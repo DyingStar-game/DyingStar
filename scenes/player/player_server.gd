@@ -64,6 +64,10 @@ var _carry_prompt_timer: float = 0.0
 ## middle-mouse free rotate accumulate into it, _server_update_carried_item re-applies it every tick,
 ## and it survives the drop as the crate's spin about the placement surface normal. Reset per pickup.
 var _carry_basis: Basis = Basis.IDENTITY
+## Centre of the carried body's collision box, BODY-local, measured at pickup. The mount pins this
+## point — not the body origin — on carry_mount_offset: a cut rock piece keeps the WHOLE rock's
+## origin, so pinning the origin held the piece off to the side. ~zero for a crate, so no change there.
+var _carry_center: Vector3 = Vector3.ZERO
 ## Last resolved placement under the crosshair (see CarryPlacement.resolve). Refreshed every tick
 ## while carrying; feeds the E prompt. The drop re-resolves rather than trusting this.
 var _place: Dictionary = {}
@@ -715,7 +719,8 @@ func server_action_received(data: Dictionary) -> void:
 					# Each pickup starts unrotated; the wheel / middle-mouse then accumulate into it.
 					_carry_basis = Basis.IDENTITY
 					_place = {}  # the first physics tick fills it; nothing stale from the last carry
-					parent_node.transform = Transform3D(_carry_basis, player.carry_mount_offset)
+					_carry_center = Globals.collision_aabb(parent_node, Transform3D.IDENTITY).get_center()
+					parent_node.transform = _carry_mount_transform()
 					#  send reparent to client
 					parent_node.send_properties_to_client(player.client_uuid)
 					player.hands_item = parent_node
@@ -757,7 +762,8 @@ func server_adopt_carried(item: Node) -> void:
 	item.set_physics_process(true)
 	_carry_basis = Basis.IDENTITY
 	_place = {}
-	item.transform = Transform3D(_carry_basis, player.carry_mount_offset)
+	_carry_center = Globals.collision_aabb(item, Transform3D.IDENTITY).get_center()
+	item.transform = _carry_mount_transform()
 	if item.has_method("send_properties_to_client"):
 		item.send_properties_to_client(player.client_uuid)
 	player.hands_item = item
@@ -2765,8 +2771,13 @@ func _resolve_placement() -> Dictionary:
 func _server_update_carried_item(_delta: float) -> void:
 	if player.hands_item == null:
 		return
-	player.hands_item.transform = Transform3D(_carry_basis, player.carry_mount_offset)
+	player.hands_item.transform = _carry_mount_transform()
 	_place = _resolve_placement()
+
+## Local pose of the carried body under the player: rotated by _carry_basis about its collision
+## centre, with that centre on carry_mount_offset.
+func _carry_mount_transform() -> Transform3D:
+	return Transform3D(_carry_basis, player.carry_mount_offset - _carry_basis * _carry_center)
 
 ## Drain the dialog queue: release the OLDEST pending line every _DIALOG_LINE_INTERVAL seconds, then
 ## clear the bubble with a single null once nothing is left to say.
