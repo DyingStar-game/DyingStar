@@ -639,23 +639,6 @@ func _relay_pane(has_main: bool, has_side: bool, panel: ServicePanel) -> void:
 		pane_layout.emit(has_main, has_side)
 
 
-## A composed app draws no content of its own: the split between the card and the column is
-## whatever the section on show asks for. Without this a section whose card half is empty — a
-## create form that moved entirely to the column — would leave the tablet showing an empty card.
-func has_main_content() -> bool:
-	var section := mounted_section()
-	if section != null:
-		return section.has_main_content()
-	return super.has_main_content()
-
-
-func has_side_content() -> bool:
-	var section := mounted_section()
-	if section != null:
-		return section.has_side_content()
-	return super.has_side_content()
-
-
 func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: int) -> void:
 	for i: int in range(bar.get_child_count()):
 		ServiceStyle.apply_segment(bar.get_child(i) as Button, i == index)
@@ -684,7 +667,13 @@ func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: i
 
 ## Whether the segment on show has anything to draw on the left. A segment that is nothing but a
 ## form has moved entirely into the column, and the tablet gives the column the whole width.
+##
+## A COMPOSED app has no holders of its own to ask — its segments hold whole sections, and the
+## section on show is the only one that knows whether its card half is empty.
 func has_main_content() -> bool:
+	var mounted := mounted_section()
+	if mounted != null:
+		return mounted.has_main_content()
 	if _seg_index < 0 or _seg_index >= _seg_holders.size():
 		return true
 	var holder: ScrollContainer = _seg_holders[_seg_index]
@@ -695,6 +684,9 @@ func has_main_content() -> bool:
 
 ## Whether the segment on show put anything in the right-hand column.
 func has_side_content() -> bool:
+	var mounted := mounted_section()
+	if mounted != null:
+		return mounted.has_side_content()
 	if _seg_index < 0 or _seg_index >= _side_pages.size():
 		return false
 	return not (_side_pages[_seg_index] as VBoxContainer).get_children().is_empty()
