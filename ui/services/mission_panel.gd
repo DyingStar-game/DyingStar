@@ -775,9 +775,10 @@ func _resolve_group_name(group_id: String, caption: Label) -> void:
 		return  # the card was closed while the lookup was in flight
 	if not bool(result.get("ok", false)) or not (result.get("data") is Dictionary):
 		return
-	var name := str((result.get("data") as Dictionary).get("name", "")).strip_edges()
-	if name != "":
-		caption.text = tr("%%SVC_LBL_SHARED_GROUP") + " : " + name
+	# Not `name`: that is Node's own, and shadowing it is a warning this file has enough of.
+	var group_label := str((result.get("data") as Dictionary).get("name", "")).strip_edges()
+	if group_label != "":
+		caption.text = tr("%%SVC_LBL_SHARED_GROUP") + " : " + group_label
 
 
 func _accept(mission_id: String, contract: VBoxContainer) -> void:
@@ -990,8 +991,8 @@ func _fill_zone_poi_picker(picker: OptionButton) -> void:
 		_load_zone_pois()
 	for poi: Dictionary in _zone_pois:
 		var poi_id := str(poi.get("id", ""))
-		var name := str(poi.get("name", "")).strip_edges()
-		picker.add_item(name if name != "" else poi_id)
+		var label := str(poi.get("name", "")).strip_edges()
+		picker.add_item(label if label != "" else poi_id)
 		picker.set_item_metadata(picker.item_count - 1, poi_id)
 	if picker.item_count == 0:
 		picker.add_item(tr("%%SVC_MSG_ZONE_NO_POI"))
@@ -1056,7 +1057,7 @@ func _use_my_position() -> void:
 	if _zone_rows.is_empty():
 		_new_zone_row("system")
 	var row: Dictionary = _zone_rows[0]
-	var kind := row.get("kind")
+	var kind: Variant = row.get("kind")
 	if kind is OptionButton and _enum_value(kind as OptionButton) != "system":
 		(kind as OptionButton).select(0)
 		_rebuild_zone_fields(row)
