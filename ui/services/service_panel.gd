@@ -574,8 +574,9 @@ func mount_segment(index: int, page: VBoxContainer, script_path: String) -> Serv
 	if side != null:
 		panel.side_slot = side
 	# Sections stand alone (a test, a smoke scene) unless a tablet hosts them; the shell is that host
-	# and asks no more of them than the tablet did.
-	panel.visible = false
+	# and asks no more of them than the tablet did. Visible only while their own segment is on show:
+	# the shell toggles both the chrome and the section, never just the chrome.
+	panel.visible = index == _seg_index
 	_mounts.append({"index": index, "chrome": chrome, "panel": panel})
 	page.add_child(panel)
 	# A form-only segment of the section asks for the column: the shell relays it so the tablet splits
@@ -607,9 +608,15 @@ func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: i
 	for i: int in range(_side_pages.size()):
 		(_side_pages[i] as VBoxContainer).visible = i == index
 	for mount: Dictionary in _mounts:
+		var mounted_index: int = int(mount.get("index", -1))
 		var chrome: Control = mount.get("chrome")
 		if chrome != null:
-			chrome.visible = int(mount.get("index", -1)) == index
+			chrome.visible = mounted_index == index
+		# The section itself is drawn in the card, and must follow its chrome — a section that is
+		# hidden while its chrome shows is a title bar over nothing.
+		var mounted: ServicePanel = mount.get("panel") as ServicePanel
+		if mounted != null:
+			mounted.visible = mounted_index == index
 	_seg_index = index
 	var section := mounted_section()
 	if section != null:

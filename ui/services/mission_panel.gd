@@ -53,12 +53,13 @@ const ESCROW_ENTRIES: Array = [
 	["creator", "%%SVC_ENUM_ESCROW_CREATOR"],
 	["issuer", "%%SVC_ENUM_ESCROW_ISSUER"],
 ]
-## The create form's zone kinds — exactly the MissionZone discriminator the service validates
-## (a `.strict()` union: system / scene / area). A mission with no zone is global.
+## The create form's zone kinds — exactly the MissionZone discriminator the service validates (a
+## `.strict()` union of just two shapes: the whole star system, or one point of interest). The
+## `scene` / `area` kinds this form once offered are not in that union: every zone carrying one was
+## answered with a validation error. A mission with no zone is global.
 const ZONE_ENTRIES: Array = [
 	["system", "%%SVC_ENUM_ZONE_SYSTEM"],
-	["scene", "%%SVC_ENUM_ZONE_SCENE"],
-	["area", "%%SVC_ENUM_ZONE_AREA"],
+	["poi", "%%SVC_ENUM_ZONE_POI"],
 ]
 ## The create form's fallback objective kinds when the catalogue is unreachable.
 const OBJECTIVE_TYPE_ENTRIES: Array = [
@@ -102,9 +103,13 @@ var _create_escrow: OptionButton
 var _create_amount: LineEdit
 var _create_max: LineEdit
 ## Zone block — the availability zones (no row = the service's "global" mission): a titled box of
-## repeatable rows, each {panel, index, kind, fields: Array[LineEdit]}.
+## repeatable rows, each {panel, index, kind, system, poi, radius, fields: Array[LineEdit]}.
 var _create_zones: VBoxContainer
 var _zone_rows: Array = []
+## The caller's own points of interest, fetched the first time a zone row needs to name one: the
+## zone points at a POI rather than at coordinates the player would have to type.
+var _zone_pois: Array = []
+var _zone_pois_loaded: bool = false
 var _create_objectives: VBoxContainer
 var _create_prereqs: VBoxContainer
 ## Editable clauses, each {panel, index, kind, badge, qty?, flow, fallback_box, with_title,
@@ -666,8 +671,12 @@ func _objective_progress(objective: Dictionary) -> String:
 
 
 ## Confirm only on my own open contract, for an issuer-evaluated objective not yet completed.
+##
+## "Mine" is the CREATOR, not the issuer: a mission I raised leaves issuerId null and records me
+## under createdBy, and filtering on issuerId is exactly what left "My contracts" empty forever.
+## A corporation-issued contract names the corporation as its issuer, so issuerId still counts.
 func _can_confirm(mission: Dictionary, objective: Dictionary) -> bool:
-	if str(mission.get("issuerId", "")) != PlayerServices.player_id():
+	if not _is_mine(mission):
 		return false
 	var status := str(mission.get("status", ""))
 	if status != "available" and status != "active":
@@ -676,6 +685,17 @@ func _can_confirm(mission: Dictionary, objective: Dictionary) -> bool:
 		return false
 	var entry := _kind_entry("objectiveKinds", str(objective.get("type", "")))
 	return str(entry.get("evaluation", "")) == "issuer"
+
+
+## Whether the caller is the one who raised [param mission] — by creation (a player contract) or by
+## issuance (a corporation contract). One question, answered the two ways the service records it.
+func _is_mine(mission: Dictionary) -> bool:
+	var me := PlayerServices.player_id()
+	if me == "":
+		return false
+	if str(mission.get("createdBy", "")) == me:
+		return true
+	return str(mission.get("issuerId", "")) == me
 
 
 func _confirm(mission_id: String, objective_id: String, contract: VBoxContainer) -> void:
@@ -718,18 +738,46 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 				func() -> void: _progress(mission_id, contract, objective_id, quantity))
 		actions.add_child(progress)
 
-	var group_id: Variant = mission.get("groupId")
-	var shared: bool = group_id != null and str(group_id) != ""
+	# The share line is the CREATOR's business: handing a contract to a group is a decision about
+	# who may take it, and that is not the taker's to make. It also names the group rather than
+	# printing the opaque id the service stores.
+	if _is_mine(mission):
+		actions.add_child(_share_line(mission, mission_id, contract))
+	return actions
+
+
+## The group-sharing line: the group's NAME (or nothing shared yet), over its action.
+##
+## The name is resolved AFTER the line is built: fetching it would make this a coroutine, and the
+## whole contract card is laid out in one synchronous pass. The id stands in until the service
+## answers, then the line corrects itself.
+func _share_line(mission: Dictionary, mission_id: String, contract: VBoxContainer) -> Control:
+	var group_id := str(mission.get("groupId", "")).strip_edges()
 	var share := _row()
-	share.add_child(_label(tr("%%SVC_LBL_SHARED_GROUP") + " : " + (str(group_id) if shared else "—"), DIM))
-	if shared:
-		_action_button(share, tr("%%SVC_ACT_UNSHARE"),
-				func() -> void: _unshare(mission_id, contract))
-	else:
+	if group_id == "":
+		share.add_child(_label(tr("%%SVC_LBL_SHARED_GROUP") + " : —", DIM))
 		_action_button(share, tr("%%SVC_ACT_SHARE"),
 				func() -> void: _share(mission_id, contract))
-	actions.add_child(share)
-	return actions
+		return share
+	var caption := _label(tr("%%SVC_LBL_SHARED_GROUP") + " : " + group_id, DIM)
+	share.add_child(caption)
+	_action_button(share, tr("%%SVC_ACT_UNSHARE"),
+			func() -> void: _unshare(mission_id, contract))
+	_resolve_group_name(group_id, caption)
+	return share
+
+
+## Replace [param caption]'s text with the group's name once the service has answered. The id it
+## showed is kept as the fallback, so a lookup that fails leaves the line still saying something.
+func _resolve_group_name(group_id: String, caption: Label) -> void:
+	var result: Dictionary = await PlayerServices.group_get(group_id)
+	if not is_instance_valid(caption):
+		return  # the card was closed while the lookup was in flight
+	if not bool(result.get("ok", false)) or not (result.get("data") is Dictionary):
+		return
+	var name := str((result.get("data") as Dictionary).get("name", "")).strip_edges()
+	if name != "":
+		caption.text = tr("%%SVC_LBL_SHARED_GROUP") + " : " + name
 
 
 func _accept(mission_id: String, contract: VBoxContainer) -> void:
@@ -876,8 +924,11 @@ func _new_zone_row(kind_value: String = "") -> PanelContainer:
 
 func _remove_zone_row(row: Dictionary) -> void:
 	_zone_rows.erase(row)
-	for field: LineEdit in row.get("fields", []):
-		_forget_field(field)
+	for field: Variant in row.get("fields", []):
+		# Only the free-text inputs were registered for the keyboard contract; the POI picker is a
+		# select and has nothing to give back.
+		if field is LineEdit:
+			_forget_field(field as LineEdit)
 	var panel: Variant = row.get("panel")
 	if panel is Node and is_instance_valid(panel):
 		(panel as Node).queue_free()
@@ -893,31 +944,80 @@ func _renumber_zones() -> void:
 
 
 ## Drop a zone row's current fields (they belonged to the previous kind) and build the ones the
-## chosen kind owns: `system` alone, `scene` (optionally narrowed to a system), or `area`
-## (optional system + centre x/y/z + radius in metres).
+## chosen kind owns: `system` names a star system, `poi` names one of the caller's points of
+## interest (optionally widened by a radius in metres).
+##
+## Nothing here is a coordinate the player types — the service takes a POI and asks Inventory where
+## it is. A zone that names a POI and carries no radius matches that POI's whole scene subtree
+## (`tarsis_1` matches `tarsis_1/new-paris`, never `tarsis_10`); a radius narrows it to the ground
+## around the point, which is the one match that depends on coordinates agreeing between services.
 func _rebuild_zone_fields(row: Dictionary) -> void:
-	# `system` is the one field every kind carries, so a kind switch keeps what was typed there.
-	var system := _zone_text(row.get("system"))
-	for field: LineEdit in row.get("fields", []):
-		_forget_field(field)
+	for field: Variant in row.get("fields", []):
+		if field is LineEdit:
+			_forget_field(field as LineEdit)
 	var flow: FlowContainer = row["flow"]
 	_clear(flow)
-	for key: String in ["system", "scene", "cx", "cy", "cz", "radius"]:
+	for key: String in ["system", "poi", "radius"]:
 		row[key] = null
 	row["fields"] = []
-	var kind := _enum_value(row["kind"] as OptionButton)
-	_zone_edit(row, flow, "system", tr("%%SVC_PH_ZONE_SYSTEM"), 150.0, false)
-	if system != "":
-		(row["system"] as LineEdit).text = system
-	if kind == "system":
+	# Every kind carries only its own fields: the service's union is strict, so a field this kind
+	# does not own is not ignored, it is a validation error.
+	if _enum_value(row["kind"] as OptionButton) == "system":
+		_zone_edit(row, flow, "system", tr("%%SVC_PH_ZONE_SYSTEM"), 150.0, false)
 		return
-	if kind == "scene":
-		_zone_edit(row, flow, "scene", tr("%%SVC_PH_ZONE_SCENE"), 200.0, false)
-		return
-	_zone_edit(row, flow, "cx", tr("%%SVC_PH_ZONE_X"), 70.0, false)
-	_zone_edit(row, flow, "cy", tr("%%SVC_PH_ZONE_Y"), 70.0, false)
-	_zone_edit(row, flow, "cz", tr("%%SVC_PH_ZONE_Z"), 70.0, false)
+	_zone_poi_picker(row, flow)
 	_zone_edit(row, flow, "radius", tr("%%SVC_PH_ZONE_RADIUS"), 90.0, true)
+
+
+## The POI a `poi` zone points at: the caller's own points of interest, by name. The picker is the
+## one field this row owns that is not a free-text input, so it is built here rather than through
+## [method _zone_edit].
+func _zone_poi_picker(row: Dictionary, flow: FlowContainer) -> void:
+	var picker := OptionButton.new()
+	picker.custom_minimum_size = Vector2(220, 40)
+	ServiceStyle.apply_option(picker)
+	row["poi"] = picker
+	(row["fields"] as Array).append(picker)
+	flow.add_child(picker)
+	_fill_zone_poi_picker(picker)
+
+
+## Put every one of the caller's points of interest in [param picker]. The first fetch costs a
+## round trip; after that the list is already in hand when another zone names one.
+func _fill_zone_poi_picker(picker: OptionButton) -> void:
+	picker.clear()
+	if not _zone_pois_loaded:
+		_load_zone_pois()
+	for poi: Dictionary in _zone_pois:
+		var poi_id := str(poi.get("id", ""))
+		var name := str(poi.get("name", "")).strip_edges()
+		picker.add_item(name if name != "" else poi_id)
+		picker.set_item_metadata(picker.item_count - 1, poi_id)
+	if picker.item_count == 0:
+		picker.add_item(tr("%%SVC_MSG_ZONE_NO_POI"))
+		picker.set_item_metadata(0, "")
+	picker.select(0)
+
+
+## The caller's own points of interest, for the zone rows to name. One fetch per panel life.
+func _load_zone_pois() -> void:
+	_zone_pois_loaded = true
+	var result: Dictionary = await PlayerServices.poi_list(100, 0)
+	_zone_pois = ServicePage.items_of(result) if bool(result.get("ok", false)) else []
+	for row: Dictionary in _zone_rows:
+		var picker: Variant = row.get("poi")
+		if picker is OptionButton:
+			_fill_zone_poi_picker(picker as OptionButton)
+
+
+## The id the [param picker] names, or "" when it carries no POI (nothing to point a zone at).
+static func _picked_poi_id(picker: Variant) -> String:
+	if not (picker is OptionButton):
+		return ""
+	var option := picker as OptionButton
+	if option.selected < 0 or option.selected >= option.item_count:
+		return ""
+	return str(option.get_item_metadata(option.selected))
 
 
 ## One zone field: registered with the keyboard contract, named on the row, and listed in the
@@ -932,8 +1032,9 @@ func _zone_edit(row: Dictionary, flow: FlowContainer, key: String, placeholder: 
 
 
 ## Prefill the first zone row from the player's own presence location (`/api/me` →
-## `presence.location` = {system, scene, position}), whatever the chosen kind can carry: empty
-## fields only, so a value already typed stays put.
+## `presence.location` = {system, scene, position}). A zone can only carry a star system or a point
+## of interest, so this fills the SYSTEM kind — a point of interest is named from the picker,
+## after being placed in Propriétés (« Ici » or the chart).
 func _use_my_position() -> void:
 	var result: Dictionary = await PlayerServices.profile_get()
 	if not bool(result.get("ok", false)):
@@ -947,35 +1048,21 @@ func _use_my_position() -> void:
 		_say(tr("%%SVC_MSG_NO_POSITION"), WARN)
 		return
 	var loc: Dictionary = location
-	var position: Variant = loc.get("position")
 	var system := str(loc.get("system", "")).strip_edges()
-	var scene := str(loc.get("scene", "")).strip_edges()
-	if system == "" and scene == "" and not (position is Dictionary):
-		_say(tr("%%SVC_MSG_NO_POSITION"), WARN)
+	if system == "":
+		# Off-world the body itself is the place, and a body is a point of interest, not a system.
+		_say(tr("%%SVC_MSG_ZONE_OFFWORLD"), DIM)
 		return
 	if _zone_rows.is_empty():
-		_new_zone_row(_prefill_zone_kind(system, scene))
+		_new_zone_row("system")
 	var row: Dictionary = _zone_rows[0]
+	var kind := row.get("kind")
+	if kind is OptionButton and _enum_value(kind as OptionButton) != "system":
+		(kind as OptionButton).select(0)
+		_rebuild_zone_fields(row)
 	_prefill_zone_field(row.get("system"), system)
-	_prefill_zone_field(row.get("scene"), scene)
-	if position is Dictionary:
-		_prefill_zone_field(row.get("cx"), str((position as Dictionary).get("x", "")))
-		_prefill_zone_field(row.get("cy"), str((position as Dictionary).get("y", "")))
-		_prefill_zone_field(row.get("cz"), str((position as Dictionary).get("z", "")))
-		var radius: Variant = row.get("radius")
-		if radius is LineEdit and (radius as LineEdit).text.strip_edges() == "":
-			(radius as LineEdit).text = "1000"
-	var location_text := ServiceTypes.location_text(loc)
-	if location_text != "":
-		_say(location_text, GOOD)
-
-
-## The kind a prefilled row starts on — the richest thing the location actually carries: a scene
-## path narrows the most, a bare system next, and only a position with neither needs an area.
-static func _prefill_zone_kind(system: String, scene: String) -> String:
-	if scene != "":
-		return "scene"
-	return "system" if system != "" else "area"
+	var where := ServiceTypes.location_text(loc)
+	_say(where if where != "" else system, GOOD)
 
 
 ## One clause card: numbered head (N. kind ▾ · evaluation badge · quantity · ×) over the sentence
@@ -1461,37 +1548,26 @@ func _collect_zones() -> Variant:
 ## One row's MissionZone payload, carrying only the keys the service's strict schema accepts for
 ## its kind — a `.strict()` union, so an extra key is a validation error, not an ignored field.
 func _collect_zone(row: Dictionary) -> Variant:
-	var kind := _enum_value(row["kind"] as OptionButton)
-	var system := _zone_text(row.get("system"))
-	if kind == "system":
+	if _enum_value(row["kind"] as OptionButton) == "system":
+		var system := _zone_text(row.get("system"))
 		if system == "":
 			_say(tr("%%SVC_MSG_ZONE_SYSTEM_REQUIRED"), WARN)
 			return null
 		return {"kind": "system", "system": system}
-	if kind == "scene":
-		var scene := _zone_text(row.get("scene"))
-		if scene == "":
-			_say(tr("%%SVC_MSG_ZONE_SCENE_REQUIRED"), WARN)
-			return null
-		var scene_zone := {"kind": "scene", "scene": scene}
-		if system != "":
-			scene_zone["system"] = system
-		return scene_zone
-	var point := {}
-	for axis: Array in [["cx", "x"], ["cy", "y"], ["cz", "z"]]:
-		var raw := _zone_text(row.get(axis[0]))
-		if not raw.is_valid_float():
-			_say(tr("%%SVC_MSG_ZONE_AREA_INVALID"), WARN)
-			return null
-		point[str(axis[1])] = float(raw)
-	var radius := _zone_text(row.get("radius"))
-	if not radius.is_valid_int() or int(radius) < 1 or int(radius) > 1000000:
-		_say(tr("%%SVC_MSG_ZONE_AREA_INVALID"), WARN)
+	var poi_id := _picked_poi_id(row.get("poi"))
+	if poi_id == "":
+		_say(tr("%%SVC_MSG_ZONE_NEED_POI"), WARN)
 		return null
-	var area_zone := {"kind": "area", "center": point, "radiusM": int(radius)}
-	if system != "":
-		area_zone["system"] = system
-	return area_zone
+	# The radius is the one number here, and it is optional: without it the zone is the POI's whole
+	# scene subtree, which needs no coordinates to agree between the services.
+	var zone := {"kind": "poi", "poiId": poi_id}
+	var radius := _zone_text(row.get("radius"))
+	if radius.strip_edges() != "":
+		if not radius.is_valid_int() or int(radius) < 1 or int(radius) > 1000000:
+			_say(tr("%%SVC_MSG_ZONE_RADIUS_INVALID"), WARN)
+			return null
+		zone["radiusM"] = int(radius)
+	return zone
 
 
 ## The inline variables of one sentence: display values for the title substitution plus their typed

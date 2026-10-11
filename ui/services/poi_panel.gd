@@ -36,6 +36,11 @@ var _form_radius: LineEdit
 var _form_visibility: OptionButton
 var _form_owner: OptionButton
 var _form_owner_picker: ServiceTargetPicker
+## The form's three buttons: a POI is either CREATED or edited, never both at once, so only the
+## pair the current mode needs is on show (Save with no id to save would be a dead button).
+var _form_new: Button
+var _form_create: Button
+var _form_save: Button
 var _edit_id: String = ""
 ## The place the form will send: system, scene and position (see [PlayerLocation]). Null until a
 ## place has been taken — a form that is never placed has nothing to say about where it is.
@@ -282,9 +287,9 @@ func _build_form(side: VBoxContainer) -> void:
 	rows.add_child(owner)
 
 	var buttons := _row()
-	_action_button(buttons, tr("%%SVC_ACT_NEW_POI"), _blank_form)
-	_action_button(buttons, tr("%%SVC_ACT_CREATE_POI"), _create)
-	_action_button(buttons, tr("%%SVC_ACT_SAVE"), _save)
+	_form_new = _action_button(buttons, tr("%%SVC_ACT_NEW_POI"), _blank_form)
+	_form_create = _action_button(buttons, tr("%%SVC_ACT_CREATE_POI"), _create)
+	_form_save = _action_button(buttons, tr("%%SVC_ACT_SAVE"), _save)
 	rows.add_child(buttons)
 
 	side.add_child(rows)
@@ -311,6 +316,7 @@ func _fill_form(poi: Dictionary) -> void:
 	_select_enum(_form_owner, "corporation" if poi.get("ownerType") == "corporation" else "")
 	_form_owner.disabled = true
 	_form_owner_picker.visible = _enum_value(_form_owner) != ""
+	_sync_form_buttons()
 
 
 ## The blank form: everything back to its default, ready to create. The place starts where the
@@ -327,6 +333,20 @@ func _blank_form() -> void:
 	_form_owner.select(0)
 	_form_owner.disabled = false
 	_form_owner_picker.visible = false
+	_sync_form_buttons()
+
+
+## Show only the buttons the current mode can act on: a blank form creates, an edit saves. Neither
+## state ever offers a button that would do nothing.
+func _sync_form_buttons() -> void:
+	var editing: bool = _edit_id != ""
+	if _form_create != null:
+		_form_create.visible = not editing
+	if _form_save != null:
+		_form_save.visible = editing
+	# The blank button only has somewhere to go while an edit is open.
+	if _form_new != null:
+		_form_new.visible = editing
 
 
 ## Take the place the player stands in right now. No network, no map: the body they are on and

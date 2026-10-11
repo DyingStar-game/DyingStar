@@ -38,6 +38,25 @@ func test_open_app_leaves_the_overview_behind() -> void:
 	assert_true(_panel("economy").visible)
 
 
+func test_a_mounted_section_is_shown_only_while_its_own_segment_is() -> void:
+	_tablet.open()
+	var social := _panel("social")
+	social.goto_segment(0)
+	assert_true(social.mounted_section().visible,
+			"the contacts section draws in the card, not just its chrome")
+	social.goto_segment(1)
+	assert_false(_mounted(social, 0).visible, "contacts left with its segment")
+	assert_true(_mounted(social, 1).visible, "the squad section took its place")
+
+
+## The section mounted into segment [param index] of [param panel].
+func _mounted(panel: ServicePanel, index: int) -> ServicePanel:
+	for mount: Dictionary in panel._mounts:
+		if int(mount.get("index", -1)) == index:
+			return mount.get("panel") as ServicePanel
+	return null
+
+
 ## The panel the tablet built for [param id], as the app opened it.
 func _panel(id: String) -> ServicePanel:
 	return _tablet._panels[id] as ServicePanel

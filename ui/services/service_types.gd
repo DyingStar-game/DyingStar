@@ -109,9 +109,12 @@ const VISIBILITY_KEYS: Dictionary = {
 	"public": "%%SVC_ENUM_VISIBILITY_PUBLIC",
 	"corporation": "%%SVC_ENUM_VISIBILITY_CORPORATION",
 }
-## Availability zone kinds — the `MissionZone` discriminator, as the service validates them.
+## Availability zone kinds — the `MissionZone` discriminator, as the service validates them. Only
+## `system` and `poi` exist in that union; `scene` and `area` are kept in the table so a zone an
+## older build stored still reads back, but no form offers them any more.
 const ZONE_KIND_KEYS: Dictionary = {
 	"system": "%%SVC_ENUM_ZONE_SYSTEM",
+	"poi": "%%SVC_ENUM_ZONE_POI",
 	"scene": "%%SVC_ENUM_ZONE_SCENE",
 	"area": "%%SVC_ENUM_ZONE_AREA",
 }
@@ -654,6 +657,12 @@ static func zone_line(zone: Variant) -> String:
 	match kind:
 		"system":
 			return text("%%SVC_FMT_ZONE_SYSTEM") % dash(z.get("system"))
+		"poi":
+			var radius: Variant = z.get("radiusM")
+			if radius == null:
+				# No radius: the zone is the POI's whole scene subtree, which is the wider thing.
+				return text("%%SVC_FMT_ZONE_POI") % dash(z.get("poiId"))
+			return text("%%SVC_FMT_ZONE_POI_RADIUS") % [dash(z.get("poiId")), num(radius)]
 		"scene":
 			return prefix + (text("%%SVC_FMT_ZONE_SCENE") % dash(z.get("scene")))
 		"area":
