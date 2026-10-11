@@ -213,6 +213,39 @@ func test_the_blend_does_not_depend_on_the_order() -> void:
 		e += 0.37
 
 
+## A building in a sloped village: neighbours whose aprons stop short of ours, at
+## platforms tens of metres apart. tarsis_3 village 2's cargo depot lost its whole
+## apron to them when every pad was blended from the footprint's edge.
+func _village() -> Array:
+	var pads: Array = [_rec]
+	var k := 0
+	for off: Vector2 in [Vector2(40.0, 0.0), Vector2(-40.0, 0.0), Vector2(0.0, 50.0),
+			Vector2(30.0, -45.0)]:
+		var n := PadBed.record("pad_n%d" % k, off.x / MPD, off.y / MPD, 0.0, 6.0, 6.0, 8.0, 0.0)
+		n["z"] = 100.0 + (25.0 if k % 2 == 0 else -30.0)
+		pads.append(n)
+		k += 1
+	return pads
+
+
+func test_the_apron_stays_flat_among_neighbours() -> void:
+	var pads := _village()
+	for e: float in [10.01, 12.0, 15.0, 17.99, 18.0]:
+		assert_eq(PadBed.apply(140.0, _east(e), pads, MPD), 100.0, "%.2f m east, in the apron" % e)
+		assert_eq(PadBed.apply(140.0, _east(-e), pads, MPD), 100.0, "%.2f m west, in the apron" % e)
+
+
+## Past the apron the ground climbs to the neighbours (here 25 m over the 8 m between two aprons, so
+## steeply), but it starts from the flat apron: no step at its edge.
+func test_the_talus_leaves_the_apron_without_a_step() -> void:
+	var pads := _village()
+	for side: float in [1.0, -1.0]:
+		var edge := side * 18.0
+		for gap: float in [0.001, 0.01]:
+			var y := PadBed.apply(140.0, _east(edge + side * gap), pads, MPD)
+			assert_lte(absf(y - 100.0), 0.02, "%.3f m past the apron's edge" % gap)
+
+
 # ── The refinement predicate and the index's bound ───────────────────────
 
 func test_reach_is_an_upper_bound_on_what_apply_moves() -> void:

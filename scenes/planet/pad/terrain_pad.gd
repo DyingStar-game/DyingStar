@@ -225,6 +225,12 @@ func _apply() -> void:
 		var st: Dictionary = terrain.planet_data.pad_settled_stats(rec, sync.terrain_settled)
 		if not st.is_empty():
 			rec["settled"] = st
+	# Called back when the platform gets an altitude (its tiles arrive) or changes level (a larger
+	# touching pad appears or goes, PlanetData._settle_pad_levels): nothing else moves this node to
+	# re-run _apply, and the building would stay off its platform. Connected first: registering may
+	# announce this very pad.
+	if terrain.has_signal("pads_caught_up") and not terrain.pads_caught_up.is_connected(_on_pads_caught_up):
+		terrain.pads_caught_up.connect(_on_pads_caught_up)
 	terrain.register_terrain_pad(rec)
 	var z: float = terrain.terrain_pad_altitude(rec)
 	var what := "emprise %.1f × %.1f m + %.0f m de tablier" % [
@@ -234,10 +240,6 @@ func _apply() -> void:
 		# not readable, so the platform has no altitude and the pad is set aside
 		# until they arrive (PlanetData.retry_starved_pads).
 		_say("pad '%s' EN ATTENTE des tuiles d'élévation — %s" % [uuid, what])
-		# Called back once they are there: nothing else moves this node to re-run _apply, and the
-		# building would stay off its platform, its measure never persisted.
-		if terrain.has_signal("pads_caught_up") and not terrain.pads_caught_up.is_connected(_on_pads_caught_up):
-			terrain.pads_caught_up.connect(_on_pads_caught_up)
 		return
 	# The gap is the thing to look at when a building looks wrong: the platform
 	# sits at the MEDIAN of the relief under the footprint, which is not the
@@ -452,7 +454,6 @@ func _unregister() -> void:
 func _on_pads_caught_up(uuids: Array) -> void:
 	if not uuids.has(_uuid):
 		return
-	_stop_waiting_for_tiles()
 	_mark_dirty()
 
 

@@ -5749,11 +5749,16 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 	_pads_starved.erase(uuid)
 	rec["z"] = float(stats["z"])
 	rec["talus_m"] = float(stats["talus_m"])
-	if not next.register(rec):
+	_pad_alt[uuid] = stats
+	next.register(rec)
+	var changed := _settle_pad_levels(next, idx, [old, rec])
+	if changed.is_empty():
 		_pad_mutex.unlock()
 		return {}
-	_pad_alt[uuid] = stats
-	dirty.merge(next.pixels_of(rec))
+	for u: String in changed:
+		if u != uuid:
+			dirty.merge(idx.pixels_of(idx.get_rec(u)))
+		dirty.merge(next.pixels_of(next.get_rec(u)))
 	_pads = next
 	_set_pad_road_cuts(uuid, rec)
 	_pad_mutex.unlock()
@@ -5770,10 +5775,28 @@ func unregister_pad(uuid: String) -> Dictionary:
 		var next := _pads.clone()
 		var rec := next.unregister(uuid)
 		dirty = next.pixels_of(rec)
+		# The pads that stood on its level go back to theirs (or to the next largest one's).
+		for u: String in _settle_pad_levels(next, _pads, [rec]):
+			dirty.merge(_pads.pixels_of(_pads.get_rec(u)))
+			dirty.merge(next.pixels_of(next.get_rec(u)))
 		_pads = next
 		_set_pad_road_cuts(uuid, {})
 	_pad_mutex.unlock()
 	return dirty
+
+
+## Re-level the pads touching [param seeds] in [param next] (PadLevels.settle), and queue the ones
+## whose level moved for their TerrainPad to re-seat its building. Call with _pad_mutex held.
+func _settle_pad_levels(next: PadIndex, published: PadIndex, seeds: Array) -> Array[String]:
+	var changed := PadLevels.settle(next, published, seeds, _pad_alt,
+			1 << maxi(max_quadtree_depth, 0), radius * PI / 180.0)
+	for u: String in changed:
+		var pub: Dictionary = published.get_rec(u) if published != null else {}
+		var cur: Dictionary = next.get_rec(u)
+		if not pub.is_empty() and not cur.is_empty() and float(pub["z"]) != float(cur["z"]) \
+				and not _pads_caught_up.has(u):
+			_pads_caught_up.append(u)
+	return changed
 
 
 ## The pads a chunk at (nside, ipix) must apply — its own HEALPix pixel and its
@@ -5792,7 +5815,8 @@ func pad_altitude(rec: Dictionary) -> float:
 	var uuid := str(rec.get("uuid", ""))
 	if _pad_alt.has(uuid) and _pads != null \
 			and PadBed.same_geometry(_pads.get_rec(uuid), rec):
-		return float((_pad_alt[uuid] as Dictionary)["z"])
+		# The level the ground is drawn at: a larger touching pad's, if any (_settle_pad_levels).
+		return float(_pads.get_rec(uuid)["z"])
 	var stats := _pad_stats_if_readable(rec)
 	return NAN if stats.is_empty() else float(stats["z"])
 
