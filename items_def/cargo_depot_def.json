@@ -24,7 +24,8 @@
 				"max_distance_to_reception",
 				"pnj_zones",
 				"is_pnj_workplace",
-				"terrain_settled"
+				"terrain_settled",
+				"shelves_spawned"
 			]
 		}
 	]

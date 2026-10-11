@@ -3407,6 +3407,17 @@ func registry_has_type_in_field(zone: Node3D, type: String, half: float) -> bool
 	return false
 
 
+## Whether the registry holds a prop of [param type] parented to [param parent_uuid], live or asleep:
+## what a structure checks before spawning its default contents a second time. Children still waiting
+## for that parent count too.
+func registry_has_child_of_type(parent_uuid: String, type: String) -> bool:
+	for kids: Dictionary in [prop_registry.children_of.get(parent_uuid, {}), prop_registry.waiting.get(parent_uuid, {})]:
+		for u in kids:
+			if str(prop_registry.entries.get(u, {}).get("type", "")) == type:
+				return true
+	return false
+
+
 # ── Origin-rebase frame helpers ──────────────────────────────────────────────────────────────────
 # Server-side, every planet lives at the ORIGIN of its own physics world (see create_planet); its
 # true universe position is planet.orbital_position (data). Any comparison that crosses worlds — or
