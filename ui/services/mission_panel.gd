@@ -421,12 +421,13 @@ func _created_missions() -> void:
 	_page_created.reset()
 
 
-## My own contracts: the issuer filters the catalogue by my player id.
+## My own contracts: the creator's management view, which lists them whatever their visibility or
+## issuer. Filtering the catalogue by issuerId never found them — a player mission leaves issuerId
+## null and records the creator under createdBy, and a corporation-issued one names the corporation.
 func _load_created() -> void:
 	var at: int = _page_created.offset
-	var result: Dictionary = await PlayerServices.missions_list(
-			_enum_value(_created_status), "", "", "player", PlayerServices.player_id(), "",
-			_page_created.limit, at)
+	var result: Dictionary = await PlayerServices.missions_created(
+			_enum_value(_created_status), _page_created.limit, at)
 	if _land(_page_created, at, result):
 		_fill_missions_list(_page_created, _created, result, tr("%%SVC_MSG_NO_CREATED"))
 
@@ -584,7 +585,9 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 		list.add_theme_constant_override("separation", 4)
 		for prereq: Variant in prereqs:
 			if prereq is Dictionary:
-				var line := _label(ServiceTypes.prerequisite_line(prereq), ServiceStyle.TEXT)
+				var entry := _kind_entry("prerequisiteKinds", str((prereq as Dictionary).get("kind", "")))
+				var line := _label(ServiceTypes.prerequisite_line(prereq,
+						str(entry.get("name", ""))), ServiceStyle.TEXT)
 				line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				list.add_child(line)
 		doc.add_child(_titled(tr("%%SVC_LBL_PREREQUISITES"), list))
@@ -1642,8 +1645,9 @@ func _category_options() -> Array:
 
 ## Kind options for one clause, filtered to the create form's current category: the catalogue
 ## marks each kind `all` or with an explicit category list (the service enforces the same pair at
-## validate time). Labels are the raw kind names — the catalogue summary is the sentence, not a
-## dropdown caption. No catalogue (or a category nothing matches) falls back to the full list.
+## validate time). The label is the catalogue's own `name` — localized by the service, since
+## PlayerServices sends Accept-Language with every call. No catalogue (or a category nothing
+## matches) falls back to the full list, whose labels are the raw kind names.
 func _kind_options(catalog_key: String, category: String) -> Array:
 	var kinds: Variant = _catalog.get(catalog_key)
 	if kinds is Array and not (kinds as Array).is_empty():
@@ -1653,9 +1657,10 @@ func _kind_options(catalog_key: String, category: String) -> Array:
 			if not (entry is Dictionary):
 				continue
 			var kind := str((entry as Dictionary).get("kind", ""))
-			all.append([kind, kind])
+			var pair := [kind, _kind_label(entry as Dictionary, kind)]
+			all.append(pair)
 			if _kind_fits_category(entry, category):
-				allowed.append([kind, kind])
+				allowed.append(pair)
 		return allowed if not allowed.is_empty() else all
 	if catalog_key == "prerequisiteKinds":
 		var out: Array = []
@@ -1663,6 +1668,13 @@ func _kind_options(catalog_key: String, category: String) -> Array:
 			out.append([kind, kind])
 		return out
 	return OBJECTIVE_TYPE_ENTRIES
+
+
+## A kind's dropdown caption: the catalogue's localized `name` when it carries one, the raw kind
+## otherwise (an old service, or a kind the catalogue never heard of).
+static func _kind_label(entry: Dictionary, kind: String) -> String:
+	var name: String = str(entry.get("name", "")).strip_edges()
+	return name if name != "" else kind
 
 
 ## Does this catalogue entry allow [param category]? `all` covers everything, a list is an

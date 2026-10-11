@@ -221,7 +221,7 @@ func _apply_catalog(result: Dictionary) -> void:
 		lines.append(ServiceTypes.catalog_line(entry))
 		metadata.append(entry)
 	if lines.is_empty():
-		lines.append(tr("%%SVC_MSG_NO_CATALOG"))
+		lines.append(tr("%%SVC_MSG_NO_GOODS"))
 	_fill_list(_catalog, lines, metadata)
 
 

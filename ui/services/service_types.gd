@@ -624,13 +624,18 @@ static func rewards_text(rewards: Variant) -> String:
 	return "—"
 
 
-## A gate checked at acceptance: kind plus its structured params, compact.
-static func prerequisite_line(prerequisite: Dictionary) -> String:
+## A gate checked at acceptance: kind plus its structured params, compact. [param kind_label] is
+## the caller's localized caption for the kind (the catalogue's `name`); the raw kind shows when
+## the caller has none — an old catalogue, or a kind it never heard of.
+static func prerequisite_line(prerequisite: Dictionary, kind_label: String = "") -> String:
 	var params: Variant = prerequisite.get("params")
 	var compact: String = "—" if params == null else JSON.stringify(params)
 	if compact == "{}":
 		compact = "—"
-	return text("%%SVC_FMT_PREREQ_LINE") % [dash(prerequisite.get("kind")), compact]
+	var shown: String = kind_label.strip_edges()
+	if shown == "":
+		shown = str(dash(prerequisite.get("kind")))
+	return text("%%SVC_FMT_PREREQ_LINE") % [shown, compact]
 
 
 static func zone_kind_label(value: Variant) -> String:

@@ -557,6 +557,15 @@ func my_missions(status: String = "", limit: int = 20, offset: int = 0) -> Dicti
 			{"status": status, "limit": limit, "offset": offset})
 
 
+## The missions I created, as their issuer sees them: every one of them, all statuses, with none of
+## the browse's zone / group / free-slot filtering. The creator's management view — and the only one
+## that finds them whatever their visibility, since a corporation-issued contract records the
+## corporation as its issuer and my player id only in `createdBy`.
+func missions_created(status: String = "", limit: int = 20, offset: int = 0) -> Dictionary:
+	return await _http_get(SERVICE_MISSION, "/api/me/missions-created",
+			{"status": status, "limit": limit, "offset": offset})
+
+
 # ---------------------------------------------------------------------------------------------
 # Economy
 # ---------------------------------------------------------------------------------------------

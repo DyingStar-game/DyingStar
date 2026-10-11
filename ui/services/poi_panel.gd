@@ -29,16 +29,17 @@ var _detail_id: String = ""
 var _form_mode: Label
 var _form_name: LineEdit
 var _form_description: TextEdit
-var _form_system: LineEdit
-var _form_scene: LineEdit
-var _form_x: LineEdit
-var _form_y: LineEdit
-var _form_z: LineEdit
+## The chosen place, read-only: system · scene · x,y,z. The player never types coordinates — they
+## take theirs (« Here ») or pick one on the chart.
+var _form_where: Label
 var _form_radius: LineEdit
 var _form_visibility: OptionButton
 var _form_owner: OptionButton
 var _form_owner_picker: ServiceTargetPicker
 var _edit_id: String = ""
+## The place the form will send: system, scene and position (see [PlayerLocation]). Null until a
+## place has been taken — a form that is never placed has nothing to say about where it is.
+var _placed: Dictionary = {}
 ## The corporation tab.
 var _corp_picker: ServiceTargetPicker
 var _corp_pois: ItemList
@@ -250,24 +251,24 @@ func _build_form(side: VBoxContainer) -> void:
 	_form_description = _textarea(tr("%%SVC_PH_POI_DESCRIPTION"), 90.0)
 	rows.add_child(_form_description)
 
-	# The location fields carry the mission-zone wording: same values, same meaning.
-	var where := _row(10)
-	_form_system = _field(tr("%%SVC_PH_ZONE_SYSTEM"), 170.0)
-	_form_scene = _field(tr("%%SVC_PH_ZONE_SCENE"), 190.0)
-	where.add_child(_form_system)
-	where.add_child(_form_scene)
-	rows.add_child(where)
+	# Where it is: never typed. The player takes the place they stand in, or picks one on the chart;
+	# the form shows what that resolved to and sends exactly that.
+	rows.add_child(_label(tr("%%SVC_LBL_LOCATION"), DIM))
+	_form_where = _label(tr("%%SVC_MSG_TAKE_A_PLACE"), ServiceStyle.TEXT)
+	_form_where.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rows.add_child(_form_where)
+	var place := _row(10)
+	_action_button(place, tr("%%SVC_ACT_HERE"), _take_here)
+	_action_button(place, tr("%%SVC_ACT_ON_CHART"), _take_on_chart)
+	rows.add_child(place)
 
-	var position := _row(10)
-	_form_x = _number_field(tr("%%SVC_PH_ZONE_X"), 90.0)
-	_form_y = _number_field(tr("%%SVC_PH_ZONE_Y"), 90.0)
-	_form_z = _number_field(tr("%%SVC_PH_ZONE_Z"), 90.0)
+	# The radius is the one number the player owns: it is only a place until they widen it into a
+	# zone, and only then is it worth anything.
+	var radius_row := _row(10)
+	radius_row.add_child(_label(tr("%%SVC_LBL_RADIUS_ZONE"), DIM))
 	_form_radius = _number_field(tr("%%SVC_PH_ZONE_RADIUS"), 130.0)
-	position.add_child(_form_x)
-	position.add_child(_form_y)
-	position.add_child(_form_z)
-	position.add_child(_form_radius)
-	rows.add_child(position)
+	radius_row.add_child(_form_radius)
+	rows.add_child(radius_row)
 
 	var owner := _row(10)
 	owner.add_child(_label(tr("%%SVC_LBL_OWNER"), DIM))
@@ -291,16 +292,20 @@ func _build_form(side: VBoxContainer) -> void:
 
 
 ## Prefill the form for an edit. Ownership is read-only in the patch, so the owner select locks.
+## The place is not re-typed either: it is read back and shown, and the player moves it only if
+## they choose to.
 func _fill_form(poi: Dictionary) -> void:
 	_edit_id = str(poi.get("id", ""))
 	_form_mode.text = "%s : %s" % [tr("%%SVC_TAB_EDIT"), ServiceTypes.dash(poi.get("name"))]
 	_form_name.text = _text(poi.get("name"))
 	_form_description.text = _text(poi.get("description"))
-	_form_system.text = _text(poi.get("system"))
-	_form_scene.text = _text(poi.get("scene"))
-	_form_x.text = _coordinate(poi.get("x"))
-	_form_y.text = _coordinate(poi.get("y"))
-	_form_z.text = _coordinate(poi.get("z"))
+	_placed = {
+		"system": _text(poi.get("system")),
+		"scene": _text(poi.get("scene")),
+		"position": Vector3(ServiceTypes.num(poi.get("x")), ServiceTypes.num(poi.get("y")),
+				ServiceTypes.num(poi.get("z"))),
+	}
+	_render_where()
 	_form_radius.text = _coordinate(poi.get("radiusM"))
 	_select_enum(_form_visibility, ServiceTypes.dash(poi.get("visibility")))
 	_select_enum(_form_owner, "corporation" if poi.get("ownerType") == "corporation" else "")
@@ -308,22 +313,60 @@ func _fill_form(poi: Dictionary) -> void:
 	_form_owner_picker.visible = _enum_value(_form_owner) != ""
 
 
-## The blank form: everything back to its default, ready to create.
+## The blank form: everything back to its default, ready to create. The place starts where the
+## player stands — the common case — and they move it only if they mean to.
 func _blank_form() -> void:
 	_edit_id = ""
 	_form_mode.text = tr("%%SVC_TAB_CREATE")
 	_form_name.text = ""
 	_form_description.text = ""
-	_form_system.text = ""
-	_form_scene.text = ""
-	_form_x.text = ""
-	_form_y.text = ""
-	_form_z.text = ""
+	_placed = {}
+	_render_where()
 	_form_radius.text = ""
 	_form_visibility.select(0)
 	_form_owner.select(0)
 	_form_owner.disabled = false
 	_form_owner_picker.visible = false
+
+
+## Take the place the player stands in right now. No network, no map: the body they are on and
+## where on it they are, resolved once and shown.
+func _take_here() -> void:
+	var player := PlayerLocation.local_player()
+	if player == null:
+		_say(tr("%%SVC_MSG_NO_PLAYER"), WARN)
+		return
+	_placed = PlayerLocation.presence_of(player)
+	_render_where()
+	_say(tr("%%SVC_MSG_PLACE_HERE"), GOOD)
+
+
+## Ask the chart for a place: the console owns the chart, so all this does is ask — it opens on the
+## NAVIGATION tab in placement mode, the player picks a point, and it comes back through
+## [method set_placed]. Nothing here ever reaches for [StarMap].
+func _take_on_chart() -> void:
+	if _placed == null or (_placed as Dictionary).is_empty():
+		_take_here()
+	placement_requested.emit()
+	_say(tr("%%SVC_MSG_PICK_ON_CHART"), DIM)
+
+
+## Show what was resolved: system · scene, then the metres. A form with no place yet says so.
+func _render_where() -> void:
+	if _form_where == null:
+		return
+	if _placed == null or (_placed is Dictionary) and (_placed as Dictionary).is_empty():
+		_form_where.text = tr("%%SVC_MSG_TAKE_A_PLACE")
+		return
+	var place: Dictionary = _placed
+	var position: Vector3 = place.get("position", Vector3.ZERO) as Vector3
+	var head := PackedStringArray()
+	if str(place.get("system", "")) != "":
+		head.append(str(place["system"]))
+	if str(place.get("scene", "")) != "":
+		head.append(str(place["scene"]))
+	var where: String = " · ".join(head) if head.size() > 0 else "—"
+	_form_where.text = "%s  —  %.1f, %.1f, %.1f" % [where, position.x, position.y, position.z]
 
 
 func _sync_owner() -> void:
@@ -368,23 +411,24 @@ func _form_body() -> Dictionary:
 	if poi_name == "":
 		_say(tr("%%SVC_MSG_POI_NAME_REQUIRED"), WARN)
 		return {}
-	var coordinates := [_form_x.text.strip_edges(), _form_y.text.strip_edges(),
-		_form_z.text.strip_edges()]
-	for coordinate: String in coordinates:
-		if not coordinate.is_valid_float():
-			_say(tr("%%SVC_MSG_POI_COORDINATES"), WARN)
-			return {}
+	if _placed == null or (_placed as Dictionary).is_empty() or not (_placed as Dictionary).has("position"):
+		_say(tr("%%SVC_MSG_TAKE_A_PLACE"), WARN)
+		return {}
+	var place: Dictionary = _placed
+	var position: Vector3 = place.get("position", Vector3.ZERO) as Vector3
 	var body := {
 		"name": poi_name,
-		"x": _coordinate_of(coordinates[0]),
-		"y": _coordinate_of(coordinates[1]),
-		"z": _coordinate_of(coordinates[2]),
+		"x": position.x,
+		"y": position.y,
+		"z": position.z,
 		"visibility": _enum_value(_form_visibility),
 	}
+	var description: String = _form_description.text.strip_edges()
+	if description != "":
+		body["description"] = description
 	for pair: Array in [
-		["description", _form_description.text.strip_edges()],
-		["system", _form_system.text.strip_edges()],
-		["scene", _form_scene.text.strip_edges()],
+		["system", str(place.get("system", ""))],
+		["scene", str(place.get("scene", ""))],
 	]:
 		if str(pair[1]) != "":
 			body[pair[0]] = str(pair[1])
@@ -392,6 +436,16 @@ func _form_body() -> Dictionary:
 	if radius.is_valid_float():
 		body["radiusM"] = _coordinate_of(radius)
 	return body
+
+
+## The chart handed a place over: what the player picked is now where the form says it is.
+## Called by PlayerClient, which owns the chart (this file never reaches for [StarMap]).
+func set_placed(place: Dictionary) -> void:
+	if place.is_empty() or not place.has("position"):
+		return
+	_placed = place.duplicate()
+	_render_where()
+	_say(tr("%%SVC_MSG_PLACE_CHART"), GOOD)
 
 
 # ---------------------------------------------------------------------------------------------
