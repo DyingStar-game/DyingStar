@@ -97,6 +97,11 @@ const float WRAP = 8192.0;
 
 varying vec3 world_pos;
 varying vec3 world_normal;
+// The same normal in the MODEL frame — the frame tri_pos is in. The triplanar weights and the
+// detail normal must be in that frame: the planet spins on the client, so world axes and tri_pos
+// axes differ, and weights taken from world_normal gave a steep slope's weight to a plane nearly
+// edge-on to it in tri_pos — the detail smeared down building taluses (planet_surface.gdshader).
+varying vec3 model_normal;
 varying vec3 tri_pos;
 varying flat float detail_layer;
 varying float detail_scale;
@@ -173,6 +178,7 @@ void vertex() {
 	// texture continuous across the terrain-to-skirt boundary.
 	world_pos    = (MODEL_MATRIX * vec4(VERTEX + CUSTOM0.xyz, 1.0)).xyz;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	model_normal = NORMAL;
 	// High-precision triplanar position: chunk-local vertex + wrapped chunk
 	// origin.  Both terms are small (≤ ~8300 m), so float32 keeps
 	// sub-millimetre precision — unlike world_pos (~4.5e6 m → 0.5 m steps).
@@ -227,16 +233,20 @@ void fragment() {
 	// Surface normal used for shading — starts as the geometric normal and is
 	// perturbed by the detail height below so the rock micro-relief is lit.
 	vec3 shaded_normal = world_normal;
+	// Model frame (tri_pos's) <-> world. The chunk's basis is the planet's rotation, no scale.
+	mat3 m2w = mat3(MODEL_MATRIX);
+	mat3 w2m = transpose(m2w);
+	vec3 nrm_m = normalize(model_normal);
 
 	if (detail_scale > 0.0) {
-		vec3 n = abs(world_normal);
+		vec3 n = abs(nrm_m);
 		n = pow(n, vec3(triplanar_sharpness));
 		n /= (n.x + n.y + n.z);
 
 		// Snap all octave scales to the seamless 1/WRAP grid (see tri_pos).
 		float s = snap_scale(detail_scale);
 		float layer = detail_layer;
-		vec3 sgn = sign(world_normal);
+		vec3 sgn = sign(nrm_m);
 
 		// ── Three detail octaves ─────────────────────────────────────
 		// Each octave contributes to BOTH the albedo modifier (height) and
@@ -309,8 +319,9 @@ void fragment() {
 			// lighting the ground from one azimuth and not from the opposite one).
 			// Subtracting one base per contributing octave (oct, counted above
 			// and cliff-blended with bn) leaves the pure gradient perturbation,
-			// which then rides on world_normal.
-			shaded_normal = normalize(world_normal + (bn - sgn * n * oct));
+			// which then rides on world_normal — brought from tri_pos's frame, which
+			// bn is in, to world space.
+			shaded_normal = normalize(world_normal + m2w * (bn - sgn * n * oct));
 		}
 	}
 
@@ -321,7 +332,10 @@ void fragment() {
 	// Using overlay-style blending for natural look.
 	float mod = mix(1.0, detail * 2.0, detail_strength);
 	// Rock blocks of a rocky_terrain field (CUSTOM1), faded with the distance.
-	mod *= rock_blocks(rock, tri_pos, world_normal, planet_up, cam_dist, shaded_normal);
+	// In tri_pos's frame, like the planes; its shading normal comes back to world space.
+	vec3 sn_m = w2m * shaded_normal;
+	mod *= rock_blocks(rock, tri_pos, nrm_m, w2m * planet_up, cam_dist, sn_m);
+	shaded_normal = normalize(m2w * sn_m);
 	ALBEDO = clamp(biome_color * mod * albedo_multiplier, vec3(0.0), vec3(1.0));
 
 	// Increase roughness on steep cliff faces for a more matte rock look.

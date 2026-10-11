@@ -136,6 +136,12 @@ const float GRID_X = 3.5 / TWO_SQRT3;        // 1.01036297
 const float SNAP = 4096.0;
 
 varying vec3 world_normal;
+// The same normal in the MODEL frame — the frame tri_pos is in. The triplanar weights, the planes'
+// view direction and their normal perturbation must all be in that frame: the planet spins on the
+// client, so world axes and tri_pos axes differ, and weights taken from world_normal gave a steep
+// slope's weight to a plane nearly edge-on to it in tri_pos — the ground texture smeared down
+// building taluses, depending on their heading and the time of day.
+varying vec3 model_normal;
 varying vec3 tri_pos;    // chunk_origin_mod + chunk-local vertex (wrapped, precise)
 varying vec3 local_pos;  // chunk-local vertex only — for derivatives (smallest = most precise)
 varying vec3 far_radial;  // true smooth sphere normal, world space (terrain_far_light)
@@ -433,6 +439,7 @@ void vertex() {
 	// skirt vertices, so the texture stays continuous down the skirts.
 	vec3 surface = VERTEX + CUSTOM0.xyz;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	model_normal = NORMAL;
 	tri_pos      = chunk_origin_mod + surface;
 	local_pos    = surface;
 	far_radial   = far_light_radial(MODEL_MATRIX, surface);
@@ -442,8 +449,11 @@ void vertex() {
 }
 
 void fragment() {
-	// Triplanar weights from the geometric normal.
-	vec3 n = pow(abs(world_normal), vec3(triplanar_sharpness));
+	// Model frame (tri_pos's) <-> world. The chunk's basis is the planet's rotation, no scale.
+	mat3 m2w = mat3(MODEL_MATRIX);
+	mat3 w2m = transpose(m2w);
+	// Triplanar weights from the geometric normal, in tri_pos's frame.
+	vec3 n = pow(abs(normalize(model_normal)), vec3(triplanar_sharpness));
 	n /= (n.x + n.y + n.z);
 
 	float s = snap_scale(tile_scale);
@@ -459,6 +469,7 @@ void fragment() {
 	// View direction fragment → camera, world space, from the view-space VERTEX
 	// (camera-relative, so float32-precise at astronomic world positions).
 	vec3 view_w = normalize(mat3(INV_VIEW_MATRIX) * (-VERTEX));
+	vec3 view_m = w2m * view_w;  // projected on the planes below, which are tri_pos's
 
 	vec3 albedo = vec3(0.0);
 	vec3 delta = vec3(0.0);   // world-space normal perturbation
@@ -480,33 +491,37 @@ void fragment() {
 		rough  += rt * n.z;
 	} else {
 		if (n.x > 0.002) {
-			albedo += hex_plane(tri_pos.yz, dpx.yz, dpy.yz, view_w.yz, s, k, rot_strength, contrast_adjust, nt, rt) * n.x;
+			albedo += hex_plane(tri_pos.yz, dpx.yz, dpy.yz, view_m.yz, s, k, rot_strength, contrast_adjust, nt, rt) * n.x;
 			delta  += vec3(0.0, nt.x, nt.y) * n.x;
 			rough  += rt * n.x;
 		}
 		if (n.y > 0.002) {
-			albedo += hex_plane(tri_pos.xz, dpx.xz, dpy.xz, view_w.xz, s, k, rot_strength, contrast_adjust, nt, rt) * n.y;
+			albedo += hex_plane(tri_pos.xz, dpx.xz, dpy.xz, view_m.xz, s, k, rot_strength, contrast_adjust, nt, rt) * n.y;
 			delta  += vec3(nt.x, 0.0, nt.y) * n.y;
 			rough  += rt * n.y;
 		}
 		if (n.z > 0.002) {
-			albedo += hex_plane(tri_pos.xy, dpx.xy, dpy.xy, view_w.xy, s, k, rot_strength, contrast_adjust, nt, rt) * n.z;
+			albedo += hex_plane(tri_pos.xy, dpx.xy, dpy.xy, view_m.xy, s, k, rot_strength, contrast_adjust, nt, rt) * n.z;
 			delta  += vec3(nt.x, nt.y, 0.0) * n.z;
 			rough  += rt * n.z;
 		}
 	}
 
 	// Perturb the TRUE geometric normal with each plane's tangent gradient mapped
-	// onto its two world axes (never rebuild the normal from the planes: that
-	// warps it toward the dominant axis — see terrain_biome.gdshader).
-	vec3 shaded_normal = normalize(world_normal + delta * normal_strength);
+	// onto its two axes — tri_pos's, hence brought to world space (never rebuild
+	// the normal from the planes: that warps it toward the dominant axis — see
+	// terrain_biome.gdshader).
+	vec3 shaded_normal = normalize(world_normal + m2w * delta * normal_strength);
 
 	// Rock blocks of a rocky_terrain field (CUSTOM1), faded with the distance.
 	// Not at quality 0: that is the measurement floor.
 	float rock_mul = 1.0;
 	if (planet_hex_quality >= 1) {
-		rock_mul = rock_blocks(rock, tri_pos, world_normal, normalize(planet_up_w), length(VERTEX),
-				shaded_normal);
+		// In tri_pos's frame, like the planes; its shading normal comes back to world space.
+		vec3 sn_m = w2m * shaded_normal;
+		rock_mul = rock_blocks(rock, tri_pos, normalize(model_normal), w2m * normalize(planet_up_w),
+				length(VERTEX), sn_m);
+		shaded_normal = normalize(m2w * sn_m);
 	}
 
 	ALBEDO    = albedo * rock_mul * mix(vec3(1.0), COLOR.rgb, vertex_color_strength);
