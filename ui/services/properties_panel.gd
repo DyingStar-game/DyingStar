@@ -19,9 +19,9 @@ func _build() -> void:
 	var labels := PackedStringArray()
 	for section: Dictionary in SECTIONS:
 		labels.append(tr(str(section["title"])))
-	var pages := _segments_pages(labels)
+	_mount_bar(labels)
 	for i: int in range(SECTIONS.size()):
-		mount_segment(i, pages[i], str(SECTIONS[i]["path"]))
+		mount_segment(i, str(SECTIONS[i]["path"]))
 	add_chrome(_status_line())
 
 

@@ -49,6 +49,15 @@ func test_a_mounted_section_is_shown_only_while_its_own_segment_is() -> void:
 	assert_true(_mounted(social, 1).visible, "the squad section took its place")
 
 
+func test_a_mounted_section_is_the_shells_own_child() -> void:
+	_tablet.open()
+	var social := _panel("social")
+	for index: int in [0, 1, 2]:
+		var section := _mounted(social, index)
+		assert_eq(section.get_parent(), social,
+				"a section is laid out by the shell itself, not by a page inside a scroll")
+
+
 ## The section mounted into segment [param index] of [param panel].
 func _mounted(panel: ServicePanel, index: int) -> ServicePanel:
 	for mount: Dictionary in panel._mounts:

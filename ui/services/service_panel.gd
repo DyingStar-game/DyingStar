@@ -544,6 +544,41 @@ func _segments_pages(labels: PackedStringArray) -> Array[VBoxContainer]:
 	return pages
 
 
+## The bar and the action column of a COMPOSED app, with no content pages at all: each segment
+## holds a whole section (see [method mount_segment]), and a section already carries its own card,
+## its own scrolling and its own layout. Wrapping it in this shell's page would put a second set of
+## margins around content that has some — and a ScrollContainer inside a ScrollContainer is how a
+## panel ends up being handed no height at all.
+func _mount_bar(labels: PackedStringArray) -> void:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 6)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	add_chrome(bar)
+
+	var holders: Array[ScrollContainer] = []
+	_side_pages.clear()
+	for _i: int in range(labels.size()):
+		var side := VBoxContainer.new()
+		side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		side.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		side.add_theme_constant_override("separation", 12)
+		side_slot.add_child(side)
+		_side_pages.append(side)
+
+	for i: int in range(labels.size()):
+		var tab := Button.new()
+		tab.text = labels[i]
+		ServiceStyle.apply_segment(tab, i == 0)
+		var index: int = i
+		tab.pressed.connect(func() -> void: _show_segment(bar, holders, index))
+		bar.add_child(tab)
+
+	_seg_bar = bar
+	_seg_holders = holders
+	_seg_index = 0
+	pane_layout.emit(has_main_content(), has_side_content())
+
+
 ## The action-column page of the [param index]-th segment: forms, filters and the buttons that act
 ## on what the left half is showing. Callers fill it right after [method _segments_pages] returns.
 func _side_page(index: int) -> VBoxContainer:
@@ -558,19 +593,23 @@ func goto_segment(index: int) -> void:
 		_show_segment(_seg_bar, _seg_holders, index)
 
 
-## Mount a section script into segment [param index]: the section gets its own chrome slot (its app
-## bar and its own tabs draw there, hidden while another segment is on show) and the segment's action
-## column. A composed app is thus a thin shell whose segments each hold a whole section, rather than
-## a rewrite of every section's layout.
-func mount_segment(index: int, page: VBoxContainer, script_path: String) -> ServicePanel:
+## Mount a section script as the segment [param index] of this composed app: the section gets its own
+## chrome slot (its app bar and its own tabs draw there, hidden while another segment is on show)
+## and the segment's action column. A composed app is thus a thin shell whose segments each hold a
+## whole section, rather than a rewrite of every section's layout.
+##
+## The section becomes a DIRECT child of [code]self[/code] — never nested in a page of this shell's
+## own. It is laid out by the same VBoxContainer the sections of a plain app would be, which is the
+## only arrangement the card is known to hand a real height to.
+func mount_segment(index: int, script_path: String) -> ServicePanel:
 	var chrome := VBoxContainer.new()
 	chrome.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chrome.visible = index == _seg_index
 	add_chrome(chrome)
-	var side := _side_page(index)
 	var script: GDScript = load(script_path)
 	var panel: ServicePanel = script.new()
 	panel.tab_slot = chrome
+	var side := _side_page(index)
 	if side != null:
 		panel.side_slot = side
 	# Sections stand alone (a test, a smoke scene) unless a tablet hosts them; the shell is that host
@@ -578,7 +617,7 @@ func mount_segment(index: int, page: VBoxContainer, script_path: String) -> Serv
 	# the shell toggles both the chrome and the section, never just the chrome.
 	panel.visible = index == _seg_index
 	_mounts.append({"index": index, "chrome": chrome, "panel": panel})
-	page.add_child(panel)
+	add_child(panel)
 	# A form-only segment of the section asks for the column: the shell relays it so the tablet splits
 	# the way the section on show needs, not the way the shell itself would.
 	panel.pane_layout.connect(_relay_pane.bind(panel))
@@ -598,6 +637,23 @@ func mounted_section() -> ServicePanel:
 func _relay_pane(has_main: bool, has_side: bool, panel: ServicePanel) -> void:
 	if mounted_section() == panel:
 		pane_layout.emit(has_main, has_side)
+
+
+## A composed app draws no content of its own: the split between the card and the column is
+## whatever the section on show asks for. Without this a section whose card half is empty — a
+## create form that moved entirely to the column — would leave the tablet showing an empty card.
+func has_main_content() -> bool:
+	var section := mounted_section()
+	if section != null:
+		return section.has_main_content()
+	return super.has_main_content()
+
+
+func has_side_content() -> bool:
+	var section := mounted_section()
+	if section != null:
+		return section.has_side_content()
+	return super.has_side_content()
 
 
 func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: int) -> void:
