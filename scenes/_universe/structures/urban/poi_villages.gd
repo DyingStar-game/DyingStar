@@ -136,12 +136,15 @@ func _spawn_item(item: Node, xform: Transform3D, parent_uuid: String, key: Strin
 		"position": {"x": xform.origin.x, "y": xform.origin.y, "z": xform.origin.z},
 		"rotation": {"x": rot.x, "y": rot.y, "z": rot.z},
 	}, true)
+	# poi_uuid ties an item to its village (parent_id is our parent, not the village): Horizon
+	# assigns apartments by it, and any other item that declares it learns which village it is in.
+	if _has_property(item, "poi_uuid"):
+		data["poi_uuid"] = village_uuid
 	if item_sync.type_name == "spawnbuilding":
 		# A new building of this village, every apartment free: the layout node still carries
-		# the script's defaults (test apartment, total 1 / available 0). poi_uuid ties it to us
-		# for Horizon's apartment assignment (parent_id is our parent, not the village).
+		# the script's defaults (test apartment, total 1 / available 0).
 		var capacity: int = int(item.rows) * int(item.cols) * int(item.floors)
-		data.merge({"poi_uuid": village_uuid, "apartments": [], "total": capacity, "available": capacity}, true)
+		data.merge({"apartments": [], "total": capacity, "available": capacity}, true)
 	# Through the streaming, not built now: a village wakes for Horizon (spawn_requested) or a zone
 	# warm-up with nobody near, and after a new QGIS export all 89 of tarsis_3 did at once — every
 	# mining depot and hab of the planet built, then kept 5 min (costly types) before sleeping.

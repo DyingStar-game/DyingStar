@@ -25,7 +25,8 @@
 				"pnj_zones",
 				"is_pnj_workplace",
 				"terrain_settled",
-				"shelves_spawned"
+				"shelves_spawned",
+				"poi_uuid"
 			]
 		}
 	]

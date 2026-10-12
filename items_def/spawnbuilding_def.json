@@ -17,8 +17,7 @@
 				"rows",
 				"floors",
 				"spawn_point",
-				"apartments",
-				"poi_uuid"
+				"apartments"
 			]
 		},
 		{
@@ -28,7 +27,8 @@
 			"properties": [
 				"scenename",
 				"name",
-				"terrain_settled"
+				"terrain_settled",
+				"poi_uuid"
 			]
 		}
 	]
