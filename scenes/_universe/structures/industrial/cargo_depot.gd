@@ -6,6 +6,10 @@ extends Node3D
 ## keep the PropSync child for networking and inline the tiny uuid facade below). Custom state
 ## (reception_players, storage_shelves) is applied via apply_prop_data().
 
+## uuid of the poi_village this depot belongs to ("" = none), set when the village spawns it.
+## Replicated with the depot (cargo_depot_def.json).
+@export var poi_uuid: String = ""
+
 @export_group("PNJ")
 
 ## Marks this depot as a workplace for PNJ (NPC) workers. Replicated with the depot (cargo_depot_def.json).
@@ -214,6 +218,9 @@ func apply_prop_data(data: Dictionary) -> void:
 
 	if "storage_shelves" in data:
 		storage_shelves = data["storage_shelves"]
+
+	if "poi_uuid" in data:
+		poi_uuid = data["poi_uuid"]
 
 	if "shelves_spawned" in data:
 		shelves_spawned = data["shelves_spawned"]
