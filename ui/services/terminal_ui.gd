@@ -562,6 +562,19 @@ func _open_app(id: String) -> void:
 		panel.refresh()
 
 
+## Open [param id] and land on [param segment] of its tab bar. The entry point a notification
+## uses to take the player where they can act on it — a friend request opens the contacts app on
+## the requests tab, so the toast is a shortcut rather than a dead end. [param segment] < 0 leaves
+## the app on whichever tab it was already showing.
+func open_app(id: String, segment: int = -1) -> void:
+	if not _built:
+		_ensure_built()
+	show()
+	_open_app(id)
+	if segment >= 0 and _panels.has(id):
+		(_panels[id] as ServicePanel).goto_segment(segment)
+
+
 func _open_plus() -> void:
 	_show_nothing()
 	_active_id = "plus"

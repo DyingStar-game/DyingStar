@@ -19,6 +19,38 @@ var livekit_url: String = ""
 var livekit_token: String = ""
 var room: LiveKitRoom
 
+## Room connection state, kept HERE rather than read off the extension (a native binary whose
+## API can't be asked cheaply or safely — see _identity_by_participant): every transition is
+## already handed to us on a room signal, so this only records them. The Diagnostics app in the
+## tablet shows it, so "nobody hears me" has one obvious place to look first.
+## CONNECTING — connect_to_room() was called, no answer yet;
+## CONNECTED — joined, publishing our mic;
+## FAILED — connection_failed: bad url/token, SFU unreachable (reason kept);
+## DISCONNECTED — left after having been connected (remote close, network drop).
+enum LinkState { CONNECTING, CONNECTED, FAILED, DISCONNECTED }
+signal link_state_changed(link_state: int, detail: String)
+
+var link_state: int = LinkState.CONNECTING
+## Human reason of the last failure/loss (empty while healthy). The token/url are deliberately
+## NOT logged here — this is the one string the UI may show.
+var link_error: String = ""
+
+## What the Diagnostics app shows for one link state, without having to name this script as a
+## global class (the panel calls this through a plain preload()): the state's translation key, a
+## tone for its colour (2 = up, 1 = dialing, 0 = down) and whether the room is actually joined
+## (the row then shows the participant count).
+static func link_state_view(state: int) -> Dictionary:
+	match state:
+		LinkState.CONNECTED:
+			return {"key": "%%SVC_STATE_LINK_CONNECTED", "tone": 2, "joined": true}
+		LinkState.CONNECTING:
+			return {"key": "%%SVC_STATE_LINK_CONNECTING", "tone": 1, "joined": false}
+		LinkState.FAILED:
+			return {"key": "%%SVC_STATE_LINK_FAILED", "tone": 0, "joined": false}
+		LinkState.DISCONNECTED:
+			return {"key": "%%SVC_STATE_LINK_DISCONNECTED", "tone": 0, "joined": false}
+	return {"key": "%%SVC_STATE_LINK_NONE", "tone": 0, "joined": false}
+
 ## Set to true to force non-spatial AudioStreamPlayer (bypasses 3D attenuation/listener).
 ## Use to isolate whether silence is a 3D positioning issue vs. mic/stream issue.
 var debug_force_2d_audio: bool = false
@@ -76,18 +108,32 @@ func _ready():
 	# auto_subscribe=false → server (Horizon) controls who subscribes to whom
 	# via RoomService.UpdateSubscriptions (zone-based audio).
 	room.connect_to_room(livekit_url, livekit_token, {"auto_subscribe": false})
+	_set_link_state(LinkState.CONNECTING, "")
 
 func _on_connected():
 	# print("[livekit] Connected as: ", room.get_local_participant().get_identity())
+	_set_link_state(LinkState.CONNECTED, "")
 	_refresh_identities()  # those already in the room never fire participant_connected
 	_start_microphone_publish()
 
 func _on_connection_failed(reason: String) -> void:
+	_set_link_state(LinkState.FAILED, reason)
 	push_error("[livekit] Connection failed: " + reason)
 
 func _on_disconnected(reason: String) -> void:
+	_set_link_state(LinkState.DISCONNECTED, reason)
 	push_warning("[livekit] Disconnected: " + reason)
 	_free_all_bridges()  # dropped from the room: nothing will ever arrive on these again
+
+
+## Record (and announce) a room link transition. Emitted only on a real change: the Diagnostics
+## app polls this same value once a second.
+func _set_link_state(next: int, detail: String) -> void:
+	if link_state == next and link_error == detail:
+		return
+	link_state = next
+	link_error = detail
+	link_state_changed.emit(next, detail)
 
 func _on_participant_connected(participant):
 	# print("[livekit] Joined: ", participant.get_identity())

@@ -26,6 +26,24 @@ layout_mode = 2
 [node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1744614801]
 layout_mode = 2
 
+[node name="DmHeader" type="PanelContainer" parent="MarginContainer/VBoxContainer" unique_id=551200001]
+visible = false
+layout_mode = 2
+
+[node name="DmHeaderRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer/DmHeader" unique_id=551200002]
+layout_mode = 2
+
+[node name="DmPeerName" type="Button" parent="MarginContainer/VBoxContainer/DmHeader/DmHeaderRow" unique_id=551200003]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+alignment = 0
+
+[node name="DmClose" type="Button" parent="MarginContainer/VBoxContainer/DmHeader/DmHeaderRow" unique_id=551200004]
+layout_mode = 2
+focus_mode = 0
+text = "✕"
+
 [node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer" unique_id=229911467]
 layout_mode = 2
 size_flags_vertical = 3

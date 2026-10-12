@@ -63,6 +63,20 @@ func test_editor_listing_still_finds_the_bodies() -> void:
 	assert_true(SystemScenes.systems().has(KNOWN_SYSTEM), "%s not listed as a system" % KNOWN_SYSTEM)
 
 
+## A body KEY resolves to its system — the lookup service-social's presence relies on to report a
+## readable "system · scene" pair. Its counterpart on the wire is the body's NETWORK name
+## ("SandBox" for tarsis_3), which is NOT a key and must not be fed here: it matches no scene file,
+## which is how presence ended up reporting an empty system for every player.
+func test_a_body_key_resolves_to_its_system() -> void:
+	assert_eq(SystemScenes.system_of(KNOWN_BODY), KNOWN_SYSTEM)
+
+
+func test_a_network_name_is_not_a_body_key() -> void:
+	# The trap in one assertion: tarsis_3's scene carries uuid "_planet_SandBox", so the node arrives
+	# named "SandBox" — which resolves to no system at all.
+	assert_eq(SystemScenes.system_of("SandBox"), "")
+
+
 ## body_properties() rebuilds the path from the key instead of keeping the file name, so it is worth
 ## pinning that it still reaches the scene at all.
 func test_body_properties_reach_the_scene() -> void:
