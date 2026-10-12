@@ -4609,6 +4609,8 @@ func register_terrain_pad(rec: Dictionary) -> void:
 	if planet_data == null:
 		return
 	_pads_changed(planet_data.register_pad(rec))
+	# Touching pads it pulled onto its level (or released): their buildings must sit on it.
+	_announce_caught_up_pads()
 
 
 ## Drop the pad [param uuid] and give its ground back its natural relief.
@@ -4616,6 +4618,7 @@ func unregister_terrain_pad(uuid: String) -> void:
 	if planet_data == null:
 		return
 	_pads_changed(planet_data.unregister_pad(uuid))
+	_announce_caught_up_pads()
 
 
 ## The altitude a pad levels the ground to, NAN while its tiles are unreadable.

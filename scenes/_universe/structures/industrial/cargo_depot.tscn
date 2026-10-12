@@ -102,7 +102,6 @@ script = ExtResource("terrain_pad_1")
 
 [node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=693024102]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09100000000034925, -0.1999999999970896, 46.721999999994296)
-visible = false
 size = Vector3(20.77126677457909, 0.2, 96.91522609360618)
 
 [node name="PropSync" type="Node" parent="." unique_id=1925827598]

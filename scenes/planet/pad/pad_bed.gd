@@ -161,6 +161,40 @@ static func sdf_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
 	return Vector2(maxf(qx, 0.0), maxf(qy, 0.0)).length() + minf(maxf(qx, qy), 0.0)
 
 
+## Do the footprints-plus-aprons of [param a] and [param b] touch? Then the two
+## buildings share their flat ground, and PlanetData puts them on ONE level.
+## The aprons are taken as rectangles (square corners, a little generous at the
+## corners) and tested with separating axes on the tangent plane at [param a].
+static func aprons_touch(a: Dictionary, b: Dictionary, m_per_deg: float) -> bool:
+	var lat0: float = float(a["lat"])
+	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
+	var t := Vector2(wrapf(float(b["lon"]) - float(a["lon"]), -180.0, 180.0) * ls * m_per_deg,
+			(float(b["lat"]) - lat0) * m_per_deg)
+	var ya: float = float(a["yaw"])
+	var yb: float = float(b["yaw"])
+	var axes := [Vector2(cos(ya), sin(ya)), Vector2(-sin(ya), cos(ya)),
+			Vector2(cos(yb), sin(yb)), Vector2(-sin(yb), cos(yb))]
+	var ea := Vector2(float(a["hx"]), float(a["hy"])) + Vector2.ONE * float(a["apron_m"])
+	var eb := Vector2(float(b["hx"]), float(b["hy"])) + Vector2.ONE * float(b["apron_m"])
+	for l: Vector2 in axes:
+		var ra: float = ea.x * absf((axes[0] as Vector2).dot(l)) + ea.y * absf((axes[1] as Vector2).dot(l))
+		var rb: float = eb.x * absf((axes[2] as Vector2).dot(l)) + eb.y * absf((axes[3] as Vector2).dot(l))
+		if absf(t.dot(l)) > ra + rb:
+			return false
+	return true
+
+
+## Does [param a] rank above [param b] for the shared level of touching pads?
+## The larger footprint wins; equal footprints are ordered by uuid so the
+## answer never depends on the order the pads were registered in.
+static func outranks(a: Dictionary, b: Dictionary) -> bool:
+	var sa := float(a["hx"]) * float(a["hy"])
+	var sb := float(b["hx"]) * float(b["hy"])
+	if sa != sb:
+		return sa > sb
+	return str(a["uuid"]) > str(b["uuid"])
+
+
 ## The SAMPLE_N × SAMPLE_N directions the pad's altitude is read at: an even
 ## grid over the BOUNDING BOX of the footprint and its apron, in the pad's own
 ## frame. That whole area is what ends up level and what a player walks and
@@ -314,13 +348,17 @@ static func height_at(h: float, rec: Dictionary, d: float) -> float:
 ##
 ## The nearest pad alone switches altitude on the line halfway between two
 ## pads: on a slope, two neighbours' platforms differ by metres and that line
-## becomes a cliff the grid draws as saw teeth (tarsis_3 village 2). Outside
-## every footprint, each pad's own rule ([method height_at]) is therefore
-## weighted by 1/d², faded to 0 over the last PadSettings.NEIGHBOUR_FADE_M of
-## its reach:
-##   · 1/d² grows without bound at a footprint's edge, so the ground meets
-##     every building at its own floor, with a level start, and ramps across
-##     the gap to the next one;
+## becomes a cliff the grid draws as saw teeth (tarsis_3 village 2). So:
+##   · inside ONE apron the ground is that pad's platform, exactly;
+##   · where aprons overlap, they are blended by their depth into their own
+##     apron over d² — the ramp between two close buildings, joining each flat
+##     apron without a step;
+##   · past every apron, each pad's own rule ([method height_at]) is weighted
+##     by 1/(distance to its apron)², faded to 0 over the last
+##     PadSettings.NEIGHBOUR_FADE_M of its reach;
+##   · both weights grow without bound where the flat ground they continue
+##     ends (a footprint's edge, an apron's edge), so the ground meets every
+##     building at its own floor and every talus starts from its apron;
 ##   · the fade makes a pad join and leave the blend at weight 0, so the
 ##     ground is continuous wherever the set of pads changes (the measured
 ##     talus cap keeps a margin, so its own rule has normally handed the
@@ -341,26 +379,55 @@ static func apply(h: float, lonlat: Vector2, pads: Array, m_per_deg: float) -> f
 	if pads.size() < 2 or d_min <= 0.0:
 		return near_h
 	var blend: Array = []
+	var aprons: Array = []
 	for rec: Dictionary in pads:
 		var d := sdf_m(rec, lonlat, m_per_deg)
-		var fade := (float(rec["apron_m"]) + talus_cap(rec) - d) / PadSettings.NEIGHBOUR_FADE_M
+		var apron := float(rec["apron_m"])
+		if d <= apron:
+			aprons.append([str(rec["uuid"]), d, rec, apron])
+			continue
+		var fade := (apron + talus_cap(rec) - d) / PadSettings.NEIGHBOUR_FADE_M
 		if fade > 0.0:
 			blend.append([str(rec["uuid"]), d, rec, minf(fade, 1.0)])
+	# Summed in uuid order: the index hands pads in an order that depends on
+	# the chunk, and the mesh, the collision and the neighbouring chunk must
+	# add the same floats in the same order to get the same bits.
+	if not aprons.is_empty():
+		# The apron is FLAT: the ground a truck parks on is the platform, whatever
+		# the neighbours. Blending every pad from the footprint's edge, as this did,
+		# let a village's twenty neighbours pull the apron towards their own
+		# altitudes and the raw relief until nothing of its 8 m was left (tarsis_3
+		# village 2, the cargo depot). Only where two aprons overlap — buildings
+		# closer than their aprons, which cannot both be flat — is there a ramp:
+		# each weighs its depth into its own apron over d², so it is 0 at its
+		# apron's edge (the ground joins the neighbour's flat apron there) and
+		# infinite at its footprint's (every building meets its own floor).
+		if aprons.size() == 1:
+			return float(aprons[0][2]["z"])
+		aprons.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+		var aw := 0.0
+		var awz := 0.0
+		for e: Array in aprons:
+			var d: float = e[1]
+			var w: float = (float(e[3]) - d) / (d * d)
+			aw += w
+			awz += w * float(e[2]["z"])
+		return awz / aw if aw > 0.0 else float(aprons[0][2]["z"])
 	if blend.is_empty():
 		return near_h
 	if blend.size() == 1:
 		# Not necessarily the nearest: past its own reach the nearest pad has
 		# faded out while a farther one with a wider talus still holds the ground.
 		return height_at(h, blend[0][2], float(blend[0][1]))
-	# Summed in uuid order: the index hands pads in an order that depends on
-	# the chunk, and the mesh, the collision and the neighbouring chunk must
-	# add the same floats in the same order to get the same bits.
+	# Past every apron, each pad weighs 1/(distance to its APRON)²: infinite at
+	# the apron's edge, so the talus starts from the flat apron without a step.
 	blend.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
 	var sw := 0.0
 	var swh := 0.0
 	for e: Array in blend:
 		var d: float = e[1]
-		var w: float = float(e[3]) / (d * d)
+		var s: float = d - float(e[2]["apron_m"])
+		var w: float = float(e[3]) / (s * s)
 		sw += w
 		swh += w * height_at(h, e[2], d)
 	return swh / sw

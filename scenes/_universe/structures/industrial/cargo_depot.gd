@@ -15,6 +15,19 @@ extends Node3D
 ## Category comes from each PNJPlace* Area3D "editor_description" field.
 @export var pnj_zones: Dictionary = {}
 
+@export_group("Shelves")
+
+## True once the server has spawned this depot's networked shelves (SHELVES_LAYOUT), so a server restart
+## never spawns them again. Replicated and persisted with the depot (cargo_depot_def.json).
+@export var shelves_spawned: bool = false
+
+## Where each networked shelf of a depot stands, in the depot's local frame: [{name, position, rotation}].
+const SHELVES_LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelves.json"
+## The scene every shelf of SHELVES_LAYOUT is spawned from.
+const SHELF_SCENE := "scenes/_universe/props/furniture/metal_shelf.tscn"
+## Slots of a metal shelf (metal_shelf.tscn), all free on a new shelf.
+const SHELF_SLOTS := 24
+
 # Resolved through a getter, not an initializer, so the editor can never read the button
 # callback back as Nil ("value is Nil, but Callable was expected").
 ## Editor: fill pnj_zones from the PNJPlace* Area3D children, grouped by their editor_description.
@@ -201,6 +214,60 @@ func apply_prop_data(data: Dictionary) -> void:
 
 	if "storage_shelves" in data:
 		storage_shelves = data["storage_shelves"]
+
+	if "shelves_spawned" in data:
+		shelves_spawned = data["shelves_spawned"]
+	if not shelves_spawned and GameOrchestrator.is_server():
+		# Deferred: the first call runs before add_child and before the uuid is assigned, and
+		# create_generic_object registers us in props_list only after it (the shelves' parent_id).
+		spawn_shelves.call_deferred()
+
+
+## SERVER: spawn the networked shelves of SHELVES_LAYOUT under this depot, once. Their uuids are drawn
+## from ours and the shelf name, so even a lost flag upserts the same shelves instead of piling copies.
+func spawn_shelves() -> void:
+	if shelves_spawned or not is_inside_tree():
+		return
+	var depot_uuid := uuid
+	if depot_uuid == "":
+		return
+	shelves_spawned = true  # before spawning: apply_prop_data runs again on every replicated update
+	var agent = NetworkOrchestrator.network_agent
+	if agent != null and agent.has_method("registry_has_child_of_type") \
+			and agent.registry_has_child_of_type(depot_uuid, "shelf"):
+		# Shelves already stored under this depot (the old startup_items.json ones): keep them.
+		print("[cargo_depot] %s already has its shelves" % name)
+		_sync.server_prop_update({"shelves_spawned": true})
+		return
+	var layout = JSON.parse_string(FileAccess.get_file_as_string(SHELVES_LAYOUT))
+	if typeof(layout) != TYPE_ARRAY:
+		push_warning("[cargo_depot] no shelf layout in %s" % SHELVES_LAYOUT)
+		return
+	var free_slots: Array = []
+	free_slots.resize(SHELF_SLOTS)
+	free_slots.fill(false)
+	for shelf: Dictionary in layout:
+		var shelf_uuid: String = shelf_uuid_for(depot_uuid, str(shelf["name"]))
+		NetworkOrchestrator.protected_prop_uuids[shelf_uuid] = true  # world infrastructure
+		# Through the streaming, not built now: 193 shelves per depot are queued, then live and sleep
+		# with the depot (their parent).
+		NetworkOrchestrator.spawn_prop_authoritative({
+			"type": "shelf",
+			"uuid": shelf_uuid,
+			"scenename": SHELF_SCENE,
+			"parent_id": depot_uuid,
+			"name": str(shelf["name"]),
+			"position": shelf["position"],
+			"rotation": shelf["rotation"],
+			"shelf_slots_occupied": free_slots.duplicate(),
+		}, false)
+	print("[cargo_depot] %s: %d shelves spawned" % [name, layout.size()])
+	_sync.server_prop_update({"shelves_spawned": true})
+
+
+## The uuid of the shelf [param shelf_name] of the depot [param depot_uuid]: the same on every boot.
+static func shelf_uuid_for(depot_uuid: String, shelf_name: String) -> String:
+	return PropSpawn.stable_uuid("%s|%s" % [depot_uuid, shelf_name])
 
 
 ## Is [param uuid] still a connected player on this server? The single source of truth for liveness
