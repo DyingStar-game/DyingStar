@@ -247,6 +247,10 @@ func setup() -> void:
 	_star_map.host_in(_services.navigation_slot())
 	_services.navigation_requested.connect(_open_navigation)
 	_services.navigation_closed.connect(_close_navigation)
+	# A section wants a place named on the chart (a point of interest being created): the chart
+	# opens in placement mode, the point comes back the same way the chart itself does.
+	_services.placement_requested.connect(_begin_placement)
+	_star_map.poi_placed.connect(_on_poi_placed)
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
@@ -1488,6 +1492,29 @@ func _close_navigation() -> void:
 		_star_map.close()
 
 
+## A section asked for a place: show the chart in placement mode. The tablet opens its NAVIGATION
+## tab, which is where the chart lives, and arms it so the next click names a point rather than
+## selecting whatever it lands on.
+func _begin_placement() -> void:
+	if _star_map == null or _services == null:
+		return
+	_services.open_navigation()
+	_star_map.begin_poi_place()
+
+
+## The chart named the place: hand it back to the form that asked (through the tablet), leave the
+## placement mode, and take the player to where they can act on it — the creating segment, with the
+## place now shown and the name still theirs to give.
+func _on_poi_placed(place: Dictionary) -> void:
+	if _star_map != null:
+		_star_map.end_poi_place()
+	if _services == null or place.is_empty():
+		return
+	_services.set_placed(place)
+	# Properties -> the POI section -> its creating segment.
+	_services.open_app("properties", 1)
+
+
 ## The mouse/camera is taken over: input is locked (menu/wheel), a 3D screen holds the pointer, OR
 ## AltGr is held over an overlay panel (graphics options, debug readouts).
 ## Frees the cursor and takes the look off the mouse (see _process). One source.
@@ -2043,19 +2070,19 @@ func _on_notification_clicked(envelope: Dictionary) -> void:
 	var type := str(envelope.get("type", ""))
 	match type:
 		"friend_request_received":
-			# Requests tab: where Accept / Decline are.
-			_services.open_app("contacts", 1)
+			# The contacts segment carries the requests too: one page, requests at the top.
+			_services.open_app("social", 0)
 		"friend_request_accepted":
-			# Contacts tab: the list just gained them.
-			_services.open_app("contacts", 0)
+			# The contacts segment: the list just gained them.
+			_services.open_app("social", 0)
 		"corporation_joined":
-			# No roster tab for us — the corporation app shows the members.
-			_services.open_app("corporations", -1)
+			# No roster tab for us — the corporations segment shows the members.
+			_services.open_app("social", 2)
 		_:
 			# A type we do not know has no screen behind it. Open the app whose area owns it rather
 			# than dropping the click: something is better than nothing, and it cannot be wrong in a
 			# harmful way (the app is merely opened, nothing is sent).
-			_services.open_app("contacts", -1)
+			_services.open_app("social", -1)
 
 
 ## Display names we already hold for social ids: ChatNetwork's own DM registry (a friend the player

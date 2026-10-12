@@ -20,22 +20,14 @@ extends CanvasLayer
 const APPS: Array = [
 	{"id": "identity", "title": "%%SVC_APP_IDENTITY", "area": "profile",
 		"icon": ServiceAppIcon.Kind.IDENTITY, "path": "res://ui/services/profile_panel.gd"},
-	{"id": "contacts", "title": "%%SVC_APP_CONTACTS", "area": "friends",
-		"icon": ServiceAppIcon.Kind.CONTACTS, "path": "res://ui/services/friends_panel.gd"},
-	{"id": "squad", "title": "%%SVC_APP_SQUAD", "area": "groups",
-		"icon": ServiceAppIcon.Kind.SQUAD, "path": "res://ui/services/groups_panel.gd"},
-	{"id": "corporations", "title": "%%SVC_APP_CORPORATIONS", "area": "corporations",
-		"icon": ServiceAppIcon.Kind.CORPORATIONS, "path": "res://ui/services/corporations_panel.gd"},
+	{"id": "social", "title": "%%SVC_APP_SOCIAL", "area": "friends",
+		"icon": ServiceAppIcon.Kind.CONTACTS, "path": "res://ui/services/social_panel.gd"},
+	{"id": "economy", "title": "%%SVC_APP_ECONOMY", "area": "economy",
+		"icon": ServiceAppIcon.Kind.BANK, "path": "res://ui/services/economy_panel.gd"},
+	{"id": "properties", "title": "%%SVC_APP_PROPERTIES", "area": "inventory",
+		"icon": ServiceAppIcon.Kind.INVENTORY, "path": "res://ui/services/properties_panel.gd"},
 	{"id": "missions", "title": "%%SVC_APP_MISSIONS", "area": "missions",
 		"icon": ServiceAppIcon.Kind.MISSIONS, "path": "res://ui/services/mission_panel.gd"},
-	{"id": "bank", "title": "%%SVC_APP_BANK", "area": "economy",
-		"icon": ServiceAppIcon.Kind.BANK, "path": "res://ui/services/economy_panel.gd"},
-	{"id": "inventory", "title": "%%SVC_APP_INVENTORY", "area": "inventory",
-		"icon": ServiceAppIcon.Kind.INVENTORY, "path": "res://ui/services/inventory_panel.gd"},
-	{"id": "pois", "title": "%%SVC_APP_POIS", "area": "pois",
-		"icon": ServiceAppIcon.Kind.POIS, "path": "res://ui/services/poi_panel.gd"},
-	{"id": "market", "title": "%%SVC_APP_MARKET", "area": "market",
-		"icon": ServiceAppIcon.Kind.MARKET, "path": "res://ui/services/market_panel.gd"},
 	{"id": "reports", "title": "%%SVC_APP_REPORTS", "area": "reports",
 		"icon": ServiceAppIcon.Kind.REPORTS, "path": "res://ui/services/reports_panel.gd"},
 	{"id": "diagnostics", "title": "%%SVC_APP_DIAGNOSTICS", "area": "diagnostics",
@@ -48,17 +40,16 @@ const APPS: Array = [
 const NAV: Array = [
 	{"app": "", "title": "%%SVC_NAV_HOME"},
 	{"app": "identity", "title": "%%SVC_NAV_PROFILE"},
-	{"app": "bank", "title": "%%SVC_NAV_ECONOMY"},
-	{"app": "inventory", "title": "%%SVC_NAV_INVENTORY"},
+	{"app": "economy", "title": "%%SVC_NAV_ECONOMY"},
+	{"app": "properties", "title": "%%SVC_NAV_PROPERTIES"},
 	{"app": "missions", "title": "%%SVC_NAV_MISSIONS"},
 	{"app": NAVIGATION, "title": "%%SVC_NAV_NAVIGATION"},
-	{"app": "contacts", "title": "%%SVC_NAV_SOCIAL"},
-	{"app": "diagnostics", "title": "%%SVC_NAV_SYSTEM"},
+	{"app": "social", "title": "%%SVC_NAV_SOCIAL"},
 	{"app": "plus", "title": "%%SVC_NAV_PLUS"},
 ]
 
 ## The apps the bar has no room for: the PLUS grid, in the order they were on the old home rail.
-const PLUS_APPS: PackedStringArray = ["squad", "corporations", "pois", "market", "reports"]
+const PLUS_APPS: PackedStringArray = ["reports", "diagnostics"]
 
 ## The action column's width while the left card still has something to show beside it.
 const SIDE_WIDTH: float = 400.0
@@ -76,6 +67,10 @@ const ARES_LOGO_REGION := Rect2(51, 67, 416, 131)
 signal navigation_requested
 ## The NAVIGATION tab is left (another tab, home, the tablet closed): PlayerClient closes the chart.
 signal navigation_closed
+## A section wants the chart to name a place for it (a point of interest being created). Relayed
+## from whichever app asked; PlayerClient opens the chart in placement mode and answers through
+## [method set_placed]. The tablet never reaches for the chart itself.
+signal placement_requested
 
 var _overview: ServiceOverviewScreen = null
 ## id -> ServicePanel, and id -> the `area` its mutations announce on.
@@ -310,6 +305,7 @@ func _build() -> void:
 		panel.pane_layout.connect(_on_pane_layout.bind(panel))
 		panel.visible = false
 		panel.home_requested.connect(_go_home)
+		panel.placement_requested.connect(placement_requested.emit)
 		_content.add_child(panel)
 		_panels[id] = panel
 		_areas[id] = str(app["area"])
@@ -573,6 +569,14 @@ func open_app(id: String, segment: int = -1) -> void:
 	_open_app(id)
 	if segment >= 0 and _panels.has(id):
 		(_panels[id] as ServicePanel).goto_segment(segment)
+
+
+## The chart named a place: hand it to the app that asked for one (the points of interest form).
+func set_placed(place: Dictionary) -> void:
+	if not _built:
+		return
+	for id: Variant in _panels:
+		(_panels[id] as ServicePanel).set_placed(place)
 
 
 func _open_plus() -> void:

@@ -1,6 +1,12 @@
 class_name StarMap
 extends CanvasLayer
 
+## The chart named a place for a point of interest being created (see [method begin_poi_place]):
+## `place` carries `system`, `scene` and `position` in game units — the shape PlayerLocation
+## answers with, and the shape the inventory service stores. The mode stays on until cancelled, so
+## a player who missed their click simply clicks again.
+signal poi_placed(place: Dictionary)
+
 ## Chart of the system: every celestial body as a plain coloured sphere, its orbit as a ring, and its
 ## current spin shown by a tilted axis with a meridian marker. Drawn on its own face (a Control): the
 ## whole screen on this layer by itself, or the DataPad's NAVIGATION tab once hosted ([method host_in]).
@@ -323,6 +329,9 @@ var _poi_focus: int = -1
 ## Key of the body whose towns are currently loaded, so that drifting onto another one clears the
 ## selection that belonged to the previous.
 var _poi_key: String = ""
+## Placement mode for a point of interest: the next click names a place instead of selecting
+## whatever it lands on. Stays on until [method end_poi_place], so a missed click is just a click.
+var _placing_poi: bool = false
 ## The relief of the body being looked at — its tiles, their levels, their life cycle. ONE object,
 ## where there were seventeen fields and ten functions here.
 ##
@@ -527,6 +536,51 @@ func host_in(slot: Control) -> void:
 ## what the in-world consoles answer for the game's own polled inputs.
 func is_typing() -> bool:
 	return is_instance_valid(_search) and _search.has_focus()
+
+
+## The next clicks name places rather than select what they land on: each one emits
+## [signal poi_placed] with the point under the cursor, and the mode stays on until
+## [method end_poi_place]. A player placing a point of interest misses the first time; making them
+## re-arm for every attempt would be the interface asking them to be perfect.
+func begin_poi_place() -> void:
+	_placing_poi = true
+
+
+func end_poi_place() -> void:
+	_placing_poi = false
+
+
+func is_placing_poi() -> bool:
+	return _placing_poi
+
+
+## The place under [param screen_pos], or an empty dictionary when the cursor is over nothing a
+## point could stand on. The position is the point on the body's own sphere the ray meets, expressed
+## the way the services store a place (see [PlayerLocation]): the body's true position plus the
+## offset that reaches the surface, in game units.
+func _place_at(screen_pos: Vector2) -> Dictionary:
+	var origin: Vector3 = _camera.project_ray_origin(screen_pos)
+	var dir: Vector3 = _camera.project_ray_normal(screen_pos)
+	var index: int = _pick_pass(origin, dir, true)
+	if index < 0:
+		return {}  # empty space: a point of interest needs a body to belong to
+	var entry: Dictionary = _bodies[index]
+	var centre: Vector3 = entry["true_pos"]
+	var radius: float = float(entry["radius_m"]) * UNITS_PER_METRE
+	var to_centre: Vector3 = centre - origin
+	var along: float = to_centre.dot(dir)
+	if along <= 0.0:
+		return {}
+	# Where the ray meets the sphere: the foot of the perpendicular, pulled back to the surface.
+	var closest: Vector3 = origin + dir * along
+	var away: Vector3 = closest - centre
+	var distance: float = maxf(away.length(), radius)
+	var surface: Vector3 = centre + away.normalized() * distance
+	return {
+		"system": SystemScenes.system_of(str(entry["key"])),
+		"scene": str(entry["key"]),
+		"position": surface / UNITS_PER_METRE,
+	}
 
 
 func _build_ui() -> void:
@@ -3112,6 +3166,13 @@ func _select_pressed(event: InputEvent) -> void:
 ## ...except YOU, before them. Your marker is drawn over everything, so whatever lies under it, what
 ## the cursor is on is you — the dot or its name (see _player_under).
 func _click_at(at: Vector2, double: bool) -> void:
+	# Placing a point of interest swallows the click: it is a name, not a selection.
+	if _placing_poi:
+		var place: Dictionary = _place_at(at)
+		if place.is_empty():
+			return  # nothing under the cursor: the mode stays armed for another try
+		poi_placed.emit(place)
+		return
 	var on_you: bool = _player_under(at)
 	var ray_from: Vector3 = _camera.project_ray_origin(at)
 	var ray_dir: Vector3 = _camera.project_ray_normal(at)

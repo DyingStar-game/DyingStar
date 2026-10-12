@@ -14,6 +14,11 @@ extends VBoxContainer
 ## button emits this; TerminalUI routes it).
 signal home_requested
 
+## A section wants the chart to name a place for it (a point of interest being created asks for a
+## point to be picked). Relayed up through the shells that host it (see [method mount_segment]) so
+## the console — which owns the chart — can act on it; this file never reaches for [StarMap].
+signal placement_requested
+
 ## How the tablet should split the screen for the segment now on show: data on the left, this
 ## segment's actions in the right-hand column. Emitted when a segment is switched to, and once more
 ## after [method _build] has filled both halves.
@@ -53,6 +58,9 @@ var _seg_index: int = 0
 ## Guards against overlapping refreshes (rapid section switches): a second refresh is skipped while
 ## one is in flight.
 var _loading: bool = false
+## Sections mounted into a segment by [method mount_segment]: {"index": int, "chrome": Control,
+## "panel": ServicePanel}. Their chrome is shown only while their own segment is on show.
+var _mounts: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -100,18 +108,28 @@ func refresh() -> void:
 	pass
 
 
+## The chart named a place for whatever asked for it (see [signal placement_requested]). Sections
+## that can take one override; the default is to have nothing to say about it.
+func set_placed(_place: Dictionary) -> void:
+	pass
+
+
 # ---------------------------------------------------------------------------------------------
 # Screen contract
 # ---------------------------------------------------------------------------------------------
 
-## True while one of our inputs holds the keyboard. The owning console relays this so the game stops
-## acting on what is being typed (gameplay polls [Input], which a focused LineEdit cannot consume).
+## True while one of our inputs — or a mounted section's — holds the keyboard. The owning console
+## relays this so the game stops acting on what is being typed.
 func is_typing() -> bool:
 	for field: LineEdit in _fields:
 		if field != null and field.has_focus():
 			return true
 	for area: TextEdit in _text_areas:
 		if area != null and area.has_focus():
+			return true
+	for mount: Dictionary in _mounts:
+		var panel: ServicePanel = mount.get("panel")
+		if panel != null and panel.is_typing():
 			return true
 	return false
 
@@ -124,6 +142,10 @@ func release_fields() -> void:
 	for area: TextEdit in _text_areas:
 		if area != null and area.has_focus():
 			area.release_focus()
+	for mount: Dictionary in _mounts:
+		var panel: ServicePanel = mount.get("panel")
+		if panel != null:
+			panel.release_fields()
 
 
 ## Adopt a focusable field the panel does not build itself — a composed control's input (the
@@ -522,6 +544,41 @@ func _segments_pages(labels: PackedStringArray) -> Array[VBoxContainer]:
 	return pages
 
 
+## The bar and the action column of a COMPOSED app, with no content pages at all: each segment
+## holds a whole section (see [method mount_segment]), and a section already carries its own card,
+## its own scrolling and its own layout. Wrapping it in this shell's page would put a second set of
+## margins around content that has some — and a ScrollContainer inside a ScrollContainer is how a
+## panel ends up being handed no height at all.
+func _mount_bar(labels: PackedStringArray) -> void:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 6)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	add_chrome(bar)
+
+	var holders: Array[ScrollContainer] = []
+	_side_pages.clear()
+	for _i: int in range(labels.size()):
+		var side := VBoxContainer.new()
+		side.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		side.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		side.add_theme_constant_override("separation", 12)
+		side_slot.add_child(side)
+		_side_pages.append(side)
+
+	for i: int in range(labels.size()):
+		var tab := Button.new()
+		tab.text = labels[i]
+		ServiceStyle.apply_segment(tab, i == 0)
+		var index: int = i
+		tab.pressed.connect(func() -> void: _show_segment(bar, holders, index))
+		bar.add_child(tab)
+
+	_seg_bar = bar
+	_seg_holders = holders
+	_seg_index = 0
+	pane_layout.emit(has_main_content(), has_side_content())
+
+
 ## The action-column page of the [param index]-th segment: forms, filters and the buttons that act
 ## on what the left half is showing. Callers fill it right after [method _segments_pages] returns.
 func _side_page(index: int) -> VBoxContainer:
@@ -536,6 +593,52 @@ func goto_segment(index: int) -> void:
 		_show_segment(_seg_bar, _seg_holders, index)
 
 
+## Mount a section script as the segment [param index] of this composed app: the section gets its own
+## chrome slot (its app bar and its own tabs draw there, hidden while another segment is on show)
+## and the segment's action column. A composed app is thus a thin shell whose segments each hold a
+## whole section, rather than a rewrite of every section's layout.
+##
+## The section becomes a DIRECT child of [code]self[/code] — never nested in a page of this shell's
+## own. It is laid out by the same VBoxContainer the sections of a plain app would be, which is the
+## only arrangement the card is known to hand a real height to.
+func mount_segment(index: int, script_path: String) -> ServicePanel:
+	var chrome := VBoxContainer.new()
+	chrome.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chrome.visible = index == _seg_index
+	add_chrome(chrome)
+	var script: GDScript = load(script_path)
+	var panel: ServicePanel = script.new()
+	panel.tab_slot = chrome
+	var side := _side_page(index)
+	if side != null:
+		panel.side_slot = side
+	# Sections stand alone (a test, a smoke scene) unless a tablet hosts them; the shell is that host
+	# and asks no more of them than the tablet did. Visible only while their own segment is on show:
+	# the shell toggles both the chrome and the section, never just the chrome.
+	panel.visible = index == _seg_index
+	_mounts.append({"index": index, "chrome": chrome, "panel": panel})
+	add_child(panel)
+	# A form-only segment of the section asks for the column: the shell relays it so the tablet splits
+	# the way the section on show needs, not the way the shell itself would.
+	panel.pane_layout.connect(_relay_pane.bind(panel))
+	# A section may ask the chart for a place; the shell carries that up, never to the chart itself.
+	panel.placement_requested.connect(placement_requested.emit)
+	return panel
+
+
+## The mounted section whose segment is on show, or null.
+func mounted_section() -> ServicePanel:
+	for mount: Dictionary in _mounts:
+		if int(mount.get("index", -1)) == _seg_index:
+			return mount.get("panel") as ServicePanel
+	return null
+
+
+func _relay_pane(has_main: bool, has_side: bool, panel: ServicePanel) -> void:
+	if mounted_section() == panel:
+		pane_layout.emit(has_main, has_side)
+
+
 func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: int) -> void:
 	for i: int in range(bar.get_child_count()):
 		ServiceStyle.apply_segment(bar.get_child(i) as Button, i == index)
@@ -543,13 +646,34 @@ func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: i
 		holders[i].visible = i == index
 	for i: int in range(_side_pages.size()):
 		(_side_pages[i] as VBoxContainer).visible = i == index
+	for mount: Dictionary in _mounts:
+		var mounted_index: int = int(mount.get("index", -1))
+		var chrome: Control = mount.get("chrome")
+		if chrome != null:
+			chrome.visible = mounted_index == index
+		# The section itself is drawn in the card, and must follow its chrome — a section that is
+		# hidden while its chrome shows is a title bar over nothing.
+		var mounted: ServicePanel = mount.get("panel") as ServicePanel
+		if mounted != null:
+			mounted.visible = mounted_index == index
 	_seg_index = index
-	pane_layout.emit(has_main_content(), has_side_content())
+	var section := mounted_section()
+	if section != null:
+		# The section on show decides the split: its form-only segment is the whole card.
+		pane_layout.emit(section.has_main_content(), section.has_side_content())
+	else:
+		pane_layout.emit(has_main_content(), has_side_content())
 
 
 ## Whether the segment on show has anything to draw on the left. A segment that is nothing but a
 ## form has moved entirely into the column, and the tablet gives the column the whole width.
+##
+## A COMPOSED app has no holders of its own to ask — its segments hold whole sections, and the
+## section on show is the only one that knows whether its card half is empty.
 func has_main_content() -> bool:
+	var mounted := mounted_section()
+	if mounted != null:
+		return mounted.has_main_content()
 	if _seg_index < 0 or _seg_index >= _seg_holders.size():
 		return true
 	var holder: ScrollContainer = _seg_holders[_seg_index]
@@ -560,6 +684,9 @@ func has_main_content() -> bool:
 
 ## Whether the segment on show put anything in the right-hand column.
 func has_side_content() -> bool:
+	var mounted := mounted_section()
+	if mounted != null:
+		return mounted.has_side_content()
 	if _seg_index < 0 or _seg_index >= _side_pages.size():
 		return false
 	return not (_side_pages[_seg_index] as VBoxContainer).get_children().is_empty()

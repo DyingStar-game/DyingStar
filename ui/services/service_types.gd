@@ -109,9 +109,12 @@ const VISIBILITY_KEYS: Dictionary = {
 	"public": "%%SVC_ENUM_VISIBILITY_PUBLIC",
 	"corporation": "%%SVC_ENUM_VISIBILITY_CORPORATION",
 }
-## Availability zone kinds — the `MissionZone` discriminator, as the service validates them.
+## Availability zone kinds — the `MissionZone` discriminator, as the service validates them. Only
+## `system` and `poi` exist in that union; `scene` and `area` are kept in the table so a zone an
+## older build stored still reads back, but no form offers them any more.
 const ZONE_KIND_KEYS: Dictionary = {
 	"system": "%%SVC_ENUM_ZONE_SYSTEM",
+	"poi": "%%SVC_ENUM_ZONE_POI",
 	"scene": "%%SVC_ENUM_ZONE_SCENE",
 	"area": "%%SVC_ENUM_ZONE_AREA",
 }
@@ -624,13 +627,18 @@ static func rewards_text(rewards: Variant) -> String:
 	return "—"
 
 
-## A gate checked at acceptance: kind plus its structured params, compact.
-static func prerequisite_line(prerequisite: Dictionary) -> String:
+## A gate checked at acceptance: kind plus its structured params, compact. [param kind_label] is
+## the caller's localized caption for the kind (the catalogue's `name`); the raw kind shows when
+## the caller has none — an old catalogue, or a kind it never heard of.
+static func prerequisite_line(prerequisite: Dictionary, kind_label: String = "") -> String:
 	var params: Variant = prerequisite.get("params")
 	var compact: String = "—" if params == null else JSON.stringify(params)
 	if compact == "{}":
 		compact = "—"
-	return text("%%SVC_FMT_PREREQ_LINE") % [dash(prerequisite.get("kind")), compact]
+	var shown: String = kind_label.strip_edges()
+	if shown == "":
+		shown = str(dash(prerequisite.get("kind")))
+	return text("%%SVC_FMT_PREREQ_LINE") % [shown, compact]
 
 
 static func zone_kind_label(value: Variant) -> String:
@@ -649,6 +657,12 @@ static func zone_line(zone: Variant) -> String:
 	match kind:
 		"system":
 			return text("%%SVC_FMT_ZONE_SYSTEM") % dash(z.get("system"))
+		"poi":
+			var radius: Variant = z.get("radiusM")
+			if radius == null:
+				# No radius: the zone is the POI's whole scene subtree, which is the wider thing.
+				return text("%%SVC_FMT_ZONE_POI") % dash(z.get("poiId"))
+			return text("%%SVC_FMT_ZONE_POI_RADIUS") % [dash(z.get("poiId")), num(radius)]
 		"scene":
 			return prefix + (text("%%SVC_FMT_ZONE_SCENE") % dash(z.get("scene")))
 		"area":
