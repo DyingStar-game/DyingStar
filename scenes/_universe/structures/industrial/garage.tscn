@@ -157,14 +157,12 @@ fade_distance = 400.0
 
 [node name="Photocell" type="Node3D" parent="NeonSign" unique_id=2140967028]
 script = ExtResource("pc_photocell")
-tuning = null
 
 [node name="Lights" type="Node3D" parent="." unique_id=131444773]
 script = ExtResource("light_group_script")
 
 [node name="Photocell" type="Node3D" parent="Lights" unique_id=1614826877]
 script = ExtResource("pc_photocell")
-tuning = null
 
 [node name="LedPanel 01" parent="Lights" unique_id=844345665 instance=ExtResource("led_1x1")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.8999509822331735, -4.592254021106273)

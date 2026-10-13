@@ -10,6 +10,8 @@ func set_lit(on: bool, animate: bool = false) -> void:
 	_switch_under(self, on, animate)
 
 
+## Switch every lamp below [param node], walking into the sub-groups (a lamp's own children are its
+## parts, not further lamps).
 static func _switch_under(node: Node, on: bool, animate: bool) -> void:
 	for child: Node in node.get_children():
 		if child is Photocell:
