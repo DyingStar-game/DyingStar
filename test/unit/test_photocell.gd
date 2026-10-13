@@ -10,13 +10,15 @@ const TARSIS_3_AIR := "res://scenes/planet/atmospheres/tarsis_3.tres"
 const VILLAGE_M := 5130.0
 ## The village under the veil the lamps stayed off in, the star high in a dark sky (2026-10-05).
 const UNDER_THE_VEIL_M := -406.0
-## The scenes whose lights follow the daylight, and the node each one's Photocell sits under.
+## The scenes whose lights follow the daylight, and the nodes their Photocells sit under (a building's
+## ceiling lights are one LightGroup, one Photocell for them all).
 const WIRED := {
-	"res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn": "SpotLight3D",
-	"res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn": "SpotLight3D",
-	"res://scenes/_universe/structures/industrial/garage.tscn": "NeonSign",
-	"res://scenes/_universe/structures/industrial/cargo_depot.tscn": "NeonSign",
-	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn": "NeonSign",
+	"res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn": ["SpotLight3D"],
+	"res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn": ["SpotLight3D"],
+	"res://scenes/_universe/structures/industrial/garage.tscn": ["NeonSign", "Lights"],
+	"res://scenes/_universe/structures/industrial/cargo_depot.tscn": ["NeonSign", "Lights"],
+	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn": ["NeonSign"],
+	"res://scenes/_universe/structures/buildings/spawn_building.tscn": ["MultiMeshInstance3D/0-0-0/ceiling"],
 }
 
 
@@ -105,16 +107,17 @@ func test_the_lamps_and_signs_are_wired() -> void:
 		assert_not_null(ext, "%s uses a Photocell" % path)
 		if ext == null:
 			continue
-		var under := RegEx.create_from_string("\\[node [^\\n]*parent=\"%s\"[^\\n]*\\]\\nscript = ExtResource\\(\"%s\"\\)"
-				% [WIRED[path], ext.get_string(1)])
-		assert_not_null(under.search(text), "%s: the Photocell drives its %s" % [path, WIRED[path]])
+		for parent: String in WIRED[path]:
+			var under := RegEx.create_from_string("\\[node [^\\n]*parent=\"%s\"[^\\n]*\\]\\nscript = ExtResource\\(\"%s\"\\)"
+					% [parent, ext.get_string(1)])
+			assert_not_null(under.search(text), "%s: a Photocell drives its %s" % [path, parent])
 
 
-## Over the plateau the lamps keep the thresholds they were tuned with by eye: the star at +2° and +4°.
-func test_over_a_village_the_lamps_switch_at_two_and_four_degrees() -> void:
+## Over the plateau the lamps keep the thresholds they were tuned with in game: the star at +2.9° and +4°.
+func test_over_a_village_the_lamps_switch_at_three_and_four_degrees() -> void:
 	var air: AtmosphereProfile = load(TARSIS_3_AIR)
 	var cell := Photocell.new()
-	assert_almost_eq(Planet.daylight(air, VILLAGE_M, 2.0), cell.on_below_light, cell.on_below_light * 0.05)
+	assert_almost_eq(Planet.daylight(air, VILLAGE_M, 2.9), cell.on_below_light, cell.on_below_light * 0.05)
 	assert_almost_eq(Planet.daylight(air, VILLAGE_M, 4.0), cell.off_above_light, cell.off_above_light * 0.05)
 	cell.free()
 
@@ -177,3 +180,38 @@ func _cell_of_prop(uuid: String) -> Photocell:
 	light.add_child(cell)
 	autofree(prop)
 	return cell
+
+
+func test_a_light_group_switches_every_panel_light_and_face() -> void:
+	var group := LightGroup.new()
+	add_child_autofree(group)
+	var scene := load("res://scenes/_universe/props/lighting/led_panel_1x1m.tscn") as PackedScene
+	var panel := scene.instantiate() as LedPanel
+	var bay := Node3D.new()  # a sub-group: a plain node, walked through
+	group.add_child(bay)
+	bay.add_child(panel)
+	var spot := SpotLight3D.new()
+	group.add_child(spot)
+	group.set_lit(false)
+	var face := panel.get_node("Visual") as MeshInstance3D
+	assert_false((panel.get_node("AreaLight3D") as Light3D).visible, "the panel's light is out")
+	assert_not_null(face.material_override, "its glowing face goes dark too")
+	assert_false(spot.visible, "a bare light too")
+	group.set_lit(true)
+	assert_true((panel.get_node("AreaLight3D") as Light3D).visible)
+	assert_null(face.material_override, "its own glowing face back")
+
+
+func test_every_lamp_reads_the_shared_tuning_in_lux() -> void:
+	var cell := Photocell.new()
+	assert_eq(cell.tuning, Photocell.DEFAULT_TUNING, "one resource for every lamp")
+	assert_almost_eq(cell.on_below_light, cell.tuning.on_below_lux / PhotocellTuning.CLEAR_NOON_LUX, 1e-9,
+			"the threshold in lux, read as a daylight share")
+	var own := PhotocellTuning.new()
+	own.on_below_lux = 5000.0
+	own.off_above_lux = 8000.0
+	own.max_delay_s = 10.0
+	cell.tuning = own
+	assert_almost_eq(cell.on_below_light, 0.05, 1e-9, "a lamp given its own tuning follows it")
+	assert_eq(cell.max_delay_s, 10.0)
+	cell.free()

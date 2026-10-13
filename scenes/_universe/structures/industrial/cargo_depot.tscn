@@ -16,6 +16,7 @@
 [ext_resource type="Shape3D" uid="uid://7gu1abixw0uu" path="res://scenes/_universe/structures/industrial/stairs_collider_shape.tres" id="17_2hcbk"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="18_bfkre"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
+[ext_resource type="Script" path="res://scenes/_universe/props/lighting/light_group.gd" id="light_group_script"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Script" uid="uid://c4t1duu3n71vw" path="res://scenes/_universe/structures/industrial/cargo_depot.gd" id="script_cargo"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="terrain_pad_1"]
@@ -328,6 +329,10 @@ shape = SubResource("BoxShape3D_dagjk")
 debug_color = Color(0.3492929, 0.4840585, 1, 0.41960785)
 
 [node name="Lights" type="Node3D" parent="." unique_id=167323431]
+script = ExtResource("light_group_script")
+
+[node name="Photocell" type="Node3D" parent="Lights" unique_id=1156243201]
+script = ExtResource("pc_photocell")
 
 [node name="Reception" type="Node3D" parent="Lights" unique_id=423351807]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5)

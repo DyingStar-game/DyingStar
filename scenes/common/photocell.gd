@@ -23,24 +23,28 @@ extends Node3D
 ## The lights this photocell switches: a Light3D is shown or hidden, anything with set_lit(bool) —
 ## a NeonSign — is asked to. Empty: it drives its parent.
 @export var targets: Array[Node] = []
-## Daylight (share of the star's full overhead light reaching flat ground, Planet.daylight_at) under
-## which the lights come on at dusk. 0.011 is the star at +2° over a village at 5130 m, the median of
-## Tarsis 3's villages, where it was tuned by eye; the same light comes with the star at 6° at 3700 m,
-## inside the top of the veil, and at 31° under it. A real photocell switches near 30 lux, some
-## 0.0003 of a clear noon: this one runs brighter, as Tarsis 3's haze reads dark long before that.
-@export_range(0.0, 0.2, 0.0005) var on_below_light: float = 0.011:
+## When the lamps switch and how long each waits (lux, seconds): the resource every lamp shares,
+## photocell_tuning.tres, tuned once in the Inspector for all of them. A lamp that needs its own takes
+## its own copy (Make Unique). The light read is Planet.daylight_at: the share of the star's full
+## overhead light reaching flat ground, under the veil as over the plateau.
+@export var tuning: PhotocellTuning = DEFAULT_TUNING:
 	set(value):
-		on_below_light = value
+		tuning = value
 		update_configuration_warnings()
-## Daylight above which they go off at dawn: 0.031, the star at +4° over that village. Kept above
-## on_below_light, so a lamp sitting at the threshold never blinks.
-@export_range(0.0, 0.2, 0.0005) var off_above_light: float = 0.031:
-	set(value):
-		off_above_light = value
-		update_configuration_warnings()
-## Longest wait (s) between the star crossing the threshold and this lamp switching. Each lamp draws
-## its own wait in that range, so a village comes on one lamp at a time over a couple of minutes.
-@export_range(0.0, 600.0, 1.0) var max_delay_s: float = 120.0
+
+## The tuning every lamp shares unless given its own.
+const DEFAULT_TUNING: PhotocellTuning = preload("res://scenes/common/photocell_tuning.tres")
+
+## The tuning's thresholds as daylight shares, and its longest wait (s): read-only views of [member tuning].
+var on_below_light: float:
+	get:
+		return (tuning if tuning != null else DEFAULT_TUNING).on_below_light()
+var off_above_light: float:
+	get:
+		return (tuning if tuning != null else DEFAULT_TUNING).off_above_light()
+var max_delay_s: float:
+	get:
+		return (tuning if tuning != null else DEFAULT_TUNING).max_delay_s
 
 ## How often the star is read, in seconds of the shared clock. It moves a fraction of a degree a
 ## minute, so this costs nothing and misses nothing.
@@ -174,7 +178,7 @@ func _altitude(planet: Planet) -> float:
 func _get_configuration_warnings() -> PackedStringArray:
 	var warnings: PackedStringArray = []
 	if on_below_light >= off_above_light:
-		warnings.append("on_below_light must stay under off_above_light, or a lamp at the threshold blinks.")
+		warnings.append("The tuning's on_below_lux must stay under off_above_lux, or a lamp at the threshold blinks.")
 	var parent := get_parent()
 	if targets.is_empty() and parent != null and not (parent is Light3D) and not parent.has_method("set_lit"):
 		warnings.append("Nothing to switch: list the lights in targets, or put the Photocell under a light.")

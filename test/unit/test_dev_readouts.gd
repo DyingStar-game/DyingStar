@@ -130,3 +130,10 @@ func test_the_music_readout_tells_a_pause_from_a_chosen_silence() -> void:
 	assert_eq(lines[1], "playlist: (none)", "the rule has no playlist")
 	assert_eq(lines.size(), 4, "nothing pending, no fifth line")
 	assert_eq(DevReadouts.music_lines({})[0], "music --", "before the director started")
+
+
+func test_the_daylight_line_reads_in_lux_against_the_photocell_thresholds() -> void:
+	var text: String = DevReadouts.daylight_text(0.011)
+	assert_string_contains(text, "1100 lux", "a daylight of 0.011 is about 1100 lux")
+	assert_string_contains(text, "on < %.0f lux" % Photocell.DEFAULT_TUNING.on_below_lux, "the shared tuning, in lux")
+	assert_eq(DevReadouts.daylight_line(null), "light: --", "no body: nothing to read")

@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="PhotocellTuning" format=3 uid="uid://br4v2qpk6p5l8"]
+
+[ext_resource type="Script" uid="uid://y5bvh64w7bxs" path="res://scenes/common/photocell_tuning.gd" id="1_tuning"]
+
+[resource]
+script = ExtResource("1_tuning")
+on_below_lux = 1900.0
