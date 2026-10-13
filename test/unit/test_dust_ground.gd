@@ -58,7 +58,23 @@ func test_the_build_is_spread_over_frames_and_swaps_whole() -> void:
 	assert_false(g.update(moved, _hill, 0.0), "a new build starts, one row only")
 	assert_eq(g.anchor, first, "the grid in use stays until the new one is complete")
 	_build(g, moved, _hill)
-	assert_eq(g.anchor, moved, "then both swap at once")
+	assert_ne(g.anchor, first, "then both swap at once")
+	assert_lt(g.anchor.distance_to(moved), DustGround.CELL_M * DustGround.COLOUR_STEP,
+			"slid by whole colour cells: within one of the camera")
+
+
+func test_moving_on_asks_only_the_new_strips() -> void:
+	var g := DustGround.new()
+	_build(g, ANCHOR, _hill)
+	assert_eq(g.last_build_cells, DustGround.SIZE * DustGround.SIZE, "the first grid asks every cell")
+	var hill_top: float = DustGround.ground_at(g._heights, g.east, g.north, g.east * 200.0)
+	var moved: Vector3 = ANCHOR + g.east * 128.0
+	_build(g, moved, _hill)
+	var strip: int = int(128.0 / DustGround.CELL_M) * DustGround.SIZE
+	assert_eq(g.last_build_cells, strip, "128 m on: only the 8 new columns are asked")
+	assert_eq(g.east, DustGround.tangent_frame(ANCHOR)[0], "the same plane, slid")
+	var again: float = DustGround.ground_at(g._heights, g.east, g.north, g.east * 200.0 - (g.anchor - ANCHOR))
+	assert_almost_eq(again, hill_top, 0.01, "the hill kept where it was, from the copied cells")
 
 
 func test_the_grid_reaches_the_near_layer_range() -> void:

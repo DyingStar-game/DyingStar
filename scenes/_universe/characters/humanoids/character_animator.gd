@@ -31,6 +31,10 @@ const MOVE_EPSILON: float = 0.3
 const DIR_DEADZONE: float = 0.38
 ## Tiny (not zero, to avoid degenerate skinning) scale that hides our OWN head in first person.
 const HEAD_HIDE_SCALE: Vector3 = Vector3(0.001, 0.001, 0.001)
+## The hidden head took its shadow with it: our own body's shadow had no head (2026-10-12). A stand-in
+## casts it instead (see add_head_shadow): a capsule this wide and tall (m), drawn in shadows only.
+const HEAD_SHADOW_RADIUS_M: float = 0.13
+const HEAD_SHADOW_HEIGHT_M: float = 0.34
 ## The Walk clip looks clean (feet match the ground) at this ground speed, so its playback is scaled by
 ## planar_speed / this (clamped) to kill foot-sliding at other walk speeds. Calibrated in-game.
 const WALK_REF_SPEED: float = 1.0
@@ -214,6 +218,8 @@ func setup(player_body, is_local: bool) -> void:
 		_head_bone = _resolve_bone([&"Head", &"head"])
 		_neck_bone = _resolve_bone([&"Neck", &"neck"])
 		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
+		if _is_local:
+			add_head_shadow(_skeleton, _head_bone, _neck_bone)
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
 		_idle = _resolve_idle()
@@ -222,6 +228,36 @@ func setup(player_body, is_local: bool) -> void:
 	# Local only: sample the vault probe in the physics frame (its space state is null in _process) so the
 	# debug HUD can show whether a ledge is climbable right now.
 	set_physics_process(_is_local and _anim != null and anim_set != null)
+
+## A shadow for the head first person hides (HEAD_HIDE_SCALE): a capsule the head's size, drawn in
+## shadows only, at the head's rest place. Carried by the bone ABOVE the neck — the neck is collapsed too,
+## so the head bone sits low. Returns the capsule, or null when the rig has no head or neck.
+static func add_head_shadow(skeleton: Skeleton3D, head: int, neck: int) -> MeshInstance3D:
+	if skeleton == null or head == -1 or neck == -1:
+		return null
+	var carrier: int = skeleton.get_bone_parent(neck)
+	if carrier == -1:
+		return null
+	var attach := BoneAttachment3D.new()
+	attach.name = "HeadShadow"
+	skeleton.add_child(attach)
+	attach.bone_idx = carrier
+	var capsule := CapsuleMesh.new()
+	var unit: float = 1.0 / maxf(skeleton.global_basis.get_scale().x if skeleton.is_inside_tree() else 1.0, 1e-6)
+	capsule.radius = HEAD_SHADOW_RADIUS_M * unit
+	capsule.height = HEAD_SHADOW_HEIGHT_M * unit
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = capsule
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	mesh.layers = Globals.RENDER_MASK_OWN_BODY  # our own torch leaves our body out of its shadows
+	var carrier_rest: Transform3D = skeleton.get_bone_global_rest(carrier)
+	var head_rest: Transform3D = skeleton.get_bone_global_rest(head)
+	var up: Vector3 = head_rest.basis.y.normalized()
+	var centre: Vector3 = head_rest.origin + up * capsule.height * 0.4
+	mesh.transform = carrier_rest.affine_inverse() * Transform3D(head_rest.basis.orthonormalized(), centre)
+	attach.add_child(mesh)
+	return mesh
+
 
 ## The skeleton the animations actually pose. The clips live in a library built for this character
 ## (addons/dyingstar/build_retargeted_animations.gd) and the AnimationPlayer names the rig they address
@@ -367,8 +403,7 @@ func _process(delta: float) -> void:
 			# too -- the pivot is at its rest right now if nobody has moved it yet.
 			# Seated: the ride owns the camera, raised by the seated eye height. That lifts the EYE only --
 			# the body stays on the seat where _ride_seat put it (see Player.seat_eye_height).
-			if not _head_cam.rest_captured:
-				_head_cam.camera_base = _player.camera_pivot.position
+			_head_cam.capture_base(_player.camera_pivot.position)  # once: the pivot is at its rest right now
 			# Per ROLE: the seat pose is chosen by role a few lines down (sit_driving vs sit_passenger)
 			# and the two clips do not put the head in the same place. One eye height for both left the
 			# passenger looking from too low. The offset is a DELTA off the driver's tuning, so it is zero

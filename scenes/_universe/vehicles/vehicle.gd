@@ -841,6 +841,12 @@ var _net_suspension: Array = []
 ## so it goes out on the next tick: the whole state on the first one, from spawn, every key with its
 ## value — an admin reading the database sees "headlights": false, not nothing.
 var _net_sent: Dictionary = {}
+## The share of the motors' full force the drive asks for (0..1): SERVER, set by _draw_energy each tick;
+## a replica gets it as "power", rounded to POWER_STEP so it only travels when it really changes. The
+## dashboard's power gauge (an electric truck has no meaningful RPM).
+var _power_share: float = 0.0
+var _net_power: float = 0.0
+const POWER_STEP: float = 0.05
 ## SERVER: seconds until the whole state is sent once more. Horizon drops, without a word, an update
 ## for an object it has not finished creating (handlers/update.rs: no gorc id, nothing done) — and
 ## the first tick of a vehicle spawned at runtime races its own create_object. Sent again once, a
@@ -1851,6 +1857,30 @@ func _wind_on_doors() -> void:
 			server_toggle_door(handle.door_id)
 
 
+## For the dashboard's door light: whether a door or hatch is open, and the lowest speed (km/h) at which
+## the wind shuts one of the open doors (DoorWind, the same sum _wind_on_doors does) — INF when none
+## open or the wind moves none of them (a hatch). Server and replica alike: the doors' state is
+## replicated, the leaves measured from the meshes.
+func open_doors_wind_kmh() -> Vector2:
+	if _wind_handles.is_empty():
+		_wind_handles = find_children("*", "VehicleDoorHandle", true, false)
+	var any_open: bool = false
+	var lowest: float = INF
+	var rho: float = -1.0
+	for handle: VehicleDoorHandle in _wind_handles:
+		if not is_door_open(handle.door_id):
+			continue
+		any_open = true
+		var leaf: Vector2 = door_leaf(handle)
+		if leaf.x <= 0.0:
+			continue
+		if rho < 0.0:
+			rho = air_density_now()
+		lowest = minf(lowest, DOOR_WIND.shutting_speed_kmh(rho, leaf.x, leaf.y, handle.open_angle_deg,
+				handle.wind_hold_nm))
+	return Vector2(1.0 if any_open else 0.0, lowest)
+
+
 ## The leaf the wind presses on, for [param handle]'s door: Vector2(area m2, width m), Vector2.ZERO
 ## when the wind does not act on it. What the handle sets, else (-1) measured once from the door's
 ## mesh if it is a "_door" (DoorWind.by_default), else nothing.
@@ -2680,6 +2710,7 @@ func full_state() -> Dictionary:
 		"pilot_uuid": _pilot_uuid_now(),
 		"speed": snappedf(linear_velocity.length() * 3.6, 0.1),
 		"wheel_kmh": snappedf(get_wheel_kmh(), 0.1),
+		"power": snappedf(_power_share, POWER_STEP),
 		"cargo_mass": snappedf(get_cargo_mass(), 0.1),
 		"handbrake": _handbrake,
 		"mass": snappedf(mass, 0.1),  # total weight (empty + cargo + seated players)
@@ -2940,6 +2971,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("wheel_kmh"):
 		_net_wheel_kmh = float(data["wheel_kmh"])
 		_net_wheel_seen = true
+	if data.has("power"):
+		_net_power = float(data["power"])
 	if data.has("cargo_mass"):
 		_net_cargo_mass = float(data["cargo_mass"])
 	if data.has("mass"):
@@ -3598,6 +3631,7 @@ func _on_bays_changed() -> void:
 ## the motors fitted — the battery follows the torque, not the speed. Nothing is drawn without
 ## force: no throttle, hand brake, engine off. Running dry cuts the engine and the lights.
 func _draw_energy(force: float, delta: float) -> void:
+	_power_share = power_share(force, _powertrain.engine_power)
 	if force == 0.0 or _powertrain.engine_power <= 0.0:
 		return
 	var torque_nm: float = 0.0
@@ -3676,6 +3710,20 @@ func _sync_steering() -> void:
 	_steering_model.return_speed = steer_return_speed
 	_steering_model.self_center_speed = steer_self_center_speed
 	_steering_model.self_center_ref_kmh = steer_self_center_ref_kmh
+
+## The share of the motors' full force being used, 0..1: the server's own, the replicated one on a client.
+func get_power_share() -> float:
+	if _is_networked() and not GameOrchestrator.is_server():
+		return _net_power
+	return _power_share
+
+
+## The share of [param full_force] a drive [param force] (N, either sign) uses, 0..1; 0 with no motor.
+static func power_share(force: float, full_force: float) -> float:
+	if full_force <= 0.0:
+		return 0.0
+	return clampf(absf(force) / full_force, 0.0, 1.0)
+
 
 ## The motor turns with the wheels it drives (an electric motor on a fixed reduction): its revs come
 ## from THEIR speed, not the body's. The body's speed counted a fall, a jump or a slide as revs — the

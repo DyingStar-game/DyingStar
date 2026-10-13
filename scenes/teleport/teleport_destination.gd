@@ -42,6 +42,9 @@ var kind: Kind = Kind.MANUAL
 var detail: String = ""
 ## Set for a station: the uuid of the OrbitalStation to land in. lon/lat/height are then unused.
 var station_uuid: String = ""
+## The heading it is listed under (TeleportCatalog.grouped): a POI's type ("mining village"), or a
+## translation key for the stations and the computed points. Empty: the POI heading.
+var group: String = ""
 
 
 func _init(p_label: String = "", p_planet: String = "", p_lon: float = 0.0, p_lat: float = 0.0,

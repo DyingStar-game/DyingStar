@@ -86,6 +86,11 @@ func _surface_size() -> Vector2:
 	return Vector2(axes[2], axes[1])  # drop the smallest axis: that one is the thickness
 
 
+## The interactive surface's size (m), for a screen that lays its interface out to the screen's shape.
+func surface_size() -> Vector2:
+	return _surface_size()
+
+
 func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_position: Vector3, _normal: Vector3, _shape_idx: int) -> void:
 	# Size AND position both come from the MESH, never from the collision shape. They used to be mixed:
 	# the width was read off the BoxShape's Z while the position was read off the Area's X — which is

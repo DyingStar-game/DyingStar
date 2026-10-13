@@ -2964,6 +2964,7 @@ func warm_mountains() -> void:
 	RockFieldRelief.native_available()
 	GradeBed.native_available()
 	HEALPix._build_tables()
+	RockImpurity.warm()  # rule_of is read lock-free by every task: filled now, never written again
 	var found := false
 	var pack = _ensure_modifier_pack()
 	if pack != null:

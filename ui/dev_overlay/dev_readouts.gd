@@ -39,7 +39,24 @@ static func universe_lines(body: Node3D, cache: ServerInfoCache) -> PackedString
 		planet_time(body),
 	]
 	out.append_array(where(body))
+	out.append(daylight_line(body))
 	return out
+
+
+## The daylight here as a photocell reads it (Planet.daylight_at), in lux, against the photocells'
+## default thresholds: to tune them by eye, the value read at the moment a lamp should come on.
+static func daylight_line(body: Node3D) -> String:
+	var planet : Planet = Planet.of(body) if is_instance_valid(body) else null
+	if planet == null:
+		return "light: --"
+	return daylight_text(planet.daylight_at(body.global_position))
+
+
+## [param daylight] (0..1) as the readout's text.
+static func daylight_text(daylight: float) -> String:
+	var tuning: PhotocellTuning = Photocell.DEFAULT_TUNING
+	return "light: daylight %.4f (~%.0f lux)  photocell on < %.0f lux, off > %.0f lux" % [daylight,
+		PhotocellTuning.lux_of(daylight), tuning.on_below_lux, tuning.off_above_lux]
 
 
 ## Local solar time on the body we belong to — so it follows you from planet to moon, and says

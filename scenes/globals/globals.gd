@@ -173,6 +173,8 @@ func collision_aabb(body: Node3D, frame_from_body: Transform3D) -> AABB:
 	var bounds := AABB()
 	var started := false
 	for owner_id in col.get_shape_owners():
+		if col.is_shape_owner_disabled(owner_id):
+			continue  # a disabled shape collides with nothing: it is not part of the body's bounds
 		var owner_xform: Transform3D = col.shape_owner_get_transform(owner_id)  # relative to body
 		for i in col.shape_owner_get_shape_count(owner_id):
 			var shape: Shape3D = col.shape_owner_get_shape(owner_id, i)

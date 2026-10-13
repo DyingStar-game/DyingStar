@@ -52,3 +52,27 @@ func test_leaving_the_tab_tells_the_chart() -> void:
 	assert_eq(_closed, 2, "home left the tab")
 	_tablet.close()
 	assert_eq(_closed, 2, "closing from home: nothing more to close")
+
+
+func _escape(pressed: bool) -> void:
+	var ev := InputEventAction.new()
+	ev.action = &"ui_cancel"
+	ev.pressed = pressed
+	_tablet._input(ev)
+
+
+func test_escape_after_f2_closes_the_tablet() -> void:
+	_tablet.open_navigation()  # F2: the tablet was closed, opened straight on the chart
+	_escape(true)
+	_escape(false)
+	assert_false(_tablet.is_open(), "came for the chart: Escape goes back to the game")
+	assert_eq(_closed, 1, "the chart is told")
+
+
+func test_escape_from_the_tab_reached_inside_the_tablet_goes_home() -> void:
+	_tablet.open()  # the tablet opened on its home first
+	_tablet.open_navigation()
+	_escape(true)
+	_escape(false)
+	assert_true(_tablet.is_open(), "browsing the tablet: Escape backs out one level only")
+	assert_false(_tablet.navigation_slot().visible, "home, off the chart")

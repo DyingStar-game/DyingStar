@@ -18,6 +18,11 @@ const CREDITS : StringName = &"credits"
 const QUIT : StringName = &"quit"
 ## "Graphics quality" button, from the bottom-right corner.
 const _QUALITY_MARGIN_PX : float = 40.0
+## The development notice, bottom left of the home screen: the share of the screen's width it spans (the
+## rest leaves room for the graphics-quality button, bottom right) and its text size. A fixed 620 px
+## made a narrow column of it on a wide screen.
+const _NOTICE_WIDTH_SHARE : float = 0.6
+const _NOTICE_FONT_SIZE : int = 18
 
 var is_ready: bool = false
 var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
@@ -33,6 +38,8 @@ var bar : TopBar = null
 ## Bottom right of the home screen, over a stage: "Graphics quality: High" — the preset in use (the
 ## one detected for this GPU on a first launch), and a way straight to Settings > Graphics.
 var _quality : Button = null
+## Bottom left of the home screen: the game is in development, much is a placeholder, nothing is final.
+var _notice : PanelContainer = null
 
 func _ready() -> void:
 	# The background fills the screen; the menu itself (logo, buttons) keeps to a centred 16:9 area.
@@ -52,6 +59,8 @@ func _ready() -> void:
 		if is_instance_valid(_settings_overlay):
 			_close_settings())
 	add_child(bar)
+	_notice = _dev_notice()
+	$Control.add_child(_notice)
 	# A gamepad plugged in: say it can drive the menus — at once, and when one is plugged in later.
 	_offer_pad.call_deferred()
 	Input.joy_connection_changed.connect(func(_device: int, connected: bool) -> void:
@@ -120,6 +129,7 @@ func _open_overlay(entry: StringName) -> void:
 	bar.attach_page(overlay)
 	# Over a stage the settings are see-through: the menu's own buttons would show under them.
 	$Control.visible = not _stage_mode
+	_notice.visible = false
 	bar.set_active(entry)
 	bar.set_back_visible(true)
 
@@ -133,6 +143,7 @@ func _on_settings_closed(overlay: Node) -> void:
 	if not is_inside_tree():
 		return
 	$Control.visible = true
+	_notice.visible = true
 	# Back on the bar, where you came from: on the pad, its entry has the focus again — unless the
 	# triggers closed the overlay, and already put the focus on the entry they stepped to.
 	var focused : Control = get_viewport().gui_get_focus_owner()
@@ -171,6 +182,33 @@ func set_stage_mode(on: bool) -> void:
 		_label_quality()
 	if _quality != null:
 		_quality.visible = on
+
+
+## The development notice: the game is being built, many sounds and models are placeholders there to
+## try the gameplay, nothing is final. On a dark, see-through card so it reads over the 3D stage as over
+## the still background.
+func _dev_notice() -> PanelContainer:
+	var card := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.55)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(14)
+	card.add_theme_stylebox_override("panel", style)
+	card.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	card.anchor_right = _NOTICE_WIDTH_SHARE
+	card.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	card.offset_left = _QUALITY_MARGIN_PX
+	card.offset_right = 0.0
+	card.offset_bottom = -_QUALITY_MARGIN_PX
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var text := Label.new()
+	text.text = "%%MENU_DEV_NOTICE"
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_theme_font_override("font", SettingsRowFactory.FONT)
+	text.add_theme_font_size_override("font_size", _NOTICE_FONT_SIZE)
+	text.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.85))
+	card.add_child(text)
+	return card
 
 
 func _label_quality() -> void:

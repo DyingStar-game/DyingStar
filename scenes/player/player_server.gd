@@ -2833,16 +2833,25 @@ func _compute_carry_prompt() -> String:
 		if _place.get("shelf") != null:
 			return "cargo"  # dropping here snaps it into a shelf slot (sticks)
 		return "drop"
-	if _stance != 0:
-		return ""  # standing only: no "pick up" prompt while crouched or prone
 	player.interact_ray.force_raycast_update()
 	var prop = player._aimed_carriable()
 	if prop != null and _component_locked(prop) and not _is_blocked_by_geometry(prop):
 		return "locked"  # a part of a running vehicle: the HUD says why it stays in
-	if prop != null and prop.has_method("interact") and prop.interact(player) \
-			and not _is_blocked_by_geometry(prop):
+	var grabbable: bool = prop != null and prop.has_method("interact") and prop.interact(player) \
+			and not _is_blocked_by_geometry(prop)
+	return grab_prompt(grabbable, _stance == 0, prop is VehicleComponent)
+
+
+## The prompt for a prop in reach with empty hands: "carry" when it can be taken; "" when it cannot,
+## or while crouched or prone (a box is lifted standing) — except a vehicle part ("stand"): one is
+## fitted or taken out standing, and with no prompt at all a player crouched at a bay saw E do
+## nothing and never knew why.
+static func grab_prompt(grabbable: bool, standing: bool, is_part: bool) -> String:
+	if not grabbable:
+		return ""
+	if standing:
 		return "carry"
-	return ""
+	return "stand" if is_part else ""
 
 ## Which truck bed should swallow a crate dropped at this world point: any truck whose designer
 ## loading zone contains it. Same rule whether we stand in the bed or reach over from outside — the

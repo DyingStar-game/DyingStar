@@ -50,3 +50,10 @@ func test_the_far_dust_lies_on_a_ground_grid_that_reaches_it() -> void:
 func test_the_noise_offset_wraps_to_its_period() -> void:
 	var v: Vector3 = WeatherSky.wrap_to_period(Vector3(-10.0, 230.0, 110.0), 110.0)
 	assert_almost_eq(v, Vector3(100.0, 10.0, 0.0), Vector3.ONE * 1e-9, "always in [0, period)")
+
+
+func test_the_far_dust_fades_out_high_up() -> void:
+	assert_eq(WeatherSky.far_layer_share(500.0), 1.0, "near the ground: all of it")
+	assert_eq(WeatherSky.far_layer_share(WeatherSky.DUST_CEILING_M), 0.0, "at the ceiling: none, nothing is drawn")
+	var mid: float = WeatherSky.far_layer_share((WeatherSky.DUST_FADE_FROM_M + WeatherSky.DUST_CEILING_M) * 0.5)
+	assert_almost_eq(mid, 0.5, 1e-6, "halfway: half")

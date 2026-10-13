@@ -174,21 +174,29 @@ static func strata(dir: Vector3, radius: float, height_m: float) -> float:
 ##   · else the chromophore-weighted mean of its elements (ppm_max ×
 ##     CHROMOPHORE, optional ones at OPTIONAL_WEIGHT): Cr rules a ruby, Fe an
 ##     orange, with no table saying so.
+##
+## Read without a lock by every mesh and bridge task, so the table is never written once they
+## run: warm() fills it on the main thread, and a slug it missed is built for this call alone.
+## It used to publish a new table on a miss (_rules = next): the assignment frees the old table
+## while another worker is inside _rules.get(), and the client crashed in Dictionary::get a
+## few seconds into a cold load (crash dumps 2026-10-01 and 2026-10-13, 0x3bcb532).
 static func rule_of(slug: String) -> Dictionary:
 	var r: Variant = _rules.get(slug)
 	if r != null:
 		return r
+	return _build_rule(RockCatalogue.get_rock(slug))
+
+
+## Every catalogue rock's rule, built once on the main thread before any chunk task runs
+## (PlanetData.warm_mountains). The only time _rules is assigned outside the tests.
+static func warm() -> void:
 	_rules_mutex.lock()
-	r = _rules.get(slug)
-	if r == null:
-		r = _build_rule(RockCatalogue.get_rock(slug))
-		# Replace the table rather than mutate it: the lock-free read above,
-		# on another worker, never sees a half-written Dictionary.
-		var next := _rules.duplicate()
-		next[slug] = r
-		_rules = next
+	if _rules.is_empty():
+		var built: Dictionary = {}
+		for slug in RockCatalogue.slugs():
+			built[slug] = _build_rule(RockCatalogue.get_rock(str(slug)))
+		_rules = built
 	_rules_mutex.unlock()
-	return r
 
 
 static func _build_rule(rock: Dictionary) -> Dictionary:
@@ -212,7 +220,7 @@ static func _build_rule(rock: Dictionary) -> Dictionary:
 	return {"pair": has_fe and has_ti, "elements": elements, "weights": weights}
 
 
-## Tests / a re-exported catalogue: forget the cached rules.
+## Tests / a re-exported catalogue: forget the cached rules (never while chunk tasks run).
 static func reset() -> void:
 	_rules_mutex.lock()
 	_rules.clear()

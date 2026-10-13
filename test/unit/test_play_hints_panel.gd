@@ -35,6 +35,19 @@ func after_each() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
 
 
+func test_the_panel_sits_under_the_chat() -> void:
+	var chat := Control.new()
+	chat.anchor_top = 0.5
+	chat.anchor_bottom = 0.5
+	chat.offset_top = -182.0
+	chat.offset_bottom = 183.0
+	add_child_autofree(chat)
+	_panel.place_under(chat)
+	assert_eq(_panel.anchor_top, 0.5, "on the chat's own anchor")
+	assert_eq(_panel.offset_top, 183.0 + PlayHintsPanel.GAP_PX, "just under its bottom edge")
+	assert_gt(_panel.offset_top, chat.offset_bottom, "never over the chat")
+
+
 func test_a_line_shows_its_key_and_what_it_does() -> void:
 	PlayHints.provide(_owner, &"test", [PlayHints.row(&"test_hint_jump", "%%ACT_JUMP")])
 	_panel.refresh()
@@ -144,3 +157,9 @@ func test_a_panel_can_keep_to_some_contexts() -> void:
 
 func _labels() -> Array:
 	return _panel.shown().map(func(r: Dictionary) -> String: return str(r["label"]))
+
+
+func test_no_more_lines_than_fit_above_the_voice_buttons() -> void:
+	assert_eq(PlayHintsPanel.rows_that_fit(555.0, 610.0, 32.0), 1, "a 720p window under the chat: one line, never zero")
+	assert_eq(PlayHintsPanel.rows_that_fit(735.0, 830.0, 32.0), 2, "as many as fit")
+	assert_eq(PlayHintsPanel.rows_that_fit(100.0, 2000.0, 32.0), PlayHintsPanel.MAX_ROWS, "plenty of room: MAX_ROWS")

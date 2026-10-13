@@ -19,18 +19,33 @@ var camera_base : Vector3 = Vector3.ZERO
 ## The head bone's position (body frame) at rest, standing still: the origin of every head offset.
 var head_rest : Vector3 = Vector3.ZERO
 var rest_captured : bool = false
+## camera_base is taken, by capture_base or capture_rest: never retaken (see capture_base).
+var _base_captured : bool = false
 ## Stance (0 standing, 1 crouched, 2 prone) -> its eye point (y, z) relative to the standing rest.
 var _eye : Dictionary = {0: Vector2.ZERO}
 ## Stances whose eye point was taken standing still: final, never retaken (a breath would move it).
 var _settled : Dictionary = {0: true}
 
 
-## Take the rest pose, once: the camera where the scene put it, the head where the first frame has it.
+## Take the camera's rest position, once: where the scene put the pivot. Seated or floating the pivot
+## is then written as camera_base + an eye height, so taking it again every frame (as the animator did
+## while the on-foot rest had never been captured) climbed the view by that height each frame: a player
+## who reconnected in EVA, never on foot since, saw the camera rise kilometres over a body still
+## answering the keys (2026-10-12).
+func capture_base(camera_now: Vector3) -> void:
+	if _base_captured:
+		return
+	camera_base = camera_now
+	_base_captured = true
+
+
+## Take the rest pose, once: the camera where the scene put it (unless capture_base already has), the
+## head where the first frame has it.
 func capture_rest(head_now: Vector3, camera_now: Vector3) -> void:
 	if rest_captured:
 		return
 	head_rest = head_now
-	camera_base = camera_now
+	capture_base(camera_now)
 	rest_captured = true
 
 

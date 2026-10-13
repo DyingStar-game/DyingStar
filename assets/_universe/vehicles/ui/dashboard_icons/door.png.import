@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://y0iiw1ouqcp7"
-path="res://.godot/imported/motor_component_decal.png-5b1f337d3bb226a5460480a39b437588.ctex"
+uid="uid://msqghgulbpwm"
+path="res://.godot/imported/door.png-59ed513e092880936824a2cbf9dffead.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/_universe/props/vehicles/icons/motor_component_decal.png"
-dest_files=["res://.godot/imported/motor_component_decal.png-5b1f337d3bb226a5460480a39b437588.ctex"]
+source_file="res://assets/_universe/vehicles/ui/dashboard_icons/door.png"
+dest_files=["res://.godot/imported/door.png-59ed513e092880936824a2cbf9dffead.ctex"]
 
 [params]
 

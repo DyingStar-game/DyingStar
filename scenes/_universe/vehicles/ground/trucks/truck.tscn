@@ -9,7 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="4_nd433"]
 [ext_resource type="AudioStream" uid="uid://dijy5efx8pd3k" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-start.ogg" id="4_urxpd"]
 [ext_resource type="AudioStream" uid="uid://cwgcj6sbuymvd" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-engine-stop.ogg" id="5_2twiw"]
-[ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/_universe/vehicles/ground/trucks/truck_ui.tscn" id="5_d2vf6"]
+[ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/_universe/vehicles/vehicle_dashboard.tscn" id="5_d2vf6"]
 [ext_resource type="AudioStream" uid="uid://c10qmvkxsm1yn" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-headlight-on.ogg" id="6_n6abw"]
 [ext_resource type="PackedScene" uid="uid://bjxceboesdb8w" path="res://scenes/_universe/vehicles/rear_camera.tscn" id="6_nd433"]
 [ext_resource type="AudioStream" uid="uid://cnr042v1yqphh" path="res://assets/_universe/audio/sfx/vehicles/ground/car-handbreak-on.ogg" id="6_q1ni8"]
@@ -163,7 +163,7 @@ handle_input_locally = false
 size = Vector2i(1921, 1112)
 size_2d_override_stretch = true
 
-[node name="VehiculeDashboard" parent="Gui3D/SubViewport" unique_id=957292936 instance=ExtResource("5_d2vf6")]
+[node name="VehicleDashboard" parent="Gui3D/SubViewport" unique_id=957292936 instance=ExtResource("5_d2vf6")]
 
 [node name="Light" type="Node3D" parent="." unique_id=2071163623]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5855397533027074, 0.5199967536373418)

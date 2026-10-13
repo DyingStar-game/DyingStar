@@ -113,6 +113,8 @@ var _use_lut: bool = true
 var _lut_key: String = ""
 ## Which contributor the development switches currently remove. See cycle_light_isolation().
 var _isolation: int = 0
+## The dust's cost probe (client.ini debug_dust_probe=true), null when off.
+var _dust_cost: DustCostProbe = DustCostProbe.new() if DustCostProbe.wanted() else null
 
 
 func _ready() -> void:
@@ -122,6 +124,8 @@ func _ready() -> void:
 	# Run AFTER PlayerSunLight (priority 100) so the star direction we read is this frame's, not the
 	# previous one — otherwise the sky lags the light by a frame at sunrise and sunset.
 	process_priority = 110
+	if _dust_cost != null:  # the probe reads the frame's GPU time, which Godot measures on demand
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	# Bisection switches, read from client.ini (client_config.gd) because a packaged build takes no
 	# command line. One RX 5700 XT spends ~30 ms of GPU per frame on the spawn a RTX 3080 renders in
 	# 3 ms, and turning shadows off changed nothing; the two full-screen raymarches owned here
@@ -427,8 +431,25 @@ func _update_wind_dust(delta: float) -> void:
 	var body: Planet = current_body()
 	if body == null:
 		return
+	var t0: int = Time.get_ticks_usec()
 	_weather_sky.update(self, body, player.global_position)
+	var t1: int = Time.get_ticks_usec()
 	_weather_sky.animate_dust(self, body, player.camera, delta)
+	if _dust_cost != null:
+		_probe_dust_cost(t1 - t0, Time.get_ticks_usec() - t1, delta)
+
+
+## The dust's cost to the log (client.ini debug_dust_probe, DustCostProbe).
+func _probe_dust_cost(update_us: int, frame_us: int, delta: float) -> void:
+	var param := func(key: String) -> Variant:
+		return _aerial_material.get_shader_parameter(key) if _aerial_material != null else null
+	var layer: Dictionary = {"near": param.call("dust_density"), "near_steps": param.call("dust_steps"),
+		"far": param.call("dust_far_density"), "far_steps": param.call("dust_far_steps"),
+		"lamps": param.call("dust_light_count"), "setting": wind_dust_level()}
+	var gpu_ms: float = RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid())
+	var line: String = _dust_cost.frame(update_us, frame_us, _weather_sky.grids(), gpu_ms, delta, layer)
+	if not line.is_empty():
+		print(line)
 
 
 ## Graphics > Wind-blown dust: 0 off (the layer neither read, laid nor drawn), 1 low, 2 high.

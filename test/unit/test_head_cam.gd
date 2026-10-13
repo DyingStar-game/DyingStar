@@ -84,3 +84,19 @@ func test_at_a_screen_the_view_holds_still() -> void:
 func test_the_rest_is_taken_once() -> void:
 	_cam.capture_rest(Vector3(5.0, 5.0, 5.0), Vector3(9.0, 9.0, 9.0))
 	assert_eq(_cam.camera_base, Vector3(0.0, 1.6, 0.0), "the first capture stands")
+
+
+func test_floating_or_seated_from_the_start_the_view_stays_put() -> void:
+	# Reconnected in EVA (or seated): never on foot, the on-foot rest was never taken. The animator writes
+	# the pivot as camera_base + an eye height every frame; the base must not be retaken from that pivot,
+	# or the view climbs the eye height each frame (2026-10-12: kilometres over the body).
+	_cam = HeadCam.new()  # a fresh one: this player has never stood since connecting
+	var rest := Vector3(0.0, 1.62, -0.17)
+	var eye := Vector3(0.0, 0.063, 0.0)
+	var pivot := rest
+	for frame in 600:
+		_cam.capture_base(pivot)
+		pivot = _cam.camera_base + eye
+	assert_almost_eq(pivot, rest + eye, Vector3.ONE * 1e-6, "ten seconds later: still the seated eye")
+	_cam.capture_rest(Vector3(0.0, 1.7, 0.0), pivot)  # then on foot
+	assert_almost_eq(_cam.camera_base, rest, Vector3.ONE * 1e-6, "standing up keeps the scene's rest, not the raised pivot")

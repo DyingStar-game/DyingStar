@@ -55,3 +55,10 @@ func _carriable(path: String) -> bool:
 	assert_not_null(sync, "%s is a networked prop" % path)
 	prop.free()
 	return carriable
+
+
+func test_crouched_or_prone_a_part_says_to_stand_up() -> void:
+	assert_eq(PlayerServer.grab_prompt(true, true, true), "carry", "standing: take the part")
+	assert_eq(PlayerServer.grab_prompt(true, false, true), "stand", "crouched or prone at a part: stand up")
+	assert_eq(PlayerServer.grab_prompt(true, false, false), "", "crouched at a crate: nothing, as before")
+	assert_eq(PlayerServer.grab_prompt(false, false, true), "", "out of reach: nothing")

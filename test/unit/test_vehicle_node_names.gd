@@ -6,7 +6,6 @@ extends GutTest
 ## an instanced scene's children) are named in Blender and left out.
 
 const ROOT := "res://scenes/_universe/vehicles"
-const DASHBOARD := "res://scenes/_universe/vehicles/ground/trucks/truck_ui.tscn"
 
 var _node := RegEx.create_from_string("^\\[node name=\"([^\"]+)\"(.*)$")
 var _pascal := RegEx.create_from_string("^[A-Z][A-Za-z0-9]*$")
@@ -28,14 +27,6 @@ func test_the_rule_skips_what_blender_names() -> void:
 		"[node name=\"Col_bed\" parent=\"Model/Carrosserie\" index=\"2\"]",
 	])
 	assert_eq(misnamed("x.tscn", src), PackedStringArray(["x.tscn:2 Slot_FR", "x.tscn:3 hanbreak"]))
-
-
-func test_the_dashboard_finds_its_labels() -> void:
-	var panel : Node = (load(DASHBOARD) as PackedScene).instantiate()
-	for label in ["Speed", "RPM", "Load", "Overloaded", "Powertrain", "Transmission", "Handbrake", "Light",
-			"Limiter", "Odometer"]:
-		assert_not_null(panel.get_node_or_null(label), "the dashboard script reads $%s" % label)
-	panel.free()
 
 
 ## "path:line name" of every node [param source] declares (type= or instance=) that is not PascalCase.

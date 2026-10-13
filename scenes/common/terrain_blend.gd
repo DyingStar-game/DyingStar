@@ -38,6 +38,15 @@ extends Node
 var _mat: ShaderMaterial = null
 var _band: float = 0.0
 var _enabled: bool = true
+## Which re-measure chain is the live one (_refresh_when_posed): an older one stops at its next step.
+var _measure_chain: int = 0
+## Measured again this long (s) after the first measure: the terrain tiles under a building stream in
+## after it appears, and its pad is re-seated when a neighbour's level changes. Measured once, a
+## building that arrived first kept no fringe, or one painted up its wall (2026-10-13).
+const REMEASURE_S: Array[float] = [2.0, 10.0]
+## client.ini debug_fringe_probe=true: one "[FringeProbe]" line per measure (object, clearance over
+## the drawn ground and over the raw relief, band, outcome).
+static var _probe_on: bool = ClientConfig.get_bool("debug_fringe_probe", false)
 var _grounded: bool = false
 var _targets: Array[GeometryInstance3D] = []
 
@@ -87,8 +96,18 @@ func refresh() -> void:
 	_band = minf(height, maxf(b["high"] - b["low"], 0.0) * max_height_ratio)
 
 	# Measured from the object's LOWEST point, never its origin: a rock's origin sits at its centre,
-	# so measuring from there would call a resting rock airborne.
-	var clearance: float = planet.surface_altitude_of(low)
+	# so measuring from there would call a resting rock airborne. Over the ground as DRAWN: the pad a
+	# building is seated on and the road beds (carved_surface_dist), not the raw relief, which sits
+	# metres above or below a pad: no fringe on a raised pad, a band up the wall on a cut one.
+	if planet.planet_data == null:  # the planet's data not assigned yet: nothing to measure against
+		_clear()
+		return
+	var drawn_r: float = planet.planet_data.carved_surface_dist(planet.local_dir_of(low))
+	var clearance: float = planet.global_position.distance_to(low) - drawn_r
+	if _probe_on:
+		print("[FringeProbe] %s clearance %.2f m over the drawn ground (%.2f over the raw relief), band %.2f m -> %s" % [
+			get_parent().name, clearance, planet.surface_altitude_of(low), _band,
+			"fringe" if _enabled and clearance <= grounded_clearance and _band > 0.0 else "none"])
 	if not _enabled or clearance > grounded_clearance or _band <= 0.0:
 		_clear()
 		return
@@ -218,9 +237,26 @@ func _refresh_when_posed() -> void:
 	# ever added to the tree -- the trap that once spawned the depot crate under the screen. Measure
 	# now and we would read the parent's origin, find a huge clearance, and call a resting object
 	# airborne. Two frames is empirical: it is after _ready and after the first replication pass.
+	# One chain at a time: entering the tree again (a reparent) starts a new one and ends the old.
+	_measure_chain += 1
+	var chain: int = _measure_chain
 	await get_tree().process_frame
 	await get_tree().process_frame
-	if is_instance_valid(self) and is_inside_tree():
+	if chain != _measure_chain or not is_inside_tree():
+		return
+	refresh()
+	for wait_s: float in REMEASURE_S:
+		# A child Timer, not a SceneTreeTimer: freed with us, so a building unloaded during the wait
+		# drops the chain instead of resuming it on a freed instance.
+		var timer := Timer.new()
+		timer.one_shot = true
+		timer.wait_time = wait_s
+		add_child(timer)
+		timer.start()
+		await timer.timeout
+		timer.queue_free()
+		if chain != _measure_chain or not is_inside_tree():
+			return
 		refresh()
 
 
@@ -254,7 +290,7 @@ func _apply(up: Vector3, ground: Vector3, center: Vector3, look: GroundLook) -> 
 		gi.material_overlay = look.material
 		gi.set_instance_shader_parameter(&"blend_plane", plane)
 		gi.set_instance_shader_parameter(
-				&"blend_ground_color", Vector3(look.color.r, look.color.g, look.color.b))
+				&"blend_ground_color", Vector3(look.tint.r, look.tint.g, look.tint.b))
 		gi.set_instance_shader_parameter(&"blend_height", _band)
 		gi.set_instance_shader_parameter(&"blend_detail_uv", look.detail)
 		gi.set_instance_shader_parameter(&"blend_center", gi.to_local(center))

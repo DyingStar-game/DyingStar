@@ -34,7 +34,7 @@ var _enabled: bool = true
 
 var _system_list: ItemList
 var _body_list: ItemList
-var _dest_list: ItemList
+var _dest_list: Tree
 var _filter: LineEdit
 var _lon: LineEdit
 var _lat: LineEdit
@@ -99,13 +99,16 @@ func _on_system_picked(index: int) -> void:
 	var rows: Array[Dictionary] = TeleportCatalog.bodies(_system)
 	for i: int in range(rows.size()):
 		# Moons are indented under their planet: the list is already sorted parent-first, so the
-		# indent alone carries the hierarchy without a second widget.
+		# indent alone carries the hierarchy without a second widget. The mark tells a planet (○), a
+		# moon (●) and a giant (◌) apart.
 		var prefix: String = "    " if rows[i]["is_moon"] else ""
-		_body_list.add_item(prefix + str(rows[i]["label"]))
+		_body_list.add_item("%s%s  %s" % [prefix, TeleportCatalog.body_mark(rows[i]), rows[i]["label"]])
 		_body_list.set_item_metadata(i, str(rows[i]["key"]))
 	if _body_list.item_count > 0:
-		_body_list.select(0)
-		_on_body_picked(0)
+		var first: int = TeleportCatalog.preferred_body_index(rows)
+		_body_list.select(first)
+		_body_list.ensure_current_is_visible()
+		_on_body_picked(first)
 
 
 func _on_body_picked(index: int) -> void:
@@ -115,14 +118,28 @@ func _on_body_picked(index: int) -> void:
 	_apply_filter()
 
 
+## The destinations by heading (TeleportCatalog.grouped), each heading a folded row with its arrow:
+## a click opens it, and so does activating it from the keyboard or a gamepad (it is selectable, or a
+## pad could never reach a destination under a folded heading). A filter being typed opens every
+## heading, so what it found is in sight.
 func _apply_filter() -> void:
 	_shown_dests = TeleportCatalog.filter(_all_dests, _filter.text)
 	_dest_list.clear()
-	for dest: TeleportDestination in _shown_dests:
-		var label: String = dest.label
-		if dest.detail != "":
-			label += "   —   %s" % dest.detail
-		_dest_list.add_item(label)
+	var root: TreeItem = _dest_list.create_item()
+	var filtering: bool = _filter.text.strip_edges() != ""
+	for group: Array in TeleportCatalog.grouped(_shown_dests):
+		var dests: Array[TeleportDestination] = group[1]
+		var heading: TreeItem = _dest_list.create_item(root)
+		heading.set_text(0, "%s  (%d)" % [tr(str(group[0])), dests.size()])
+		heading.set_custom_color(0, ACCENT)
+		heading.collapsed = not filtering
+		for dest: TeleportDestination in dests:
+			var row: TreeItem = _dest_list.create_item(heading)
+			var label: String = dest.label
+			if dest.detail != "":
+				label += "   —   %s" % dest.detail
+			row.set_text(0, label)
+			row.set_metadata(0, dest)
 	var poi_count: int = 0
 	for dest: TeleportDestination in _all_dests:
 		if dest.kind == TeleportDestination.Kind.POI:
@@ -135,10 +152,11 @@ func _apply_filter() -> void:
 		_say("%d POI on %s." % [poi_count, _body_key], DIM)
 
 
-func _on_dest_picked(index: int) -> void:
-	if index < 0 or index >= _shown_dests.size():
+func _on_dest_picked() -> void:
+	var row: TreeItem = _dest_list.get_selected()
+	var dest: TeleportDestination = row.get_metadata(0) if row != null else null
+	if dest == null:
 		return
-	var dest: TeleportDestination = _shown_dests[index]
 	if dest.is_station():
 		_picked_station = dest
 		for field: LineEdit in [_lon, _lat, _height]:
@@ -171,9 +189,10 @@ func _typed_destination() -> TeleportDestination:
 		return null
 	if _picked_station != null and _lon.text == "" and _lat.text == "" and _height.text == "":
 		return _picked_station
+	var picked: TreeItem = _dest_list.get_selected()
+	var from_list: TeleportDestination = picked.get_metadata(0) if picked != null else null
 	var dest: TeleportDestination = TeleportDestination.new(
-			"Manual" if _dest_list.get_selected_items().is_empty() else _dest_list.get_item_text(
-					_dest_list.get_selected_items()[0]),
+			from_list.label if from_list != null else "Manual",
 			_body_key,
 			_to_float(_lon.text), _to_float(_lat.text), _to_float(_height.text),
 			TeleportDestination.Height.GROUND if _mode.selected == 0 \
@@ -246,15 +265,13 @@ func _build() -> void:
 	columns.add_child(_titled_column("BODY", _body_list, 2))
 	_body_list.item_selected.connect(_on_body_picked)
 
-	_filter = LineEdit.new()
-	_filter.placeholder_text = "filter…"
-	_filter.text_changed.connect(func(_t: String) -> void: _apply_filter())
-	_filter.text_submitted.connect(func(_t: String) -> void: _on_go_pressed())
-	_dest_list = ItemList.new()
+	_filter = _filter_field()
+	_dest_list = Tree.new()
+	_dest_list.hide_root = true
 	_dest_list.item_selected.connect(_on_dest_picked)
-	_dest_list.item_activated.connect(func(index: int) -> void:
-		_on_dest_picked(index)
-		_on_go_pressed())
+	_dest_list.item_activated.connect(_on_dest_activated)
+	# A click anywhere on a heading opens or closes it, not only on its arrow.
+	_dest_list.gui_input.connect(_on_dest_list_input)
 	columns.add_child(_titled_column("DESTINATION", _dest_list, 3, _filter))
 
 	column.add_child(_coordinate_row())
@@ -294,6 +311,48 @@ func _coordinate_row() -> Control:
 	return row
 
 
+## The destinations' filter, made to be seen: framed in the accent colour, saying what it does. Players
+## did not notice the plain field over the list (2026-10-13).
+func _filter_field() -> LineEdit:
+	var field := LineEdit.new()
+	field.placeholder_text = tr("%%TELEPORT_FILTER_HINT")
+	field.custom_minimum_size = Vector2(0, 44)
+	field.clear_button_enabled = true
+	for state: String in ["normal", "focus"]:
+		var frame := StyleBoxFlat.new()
+		frame.bg_color = Color(0.10, 0.11, 0.14)
+		frame.border_color = ACCENT if state == "focus" else ACCENT * Color(1, 1, 1, 0.6)
+		frame.set_border_width_all(2)
+		frame.set_corner_radius_all(4)
+		frame.content_margin_left = 10
+		frame.content_margin_right = 10
+		field.add_theme_stylebox_override(state, frame)
+	field.text_changed.connect(func(_t: String) -> void: _apply_filter())
+	field.text_submitted.connect(func(_t: String) -> void: _on_go_pressed())
+	return field
+
+
+## Enter / A on a row: a heading opens or closes, a destination is the jump.
+func _on_dest_activated() -> void:
+	var row: TreeItem = _dest_list.get_selected()
+	if row != null and row.get_child_count() > 0:
+		row.collapsed = not row.collapsed
+		return
+	_on_dest_picked()
+	_on_go_pressed()
+
+
+## A left click on a heading opens or closes it (the click is taken: it neither selects nor activates).
+func _on_dest_list_input(event: InputEvent) -> void:
+	var click := event as InputEventMouseButton
+	if click == null or not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var item: TreeItem = _dest_list.get_item_at_position(click.position)
+	if item != null and item.get_child_count() > 0:
+		item.collapsed = not item.collapsed
+		_dest_list.accept_event()
+
+
 func _number_field(placeholder: String) -> LineEdit:
 	var field := LineEdit.new()
 	field.placeholder_text = placeholder
@@ -302,16 +361,18 @@ func _number_field(placeholder: String) -> LineEdit:
 	return field
 
 
-func _titled_column(title: String, list: ItemList, stretch: int,
+func _titled_column(title: String, list: Control, stretch: int,
 		extra: Control = null) -> Control:
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.size_flags_stretch_ratio = float(stretch)
+	box.add_theme_constant_override("separation", 10)
 	box.add_child(_label(title, ACCENT))
 	if extra != null:
 		box.add_child(extra)
 	list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	list.allow_reselect = true
+	if list is ItemList:
+		(list as ItemList).allow_reselect = true
 	box.add_child(list)
 	return box
 

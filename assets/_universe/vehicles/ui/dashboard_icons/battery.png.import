@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmqxthcvx16iv"
-path="res://.godot/imported/battery_component_decal.png-68f70754b0b4370ca2769a649e4c2a2b.ctex"
+uid="uid://d3lr08n4n77lh"
+path="res://.godot/imported/battery.png-4ab2efa5a3bcd9a1095f170eecce2b70.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/_universe/props/vehicles/icons/battery_component_decal.png"
-dest_files=["res://.godot/imported/battery_component_decal.png-68f70754b0b4370ca2769a649e4c2a2b.ctex"]
+source_file="res://assets/_universe/vehicles/ui/dashboard_icons/battery.png"
+dest_files=["res://.godot/imported/battery.png-4ab2efa5a3bcd9a1095f170eecce2b70.ctex"]
 
 [params]
 

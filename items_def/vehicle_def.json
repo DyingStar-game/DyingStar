@@ -22,6 +22,7 @@
 				"speed",
 				"velocity_local",
 				"wheel_kmh",
+				"power",
 				"handbrake",
 				"headlights",
 				"engine",

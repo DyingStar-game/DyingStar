@@ -8,6 +8,8 @@
 [ext_resource type="Texture2D" uid="uid://bkdgy355wbt83" path="res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg" id="6_5left"]
 [ext_resource type="Script" uid="uid://db0rt5lmk5ogb" path="res://scenes/_universe/vehicles/charging_zone.gd" id="7_5iueg"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="8_neon"]
+[ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="led_1x1"]
+[ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="light_group_script"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
@@ -155,3 +157,27 @@ fade_distance = 400.0
 
 [node name="Photocell" type="Node3D" parent="NeonSign" unique_id=2140967028]
 script = ExtResource("pc_photocell")
+
+[node name="Lights" type="Node3D" parent="." unique_id=131444773]
+script = ExtResource("light_group_script")
+
+[node name="Photocell" type="Node3D" parent="Lights" unique_id=1614826877]
+script = ExtResource("pc_photocell")
+
+[node name="LedPanel 01" parent="Lights" unique_id=844345665 instance=ExtResource("led_1x1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.8999509822331735, -4.592254021106273)
+
+[node name="LedPanel 03" parent="Lights" unique_id=825864694 instance=ExtResource("led_1x1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.8999509822331735, -18.468406382126247)
+
+[node name="LedPanel 05" parent="Lights" unique_id=217787756 instance=ExtResource("led_1x1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.8999509822331735, -36.879701731881305)
+
+[node name="LedPanel 06" parent="Lights" unique_id=185910193 instance=ExtResource("led_1x1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.8999509822331735, -4.592254021106273)
+
+[node name="LedPanel 08" parent="Lights" unique_id=1130656204 instance=ExtResource("led_1x1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.8999509822331735, -18.468406382126247)
+
+[node name="LedPanel 10" parent="Lights" unique_id=1580527226 instance=ExtResource("led_1x1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.8999509822331735, -36.879701731881305)

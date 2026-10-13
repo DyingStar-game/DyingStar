@@ -265,10 +265,13 @@ func setup() -> void:
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
 			_driven_vehicle, _star_map)]:
 		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
-	# Play hints (left): the keys of the moment, each gone once learnt. Steps aside for the graphics panel.
+	# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
+	# the graphics panel.
 	var hints := PlayHintsPanel.new()
 	hints.hidden_rule = _modal_open
 	player.get_node("UserInterface").add_child(hints)
+	if player.direct_chat != null:
+		hints.place_under(player.direct_chat)
 	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
 	_offer_play_hints()
 	# A dark patch behind the interaction prompt, fitted to its width, so it reads over a bright ground.
@@ -494,6 +497,12 @@ func _process(_delta: float) -> void:
 		elif player._carry_prompt == "locked":
 			# A part of a running vehicle: no key to press, only why — in red, it is a refusal.
 			player.interact_label.text = tr("%%HUD_PART_ENGINE_RUNNING")
+			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
+			player.interact_label.show()
+		elif player._carry_prompt == "stand":
+			# Crouched or prone at a vehicle part: no key to press, only why — a part is fitted or
+			# taken out standing.
+			player.interact_label.text = tr("%%HUD_PART_STAND_UP")
 			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 			player.interact_label.show()
 

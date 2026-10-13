@@ -12,6 +12,8 @@ class_name GroundLook
 extends RefCounted
 
 const MATERIAL_PATH := "res://assets/_universe/_shared/materials/terrain_blend.tres"
+## What the biome map gives where it has nothing (PlanetData.ground_albedo_at).
+const NO_SAMPLE := Color(0, 0, 0, 0)
 
 # ONE fringe material PER GROUND TEXTURE -- never per object. A texture cannot be a per-instance
 # uniform, so objects standing on different ground need different materials; but they GROUP, and a
@@ -21,14 +23,24 @@ const MATERIAL_PATH := "res://assets/_universe/_shared/materials/terrain_blend.t
 # hundred: a material per object is precisely what this design exists to avoid.
 static var _template: ShaderMaterial = null
 static var _materials: Dictionary = {}
+# The mean colour of each ground texture, read once (see _mean_of).
+static var _means: Dictionary = {}
 # Which planet's detail array the template currently carries.
 static var _detail_source: PlanetData = null
 
 ## The fringe material to wear here. Null when the ground cannot be read.
 var material: ShaderMaterial = null
-## Flat ground colour, already scaled by the terrain's albedo multiplier. Used by the biomes that
-## have no texture yet — which is most of them, and will be for a while.
+## The colour the ground SHOWS here, on average: what the dust it gives up takes (the wheels, the feet,
+## the blown layer). Flat ground: the biome colour scaled by the terrain's albedo multiplier. Textured
+## ground: the texture's mean colour times the tint its shader applies (see [member tint]). It was the
+## raw tint scaled by the FLAT terrain's multiplier on both, and dust off the textured biomes came out
+## darker than the ground under it (2026-10-11).
 var color: Color = Color(0.45, 0.35, 0.25)
+## The colour the fringe material paints with. Flat ground: [member color] itself. Textured ground: the
+## tint the ground shader multiplies its texture by (planet_surface.gdshader: tex * mix(1, COLOR,
+## vertex_color_strength)); left out, the fringe showed the bare texture, white marble on every
+## corundum plateau (2026-10-11).
+var tint: Color = Color(0.45, 0.35, 0.25)
 ## (detail layer, tiling scale) of the ground's own detail texture. Zero means "no detail texture".
 var detail: Vector2 = Vector2.ZERO
 
@@ -37,13 +49,69 @@ var detail: Vector2 = Vector2.ZERO
 static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
 	var look := GroundLook.new()
 	look.color = fallback
+	look.tint = fallback
 	if data == null:
 		return look
 	_share_detail_texture(data)
-	look.color = _colour_of(data, dir, fallback)
+	var ground: Material = data.ground_material_at(dir)
+	var sampled: Color = _vertex_sample(data, dir)
+	if sampled != NO_SAMPLE:  # nothing sampled: the fallback as it is, not scaled like a biome colour
+		look.tint = sampled
+		look.color = _shown(data, ground, sampled)
+	if _albedo_texture_of(ground) == null:
+		look.tint = look.color  # flat ground: the fringe paints the colour itself
 	look.detail = data.ground_detail_at(dir)
-	look.material = material_for(data.ground_material_at(dir))
+	look.material = material_for(ground)
 	return look
+
+
+## Only the colour the ground shows at [param dir] (see [member color]): what the dust it gives up
+## takes, without the fringe's material and detail.
+## [param height_m]: the ground's height there over the reference sphere when the caller has it (a ground
+## query saved); NAN samples it.
+static func colour_at(data: PlanetData, dir: Vector3, fallback: Color, height_m: float = NAN) -> Color:
+	if data == null:
+		return fallback
+	var sampled: Color = _vertex_sample(data, dir, height_m)
+	if sampled == NO_SAMPLE:  # the fallback as it is, not scaled like a biome colour
+		return fallback
+	return _shown(data, data.ground_material_at(dir), sampled)
+
+
+## The colour the terrain bakes into its vertex at [param dir]: the planet's default rock or the zone's,
+## shaded by RockImpurity at the surface (PlanetChunk.road_ground_tint, the terrain's own rule, which
+## the roads already use), the biome's colour else. It was RockCatalogue's bare mottle between the
+## rock's light and dark shades: one building's fringe came out pale, its neighbour's on the same
+## ground rust-red, and the dust off that ground matched neither (2026-10-12).
+static func vertex_colour(data: PlanetData, dir: Vector3, fallback: Color, height_m: float = NAN) -> Color:
+	var sampled: Color = _vertex_sample(data, dir, height_m)
+	return fallback if sampled == NO_SAMPLE else sampled
+
+
+## vertex_colour without its fallback: NO_SAMPLE where the biome map has nothing.
+static func _vertex_sample(data: PlanetData, dir: Vector3, height_m: float = NAN) -> Color:
+	var zone: Dictionary = data.first_zone_at(dir)
+	if zone.is_empty() and not data.corundum_default_biome:
+		return data.ground_albedo_at(dir)  # no zone here: the biome map (NO_SAMPLE where it is empty)
+	var cor_bd: BiomeDefinition = data.get_biome_by_type(ArideDesertCorundumPlateauTerrain.BIOME_TYPE) \
+			if data.corundum_default_biome else null
+	return PlanetChunk.road_ground_tint(data, dir, zone, cor_bd, height_m)
+
+
+## What a ground drawn with [param ground] and the vertex colour [param tint] shows on average.
+static func _shown(data: PlanetData, ground: Material, tint: Color) -> Color:
+	var tex: Texture2D = _albedo_texture_of(ground)
+	if tex != null:
+		return shown_colour(_mean_of(tex), tint, _vertex_color_strength_of(ground))
+	return _flat_colour(data, tint)
+
+
+## What a textured ground shows on average: its texture's [param mean] times the vertex [param tint],
+## weighed by the ground shader's [param strength] — planet_surface.gdshader's own rule, read off the
+## same numbers so the dust and the fringe cannot drift from the ground.
+static func shown_colour(mean: Color, tint: Color, strength: float) -> Color:
+	var t: Color = Color.WHITE.lerp(tint, clampf(strength, 0.0, 1.0))
+	return Color(mean.r * t.r, mean.g * t.g, mean.b * t.b)
 
 
 ## The fringe material for a given ground material, created once per distinct ground texture.
@@ -53,16 +121,13 @@ static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
 ## vertex colour modulated by a grey detail layer. No parameter name is common to both, which is
 ## why this asks rather than assumes.
 static func material_for(ground: Material) -> ShaderMaterial:
-	var tex: Texture2D = null
+	var tex: Texture2D = _albedo_texture_of(ground)
 	var scale: float = 0.1
 	var sm := ground as ShaderMaterial
-	if sm != null:
-		var t: Variant = sm.get_shader_parameter(&"albedo_texture")
-		if t is Texture2D:
-			tex = t as Texture2D
-			var ts: Variant = sm.get_shader_parameter(&"tile_scale")
-			if ts != null:
-				scale = float(ts)
+	if tex != null:
+		var ts: Variant = sm.get_shader_parameter(&"tile_scale")
+		if ts != null:
+			scale = float(ts)
 	var key: Variant = tex if tex != null else "flat"
 	if _materials.has(key):
 		return _materials[key]
@@ -76,6 +141,7 @@ static func material_for(ground: Material) -> ShaderMaterial:
 		mat.set_shader_parameter(&"blend_albedo_tex", tex)
 		mat.set_shader_parameter(&"blend_use_albedo", true)
 		mat.set_shader_parameter(&"blend_albedo_scale", scale)
+		mat.set_shader_parameter(&"blend_vertex_color_strength", _vertex_color_strength_of(ground))
 	_materials[key] = mat
 	return mat
 
@@ -85,8 +151,43 @@ static func is_ours(m: Material) -> bool:
 	return m != null and _materials.values().has(m)
 
 
-static func _colour_of(data: PlanetData, dir: Vector3, fallback: Color) -> Color:
-	var biome: Color = data.ground_albedo_at(dir)
+## The ground material's albedo texture, or null for a flat (vertex-coloured) ground.
+static func _albedo_texture_of(ground: Material) -> Texture2D:
+	var sm := ground as ShaderMaterial
+	if sm == null:
+		return null
+	var t: Variant = sm.get_shader_parameter(&"albedo_texture")
+	return t as Texture2D if t is Texture2D else null
+
+
+## How much of its vertex tint the ground shader applies (planet_surface.gdshader's
+## vertex_color_strength; 0 when the material does not say).
+static func _vertex_color_strength_of(ground: Material) -> float:
+	var sm := ground as ShaderMaterial
+	var v: Variant = sm.get_shader_parameter(&"vertex_color_strength") if sm != null else null
+	return float(v) if v != null else 0.0
+
+
+## The mean colour of [param tex], read once per texture from its smallest useful size. White when
+## the pixels cannot be read (no renderer, a texture with no image): the tint alone then speaks.
+static func _mean_of(tex: Texture2D) -> Color:
+	if _means.has(tex):
+		return _means[tex]
+	var mean: Color = Color.WHITE
+	var img: Image = tex.get_image()
+	if img != null and not img.is_empty():
+		if img.is_compressed():
+			img.decompress()
+		# Trilinear averages the whole texture (Godot builds the mipmaps it needs when the image has
+		# none); bilinear to 1 x 1 only read a few texels at the centre.
+		img.resize(1, 1, Image.INTERPOLATE_TRILINEAR)
+		mean = img.get_pixel(0, 0)
+		mean.a = 1.0
+	_means[tex] = mean
+	return mean
+
+
+static func _flat_colour(data: PlanetData, biome: Color) -> Color:
 	# What the terrain renders is the biome colour scaled by albedo_multiplier -- see
 	# terrain_biome.gdshader:345, ALBEDO = biome_color * mod * albedo_multiplier, where mod sits at
 	# ~1.0 for neutral detail. Read the factor off the real material rather than copying 0.4 here:
@@ -97,8 +198,6 @@ static func _colour_of(data: PlanetData, dir: Vector3, fallback: Color) -> Color
 		var p: Variant = mat.get_shader_parameter(&"albedo_multiplier")
 		if p != null:
 			mult = float(p)
-	if biome == Color(0, 0, 0, 0):
-		return fallback
 	return Color(biome.r * mult, biome.g * mult, biome.b * mult)
 
 
