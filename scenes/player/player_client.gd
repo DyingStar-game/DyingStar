@@ -499,6 +499,12 @@ func _process(_delta: float) -> void:
 			player.interact_label.text = tr("%%HUD_PART_ENGINE_RUNNING")
 			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 			player.interact_label.show()
+		elif player._carry_prompt == "stand":
+			# Crouched or prone at a vehicle part: no key to press, only why — a part is fitted or
+			# taken out standing.
+			player.interact_label.text = tr("%%HUD_PART_STAND_UP")
+			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
+			player.interact_label.show()
 
 	var dir_vect = Vector3.ZERO
 
