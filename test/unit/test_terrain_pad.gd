@@ -758,3 +758,40 @@ func test_the_cut_widens_by_the_ribbons_half_width() -> void:
 	assert_almost_eq((narrow[0] as Vector2).x - (wide[0] as Vector2).x, 3.0, 0.3,
 			"a 3 m half-width pushes the cut 3 m further out on each side")
 	assert_almost_eq((wide[0] as Vector2).y - (narrow[0] as Vector2).y, 3.0, 0.3)
+
+
+## The ARES machines in the cargo depot each carry the dispenser's pad, and took the depot's uuid: the
+## two records replaced each other every frame and the depot's chunks were rebuilt without end.
+func test_a_machine_inside_a_building_leaves_the_ground_to_the_building() -> void:
+	var depot: Node = (load("res://scenes/_universe/structures/industrial/cargo_depot.tscn") as PackedScene).instantiate()
+	var own: Array = []
+	var nested: Array = []
+	for node: Node in depot.find_children("*", "TerrainPad", true, false):
+		(nested if (node as TerrainPad).inside_another_pad() else own).append(node)
+	assert_eq(own.size(), 1, "the depot's own pad levels the ground")
+	assert_gt(nested.size(), 0, "its machines' pads stand down")
+	depot.free()
+	_forgive_floor_material()
+
+
+## The cargo depot pulls in concrete_floor_001.tres, whose triplanar + height mapping raises an engine
+## error the first time it loads (see test_neon_sign): that one, and only that one, is not this test's.
+func _forgive_floor_material() -> void:
+	for e in get_errors():
+		if (str(e.code) + str(e.rationale)).contains("Height mapping"):
+			e.handled = true
+
+
+func test_a_machine_on_its_own_and_a_grouped_building_keep_their_pad() -> void:
+	var machine: Node = (load("res://scenes/_universe/structures/dispenser/tool_dispenser.tscn") as PackedScene).instantiate()
+	for node: Node in machine.find_children("*", "TerrainPad", true, false):
+		assert_false((node as TerrainPad).inside_another_pad(), "a machine in a village levels its own ground")
+	var outpost := Node3D.new()
+	outpost.add_child((load("res://scenes/_universe/structures/industrial/garage.tscn") as PackedScene).instantiate())
+	var pads: Array = outpost.find_children("*", "TerrainPad", true, false)
+	assert_gt(pads.size(), 0)
+	for node: Node in pads:
+		if node.owner == outpost.get_child(0):
+			assert_false((node as TerrainPad).inside_another_pad(), "a garage under a group node keeps its pad")
+	machine.free()
+	outpost.free()
