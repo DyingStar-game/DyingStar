@@ -480,6 +480,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "truck-door-alarm.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-door-alarm.ogg",
+			"author": "RanneM",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/475557/",
+			"license": "CC0"
+		},
+		{
 			"asset": "truck-door-close.ogg",
 			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-door-close.ogg",
 			"author": "WarpZone",
@@ -644,6 +653,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "battery.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/battery.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "building_apartment_002.blend",
 			"path": "res://assets_blender/_universe/structures/buildings/building_apartment_002.blend",
 			"author": "Mapper",
@@ -658,6 +676,15 @@
 			"author": "BenLatouro",
 			"source": "Discord",
 			"id": "950703145783291924",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "door.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/door.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -725,6 +752,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "handbrake.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/handbrake.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "hazard_stripes.jpg",
 			"path": "res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg",
 			"author": "Kjpargeter",
@@ -734,11 +770,38 @@
 			"license": "Freepik License (attribution)"
 		},
 		{
+			"asset": "headlights.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/headlights.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "iron_plate_0.5x0.3.blend",
 			"path": "res://assets_blender/_universe/props/furniture/iron_plate_0.5x0.3.blend",
 			"author": "ddurieux",
 			"source": "Discord",
 			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "limiter.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/limiter.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "load.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/load.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -856,6 +919,15 @@
 			"author": "Tarcellos",
 			"source": "Discord",
 			"id": "571991741763158016",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "motor.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/motor.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},

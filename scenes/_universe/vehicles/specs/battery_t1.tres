@@ -1,7 +1,7 @@
-[gd_resource type="Resource" script_class="VehicleBatterySpec" format=3]
+[gd_resource type="Resource" script_class="VehicleBatterySpec" format=3 uid="uid://bw4ggp8iug06d"]
 
-[ext_resource type="Script" path="res://scenes/_universe/vehicles/vehicle_battery_spec.gd" id="1_spec"]
-[ext_resource type="Texture2D" path="res://assets/_universe/props/vehicles/icons/battery_component_decal.png" id="2_icon"]
+[ext_resource type="Script" uid="uid://cbcb74vrxx0i5" path="res://scenes/_universe/vehicles/vehicle_battery_spec.gd" id="1_spec"]
+[ext_resource type="Texture2D" uid="uid://d3lr08n4n77lh" path="res://assets/_universe/vehicles/ui/dashboard_icons/battery.png" id="2_icon"]
 
 [resource]
 script = ExtResource("1_spec")

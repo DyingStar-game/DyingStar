@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://eymb64nygadx"]
+
+[ext_resource type="Script" uid="uid://dmbf0ejtu5n8e" path="res://scenes/_universe/vehicles/vehicle_dashboard.gd" id="1_nctt3"]
+[ext_resource type="AudioStream" uid="uid://syo8fbsu24lt" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-alarm.ogg" id="2_alarm"]
+
+[node name="VehicleDashboard" type="Panel" unique_id=957292936]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_nctt3")
+sfx_door_alarm = ExtResource("2_alarm")
