@@ -35,6 +35,19 @@ func after_each() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
 
 
+func test_the_panel_sits_under_the_chat() -> void:
+	var chat := Control.new()
+	chat.anchor_top = 0.5
+	chat.anchor_bottom = 0.5
+	chat.offset_top = -182.0
+	chat.offset_bottom = 183.0
+	add_child_autofree(chat)
+	_panel.place_under(chat)
+	assert_eq(_panel.anchor_top, 0.5, "on the chat's own anchor")
+	assert_eq(_panel.offset_top, 183.0 + PlayHintsPanel.GAP_PX, "just under its bottom edge")
+	assert_gt(_panel.offset_top, chat.offset_bottom, "never over the chat")
+
+
 func test_a_line_shows_its_key_and_what_it_does() -> void:
 	PlayHints.provide(_owner, &"test", [PlayHints.row(&"test_hint_jump", "%%ACT_JUMP")])
 	_panel.refresh()

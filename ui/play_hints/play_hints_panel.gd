@@ -20,6 +20,8 @@ const LEFT_PX : float = 20.0
 ## Top of the panel, as a share of the window height: above the chat (centre left) and the voice
 ## buttons (bottom left).
 const TOP_RATIO : float = 0.18
+## Space (px) left between the panel and the Control it sits under (place_under).
+const GAP_PX : float = 12.0
 ## Fade speed (alpha per second).
 const FADE_RATE : float = 5.0
 ## The same action is counted as "used" at most once per this many seconds: a stick held over its
@@ -57,6 +59,16 @@ func _init() -> void:
 	_list.add_theme_constant_override(&"v_separation", 6)
 	add_child(_list)
 	modulate.a = 0.0
+
+
+## Sit just under [param above], on the same anchor: in game the chat (centre left), whose top the
+## hints overlapped once they ran to more than three lines (2026-10-11). The chart keeps the default
+## place, under its own two buttons.
+func place_under(above: Control) -> void:
+	anchor_top = above.anchor_bottom
+	anchor_bottom = above.anchor_bottom
+	offset_top = above.offset_bottom + GAP_PX
+	offset_bottom = offset_top
 
 
 ## Step aside while `panel` (the graphics options, on the same edge) is up.
