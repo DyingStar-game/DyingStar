@@ -5729,7 +5729,12 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 		_pad_mutex.unlock()
 		return {}
 	var dirty: Dictionary = idx.pixels_of(old) if not old.is_empty() else {}
-	var stats := settled if not settled.is_empty() else _pad_stats_if_readable(rec)
+	var stats: Dictionary
+	if PadBed.is_notch(rec):
+		# A notch's floor is authored (PadBed.notch_record): nothing to measure, no tile to wait for.
+		stats = {"z": float(rec["z"]), "span": 0.0, "talus_m": 0.0}
+	else:
+		stats = settled if not settled.is_empty() else _pad_stats_if_readable(rec)
 	# Copy-on-write: the workers read the published index, so it is the CLONE
 	# that is edited and the reference that is swapped, in one assignment.
 	var next := idx.clone()
@@ -5959,7 +5964,8 @@ func _pad_cuts_of(rec: Dictionary) -> Dictionary:
 	var out := {}
 	# has_roads() opens the pack if it is not open yet — the guard must not be
 	# on _modifier_pack, which is still null the first time a pad registers.
-	if not has_roads():
+	# A notch cuts no road: it lowers the ground, it does not stand on it.
+	if PadBed.is_notch(rec) or not has_roads():
 		return out
 	var m_per_deg := radius * PI / 180.0
 	var nside: int = 1 << maxi(max_quadtree_depth, 0)

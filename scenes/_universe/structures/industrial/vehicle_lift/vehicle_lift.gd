@@ -12,7 +12,11 @@ extends Node3D
 		
 		_update_platform_movement()
 
-@export_range(0.0, 4.0, 0.01, "suffix:m") var guide_z_offset: float = 0.0:
+## Horizontal distance (m) from the cliff edge (the lift's origin) out to the vertical guide the platform
+## runs down, along +Z. 0 on a vertical wall; on a sloped face, at least the slope's run from the edge to
+## its foot, or the platform rides into it. Raising it lengthens the bridges to the platform; past ~4 m the
+## rail segments no longer touch the cliff.
+@export_range(0.0, 500.0, 0.01, "suffix:m") var guide_z_offset: float = 0.0:
 	set(value):
 		guide_z_offset = max(0.0, value)		# INFO Décalage du bord de la falaise
 		update_gizmos()
@@ -26,6 +30,8 @@ extends Node3D
 				"guide_z_offset": guide_z_offset
 		})
 
+## Height (m) the platform travels down from the upper landing to the lower one, which stands on the ground
+## at the foot. Raising it adds rail segments (one per 3 m) and lengthens every trip.
 @export_range(3.0, 1000.0, 0.01, "suffix:m") var descent_depth: float = 3.0:
 	set(value):
 		descent_depth = max(0.0, value)			# INFO Profondeur de descente
@@ -40,6 +46,30 @@ extends Node3D
 			_sync.server_prop_update({
 				"descent_depth": descent_depth
 		})
+
+
+## Length (m) of the notch cut into the terrain under the lift, along +Z from the edge: on a sloped
+## cliff, how far out the slope runs before it is down to the lower landing. 0 = no notch (a vertical
+## wall, or open ground). Keep it under ~380 m (a notch reaches at most half a finest terrain chunk).
+@export_range(0.0, 400.0, 0.1, "suffix:m") var notch_length_m: float = 0.0:
+	set(value):
+		notch_length_m = maxf(0.0, value)
+		_update_notch()
+		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
+			return
+		if _sync != null:
+			_sync.server_prop_update({"notch_length_m": notch_length_m})
+
+## Width (m) of that notch, centred on the lift: wider than the lower landing (22.2 m), or its sides
+## stand in the rock.
+@export_range(0.0, 100.0, 0.1, "suffix:m") var notch_width_m: float = NOTCH_DEFAULT_WIDTH_M:
+	set(value):
+		notch_width_m = maxf(0.0, value)
+		_update_notch()
+		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
+			return
+		if _sync != null:
+			_sync.server_prop_update({"notch_width_m": notch_width_m})
 
 
 @export_group("Lift Dynamics")
@@ -94,6 +124,13 @@ func reset_platform() -> void:
 
 
 const PLATFORM_SYSTEM_INITIAL_POSITION: Vector3 = Vector3(0.0,-0.175,2.075)
+## Width of the notch under a lift when its data does not say (see notch_width_m).
+const NOTCH_DEFAULT_WIDTH_M := 24.0
+## How far under the lower landing's floor the notch's floor is: the lift's origin stands this high
+## above the ground at the top (the hand-placed first lift), so the bottom gets the same step.
+const NOTCH_FLOOR_BELOW_LANDING_M := 0.74
+## Name of the TerrainNotch child the lift keeps in step with its dimensions.
+const NOTCH_NODE_NAME := "TerrainNotch"
 const LOWER_LANDING_INITIAL_POSITION: Vector3 = Vector3(0.0,0.0,0.0)
 
 const BASE_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/base/base.tscn")
@@ -396,6 +433,7 @@ func _physics_process(_delta: float) -> void:
 
 
 func _update_visuals() -> void:
+	_update_notch()
 	var base: Node3D = get_node_or_null("Base")
 	var upper_landing: Node3D = get_node_or_null("Upper Landing")
 	var lower_landing: Node3D = get_node_or_null("Lower Landing")
@@ -623,6 +661,10 @@ func platform_system_spawned() -> void:
 func apply_prop_data(_data: Dictionary) -> void:
 	if "name" in _data and not name == _data["name"]:
 		name = _data["name"]
+	if "notch_width_m" in _data:
+		notch_width_m = _data["notch_width_m"]
+	if "notch_length_m" in _data:
+		notch_length_m = _data["notch_length_m"]
 	if "descent_depth" in _data:
 		descent_depth = _data["descent_depth"]
 	if "guide_z_offset" in _data:
@@ -647,3 +689,35 @@ func apply_prop_data(_data: Dictionary) -> void:
 					_on_lift_started()
 				else:
 					_on_lift_stopped()
+
+
+## Keep the TerrainNotch child in step with the lift: a box [member notch_width_m] wide and
+## [member notch_length_m] long from the edge, down to the lower landing's ground. Created on first
+## need, removed when the length goes back to 0. Never owned by the scene: it is derived, not saved.
+func _update_notch() -> void:
+	if not is_inside_tree():
+		return
+	var notch := get_node_or_null(NOTCH_NODE_NAME) as TerrainNotch
+	if notch_length_m <= 0.0:
+		if notch != null:
+			notch.queue_free()
+		return
+	if notch == null:
+		notch = TerrainNotch.new()
+		notch.name = NOTCH_NODE_NAME
+		add_child(notch)
+	notch.width_m = notch_width_m
+	notch.length_m = notch_length_m
+	notch.floor_depth_m = descent_depth + NOTCH_FLOOR_BELOW_LANDING_M
+
+
+## The notch record of a lift described by its network data [param od], standing at [param rel] in
+## the terrain's frame — what the server registers for a lift that is not in the tree (asleep, not
+## built yet), the very numbers its live TerrainNotch will state. {} when the lift has no notch.
+static func notch_record_from_data(data, rel: Transform3D, od: Dictionary, uuid: String) -> Dictionary:
+	var length := float(od.get("notch_length_m", 0.0))
+	if length <= 0.0:
+		return {}
+	var rec := TerrainNotch.record_for(data, rel, float(od.get("notch_width_m", NOTCH_DEFAULT_WIDTH_M)),
+			length, float(od.get("descent_depth", 3.0)) + NOTCH_FLOOR_BELOW_LANDING_M, uuid)
+	return {} if rec.has("_refusal") else rec

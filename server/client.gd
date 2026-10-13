@@ -935,7 +935,11 @@ func _free_retired_some() -> void:
 		# Never take apart what is rebuilt whole on every removal: a CSG shape (its parent's mesh is
 		# re-baked) or a physics body (its compound shape is rebuilt for each CollisionShape3D gone).
 		# Leaf by leaf through those cost 130-220 ms of script a frame. Such a group goes whole.
-		var up: Node = leaf.get_parent()
+		# Only BELOW the root: once the root has no child left it is its own leaf, and the walk from
+		# its parent never met the root again — it climbed out of the retired object and took the
+		# highest physics body above it. A crate retired on the vehicle lift took the Platform System,
+		# the platform and the player riding it (7001, 2026-10-13); in a truck bed, the truck.
+		var up: Node = leaf.get_parent() if leaf != root else null
 		while up != null and up != root:
 			if up is CSGShape3D or up is CollisionObject3D:
 				leaf = up

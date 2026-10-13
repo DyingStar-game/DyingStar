@@ -33,6 +33,9 @@ var uuid: String:
 
 
 func _ready() -> void:
+	# What stands on the platform rides this system as its child (platform_area_detection.gd): on the
+	# clients that makes a crate on it follow it like cargo in a truck bed (PropNet.rides_parent).
+	add_to_group(PropNet.RIDE_CARRIER_GROUP)
 	if Engine.is_editor_hint():
 		var railing: Node3D = get_node_or_null("Platform/Railing")
 		var railing_json_path: StringName = &"res://scenes/_universe/structures/industrial/vehicle_lift/platform/railing_datas.json"

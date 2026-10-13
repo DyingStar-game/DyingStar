@@ -34,14 +34,28 @@ var uuid: String:
 
 
 func _ready() -> void:
+	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
+		# The client's platform is a frozen replica, KINEMATIC under its Platform System
+		# (PropNet.apply_ride_freeze_mode), placed by the network alone. The scene's axis locks are
+		# for the server's spring simulation, and they hold in WORLD axes: a locked kinematic body
+		# cannot follow its planet along the orbit, so the platform stayed behind in space —
+		# 1.5e6 m away after a minute, its kiosk out of every player's reach (2026-10-13).
+		axis_lock_linear_x = false
+		axis_lock_linear_z = false
+		axis_lock_angular_x = false
+		axis_lock_angular_y = false
+		axis_lock_angular_z = false
 	if not Engine.is_editor_hint() and GameOrchestrator.is_server():
 		contact_monitor = true
 		max_contacts_reported = 10
+		# Dynamic on the server: _integrate_forces weighs the load from the contacts, and a frozen body
+		# gets no such callback. The scene keeps freeze on for the editor and the client replicas.
+		# Until 2026-10-13 the server's settle-culler did this by accident when it woke the platform;
+		# it no longer touches it (Server._is_cullable_body), so the platform says it itself.
+		freeze = false
 		
 		await get_tree().physics_frame
 		await get_tree().physics_frame
-		
-		#set_freeze_enabled(false)
 		
 		var parent_system_platform: Node3D = get_parent()
 		if parent_system_platform.has_method("platform_spawned"):

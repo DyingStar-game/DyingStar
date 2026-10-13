@@ -25,7 +25,9 @@ var _dynamic_bridge_collider_shape_01: Shape3D
 var _dynamic_bridge_collider_shape_02: Shape3D
 
 
-@export_range(0.0, 4.0, 0.01, "suffix:m") var z_offset: float = 0.0:
+## Length (m) the bridges are stretched by, from the landing out to the platform: the lift's
+## guide_z_offset. Higher = longer bridges and colliders.
+@export_range(0.0, 500.0, 0.01, "suffix:m") var z_offset: float = 0.0:
 	set(value):
 		if value != z_offset:
 			z_offset = max(0.0, value)
@@ -47,6 +49,14 @@ func _ready() -> void:
 		return
 	
 	_dynamic_bridge_mesh = _dynamic_right_bridge_visual.mesh
+	if not Engine.is_editor_hint():
+		# Each lift stretches its OWN copy. The .mesh is one resource shared by every lift, and
+		# update_length moves its vertices by deltas: a row of lifts with different guide offsets
+		# stretched the same mesh once per lift (and categorize_vertices then read a mesh another lift
+		# had already moved). Not in the editor, where the copy would be saved into the scene.
+		_dynamic_bridge_mesh = _dynamic_bridge_mesh.duplicate()
+		_dynamic_right_bridge_visual.mesh = _dynamic_bridge_mesh
+		_dynamic_left_bridge_visual.mesh = _dynamic_bridge_mesh
 	
 	_dynamic_right_bridge_collider_01 = _right_bridge.get_node_or_null("Collider 01")
 	_dynamic_right_bridge_collider_02 = _right_bridge.get_node_or_null("Collider 02")

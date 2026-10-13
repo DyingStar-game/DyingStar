@@ -32,6 +32,13 @@ class_name PadBed
 ## Unlike a railway cutting (GradeBed, which only ever lowers the ground), a
 ## pad both CUTS and FILLS: the platform sits at the median of the relief under
 ## it, so it digs into the high side and banks up the low side.
+##
+## A NOTCH (`kind: "notch"`, [method notch_record]) rides the same index and the
+## same chunk paths but is another rule: a box cut straight down into the ground
+## to an AUTHORED floor `z` — no median, no apron, no talus, never a fill. It is
+## what lets a vehicle lift's platform run down a sloped cliff (TerrainNotch).
+## Notches take no part in the pad rules (nearest pad, aprons, levels, roads):
+## [method apply] and [method shaved] run the pads first, then cut the notches.
 
 
 ## A quantised pad record. [param yaw] is in radians, the rest in degrees /
@@ -40,6 +47,53 @@ static func record(uuid: String, lon: float, lat: float, yaw: float,
 		hx: float, hy: float, apron_m: float, z_off: float) -> Dictionary:
 	return quantise({"uuid": uuid, "lon": lon, "lat": lat, "yaw": yaw,
 			"hx": hx, "hy": hy, "apron_m": apron_m, "z_off": z_off, "z": 0.0})
+
+
+## A quantised NOTCH record: a box [param hx] × [param hy] (half extents, m) cut
+## down to the floor altitude [param z_floor] (m above the radius). Its `z` and
+## `talus_m` (0) are final — a notch is never measured — and its apron is 0, so
+## [method reach_m] and [method near] bound it by its box alone.
+static func notch_record(uuid: String, lon: float, lat: float, yaw: float,
+		hx: float, hy: float, z_floor: float) -> Dictionary:
+	var rec := record(uuid, lon, lat, yaw, hx, hy, 0.0, 0.0)
+	rec["kind"] = "notch"
+	rec["z"] = snappedf(z_floor, PadSettings.Q_Z_M)
+	rec["talus_m"] = 0.0
+	return rec
+
+
+## Is [param rec] a notch rather than a building pad?
+static func is_notch(rec: Dictionary) -> bool:
+	return str(rec.get("kind", "pad")) == "notch"
+
+
+## [param pads] split into [building pads, notches], or null when there is no
+## notch in it — the common case, answered without allocating anything.
+static func _notches_split(pads: Array) -> Variant:
+	var has := false
+	for rec: Dictionary in pads:
+		if is_notch(rec):
+			has = true
+			break
+	if not has:
+		return null
+	var only_pads: Array = []
+	var notches: Array = []
+	for rec: Dictionary in pads:
+		(notches if is_notch(rec) else only_pads).append(rec)
+	return [only_pads, notches]
+
+
+## [param h] cut down to the floor of every notch whose box holds [param lonlat]
+## ([param band_m] wider, for the coarse-LOD clamp). Only ever lowers: ground
+## already under the floor is left alone.
+static func _cut_notches(h: float, lonlat: Vector2, notches: Array, m_per_deg: float,
+		band_m: float = 0.0) -> float:
+	var out := h
+	for rec: Dictionary in notches:
+		if sdf_m(rec, lonlat, m_per_deg) <= band_m:
+			out = minf(out, float(rec["z"]))
+	return out
 
 
 ## Snap every field of [param rec] to the steps in PadSettings. Idempotent —
@@ -116,6 +170,11 @@ static func same_geometry(a: Dictionary, b: Dictionary) -> bool:
 	for k in ["lon", "lat", "yaw", "hx", "hy", "apron_m", "z_off"]:
 		if float(a.get(k, INF)) != float(b.get(k, -INF)):
 			return false
+	# A notch's floor is authored, not derived: moving it is a change of geometry.
+	if is_notch(a) != is_notch(b):
+		return false
+	if is_notch(a) and float(a.get("z", INF)) != float(b.get("z", -INF)):
+		return false
 	return true
 
 
@@ -166,6 +225,8 @@ static func sdf_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
 ## The aprons are taken as rectangles (square corners, a little generous at the
 ## corners) and tested with separating axes on the tangent plane at [param a].
 static func aprons_touch(a: Dictionary, b: Dictionary, m_per_deg: float) -> bool:
+	if is_notch(a) or is_notch(b):
+		return false  # a notch has no level to share
 	var lat0: float = float(a["lat"])
 	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
 	var t := Vector2(wrapf(float(b["lon"]) - float(a["lon"]), -180.0, 180.0) * ls * m_per_deg,
@@ -371,6 +432,17 @@ static func height_at(h: float, rec: Dictionary, d: float) -> float:
 static func apply(h: float, lonlat: Vector2, pads: Array, m_per_deg: float) -> float:
 	if pads.is_empty():
 		return h
+	var split = _notches_split(pads)
+	if split != null:
+		# Pads first (a lift standing beside a building meets its ground), then the notches cut down.
+		return _cut_notches(_apply_pads(h, lonlat, split[0], m_per_deg), lonlat, split[1], m_per_deg)
+	return _apply_pads(h, lonlat, pads, m_per_deg)
+
+
+## [method apply] for building pads only (no notch in [param pads]).
+static func _apply_pads(h: float, lonlat: Vector2, pads: Array, m_per_deg: float) -> float:
+	if pads.is_empty():
+		return h
 	var q := nearest(pads, lonlat, m_per_deg)
 	if not q["hit"]:
 		return h
@@ -454,6 +526,18 @@ static func shaved(h: float, lonlat: Vector2, pads: Array, m_per_deg: float,
 		band_m: float) -> float:
 	if pads.is_empty() or band_m <= 0.0:
 		return h
+	var split = _notches_split(pads)
+	if split != null:
+		return _cut_notches(_shaved_pads(h, lonlat, split[0], m_per_deg, band_m), lonlat,
+				split[1], m_per_deg, band_m)
+	return _shaved_pads(h, lonlat, pads, m_per_deg, band_m)
+
+
+## [method shaved] for building pads only (no notch in [param pads]).
+static func _shaved_pads(h: float, lonlat: Vector2, pads: Array, m_per_deg: float,
+		band_m: float) -> float:
+	if pads.is_empty():
+		return h
 	var q := nearest(pads, lonlat, m_per_deg)
 	if not q["hit"]:
 		return h
@@ -500,7 +584,7 @@ static func road_exclusion(rec: Dictionary, cl: PackedVector2Array,
 		half_width_m: float = 0.0) -> Array:
 	var out: Array = []
 	var n := cl.size()
-	if n < 2 or cum.size() != n or m_per_deg <= 0.0:
+	if n < 2 or cum.size() != n or m_per_deg <= 0.0 or is_notch(rec):
 		return out
 	var limit: float = PadSettings.ROAD_CUT_MARGIN_M + maxf(half_width_m, 0.0)
 	var step: float = PadSettings.ROAD_CUT_STEP_M
