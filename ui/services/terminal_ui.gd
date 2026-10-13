@@ -94,6 +94,9 @@ var _clock: Label = null
 var _active_id: String = ""
 var _built: bool = false
 var _close_armed: bool = false
+## The tablet was opened straight on NAVIGATION (F2, the chart's key): Escape then closes it, back to the
+## game, instead of leaving the chart for the tablet's home (2026-10-11). Cleared as soon as the tab is left.
+var _opened_for_navigation: bool = false
 
 
 ## One tab of the bottom bar: a wide tile carrying the active app's amber corner mark, the mockup's
@@ -156,6 +159,7 @@ func open() -> void:
 	if GameOrchestrator.is_server():
 		return
 	_ensure_built()
+	_opened_for_navigation = false
 	show()
 	_go_home()
 
@@ -166,8 +170,11 @@ func open_navigation() -> void:
 	if GameOrchestrator.is_server():
 		return
 	_ensure_built()
+	var was_open: bool = visible
 	show()
 	_show_navigation()
+	if not was_open:
+		_opened_for_navigation = true  # after _show_navigation, which leaves the tab it replaces
 
 
 func close() -> void:
@@ -196,6 +203,8 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
 		if is_typing():
 			release_fields()
+		elif _active_id == NAVIGATION and _opened_for_navigation:
+			_close_armed = true  # came for the chart: back to the game, not to the tablet's home
 		elif _active_id != "":
 			_go_home()
 		else:
@@ -536,6 +545,7 @@ func _show_nothing() -> void:
 
 ## Off the NAVIGATION tab, if that is where we were: the slot hidden, the chart told.
 func _leave_navigation() -> void:
+	_opened_for_navigation = false
 	if _navigation != null:
 		_navigation.visible = false
 	if _active_id == NAVIGATION:
