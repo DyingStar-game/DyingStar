@@ -1115,8 +1115,11 @@ func _player_within(pos: Vector3, radius: float) -> bool:
 func _is_cullable_body(node: Variant) -> bool:
 	if not is_instance_valid(node) or not (node is RigidBody3D) or node is Vehicle:
 		return false
-	var parent: Node = node.get_parent()
-	return not (parent is Player or parent is Vehicle)
+	# Riding a parent that moves (carried, bed-loaded, a vehicle lift's platform and what stands on
+	# it): the planet-local position recorded at the freeze goes stale as the parent moves, so the
+	# wake-on-approach never fires again — the lift platform stayed frozen with its shapes off and
+	# players fell through it (2026-10-13).
+	return not PropNet.rides_parent(node as Node3D)
 
 ## True when [param body] sits over a planet whose terrain collision has NOT been built under it yet.
 ## False in open space — there is nothing to wait for — and false once the chunk is resident.
@@ -1159,9 +1162,8 @@ const GROUND_HOLD_META := "_ground_hold"
 func _hold_if_no_ground(rb: RigidBody3D) -> bool:
 	if rb.freeze:
 		return false
-	# Carried or bed-loaded: its carrier owns its freeze (the culler's rule, _is_cullable_body).
-	var carrier: Node = rb.get_parent()
-	if carrier is Player or carrier is Vehicle:
+	# Carried, bed-loaded or on a lift: its carrier owns its freeze (the culler's rule, _is_cullable_body).
+	if PropNet.rides_parent(rb):
 		return false
 	if not _ground_missing_under(rb):
 		return false
@@ -3322,6 +3324,7 @@ func _stream_register_pads(uuid: String) -> void:
 	if e.is_empty() or int(e["kind"]) != PropRegistry.KIND_GROUND or prop_registry.live.has(uuid):
 		return
 	var od: Dictionary = e["event"]["data"].get("object_data", {})
+	_stream_register_notch(uuid, e, od)
 	var templates: Array = _stream_pad_templates_for(str(od.get("scenename", "")))
 	if templates.is_empty():
 		return
@@ -3351,6 +3354,24 @@ func _stream_register_pads(uuid: String) -> void:
 			var st: Dictionary = (planet as Planet).planet_data.pad_settled_stats(rec, od["terrain_settled"])
 			if not st.is_empty():
 				rec["settled"] = st
+		terrain.register_terrain_pad(rec)
+
+
+## The notch a vehicle lift cuts under itself (VehicleLift.notch_length_m), from its DATA: a lift that
+## sleeps keeps its shaft in the terrain, and one not built yet has it before the chunks under it are
+## — the record its live TerrainNotch states later, under the same uuid, so nothing is rebuilt then.
+func _stream_register_notch(uuid: String, e: Dictionary, od: Dictionary) -> void:
+	if float(od.get("notch_length_m", 0.0)) <= 0.0 or not (e.get("pos") is Vector3):
+		return
+	var planet = props_list["planets"].get(e["world"])
+	if not (planet is Planet) or (planet as Planet).planet_terrain == null:
+		return
+	var terrain: PlanetTerrain = (planet as Planet).planet_terrain
+	var to_terrain: Transform3D = terrain.global_transform.affine_inverse() * (planet as Planet).global_transform
+	var item := Transform3D(Basis.from_euler(_stream_vec(od.get("rotation", {}))), e["pos"])
+	var rec := VehicleLift.notch_record_from_data((planet as Planet).planet_data, to_terrain * item, od,
+			"notch|prop:" + uuid)
+	if not rec.is_empty():
 		terrain.register_terrain_pad(rec)
 
 

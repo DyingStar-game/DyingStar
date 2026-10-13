@@ -689,11 +689,38 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "Base.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/base/Base.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "Base_Colliders.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/base/Base_Colliders.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "battery.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/battery.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "Beacon.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/common/beacon/Beacon.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -721,6 +748,15 @@
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "Dynamic_Bridge.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/dynamic_bridge/Dynamic_Bridge.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -865,6 +901,15 @@
 			"author": "ddurieux",
 			"source": "Discord",
 			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "Kiosk.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/common/kiosk/Kiosk.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -1027,6 +1072,69 @@
 			"author": "ddurieux",
 			"source": "Discord",
 			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "Platform.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/platform/Platform.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "Platform_AreaDetection.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/platform/Platform_AreaDetection.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "Platform_Colliders.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/platform/Platform_Colliders.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "RailHead.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/rail/RailHead.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "RailHead_Colilder.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/rail/RailHead_Colilder.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "RailingSegments.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/railing/RailingSegments.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "RailSegment.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/rail/RailSegment.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},

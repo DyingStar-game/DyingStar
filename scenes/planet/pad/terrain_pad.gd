@@ -268,8 +268,14 @@ func _apply() -> void:
 		moved = _sit_building_on_platform(terrain, z) or moved
 	# A building that just moved is called back by its transform notification: the measure is
 	# persisted from that pass, the one that finds nothing left to correct.
-	if not moved:
+	if not moved and _persists_settled():
 		_publish_settled(terrain, sync)
+
+
+## Does this pad persist its measure in its building's terrain_settled? A building pad does; a
+## TerrainNotch has nothing measured to persist (its floor is authored).
+func _persists_settled() -> bool:
+	return true
 
 
 ## Persist what this pad measured in its building's terrain_settled field, so the next server that

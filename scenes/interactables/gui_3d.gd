@@ -40,12 +40,14 @@ func _ready() -> void:
 func _mouse_entered_area() -> void:
 	is_mouse_inside = true
 	# Notify the viewport that the mouse is now hovering it.
-	node_viewport.notification(NOTIFICATION_VP_MOUSE_ENTER)
+	if node_viewport != null:
+		node_viewport.notification(NOTIFICATION_VP_MOUSE_ENTER)
 
 
 func _mouse_exited_area() -> void:
 	# Notify the viewport that the mouse is no longer hovering it.
-	node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
+	if node_viewport != null:
+		node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
 	is_mouse_inside = false
 
 
@@ -66,7 +68,7 @@ func _unhandled_input(input_event: InputEvent) -> void:
 	# Nothing in a panel reacts to a key without holding focus, which makes "has a focus owner" the
 	# exact condition. A click never comes through here — it arrives by picking, above — so a field
 	# can still be focused in the first place.
-	if node_viewport.gui_get_focus_owner() == null:
+	if node_viewport == null or node_viewport.gui_get_focus_owner() == null:
 		return
 	node_viewport.push_input(input_event)
 
@@ -130,12 +132,14 @@ func click_at(point: Vector3, pressed: bool) -> void:
 
 ## The crosshair left the screen: the interface stops showing a hover.
 func pointer_left() -> void:
-	node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
+	if node_viewport != null:
+		node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
 
 
 ## Give the keyboard back to the game: whatever field of this screen has it lets go.
 func release_keyboard() -> void:
-	node_viewport.gui_release_focus()
+	if node_viewport != null:
+		node_viewport.gui_release_focus()
 
 
 ## [param point] (world) on the screen mesh as 0..1 UVs, (0, 0) the top-left corner. A QuadMesh or
@@ -149,10 +153,15 @@ func _uv_of(point: Vector3) -> Vector2:
 
 ## Place [param input_event] at [param point] in the viewport's pixels, relative motion included, and push it.
 func _push_at(input_event: InputEvent, point: Vector3) -> void:
-	_push_at_pixel(input_event, _uv_of(point) * Vector2(node_viewport.size))
+	if node_viewport != null:
+		_push_at_pixel(input_event, _uv_of(point) * Vector2(node_viewport.size))
 
 
+## Push [param input_event] at [param event_pos_2d] (the viewport's pixels). A screen whose SubViewport
+## is handed over later (the vehicle lift's kiosks, kiosk.gd) may have none yet: nothing to push into.
 func _push_at_pixel(input_event: InputEvent, event_pos_2d: Vector2) -> void:
+	if node_viewport == null:
+		return
 	var now := Time.get_ticks_msec() / 1000.0
 	input_event.position = event_pos_2d
 	if input_event is InputEventMouse:
@@ -179,6 +188,6 @@ func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_positi
 	# quivered inside it with the ray's angle of incidence. _uv_of works in the mesh's frame.
 	# Outside the area (a drag leaving it), the last known position stands.
 	var event_pos_2d: Vector2 = last_event_pos_2d
-	if is_mouse_inside:
+	if is_mouse_inside and node_viewport != null:
 		event_pos_2d = _uv_of(event_position) * Vector2(node_viewport.size)
 	_push_at_pixel(input_event, event_pos_2d)

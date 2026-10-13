@@ -8,7 +8,9 @@ extends Control
 
 enum Kind { IDENTITY, CONTACTS, CORPORATIONS, MISSIONS, BANK, REPORTS, DIAGNOSTICS, INVENTORY, MARKET, SQUAD, POIS }
 
+## Which app pictogram is drawn.
 @export var kind: Kind = Kind.IDENTITY
+## Colour of the pictogram's strokes and fills (usually the tablet's accent colour).
 @export var colour: Color = Color(1, 1, 1, 1)
 
 
