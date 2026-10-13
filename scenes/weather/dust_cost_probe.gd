@@ -66,7 +66,7 @@ func report(grids: Dictionary, layer: Dictionary) -> String:
 		var grid: DustGround = grids[name]
 		var spent: Vector2i = _grid_us.get(name, Vector2i.ZERO)
 		parts.append("%s grid %.2f ms/frame (colour %.2f)%s, last build %d cells" % [name,
-			spent.x / 1000.0 / n, spent.y / 1000.0 / n, " building" if grid._row >= 0 else "",
+			spent.x / 1000.0 / n, spent.y / 1000.0 / n,  " building" if grid.is_building() else "",
 			grid.last_build_cells])
 	parts.append("gpu frame %.2f ms" % (_gpu_ms / n))
 	parts.append("layer: near %.5f /m x %d steps, far %.5f /m x %d steps, %d lamps, setting %d" % [

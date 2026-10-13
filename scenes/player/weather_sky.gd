@@ -131,8 +131,18 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 ## frame plus the air's travel, wrapped in double precision so the float32 shader never sees more than
 ## a noise period.
 func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D, delta: float) -> void:
+	# One ground query a frame: the eye's height over the drawn ground decides the cut-off, the layer's
+	# height and where the ground grids are laid (1.7 m while the planet has no ground data).
+	var dir: Vector3 = Vector3.ZERO
+	var surface: float = 0.0
+	var height: float = 1.7
+	if camera != null and planet.planet_data != null:
+		dir = planet.local_dir_of(camera.global_position)
+		if not dir.is_zero_approx():
+			surface = planet.planet_data.crack_aware_surface_dist(dir)
+			height = camera.global_position.distance_to(planet.global_position) - surface
 	if camera != null:
-		_eye_height_m = planet.surface_altitude_of(camera.global_position)
+		_eye_height_m = height
 	if _dust_density <= 0.0 or camera == null or _eye_height_m > DUST_CEILING_M:
 		if _dust_sent:
 			renderer.set_dust_param(&"dust_density", 0.0)
@@ -171,13 +181,8 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	renderer.set_dust_param(&"dust_stretch", DUST_STRETCH)
 	renderer.set_dust_param(&"dust_noise_scale", DUST_NOISE_SCALE)
 	var up: Vector3 = (camera.global_position - planet.global_position).normalized()
-	var height: float = 1.7
-	if planet.planet_data != null:
-		var dir: Vector3 = planet.local_dir_of(camera.global_position)
-		if not dir.is_zero_approx():
-			var surface: float = planet.planet_data.crack_aware_surface_dist(dir)
-			height = camera.global_position.distance_to(planet.global_position) - surface
-			_lay_grounds(renderer, planet, dir * surface, cam_planet, height < NEAR_LAYER_GONE_M)
+	if surface > 0.0:
+		_lay_grounds(renderer, planet, dir * surface, cam_planet, height < NEAR_LAYER_GONE_M)
 	renderer.set_dust_param(&"dust_frame", to_planet)
 	renderer.set_dust_param(&"dust_offset", wrap_to_period(cam_q + _scroll, period_c))
 	renderer.set_dust_param(&"dust_offset_fine", wrap_to_period(cam_q + _scroll_fine, period_f))

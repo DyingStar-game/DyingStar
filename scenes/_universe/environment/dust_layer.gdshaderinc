@@ -65,7 +65,7 @@ uniform float dust_stretch = 3.5;
 uniform float dust_noise_scale = 110.0;
 uniform float dust_breakup = 0.75;
 // The dust's colour: the ground's.
-uniform vec3 dust_albedo = vec3(0.86, 0.74, 0.56);
+uniform vec3 dust_albedo : source_color = vec3(0.86, 0.74, 0.56);
 // The real ground around the camera (DustGround): a height grid over a tangent plane anchored near
 // it, all in the planet's frame. dust_ground_cam is the camera relative to that anchor, the texels the
 // ground's height over the plane. The grid reaches past the march's range; off it (a fast camera

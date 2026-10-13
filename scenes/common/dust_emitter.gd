@@ -32,6 +32,9 @@ const CULL_DISTANCE_M: float = 90.0
 const GROUND_REFRESH_S: float = 0.5
 ## The gravity SurfaceDust's air_settle is written for (m/s²).
 const EARTH_GRAVITY: float = 9.81
+## The colour probe (client.ini debug_dust_probe=true): every PROBE_S, one "[DustColour]" line per emitter
+## with what decided the last puff's colour, to tell a wrong ground from a wrong family or a missing planet.
+const PROBE_S: float = 2.0
 
 static var _shader: Shader = null
 static var _process_shader: Shader = null
@@ -47,9 +50,6 @@ var _ground_color: Color = Color(0.55, 0.48, 0.4)
 var _ground_target: Color = Color(0.55, 0.48, 0.4)
 var _ground_glide: ColourGlide = ColourGlide.new()
 var _glided_at: float = -1.0
-## The colour probe (client.ini debug_dust_probe=true): every PROBE_S, one "[DustColour]" line per emitter
-## with what decided the last puff's colour, to tell a wrong ground from a wrong family or a missing planet.
-const PROBE_S: float = 2.0
 static var _probe_on: bool = ClientConfig.get_bool("debug_dust_probe", false)
 var _probe_at: float = -INF
 var _probe_planet: bool = false

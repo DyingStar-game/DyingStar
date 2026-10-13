@@ -12,6 +12,8 @@ class_name GroundLook
 extends RefCounted
 
 const MATERIAL_PATH := "res://assets/_universe/_shared/materials/terrain_blend.tres"
+## What the biome map gives where it has nothing (PlanetData.ground_albedo_at).
+const NO_SAMPLE := Color(0, 0, 0, 0)
 
 # ONE fringe material PER GROUND TEXTURE -- never per object. A texture cannot be a per-instance
 # uniform, so objects standing on different ground need different materials; but they GROUP, and a
@@ -52,8 +54,10 @@ static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
 		return look
 	_share_detail_texture(data)
 	var ground: Material = data.ground_material_at(dir)
-	look.tint = vertex_colour(data, dir, fallback)
-	look.color = _shown(data, ground, look.tint)
+	var sampled: Color = _vertex_sample(data, dir)
+	if sampled != NO_SAMPLE:  # nothing sampled: the fallback as it is, not scaled like a biome colour
+		look.tint = sampled
+		look.color = _shown(data, ground, sampled)
 	if _albedo_texture_of(ground) == null:
 		look.tint = look.color  # flat ground: the fringe paints the colour itself
 	look.detail = data.ground_detail_at(dir)
@@ -68,7 +72,10 @@ static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
 static func colour_at(data: PlanetData, dir: Vector3, fallback: Color, height_m: float = NAN) -> Color:
 	if data == null:
 		return fallback
-	return _shown(data, data.ground_material_at(dir), vertex_colour(data, dir, fallback, height_m))
+	var sampled: Color = _vertex_sample(data, dir, height_m)
+	if sampled == NO_SAMPLE:  # the fallback as it is, not scaled like a biome colour
+		return fallback
+	return _shown(data, data.ground_material_at(dir), sampled)
 
 
 ## The colour the terrain bakes into its vertex at [param dir]: the planet's default rock or the zone's,
@@ -77,10 +84,15 @@ static func colour_at(data: PlanetData, dir: Vector3, fallback: Color, height_m:
 ## rock's light and dark shades: one building's fringe came out pale, its neighbour's on the same
 ## ground rust-red, and the dust off that ground matched neither (2026-10-12).
 static func vertex_colour(data: PlanetData, dir: Vector3, fallback: Color, height_m: float = NAN) -> Color:
+	var sampled: Color = _vertex_sample(data, dir, height_m)
+	return fallback if sampled == NO_SAMPLE else sampled
+
+
+## vertex_colour without its fallback: NO_SAMPLE where the biome map has nothing.
+static func _vertex_sample(data: PlanetData, dir: Vector3, height_m: float = NAN) -> Color:
 	var zone: Dictionary = data.first_zone_at(dir)
 	if zone.is_empty() and not data.corundum_default_biome:
-		var sampled: Color = data.ground_albedo_at(dir)  # no zone here: the biome map
-		return fallback if sampled == Color(0, 0, 0, 0) else sampled
+		return data.ground_albedo_at(dir)  # no zone here: the biome map (NO_SAMPLE where it is empty)
 	var cor_bd: BiomeDefinition = data.get_biome_by_type(ArideDesertCorundumPlateauTerrain.BIOME_TYPE) \
 			if data.corundum_default_biome else null
 	return PlanetChunk.road_ground_tint(data, dir, zone, cor_bd, height_m)
@@ -166,7 +178,9 @@ static func _mean_of(tex: Texture2D) -> Color:
 	if img != null and not img.is_empty():
 		if img.is_compressed():
 			img.decompress()
-		img.resize(1, 1, Image.INTERPOLATE_TRILINEAR if img.has_mipmaps() else Image.INTERPOLATE_BILINEAR)
+		# Trilinear averages the whole texture (Godot builds the mipmaps it needs when the image has
+		# none); bilinear to 1 x 1 only read a few texels at the centre.
+		img.resize(1, 1, Image.INTERPOLATE_TRILINEAR)
 		mean = img.get_pixel(0, 0)
 		mean.a = 1.0
 	_means[tex] = mean

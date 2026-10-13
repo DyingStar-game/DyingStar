@@ -42,7 +42,8 @@ const BUDGET_MS: float = 1.5
 ## height that cell has just asked for: no ground query of its own.
 const COLOUR_STEP: int = 4
 const COLOUR_SIZE: int = SIZE / COLOUR_STEP
-## Past this many grid widths from where its plane was laid, a grid is laid on a new plane.
+## Past this many half-widths (half()) from where its plane was laid, a grid is laid on a new plane:
+## 16 halves, 8 grid widths.
 const FRAME_KEEP_HALVES: float = 16.0
 
 ## This grid's cell (m) and how far (m) the camera goes from its anchor before a new one is started.
@@ -125,6 +126,11 @@ func take_spent_us() -> Vector2i:
 	spent_ground_us = 0
 	spent_colour_us = 0
 	return spent
+
+
+## Is a grid being built (rows still to fill) right now?
+func is_building() -> bool:
+	return _row >= 0
 
 
 ## Half the width (m) of a grid of [param cell] m cells.
