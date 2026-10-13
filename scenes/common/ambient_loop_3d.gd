@@ -21,6 +21,9 @@ extends Node3D
 @export_range(1.0, 200.0, 1.0) var distance: float = 25.0
 ## How the sound fades with distance (see Sfx3D.Attenuation).
 @export var attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+## Starts on its own and never stops (a generator's hum). Off: silent until set_running(true), for a
+## machine that only runs now and then (the vehicle lift's winch).
+@export var autoplay: bool = true
 
 var _player: AudioStreamPlayer3D
 
@@ -31,7 +34,19 @@ func _ready() -> void:
 	_player = AudioStreamPlayer3D.new()
 	Sfx3D.configure(_player, Sfx3D.as_looping(stream), volume_db, falloff, distance, attenuation)
 	add_child(_player, false, INTERNAL_MODE_BACK)
-	_player.play(randf() * stream.get_length())
+	if autoplay:
+		_player.play(randf() * stream.get_length())
+
+
+## Run the loop ([param on]) or stop it. A loop already running goes on where it is: told twice, it
+## does not start over.
+func set_running(on: bool) -> void:
+	if _player == null:
+		return  # muted here (editor, server)
+	if on and not _player.playing:
+		_player.play(randf() * stream.get_length())
+	elif not on and _player.playing:
+		_player.stop()
 
 
 ## The playing sound, or null where it is muted (editor, server).

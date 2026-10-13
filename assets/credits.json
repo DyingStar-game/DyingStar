@@ -363,6 +363,33 @@
 			"license": "Pixabay Content License"
 		},
 		{
+			"asset": "lift-platform-rolling.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-rolling.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lift-platform-start-stop.mp3",
+			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-start-stop.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lift-winch-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-winch-loop.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "machine-button-off.ogg",
 			"path": "res://assets/_universe/audio/sfx/machine/machine-button-off.ogg",
 			"author": "WarpZone",

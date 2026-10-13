@@ -81,6 +81,28 @@ extends Node3D
 ## trips (a short run may never reach max_speed).
 @export_range(0.1, 10.0, 0.01, "suffix:m/s") var acceleration: float = 2.0
 
+@export_group("Start / stop sound")
+## Played at the platform when it starts or stops (each client, as it hears the lift change state).
+## The winch's hum (Base/Animated Axis/WinchHum) and the cart's rolling (Platform System/RollingNoise)
+## run in between: set them on those nodes.
+@export var sfx_start_stop: AudioStream = preload(
+		"res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-start-stop.mp3")
+## Loudness in decibels (0 = the sample's own level, negative = quieter).
+@export_range(-40.0, 12.0, 0.5) var sfx_start_stop_db: float = 2.0
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
+@export_range(0.5, 200.0, 0.5) var sfx_start_stop_falloff: float = 10.0
+## Distance (m) past which the sound is no longer audible at all (hard cut-off).
+@export_range(1.0, 500.0, 1.0) var sfx_start_stop_distance: float = 100.0
+## How the sound fades with distance.
+@export var sfx_start_stop_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+## Slowest the cart drawn on a client is heard rolling (m/s). Braking at 2 m/s², it drops under
+## 0.15 m/s some 0.07 s before it rests: the rolling falls silent just before the stop's clunk.
+@export_range(0.0, 2.0, 0.01, "suffix:m/s") var rolling_min_speed_m_s: float = 0.15
+
+## Slowest the cart drawn on a client may still be moving (m/s) and be "at rest": the stop's clunk
+## waits for it.
+const REST_SPEED_M_S: float = 0.02
+
 
 @export_group("Debug")
 ## SERVER, at run time: tick to send the platform up to the upper landing (unticks itself).
@@ -161,6 +183,14 @@ var _ui_update_timer: float = 0.0
 var _is_platform_system_spawned: bool = false
 
 var _travel_time: float = 0.0
+## CLIENT: whether a moving state was heard already. The first one is how the lift was when we
+## arrived: a lift found running is heard running, without the clunk of a start.
+var _moving_heard: bool = false
+## CLIENT: the stop's clunk waits for the platform drawn here to be at rest (_process); where the
+## cart was drawn last frame, to tell how fast it goes; whether there was a last frame.
+var _clunk_on_rest: bool = false
+var _cart_drawn_at: Vector3 = Vector3.ZERO
+var _cart_seen: bool = false
 
 
 # Cached PropSync child. Resolved lazily (not @onready) because the uuid facade below is used
@@ -553,6 +583,8 @@ func _process(_delta: float) -> void:
 
 	var display_direction: float = 1.0 if target_depth_in_meter >= current_depth_in_meter else -1.0
 
+	_sound_cart(_delta)
+
 	_ui_update_timer += _delta
 	if _ui_update_timer >= 1.0:
 		_ui_update_timer = 0.0
@@ -636,6 +668,7 @@ func _on_lift_started() -> void:
 		upper_landing.start_beacons()
 	if lower_landing:
 		lower_landing.start_beacons()
+	_sound_running(true)
 
 
 func _on_lift_stopped() -> void:
@@ -653,6 +686,63 @@ func _on_lift_stopped() -> void:
 	if lower_landing:
 		lower_landing.stop_beacons()
 		lower_landing.update_interface_lift_progress(platform_progress_ratio, 0, "Stopped")
+	_sound_running(false)
+
+
+## CLIENT: the lift's machinery heard while it runs ([param running]): the winch at the top, and the
+## clunk of the platform as it sets off — or, on a stop, once the platform drawn here is at rest
+## (_sound_cart): the server says it stopped as it arrives, while the platform we draw still glides
+## into place. The cart's rolling is _sound_cart's too.
+func _sound_running(running: bool) -> void:
+	var winch := get_node_or_null("Base/Animated Axis/WinchHum") as AmbientLoop3D
+	if winch != null:
+		winch.set_running(running)
+	_clunk_on_rest = false
+	if not _moving_heard:
+		return  # how the lift was when we arrived: no start nor stop was heard
+	if running:
+		_play_clunk()
+	else:
+		_clunk_on_rest = true
+
+
+## CLIENT: the clunk of the platform starting or stopping, at the cart.
+func _play_clunk() -> void:
+	if sfx_start_stop == null or Sfx3D.muted():
+		return
+	var cart: Node3D = get_node_or_null("Platform System") as Node3D
+	Sfx3D.play(cart if cart != null else self, sfx_start_stop, sfx_start_stop_db, sfx_start_stop_falloff,
+			sfx_start_stop_distance, sfx_start_stop_attenuation)
+
+
+## CLIENT, every frame: the cart as it is DRAWN here decides its sounds — rolling while it goes, the
+## stop's clunk once it rests. The server's word comes as the platform arrives, and the platform we
+## draw glides on a little after it: the sounds follow what the player sees.
+func _sound_cart(delta: float) -> void:
+	var cart := get_node_or_null("Platform System") as Node3D
+	if cart == null or delta <= 0.0:
+		_cart_seen = false
+		return
+	var speed: float = cart.position.distance_to(_cart_drawn_at) / delta if _cart_seen else 0.0
+	_cart_drawn_at = cart.position
+	_cart_seen = true
+	var rolling := cart.get_node_or_null("RollingNoise") as AmbientLoop3D
+	if rolling != null:
+		rolling.set_running(rolling_heard(speed, rolling_min_speed_m_s))
+	if _clunk_on_rest and at_rest(speed):
+		_clunk_on_rest = false
+		_play_clunk()
+
+
+## Whether the cart drawn here, going at [param speed] (m/s), is heard rolling: faster than
+## [param min_speed] (rolling_min_speed_m_s).
+static func rolling_heard(speed: float, min_speed: float) -> bool:
+	return speed > min_speed
+
+
+## Whether the cart drawn here, going at [param speed] (m/s), is at rest (REST_SPEED_M_S).
+static func at_rest(speed: float) -> bool:
+	return speed <= REST_SPEED_M_S
 
 
 func platform_system_spawned() -> void:
@@ -696,6 +786,7 @@ func apply_prop_data(_data: Dictionary) -> void:
 					_on_lift_started()
 				else:
 					_on_lift_stopped()
+			_moving_heard = true
 
 
 ## Keep the TerrainNotch child in step with the lift: a box [member notch_width_m] wide and
