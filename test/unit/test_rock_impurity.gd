@@ -178,3 +178,16 @@ func test_iron_valence_slides_a_green_to_its_deep_hue_and_leaves_a_ruby_alone() 
 	var c_red := RockImpurity.concentration("corundum_red", d, RADIUS, 900.0, 1.0, 0.0)
 	assert_eq(RockImpurity.tint("corundum_red", d, RADIUS, 900.0, 1.0, 0.0, 0.5),
 			(pair[0] as Color).lerp(pair[1], c_red), "a ruby only deepens")
+
+
+func test_the_rules_table_is_never_replaced_once_warm() -> void:
+	# Read lock-free by every chunk task: a table swapped under a reader crashed the client in
+	# Dictionary::get (2026-10-01, 2026-10-13). Warm fills it once; a lookup never publishes.
+	RockImpurity.warm()
+	var table: Dictionary = RockImpurity._rules
+	assert_false(table.is_empty(), "every catalogue rock has its rule")
+	var slug: String = str(RockCatalogue.slugs()[0])
+	assert_same(RockImpurity.rule_of(slug), table[slug], "a warm rock reads the shared rule")
+	assert_false(RockImpurity.rule_of("no_such_rock").is_empty(), "an unknown rock still gets a rule")
+	assert_same(RockImpurity._rules, table, "and the table was neither replaced")
+	assert_false(table.has("no_such_rock"), "nor written")
