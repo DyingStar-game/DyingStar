@@ -13,12 +13,12 @@ func _dest(label: String, group: String) -> TeleportDestination:
 func test_headings_and_their_order() -> void:
 	var list: Array[TeleportDestination] = [
 		_dest("Low orbit", TeleportCatalog.GROUP_COMPUTED),
-		_dest("M0042", "mining village"),
-		_dest("major_railway_city_11", "railway city"),
-		_dest("F0005", "factory village"),
+		_dest("M0042", TeleportCatalog.POI_TYPE_GROUPS["mining village"]),
+		_dest("major_railway_city_11", TeleportCatalog.POI_TYPE_GROUPS["railway city"]),
+		_dest("F0005", TeleportCatalog.POI_TYPE_GROUPS["factory village"]),
 		_dest("Palaka-Pital", TeleportCatalog.GROUP_STATIONS),
-		_dest("major_railway_city_2", "railway city"),
-		_dest("F0003", "factory village"),
+		_dest("major_railway_city_2", TeleportCatalog.POI_TYPE_GROUPS["railway city"]),
+		_dest("F0003", TeleportCatalog.POI_TYPE_GROUPS["factory village"]),
 		_dest("Lone", ""),
 	]
 	var groups: Array = TeleportCatalog.grouped(list)
@@ -26,7 +26,8 @@ func test_headings_and_their_order() -> void:
 	for g: Array in groups:
 		headings.append(str(g[0]))
 	assert_eq(headings, PackedStringArray([TeleportCatalog.GROUP_STATIONS, TeleportCatalog.GROUP_POI,
-		"factory village", "mining village", "railway city", TeleportCatalog.GROUP_COMPUTED]),
+		TeleportCatalog.POI_TYPE_GROUPS["factory village"], TeleportCatalog.POI_TYPE_GROUPS["mining village"],
+		TeleportCatalog.POI_TYPE_GROUPS["railway city"], TeleportCatalog.GROUP_COMPUTED]),
 		"stations, the POI types alphabetically (untyped under the POI heading), computed points last")
 	var factory: Array = groups[2][1]
 	assert_eq((factory[0] as TeleportDestination).label, "F0003", "alphabetical inside a heading")

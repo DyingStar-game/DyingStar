@@ -17,10 +17,28 @@ extends RefCounted
 ## (the villages are networked props now), and reading an 8 KB JSON costs nothing.
 
 const POI_DIR: String = "res://assets/qgis/export"
-## The headings that are not a POI type (translation keys), in the list's order with the POI between.
+## The list's headings (translation keys): the stations, the POI without a known type, each POI type
+## (POI_TYPE_GROUPS), the computed points, in that order.
 const GROUP_STATIONS: String = "%%TELEPORT_GROUP_STATIONS"
 const GROUP_POI: String = "%%TELEPORT_GROUP_POI"
 const GROUP_COMPUTED: String = "%%TELEPORT_GROUP_COMPUTED"
+## A POI's heading by its "poi_type" in the POI file: the raw types were shown to the player, in
+## English only. A type missing here goes under GROUP_POI.
+const POI_TYPE_GROUPS: Dictionary = {
+	"city": "%%TELEPORT_GROUP_CITY",
+	"factory village": "%%TELEPORT_GROUP_FACTORY_VILLAGE",
+	"mining village": "%%TELEPORT_GROUP_MINING_VILLAGE",
+	"railway city": "%%TELEPORT_GROUP_RAILWAY_CITY",
+}
+## Over this mass (Earth masses) a body is a giant, gas or ice: past ten or so a planet holds on to an
+## envelope of gas. On Tarsis it parts the service's types exactly: Tarsis V (GasGiant, 134) and VI
+## (IceGiant, 38) from the rest, none over 1.4.
+const GIANT_MIN_EARTHS: float = 10.0
+## The mark before a body in the list: a planet, a moon, a giant.
+const MARK_PLANET: String = "○"
+const MARK_MOON: String = "●"
+const MARK_GIANT: String = "◌"
+
 
 ## How far above the ground a derived or ground-mode destination puts you. Small: enough not to spawn
 ## inside the terrain, not so much that you fall.
@@ -32,15 +50,6 @@ const ORBIT_HEIGHT_M: float = 100000.0
 static func systems() -> PackedStringArray:
 	return SystemScenes.systems()
 
-
-## Over this mass (Earth masses) a body is a giant, gas or ice: past ten or so a planet holds on to an
-## envelope of gas. On Tarsis it parts the service's types exactly: Tarsis V (GasGiant, 134) and VI
-## (IceGiant, 38) from the rest, none over 1.4.
-const GIANT_MIN_EARTHS: float = 10.0
-## The mark before a body in the list: a planet, a moon, a giant.
-const MARK_PLANET: String = "○"
-const MARK_MOON: String = "●"
-const MARK_GIANT: String = "◌"
 
 ## The bodies of a system, parents before their moons, each as
 ## `{ "key": "tarsis_3_1", "label": "Korax - Tarsis III.M1", "is_moon": true, "is_giant": false }`.
@@ -137,7 +146,7 @@ static func poi_destinations(planet_name: String) -> Array[TeleportDestination]:
 				float(entry.get("lon", 0.0)), float(entry.get("lat", 0.0)),
 				height, mode, TeleportDestination.Kind.POI,
 				_poi_detail(entry))
-		dest.group = str(entry.get("poi_type", ""))
+		dest.group = POI_TYPE_GROUPS.get(str(entry.get("poi_type", "")), GROUP_POI)
 		out.append(dest)
 	return out
 
@@ -196,12 +205,16 @@ static func grouped(list: Array[TeleportDestination]) -> Array:
 	return out
 
 
+## Where [param heading] goes in the list: stations, untyped POI, the POI types, computed points.
 static func _group_rank(heading: String) -> int:
-	if heading == GROUP_STATIONS:
-		return 0
-	if heading == GROUP_COMPUTED:
-		return 2
-	return 1
+	match heading:
+		GROUP_STATIONS:
+			return 0
+		GROUP_POI:
+			return 1
+		GROUP_COMPUTED:
+			return 3
+	return 2
 
 
 ## Case-insensitive substring match over the label AND the detail line, so "mining" finds the villages

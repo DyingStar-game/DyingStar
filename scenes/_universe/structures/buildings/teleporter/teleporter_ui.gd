@@ -119,7 +119,9 @@ func _on_body_picked(index: int) -> void:
 
 
 ## The destinations by heading (TeleportCatalog.grouped), each heading a folded row with its arrow:
-## a click opens it. A filter being typed opens every heading, so what it found is in sight.
+## a click opens it, and so does activating it from the keyboard or a gamepad (it is selectable, or a
+## pad could never reach a destination under a folded heading). A filter being typed opens every
+## heading, so what it found is in sight.
 func _apply_filter() -> void:
 	_shown_dests = TeleportCatalog.filter(_all_dests, _filter.text)
 	_dest_list.clear()
@@ -128,9 +130,8 @@ func _apply_filter() -> void:
 	for group: Array in TeleportCatalog.grouped(_shown_dests):
 		var dests: Array[TeleportDestination] = group[1]
 		var heading: TreeItem = _dest_list.create_item(root)
-		heading.set_text(0, "%s  (%d)" % [tr(str(group[0])).capitalize(), dests.size()])
+		heading.set_text(0, "%s  (%d)" % [tr(str(group[0])), dests.size()])
 		heading.set_custom_color(0, ACCENT)
-		heading.set_selectable(0, false)
 		heading.collapsed = not filtering
 		for dest: TeleportDestination in dests:
 			var row: TreeItem = _dest_list.create_item(heading)
@@ -268,9 +269,7 @@ func _build() -> void:
 	_dest_list = Tree.new()
 	_dest_list.hide_root = true
 	_dest_list.item_selected.connect(_on_dest_picked)
-	_dest_list.item_activated.connect(func() -> void:
-		_on_dest_picked()
-		_on_go_pressed())
+	_dest_list.item_activated.connect(_on_dest_activated)
 	# A click anywhere on a heading opens or closes it, not only on its arrow.
 	_dest_list.gui_input.connect(_on_dest_list_input)
 	columns.add_child(_titled_column("DESTINATION", _dest_list, 3, _filter))
@@ -333,7 +332,17 @@ func _filter_field() -> LineEdit:
 	return field
 
 
-## A left click on a heading opens or closes it.
+## Enter / A on a row: a heading opens or closes, a destination is the jump.
+func _on_dest_activated() -> void:
+	var row: TreeItem = _dest_list.get_selected()
+	if row != null and row.get_child_count() > 0:
+		row.collapsed = not row.collapsed
+		return
+	_on_dest_picked()
+	_on_go_pressed()
+
+
+## A left click on a heading opens or closes it (the click is taken: it neither selects nor activates).
 func _on_dest_list_input(event: InputEvent) -> void:
 	var click := event as InputEventMouseButton
 	if click == null or not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
