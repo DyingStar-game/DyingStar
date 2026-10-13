@@ -12,9 +12,19 @@ var _map : FakeMap
 ## The chart without its scene: open is shown, and what the overlay hands it is recorded.
 class FakeMap extends StarMap:
 	var inset : float = -1.0
+	var _shown : bool = false
 
-	func _ready() -> void:
-		hide()
+	## Opened and closed as the real chart is — its face, never its layer — without building the system.
+	func open() -> void:
+		_shown = true
+		open_changed.emit(true)
+
+	func close() -> void:
+		_shown = false
+		open_changed.emit(false)
+
+	func is_open() -> bool:
+		return _shown
 
 	func debug_lines() -> PackedStringArray:
 		return PackedStringArray(["22 bodies"])
@@ -97,7 +107,7 @@ func test_the_music_section_has_its_own_switch() -> void:
 func test_the_star_map_section_needs_its_switch_and_the_map_open() -> void:
 	SettingsManager.debug.preview(&"star_map_debug", true)
 	assert_false(_panel.is_shown(), "map closed: nothing to show")
-	_map.show()
+	_map.open()
 	_panel.reevaluate()
 	assert_true(_section("%%HUD_DEV_STAR_MAP").box.visible, "open, with its switch on")
 	assert_string_contains(_section("%%HUD_DEV_STAR_MAP").text(), "22 bodies", "the map's own lines")
@@ -106,10 +116,25 @@ func test_the_star_map_section_needs_its_switch_and_the_map_open() -> void:
 
 func test_over_the_open_map_and_back_under_once_closed() -> void:
 	SettingsManager.debug.preview(&"star_map_debug", true)
-	_map.show()
+	_map.open()
 	_panel.reevaluate()
 	assert_eq(_panel.layer, StarMap.LAYER + 1, "the chart is opaque: the panel goes over it")
 	assert_eq(_map.inset, _panel.footprint_px(), "and the chart's info panel steps aside")
-	_map.hide()
+	_map.close()
 	assert_eq(_panel.layer, OverlayPanel.LAYER, "back under the menus")
 	assert_eq(_map.inset, 0.0, "the corner is the info panel's again")
+
+
+func test_over_the_datapad_the_chart_is_hosted_in() -> void:
+	var pad := CanvasLayer.new()
+	pad.layer = 30
+	add_child_autofree(pad)
+	var slot := Control.new()
+	pad.add_child(slot)
+	_map.host_in(slot)
+	SettingsManager.debug.preview(&"star_map_debug", true)
+	_map.open()
+	_panel.reevaluate()
+	assert_eq(_panel.layer, 31, "over the DataPad the chart draws in, not under it")
+	_map.close()
+	assert_eq(_panel.layer, OverlayPanel.LAYER, "back under the menus")

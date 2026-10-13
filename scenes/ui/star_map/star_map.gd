@@ -6,6 +6,10 @@ extends CanvasLayer
 ## answers with, and the shape the inventory service stores. The mode stays on until cancelled, so
 ## a player who missed their click simply clicks again.
 signal poi_placed(place: Dictionary)
+## The chart's face shows ([param open]) or goes: on every [method open] and [method close]. The layer
+## itself never hides — hosted in the DataPad only the face comes and goes — so visibility_changed
+## says nothing of it.
+signal open_changed(open: bool)
 
 ## Chart of the system: every celestial body as a plain coloured sphere, its orbit as a ring, and its
 ## current spin shown by a tilted axis with a meridian marker. Drawn on its own face (a Control): the
@@ -450,6 +454,7 @@ func open() -> void:
 	if not _opened_before or _moved_since_closed():
 		_opened_before = true
 		_open_on_player()
+	open_changed.emit(true)
 
 
 ## Have you travelled since the chart was closed — to another body, or further than a quarter of the ground
@@ -506,6 +511,7 @@ func close() -> void:
 	# still in flight are harmless: a worker writes into its own slot and nothing else.
 	_surface.hide()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	open_changed.emit(false)
 
 
 func _exit_tree() -> void:
@@ -515,6 +521,14 @@ func _exit_tree() -> void:
 
 func is_open() -> bool:
 	return _surface != null and _surface.is_visible_in_tree()
+
+
+## The canvas layer the chart's face is drawn on: its host's (the DataPad's) once hosted, else its own.
+## What goes over the open chart goes over THAT one.
+func drawn_layer() -> int:
+	var on: CanvasLayer = _surface.get_canvas_layer_node() \
+			if _surface != null and _surface.is_inside_tree() else null
+	return on.layer if on != null else layer
 
 
 ## Put the chart's face in [param slot] — the DataPad's NAVIGATION tab: the chart then draws in that
