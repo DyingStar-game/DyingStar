@@ -2148,6 +2148,8 @@ func _register_player(spawned_entity_instance: Node, player_uuid: String, adopte
 		if seat_name != "":
 			seat_parent.server_enter(spawned_entity_instance, seat_name, true)
 			print("[zone] player %s re-seated in %s of vehicle %s" % [player_uuid, seat_name, seat_parent.uuid])
+	# Updates wired and seat settled: the posture this server holds, sent even at its defaults.
+	spawned_entity_instance.server_publish_spawn_state()
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
 	_stream_adopt_waiting(player_uuid)  # what they carry, if it arrived first
 

@@ -316,6 +316,17 @@ func _solid_ray(from_pos: Vector3, to_pos: Vector3) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(from_pos, to_pos, Globals.MASK_OBSTACLE, [player.get_rid()])
 	return space.intersect_ray(query)
 
+## The posture this server holds, published when it takes the player (Player.server_publish_spawn_state)
+## even at its defaults. Stance, floating and seat are replicated only on a CHANGE, and a new body starts
+## standing, not floating, on foot: Horizon and the client still held the last session's crouch, EVA or
+## driver's seat, the client asked to stand up, the server was standing already and answered nothing —
+## stuck crouched. A body handed over seated is re-seated first, and says so.
+func spawn_state() -> Dictionary:
+	var seat: Node = player._seat_node
+	var role: String = "" if not is_instance_valid(seat) \
+			else ("driver" if seat.is_driver_seat() else "passenger")
+	return {"stance": _stance, "floating": player.floating, "seat": role}
+
 ## Physics step: apply a pending stance change now that the space state is valid. Standing up to a taller
 ## stance needs headroom (else we drop the request and stay low). Replicates only on an actual change.
 func _process_stance_request() -> void:

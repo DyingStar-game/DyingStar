@@ -955,6 +955,12 @@ func server_adopt_carried(item: Node) -> void:
 	if _role != null and _role.has_method("server_adopt_carried"):
 		_role.server_adopt_carried(item)
 
+## Server: tell Horizon and every client the posture this server holds for the body (see
+## PlayerServer.spawn_state). Called once the player is registered and its updates are wired.
+func server_publish_spawn_state() -> void:
+	if _role != null and _role.has_method("spawn_state"):
+		server_send_properties_to_client(_role.spawn_state())
+
 func server_action_received(data: Dictionary) -> void:
 	# Server authority: delegate to the PlayerServer role (only the dedicated server receives this).
 	_role.server_action_received(data)
