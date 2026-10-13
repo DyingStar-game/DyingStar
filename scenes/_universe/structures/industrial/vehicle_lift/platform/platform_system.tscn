@@ -6,6 +6,8 @@
 [ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/materials/platform_principal.material" id="3_6yhhl"]
 [ext_resource type="ArrayMesh" uid="uid://bjvuw43a1wg0g" path="res://assets/_universe/structures/industrial/vehicle_lift/platform/platform_cart_lod1.mesh" id="5_arn6u"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="26_j51iy"]
+[ext_resource type="Script" uid="uid://q5rm52iyeiak" path="res://scenes/common/ambient_loop_3d.gd" id="30_hum"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-rolling.ogg" id="31_rolling"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_fti8b"]
 size = Vector3(1.29, 3.42, 0.275)
@@ -61,3 +63,11 @@ script = ExtResource("26_j51iy")
 type_name = "vehicle_lift_platformsystem"
 smooth_transform = true
 metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="RollingNoise" type="Node3D" parent="." unique_id=1554030871]
+script = ExtResource("30_hum")
+stream = ExtResource("31_rolling")
+volume_db = -2.0
+falloff = 6.0
+distance = 70.0
+autoplay = false

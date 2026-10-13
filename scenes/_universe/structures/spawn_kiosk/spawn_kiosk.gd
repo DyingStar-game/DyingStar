@@ -8,8 +8,6 @@ extends StaticBody3D
 ## whether it is allowed now — so a tampered client cannot spawn anything else nor anywhere else.
 ## Refused while ANYTHING solid stands in the spawn box, and for `spawn_cooldown` after a spawn.
 
-const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
-
 ## Text on the kiosks to display (also the "[E] ..." prompt when aimed at; a translation key works).
 @export var kiosk_text: String = ""
 
@@ -64,12 +62,9 @@ func _on_interaction_requested(interactor: Node) -> void:
 		"kiosk": str(building.get_path_to(self)),
 	})
 
-## The networked building this kiosk belongs to: the nearest ancestor carrying a PropSync child.
+## The networked building this kiosk belongs to (MarkerSpawn.building_of).
 func _building() -> Node:
-	var n: Node = get_parent()
-	while n != null and PropSync.of(n) == null:
-		n = n.get_parent()
-	return n
+	return MarkerSpawn.building_of(self)
 
 ## SERVER: a validated press (PlayerServer checked the range). Spawns on the next physics step.
 func server_request_spawn() -> void:
@@ -98,64 +93,20 @@ func _physics_process(_delta: float) -> void:
 		return
 	_spawn()
 
-## The GORC type of spawn_scene: its PropSync's type_name, else the root's own `type_name` (a Vehicle
-## carries its networking itself, without PropSync). "" when it has neither. Instanced once (never
-## added to the tree, so no _ready runs) and cached.
+## The GORC type of spawn_scene (MarkerSpawn.scene_type), read once and cached.
 func _scene_type() -> String:
 	if _spawn_type == null:
-		_spawn_type = ""
-		var probe: Node = spawn_scene.instantiate()
-		var sync: PropSync = PropSync.of(probe)
-		if sync != null:
-			_spawn_type = str(sync.type_name)
-		elif "type_name" in probe:
-			_spawn_type = str(probe.type_name)
-		probe.free()
+		_spawn_type = MarkerSpawn.scene_type(spawn_scene)
 	return _spawn_type
 
-## First solid body in the spawn box, or null when it is empty. The building's own bodies (walls,
-## floor, this kiosk) are excluded: they would always fill it.
+## First solid body in the spawn box, or null when it is empty (MarkerSpawn.blocker). The building's
+## own bodies (walls, floor, this kiosk) are excluded: they would always fill it.
 func _spawn_box_blocker() -> Object:
-	var box := BoxShape3D.new()
-	box.size = clear_box_size
-	var params := PhysicsShapeQueryParameters3D.new()
-	params.shape = box
-	var xf: Transform3D = spawn_marker.global_transform
-	params.transform = Transform3D(xf.basis,
-			xf.origin + xf.basis.y.normalized() * (clear_box_lift + clear_box_size.y * 0.5))
-	params.collision_mask = Globals.MASK_SOLID
-	params.collide_with_bodies = true
-	params.collide_with_areas = false
-	var exclude: Array[RID] = []
 	var building: Node = _building()
-	_collect_body_rids(building if building != null else self, exclude)
-	params.exclude = exclude
-	var hits: Array[Dictionary] = get_world_3d().direct_space_state.intersect_shape(params, 1)
-	return hits[0].get("collider") if not hits.is_empty() else null
+	return MarkerSpawn.blocker(spawn_marker, clear_box_size, clear_box_lift, building if building != null else self)
 
-func _collect_body_rids(node: Node, out: Array[RID]) -> void:
-	if node is CollisionObject3D:
-		out.append((node as CollisionObject3D).get_rid())
-	for child in node.get_children():
-		_collect_body_rids(child, out)
-
-## Hand the prop to the network, placed at the marker in the frame of the networked parent it sits
-## on (the planet): a prop left in world coordinates would drift away with the moving planet.
+## Hand the prop to the network at the marker (MarkerSpawn.spawn).
 func _spawn() -> void:
-	var net_parent: Node = PropSpawn.find_net_parent(spawn_marker)
-	var world: Transform3D = spawn_marker.global_transform
-	var local_pos: Vector3 = PropSpawn.to_parent_local(net_parent, world.origin)
-	var local_basis: Basis = world.basis
-	if net_parent is Node3D:
-		local_basis = (net_parent as Node3D).global_basis.inverse() * world.basis
-	var local_rot: Vector3 = local_basis.orthonormalized().get_euler()
-	NetworkOrchestrator.spawn_prop_authoritative({
-		"type": _scene_type(),
-		"uuid": UUID_UTIL.v4(),
-		"position": {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z},
-		"rotation": {"x": local_rot.x, "y": local_rot.y, "z": local_rot.z},
-		"scenename": spawn_scene.resource_path.trim_prefix("res://"),
-		"parent_id": PropSpawn.net_parent_uuid(net_parent),
-	})
+	MarkerSpawn.spawn(spawn_scene, _scene_type(), spawn_marker)
 	_last_spawn_ms = Time.get_ticks_msec()
 	print("🏪 Kiosk spawn '%s' (%s)" % [spawn_scene.resource_path, _scene_type()])

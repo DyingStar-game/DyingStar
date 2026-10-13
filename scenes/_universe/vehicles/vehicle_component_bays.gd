@@ -101,7 +101,7 @@ func refuse_reason(spec: VehicleComponentSpec) -> String:
 		return "Not a vehicle part"
 	var limit: int = limit_for(spec.kind)
 	if limit >= 0 and fitted_count(spec.kind) >= limit:
-		return "This chassis takes %d %s" % [limit, spec.display_name]
+		return "This chassis takes %d %s" % [limit, spec.label()]
 	return ""
 
 

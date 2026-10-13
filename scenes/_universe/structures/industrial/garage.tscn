@@ -2,12 +2,14 @@
 
 [ext_resource type="PackedScene" uid="uid://c17mvq7136cgs" path="res://assets/_universe/structures/industrial/garage.glb" id="1_wl12i"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_dtmlv"]
+[ext_resource type="Material" uid="uid://dkxs53ephoysf" path="res://assets/_universe/_shared/materials/mat_concrete_wall_smooth/mat_concrete_wall_smooth.tres" id="2_qn3cl"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_dtmlv"]
 [ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://scenes/_universe/structures/spawn_kiosk/spawn_kiosk.tscn" id="4_u0y64"]
 [ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/_universe/vehicles/ground/trucks/truck.tscn" id="5_truck"]
 [ext_resource type="Texture2D" uid="uid://bkdgy355wbt83" path="res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg" id="6_5left"]
 [ext_resource type="Script" uid="uid://db0rt5lmk5ogb" path="res://scenes/_universe/vehicles/charging_zone.gd" id="7_5iueg"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="8_neon"]
+[ext_resource type="PackedScene" uid="uid://bqc3pjlv1nipw" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="disp_scene"]
 [ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="led_1x1"]
 [ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="light_group_script"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
@@ -44,6 +46,9 @@ size = Vector3(1.9300036668046232, 0.982875679677818, 4.008007256641804)
 [node name="garage" parent="." unique_id=1594753760 instance=ExtResource("1_wl12i")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00040201531804373, 0, -0.00181337476357157)
 collision_mask = 0
+
+[node name="Murs New" parent="garage" index="2" unique_id=272819036]
+material_override = ExtResource("2_qn3cl")
 
 [node name="CollisionShapeFloor" type="CollisionShape3D" parent="garage" unique_id=1188942111]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.544735670089722, -0.4890367858145761, -20.37022089958191)
@@ -165,19 +170,33 @@ script = ExtResource("light_group_script")
 script = ExtResource("pc_photocell")
 
 [node name="LedPanel 01" parent="Lights" unique_id=844345665 instance=ExtResource("led_1x1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.8999509822331735, -4.592254021106273)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.899950982233173, -4.592254021106273)
 
 [node name="LedPanel 03" parent="Lights" unique_id=825864694 instance=ExtResource("led_1x1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.8999509822331735, -18.468406382126247)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.899950982233173, -18.468406382126247)
 
 [node name="LedPanel 05" parent="Lights" unique_id=217787756 instance=ExtResource("led_1x1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.8999509822331735, -36.879701731881305)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 7.899950982233173, -36.879701731881305)
 
 [node name="LedPanel 06" parent="Lights" unique_id=185910193 instance=ExtResource("led_1x1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.8999509822331735, -4.592254021106273)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.899950982233173, -4.592254021106273)
 
 [node name="LedPanel 08" parent="Lights" unique_id=1130656204 instance=ExtResource("led_1x1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.8999509822331735, -18.468406382126247)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.899950982233173, -18.468406382126247)
 
 [node name="LedPanel 10" parent="Lights" unique_id=1580527226 instance=ExtResource("led_1x1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.8999509822331735, -36.879701731881305)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, 7.899950982233173, -36.879701731881305)
+
+[node name="ItemDispenser" parent="." unique_id=875294262 instance=ExtResource("disp_scene")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.030244222750913, 0.01096325825641919, -14.28729467483291)
+
+[node name="ItemDispenser2" parent="." unique_id=1089814030 instance=ExtResource("disp_scene")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.030244222750913, 0.01096325825641919, -25.31689751360224)
+
+[node name="ItemDispenser3" parent="." unique_id=1631768257 instance=ExtResource("disp_scene")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.030244222750913, 0.01096325825641919, -31.5335827499995)
+
+[node name="ItemDispenser4" parent="." unique_id=447734562 instance=ExtResource("disp_scene")]
+transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.030244222750913, 0.01096325825641919, -37.58315279186995)
+
+[editable path="garage"]

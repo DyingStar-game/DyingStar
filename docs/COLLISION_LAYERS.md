@@ -154,7 +154,7 @@ makes the area findable by the one monitor that is looking. `monitoring = true` 
 
 Everywhere else — seats, cargo bays, spawn zones, consoles, screens, teleporter pads, a prop's
 carry area — the node only needs `monitorable = true` and the right `collision_layer`.
-`scenes/interactables/screen_zone.gd` is the canonical self-configuring form.
+`scenes/audio/music/music_zone.gd` is the canonical self-configuring form.
 
 An area in one of the three cases above **must join the `active_monitor` group**. This is a group
 rather than a name list because `Globals` already legislates it ("Variants of one layer are told

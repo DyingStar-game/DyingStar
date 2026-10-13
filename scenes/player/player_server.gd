@@ -59,6 +59,8 @@ var _jump_count: int = 0
 var _spawn_queue: Array[String] = []
 ## Server-only line-of-sight ray (lazy) + carry-prompt throttle timer.
 var _los_ray: RayCast3D = null
+## Where a put-down tool appears, in the player's frame: in front, at waist height, from where it falls.
+const TOOL_DROP_AT := Vector3(0.0, 1.0, -0.8)
 var _carry_prompt_timer: float = 0.0
 ## Orientation of the carried crate ON ITS MOUNT, in BODY-local space: the wheel notch and the
 ## middle-mouse free rotate accumulate into it, _server_update_carried_item re-applies it every tick,
@@ -393,26 +395,30 @@ func server_action_received(data: Dictionary) -> void:
 		"god_mode_land":
 			_god_mode_land()
 		"screen_state":
-			# A 3D screen (mining depot, teleporter) button was pressed: route it to that screen.
-			if player.screen_interacting and player.screen_interacting.has_method("update_screen"):
-				# Hand the ACTOR over when the screen asks for one. Two players can stand at the same
-				# console, so "whoever walked up last" (screen_focus_changed) is not necessarily who
-				# pressed the button — and WHOSE action this is must never be read from the payload,
-				# which the client wrote. Screens that do not care are untouched.
-				if player.screen_interacting.has_method("set_screen_actor"):
-					player.screen_interacting.set_screen_actor(player)
-				player.screen_interacting.update_screen(data)
+			# A 3D screen (mining depot, teleporter, component dispenser) button was pressed. The client
+			# NAMES the screen (ScreenTarget.address_of), like a kiosk; we find it again and check the
+			# player is within reach of it, so a tampered client reaches no screen it is not at.
+			var screen: Node3D = ScreenTarget.resolve(_find_deletable_prop(str(data.get("target_uuid", ""))),
+					data, player.interact_ray.global_position)
+			if screen != null:
+				# Hand the ACTOR over when the screen asks for one: WHOSE action this is must never be read
+				# from the payload, which the client wrote. Screens that do not care are untouched.
+				if screen.has_method("set_screen_actor"):
+					screen.set_screen_actor(player)
+				screen.update_screen(data)
 			else:
-				# Not silent: the client showed a screen and sent its button, so a server that sees the
-				# player at no screen is a disagreement between the two, and it used to vanish without a word.
-				push_warning("[Screen] %s pressed '%s' but the server has them at no screen"
-						% [player.client_uuid, str(data.get("state", ""))])
+				# Not silent: the client showed a screen and sent its button, so a server that cannot find
+				# it within reach is a disagreement between the two (or a tampered client).
+				push_warning("[Screen] %s pressed '%s' on '%s' but no such screen is within reach"
+						% [player.client_uuid, str(data.get("state", "")), str(data.get("screen", ""))])
 		"update_property":
 			# Generic player-property update (tech-debt A): apply the authoritative side-effects we
 			# know about, then replicate every property to nearby clients.
 			var props: Dictionary = data.duplicate()
 			props.erase("action")
 			if props.has("tools"):
+				if str(props["tools"]) != "" and not player.owns_mining_tool:
+					props["tools"] = ""  # no tool to take out: the owner's client is told it stays away
 				player.mining_tool.server_set_tool(str(props["tools"]))
 			if props.has("head"):
 				# Apply on the server too so the interaction ray + carried item follow the gaze
@@ -424,7 +430,7 @@ func server_action_received(data: Dictionary) -> void:
 		"perforate_rock":
 			# Authoritative fracture: cut the targeted rock along the aimed fault.
 			var rock = _find_mining_rock(str(data.get("uuid", "")))
-			if rock and rock.has_method("server_perforate"):
+			if rock and rock.has_method("server_perforate") and player.owns_mining_tool:
 				var h: Dictionary = data.get("hit", {})
 				var dd: Dictionary = data.get("dir", {})
 				rock.server_perforate(
@@ -436,25 +442,15 @@ func server_action_received(data: Dictionary) -> void:
 			var del_type: String = str(data.get("type", ""))
 			var del_uuid: String = str(data.get("uuid", ""))
 			var deletable := ["miningrock", "box", "mining_depot", "crate_container", "vehicle",
-					"vehicle_component"]
+					"vehicle_component", "food", "tool"]
 			if del_uuid == "" or not (del_type in deletable):
 				print("🗑️ Admin delete refused: type=%s uuid=%s" % [del_type, del_uuid])
 			elif NetworkOrchestrator.protected_prop_uuids.has(del_uuid):
 				# World infrastructure placed by designers (e.g. a depot in the city): keep it.
 				print("🗑️ Admin delete refused: %s is protected world infrastructure" % del_uuid)
 			else:
-				# Free the node (removes its collision body) AND tell Horizon to drop it from the GORC +
-				# database. Both are needed: queue_free alone may not replicate the delete, and the GORC
-				# delete alone leaves a collision ghost.
-				var prop = _find_deletable_prop(del_uuid)
-				if prop != null and is_instance_valid(prop):
-					print("🗑️ Admin delete: freeing local node %s %s" % [del_type, del_uuid])
-					_reparent_children_of_prop(prop)
-					prop.queue_free()
-				if NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
-					# Not held locally (e.g. loaded from the database): tell Horizon directly.
-					print("🗑️ Admin delete: forwarding to Horizon %s %s" % [del_type, del_uuid])
-					NetworkOrchestrator.network_agent._on_prop_delete(del_uuid, del_type)
+				print("🗑️ Admin delete: %s %s" % [del_type, del_uuid])
+				_server_delete_prop(_find_deletable_prop(del_uuid), del_type, del_uuid)
 		"spawn_prop":
 			# Dev spawn wheel (dev tool "spawn_wheel", refused at the top while it is off): the client only
 			# NAMES what it wants; we own everything else.
@@ -680,6 +676,17 @@ func server_action_received(data: Dictionary) -> void:
 				var can_grab: bool = _stance == 0 and parent_node != null and parent_node.has_method("interact") \
 						and not _component_locked(parent_node) \
 						and parent_node.interact(player) and not _is_blocked_by_geometry(parent_node)
+				# A tool is not carried: it goes into the kit (ToolProp). With nothing to take and the tool
+				# out, `action` puts it down. Either way the client's predicted stow is undone.
+				var kit_handled: bool = false
+				if can_grab and parent_node is ToolProp:
+					kit_handled = _server_take_tool(parent_node)
+					can_grab = false
+				elif parent_node == null:
+					kit_handled = _server_drop_tool()
+				if kit_handled:
+					picked_up = true
+					player.server_send_properties_to_client({"carrying": false})
 				if can_grab:
 					# If it's secured in a vehicle bed, take it out of the load first (retrieval).
 					var prev_parent = parent_node.get_parent()
@@ -899,6 +906,18 @@ func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 		if found != null:
 			return found
 	return null
+
+## Remove a networked prop for good: free the node (its collision body) AND tell Horizon to drop it
+## from the GORC and the database. Both are needed: queue_free alone may not replicate the delete, and
+## the GORC delete alone leaves a collision ghost. [param prop] may be null (not held here, e.g. only in
+## the database): Horizon is told all the same.
+func _server_delete_prop(prop: Node, type: String, uuid: String) -> void:
+	if prop != null and is_instance_valid(prop):
+		_reparent_children_of_prop(prop)
+		prop.queue_free()
+	if NetworkOrchestrator.network_agent.has_method("_on_prop_delete"):
+		NetworkOrchestrator.network_agent._on_prop_delete(uuid, type)
+
 
 ## A part its bay will not give back right now (VehicleComponentBays.removal_refused): any part, while
 ## the engine runs. Checked before interact(), which would mark it carried.
@@ -2839,7 +2858,51 @@ func _compute_carry_prompt() -> String:
 		return "locked"  # a part of a running vehicle: the HUD says why it stays in
 	var grabbable: bool = prop != null and prop.has_method("interact") and prop.interact(player) \
 			and not _is_blocked_by_geometry(prop)
+	var tool: String = tool_prompt(prop is ToolProp, prop != null, grabbable, _stance == 0,
+			player.owns_mining_tool, player.mining_tool != null and player.mining_tool.is_equipped())
+	if tool != "":
+		return tool
 	return grab_prompt(grabbable, _stance == 0, prop is VehicleComponent)
+
+
+## The prompt for the mining tool, "" when it has nothing to say: "take" a tool aimed at (in reach,
+## standing), "tool_owned" when the player already has one, "drop_tool" with the tool out
+## ([param tool_out]) and nothing aimed at ([param aimed]).
+static func tool_prompt(is_tool: bool, aimed: bool, grabbable: bool, standing: bool, owns: bool,
+		tool_out: bool) -> String:
+	if is_tool:
+		if not grabbable or not standing:
+			return ""
+		return "tool_owned" if owns else "take"
+	if not aimed and owns and tool_out:
+		return "drop_tool"
+	return ""
+
+
+## SERVER: take the aimed tool into the player's kit: the prop is gone, the tool is out in their hands.
+## False (refused) when they already own one.
+func _server_take_tool(tool: Node) -> bool:
+	if player.owns_mining_tool:
+		return false
+	_server_delete_prop(tool, ToolProp.TYPE, str(tool.uuid))
+	player.server_set_owns_mining_tool(true)
+	print("[Tool] %s took a mining tool" % player.client_uuid)
+	return true
+
+
+## SERVER: put the tool down in front of the player — a ToolProp anyone may take — when it is out in
+## their hands. False when there is no tool out.
+func _server_drop_tool() -> bool:
+	if not player.owns_mining_tool or player.mining_tool == null or not player.mining_tool.is_equipped():
+		return false
+	var at := Marker3D.new()
+	player.add_child(at)
+	at.position = TOOL_DROP_AT
+	MarkerSpawn.spawn(load(ToolProp.SCENE_PATH), ToolProp.TYPE, at)
+	at.free()
+	player.server_set_owns_mining_tool(false)
+	print("[Tool] %s put a mining tool down" % player.client_uuid)
+	return true
 
 
 ## The prompt for a prop in reach with empty hands: "carry" when it can be taken; "" when it cannot,

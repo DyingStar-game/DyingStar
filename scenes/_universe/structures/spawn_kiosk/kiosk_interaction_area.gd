@@ -1,6 +1,6 @@
 extends Interactable
 
-## PASSIVE BY DESIGN, like ScreenZone / VehicleSeat / VehicleDoorHandle: a look-at target for the
+## PASSIVE BY DESIGN, like VehicleSeat / VehicleDoorHandle: a look-at target for the
 ## player's InteractRay, which calls interact() on what it hits. It is DETECTED; it never detects.
 ##
 ## It used to carry none of this, so it inherited the engine defaults — layer 1 and mask 1 — and two

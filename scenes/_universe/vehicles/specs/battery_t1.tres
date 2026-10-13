@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_spec")
-display_name = "T1 Battery"
+display_name = "%%PART_BATTERY_T1"
 kind = 1
 scene_path = "res://scenes/_universe/props/vehicles/battery_t1.tscn"
 mass_kg = 25.0

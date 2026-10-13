@@ -336,11 +336,7 @@ func handle_extract():
 func _on_rock_depot_ui_action_triggered(type: String) -> void:
 	if GameOrchestrator.is_server(): return
 	# on client trigger the screen state update for the current player if pressed on ui element
-	var player: Player = NetworkOrchestrator.network_agent.player_entity
-	player.client_send_action_to_server({
-		"action": "screen_state",
-		"state": type
-	})
+	ScreenTarget.send(self, {"state": type})
 
 func update_screen(data: Dictionary):
 	var target_state = data["state"]
@@ -353,15 +349,8 @@ func update_screen(data: Dictionary):
 		handle_extract()
 
 
-## 3D-screen contract: a player's proximity monitor gained (or lost) this console. The PLAYER owns
-## `screen_interacting` and is the single active monitor of the game (Player.connect_area_detect), so
-## all we do here is note who is using the machine.
-## This used to be a pair of body_entered / body_exited handlers on our own Area3D, with a half-second
-## grace period bolted on to survive the planet's spin. Both are gone: an area-to-area overlap cannot
-## desynchronise across a moving frame, so there is no false exit left to absorb (see ScreenZone).
-func screen_focus_changed(player: Player, focused: bool) -> void:
-	if focused:
-		active_player = player
-		return
-	if is_instance_valid(active_player) and active_player.client_uuid == player.client_uuid:
-		active_player = null
+## SERVER, 3D-screen contract (ScreenTarget): the player whose action is about to be handled — who
+## is using the machine. It was noted from a proximity zone in front of the console, gone since the
+## crosshair points at screens (2026-10-13).
+func set_screen_actor(player: Player) -> void:
+	active_player = player

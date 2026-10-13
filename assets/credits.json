@@ -291,6 +291,33 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "dispenser-delivery.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/dispenser-delivery.ogg",
+			"author": "JarredGibb",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/219491/",
+			"license": "CC0"
+		},
+		{
+			"asset": "dispenser-hatch-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/dispenser-hatch-open.ogg",
+			"author": "gropkcor",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/392240/",
+			"license": "CC0"
+		},
+		{
+			"asset": "dispenser-idle-hum.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/dispenser-idle-hum.ogg",
+			"author": "loganzsound",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/861546/",
+			"license": "CC0"
+		},
+		{
 			"asset": "generator-loop.ogg",
 			"path": "res://assets/_universe/audio/sfx/machine/generator-loop.ogg",
 			"author": "WarpZone",
@@ -334,6 +361,33 @@
 			"id": "",
 			"url": "https://pixabay.com/sound-effects/road-hammer-drill-machine-short-278458/",
 			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "lift-platform-rolling.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-rolling.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lift-platform-start-stop.mp3",
+			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-start-stop.mp3",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lift-winch-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-winch-loop.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
 		},
 		{
 			"asset": "machine-button-off.ogg",
@@ -653,6 +707,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "ares_logo_mark.png",
+			"path": "res://assets/textures/decals/ares_logo/ares_logo_mark.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "Base.glb",
 			"path": "res://assets/_universe/structures/industrial/vehicle_lift/base/Base.glb",
 			"author": "The_Moye",
@@ -725,6 +788,42 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "food_biscuit.glb",
+			"path": "res://assets/_universe/props/food/food_biscuit.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "food_biscuit.png",
+			"path": "res://assets/_universe/props/food/icons/food_biscuit.png",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "food_nutrigris.glb",
+			"path": "res://assets/_universe/props/food/food_nutrigris.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "food_nutrigris.png",
+			"path": "res://assets/_universe/props/food/icons/food_nutrigris.png",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "furn_floodlight_outdoor_lg.glb",
 			"path": "res://assets/_universe/props/furniture/furn_floodlight_outdoor_lg.glb",
 			"author": "SangeetBlaze",
@@ -784,6 +883,15 @@
 			"author": "Kankan",
 			"source": "Discord",
 			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hammerdrill.glb",
+			"path": "res://assets/_universe/props/tools/tools/mining/hammerdrill.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -964,6 +1072,15 @@
 			"author": "Tarcellos",
 			"source": "Discord",
 			"id": "571991741763158016",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mining_tool.png",
+			"path": "res://assets/_universe/props/tools/icons/mining_tool.png",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},

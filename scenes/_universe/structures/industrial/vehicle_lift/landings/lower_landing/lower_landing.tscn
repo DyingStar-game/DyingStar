@@ -20,14 +20,9 @@
 [ext_resource type="ArrayMesh" uid="uid://c0j587jkhrtiy" path="res://assets/_universe/structures/industrial/vehicle_lift/railing/railing_type02_lod2.mesh" id="17_1vhs6"]
 [ext_resource type="PackedScene" uid="uid://duni0rc7ofqdu" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/kiosk/kiosk.tscn" id="18_0mqw1"]
 [ext_resource type="PackedScene" uid="uid://ls2ntiaejh3w" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/beacon/beacon.tscn" id="18_1vhs6"]
-[ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="19_0mqw1"]
-
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_fti8b"]
 height = 0.9
 radius = 0.05
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_rsfnm"]
-size = Vector3(1.2359055290535252, 1.5159430815429005, 1.258038524483709)
 
 [node name="Lower Landing" type="StaticBody3D" unique_id=814693587]
 collision_mask = 0
@@ -393,7 +388,7 @@ surface_material_override/0 = ExtResource("9_1lu48")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45703608, 0)
 shape = SubResource("CylinderShape3D_fti8b")
 
-[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport", "screen_interaction_area") instance=ExtResource("18_0mqw1")]
+[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport") instance=ExtResource("18_0mqw1")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.1545362, 0.4567987, 7.605912)
 pivot_base_rotation = 90.0
 pivot_arm01_z_rotation = 20.0
@@ -402,16 +397,6 @@ pivot_arm02_z_rotation = 20.0
 pivot_balljoint_y_rotation = 90.0
 ball_joint_rotation = Vector2(25, 0)
 screen_display_viewport = NodePath("../Screen Display Interface")
-screen_interaction_area = NodePath("../ScreenDetector")
-
-[node name="ScreenDetector" type="Area3D" parent="." unique_id=136395465 groups=["screen_area"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.245936506532395, 0.21703245945570748, 6.143362127545709)
-input_ray_pickable = false
-script = ExtResource("19_0mqw1")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="ScreenDetector" unique_id=398459682]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1179527667071152, 0.25797153000000006, -0.00753310322761534)
-shape = SubResource("BoxShape3D_rsfnm")
 
 [node name="Screen Display Interface" type="SubViewport" parent="." unique_id=331619490]
 disable_3d = true

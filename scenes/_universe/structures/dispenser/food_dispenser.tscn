@@ -1,0 +1,65 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="1_base"]
+
+[sub_resource type="BoxShape3D" id="Shape_upper_food"]
+size = Vector3(1, 0.83, 0.8)
+
+[sub_resource type="BoxShape3D" id="Shape_base_food"]
+size = Vector3(1, 0.95, 0.8)
+
+[sub_resource type="BoxShape3D" id="Shape_back_food"]
+size = Vector3(1, 0.22, 0.52)
+
+[sub_resource type="BoxShape3D" id="Shape_side_food"]
+size = Vector3(0.27, 0.22, 0.28)
+
+[node name="FoodDispenser" instance=ExtResource("1_base")]
+brand = 7
+catalogue_dir = "res://scenes/_universe/props/food/dispenser_items/"
+title_key = "%%DISPENSER_FOOD_TITLE"
+batch_spacing_m = 0.11
+tray_box_size = Vector3(0.42, 0.15, 0.24)
+tray_box_lift = -0.035
+
+[node name="UpperCollision" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.585, 0)
+shape = SubResource("Shape_upper_food")
+
+[node name="BaseCollision" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.475, 0)
+shape = SubResource("Shape_base_food")
+
+[node name="BackCollision" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.06, -0.14)
+shape = SubResource("Shape_back_food")
+
+[node name="LeftCollision" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.365, 1.06, 0.26)
+shape = SubResource("Shape_side_food")
+
+[node name="RightCollision" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.365, 1.06, 0.26)
+shape = SubResource("Shape_side_food")
+
+[node name="Tray" parent="Blockout/Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.26)
+size = Vector3(0.46, 0.22, 0.28)
+
+[node name="TrayLip" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.94, 0.41)
+size = Vector3(0.54, 0.03, 0.05)
+
+[node name="FlapHinge" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.955, 0.42)
+
+[node name="Flap" parent="FlapHinge"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
+size = Vector3(0.44, 0.2, 0.02)
+
+[node name="FlapStripe" parent="FlapHinge/Flap"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07, 0.012)
+size = Vector3(0.36, 0.02, 0.005)
+
+[node name="TrayMarker" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.995, 0.26)

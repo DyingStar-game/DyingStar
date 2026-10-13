@@ -502,7 +502,7 @@ func _build_orbit() -> void:
 ## and sweep a capsule across ~150 m of world at several km/s on every refresh.
 ## What lags for such a body is its JOLT pose, by exactly one step — so never test a player's presence
 ## with area-versus-body across this frame. Detection zones live on the `zone` layer and the player's
-## own AreaDetector does the looking (Player.connect_area_detect, ScreenZone).
+## own AreaDetector does the looking (Player.connect_area_detect).
 ## NB: "kinematic" here is a Jolt MOTION TYPE, not a node class — a RigidBody3D frozen in
 ## FREEZE_MODE_KINEMATIC (PropNet.apply_ride_freeze_mode, for cargo riding a truck) is kinematic too.
 func _carry_dynamic_bodies() -> void:

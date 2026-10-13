@@ -341,7 +341,7 @@ var remote_player: bool = false
 ## (server/client.gd only sets it on the Player itself). `owner` therefore points at the scene root
 ## for every one of them, so asking it "is my owner the Player?" is always false. Walking up and
 ## testing the TYPE, like [method Planet.of], is what actually identifies the body. Same walk
-## [_screen_owner_of] needs, hence the same reason: `owner` is not dependable inside an editable
+## [method ScreenTarget.owner_of] does, hence the same reason: `owner` is not dependable inside an editable
 ## instance.
 static func of(node: Node) -> Player:
 	var walk: Node = node
@@ -388,17 +388,17 @@ var hands_item: Node3D = null
 # Admin cleanup tool (key 2). Built at runtime for the local player only (see _ready).
 var admin_cleanup_tool: AdminCleanupTool = null
 
-# The 3D screen (e.g. a mining depot) the player is currently in front of, or null. Written ONLY by
-# _set_screen, from OUR OWN AreaDetector walking into a ScreenZone; while set, the mouse is freed to
-# click the screen.
-# The NODE is the single source of truth: its global_position is always current, so the camera reads
-# where to look straight from it. A separate world position used to be snapshotted alongside, which
-# went stale the moment the planet spun on (it carries both the player and the screen).
-var screen_interacting: Node3D = null
-## The zone we walked into, kept beside its owner: it is the ZONE — not the owner — that knows which
-## screen surface this is, and the view needs those bounds to know how far it may pan. Written by the
-## same single writer, so the two can never name different consoles.
-var screen_zone: ScreenZone = null
+## The player property saying whether they own a mining tool: replicated, and persisted with the
+## player like every property the server sends (it is read back at login, Server.create_player).
+const MINING_TOOL_KEY: String = "mining_tool"
+## Whether the player owns a mining tool. Nobody starts with one any more: it is taken at an ARES
+## Mining dispenser (or from the ground) and put down with `action` (ToolProp). SERVER-authoritative;
+## a client mirrors it from MINING_TOOL_KEY.
+var owns_mining_tool: bool = false
+
+## CLIENT: the 3D screen (its owner, ScreenTarget) the player is using — last pointed at with the
+## crosshair and still within reach — or null. Written only by set_screen_in_use (PlayerClient).
+var screen_in_use: Node3D = null
 
 ## Consecutive server ticks this player has been settled (no input, on floor,
 
@@ -638,27 +638,11 @@ func set_seated(seated: bool) -> void:
 			_seated_saved = true
 		collision_layer = 0
 		collision_mask = 0
-		# Taking a seat inside a screen's zone would otherwise keep the mouse freed while driving.
-		_set_screen(null)
+		set_screen_in_use(null)  # a seat is not a console
 	else:
 		collision_layer = _saved_collision_layer
 		collision_mask = _saved_collision_mask
 		_seated_saved = false
-		# Standing up INSIDE a screen's zone gets the screen back. The zone was dropped by the branch
-		# above, but our AreaDetector never actually LEFT it — sitting down changes the BODY's layers,
-		# not the detector's — so no area_entered will ever fire to hand it back. Without this you have
-		# to walk out of the zone and back in before the console answers again: measured on the
-		# teleporter, where arriving by truck and stepping out is the normal way to use it.
-		_restore_screen_from_overlaps()
-
-
-## Re-resolve which 3D screen we are standing at from the zones the detector overlaps RIGHT NOW,
-## rather than waiting for an entry event that has already happened.
-func _restore_screen_from_overlaps() -> void:
-	for area: Area3D in $AreaDetector.get_overlapping_areas():
-		if area.is_in_group("screen_area"):
-			_set_screen(_screen_owner_of(area))
-			return
 
 
 ## Feed a REMOTE player its latest server transform (entity interpolation). The position is
@@ -761,14 +745,6 @@ func _on_area_detector_area_entered(area: Area3D) -> void:
 		if veh is Vehicle:
 			_in_vehicle_bed = veh
 			veh.add_bed_player(self)
-	elif area.is_in_group("screen_area"):
-		# A 3D screen's console zone (see ScreenZone). Detected area-to-area and NEVER against our
-		# body: on a spinning planet the two are refreshed one physics step apart, which dropped and
-		# regained the overlap 3 times a second while the player stood still.
-		# A seated player is skipped: their body is taken out of collision by set_seated, so driving
-		# past a depot must not steal the mouse from the driver.
-		if not _seated_saved:
-			_set_screen(_screen_owner_of(area), area as ScreenZone)
 
 
 func _on_area_detector_area_exited(area: Area3D) -> void:
@@ -781,16 +757,6 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 			if _in_vehicle_bed == veh:
 				_in_vehicle_bed = null
 			veh.remove_bed_player(self)
-	elif area.is_in_group("screen_area"):
-		# Only release OUR screen: with two consoles whose zones overlap, walking out of one must not
-		# cancel the interaction with the other.
-		# A null owner means the screen is being torn down (admin delete, despawn) and the walk up the
-		# tree found nothing live. We release in that case too: erring toward release costs a step back
-		# into the zone, while erring the other way leaves the mouse locked to a screen that no longer
-		# exists, with no way out.
-		var screen: Node3D = _screen_owner_of(area)
-		if screen == null or screen == screen_interacting:
-			_set_screen(null)
 	elif area.is_in_group("spawn"):
 		if not OS.has_feature("dedicated_server"):
 			return
@@ -806,31 +772,16 @@ func _on_area_detector_area_exited(area: Area3D) -> void:
 		# if gravity_parents.has(area):
 		# 	gravity_parents.erase(area)
 
-## The node a ScreenZone belongs to: the nearest ancestor implementing the 3D-screen contract, i.e.
-## having update_screen(). The zone sits several levels below its owner (the mining depot's lives
-## under miningdepot/Gui3D) and `owner` is not dependable inside an editable instance, so we walk up
-## and test for the contract itself rather than assume a depth.
-func _screen_owner_of(area: Area3D) -> Node3D:
-	var node: Node = area.get_parent()
-	while node != null:
-		if node is Node3D and node.has_method("update_screen"):
-			return node as Node3D
-		node = node.get_parent()
-	push_warning("[Player] ScreenZone '%s' has no ancestor implementing update_screen" % area.name)
-	return null
-
-
-## Single writer for `screen_interacting`, so the camera lock, the mouse mode and the screen's own
-## bookkeeping can never disagree about which console we are using.
-func _set_screen(screen: Node3D, zone: ScreenZone = null) -> void:
-	if screen == screen_interacting:
+## Single writer for `screen_in_use`. Leaving a screen gives its keyboard back: a field left focused
+## there would go on swallowing what the player types at the next console, and the typing lock only
+## asks the screen in use.
+func set_screen_in_use(screen: Node3D) -> void:
+	if screen == screen_in_use:
 		return
-	if is_instance_valid(screen_interacting) and screen_interacting.has_method("screen_focus_changed"):
-		screen_interacting.screen_focus_changed(self, false)
-	screen_interacting = screen
-	screen_zone = zone
-	if screen != null and screen.has_method("screen_focus_changed"):
-		screen.screen_focus_changed(self, true)
+	var left: Node3D = ScreenTarget.gui_of(screen_in_use) if is_instance_valid(screen_in_use) else null
+	if left != null:
+		left.release_keyboard()
+	screen_in_use = screen
 
 
 ## npc_go_to_position is stored in the PARENT's frame (see PlayerServer). reparent() preserves the
@@ -882,6 +833,16 @@ func _set_player_global_position(pos, rot):
 
 # Send the properties of the player from godot server to horizon / client
 # for example, the health, stamina, etc...
+## SERVER: give the player a mining tool, out in their hands ([param owns] true), or take it away
+## (put down): replicated and persisted as MINING_TOOL_KEY, with the tool equipped or not ("tools").
+func server_set_owns_mining_tool(owns: bool) -> void:
+	owns_mining_tool = owns
+	var tool: String = "perforator" if owns else ""
+	if mining_tool != null:
+		mining_tool.server_set_tool(tool)
+	server_send_properties_to_client({MINING_TOOL_KEY: owns, "tools": tool})
+
+
 func server_send_properties_to_client(data: Dictionary):
 	emit_signal(
 		"hs_server_player_update",

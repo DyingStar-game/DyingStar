@@ -3,11 +3,23 @@
 [ext_resource type="PackedScene" uid="uid://62owkh6ghwx1" path="res://assets/_universe/props/food/food_biscuit.glb" id="1_qdpmo"]
 [ext_resource type="Material" uid="uid://ho5sk1nm4wo2" path="res://assets/_universe/_shared/materials/food/biscuit_material.tres" id="2_7ul2k"]
 [ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/_universe/_shared/materials/decals/ares_logo_decal_material.tres" id="3_6ebdc"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="food_propsync"]
+[ext_resource type="Script" path="res://scenes/globals/generic_prop.gd" id="food_generic"]
+[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="food_landing"]
+[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="food_pick"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_6ebdc"]
 size = Vector3(0.01929482309742525, 0.07858140991402252, 0.09955566330063448)
 
+[sub_resource type="SphereShape3D" id="SphereShape3D_food_aim"]
+radius = 0.25
+
 [node name="AresBiscuit" type="RigidBody3D" unique_id=1586142922]
+script = ExtResource("food_generic")
+id_type = "BISC"
+id_short_display = true
+sfx_pick_up = ExtResource("food_pick")
+sfx_landing = ExtResource("food_landing")
 collision_layer = 8
 collision_mask = 15
 mass = 0.05
@@ -22,5 +34,17 @@ surface_material_override/0 = ExtResource("2_7ul2k")
 
 [node name="decal" parent="food_biscuit" index="1" unique_id=1746645973]
 surface_material_override/0 = ExtResource("3_6ebdc")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("food_propsync")
+type_name = "food"
+enable_carry = true
+
+[node name="Area3D" type="Area3D" parent="."]
+collision_layer = 32
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+shape = SubResource("SphereShape3D_food_aim")
 
 [editable path="food_biscuit"]

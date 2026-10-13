@@ -33,6 +33,8 @@
 				"carrying",
 				"flashlight",
 				"carry_prompt",
+				"screen_event",
+				"mining_tool",
 				"scenename",
 				"name",
 				"parent_id",

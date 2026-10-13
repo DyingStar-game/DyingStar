@@ -107,9 +107,3 @@ extends Node3D
 				if "node_viewport" in screen_display:
 					screen_display.node_viewport = screen_display_viewport
 
-
-## Area3D in which a player can use the kiosk's screen.
-@export var screen_interaction_area: Area3D:
-	set(value):
-		if value != screen_interaction_area:
-			screen_interaction_area = value

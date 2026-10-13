@@ -19,7 +19,6 @@
 [ext_resource type="ArrayMesh" uid="uid://bwpdani728esx" path="res://assets/_universe/structures/industrial/vehicle_lift/railing/railing_type02_lod0.mesh" id="16_qwuxr"]
 [ext_resource type="ArrayMesh" uid="uid://7r8rrysn0cxj" path="res://assets/_universe/structures/industrial/vehicle_lift/railing/railing_type02_lod1.mesh" id="17_kt6v4"]
 [ext_resource type="Shape3D" uid="uid://b8fcl67yxcrp5" path="res://scenes/_universe/structures/industrial/vehicle_lift/platform/platform_area_detection.shape" id="19_ieb65"]
-[ext_resource type="Script" uid="uid://b6s4afepjswsa" path="res://scenes/interactables/screen_zone.gd" id="20_ob54u"]
 [ext_resource type="Script" uid="uid://dkb1yb41vrq8q" path="res://scenes/_universe/structures/industrial/vehicle_lift/platform/platform_area_detection.gd" id="21_p57xc"]
 [ext_resource type="PackedScene" uid="uid://b2nf01fos6i0i" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="22_j51iy"]
 [ext_resource type="PackedScene" uid="uid://duni0rc7ofqdu" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/kiosk/kiosk.tscn" id="22_p57xc"]
@@ -28,9 +27,6 @@
 
 [sub_resource type="PhysicsMaterial" id="PhysicsMaterial_yqudl"]
 rough = true
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_mkcfn"]
-size = Vector3(1.2359055290535252, 1.5159430815429005, 1.258038524483709)
 
 [node name="Platform" type="RigidBody3D" unique_id=1672728689 node_paths=PackedStringArray("_platform_interface")]
 collision_layer = 4
@@ -297,7 +293,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.175, 0)
 size = Vector3(5.6, 0.1, 4)
 texture_albedo = ExtResource("14_6yhhl")
 
-[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport", "screen_interaction_area") instance=ExtResource("22_p57xc")]
+[node name="Kiosk" parent="." unique_id=1785488499 node_paths=PackedStringArray("screen_display_viewport") instance=ExtResource("22_p57xc")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7131855, 1.0692251, 1.8047221)
 pivot_base_rotation = 192.5
 pivot_arm01_z_rotation = 20.0
@@ -305,16 +301,6 @@ pivot_arm02_y_rotation = 155.0
 pivot_balljoint_y_rotation = 167.0
 ball_joint_rotation = Vector2(45, 0)
 screen_display_viewport = NodePath("../Screen Display Interface")
-screen_interaction_area = NodePath("../ScreenDetector")
-
-[node name="ScreenDetector" type="Area3D" parent="." unique_id=318372749 groups=["screen_area"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.999916724748566, 0.6820919403541708, 0.9136219744412384)
-input_ray_pickable = false
-script = ExtResource("20_ob54u")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="ScreenDetector" unique_id=1019366550]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1179527667071152, 0.25797153000000006, -0.00753310322761534)
-shape = SubResource("BoxShape3D_mkcfn")
 
 [node name="Area Detection" type="Area3D" parent="." unique_id=212631982 groups=["active_monitor"]]
 collision_layer = 0

@@ -16,8 +16,8 @@ extends Node3D
 ##   SERVER — the only one that resolves a body, a height and a position, and the only one that moves
 ##            anybody. It re-validates everything: the payload names a place, never an outcome.
 ##
-## The screen contract is [ScreenZone]'s: expose update_screen(data), plus the optional
-## screen_focus_changed(). Same wiring as the mining depot.
+## The screen contract is [ScreenTarget]'s: expose update_screen(data), plus the optional
+## set_screen_actor() and is_typing(). Same wiring as the mining depot.
 
 ## Key in [constant Globals.ENABLED_DEV_TOOLS]. It has no InputMap binding — the cabin is walked
 ## into, not pressed — so nothing in the controls menu looks for it; the entry is purely the switch.
@@ -116,7 +116,7 @@ func _input(event: InputEvent) -> void:
 
 
 # ---------------------------------------------------------------------------------------------
-# Screen contract (see ScreenZone)
+# Screen contract (see ScreenTarget)
 # ---------------------------------------------------------------------------------------------
 
 ## 3D-screen contract: does this console hold the keyboard right now?
@@ -132,20 +132,6 @@ func _input(event: InputEvent) -> void:
 ## and is handled separately, in _input above, which hands the keyboard back.
 func is_typing() -> bool:
 	return _ui != null and _ui.is_typing()
-
-
-## Told who is standing at the console.
-func screen_focus_changed(_player: Player, focused: bool) -> void:
-	if GameOrchestrator.is_server():
-		return
-	if _ui == null:
-		return
-	if not focused:
-		# Walking away hands the keyboard back, exactly like Escape does. Focus lives in THIS screen's
-		# own SubViewport: a field left focused here would go on swallowing what the player types at
-		# the next console, and _screen_typing() — which only ever asks about the screen they are
-		# standing at — would not report it, so nothing would lock gameplay input either.
-		_ui.release_fields()
 
 
 ## The action router hands over the player whose action this is, immediately before update_screen.
@@ -406,17 +392,6 @@ static func _basis_facing(up: Vector3, nose: Vector3) -> Basis:
 func _on_ui_teleport_requested(payload: Dictionary) -> void:
 	if GameOrchestrator.is_server():
 		return
-	var player: Player = _local_player()
-	if player == null:
-		return
 	var action: Dictionary = payload.duplicate()
-	action["action"] = "screen_state"
 	action["state"] = "teleport"
-	player.client_send_action_to_server(action)
-
-
-static func _local_player() -> Player:
-	var agent = NetworkOrchestrator.network_agent
-	if agent == null or not "player_entity" in agent:
-		return null
-	return agent.player_entity as Player
+	ScreenTarget.send(self, action)
