@@ -1,5 +1,5 @@
 extends GutTest
-## WeatherMasks: a building is boxed by its collision shapes in its own frame, small or flat props are
+## WeatherMasks: a building is boxed by its bodies' collision (Globals.collision_aabb) in its own frame, small or flat props are
 ## not, and the dust layer's box maps the building's own volume onto the unit cube, camera relative.
 
 
@@ -23,6 +23,20 @@ func test_a_building_is_boxed_by_its_shapes() -> void:
 	var box : AABB = root.get_meta(WeatherMasks.META)
 	assert_almost_eq(box.size, Vector3(10.0, 4.0, 6.0), Vector3.ONE * 1e-4)
 	assert_almost_eq(box.get_center(), Vector3(0.0, 2.0, 0.0), Vector3.ONE * 1e-4)
+
+
+func test_a_polygon_wall_counts_too() -> void:
+	var root := Node3D.new()
+	var body := StaticBody3D.new()
+	var poly := CollisionPolygon3D.new()
+	poly.polygon = PackedVector2Array([Vector2(0, 0), Vector2(12, 0), Vector2(12, 5), Vector2(0, 5)])
+	poly.depth = 8.0
+	body.add_child(poly)
+	root.add_child(body)
+	add_child_autofree(root)
+	WeatherMasks._box(root)
+	var box : AABB = root.get_meta(WeatherMasks.META)
+	assert_almost_eq(box.size, Vector3(12.0, 5.0, 8.0), Vector3.ONE * 1e-3, "a building walled by a polygon is boxed")
 
 
 func test_small_or_flat_props_are_not_masked() -> void:

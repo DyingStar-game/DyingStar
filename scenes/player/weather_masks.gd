@@ -118,18 +118,20 @@ static func prop_root(body: Node) -> Node3D:
 	return walk as Node3D
 
 
-## Box [param root] once by its collision shapes, in its own frame. Too small or too flat to be a
-## building: a zero box, never masked.
+## Box [param root] once by the collision of its static bodies (Globals.collision_aabb: box and polygon
+## shapes alike), in its own frame. Too small or too flat to be a building: a zero box, never masked.
 static func _box(root: Node3D) -> void:
 	var to_root: Transform3D = root.global_transform.affine_inverse()
 	var box := AABB()
 	var first := true
-	for node: Node in root.find_children("*", "CollisionShape3D", true, false):
-		var cs := node as CollisionShape3D
-		if cs.shape == null or cs.disabled:
+	var bodies: Array[Node] = root.find_children("*", "StaticBody3D", true, false)
+	if root is StaticBody3D:
+		bodies.append(root)
+	for node: Node in bodies:
+		var body := node as StaticBody3D
+		var placed: AABB = Globals.collision_aabb(body, to_root * body.global_transform)
+		if placed.size == Vector3.ZERO:
 			continue
-		var local: AABB = shape_aabb(cs.shape)
-		var placed: AABB = (to_root * cs.global_transform) * local
 		box = placed if first else box.merge(placed)
 		first = false
 	var widest: float = maxf(box.size.x, maxf(box.size.y, box.size.z))
@@ -138,11 +140,3 @@ static func _box(root: Node3D) -> void:
 		return
 	root.set_meta(META, box)
 
-
-## A shape's bounding box in its own frame.
-static func shape_aabb(shape: Shape3D) -> AABB:
-	if shape is BoxShape3D:
-		var size: Vector3 = (shape as BoxShape3D).size
-		return AABB(-size * 0.5, size)
-	var mesh: ArrayMesh = shape.get_debug_mesh()
-	return mesh.get_aabb() if mesh != null else AABB()
