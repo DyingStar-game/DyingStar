@@ -653,15 +653,6 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
-			"asset": "battery.png",
-			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/battery.png",
-			"author": "WarpZone",
-			"source": "Discord",
-			"id": "111043432687874048",
-			"url": "",
-			"license": "CC BY-NC-SA 4.0"
-		},
-		{
 			"asset": "Base.glb",
 			"path": "res://assets/_universe/structures/industrial/vehicle_lift/base/Base.glb",
 			"author": "The_Moye",
@@ -676,6 +667,15 @@
 			"author": "The_Moye",
 			"source": "Discord",
 			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "battery.png",
+			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/battery.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -824,6 +824,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "Kiosk.glb",
+			"path": "res://assets/_universe/structures/industrial/vehicle_lift/common/kiosk/Kiosk.glb",
+			"author": "The_Moye",
+			"source": "Discord",
+			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "limiter.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/limiter.png",
 			"author": "WarpZone",
@@ -838,15 +847,6 @@
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
-			"url": "",
-			"license": "CC BY-NC-SA 4.0"
-		},
-		{
-			"asset": "Kiosk.glb",
-			"path": "res://assets/_universe/structures/industrial/vehicle_lift/common/kiosk/Kiosk.glb",
-			"author": "The_Moye",
-			"source": "Discord",
-			"id": "215147560246050816",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
