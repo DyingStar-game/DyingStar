@@ -316,7 +316,7 @@ script = ExtResource("20_ob54u")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1179527667071152, 0.25797153000000006, -0.00753310322761534)
 shape = SubResource("BoxShape3D_mkcfn")
 
-[node name="Area Detection" type="Area3D" parent="." unique_id=212631982]
+[node name="Area Detection" type="Area3D" parent="." unique_id=212631982 groups=["active_monitor"]]
 collision_layer = 0
 collision_mask = 14
 input_ray_pickable = false

@@ -15,18 +15,18 @@ var active_player: Player
 
 func _ready() -> void:
 	set_process(false)
-	
+
 	if Engine.is_editor_hint():
 		var railing: Node3D = get_node_or_null("Railing")
 		var railing_json_path: StringName = &"res://scenes/_universe/structures/industrial/vehicle_lift/landings/lower_landing/railing_datas.json"
-		
+
 		if railing:
 			VehicleLift.generate_railings(railing, railing_json_path)
 
 
 func _process(_delta: float) -> void:
 	var rotation_step: float = deg_to_rad(beacon_speed) * _delta
-	
+
 	if beacon_left:
 		beacon_left.spin_lights(rotation_step)
 	if beacon_right:
@@ -52,10 +52,10 @@ func update_interface_lift_progress(progress: float, eta: int, status: String) -
 func update_screen(data: Dictionary):
 	var action: Dictionary = data["elevator_screen_action"]
 	var vehicle_lift = get_parent()
-	
+
 	if vehicle_lift == null or not vehicle_lift is VehicleLift:
 		return
-	
+
 	if action.has("landing"):
 		match action["landing"]:
 			"lower":
@@ -68,7 +68,10 @@ func update_screen(data: Dictionary):
 ## origin (they are metres apart). Part of the informal "3D screen" contract — PlayerClient calls it
 ## when present and falls back to the node itself, so a simpler screen needs nothing at all.
 func screen_look_target() -> Node3D:
-	var screen = get_node_or_null("Kiosk/Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display")
+	var screen = get_node_or_null(
+		"Kiosk/Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02"
+		+ "/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display"
+	)
 	return screen as Node3D
 
 
@@ -89,10 +92,9 @@ func screen_focus_changed(player: Player, focused: bool) -> void:
 func _on_call_button_triggered(datas: Dictionary) -> void:
 	if GameOrchestrator.is_server():
 		return
-	
+
 	var player: Player = NetworkOrchestrator.network_agent.player_entity
 	player.client_send_action_to_server({
 		"action": "screen_state",
 		"elevator_screen_action": datas
 	})
-	pass

@@ -1,11 +1,18 @@
 extends Control
 
 
-enum landing_list {UNDEFINED, UPPER_LANDING, LOWER_LANDING, PLATFORM}
+enum LandingList {UNDEFINED, UPPER_LANDING, LOWER_LANDING, PLATFORM}
+
+const INFOS_PATH: String = "Screen Global/Bottom Container/Infos Container/VBoxContainer/"
+const INTERFACES_DIR: String = "res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/"
 
 
+## Buttons scene added to the screen (call buttons for a landing, up/down/stop for the platform).
+## Empty = a screen that only displays.
 @export var button_group_scene: PackedScene
-@export var landing: landing_list = landing_list.UNDEFINED
+## Where this screen stands: decides which end of the lift diagram lights up and how the remaining
+## distance is counted. UNDEFINED = neither.
+@export var landing: LandingList = LandingList.UNDEFINED
 
 
 @onready var lift_name_value: Label = %"Lift Name"
@@ -36,42 +43,42 @@ var vehicle_lift: VehicleLift
 func _ready() -> void:
 	if Engine.is_editor_hint() or GameOrchestrator.is_server():
 		return
-	
-	weight_value_display = get_node_or_null("Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer/Weight Value")
-	mouse_coord_value_display = get_node_or_null("Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer2/Mouse Coord Value")
+
+	weight_value_display = get_node_or_null(INFOS_PATH + "HBoxContainer/Weight Value")
+	mouse_coord_value_display = get_node_or_null(INFOS_PATH + "HBoxContainer2/Mouse Coord Value")
 	mouse_cursor = get_node_or_null("Mouse Cursor")
-	
+
 	var current_node_to_check: Node = get_parent()
 	while current_node_to_check != null:
 		if current_node_to_check is VehicleLift:
 			vehicle_lift = current_node_to_check
 			break
-		
+
 		current_node_to_check = current_node_to_check.get_parent()
-	
+
 	if not vehicle_lift:
 		return
-	
+
 	lift_name_value.text = vehicle_lift.get_name()
 	distance_max_value.text = str(vehicle_lift.descent_depth)
 	display_progress(vehicle_lift.platform_progress_ratio)
-	
+
 	if button_group_scene:
 		var buttons_instance = button_group_scene.instantiate()
 		buttons_container.add_child(buttons_instance)
-		
+
 		if buttons_instance.has_method("setup"):
 			buttons_instance.setup(vehicle_lift, self)
-	
+
 	match landing:
-		landing_list.UPPER_LANDING:
+		LandingList.UPPER_LANDING:
 			var segment_background: TextureRect = segment_controls[0].get_node_or_null("Background")
 			if segment_background:
-				segment_background.texture = load("res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/lift_element_upper_landing_on.png")
-		landing_list.LOWER_LANDING:
+				segment_background.texture = load(INTERFACES_DIR + "lift_element_upper_landing_on.png")
+		LandingList.LOWER_LANDING:
 			var segment_background: TextureRect = segment_controls[segment_controls.size()-1].get_node_or_null("Background")
 			if segment_background:
-				segment_background.texture = load("res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/lift_element_lower_landing_on.png")
+				segment_background.texture = load(INTERFACES_DIR + "lift_element_lower_landing_on.png")
 
 
 func display_new_weight(weight_on_platform: int) -> void:
@@ -88,32 +95,32 @@ func display_mouse_coord(coord: Vector2) -> void:
 func display_progress(progress: float, eta: int = 0, status: String = "Stopped") -> void:
 	if not vehicle_lift:
 		return
-	
+
 	if distance_value and arrival_value:
 		var distance_to_show: float = 0.0
-		
+
 		match landing:
-			landing_list.UPPER_LANDING:
+			LandingList.UPPER_LANDING:
 				distance_to_show = (progress / 100.0) * vehicle_lift.descent_depth
-			landing_list.LOWER_LANDING:
+			LandingList.LOWER_LANDING:
 				distance_to_show = (1 - (progress / 100.0)) * vehicle_lift.descent_depth
-			landing_list.PLATFORM:
+			LandingList.PLATFORM:
 				match status:
 					"Going Up":
 						distance_to_show = (progress / 100.0) * vehicle_lift.descent_depth
 					"Going Down":
 						distance_to_show = (1 - (progress / 100.0)) * vehicle_lift.descent_depth
-		
+
 		distance_value.text = "%.1f" % distance_to_show
 		arrival_value.text = "%d" % eta
 		state_value.text = status
-	
+
 	var active_segment_index: int = int(floor((progress / 100.0) * segment_controls.size()))
 	if active_segment_index >= segment_controls.size():
 		active_segment_index = segment_controls.size() - 1
-	
+
 	var active_segment_control = segment_controls[active_segment_index]
-	
+
 	var desaturate_amount: float = 0.0
 	for i in range(segment_controls.size()):
 		if segment_controls[i]:
@@ -126,7 +133,7 @@ func display_progress(progress: float, eta: int = 0, status: String = "Stopped")
 				desaturate_amount = 0.5
 				if segment_platform:
 					segment_platform.hide()
-			
+
 			for icon_display in segment_controls[i].get_children():
 				if icon_display is TextureRect and icon_display.material is ShaderMaterial:
 					icon_display.set_instance_shader_parameter("amount", desaturate_amount)

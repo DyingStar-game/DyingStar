@@ -2,6 +2,8 @@
 extends AnimatableBody3D
 
 
+## Screen layer of the platform, kept for the Inspector wiring; the progress is shown through the
+## Platform's own interface.
 @export var _platform_interface: CanvasLayer
 
 
@@ -39,7 +41,7 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		var railing: Node3D = get_node_or_null("Platform/Railing")
 		var railing_json_path: StringName = &"res://scenes/_universe/structures/industrial/vehicle_lift/platform/railing_datas.json"
-		
+
 		if railing:
 			VehicleLift.generate_railings(railing, railing_json_path)
 	else:
@@ -47,7 +49,7 @@ func _ready() -> void:
 			var parent_lift: Node3D = get_parent()
 			if parent_lift is VehicleLift and parent_lift.has_method("platform_system_spawned"):
 				parent_lift.platform_system_spawned()
-			
+
 			if not _is_platform_spawned:
 				# Deferred: we enter props_list only after add_child, and the platform's parent_id is us.
 				spawn_platform.call_deferred()
@@ -74,10 +76,6 @@ func spawn_platform() -> void:
 		"parent_id": uuid,
 		"name": "Platform"
 	})
-
-
-func _process(delta: float) -> void:
-	pass
 
 
 func update_interface_lift_progress(progress: float, eta: int, status: String) -> void:

@@ -1,6 +1,8 @@
 extends RigidBody3D
 
 
+## The platform's screen interface (lift_base_interface): receives the trip progress and the weight
+## measured on the platform. Empty = nothing is displayed.
 @export var _platform_interface: Control
 #func set_interface(interface: Control) -> void:
 	#print_rich("[color=gold]Dans set_interface de plateform, interface = %s[/color]" % interface)
@@ -53,10 +55,10 @@ func _ready() -> void:
 		# Until 2026-10-13 the server's settle-culler did this by accident when it woke the platform;
 		# it no longer touches it (Server._is_cullable_body), so the platform says it itself.
 		freeze = false
-		
+
 		await get_tree().physics_frame
 		await get_tree().physics_frame
-		
+
 		var parent_system_platform: Node3D = get_parent()
 		if parent_system_platform.has_method("platform_spawned"):
 			parent_system_platform.platform_spawned()
@@ -65,22 +67,22 @@ func _ready() -> void:
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 		return
-	
+
 	var total_force_in_newtons: float = 0.0
 	var local_gravity: Vector3 = state.total_gravity
 	var up_direction: Vector3 = -local_gravity.normalized()
 	var gravity_magnitude: float = local_gravity.length()
-	
+
 	for i in state.get_contact_count():
 		var object_in_contact: Object = state.get_contact_collider_object(i)
 		var normal: Vector3 = state.get_contact_local_normal(i)
-		
+
 		if normal.dot(up_direction) <- 0.5:
 			var impulse: Vector3 = state.get_contact_impulse(i)
 			_total_impulse_force += abs(impulse.dot(up_direction)) / state.step
-			
+
 			_unique_bodies_on_platform[object_in_contact] = true
-	
+
 	var total_static_force: float = 0.0
 	for body in _unique_bodies_on_platform:
 		if body is RigidBody3D:
@@ -90,20 +92,20 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			total_static_force += body.mass * gravity_magnitude
 		if body is CharacterBody3D and "mass" in body:
 			total_static_force += body.mass * gravity_magnitude
-	
+
 	total_force_in_newtons = max(total_static_force, _total_impulse_force) + _player_custom_force
 	_player_custom_force = 0.0
-	
+
 	if gravity_magnitude > 0.001:
 		_weight_on_platform = total_force_in_newtons / gravity_magnitude
 	else:
 		_weight_on_platform = 0.0
-	
+
 	_unique_bodies_on_platform.clear()
 	_total_impulse_force = 0.0
-	
+
 	#print_rich("[color=green]weight on platform = %.1f[/color]" % _weight_on_platform)
-	
+
 			## INFO seulement serveur
 	if _sync != null:
 		_sync.server_prop_update({
@@ -111,16 +113,11 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		})
 
 
-func _physics_process(delta: float) -> void:
-	#print("platform !!")
-	pass
-
-
 
 func add_kinematic_force(force: float) -> void:
 	if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 		return
-	
+
 	_player_custom_force += force
 	sleeping = false
 
@@ -132,14 +129,14 @@ func update_display_progress(progress: float, eta: int, status: String) -> void:
 
 func update_screen(data: Dictionary):
 	var action: Dictionary = data["elevator_screen_action"]
-	
+
 	## TODO très moche, à corriger
 	var vehicle_lift = get_parent().get_parent()
-	
+
 	if vehicle_lift == null or not vehicle_lift is VehicleLift:
 		push_error("vehicle_lift non présent ou n'est pas un VehicleLift dans %s" % name)
 		return
-	
+
 	if action.has("button"):
 		match action["button"]:
 			"down":
@@ -156,7 +153,10 @@ func update_screen(data: Dictionary):
 ## origin (they are metres apart). Part of the informal "3D screen" contract — PlayerClient calls it
 ## when present and falls back to the node itself, so a simpler screen needs nothing at all.
 func screen_look_target() -> Node3D:
-	var screen = get_node_or_null("Kiosk/Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display")
+	var screen = get_node_or_null(
+		"Kiosk/Kiosk Pivot Base Arm 01/Kiosk Arm 01/Kiosk Pivot Z Arm 01 Arm 02/Kiosk Pivot Y Arm 01 Arm 02"
+		+ "/Kiosk Arm 02/Kiosk Z Pivot Arm 02 BallJoint/Kiosk Ball Joint/Kiosk Tablet/Screen Display"
+	)
 	return screen as Node3D
 
 
@@ -177,13 +177,12 @@ func screen_focus_changed(player: Player, focused: bool) -> void:
 func _on_call_button_triggered(datas: Dictionary) -> void:
 	if GameOrchestrator.is_server():
 		return
-	
+
 	var player: Player = NetworkOrchestrator.network_agent.player_entity
 	player.client_send_action_to_server({
 		"action": "screen_state",
 		"elevator_screen_action": datas
 	})
-	pass
 
 # PropSync applies the replicated transform, then calls this with the full payload so the depot can
 # apply its own machine state. Replaces the old client_channel_data_update override.

@@ -3,13 +3,15 @@ class_name VehicleLift
 extends Node3D
 
 
+## Where the platform stands on its run (%): 0 = at the upper landing, 100 = at the lower one. The
+## server drives it while the lift moves; set it by hand in the editor to preview a position.
 @export_range(0.0, 100.0, 0.01, "suffix:%") var platform_progress_ratio: float = 0.0:
 	set(value):
 		platform_progress_ratio = value
-		
+
 		if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
 			return
-		
+
 		_update_platform_movement()
 
 ## Horizontal distance (m) from the cliff edge (the lift's origin) out to the vertical guide the platform
@@ -21,10 +23,10 @@ extends Node3D
 		guide_z_offset = max(0.0, value)		# INFO Décalage du bord de la falaise
 		update_gizmos()
 		_update_visuals()
-		
+
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 			return
-		
+
 		if _sync != null:
 			_sync.server_prop_update({
 				"guide_z_offset": guide_z_offset
@@ -35,13 +37,13 @@ extends Node3D
 @export_range(3.0, 1000.0, 0.01, "suffix:m") var descent_depth: float = 3.0:
 	set(value):
 		descent_depth = max(0.0, value)			# INFO Profondeur de descente
-		
+
 		update_gizmos()
 		_update_visuals()
-		
+
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 			return
-		
+
 		if _sync != null:
 			_sync.server_prop_update({
 				"descent_depth": descent_depth
@@ -73,11 +75,15 @@ extends Node3D
 
 
 @export_group("Lift Dynamics")
+## Cruising speed of the platform (m/s). Higher = shorter trips; the screens' ETA follows.
 @export_range(0.1, 10.0, 0.01, "suffix:m/s") var max_speed: float = 5.0
+## Acceleration and braking of the platform (m/s²). Lower = gentler starts and stops, but longer
+## trips (a short run may never reach max_speed).
 @export_range(0.1, 10.0, 0.01, "suffix:m/s") var acceleration: float = 2.0
 
 
 @export_group("Debug")
+## SERVER, at run time: tick to send the platform up to the upper landing (unticks itself).
 @export var debug_move_up: bool = false:
 	set(value):
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
@@ -86,6 +92,7 @@ extends Node3D
 			move_up()
 		debug_move_up = false
 
+## SERVER, at run time: tick to stop the platform where it is (unticks itself).
 @export var debug_stop_movement: bool = false:
 	set(value):
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
@@ -94,6 +101,7 @@ extends Node3D
 			stop_movement()
 		debug_stop_movement = false
 
+## SERVER, at run time: tick to send the platform down to the lower landing (unticks itself).
 @export var debug_move_down: bool = false:
 	set(value):
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
@@ -102,11 +110,12 @@ extends Node3D
 			move_down()
 		debug_move_down = false
 
+## SERVER, at run time: tick to put the platform back at its starting position (unticks itself).
 @export var debug_reset_platform: bool = false:
 	set(value):
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 			return
-		
+
 		if value == true:
 			reset_platform()
 		debug_reset_platform = false
@@ -115,7 +124,7 @@ func reset_platform() -> void:
 	var platform_system = get_node_or_null("Platform System")
 	if not platform_system:
 		return
-	
+
 	platform_system.position = PLATFORM_SYSTEM_INITIAL_POSITION
 	var platform = platform_system.get_node_or_null("Platform")
 	if platform and platform.has_method("debug_reset_position"):
@@ -133,14 +142,15 @@ const NOTCH_FLOOR_BELOW_LANDING_M := 0.74
 const NOTCH_NODE_NAME := "TerrainNotch"
 const LOWER_LANDING_INITIAL_POSITION: Vector3 = Vector3(0.0,0.0,0.0)
 
-const BASE_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/base/base.tscn")
-const UPPER_LANDING_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/landings/upper_landing/upper_landing.tscn")
-const LOWER_LANDING_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/landings/lower_landing/lower_landing.tscn")
-const RAIL_HEAD_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/rail/rail_head.tscn")
-const RAIL_SEGMENT_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/rail/rail_segment.tscn")
-const PLATFORM_SYSTEM_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/platform/platform_system.tscn")
-const RAILING_LIBRARY_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/railing/railing_segments.tscn")
-const DYNAMIC_BRIDGEs_SCENE: PackedScene = preload("res://scenes/_universe/structures/industrial/vehicle_lift/dynamic_bridge/dynamic_bridges.tscn")
+const LIFT_DIR: String = "res://scenes/_universe/structures/industrial/vehicle_lift/"
+const BASE_SCENE: PackedScene = preload(LIFT_DIR + "base/base.tscn")
+const UPPER_LANDING_SCENE: PackedScene = preload(LIFT_DIR + "landings/upper_landing/upper_landing.tscn")
+const LOWER_LANDING_SCENE: PackedScene = preload(LIFT_DIR + "landings/lower_landing/lower_landing.tscn")
+const RAIL_HEAD_SCENE: PackedScene = preload(LIFT_DIR + "rail/rail_head.tscn")
+const RAIL_SEGMENT_SCENE: PackedScene = preload(LIFT_DIR + "rail/rail_segment.tscn")
+const PLATFORM_SYSTEM_SCENE: PackedScene = preload(LIFT_DIR + "platform/platform_system.tscn")
+const RAILING_LIBRARY_SCENE: PackedScene = preload(LIFT_DIR + "railing/railing_segments.tscn")
+const DYNAMIC_BRIDGES_SCENE: PackedScene = preload(LIFT_DIR + "dynamic_bridge/dynamic_bridges.tscn")
 
 
 var _target_ratio: float = 0.0
@@ -174,51 +184,51 @@ var uuid: String:
 static func generate_railings(parent_node: Node3D, json_path: String) -> void:
 	if parent_node.has_node("Visuals"):
 		return
-	
+
 	var node_owner: Node = null
 	if Engine.is_editor_hint():
 		node_owner = parent_node.get_tree().edited_scene_root
 		if node_owner == null:
 			node_owner = parent_node
-	
+
 	var json_file: FileAccess = FileAccess.open(json_path, FileAccess.READ)
 	var json: JSON = JSON.new()
 	var error: Error = json.parse(json_file.get_as_text())
-	
+
 	if error != OK:
 		push_error("Erreur de lecture du JSON à la ligne ", json.get_error_line(), " : ", json.get_error_message())
 		return
-	
+
 	var railing_visuals: Node3D = Node3D.new()
 	railing_visuals.name = "Visuals"
 	parent_node.add_child(railing_visuals)
 	if node_owner:
 		railing_visuals.owner = node_owner
-	
+
 	var railing_library: Node3D = RAILING_LIBRARY_SCENE.instantiate()
-	
+
 	var item_index: int = 0
 	for item in json.data:
 		var railing_type: String = "Railing " + str(item["type"])
 		var railing_source_node: Node3D = railing_library.get_node_or_null(railing_type)
-		
+
 		if railing_source_node:
 			var railing_segment: Node3D = railing_source_node.duplicate()
 			railing_segment.name = "Railing Segment %d" % item_index
 			railing_segment.show()
-			
+
 			railing_segment.position = Vector3(item["position"][0], item["position"][1], item["position"][2])
 			railing_segment.rotation = Vector3(item["rotation"][0], item["rotation"][1], item["rotation"][2])
-			
+
 			railing_visuals.add_child(railing_segment)
-			
+
 			if node_owner:
 				_set_owner_recursive(railing_segment, node_owner)
 		else:
 			push_warning("Type de garde-corps introuvable dans la bibliothèque : " + railing_type)
-		
+
 		item_index += 1
-	
+
 	railing_library.queue_free()
 
 
@@ -230,28 +240,28 @@ static func _set_owner_recursive(node: Node, new_owner: Node) -> void:
 
 static func compute_travel_time(travel_distance: float, max_speed: float, p_acceleration: float) -> float:
 	var computed_travel_time: float = 0.0
-	
+
 	if travel_distance <= 0.0 or max_speed <= 0.0 or p_acceleration <= 0.0:
 		return computed_travel_time
-	
+
 	var threshold_distance: float = (max_speed * max_speed) / p_acceleration
 	if travel_distance >= threshold_distance:
 		var nonlinear_speed_time : float = (2.0 * max_speed) / p_acceleration
 		var linear_speed_distance : float = travel_distance - threshold_distance
 		var linear_speed_time : float = linear_speed_distance / max_speed
-		
+
 		computed_travel_time = nonlinear_speed_time + linear_speed_time
 	else:
 		var nonlinear_speed_time : float = sqrt(travel_distance / p_acceleration) * 2.0
-		
+
 		computed_travel_time = nonlinear_speed_time
-	
+
 	return computed_travel_time
 
 
 func _ready() -> void:
 	set_physics_process(false)
-	
+
 	var node_owner: Node = null
 	if Engine.is_editor_hint():
 		node_owner = get_tree().edited_scene_root
@@ -259,76 +269,76 @@ func _ready() -> void:
 			node_owner = self
 	else:
 		node_owner = self
-	
+
 	if not has_node("PropSync"):
 		var prop_sync: PropSync = PropSync.new()
 		prop_sync.name = "PropSync"
 		prop_sync.type_name = "vehicle_lift"
 		add_child(prop_sync)
-		
+
 		if node_owner:
 			prop_sync.owner = node_owner
-	
+
 	if not has_node("Base"):
 		var base: StaticBody3D = BASE_SCENE.instantiate()
 		base.name = "Base"
 		add_child(base)
-		
+
 		if node_owner:
 			base.owner = node_owner
-	
+
 	if not has_node("Upper Landing"):
 		var upper: StaticBody3D = UPPER_LANDING_SCENE.instantiate()
 		upper.name = "Upper Landing"
 		add_child(upper)
-		
+
 		if node_owner:
 			upper.owner = node_owner
-	
+
 	if not has_node("Lower Landing"):
 		var lower: StaticBody3D = LOWER_LANDING_SCENE.instantiate()
 		lower.name = "Lower Landing"
 		add_child(lower)
-		
+
 		if node_owner:
 			lower.owner = node_owner
-	
+
 	if not has_node("Rail Head"):
 		var rail_head: StaticBody3D = RAIL_HEAD_SCENE.instantiate()
 		rail_head.name = "Rail Head"
 		add_child(rail_head)
-		
+
 		if node_owner:
 			rail_head.owner = node_owner
-	
+
 	if not has_node("Rail Segments"):
 		var rail_segments: StaticBody3D = StaticBody3D.new()
 		rail_segments.name = "Rail Segments"
 		rail_segments.collision_mask = 0
 		add_child(rail_segments)
-		
+
 		var rail_segments_visuals: Node3D = Node3D.new()
 		rail_segments_visuals.name = "Visuals"
 		rail_segments.add_child(rail_segments_visuals)
-		
+
 		var rail_segments_collider: CollisionShape3D = CollisionShape3D.new()
 		rail_segments_collider.name = "Collider"
 		rail_segments_collider.shape = BoxShape3D.new()
 		rail_segments.add_child(rail_segments_collider)
-		
+
 		if node_owner:
 			rail_segments.owner = node_owner
 			rail_segments_visuals.owner = node_owner
 			rail_segments_collider.owner = node_owner
-	
+
 	if not has_node("Dynamic Bridges"):
-		var dynamic_bridges: Node3D = DYNAMIC_BRIDGEs_SCENE.instantiate()
+		var dynamic_bridges: Node3D = DYNAMIC_BRIDGES_SCENE.instantiate()
 		dynamic_bridges.name = "Dynamic Bridges"
 		add_child(dynamic_bridges)
-		
+
 		if node_owner:
 			dynamic_bridges.owner = node_owner
-	
+
 	if not Engine.is_editor_hint() and GameOrchestrator.is_server() and not _is_platform_system_spawned:
 		# Deferred: create_generic_object registers us in props_list only after add_child, and the
 		# platform system's parent_id is our uuid.
@@ -364,18 +374,18 @@ func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint() or descent_depth <= 0.001:
 		set_physics_process(false)
 		return
-	
+
 	if not GameOrchestrator.is_server():
 		return
-	
+
 	var current_depth_in_meter: float = (platform_progress_ratio / 100.0) * descent_depth
 	var target_depth_in_meter: float = (_target_ratio / 100.0) * descent_depth
 	var distance_to_target: float = abs(target_depth_in_meter - current_depth_in_meter)
-	
+
 	var stopping_distance = (_current_speed * _current_speed) / (2.0 * acceleration)
-	
+
 	var desired_direction: float = 1.0 if target_depth_in_meter >= current_depth_in_meter else -1.0
-	
+
 	if _is_moving:
 		# Freiner avant le changement de direction
 		if _current_speed > 0.0 and _current_direction != desired_direction:
@@ -383,7 +393,7 @@ func _physics_process(_delta: float) -> void:
 		else:
 			# Arrêt complet -> Changement de direction
 			_current_direction = desired_direction
-			
+
 			# Accélération / Décélération
 			if distance_to_target <= stopping_distance:
 				_current_speed -= acceleration * _delta
@@ -391,10 +401,10 @@ func _physics_process(_delta: float) -> void:
 				_current_speed += acceleration * _delta
 	else:
 		_current_speed -= acceleration * _delta
-	
+
 	_current_speed = clamp(_current_speed, 0.0, max_speed)
 	var frame_movement: float = _current_speed * _delta
-	
+
 	if _is_moving and _current_direction == desired_direction and distance_to_target <= frame_movement:
 		current_depth_in_meter = target_depth_in_meter
 		_current_speed = 0.0
@@ -407,11 +417,11 @@ func _physics_process(_delta: float) -> void:
 			})
 	else:
 		current_depth_in_meter += frame_movement * _current_direction
-		
+
 		if not _is_moving and _current_speed <= 0.0:
 			_current_speed = 0.0
 			set_physics_process(false)
-			
+
 		elif current_depth_in_meter <= 0.0 or current_depth_in_meter >= descent_depth:
 			current_depth_in_meter = clamp(current_depth_in_meter, 0.0, descent_depth)
 			_current_speed = 0.0
@@ -422,9 +432,9 @@ func _physics_process(_delta: float) -> void:
 				_sync.server_prop_update({
 					"is_moving": _is_moving
 				})
-	
+
 	platform_progress_ratio = (current_depth_in_meter / descent_depth) * 100.0
-	
+
 	## INFO seulement serveur
 	if _sync != null:
 		_sync.server_prop_update({
@@ -440,79 +450,79 @@ func _update_visuals() -> void:
 	var rail_head: Node3D = get_node_or_null("Rail Head")
 	var rail_segments: Node3D = get_node_or_null("Rail Segments")
 	var dynamic_bridges: Node3D = get_node_or_null("Dynamic Bridges")
-	
+
 	if base:
 		base.set_axis_length(guide_z_offset)
-	
+
 	if upper_landing:
 		upper_landing.position = Vector3(0, 0, guide_z_offset)
-	
+
 	if lower_landing:
 		lower_landing.position = LOWER_LANDING_INITIAL_POSITION + Vector3(0, -descent_depth, guide_z_offset)
-	
+
 	if rail_head:
 		rail_head.position = Vector3(0, 0, guide_z_offset)
-	
+
 	if rail_segments:
 		var node_owner: Node = null
 		if Engine.is_editor_hint():
 			node_owner = get_tree().edited_scene_root
 			if node_owner == null:
 				node_owner = self
-		
+
 		rail_segments.position = Vector3(0, 0, guide_z_offset)
-		
+
 		var segment_height: float = 3.0
 		var nb_segments: int = ceili(descent_depth / segment_height) + 1
-		
+
 		var rail_segments_visuals: Node3D = rail_segments.get_node_or_null("Visuals")
 		if rail_segments_visuals:
 			var current_segment_index: int = rail_segments_visuals.get_child_count()
-			
+
 			for segment_index in range(current_segment_index, nb_segments):
 				var segment = RAIL_SEGMENT_SCENE.instantiate()
 				segment.name = "Rail Segment %d" % segment_index
-				
+
 				var pos: Vector3 = Vector3(0.0, -(segment_index * segment_height + 1.5), 0.0)
 				segment.position = pos
 				rail_segments_visuals.add_child(segment)
-				
+
 				if node_owner:
 					segment.owner = node_owner
-			
+
 			if current_segment_index > nb_segments:
 				for segment_index in range(current_segment_index - 1, nb_segments - 1, -1):
 					var segment = rail_segments_visuals.get_child(segment_index)
 					rail_segments_visuals.remove_child(segment)
 					segment.queue_free()
-		
+
 		var rail_segments_collider: CollisionShape3D = rail_segments.get_node_or_null("Collider")
-		
+
 		if rail_segments_collider and rail_segments_collider.shape:
 			var total_height = nb_segments * segment_height
 			rail_segments_collider.shape.size = Vector3(2.67, total_height, 0.5)
 			rail_segments_collider.position = Vector3(0, -total_height / 2.0, 2.25)
-	
+
 	if dynamic_bridges:
 		dynamic_bridges.update_length(guide_z_offset)
 		dynamic_bridges.update_collider_position(guide_z_offset)
-	
+
 	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
 		return
-	
+
 	_update_platform_movement()
 
 
 func _update_platform_movement() -> void:
 	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
 		return
-	
+
 	var platform = get_node_or_null("Platform System") as AnimatableBody3D
-	
+
 	if platform:
 		var target_y: float = lerpf(0.0, -descent_depth, (platform_progress_ratio / 100.0))
 		var target_position: Vector3 = PLATFORM_SYSTEM_INITIAL_POSITION + Vector3(0, target_y, guide_z_offset)
-		
+
 		### INFO Ne fonctionne pas en ligne: probablement à cause du mouvement combiné (planete, orbite)
 		#if Engine.is_editor_hint():
 			### INFO Déplacement par position (peut provoquer des "sauts" physiques en jeu)
@@ -523,48 +533,45 @@ func _update_platform_movement() -> void:
 			##print_rich("\t[color=gold]platform_motion = [/color][color=green]%.1v[/color]" % platform_motion)
 			#
 			#platform.move_and_collide(platform_motion)
-		
+
 		platform.position = target_position
-		
-		#print_rich("\t[color=green]elevator.position[/color] = [color=orange]%.1v[/color] [color=green]elevator.global_position[/color] = [color=orange]%.1v[/color]" % [position, self.global_position])
-		#print_rich("\t[color=green]platform.position[/color] = [color=orange]%.1v[/color] [color=green]platform.global_position[/color] = [color=orange]%.1v[/color]" % [platform.position, platform.global_position])
-		#print_rich("\t[color=green]target_position[/color] = [color=orange]%.1v[/color] [color=green]target_y[/color] = [color=orange]%.1f[/color]" % [target_position, target_y])
+
 
 
 func _process(_delta: float) -> void:
 	if Engine.is_editor_hint() or GameOrchestrator.is_server():
 		return
-	
+
 	var base: Node3D = get_node_or_null("Base") as StaticBody3D
 	var platform_system: Node3D = get_node_or_null("Platform System") as AnimatableBody3D
-	
+
 	var current_depth_in_meter: float = (platform_progress_ratio / 100.0) * descent_depth
 	var target_depth_in_meter: float = (_target_ratio / 100.0) * descent_depth
 	var distance_to_target: float = abs(target_depth_in_meter - current_depth_in_meter)
-	
+
 	var stopping_distance = (_current_speed * _current_speed) / (2.0 * acceleration)
-	
+
 	var display_direction: float = 1.0 if target_depth_in_meter >= current_depth_in_meter else -1.0
-	
+
 	_ui_update_timer += _delta
 	if _ui_update_timer >= 1.0:
 		_ui_update_timer = 0.0
 		_travel_time -= 1.0
-		
+
 		var eta: int = 0
 		if _is_moving:
 			eta = ceili(_travel_time)
-			
+
 			var upper_landing: Node3D = get_node_or_null("Upper Landing")
 			var lower_landing: Node3D = get_node_or_null("Lower Landing")
-			
+
 			if upper_landing:
 				upper_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
 			if lower_landing:
 				lower_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
 			if platform_system:
 				platform_system.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
-	
+
 	if base:
 		base.set_axis_length(guide_z_offset)
 		base.update_animated_axis_rotation(platform_progress_ratio, descent_depth)
@@ -573,12 +580,12 @@ func _process(_delta: float) -> void:
 func move_down() -> void:
 	if platform_progress_ratio >= 100.0:
 		return
-	
+
 	if not _is_moving and _current_speed <= 0.0:
 		_target_ratio = 100.0
 		_is_moving = true
 		set_physics_process(true)
-		
+
 			## INFO seulement serveur
 		if _sync != null:
 			_sync.server_prop_update({
@@ -590,12 +597,12 @@ func move_down() -> void:
 func move_up() -> void:
 	if platform_progress_ratio <= 0.0:
 		return
-	
+
 	if not _is_moving and _current_speed <= 0.0:
 		_target_ratio = 0.0
 		_is_moving = true
 		set_physics_process(true)
-		
+
 			## INFO seulement serveur
 		if _sync != null:
 			_sync.server_prop_update({
@@ -607,7 +614,7 @@ func move_up() -> void:
 func stop_movement() -> void:
 	_is_moving = false
 	_ui_update_timer = 0.0
-	
+
 		## INFO seulement serveur
 	if _sync != null:
 		_sync.server_prop_update({
@@ -619,12 +626,12 @@ func _on_lift_started() -> void:
 	var current_depth_in_meter: float = (platform_progress_ratio / 100.0) * descent_depth
 	var target_depth_in_meter: float = (_target_ratio / 100.0) * descent_depth
 	var distance_to_target: float = abs(target_depth_in_meter - current_depth_in_meter)
-	
+
 	_travel_time = compute_travel_time(distance_to_target, max_speed, acceleration)
-	
+
 	var upper_landing: Node3D = get_node_or_null("Upper Landing")
 	var lower_landing: Node3D = get_node_or_null("Lower Landing")
-	
+
 	if upper_landing:
 		upper_landing.start_beacons()
 	if lower_landing:
@@ -633,11 +640,11 @@ func _on_lift_started() -> void:
 
 func _on_lift_stopped() -> void:
 	_travel_time = 0.0
-	
+
 	var upper_landing: Node3D = get_node_or_null("Upper Landing")
 	var lower_landing: Node3D = get_node_or_null("Lower Landing")
 	var platform: Node3D = get_node_or_null("Platform System")
-	
+
 	if upper_landing:
 		upper_landing.stop_beacons()
 		upper_landing.update_interface_lift_progress(platform_progress_ratio, 0, "Stopped")
@@ -682,7 +689,7 @@ func apply_prop_data(_data: Dictionary) -> void:
 	if "is_moving" in _data:
 		var last_moving_state: bool = _is_moving
 		_is_moving = _data["is_moving"]
-		
+
 		if not GameOrchestrator.is_server():
 			if _is_moving != last_moving_state:
 				if _is_moving:

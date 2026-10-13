@@ -34,7 +34,9 @@ func _ready() -> void:
 		if not body_exited.is_connected(_on_body_entered_exited):
 			body_exited.connect(_on_body_entered_exited.bind("exited"))
 	else:
+		# Riding is decided by the server only: no broadphase query per step on the clients.
 		set_physics_process(false)
+		monitoring = false
 
 
 ## WARNING Passer par une Area ne permet plus de faire réagir le poids à ce qui est réellement en contact :
