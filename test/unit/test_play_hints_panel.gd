@@ -157,3 +157,9 @@ func test_a_panel_can_keep_to_some_contexts() -> void:
 
 func _labels() -> Array:
 	return _panel.shown().map(func(r: Dictionary) -> String: return str(r["label"]))
+
+
+func test_no_more_lines_than_fit_above_the_voice_buttons() -> void:
+	assert_eq(PlayHintsPanel.rows_that_fit(555.0, 610.0, 32.0), 1, "a 720p window under the chat: one line, never zero")
+	assert_eq(PlayHintsPanel.rows_that_fit(735.0, 830.0, 32.0), 2, "as many as fit")
+	assert_eq(PlayHintsPanel.rows_that_fit(100.0, 2000.0, 32.0), PlayHintsPanel.MAX_ROWS, "plenty of room: MAX_ROWS")

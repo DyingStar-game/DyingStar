@@ -17,9 +17,13 @@ const REFRESH_S : float = 0.25
 const MAX_ROWS : int = 6
 ## Distance (px) from the left edge of the window.
 const LEFT_PX : float = 20.0
-## Top of the panel, as a share of the window height: above the chat (centre left) and the voice
-## buttons (bottom left).
+## Top of the panel, as a share of the window height, where nothing places it (place_under): the star
+## chart's, under its own two buttons.
 const TOP_RATIO : float = 0.18
+## Room (px) kept free at the bottom of the window: the voice buttons (bottom left, 100 px high).
+const BOTTOM_CLEAR_PX : float = 110.0
+## A line's height (px) before any has been laid out to measure.
+const ROW_GUESS_PX : float = 32.0
 ## Space (px) left between the panel and the Control it sits under (place_under).
 const GAP_PX : float = 12.0
 ## Fade speed (alpha per second).
@@ -109,7 +113,7 @@ func refresh() -> void:
 			if int(c["level"]) != int(lowest[c["context"]]):
 				continue
 			rows.append({"actions": c["actions"], "label": c["label"], "keys": c["keys"]})
-			if rows.size() >= MAX_ROWS:
+			if rows.size() >= _row_cap():
 				break
 	_target_alpha = 1.0 if not rows.is_empty() else 0.0
 	if rows.is_empty():
@@ -147,6 +151,21 @@ func _memory() -> PlayHintsMemory:
 	if memory == null:
 		memory = PlayHintsMemory.shared()
 	return memory
+
+
+## How many lines fit between the panel's top and the voice buttons, at most MAX_ROWS: under the chat a
+## 720p window had room for three, and six ran over the buttons.
+func _row_cap() -> int:
+	var shown: int = _list.get_child_count() / 2
+	var row_px: float = _list.get_combined_minimum_size().y / shown if shown > 0 else ROW_GUESS_PX
+	return rows_that_fit(get_global_rect().position.y, get_viewport_rect().size.y - BOTTOM_CLEAR_PX, row_px)
+
+
+## Lines of [param row_px] that fit from [param top_px] down to [param bottom_px]: 1 to MAX_ROWS.
+static func rows_that_fit(top_px: float, bottom_px: float, row_px: float) -> int:
+	if row_px <= 0.0:
+		return MAX_ROWS
+	return clampi(floori((bottom_px - top_px) / row_px), 1, MAX_ROWS)
 
 
 func _rebuild(rows: Array[Dictionary]) -> void:
