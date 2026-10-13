@@ -254,7 +254,7 @@ func _apply(up: Vector3, ground: Vector3, center: Vector3, look: GroundLook) -> 
 		gi.material_overlay = look.material
 		gi.set_instance_shader_parameter(&"blend_plane", plane)
 		gi.set_instance_shader_parameter(
-				&"blend_ground_color", Vector3(look.color.r, look.color.g, look.color.b))
+				&"blend_ground_color", Vector3(look.tint.r, look.tint.g, look.tint.b))
 		gi.set_instance_shader_parameter(&"blend_height", _band)
 		gi.set_instance_shader_parameter(&"blend_detail_uv", look.detail)
 		gi.set_instance_shader_parameter(&"blend_center", gi.to_local(center))

@@ -93,6 +93,10 @@ uniform sampler2D blend_albedo_tex : source_color, filter_linear_mipmap_anisotro
 uniform bool blend_use_albedo = false;
 // tile_scale of that material: 0.1 means one tile per 10 m, the size of the marbling one sees.
 uniform float blend_albedo_scale = 0.1;
+// How much of the ground's vertex tint its shader applies to that texture (planet_surface.gdshader's
+// vertex_color_strength, copied by GroundLook.material_for). On the textured path blend_ground_color is
+// that tint (GroundLook.tint): without it the band showed the bare texture, white marble on corundum.
+uniform float blend_vertex_color_strength : hint_range(0.0, 1.0) = 0.0;
 uniform float blend_fade_start = 100.0;
 // The fringe is drawn AFTER the aerial-perspective quad and so carries no atmospheric veil: that
 // quad reads a screen copy taken once, before the whole alpha list, and overwrites every pixel it
@@ -266,9 +270,10 @@ void fragment() {
 		// hundreds of metres of open ground, and 499 lines of it would buy nothing on a band a few
 		// dozen centimetres tall where a single tile barely fits.
 		vec3 ap = tri_pos * blend_albedo_scale;
-		ALBEDO = texture(blend_albedo_tex, ap.yz).rgb * tri_w.x
+		ALBEDO = (texture(blend_albedo_tex, ap.yz).rgb * tri_w.x
 				+ texture(blend_albedo_tex, ap.xz).rgb * tri_w.y
-				+ texture(blend_albedo_tex, ap.xy).rgb * tri_w.z;
+				+ texture(blend_albedo_tex, ap.xy).rgb * tri_w.z)
+				* mix(vec3(1.0), blend_ground_color, blend_vertex_color_strength);
 	} else {
 		float detail = 0.5;  // neutral: no detail texture for this biome
 		if (blend_detail_uv.y > 0.0) {
