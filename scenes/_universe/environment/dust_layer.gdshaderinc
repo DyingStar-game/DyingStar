@@ -35,6 +35,9 @@ uniform float dust_far_fade = 300.0;
 uniform float dust_far_noise_scale = 20000.0;
 uniform vec3 dust_far_noise_offset = vec3(0.0);
 uniform sampler2D dust_far_ground : filter_linear, repeat_disable;
+// The dust's colour over each grid (DustGround.colour_texture): the colour of the ground it was lifted
+// from, so the haze over a far pink range is pink while the plain underfoot is yellow.
+uniform sampler2D dust_far_ground_colour : source_color, filter_linear, repeat_disable;
 uniform int dust_far_ground_on = 0;
 uniform vec3 dust_far_ground_cam = vec3(0.0);
 uniform vec3 dust_far_ground_east = vec3(1.0, 0.0, 0.0);
@@ -72,6 +75,7 @@ uniform vec3 dust_albedo = vec3(0.86, 0.74, 0.56);
 // how far the grid's highest ground stands over the ground under the camera (the layer reaches that
 // much higher).
 uniform sampler2D dust_ground : filter_linear, repeat_disable;
+uniform sampler2D dust_ground_colour : source_color, filter_linear, repeat_disable;
 uniform int dust_ground_on = 0;
 uniform vec3 dust_ground_cam = vec3(0.0);
 uniform vec3 dust_ground_east = vec3(1.0, 0.0, 0.0);
@@ -101,6 +105,29 @@ float dust_height_over_ground(vec3 p, float flat_h) {
 	vec2 uv = vec2(dot(q, dust_ground_east), dot(q, dust_ground_north)) / dust_ground_half;
 	float ground = texture(dust_ground, uv * 0.5 + 0.5).r;
 	return dot(q, dust_ground_up) - ground;
+}
+
+
+// The dust's colour at the camera-relative point [param p]: the ground's under it, from the near grid
+// (or the eye's, dust_albedo, before the grid is laid).
+vec3 dust_albedo_at(vec3 p) {
+	if (dust_ground_on == 0) {
+		return dust_albedo;
+	}
+	vec3 q = dust_frame * p + dust_ground_cam;
+	vec2 uv = vec2(dot(q, dust_ground_east), dot(q, dust_ground_north)) / dust_ground_half;
+	return texture(dust_ground_colour, uv * 0.5 + 0.5).rgb;
+}
+
+
+// The far dust's colour at [param p], from the far grid (or the eye's before it is laid).
+vec3 dust_far_albedo_at(vec3 p) {
+	if (dust_far_ground_on == 0) {
+		return dust_albedo;
+	}
+	vec3 q = dust_frame * p + dust_far_ground_cam;
+	vec2 uv = vec2(dot(q, dust_far_ground_east), dot(q, dust_far_ground_north)) / dust_far_ground_half;
+	return texture(dust_far_ground_colour, uv * 0.5 + 0.5).rgb;
 }
 
 
@@ -215,7 +242,7 @@ void dust_far(vec3 dir, float limit, vec2 pixel, vec3 lit, inout vec3 light, ino
 				* mix(0.25, 1.6, smoothstep(0.3, 0.7, bank))
 				* smoothstep(dust_far_start, dust_far_start + max(dust_far_fade, 0.01), t);
 		float step_t = exp(-sigma * dt);
-		light += trans * (1.0 - step_t) * lit;
+		light += trans * (1.0 - step_t) * lit * dust_far_albedo_at(p);
 		trans *= step_t;
 		if (trans < DUST_OPAQUE) {
 			break;
@@ -245,7 +272,8 @@ vec3 dust_march(vec3 dir, float limit, vec2 pixel, out float trans) {
 	if (dust_density <= 0.0 && dust_far_density <= 0.0) {
 		return light;
 	}
-	vec3 lit = dust_lit(dust_albedo, dust_phase(dot(dir, dust_sun_dir)), 1.0, 0.0, 1.0);
+	// The light on a white grain: each sample multiplies it by the colour of the dust there.
+	vec3 lit = dust_lit(vec3(1.0), dust_phase(dot(dir, dust_sun_dir)), 1.0, 0.0, 1.0);
 	if (dust_density <= 0.0 || range <= t0) {
 		// The ray never meets the near layer (it leaves it at once, or the eye is over it): the far
 		// dust may still lie across its path.
@@ -299,7 +327,7 @@ vec3 dust_march(vec3 dir, float limit, vec2 pixel, out float trans) {
 		float fade = smoothstep(dust_start, dust_start + 6.0, t) * (1.0 - smoothstep(range * 0.7, range, t));
 		float sigma = dust_sigma_at(dir * t, true) * fade;
 		float step_t = exp(-sigma * dt);
-		light += trans * (1.0 - step_t) * lit;
+		light += trans * (1.0 - step_t) * lit * dust_albedo_at(dir * t);
 		trans *= step_t;
 		if (trans < DUST_OPAQUE) {
 			break;

@@ -66,6 +66,11 @@ const NOISE_TEXELS: int = 128
 const NOISE_CELLS: float = 14.0
 
 var _last_read_at: float = -INF
+## The dust's colour at the eye (the lamps' beams, and the layer before its grids are laid): the ground's
+## under the eye, read every REFRESH_S and glided to every frame (ColourGlide). Along the rays the layer
+## takes the colour of the ground under each point, from the grids (DustGround.colour_texture).
+var _dust_colour_target: Color = BLOW_FALLBACK_COLOUR
+var _dust_colour: ColourGlide = ColourGlide.new()
 var _dust_density: float = 0.0
 var _dust_wind: Vector3 = Vector3.ZERO
 var _dust_sent: bool = false
@@ -100,9 +105,8 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 			else density_for(lifted, float(sample.get("dust_tau", 0.0)))
 	_dust_wind = planet.wind_world_at(observer_world_pos)
 	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
-	var ground_colour: Color = GroundLook.at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR).color \
+	_dust_colour_target = GroundLook.colour_at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR) \
 			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
-	renderer.set_dust_param(&"dust_albedo", blow_albedo_of(ground_colour))
 	# Inside a building the masks keep the room clear; seated, the march starts past the cab.
 	var boxed: bool = renderer.weather_masks != null and renderer.weather_masks.inside(observer_world_pos)
 	var seated: bool = is_instance_valid(renderer.player) and is_instance_valid(renderer.player.get("_seat_node"))
@@ -126,6 +130,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 			_dust_sent = false
 		return
 	_dust_sent = true
+	renderer.set_dust_param(&"dust_albedo", blow_albedo_of(_dust_colour.toward(_dust_colour_target, delta)))
 	if _noise == null:
 		_noise = _make_noise()
 		renderer.set_dust_param(&"dust_noise", _noise)
@@ -190,6 +195,11 @@ func _push_far(renderer: AtmosphereRenderer, cam_planet: Vector3, height: float,
 	renderer.set_dust_param(&"dust_far_noise_offset", wrap_to_period(cam_planet + _far_scroll, FAR_NOISE_SCALE))
 
 
+## The two ground grids, by name, for the dust's cost probe (DustCostProbe).
+func grids() -> Dictionary:
+	return {"near": _ground, "far": _far_ground}
+
+
 ## Keep both ground grids around [param ground_point] (planet-local, the ground under the camera) and
 ## hand the layer the camera's place on them. Grids laid on another planet are dropped first.
 func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Vector3, cam_planet: Vector3) -> void:
@@ -200,8 +210,12 @@ func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Ve
 		renderer.set_dust_param(&"dust_ground_on", 0)
 		renderer.set_dust_param(&"dust_far_ground_on", 0)
 	var radius: Callable = planet.planet_data.crack_aware_surface_dist
-	_lay_grid(renderer, _ground, "dust_ground", ground_point, cam_planet, radius, DustGround.BUDGET_MS)
-	_lay_grid(renderer, _far_ground, "dust_far_ground", ground_point, cam_planet, radius, FAR_BUDGET_MS)
+	var data: PlanetData = planet.planet_data
+	var colour: Callable = func(dir: Vector3, ground_r: float) -> Color:
+		var a: Vector3 = blow_albedo_of(GroundLook.colour_at(data, dir, BLOW_FALLBACK_COLOUR, ground_r - data.radius))
+		return Color(a.x, a.y, a.z)
+	_lay_grid(renderer, _ground, "dust_ground", ground_point, cam_planet, radius, DustGround.BUDGET_MS, colour)
+	_lay_grid(renderer, _far_ground, "dust_far_ground", ground_point, cam_planet, radius, FAR_BUDGET_MS, colour)
 	if _far_ground.ready:
 		# The far grid's highest ground over the ground under the camera: where the far dust ends going up.
 		var under_far: float = (ground_point - _far_ground.anchor).dot(_far_ground.up)
@@ -217,9 +231,10 @@ func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Ve
 ## the texture and frame when a new grid is swapped in, the camera relative to its anchor every frame
 ## (computed here in double precision: small numbers for the shader).
 static func _lay_grid(renderer: AtmosphereRenderer, grid: DustGround, prefix: String, ground_point: Vector3,
-		cam_planet: Vector3, radius: Callable, budget_ms: float) -> void:
-	if grid.update(ground_point, radius, budget_ms):
+		cam_planet: Vector3, radius: Callable, budget_ms: float, colour: Callable) -> void:
+	if grid.update(ground_point, radius, budget_ms, colour):
 		renderer.set_dust_param(prefix, grid.texture)
+		renderer.set_dust_param(prefix + "_colour", grid.colour_texture)
 		renderer.set_dust_param(prefix + "_east", grid.east)
 		renderer.set_dust_param(prefix + "_north", grid.north)
 		renderer.set_dust_param(prefix + "_up", grid.up)

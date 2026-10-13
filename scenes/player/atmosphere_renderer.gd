@@ -427,8 +427,33 @@ func _update_wind_dust(delta: float) -> void:
 	var body: Planet = current_body()
 	if body == null:
 		return
+	var t0: int = Time.get_ticks_usec()
 	_weather_sky.update(self, body, player.global_position)
+	var t1: int = Time.get_ticks_usec()
 	_weather_sky.animate_dust(self, body, player.camera, delta)
+	if _dust_cost != null:
+		_probe_dust_cost(t1 - t0, Time.get_ticks_usec() - t1, delta)
+
+
+## The dust's cost to the log (client.ini debug_dust_probe, DustCostProbe).
+func _probe_dust_cost(update_us: int, frame_us: int, delta: float) -> void:
+	var rid: RID = get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(rid, true)
+	var layer: Dictionary = {"setting": wind_dust_level()}
+	if _aerial_material != null:
+		for key: String in ["dust_density", "dust_steps", "dust_far_density", "dust_far_steps", "dust_light_count"]:
+			layer[key] = _aerial_material.get_shader_parameter(key)
+	var shown: Dictionary = {"near": layer.get("dust_density", 0.0), "near_steps": layer.get("dust_steps", 0),
+		"far": layer.get("dust_far_density", 0.0), "far_steps": layer.get("dust_far_steps", 0),
+		"lamps": layer.get("dust_light_count", 0), "setting": layer["setting"]}
+	var line: String = _dust_cost.frame(update_us, frame_us, _weather_sky.grids(),
+			RenderingServer.viewport_get_measured_render_time_gpu(rid), delta, shown)
+	if not line.is_empty():
+		print(line)
+
+
+## The dust's cost probe (client.ini debug_dust_probe=true), null when off.
+var _dust_cost: DustCostProbe = DustCostProbe.new() if DustCostProbe.wanted() else null
 
 
 ## Graphics > Wind-blown dust: 0 off (the layer neither read, laid nor drawn), 1 low, 2 high.

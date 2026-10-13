@@ -42,6 +42,17 @@ var _capacity: int = 32
 var _lifetime: float = 2.0
 var _particles: GPUParticles3D = null
 var _ground_color: Color = Color(0.55, 0.48, 0.4)
+## The ground colour read under the last puff (every GROUND_REFRESH_S), and the glide toward it: a wheel
+## crossing into the next biome blends its dust instead of switching colour at once (ColourGlide).
+var _ground_target: Color = Color(0.55, 0.48, 0.4)
+var _ground_glide: ColourGlide = ColourGlide.new()
+var _glided_at: float = -1.0
+## The colour probe (client.ini debug_dust_probe=true): every PROBE_S, one "[DustColour]" line per emitter
+## with what decided the last puff's colour, to tell a wrong ground from a wrong family or a missing planet.
+const PROBE_S: float = 2.0
+static var _probe_on: bool = ClientConfig.get_bool("debug_dust_probe", false)
+var _probe_at: float = -INF
+var _probe_planet: bool = false
 var _airless: bool = false
 var _gravity: float = 9.8
 ## The wind at the actor, world frame (m/s), read with the ground (Planet.wind_world_at); zero in calm.
@@ -80,7 +91,16 @@ func puff(global_pos: Vector3, family: StringName, strength: float, velocity: Ve
 	if not _ensure_anchor():
 		return
 	_refresh_ground(global_pos)
+	var now: float = Time.get_ticks_msec() * 0.001
+	_ground_color = _ground_glide.toward(_ground_target, now - _glided_at if _glided_at >= 0.0 else 0.0)
+	_glided_at = now
 	var color: Color = _dust.color(family, _ground_color)
+	if _probe_on and now - _probe_at >= PROBE_S:
+		_probe_at = now
+		print("[DustColour] %s family %s planet %s ground #%s glided #%s emitted #%s (family colour %s)" % [
+			_actor.name, family if family != &"" else "-", "yes" if _probe_planet else "NO (fallback)",
+			_ground_target.to_html(false), _ground_color.to_html(false), color.to_html(false),
+			"yes" if _dust.color_by_family.has(family) else "no"])
 	color.a = clampf(amount, 0.0, 1.0)
 	var to_local: Basis = _particles.global_basis.inverse()
 	var local_pos: Vector3 = _particles.to_local(global_pos)
@@ -189,13 +209,14 @@ func _refresh_ground(global_pos: Vector3) -> void:
 	if now - _ground_read_at < GROUND_REFRESH_S:
 		return
 	_ground_read_at = now
-	_ground_color = _dust.fallback_color
+	_ground_target = _dust.fallback_color
 	var planet: Planet = SurfaceProbe.planet_of(_actor)
+	_probe_planet = planet != null and planet.planet_data != null
 	if planet != null and planet.planet_data != null:
 		var data: PlanetData = planet.planet_data
 		var radial: Vector3 = planet.to_local(global_pos)
 		if not radial.is_zero_approx():
-			_ground_color = GroundLook.at(data, radial.normalized(), _dust.fallback_color).color
+			_ground_target = GroundLook.colour_at(data, radial.normalized(), _dust.fallback_color)
 		_airless = data.atmosphere_profile == null
 		_gravity = data.surface_gravity
 		_wind_world = planet.wind_world_at(global_pos)

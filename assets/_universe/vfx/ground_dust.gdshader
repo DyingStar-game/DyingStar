@@ -58,6 +58,10 @@ void vertex() {
 	MODELVIEW_MATRIX[1] = vec4(-s * size, c * size, 0.0, 0.0);
 	MODELVIEW_MATRIX[2] = vec4(0.0, 0.0, size, 0.0);
 	MODELVIEW_NORMAL_MATRIX = mat3(1.0);
+	// Lit like the ground it came from: its normal is the local up (the emitter's +Y, which DustEmitter
+	// lays on the actor's up), not the billboard's face. Facing the camera, a puff was dark against the
+	// sun and pale with the sun behind, never the shade of the ground beside it (2026-10-13).
+	NORMAL = normalize(mat3(VIEW_MATRIX) * normalize(MODEL_MATRIX[1].xyz));
 }
 
 void fragment() {
