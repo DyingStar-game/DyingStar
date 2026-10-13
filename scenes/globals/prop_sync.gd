@@ -136,7 +136,9 @@ func _on_host_sleeping_state_changed() -> void:
 ## own, so its tick can only ever find the pose it found last time — yet ~200 of them cost ~2.6 ms of
 ## every physics step at the depot, for zero emits. They are sampled at 60 / STATIC_TICK_EVERY Hz
 ## instead; a script that moves one is still replicated within a sixth of a second. Never applied while
-## the host rides a Player / Vehicle (a carried prop re-sends every tick on purpose, see server_tick).
+## the host rides a Player / Vehicle (a carried prop re-sends every tick on purpose, see server_tick),
+## nor to a smooth_transform host: the server moves it continuously (a lift platform, an
+## AnimatableBody3D), and at 6 Hz the client's interpolator caught up and waited between packets.
 const STATIC_TICK_EVERY: int = 10
 var _static_phase: int = randi() % STATIC_TICK_EVERY
 
@@ -146,7 +148,8 @@ func _physics_process(_delta: float) -> void:
 	if uuid == "":
 		return  # not networked yet (e.g. an in-scene placeholder before/without dispatch) — don't replicate
 	var host := _body()
-	if host != null and not (host is RigidBody3D) and not PropNet.rides_parent(host):
+	if host != null and not smooth_transform and not (host is RigidBody3D) \
+			and not PropNet.rides_parent(host):
 		_static_phase += 1
 		if _static_phase % STATIC_TICK_EVERY != 0:
 			return
