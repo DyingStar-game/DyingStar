@@ -297,12 +297,17 @@ static func apply_ride_freeze_mode(body: Node3D) -> void:
 		RigidBody3D.FREEZE_MODE_KINEMATIC if rides_parent(body)
 		else RigidBody3D.FREEZE_MODE_STATIC)
 
+## Group of the nodes that carry what stands on them as their children, besides vehicles and players:
+## a vehicle lift's Platform System (platform_area_detection.gd parents what steps onto its platform).
+const RIDE_CARRIER_GROUP := &"ride_carrier"
+
 ## Is this prop carried by / loaded onto a parent that moves under it? Both cases pin a CONSTANT local
 ## pose, so they share the freeze mode, the render-rate pinning below, and the exemption from the
 ## server-side "settled props stop ticking" gate (PropSync).
 static func rides_parent(body: Node3D) -> bool:
 	var parent: Node = body.get_parent()
-	return parent is Vehicle or parent is Player
+	return parent is Vehicle or parent is Player \
+			or (parent != null and parent.is_in_group(RIDE_CARRIER_GROUP))
 
 ## Client: apply a replicated LOCAL pose (position/rotation) and remember it so ride_pin can hold it.
 ## Call from a prop's client_channel_data_update (shared by every networked prop).
