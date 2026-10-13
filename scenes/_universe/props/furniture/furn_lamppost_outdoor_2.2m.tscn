@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://b21mkc12tx8va" path="res://assets/_universe/props/furniture/outdoor_lamppost_2.2m_001.glb" id="1_pk050"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_twon5"]
 [ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="2_3u0aj"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="5_rruuj"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_pk050"]
@@ -46,5 +47,14 @@ script = ExtResource("pc_photocell")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1071075195]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0041134804, 1.1000778526067734, 0.01858601)
 shape = SubResource("BoxShape3D_pk050")
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=184194628]
+script = ExtResource("5_rruuj")
+apron_m = 2.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=192739811]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.005882339179515833, -0.09671069524847142, -0.0012464368343353405)
+size = Vector3(0.3191275548051635, 0.22331681153832506, 0.305987391599956)
 
 [editable path="outdoor_lamppost_2_2m_001"]
