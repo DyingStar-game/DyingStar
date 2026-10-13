@@ -39,6 +39,12 @@ const NEAR_LAYER_RANGE_M: float = 1000.0
 ## within FAR_BUDGET_MS a frame. FAR_SHARE 0 = no far dust.
 const FAR_RANGE_M: float = 6000.0
 const FAR_SHARE: float = 0.6
+## Over the ground (m), the far dust fades out from DUST_FADE_FROM_M and is gone at DUST_CEILING_M, where
+## nothing of the wind's dust is read, laid or drawn any more. Seen from above, a 60 m layer veils the land
+## by a few percent; it still cost its ground grids (rebuilt all the time under a moving eye) and a march
+## over the whole screen 6 km plus the eye's height long: 200 fps in EVA (2026-10-13).
+const DUST_FADE_FROM_M: float = 3000.0
+const DUST_CEILING_M: float = 10000.0
 const FAR_HEIGHT_M: float = 60.0
 const FAR_NOISE_SCALE: float = 20000.0
 const FAR_CELL_M: float = 192.0
@@ -74,6 +80,8 @@ var _dust_colour: ColourGlide = ColourGlide.new()
 var _dust_density: float = 0.0
 var _dust_wind: Vector3 = Vector3.ZERO
 var _dust_sent: bool = false
+## The eye's height over the ground at the last frame (m): over DUST_CEILING_M the weather is not even read.
+var _eye_height_m: float = 0.0
 var _scroll: Vector3 = Vector3.ZERO
 var _scroll_fine: Vector3 = Vector3.ZERO
 var _wind_dir: Vector3 = Vector3.ZERO
@@ -95,7 +103,7 @@ var _no_dust_layer: bool = ClientConfig.get_bool("debug_no_dust_layer", false)
 ## layer's density, colour and start on [param renderer].
 func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Vector3) -> void:
 	var now: float = Time.get_ticks_msec() * 0.001
-	if now - _last_read_at < REFRESH_S:
+	if now - _last_read_at < REFRESH_S or _eye_height_m > DUST_CEILING_M:
 		return
 	_last_read_at = now
 	var sample: Dictionary = planet.weather_at(observer_world_pos)
@@ -123,7 +131,9 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 ## frame plus the air's travel, wrapped in double precision so the float32 shader never sees more than
 ## a noise period.
 func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D, delta: float) -> void:
-	if _dust_density <= 0.0 or camera == null:
+	if camera != null:
+		_eye_height_m = planet.surface_altitude_of(camera.global_position)
+	if _dust_density <= 0.0 or camera == null or _eye_height_m > DUST_CEILING_M:
 		if _dust_sent:
 			renderer.set_dust_param(&"dust_density", 0.0)
 			renderer.set_dust_param(&"dust_far_density", 0.0)
@@ -167,7 +177,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 		if not dir.is_zero_approx():
 			var surface: float = planet.planet_data.crack_aware_surface_dist(dir)
 			height = camera.global_position.distance_to(planet.global_position) - surface
-			_lay_grounds(renderer, planet, dir * surface, cam_planet)
+			_lay_grounds(renderer, planet, dir * surface, cam_planet, height < NEAR_LAYER_GONE_M)
 	renderer.set_dust_param(&"dust_frame", to_planet)
 	renderer.set_dust_param(&"dust_offset", wrap_to_period(cam_q + _scroll, period_c))
 	renderer.set_dust_param(&"dust_offset_fine", wrap_to_period(cam_q + _scroll_fine, period_f))
@@ -188,7 +198,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 ## land below is still covered from EVA), where it starts (past the near layer while that is seen,
 ## from the eye once it is gone) and its banks' place on the planet (wrapped in double precision).
 func _push_far(renderer: AtmosphereRenderer, cam_planet: Vector3, height: float, share: float) -> void:
-	renderer.set_dust_param(&"dust_far_density", _dust_density * FAR_SHARE)
+	renderer.set_dust_param(&"dust_far_density", _dust_density * FAR_SHARE * far_layer_share(height))
 	renderer.set_dust_param(&"dust_far_range", FAR_RANGE_M + maxf(height, 0.0))
 	renderer.set_dust_param(&"dust_far_start", lerpf(0.0, NEAR_LAYER_RANGE_M * 0.7, share))
 	renderer.set_dust_param(&"dust_far_fade", lerpf(1.0, NEAR_LAYER_RANGE_M * 0.3, share))
@@ -202,7 +212,9 @@ func grids() -> Dictionary:
 
 ## Keep both ground grids around [param ground_point] (planet-local, the ground under the camera) and
 ## hand the layer the camera's place on them. Grids laid on another planet are dropped first.
-func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Vector3, cam_planet: Vector3) -> void:
+## [param near]: lay the near grid too (only while the near layer can be seen, under NEAR_LAYER_GONE_M).
+func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Vector3, cam_planet: Vector3,
+		near: bool) -> void:
 	if planet.get_instance_id() != _ground_planet:
 		_ground = DustGround.new()
 		_far_ground = DustGround.new(FAR_CELL_M, FAR_REBUILD_M)
@@ -214,7 +226,8 @@ func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Ve
 	var colour: Callable = func(dir: Vector3, ground_r: float) -> Color:
 		var a: Vector3 = blow_albedo_of(GroundLook.colour_at(data, dir, BLOW_FALLBACK_COLOUR, ground_r - data.radius))
 		return Color(a.x, a.y, a.z)
-	_lay_grid(renderer, _ground, "dust_ground", ground_point, cam_planet, radius, DustGround.BUDGET_MS, colour)
+	if near:
+		_lay_grid(renderer, _ground, "dust_ground", ground_point, cam_planet, radius, DustGround.BUDGET_MS, colour)
 	_lay_grid(renderer, _far_ground, "dust_far_ground", ground_point, cam_planet, radius, FAR_BUDGET_MS, colour)
 	if _far_ground.ready:
 		# The far grid's highest ground over the ground under the camera: where the far dust ends going up.
@@ -275,6 +288,12 @@ static func _make_noise() -> NoiseTexture3D:
 	tex.seamless = true
 	tex.noise = noise
 	return tex
+
+
+## How much of the far dust an eye [param height_m] over the ground still sees: all of it under
+## DUST_FADE_FROM_M, none from DUST_CEILING_M up.
+static func far_layer_share(height_m: float) -> float:
+	return 1.0 - smoothstep(DUST_FADE_FROM_M, DUST_CEILING_M, height_m)
 
 
 ## How much of the near layer an eye [param height_m] over the ground sees (see NEAR_LAYER_FULL_M).

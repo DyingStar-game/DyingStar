@@ -21,3 +21,9 @@ func test_a_line_per_period_with_the_means() -> void:
 	assert_string_contains(line, "near 0.00130 /m x 20 steps")
 	assert_eq(grid.spent_ground_us, 0, "the grid's time is taken, not counted twice")
 	assert_eq(probe.frame(0, 0, grids, 6.0, 1.0 / 60.0, layer), "", "then quiet until the next period")
+
+
+func test_a_parameter_never_set_reads_zero() -> void:
+	var probe := DustCostProbe.new()
+	var line: String = probe.report({}, {"near": null, "near_steps": null, "setting": 2})
+	assert_string_contains(line, "near 0.00000 /m x 0 steps", "null from the shader: 0, not a crash")

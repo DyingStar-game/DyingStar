@@ -49,6 +49,12 @@ func frame(update_us: int, frame_us: int, grids: Dictionary, gpu_ms: float, delt
 	return line
 
 
+## [param key] of [param layer] as a number: 0 for a shader parameter never set (it reads back null).
+static func _num(layer: Dictionary, key: String) -> float:
+	var value: Variant = layer.get(key)
+	return float(value) if value is float or value is int else 0.0
+
+
 ## The period's line (see the class). [param layer]: what the layer was asked to draw.
 func report(grids: Dictionary, layer: Dictionary) -> String:
 	var n: float = maxf(float(_frames), 1.0)
@@ -64,6 +70,6 @@ func report(grids: Dictionary, layer: Dictionary) -> String:
 			grid.last_build_cells])
 	parts.append("gpu frame %.2f ms" % (_gpu_ms / n))
 	parts.append("layer: near %.5f /m x %d steps, far %.5f /m x %d steps, %d lamps, setting %d" % [
-		float(layer.get("near", 0.0)), int(layer.get("near_steps", 0)), float(layer.get("far", 0.0)),
-		int(layer.get("far_steps", 0)), int(layer.get("lamps", 0)), int(layer.get("setting", 0))])
+		_num(layer, "near"), int(_num(layer, "near_steps")), _num(layer, "far"),
+		int(_num(layer, "far_steps")), int(_num(layer, "lamps")), int(_num(layer, "setting"))])
 	return " | ".join(parts)
