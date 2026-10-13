@@ -20,6 +20,7 @@ var last_event_time := -1.0
 
 
 func _ready() -> void:
+	add_to_group(ScreenTarget.GROUP)  # the crosshair looks for screens here (PlayerClient._point_screen)
 	# Show the SubViewport on the screen mesh BY CODE, so the screen can be any mesh — e.g. one from
 	# the vehicle's GLB model (named ScreenFront, etc.) — without setting up a ViewportTexture
 	# material by hand. Only when the mesh has no material_override yet, so scenes that set their own
@@ -88,73 +89,96 @@ func surface_size() -> Vector2:
 	return _surface_size()
 
 
+# -- The crosshair as the pointer ----------------------------------------------------------------------
+# Walking up to a screen used to free the cursor and freeze the view: the player was stuck to it. Now
+# the view stays the player's and the crosshair points: PlayerClient casts its ray here (hit), hovers
+# (pointer_at) and clicks (click_at) with the `perforate` action. The free-cursor path below (physics
+# picking) stays for any screen used with a visible mouse.
+
+## Where the ray from [param from] along [param dir] meets the screen, within [param reach] m, or null
+## when it misses it. Pure geometry on the screen mesh's plane: no physics query, any frame.
+func hit(from: Vector3, dir: Vector3, reach: float) -> Variant:
+	if node_quad == null or node_viewport == null:
+		return null
+	var xf: Transform3D = node_quad.global_transform
+	var normal: Vector3 = xf.basis.z.normalized()
+	var facing: float = dir.dot(normal)
+	if is_zero_approx(facing):
+		return null
+	var t: float = (xf.origin - from).dot(normal) / facing
+	if t < 0.0 or t > reach:
+		return null
+	var point: Vector3 = from + dir * t
+	var uv: Vector2 = _uv_of(point)
+	return point if uv.x >= 0.0 and uv.x <= 1.0 and uv.y >= 0.0 and uv.y <= 1.0 else null
+
+
+## Hover the interface at [param point] (a hit()): a mouse motion pushed into the viewport.
+func pointer_at(point: Vector3) -> void:
+	var motion := InputEventMouseMotion.new()
+	_push_at(motion, point)
+
+
+## Press or release ([param pressed]) the left button at [param point] (a hit()).
+func click_at(point: Vector3, pressed: bool) -> void:
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
+	click.pressed = pressed
+	_push_at(click, point)
+
+
+## The crosshair left the screen: the interface stops showing a hover.
+func pointer_left() -> void:
+	node_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
+
+
+## Give the keyboard back to the game: whatever field of this screen has it lets go.
+func release_keyboard() -> void:
+	node_viewport.gui_release_focus()
+
+
+## [param point] (world) on the screen mesh as 0..1 UVs, (0, 0) the top-left corner. A QuadMesh or
+## PlaneMesh lies in its own local XY plane, so the mesh's frame gives (x, -y) whatever the Area's
+## orientation (see _mouse_input_event).
+func _uv_of(point: Vector3) -> Vector2:
+	var local: Vector3 = node_quad.global_transform.affine_inverse() * point
+	var size: Vector2 = _surface_size()
+	return Vector2(local.x / size.x + 0.5, -local.y / size.y + 0.5)
+
+
+## Place [param input_event] at [param point] in the viewport's pixels, relative motion included, and push it.
+func _push_at(input_event: InputEvent, point: Vector3) -> void:
+	_push_at_pixel(input_event, _uv_of(point) * Vector2(node_viewport.size))
+
+
+func _push_at_pixel(input_event: InputEvent, event_pos_2d: Vector2) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	input_event.position = event_pos_2d
+	if input_event is InputEventMouse:
+		input_event.global_position = event_pos_2d
+	if input_event is InputEventMouseMotion or input_event is InputEventScreenDrag:
+		input_event.relative = event_pos_2d - last_event_pos_2d
+		if now > last_event_time:
+			input_event.velocity = input_event.relative / (now - last_event_time)
+	last_event_pos_2d = event_pos_2d
+	last_event_time = now
+	node_viewport.push_input(input_event)
+
+
 func _mouse_input_event(_camera: Camera3D, input_event: InputEvent, event_position: Vector3, _normal: Vector3, _shape_idx: int) -> void:
+	# The crosshair drives a screen while the mouse is captured (hit / pointer_at / click_at): picking
+	# at the window centre would hand the interface the same events a second time.
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		return
 	# Size AND position both come from the MESH, never from the collision shape. They used to be mixed:
 	# the width was read off the BoxShape's Z while the position was read off the Area's X — which is
 	# the shape's THICKNESS (0.23 m on the mining depot, whose Area is turned 90° from the mesh). A
 	# depth of impact was therefore divided by a width, pinning the horizontal coordinate to
 	# 0.5 +/- 0.077: the pointer could never leave a narrow band in the middle of the screen, and only
-	# quivered inside it with the ray's angle of incidence.
-	# A QuadMesh/PlaneMesh lies in its own local XY plane BY CONSTRUCTION, so working in the mesh's
-	# frame makes (x, -y) correct whatever the Area's orientation — no axis is assumed anywhere.
-	var quad_mesh_size: Vector2 = _surface_size()
-
-	# Event position in Area3D in world coordinate space.
-	var event_pos_3d := event_position
-
-	# Current time in seconds since engine start.
-	var now := Time.get_ticks_msec() / 1000.0
-
-	# Convert position to a coordinate space relative to the SCREEN MESH.
-	# NOTE: `affine_inverse()` accounts for the node's scale, rotation, and position in the scene!
-	event_pos_3d = node_quad.global_transform.affine_inverse() * event_pos_3d
-
-	# TODO: Adapt to bilboard mode or avoid completely.
-
-	var event_pos_2d := Vector2()
-
+	# quivered inside it with the ray's angle of incidence. _uv_of works in the mesh's frame.
+	# Outside the area (a drag leaving it), the last known position stands.
+	var event_pos_2d: Vector2 = last_event_pos_2d
 	if is_mouse_inside:
-		# Convert the relative event position from 3D to 2D.
-		event_pos_2d = Vector2(event_pos_3d.x, -event_pos_3d.y)
-
-		# Right now the event position's range is the following: (-quad_size/2) -> (quad_size/2)
-		# We need to convert it into the following range: -0.5 -> 0.5
-		event_pos_2d.x = event_pos_2d.x / quad_mesh_size.x
-		event_pos_2d.y = event_pos_2d.y / quad_mesh_size.y
-		# Then we need to convert it into the following range: 0 -> 1
-		event_pos_2d.x += 0.5
-		event_pos_2d.y += 0.5
-
-		# Finally, we convert the position to the following range: 0 -> viewport.size
-		event_pos_2d.x *= node_viewport.size.x
-		event_pos_2d.y *= node_viewport.size.y
-		# We need to do these conversions so the event's position is in the viewport's coordinate system.
-
-	elif last_event_pos_2d != null:
-		# Fall back to the last known event position.
-		event_pos_2d = last_event_pos_2d
-
-	# Set the event's position and global position.
-	input_event.position = event_pos_2d
-	if input_event is InputEventMouse:
-		input_event.global_position = event_pos_2d
-
-	# Calculate the relative event distance.
-	if input_event is InputEventMouseMotion or input_event is InputEventScreenDrag:
-		# If there is not a stored previous position, then we'll assume there is no relative motion.
-		if last_event_pos_2d == null:
-			input_event.relative = Vector2(0, 0)
-		# If there is a stored previous position, then we'll calculate the relative position by subtracting
-		# the previous position from the new position. This will give us the distance the event traveled from prev_pos.
-		else:
-			input_event.relative = event_pos_2d - last_event_pos_2d
-			input_event.velocity = input_event.relative / (now - last_event_time)
-
-	# Update last_event_pos_2d with the position we just calculated.
-	last_event_pos_2d = event_pos_2d
-
-	# Update last_event_time to current time.
-	last_event_time = now
-
-	# Finally, send the processed input event to the viewport.
-	node_viewport.push_input(input_event)
+		event_pos_2d = _uv_of(event_position) * Vector2(node_viewport.size)
+	_push_at_pixel(input_event, event_pos_2d)

@@ -394,7 +394,7 @@ func _process(delta: float) -> void:
 			var still: bool = not moving and not one_shot and _emote_phase == EmotePhase.NONE \
 					and _current != anim_set.turn_left and _current != anim_set.turn_right
 			var target: Vector3 = _head_cam.target(head_now, _shown_stance, one_shot, moving, still,
-					is_instance_valid(_player.screen_interacting), head_cam_forward)
+					is_instance_valid(_player.screen_in_use), head_cam_forward)
 			_player.camera_pivot.position = _player.camera_pivot.position.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
 		else:
 			# NOT gated on _head_rest_captured. That reference is only taken on an idle frame ON FOOT, so a

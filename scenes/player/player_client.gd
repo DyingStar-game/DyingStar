@@ -27,14 +27,11 @@ const REMOTE_HALF_RATE_EXIT: float = 12.0
 ## 32 m and only comes back at 28 is something a player walking back and forth sees, and calls a bug.
 ## The half-rate switch below keeps its hysteresis because nobody can see that one flip.
 const REMOTE_SHADOW_DISTANCE: float = 40.0
-## Band along the window's edge, as a fraction of its shorter side, where the pointer starts panning
-## the view across a 3D screen. Narrow enough that the pointer only lands in it on purpose.
-const SCREEN_PAN_MARGIN: float = 0.08
-## Fastest that pan goes, with the pointer pinned right against the edge (rad/s). Deliberately NOT
-## scaled by camera_sensitivity: a console is read at the same speed whatever the player's mouse
-## settings, and the rate is converted back into an equivalent mouse delta only when it is applied.
-const SCREEN_PAN_RATE: float = 1.1
-## How fast the right stick turns the view, pushed all the way (rad/s). Like the edge pan, a rate in
+## How long (s) a refusal stays where the prompts are (_flash_prompt).
+const FLASH_PROMPT_S: float = 3.0
+## Farthest (m) the crosshair reaches a 3D screen from the eye (_point_screen).
+const SCREEN_REACH_M: float = 4.0
+## How fast the right stick turns the view, pushed all the way (rad/s). A rate in
 ## radians converted to a mouse delta only when applied, so camera_sensitivity does not change it.
 const STICK_LOOK_RATE: float = 2.4
 ## How often the ground is re-probed (s). A step comes every metre or so; sampling at 60 Hz would cast
@@ -74,6 +71,12 @@ var player
 ## camera moves. Projecting the head to the screen on the CPU (double precision) and drawing a plain
 ## 2D Label is rock-steady.
 var _name_tag: Label = null
+## A refusal said where the prompts are, for FLASH_PROMPT_S (_flash_prompt), and until when (ms).
+var _flash_text: String = ""
+var _flash_until_ms: int = 0
+## The 3D screen (its Gui3D) under the crosshair, and where on it (_point_screen); null when none.
+var _pointed_gui: Node3D = null
+var _pointed_at: Vector3 = Vector3.ZERO
 
 var _conversation_text: Label = null
 ## Social notifications at the top of the screen (null on a remote avatar — see setup()).
@@ -401,7 +404,9 @@ func _process(_delta: float) -> void:
 	# Mining (aim, perforation, head sync) runs in the MiningTool — but ONLY while in direct control, so
 	# you can't aim or drill while a menu/wheel is up (its polled input would otherwise fire while paused,
 	# and a held click would keep the tool engaged). Entering a menu cancels any in-progress action.
-	if ui_focus:
+	# The crosshair on a 3D screen points at it (_point_screen): its click is the screen's, not the tool's.
+	var pointing: bool = _point_screen(ui_focus)
+	if ui_focus or pointing:
 		player.mining_tool.cancel()
 	else:
 		player.mining_tool.update_local(_delta)
@@ -411,12 +416,7 @@ func _process(_delta: float) -> void:
 			player.mouse_motion = Vector2.ZERO  # mouse frozen during perforation
 
 	_apply_cursor_mode(ui_focus)
-	if ui_focus:
-		# A 3D screen frees the pointer and never steers the view by itself — aiming the camera at it was
-		# a pull nobody asked for, restarted by every step taken inside the zone. The one thing it does
-		# is let the player REACH it, and only while they ask for it with the pointer.
-		_pan_along_screen(_delta)
-	else:
+	if not ui_focus:
 		_handle_camera_motion()
 
 
@@ -499,12 +499,32 @@ func _process(_delta: float) -> void:
 			player.interact_label.text = tr("%%HUD_PART_ENGINE_RUNNING")
 			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 			player.interact_label.show()
+		elif player._carry_prompt == "take":
+			# A mining tool on the ground: `action` puts it in the kit, not in the arms.
+			var tool = player._aimed_carriable()
+			var tool_name: String = str(tool.part_name()) if tool != null and tool.has_method("part_name") else ""
+			player.interact_label.text = _prompt(&"action", tr("%%HUD_TAKE_NAMED") % tool_name)
+			player.interact_label.modulate = SettingsStyle.GOOD_COLOR
+			player.interact_label.show()
+		elif player._carry_prompt == "tool_owned":
+			player.interact_label.text = tr("%%HUD_TOOL_OWNED")
+			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
+			player.interact_label.show()
+		elif player._carry_prompt == "drop_tool":
+			player.interact_label.text = _prompt(&"action", tr("%%HUD_DROP_TOOL"))
+			player.interact_label.show()
 		elif player._carry_prompt == "stand":
 			# Crouched or prone at a vehicle part: no key to press, only why — a part is fitted or
 			# taken out standing.
 			player.interact_label.text = tr("%%HUD_PART_STAND_UP")
 			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 			player.interact_label.show()
+
+	# A refusal just said (_flash_prompt), where the prompts are, while nothing else is to be said.
+	if not player.interact_label.visible and Time.get_ticks_msec() < _flash_until_ms:
+		player.interact_label.text = _flash_text
+		player.interact_label.modulate = SettingsStyle.ALERT_COLOR
+		player.interact_label.show()
 
 	var dir_vect = Vector3.ZERO
 
@@ -666,53 +686,6 @@ func _send_vehicle_action(action: String, extra: Dictionary = {}) -> void:
 func _is_driving() -> bool:
 	return player._seat_is_driver and player._seat_vehicle_uuid != ""
 
-## Pan the view while the pointer leans on the edge of the window, so a screen too wide for the field
-## of view can still be read to its edges.
-##
-## The screen's own bounds are the limit: a direction stops the moment that side of the surface has
-## come inside the margin. A console that already fits in view therefore never moves the camera at
-## all, and a pointer forgotten against an edge does not send the view spinning off into the room.
-##
-## Applied through the ordinary look path instead of touching the camera here: that keeps the gravity
-## alignment, the ±80° pitch clamp and the head replication in ONE place.
-func _pan_along_screen(delta: float) -> void:
-	# ui_focus also covers the menus, and a menu must not sweep the view along behind itself.
-	if _modal_open() or not is_instance_valid(player.screen_zone):
-		return
-	var surface: MeshInstance3D = player.screen_zone.screen_surface()
-	if surface == null or surface.mesh == null:
-		return
-	var view: Viewport = player.get_viewport()
-	var rect: Vector2 = view.get_visible_rect().size
-	var margin: float = minf(rect.x, rect.y) * SCREEN_PAN_MARGIN
-	if margin <= 0.0:
-		return
-	var pointer: Vector2 = view.get_mouse_position()
-	var push: Vector2 = Vector2(
-		_edge_push(pointer.x, rect.x, margin),
-		_edge_push(pointer.y, rect.y, margin),
-	)
-	if push == Vector2.ZERO:
-		return
-	var span: Rect2 = _surface_span(surface)
-	if push.x > 0.0 and span.end.x <= rect.x - margin:
-		push.x = 0.0
-	if push.x < 0.0 and span.position.x >= margin:
-		push.x = 0.0
-	if push.y > 0.0 and span.end.y <= rect.y - margin:
-		push.y = 0.0
-	if push.y < 0.0 and span.position.y >= margin:
-		push.y = 0.0
-	if push == Vector2.ZERO:
-		return
-	# mouse_motion is -relative * 0.001, and _handle_camera_motion multiplies it by camera_sensitivity:
-	# leaning right (+x) therefore has to come out NEGATIVE to turn right, and dividing the sensitivity
-	# back out leaves SCREEN_PAN_RATE meaning what it says, radians per second.
-	var step: float = SCREEN_PAN_RATE * delta / maxf(player.camera_sensitivity, 0.001)
-	player.mouse_motion = -push * step
-	_handle_camera_motion()
-
-
 ## The right stick, as the mouse motion it stands for this frame: the look actions, turning the view at
 ## STICK_LOOK_RATE pushed all the way. Squared, so a small push is a fine aim and a full one a turn.
 ## Through mouse_motion, the one road the view is turned by: aiming slows it and perforating holds it
@@ -722,36 +695,6 @@ func _stick_look(delta: float) -> Vector2:
 	if stick == Vector2.ZERO:
 		return Vector2.ZERO
 	return -stick * stick.length() * (STICK_LOOK_RATE * delta / maxf(player.camera_sensitivity, 0.001))
-
-
-## How hard the pointer leans on one axis of the window: 0 anywhere in the free middle, then growing
-## to -1 against the low edge or +1 against the high one. Progressive on purpose — brushing the margin
-## nudges the view, pinning the border sweeps it.
-static func _edge_push(v: float, size: float, margin: float) -> float:
-	if v < margin:
-		return -clampf((margin - v) / margin, 0.0, 1.0)
-	if v > size - margin:
-		return clampf((v - (size - margin)) / margin, 0.0, 1.0)
-	return 0.0
-
-
-## The screen surface as it is SEEN: the box in window pixels that its corners project into.
-##
-## ⚠️ A corner behind the camera cannot be projected — unproject_position answers a mirrored point
-## that reads as "far off to the other side", which would unlock the wrong direction. Standing close
-## to a wide screen puts corners behind us routinely, so the moment one is, we answer a span larger
-## than the window: "there is still screen that way" everywhere, leaving the pan free to turn back.
-func _surface_span(surface: MeshInstance3D) -> Rect2:
-	var camera: Camera3D = player.camera
-	var aabb: AABB = surface.mesh.get_aabb()
-	var span: Rect2 = Rect2()
-	for i: int in range(8):
-		var corner: Vector3 = surface.global_transform * aabb.get_endpoint(i)
-		if camera.is_position_behind(corner):
-			return Rect2(Vector2(-1e6, -1e6), Vector2(2e6, 2e6))
-		var point: Vector2 = camera.unproject_position(corner)
-		span = Rect2(point, Vector2.ZERO) if i == 0 else span.expand(point)
-	return span
 
 
 ## The local vertical, from the gravity that holds the body: away from a planet's centre, or a
@@ -869,6 +812,75 @@ func _replicate_look() -> void:
 		player._last_head_yaw_sent = head_yaw_q
 		player.client_send_action_to_server({"action": "update_property", "head_yaw": head_yaw_q})
 
+## The crosshair on 3D screens (ScreenTarget): the nearest screen the ray from the eye meets within
+## SCREEN_REACH_M is hovered every frame, and becomes the screen in use (Player.set_screen_in_use)
+## until the player steps out of ScreenTarget.USE_RANGE_M. Nothing while a panel has the pointer
+## ([param ui_focus]) or seated. Walking up to a screen used to free the cursor and freeze the view; the
+## view stays the player's now. True while it points at one.
+func _point_screen(ui_focus: bool) -> bool:
+	var eye: Vector3 = player.camera.global_position if player.camera != null else player.global_position
+	var gui: Node3D = null
+	var point: Variant = null
+	if not ui_focus and player.camera != null and not is_instance_valid(player._seat_node):
+		var ray: Vector3 = -player.camera.global_basis.z
+		var nearest: float = INF
+		for candidate: Node in get_tree().get_nodes_in_group(ScreenTarget.GROUP):
+			var screen_gui := candidate as Node3D
+			if screen_gui == null or screen_gui.global_position.distance_to(eye) > SCREEN_REACH_M + 2.0:
+				continue
+			var at: Variant = screen_gui.hit(eye, ray, SCREEN_REACH_M)
+			if at != null and eye.distance_to(at) < nearest and ScreenTarget.owner_of(screen_gui) != null:
+				nearest = eye.distance_to(at)
+				gui = screen_gui
+				point = at
+	if is_instance_valid(_pointed_gui) and _pointed_gui != gui:
+		_pointed_gui.pointer_left()
+	_pointed_gui = gui
+	if gui != null:
+		_pointed_at = point
+		gui.pointer_at(point)
+		player.set_screen_in_use(ScreenTarget.owner_of(gui))
+	elif is_instance_valid(player.screen_in_use):
+		var used: Node3D = ScreenTarget.gui_of(player.screen_in_use)
+		if used == null or used.global_position.distance_to(eye) > ScreenTarget.USE_RANGE_M:
+			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
+	elif player.screen_in_use != null:
+		player.set_screen_in_use(null)  # freed (admin delete, despawn)
+	return gui != null
+
+
+## Say [param text] where the prompts are, in red, for FLASH_PROMPT_S: a key pressed for nothing
+## (the tool you do not have) answers there, where the eye already is, not in a notification.
+func _flash_prompt(text: String) -> void:
+	_flash_text = text
+	_flash_until_ms = Time.get_ticks_msec() + int(FLASH_PROMPT_S * 1000.0)
+
+
+## The `perforate` action (left click, right trigger) clicks the screen under the crosshair, before
+## anything else sees it: the tool in hand must not fire into the console. While a screen's field
+## holds the keyboard, the click first gives the keyboard back to the game, then acts on what is
+## under the crosshair, if anything (another field takes the keyboard again).
+func _input(event: InputEvent) -> void:
+	if player.remote_player or event.is_echo() or not event.is_action(&"perforate") \
+			or _ui_focus() or is_instance_valid(player._seat_node):
+		return
+	var typing: bool = _screen_typing()
+	if typing and event.is_pressed():
+		var used: Node3D = ScreenTarget.gui_of(player.screen_in_use)
+		if used != null:
+			used.release_keyboard()
+	if is_instance_valid(_pointed_gui):
+		_pointed_gui.click_at(_pointed_at, event.is_pressed())
+	if typing or is_instance_valid(_pointed_gui):
+		get_viewport().set_input_as_handled()
+
+
+## The mouse turns the view, unless a panel has the pointer (_ui_focus).
+func _look_from(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _ui_focus():
+		player.mouse_motion = -event.relative * 0.001
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if player.remote_player: return
 	# Pause menu (Esc) is a hard modal: ignore EVERY player input — seated controls, radial wheels,
@@ -880,8 +892,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# A 3D screen holding the keyboard is gated for the same reason as the chat, and must be gated
 	# HERE rather than only in _input_locked: this handler must not consume the keys the screen's
 	# fields are waiting for. Returning early leaves them unhandled, which is exactly how they reach
-	# the SubViewport (Gui3D._unhandled_input pushes them in).
-	if _menu_open() or _chat_writing() or _screen_typing(): return
+	# the SubViewport (Gui3D._unhandled_input pushes them in). The view stays free while typing.
+	if _menu_open() or _chat_writing(): return
+	if _screen_typing():
+		_look_from(event)
+		return
 	# The system chart is modal, like the pause menu: F2 toggles it, and while it is up NOTHING else
 	# in the game reacts. It has to be handled here, above its own guard, or it could never be closed.
 	# It matters most at the wheel: under the chart, Y would leave the truck and the horn would sound.
@@ -993,8 +1008,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Capture mouse look even while seated (free look in a vehicle), before the walk guard. Never while a
 	# menu/wheel/screen has focus — so a held click + Esc can't keep steering the camera behind the menu.
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _ui_focus():
-		player.mouse_motion = -event.relative * 0.001
+	_look_from(event)
 
 	# Seated (driver/passenger): E open/closes a door by LOOKING at its handle. Must run BEFORE the
 	# walk guard — seated players have player.active = false, so the on-foot action block below never runs.
@@ -1021,9 +1035,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.client_send_action_to_server({"action": JUMP})
 
 	if InputCombo.pressed(event, "toggle_tool"):
-		if player.admin_cleanup_tool != null:
-			player.admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
-		player.mining_tool.toggle_equip()
+		if not player.owns_mining_tool:
+			# Nobody starts with one any more: say where to get it (the server would refuse anyway).
+			_flash_prompt(tr("%%HUD_NO_MINING_TOOL"))
+		else:
+			if player.admin_cleanup_tool != null:
+				player.admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
+			player.mining_tool.toggle_equip()
 
 	if InputCombo.pressed(event, "action"):
 		player.interact_ray.force_raycast_update()
@@ -1398,7 +1416,7 @@ func _keep_camera_ours() -> void:
 
 
 func _screen_typing() -> bool:
-	var screen: Node3D = player.screen_interacting
+	var screen: Node3D = player.screen_in_use
 	return is_instance_valid(screen) and screen.has_method("is_typing") and screen.is_typing()
 
 ## Player input is locked: the pause menu is up, a radial wheel is open, OR the chat has the
@@ -1524,15 +1542,13 @@ func _on_poi_placed(place: Dictionary) -> void:
 	_services.open_app("properties", 1)
 
 
-## The mouse/camera is taken over: input is locked (menu/wheel), a 3D screen holds the pointer, OR
-## AltGr is held over an overlay panel (graphics options, debug readouts).
+## The mouse/camera is taken over: a menu, a wheel, the chat, the chart or the tablet is up, OR AltGr
+## is held over an overlay panel (graphics options, debug readouts).
 ## Frees the cursor and takes the look off the mouse (see _process). One source.
 func _ui_focus() -> bool:
-	# is_instance_valid, not "!= null": a freed node (the depot deleted by the admin tool while we
-	# stand in front of it) is NOT null in GDScript, and the mouse would stay locked to a screen that
-	# no longer exists, with no way out.
-	return is_instance_valid(player.screen_interacting) or _input_locked() \
-		or OverlayPanel.any_wants_pointer(get_tree())
+	# A 3D screen is not in this list any more, typing included: the view stays free, the crosshair
+	# points at it (_point_screen) and a click gives its keyboard back (_input).
+	return _modal_open() or OverlayPanel.any_wants_pointer(get_tree())
 
 # LOCAL DEV (do not commit): spawn a mining depot a few meters in front of the player.
 func _spawn_depot() -> void:
@@ -1764,6 +1780,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 		player.flashlight.visible = torch_on
 	if data.has("carry_prompt") and not player.remote_player:
 		player._carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
+	if data.has(Player.MINING_TOOL_KEY):
+		player.owns_mining_tool = bool(data[Player.MINING_TOOL_KEY])  # the server's say, owner and remotes
+	if data.has("screen_event") and data["screen_event"] is Dictionary:
+		# What a 3D screen near this player is doing (ScreenTarget.announce), whoever used it: every
+		# client around shows it. Stamped, so a re-broadcast of an old one is ignored.
+		ScreenTarget.receive(get_tree(), data["screen_event"])
 	if data.has("action"):
 		# The server tags each jump "jump:<n>". "action" is a replicated STATE (Horizon merges it into
 		# the player object and may re-broadcast it: new subscriber, zone re-entry…), so the same value
@@ -1821,7 +1843,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# only, so anything the server decided about our own hands — stowing on boarding, say — showed on
 	# everyone else's screen and not on ours.
 	if not player.remote_player and data.has("tools"):
-		player.mining_tool.apply_authoritative_tool(str(data["tools"]))
+		# A tool out that the player does not own is a record from before the dispensers: stays away.
+		player.mining_tool.apply_authoritative_tool(str(data["tools"]) if player.owns_mining_tool else "")
 	if player.remote_player:
 		if data.has("head"):
 			# Look pitch is a GENERAL player property: the body owns applying it to its camera pivot, and
@@ -1829,6 +1852,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 			player.camera_pivot.rotation.x = float(data["head"])
 		if data.has("head_yaw"):
 			player.camera_pivot.rotation.y = float(data["head_yaw"])  # seated free-look yaw (0 while standing)
+		if data.has("tools") and not player.owns_mining_tool:
+			data = data.duplicate()
+			data["tools"] = ""  # a record from before the dispensers: no tool shown that is not owned
 		player.mining_tool.apply_remote(data)
 		if data.has("carrying"):
 			_remote_carrying = bool(data["carrying"])  # drives the remote avatar's carry pose

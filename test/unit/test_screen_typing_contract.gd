@@ -2,7 +2,7 @@ extends GutTest
 ## The optional half of the 3D-screen contract, pinned: a console that takes text has to expose
 ## is_typing() ON ITS OWNER.
 ##
-## PlayerClient._screen_typing() asks player.screen_interacting — the node implementing
+## PlayerClient._screen_typing() asks player.screen_in_use — the node implementing
 ## update_screen() — and NOTHING errors when that method is absent: it answers false forever, so
 ## _input_locked() never becomes true. The teleporter shipped exactly that way, with is_typing()
 ## living on TeleporterUI alone, inside the SubViewport, where the player never looks.

@@ -7,7 +7,7 @@ extends Area3D
 ## EITHER write a tag and add a ZONE rule with that tag to music_table.tres (the usual way: the
 ## pairing stays visible in the table), OR drop a playlist here (the exception: it wins over the table).
 ##
-## PASSIVE BY DESIGN, like ScreenZone and for the same reason: it only makes itself visible on the
+## PASSIVE BY DESIGN, like VehicleSeat and for the same reason: it only makes itself visible on the
 ## `zone` layer, and the player's own AreaDetector — the single active monitor of the game — sees it.
 ## MusicDirector asks that detector what it overlaps; nothing here looks for anybody.
 

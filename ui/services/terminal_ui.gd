@@ -648,7 +648,7 @@ func _apply_pane_layout(has_main: bool, has_side: bool) -> void:
 
 
 # ---------------------------------------------------------------------------------------------
-# Screen contract (see ScreenZone)
+# Screen contract (see ScreenTarget)
 # ---------------------------------------------------------------------------------------------
 
 ## True while a field of the visible screen holds the keyboard — an app's, or one of whatever is

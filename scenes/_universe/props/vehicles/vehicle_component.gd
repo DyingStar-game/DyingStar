@@ -59,7 +59,7 @@ func is_fitted() -> bool:
 
 ## What this part is called, for the HUD and the carry prompt.
 func part_name() -> String:
-	return spec.display_name if spec != null else "Component"
+	return spec.label() if spec != null else "Component"
 
 
 ## Stencil the spec's pictogram onto the part, so an engine is told from a battery at a glance.

@@ -1109,7 +1109,10 @@ func _player_within(pos: Vector3, radius: float) -> bool:
 ## True if [param node] is a free physics prop the settle-culler may freeze/unfreeze: a live
 ## RigidBody3D that is not a Vehicle and not carried/bed-loaded (those must stay dynamic). Shared
 ## by _cull_settled_bodies (runtime) and create_generic_object (reload) so both agree.
-func _is_cullable_body(node: Node) -> bool:
+## [param node] is a Variant, not a Node: a prop deleted while tracked (a tool taken into the kit) is
+## a freed object, and a typed argument errors on it before is_instance_valid can say so — every
+## frame, the entry never forgotten.
+func _is_cullable_body(node: Variant) -> bool:
 	if not is_instance_valid(node) or not (node is RigidBody3D) or node is Vehicle:
 		return false
 	var parent: Node = node.get_parent()
@@ -2090,6 +2093,8 @@ func create_player(event: Dictionary) -> void:
 	if not spawned_entity_instance.position.is_zero_approx():
 		spawned_entity_instance.spawn_up = spawned_entity_instance.global_position.normalized()
 
+	# What the player owns, as persisted with them: the mining tool is no longer given to everyone.
+	spawned_entity_instance.owns_mining_tool = bool(player_data.get(Player.MINING_TOOL_KEY, false))
 	spawned_entity_instance.set_uuid(player_uuid)
 	if bool(event["data"].get("dormant", false)):
 		_make_dormant_player(spawned_entity_instance, player_uuid, adopted_planet != null)

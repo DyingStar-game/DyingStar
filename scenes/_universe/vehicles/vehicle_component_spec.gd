@@ -35,6 +35,7 @@ enum Kind {ENGINE, BATTERY, TANK}
 ## no scene work at all. A transparent PNG, drawn unlit so it reads like paint rather than metal.
 @export var icon: Texture2D
 
-## Short label for the HUD, e.g. "T1 Electric Motor".
+## Short label for the HUD, e.g. "T1 Electric Motor": display_name is a translation key
+## (%%PART_ENGINE_T1), read in the player's language.
 func label() -> String:
-	return display_name
+	return TranslationServer.translate(display_name)

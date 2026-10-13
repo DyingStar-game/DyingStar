@@ -3,11 +3,23 @@
 [ext_resource type="PackedScene" uid="uid://dl1t2htqdgwiv" path="res://assets/_universe/props/food/food_nutrigris.glb" id="1_lvp3x"]
 [ext_resource type="Material" uid="uid://dm3whpo6oqrbh" path="res://assets/_universe/_shared/materials/food/nutrigris_material.tres" id="2_ug831"]
 [ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/_universe/_shared/materials/decals/ares_logo_decal_material.tres" id="3_we4ba"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="food_propsync"]
+[ext_resource type="Script" path="res://scenes/globals/generic_prop.gd" id="food_generic"]
+[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="food_landing"]
+[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="food_pick"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_we4ba"]
 size = Vector3(0.07536498880108411, 0.04786435311507375, 0.07499082461072248)
 
+[sub_resource type="SphereShape3D" id="SphereShape3D_food_aim"]
+radius = 0.25
+
 [node name="AresNutrigris" type="RigidBody3D" unique_id=659628100]
+script = ExtResource("food_generic")
+id_type = "NUTRI"
+id_short_display = true
+sfx_pick_up = ExtResource("food_pick")
+sfx_landing = ExtResource("food_landing")
 collision_layer = 8
 collision_mask = 15
 mass = 0.05
@@ -22,5 +34,17 @@ surface_material_override/0 = ExtResource("2_ug831")
 
 [node name="decal_001" parent="food_nutrigris" index="1" unique_id=16790012]
 surface_material_override/0 = ExtResource("3_we4ba")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("food_propsync")
+type_name = "food"
+enable_carry = true
+
+[node name="Area3D" type="Area3D" parent="."]
+collision_layer = 32
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+shape = SubResource("SphereShape3D_food_aim")
 
 [editable path="food_nutrigris"]

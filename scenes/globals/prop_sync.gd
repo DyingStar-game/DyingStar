@@ -66,6 +66,19 @@ var _body_cache: Node3D = null
 static func of(root: Node) -> PropSync:
 	return root.get_node_or_null("PropSync") as PropSync
 
+## The networked node [param node] belongs to: itself or its nearest ancestor whose PropSync carries a
+## uuid, or null. A PropSync without one is skipped, as the photocells and the pads do: a machine
+## networked on its own when a village layout places it (an ARES dispenser) also sits, never given a
+## uuid, inside a networked building (the garage) — and then the building is the one.
+static func networked_from(node: Node) -> Node:
+	var n: Node = node
+	while n != null:
+		var sync := of(n)
+		if sync != null and sync.uuid != "":
+			return n
+		n = n.get_parent()
+	return null
+
 ## The host body this component drives (its parent in the scene tree).
 func _body() -> Node3D:
 	if _body_cache == null:

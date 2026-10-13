@@ -1,0 +1,41 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/props/tools/tool_prop.gd" id="1_tool"]
+[ext_resource type="PackedScene" path="res://assets/_universe/props/tools/tools/mining/hammerdrill.glb" id="2_drill"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="3_propsync"]
+[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="4_landing"]
+[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="5_pick"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_drill"]
+size = Vector3(0.76, 0.35, 0.1)
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_drill_aim"]
+radius = 0.4
+
+[node name="MiningToolProp" type="RigidBody3D"]
+collision_layer = 8
+collision_mask = 15
+mass = 4.0
+script = ExtResource("1_tool")
+id_type = "TOOL"
+id_short_display = true
+sfx_pick_up = ExtResource("5_pick")
+sfx_landing = ExtResource("4_landing")
+
+[node name="Drill" parent="." instance=ExtResource("2_drill")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.186, -0.174, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_drill")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("3_propsync")
+type_name = "tool"
+enable_carry = true
+
+[node name="Area3D" type="Area3D" parent="."]
+collision_layer = 32
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+shape = SubResource("SphereShape3D_drill_aim")

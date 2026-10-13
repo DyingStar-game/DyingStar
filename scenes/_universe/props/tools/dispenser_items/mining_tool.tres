@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="DispenserItem" format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/dispenser/dispenser_item.gd" id="1_item"]
+[ext_resource type="Texture2D" path="res://assets/_universe/props/tools/icons/mining_tool.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_item")
+display_name = "%%ITEM_MINING_TOOL"
+icon = ExtResource("2_icon")
+scene_path = "res://scenes/_universe/props/tools/mining_tool_prop.tscn"

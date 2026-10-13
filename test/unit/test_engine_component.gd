@@ -32,7 +32,8 @@ func test_it_carries_the_t1_spec() -> void:
 	assert_eq(_part.spec.tier, 1, "tier 1")
 	assert_almost_eq(_part.spec.power_w, 100000.0, 1.0, "100 kW")
 	assert_almost_eq(_part.spec.torque_nm, 600.0, 0.1, "600 Nm")
-	assert_eq(_part.part_name(), "T1 Electric Motor", "it knows what to call itself")
+	assert_eq(_part.part_name(), TranslationServer.translate("%%PART_ENGINE_T1"), "it knows what to call itself")
+	assert_ne(_part.part_name(), "%%PART_ENGINE_T1", "in the player's language, not as a key")
 
 
 func test_scene_mass_agrees_with_the_spec() -> void:
