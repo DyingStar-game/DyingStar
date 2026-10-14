@@ -803,6 +803,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			_auto_tune_editor_camera()
 	elif not server_mode:
 		_setup_atmosphere_lod()
+		# Settings > Debug: the server's fallback collision, in red where it pokes
+		# out of the ground.
+		if not has_node("SafetyNetDebug"):
+			var _net_debug := SafetyNetDebug.new()
+			add_child(_net_debug)
+			_net_debug.setup(self)
 
 	# Server FALLBACK collision body (BaseSphere + SafetyNet only).
 	# Terrain chunks each get their OWN small StaticBody3D at the chunk origin
@@ -822,17 +828,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		add_child(_collision_body)
 
 		var base_sphere := SphereShape3D.new()
-		# IMPORTANT: terrain triangles range from (radius + height_offset) up
-		# to (radius + height_offset + max_height).  A base sphere at exactly
-		# `radius` would float ABOVE the lowest valleys and BELOW peaks —
-		# stopping the player at altitude 0 while the actual terrain mesh is
-		# tens to hundreds of metres higher (causing "I'm under the surface"
-		# bugs).  Inset the sphere well below the deepest valley so it only
-		# catches bodies that fell past every other collision layer.
-		var _inset_below_valleys: float = 100.0
-		base_sphere.radius = planet_data.radius + planet_data.height_offset - _inset_below_valleys
-		if base_sphere.radius <= 0.0:
-			base_sphere.radius = planet_data.radius * 0.5
+		# Below the deepest valley (base_sphere_radius), so it only catches
+		# bodies that fell past every other collision layer. The client's
+		# SafetyNetDebug draws this same sphere.
+		base_sphere.radius = base_sphere_radius(planet_data)
 		var base_col := CollisionShape3D.new()
 		base_col.shape = base_sphere
 		base_col.name = "BaseSphere"
@@ -899,6 +898,24 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# loop that exhausted memory across 17 planets.
 	if is_server and not Engine.is_editor_hint():
 		_server_init_collision_root()
+
+
+## How far below the lowest relief (radius + height_offset) the server's
+## fallback collision sphere sits, in metres.
+const BASE_SPHERE_INSET_M := 100.0
+
+
+## Radius of the server's fallback collision sphere ("BaseSphere"), in metres
+## from the centre of [param data]'s body. Terrain triangles range from
+## radius + height_offset up to radius + height_offset + max_height: a sphere at
+## `radius` would stop a player at altitude 0, tens to hundreds of metres under
+## the ground they see. Inset below the lowest relief, it only catches what fell
+## through everything else — except where the ground is CARVED deeper than that
+## (cracks, notches, cuttings), where it stands above it. Drawn in red by
+## SafetyNetDebug (Settings > Debug).
+static func base_sphere_radius(data: PlanetData) -> float:
+	var r := data.radius + data.height_offset - BASE_SPHERE_INSET_M
+	return r if r > 0.0 else data.radius * 0.5
 
 
 # ------------------------------------------------------------------

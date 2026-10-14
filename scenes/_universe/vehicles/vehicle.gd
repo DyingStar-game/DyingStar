@@ -3490,6 +3490,14 @@ func _catch_if_below_surface() -> void:
 	surface_dist = pdata.carved_surface_dist(dir)
 	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
 		return
+	# The real ground decides, not the relief sampled at this point: on a sharp crest the collision
+	# triangles run metres under it (SurfaceCatch), and a truck parked there was dropped every tick.
+	var ground: float = SurfaceCatch.ground_dist(get_world_3d().direct_space_state, planet, dir,
+			surface_dist, wheels_dist, _SURFACE_CATCH_MARGIN, [get_rid()])
+	if ground > 0.0:
+		if wheels_dist >= ground - _SURFACE_CATCH_MARGIN:
+			return  # on the collision, under the theoretical crest
+		surface_dist = ground
 	var up_world: Vector3 = (planet_basis * dir).normalized()
 	# One line a second at most: with no ground at all the net fires every tick (fall, catch, fall),
 	# and a print per tick is a known server-cost trap.

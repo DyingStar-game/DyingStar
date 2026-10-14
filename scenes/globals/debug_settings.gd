@@ -29,6 +29,9 @@ const DEFAULTS : Dictionary = {
 	&"music_debug": false,
 	# What the star map draws: bodies, focus, zoom, simulated time, relief tiles.
 	&"star_map_debug": false,
+	# The server's safety nets where they stand above the ground: the fallback collision under the
+	# planet (base sphere, safety shell) in red, the below-surface catch's threshold in magenta.
+	&"safety_net_debug": false,
 }
 ## Switches a dedicated server reads from its own ini ([section, key]), since it never loads
 ## settings.ini: the movement trace is the server's to give, collision being server-only.
