@@ -17,6 +17,9 @@ extends StarMapTileLines
 
 ## What a canyon is drawn in: the shadow it is from above.
 const COLOUR: Color = Color(0.10, 0.08, 0.07)
+## How opaque the network is when drawn in full: a hint of where the plateau is cut, see-through so the
+## ground, the roads and the markers under it still read. Opaque, the dark ribbons drowned the chart.
+const OPACITY: float = 0.3
 ## How far the canyons float over the ground: two thirds of what the roads do, so a road crossing a
 ## canyon is drawn OVER it, as the bridge it crosses on is. At the same height the two fought for the
 ## same pixels and the canyon, drawn last, won.
@@ -36,6 +39,11 @@ const GRID_MAX: int = 64
 ## a grey wash; between the two they fade in.
 const BLOCK_PIXELS_MIN: float = 6.0
 const BLOCK_PIXELS_FULL: float = 14.0
+## Rounds of corner cutting on each run of canyon (see [method smooth]): the grid reads a canyon every
+## quarter block, and joined straight those points drew a broken line where the game carves a curve.
+const SMOOTH_PASSES: int = 2
+## The canyons' own drawing: unshaded and see-through like every line here, and painted once a pixel.
+const SHADER: Shader = preload("res://scenes/ui/star_map/star_map_canyons.gdshader")
 
 ## Set by [method _available], once per body: the planet the network is read from, or null.
 var _data: PlanetData = null
@@ -44,6 +52,15 @@ var _looked: bool = false
 
 func _priority() -> int:
 	return RENDER_PRIORITY
+
+
+## Each pixel of the network is painted once ([constant SHADER]): see-through, the stretches overlap
+## at every joint and every fork — each is drawn a little past its ends so they meet — and the overlaps
+## came out in dark blocks along every canyon.
+func _new_material() -> Material:
+	var material := ShaderMaterial.new()
+	material.shader = SHADER
+	return material
 
 
 ## Draw the network over [param tiles] — the ground's own tiles, and only those the ground draws FLAT:
@@ -58,8 +75,8 @@ func show_over(tiles: Dictionary, metres_per_pixel: float) -> void:
 	visible = alpha > 0.0
 	if not visible:
 		return  # nothing laid while nothing shows: coming back down pays for the view it arrives at
-	for material: StandardMaterial3D in [_material, _strip_material]:
-		material.albedo_color = Color(1.0, 1.0, 1.0, alpha)
+	for material: ShaderMaterial in [_material, _strip_material]:
+		material.set_shader_parameter(&"opacity", alpha * OPACITY)
 	var traced: Dictionary = {}
 	for id: int in tiles:
 		if traces(_data, StarMapGround.id_nside(id)):
@@ -153,10 +170,9 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 			if vy < grid_res:
 				down[here] = _crossing(grid[vy][vx], grid[vy + 1][vx], read_at, blocks, here, here + stride)
 
-	var corners := PackedVector3Array()
-	var corner_colours := PackedColorArray()
 	var half_width: float = data.crack_width_m * 0.5 / data.radius
 	var tile := StarMapDrawnTile.new(data, nside, ipix)
+	var stretches: Array[Vector3] = []
 	for vy: int in range(grid_res):
 		for vx: int in range(grid_res):
 			var here: int = vy * stride + vx
@@ -184,16 +200,91 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 				# came out in pieces that did not meet.
 				if CrackCarve.depth_factor(data, (ends[n] + ends[n + 1]).normalized(), tile.frame) < 0.5:
 					continue
-				var from: Vector3 = tile.place(ends[n], UNDER_THE_ROADS)
-				var to: Vector3 = tile.place(ends[n + 1], UNDER_THE_ROADS)
-				points.append(from)
-				points.append(to)
-				colours.append(COLOUR)
-				colours.append(COLOUR)
-				add_ribbon(corners, from, to, half_width)
+				stretches.append(ends[n])
+				stretches.append(ends[n + 1])
+	var corners := PackedVector3Array()
+	var corner_colours := PackedColorArray()
+	for run: PackedVector3Array in chain(stretches):
+		var round: PackedVector3Array = smooth(run, SMOOTH_PASSES)
+		var placed := PackedVector3Array()
+		for at: Vector3 in round:
+			placed.append(tile.place(at, UNDER_THE_ROADS))
+		for k: int in range(placed.size() - 1):
+			# The same rule again, on the curve: rounded, a run's last stretches reach past the edge of
+			# a town or a massif, where the game leaves the ground whole.
+			if CrackCarve.depth_factor(data, (round[k] + round[k + 1]).normalized(), tile.frame) < 0.5:
+				continue
+			points.append(placed[k])
+			points.append(placed[k + 1])
+			colours.append(COLOUR)
+			colours.append(COLOUR)
+			add_ribbon(corners, placed[k], placed[k + 1], half_width)
 	corner_colours.resize(corners.size())
 	corner_colours.fill(COLOUR)
 	return [points, colours, corners, corner_colours]
+
+
+## [param stretches] (two ends each) joined into runs: a crossing two squares of the grid share is one
+## point, so the stretches meeting there are one canyon. A run stops at a fork, at a loose end, and
+## where it comes back on itself.
+static func chain(stretches: Array[Vector3]) -> Array[PackedVector3Array]:
+	var count: int = stretches.size() / 2
+	var at_point: Dictionary = {}  # point -> the stretches ending there
+	for s: int in range(count):
+		for end: Vector3 in [stretches[2 * s], stretches[2 * s + 1]]:
+			(at_point.get_or_add(end, []) as Array).append(s)
+	var used := PackedByteArray()
+	used.resize(count)
+	var runs: Array[PackedVector3Array] = []
+	# From the ends and the forks first; what is left after that are closed loops.
+	for loops: bool in [false, true]:
+		for s: int in range(count):
+			if used[s] != 0:
+				continue
+			var start: Vector3 = stretches[2 * s]
+			if not loops and (at_point[start] as Array).size() == 2:
+				start = stretches[2 * s + 1]
+				if (at_point[start] as Array).size() == 2:
+					continue
+			runs.append(_walk(stretches, at_point, used, s, start))
+	return runs
+
+
+## The run from [param start] along stretch [param first], on through every point only two stretches
+## share, marking each stretch walked.
+static func _walk(stretches: Array[Vector3], at_point: Dictionary, used: PackedByteArray, first: int,
+		start: Vector3) -> PackedVector3Array:
+	var run := PackedVector3Array([start])
+	var s: int = first
+	var at: Vector3 = start
+	while true:
+		used[s] = 1
+		at = stretches[2 * s + 1] if stretches[2 * s] == at else stretches[2 * s]
+		run.append(at)
+		var there: Array = at_point[at]
+		if there.size() != 2:
+			break
+		s = there[0] if there[1] == s else there[1]
+		if used[s] != 0:
+			break
+	return run
+
+
+## [param run] (directions from the body's centre) with its corners cut [param passes] times — each
+## stretch replaced by its quarter and three-quarter points (Chaikin) — its two ends kept where they are,
+## so runs still meet at forks and at the edges of the tile.
+static func smooth(run: PackedVector3Array, passes: int) -> PackedVector3Array:
+	var out: PackedVector3Array = run
+	for _pass: int in range(passes):
+		if out.size() < 3:
+			return out
+		var cut := PackedVector3Array([out[0]])
+		for k: int in range(out.size() - 1):
+			cut.append(out[k].lerp(out[k + 1], 0.25).normalized())
+			cut.append(out[k].lerp(out[k + 1], 0.75).normalized())
+		cut.append(out[out.size() - 1])
+		out = cut
+	return out
 
 
 ## Where three canyons meet inside one square of the grid, as a direction, or ZERO when the square

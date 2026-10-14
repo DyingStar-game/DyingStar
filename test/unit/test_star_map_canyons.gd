@@ -228,3 +228,46 @@ func test_the_lines_run_where_the_canyons_are() -> void:
 		assert_almost_eq(wide, _data.crack_width_m, 1.0, "as wide as the canyon")
 		return
 	pending("aucun canyon sous les tuiles essayees de %s" % BODY)
+
+
+## Stretches meeting end to end are one canyon: joined into runs, broken at a fork, a loop kept whole.
+func test_stretches_are_joined_into_runs() -> void:
+	var a := Vector3(1, 0, 0)
+	var b := Vector3(0, 1, 0)
+	var c := Vector3(0, 0, 1)
+	var d := Vector3(-1, 0, 0)
+	var line: Array[PackedVector3Array] = StarMapCanyons.chain([b, c, a, b] as Array[Vector3])
+	assert_eq(line.size(), 1, "two stretches sharing a point: one run")
+	assert_eq(line[0].size(), 3, "through the point they share")
+	var fork: Array[PackedVector3Array] = StarMapCanyons.chain([a, b, c, b, d, b] as Array[Vector3])
+	assert_eq(fork.size(), 3, "three canyons from a fork: three runs, each ending on it")
+	for run: PackedVector3Array in fork:
+		assert_eq(run[run.size() - 1], b, "each run reaches the fork")
+	var loop: Array[PackedVector3Array] = StarMapCanyons.chain([a, b, b, c, c, a] as Array[Vector3])
+	assert_eq(loop.size(), 1, "a closed canyon: one run")
+	assert_eq(loop[0].size(), 4, "round and back to where it started")
+
+
+## A run is drawn as a curve through its points, its ends left where the fork or the tile's edge is.
+func test_a_run_is_rounded_and_keeps_its_ends() -> void:
+	var run := PackedVector3Array([Vector3(1, 0, 0), Vector3(1, 1, 0).normalized(), Vector3(0, 1, 0)])
+	var round: PackedVector3Array = StarMapCanyons.smooth(run, 2)
+	assert_eq(round[0], run[0], "the first end kept")
+	assert_eq(round[round.size() - 1], run[2], "the last end kept")
+	assert_eq(round.size(), 12, "each pass cuts every stretch in two, the ends kept: 3, 6, then 12 points")
+	for p: Vector3 in round:
+		assert_almost_eq(p.length(), 1.0, 1.0e-6, "on the sphere")
+	assert_eq(StarMapCanyons.smooth(PackedVector3Array([run[0], run[2]]), 2).size(), 2,
+			"a single stretch has no corner to cut")
+
+
+func test_the_network_is_painted_once_where_it_overlaps() -> void:
+	var lines := StarMapCanyons.new()
+	add_child_autofree(lines)
+	for material: Material in [lines._material, lines._strip_material]:
+		assert_true(material is ShaderMaterial and material.shader == StarMapCanyons.SHADER,
+				"drawn in the canyons' own shader")
+	assert_string_contains(StarMapCanyons.SHADER.code, "stencil_mode read, write, compare_not_equal",
+			"drawn only where nothing of the network is yet, and marking it")
+	assert_lt(lines._strip_material.render_priority, lines._material.render_priority,
+			"the strips first: the lines show only where no strip is")

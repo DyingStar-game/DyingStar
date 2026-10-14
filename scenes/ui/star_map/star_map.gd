@@ -6,6 +6,10 @@ extends CanvasLayer
 ## answers with, and the shape the inventory service stores. The mode stays on until cancelled, so
 ## a player who missed their click simply clicks again.
 signal poi_placed(place: Dictionary)
+## The chart's face shows ([param open]) or goes: on every [method open] and [method close]. The layer
+## itself never hides — hosted in the DataPad only the face comes and goes — so visibility_changed
+## says nothing of it.
+signal open_changed(open: bool)
 
 ## Chart of the system: every celestial body as a plain coloured sphere, its orbit as a ring, and its
 ## current spin shown by a tilted axis with a meridian marker. Drawn on its own face (a Control): the
@@ -178,6 +182,9 @@ const PLAYER_PICK_PX: float = 12.0
 ## How far you must have gone since the chart was closed, as a share of the ground its view spanned, for it
 ## to reopen on you rather than where it was (see _moved_since_closed).
 const MOVED_FRACTION: float = 0.25
+## Under this height over the ground (metres) the view turns with the body even with nothing selected,
+## as it does for a selected place: from there down, the planet's spin slid the ground out from under you.
+const GROUND_FOLLOW_M: float = 6.5e6
 ## Your marker is drawn after everything else on the chart (see _rebuild): the highest priority there is.
 const PLAYER_RENDER_PRIORITY: int = Material.RENDER_PRIORITY_MAX
 ## Where orbit rings fade out, in view units.
@@ -376,6 +383,10 @@ var _follow_dir: Vector3 = Vector3.ZERO
 ## WHICH place that was. Without it the difference is taken between two different towns, and the
 ## camera swings by the angle between them.
 var _follow_id: String = ""
+## The watched body's turn last frame, while the view rides the ground under it (see
+## [method _follow_ground]); [member _spin_body] is -1 while it does not.
+var _ground_spin: Basis = Basis.IDENTITY
+var _spin_body: int = -1
 ## The orbital plane, drawn as a grid, and the stalks that tie each body down to it.
 var _grid: EclipticGrid = null
 var _stalks: MeshInstance3D = null
@@ -450,6 +461,7 @@ func open() -> void:
 	if not _opened_before or _moved_since_closed():
 		_opened_before = true
 		_open_on_player()
+	open_changed.emit(true)
 
 
 ## Have you travelled since the chart was closed — to another body, or further than a quarter of the ground
@@ -506,6 +518,7 @@ func close() -> void:
 	# still in flight are harmless: a worker writes into its own slot and nothing else.
 	_surface.hide()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	open_changed.emit(false)
 
 
 func _exit_tree() -> void:
@@ -515,6 +528,14 @@ func _exit_tree() -> void:
 
 func is_open() -> bool:
 	return _surface != null and _surface.is_visible_in_tree()
+
+
+## The canvas layer the chart's face is drawn on: its host's (the DataPad's) once hosted, else its own.
+## What goes over the open chart goes over THAT one.
+func drawn_layer() -> int:
+	var on: CanvasLayer = _surface.get_canvas_layer_node() \
+			if _surface != null and _surface.is_inside_tree() else null
+	return on.layer if on != null else layer
 
 
 ## Put the chart's face in [param slot] — the DataPad's NAVIGATION tab: the chart then draws in that
@@ -1237,6 +1258,7 @@ func _process(delta: float) -> void:
 	# the origin. The origin is the inside of the star.
 	_track_bodies(t)
 	_follow_place(t)
+	_follow_ground(t)
 	# The origin goes wherever the camera is aimed, so the subject is always AT it.
 	_shift = _cam.look_point(_watch_position())
 	_place_bodies()
@@ -1310,6 +1332,28 @@ func _follow_place(t: float) -> void:
 	if _follow_dir != Vector3.ZERO and _follow_dir.dot(now) > -0.999:
 		_cam.turn_by(Quaternion(_follow_dir, now))
 	_follow_dir = now
+
+
+## Close over a body with nothing followed, turn the view with it: by the body's OWN turn since the
+## last frame, the same for every point of its ground, so the ground under the camera stays put wherever
+## the camera looks from — a pole included. A selected place is followed by [method _follow_place].
+func _follow_ground(t: float) -> void:
+	var body: int = _cam.anchor_body
+	var height_m: float = (_view - _guard_radius()) / UNITS_PER_METRE
+	if body < 0 or body >= _bodies.size() or not follows_ground(height_m, _follow_dir != Vector3.ZERO):
+		_spin_body = -1
+		return
+	var spin: Basis = _spin_basis(_bodies[body], t)
+	if _spin_body == body:
+		_cam.turn_by(Quaternion(spin * _ground_spin.inverse()))
+	_spin_body = body
+	_ground_spin = spin
+
+
+## Does the view ride the ground, [param height_m] over it, with a place already
+## [param following_place] or not? Under [constant GROUND_FOLLOW_M], when no place is followed.
+static func follows_ground(height_m: float, following_place: bool) -> bool:
+	return not following_place and height_m < GROUND_FOLLOW_M
 
 
 ## Which place is being followed, as something two frames can be compared on. Empty for none.

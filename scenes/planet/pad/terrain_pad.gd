@@ -123,6 +123,8 @@ var _pose_only := true
 ## whole record rebuild — which was ~25 pads × several ms per spin.
 var _applied_rel := Transform3D.IDENTITY
 var _applied_rel_ok := false
+## An object around this pad's own scene has a pad of its own: see [method inside_another_pad].
+var _nested := false
 
 
 ## Registration hangs off ENTER_TREE, not _ready, because a networked prop is
@@ -135,6 +137,7 @@ var _applied_rel_ok := false
 ## the pose with client_channel_data_update BEFORE add_child, on purpose.
 func _enter_tree() -> void:
 	set_notify_transform(true)
+	_nested = inside_another_pad()
 	if not Engine.is_editor_hint():
 		# Read the marker once, then drop it: a CSGBox3D is a mesh generator,
 		# and this one exists only to be dragged in the editor. On a later
@@ -179,6 +182,25 @@ func _mark_dirty(pose_only: bool = false) -> void:
 	_apply.call_deferred()
 
 
+## Does ANY object around this pad's own scene carry a pad of its own? Then this pad's object is nested
+## in it — an ARES dispenser in the cargo depot, or anything else placed inside a building — and the
+## outer pad levels the ground: this one stands down. Both took the outer building's uuid
+## (_resolve_uuid), so their records replaced each other in the index and each sat the building on its
+## own platform, ±0.23 m, every frame: the server and every client rebuilt the depot's chunks without
+## end, and a player arriving stayed on "Spawning".
+##
+## Looked for from the pad's own scene upward ([member Node.owner]), so an object placed under a plain
+## group node with no pad (the menu's Outpost) keeps its own.
+func inside_another_pad() -> bool:
+	var n: Node = owner.get_parent() if owner != null else null
+	while n != null and not (n is Planet) and not (n is PlanetTerrain):
+		for child: Node in n.get_children():
+			if child is TerrainPad and child != self:
+				return true
+		n = n.get_parent()
+	return false
+
+
 ## Register the pad NOW, on this thread, instead of on the next frame.
 ## PlanetTerrain calls it during its warm-up so the pads of the buildings
 ## already in the scene are in the index before the first chunk is built.
@@ -207,7 +229,7 @@ func _apply() -> void:
 	if terrain != _terrain:
 		_unregister()
 		_terrain = terrain
-	if not enabled:
+	if not enabled or _nested:
 		_unregister()
 		return
 	var rec := build_record()

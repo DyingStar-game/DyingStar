@@ -43,3 +43,26 @@ func test_a_refusal_is_said_on_the_screen() -> void:
 	ui.show_refusal("%%DISPENSER_ALREADY_OWNED")
 	assert_eq(ui._status.text, "%%DISPENSER_ALREADY_OWNED")
 	assert_false(ui._dispense.disabled, "the button comes back at once")
+
+
+func test_no_tool_on_the_belt_before_it_is_owned() -> void:
+	assert_false(MiningTool.shows_tool(false, false, false), "not owned: nothing on a remote's belt")
+	assert_false(MiningTool.shows_tool(false, true, true), "not owned: nothing in hand either")
+	assert_true(MiningTool.shows_tool(true, false, false), "owned and put away: on the belt for the others")
+	assert_false(MiningTool.shows_tool(true, false, true), "owned and put away: not in the owner's own view")
+	assert_true(MiningTool.shows_tool(true, true, true), "owned and out: in hand")
+
+
+func test_the_tool_reads_ownership_from_its_player() -> void:
+	var player := Player.new()
+	var tool := MiningTool.new()
+	player.add_child(tool)
+	assert_false(tool._owned(), "nobody starts with one")
+	player.owns_mining_tool = true
+	assert_true(tool._owned(), "taken at the machine")
+	var bench := Node3D.new()
+	var loose := MiningTool.new()
+	bench.add_child(loose)
+	assert_false(loose._owned(), "a parent that is not a player owns none")
+	player.free()
+	bench.free()

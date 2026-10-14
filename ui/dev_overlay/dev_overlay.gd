@@ -70,11 +70,11 @@ static func create(body: Node3D, animator: Node, surface_info: Callable, driven_
 	return panel
 
 
-## The chart covers the whole screen from a higher layer: while it is open the panel goes over it, and
-## the chart's info panel steps aside from the right edge whenever this one shows.
+## The chart is opaque: while it is open the panel goes over the layer it is drawn on (the DataPad's,
+## hosted there), and the chart's info panel steps aside from the right edge whenever this one shows.
 static func _show_over(panel: OverlayPanel, star_map: StarMap) -> void:
 	var place := func() -> void:
-		panel.layer = StarMap.LAYER + 1 if star_map.is_open() else OverlayPanel.LAYER
+		panel.layer = star_map.drawn_layer() + 1 if star_map.is_open() else OverlayPanel.LAYER
 		star_map.set_right_inset(panel.footprint_px() if star_map.is_open() and panel.is_shown() else 0.0)
-	star_map.visibility_changed.connect(place)
+	star_map.open_changed.connect(place.unbind(1))
 	panel.shown_changed.connect(place.unbind(1))

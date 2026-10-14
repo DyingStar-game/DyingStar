@@ -28,9 +28,9 @@ var _drawn: Dictionary = {}
 ## refresh is not concatenating lines, it is working out where they go — and the wanted set changes by
 ## a handful of tiles, so almost all of it is the same as last time.
 var _segments: Dictionary = {}
-## What the lines are drawn with, and what the strips laid beside them are: see [method _ready].
-var _material: StandardMaterial3D = null
-var _strip_material: StandardMaterial3D = null
+## What the lines are drawn with, and what the strips laid beside them are: see [method _new_material].
+var _material: Material = null
+var _strip_material: Material = null
 ## The worker laying the tiles not seen yet, or -1, and the slot it fills: id -> [points, colours].
 ## While it runs, whatever [method _laying] captured is the worker's alone.
 var _task: int = -1
@@ -44,24 +44,31 @@ var _job_outdated: bool = false
 
 
 func _ready() -> void:
-	_material = StandardMaterial3D.new()
+	_material = _new_material()
+	_material.render_priority = _priority()
+	# The strips under the lines: the same, drawn just before.
+	_strip_material = _material.duplicate()
+	_strip_material.render_priority = _priority() - 1
+
+
+## What the lines and the strips are drawn in; its priority is set by [method _ready]. A kind of line
+## that has to be drawn otherwise says so here.
+func _new_material() -> Material:
+	var material := StandardMaterial3D.new()
 	# Unshaded, because a line has no surface to be lit: shaded, the far side of a planet would carry
 	# lines that fade out exactly where the ground does, which is the one place a map still has to read.
-	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_material.vertex_color_use_as_albedo = true
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.vertex_color_use_as_albedo = true
 	# Blended, though nothing here is see-through: what is blended is drawn after the ground, without
 	# writing to the depth buffer, in the order its priority says. That order is the only thing that
 	# can put one of these over another. They lie on the same ground a few tens of metres apart at
 	# most, which the depth buffer cannot tell apart at these distances: left to it, a line over a strip
 	# came out in dashes and a strip over a strip in blocks. Against the GROUND the depth still decides,
 	# so the far side of the planet hides what is on it.
-	_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_material.render_priority = _priority()
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	# The strips are seen from above whichever way their corners were wound.
-	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	# The strips under the lines: the same, drawn just before.
-	_strip_material = _material.duplicate()
-	_strip_material.render_priority = _priority() - 1
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return material
 
 
 ## Draw the lines crossing [param tiles], which are the ground's own tiles, keyed as [StarMapGround]

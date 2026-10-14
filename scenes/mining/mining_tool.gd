@@ -194,7 +194,7 @@ func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	_perforator.position = equipment_item_offset       # shift the model so its grip sits on the pivot
 	_perforator.rotation_degrees = equipment_item_rotation_deg
 	_perforator.scale = Vector3.ONE * equipment_item_scale
-	_perforator.visible = true   # always visible: stowed pose by default / at spawn (#124)
+	_perforator.visible = shows_tool(_owned(), false, _is_owner())   # stowed at spawn (#124), if owned
 	_equipment_mount.hold(_perforator)
 	_perforator_rest_pos = _perforator.position
 	_perforator_base = _perforator_rest_pos   # sane init; the belt holster owns the stowed world pose
@@ -291,9 +291,7 @@ func _update_stow_and_reach(delta: float) -> void:
 		# base easing to rest so re-equipping slides out cleanly, and as the no-puppet fallback.
 		_perforator_base = _perforator_base.lerp(_perforator_rest_pos, clampf(stow_smooth * delta, 0.0, 1.0))
 	if _perforator != null:
-		# Visible to OTHER players when stowed (pose at spawn), but the local owner does
-		# NOT see his own stowed perforator (first-person clutter). Always visible when out.
-		_perforator.visible = active or not _is_owner()
+		_perforator.visible = shows_tool(_owned(), active, _is_owner())
 		# Orientation: item base rotation when out, fixed stow rotation when stowed.
 		_perforator.rotation_degrees = equipment_item_rotation_deg if active else stow_rotation_deg
 
@@ -407,6 +405,18 @@ func set_stowed(value: bool) -> void:
 ## The perforator can aim / reach only when equipped and not stowed.
 func _perforator_active() -> bool:
 	return _perforator != null and _equipped and not _stowed
+
+## Is the perforator drawn: never on a player who does not own one (no one starts with it, it is taken
+## at the ARES Mining dispenser), always when out, and stowed on the belt for OTHER players only — the
+## local owner does NOT see his own stowed perforator (first-person clutter).
+static func shows_tool(owned: bool, active: bool, is_owner: bool) -> bool:
+	return owned and (active or not is_owner)
+
+## The player carrying this tool owns one (Player.owns_mining_tool, the server's say, owner and
+## remotes). A parent that is not a player (a bench, a test) owns none.
+func _owned() -> bool:
+	var p = get_parent()
+	return p != null and "owns_mining_tool" in p and p.owns_mining_tool
 
 ## True if this tool belongs to the LOCAL player (not a replicated remote player). Used
 ## so the owner doesn't see his own stowed perforator while others still do.
