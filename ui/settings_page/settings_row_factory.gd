@@ -85,8 +85,14 @@ func row(label_key: String) -> HBoxContainer:
 
 ## In wrap mode, a caption takes whatever width the controls leave and breaks between words.
 func _wrap(label: Label) -> void:
-	if not wrap_captions:
-		return
+	if wrap_captions:
+		wrap_caption(label)
+
+
+## [param label], a row's caption, takes whatever width the row's controls leave and breaks between
+## words, instead of making its row as wide as its text. Shared by the factory's wrap mode and by
+## every settings row (SettingsRow), whichever way its caption was made.
+static func wrap_caption(label: Label) -> void:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
