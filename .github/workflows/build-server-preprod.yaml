@@ -1,8 +1,11 @@
 name: Build & Deploy to Preprod
 
+# A merge into develop no longer builds: a pull request only checks that the
+# image builds (nothing pushed); the preprod image is built by hand, alone from
+# here or with the client from release-preprod.yml (a dev release).
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     branches:
       - develop
   workflow_dispatch:
@@ -10,11 +13,15 @@ on:
       no_cache:
         description: "Disable Docker layer cache (force full rebuild)"
         required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      no_cache:
+        description: "Disable Docker layer cache (force full rebuild)"
+        required: false
+        default: true
+        type: boolean
 
 env:
   HARBOR_REGISTRY: harbor.dyingstar-game.space
@@ -41,7 +48,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Login to Harbor
-        if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.HARBOR_REGISTRY }}
@@ -76,12 +83,12 @@ jobs:
         with:
           context: .
           file: .docker/Dockerfile
-          push: ${{ github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          no-cache: true
+          no-cache: ${{ github.event_name == 'pull_request' || inputs.no_cache }}
 
       - name: Trigger preprod deployment
-        if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+        if: github.event_name != 'pull_request'
         uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ secrets.KUBERNETES_REPO_TOKEN }}
