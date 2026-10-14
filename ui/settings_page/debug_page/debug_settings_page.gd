@@ -12,6 +12,7 @@ const SWITCHES : Dictionary = {
 	"StarMapDebug": &"star_map_debug",
 	"VehicleHud": &"vehicle_hud",
 	"MovementDebug": &"movement_debug",
+	"SafetyNetDebug": &"safety_net_debug",
 }
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer
