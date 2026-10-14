@@ -42,3 +42,8 @@ for every change, not the state of a feature.
   it); never edit it by hand. On a pull request, `.github/workflows/credits.yml` rewrites it and fails on a
   malformed credit file or on a model / texture the pull request adds with no credit (those already in
   the project are not asked yet); `--validate --new-since origin/develop` checks the same locally.
+
+## Pull requests
+
+- The `CHANGELOG_EN` / `CHANGELOG_FR` blocks of a PR description follow the skill
+  `changelog-entry` (types, areas, wording); the PR check "Check Changelog Entry" enforces it.

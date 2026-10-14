@@ -1,12 +1,21 @@
 name: Update Changelog
 
+# Copy to .github/workflows/update-changelog.yml and set COMPONENT (twice)
+# to the component key in DyingStar-game/changelog's components.json.
+
 on:
   pull_request:
-    types: [closed]
+    types: [opened, edited, synchronize, reopened, closed]
 
 jobs:
+  check:
+    if: github.event.action != 'closed'
+    uses: DyingStar-game/changelog/.github/workflows/check-entry.yml@main
+    with:
+      component: DyingStar
+
   extract:
-    if: github.event.pull_request.merged == true
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       entry_en: ${{ steps.parse.outputs.entry_en }}
