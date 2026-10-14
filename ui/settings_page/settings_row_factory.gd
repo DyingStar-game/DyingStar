@@ -95,6 +95,23 @@ func _wrap(label: Label) -> void:
 	label.size_flags_stretch_ratio = 3.0
 
 
+## A selector of names the game does not choose — an audio device, "Microphone sur casque (CORSAIR
+## VIRTUOSO SE Wireless Gaming Headset)": the name is cut with an ellipsis at the selector's width,
+## and shown whole on hover. Left whole, the selected name set the selector's width, the page grew
+## past its column and, growing both ways, lost its left side off screen (a 4K screen, a larger UI).
+static func fit_names(selector: OptionButton) -> void:
+	selector.clip_text = true
+	selector.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	selector.item_selected.connect(func(_index: int) -> void: show_name(selector))
+	show_name(selector)
+
+
+## The selected name, whole, on hover of a selector set up by [method fit_names]. Call it again after
+## selecting from code: [method OptionButton.select] says nothing.
+static func show_name(selector: OptionButton) -> void:
+	selector.tooltip_text = selector.text
+
+
 func option_button() -> OptionButton:
 	var button := OptionButton.new()
 	_style_control(button)
