@@ -1,0 +1,107 @@
+name: Release Preprod
+
+# A dev release: builds and deploys the preprod server and client together,
+# under one dev release (<NEXT_VERSION>-dev.<UTC yyyymmddhhmm>; the client's
+# version.json keeps the matching 14-digit build id). Once both are
+# deployed from develop, the version tags the built commit and cuts the
+# [Unreleased] section of the changelog. Run from another branch, it deploys to
+# preprod but is not a dev release.
+on:
+  workflow_dispatch:
+    inputs:
+      build_server:
+        description: "Build and deploy the preprod server"
+        type: boolean
+        default: true
+      build_client:
+        description: "Build and deploy the preprod client"
+        type: boolean
+        default: true
+      no_cache:
+        description: "Disable the server's Docker layer cache (force full rebuild)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: preprod-deploy
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Compute dev version
+        id: version
+        env:
+          # Next stable version, a repository variable raised at each release
+          NEXT_VERSION: ${{ vars.NEXT_VERSION || '0.1.0' }}
+        run: echo "version=${NEXT_VERSION}-dev.$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+
+  server:
+    name: Server
+    needs: version
+    if: inputs.build_server
+    uses: ./.github/workflows/build-server-preprod.yaml
+    with:
+      no_cache: ${{ inputs.no_cache }}
+    secrets: inherit
+
+  client:
+    name: Client
+    needs: version
+    if: inputs.build_client
+    uses: ./.github/workflows/build-client.yaml
+    # build-client.yaml's release job (tags only, skipped here) asks for it
+    permissions:
+      contents: write
+    with:
+      dev_release: ${{ needs.version.outputs.version }}
+    secrets: inherit
+
+  dev-release:
+    name: Dev release (tag + changelog)
+    needs: [version, server, client]
+    if: >-
+      always() &&
+      github.ref_name == 'develop' &&
+      (needs.server.result == 'success' || needs.client.result == 'success') &&
+      needs.server.result != 'failure' && needs.server.result != 'cancelled' &&
+      needs.client.result != 'failure' && needs.client.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the built commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # No "v" prefix: v* tags start the production builds
+          gh api --method POST "/repos/${{ github.repository }}/git/refs" \
+            -f "ref=refs/tags/$VERSION" -f "sha=${{ github.sha }}"
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: DyingStar-game
+          repositories: changelog
+
+      - name: Send release dispatch to changelog repo
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/DyingStar-game/changelog/dispatches \
+            --field event_type=release \
+            --field "client_payload[component]=DyingStar" \
+            --field "client_payload[version]=$VERSION" \
+            --field "client_payload[date]=$(date -u +%Y-%m-%d)"

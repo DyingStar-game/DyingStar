@@ -1,12 +1,24 @@
 name: Build & Deploy Client
 
+# A merge into develop no longer builds: the preprod client is built by hand,
+# alone from here or with the server from release-preprod.yml (a dev release).
 on:
   push:
-    branches:
-      - develop
     tags:
       - 'v*'
   pull_request:
+  workflow_dispatch:
+    inputs:
+      dev_release:
+        description: "Dev release of this build (empty: <NEXT_VERSION>-dev.<UTC yyyymmddhhmm>)"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      dev_release:
+        description: "Dev release of this build (empty: <NEXT_VERSION>-dev.<UTC yyyymmddhhmm>)"
+        required: false
+        type: string
 
 env:
   GODOT_VERSION: 4.7
@@ -18,22 +30,34 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       release_date: ${{ steps.version.outputs.release_date }}
+      dev_release: ${{ steps.version.outputs.dev_release }}
     steps:
       - name: Compute version info
         id: version
+        env:
+          INPUT_DEV_RELEASE: ${{ inputs.dev_release }}
+          # Next stable version, a repository variable raised at each release
+          NEXT_VERSION: ${{ vars.NEXT_VERSION || '0.1.0' }}
         run: |
           # Computed once here so every platform build shares the exact same
           # version string (a per-matrix timestamp gave linux and windows
           # two different versions).
           DATE=$(date +%Y-%m-%d)
+          DEV_RELEASE=""
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             VERSION="PullRequest"
           else
-            VERSION="$(date +%Y%m%d%H%M%S)"
+            # A preprod build is a dev release (changelog section). Its
+            # version stays a 14-digit build id: the launcher orders preprod
+            # builds by it, and an installed build id would rank above a
+            # "0.1.0-dev.…" string, hiding the update.
+            DEV_RELEASE="${INPUT_DEV_RELEASE:-${NEXT_VERSION}-dev.$(date -u +%Y%m%d%H%M)}"
+            VERSION="${DEV_RELEASE##*-dev.}00"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dev_release=$DEV_RELEASE" >> "$GITHUB_OUTPUT"
           echo "release_date=$DATE" >> "$GITHUB_OUTPUT"
 
   build:
@@ -61,7 +85,7 @@ jobs:
           # The self-hosted ARC runner image is minimal; these tools that
           # GitHub-hosted runners ship by default must be installed here.
           sudo apt-get update
-          sudo apt-get install -y wget unzip zip
+          sudo apt-get install -y wget unzip zip jq
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -185,9 +209,16 @@ jobs:
           grep -vE '^[[:space:]]*(;|$)' "$INI"
 
       - name: Write version.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_DATE: ${{ needs.version.outputs.release_date }}
+          DEV_RELEASE: ${{ needs.version.outputs.dev_release }}
         run: |
-          echo '{"version":"${{ needs.version.outputs.version }}","releaseDate":"${{ needs.version.outputs.release_date }}"}' \
+          # devRelease: the changelog section of this build (empty for a release)
+          jq -cn --arg v "$VERSION" --arg d "$RELEASE_DATE" --arg dev "$DEV_RELEASE" \
+            '{version: $v, releaseDate: $d} + (if $dev == "" then {} else {devRelease: $dev} end)' \
             > "${{ matrix.build_dir }}/version.json"
+          cat "${{ matrix.build_dir }}/version.json"
 
       - name: Create build zip
         run: |
@@ -203,7 +234,7 @@ jobs:
   deploy-testing:
     name: Deploy to testing server
     needs: build
-    if: github.ref_name == 'develop' && github.event_name == 'push'
+    if: github.event_name != 'pull_request' && github.ref_type != 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Download linux build
