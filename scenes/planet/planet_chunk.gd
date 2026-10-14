@@ -1617,10 +1617,7 @@ static func generate_mesh(
 			var _src: PackedInt32Array = surface_override_indices[_k]
 			var _kept := PackedInt32Array()
 			for oi in range(0, _src.size(), 6):
-				# The quad id is recovered from its first index (row-major grid).
-				var _v0 := _src[oi]
-				@warning_ignore("integer_division")
-				var _qi_idx := (_v0 / (res + 1)) * res + (_v0 % (res + 1))
+				var _qi_idx := _quad_of_indices(_src, oi, res)
 				if _qi_idx < _grid_quad_count and _rw_ref_quads[_qi_idx] == 1:
 					continue
 				for j in 6:
@@ -3982,6 +3979,21 @@ static func _quad_takes_other_diagonal(carved: PackedByteArray, i: int, res: int
 	# The lone corner is the one that differs from the other three.
 	var lone := 1 if n == 1 else 0
 	return c10 == lone or c01 == lone
+
+
+## The grid cell of the quad written at [param oi] in [param tris] (six
+## indices, either diagonal, either winding): its (0,0) corner is its SMALLEST
+## index, the grid being row-major. Not its first index: a quad flipped by
+## _quad_takes_other_diagonal starts with i10, which named the cell to its
+## right — where that one was refined, a crack-wall quad of the road's
+## corundum surface was dropped as "drawn by the patch" and drawn by nothing
+## (a 180 m triangular hole in the canyon wall, tarsis_3, 39.521 W 24.746 N).
+static func _quad_of_indices(tris: PackedInt32Array, oi: int, res: int) -> int:
+	var v00 := tris[oi]
+	for j in range(1, 6):
+		v00 = mini(v00, tris[oi + j])
+	@warning_ignore("integer_division")
+	return (v00 / (res + 1)) * res + (v00 % (res + 1))
 
 
 ## Every triangle of [param tris] that stands between a carved and an uncarved

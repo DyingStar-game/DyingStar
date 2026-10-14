@@ -199,12 +199,38 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			for xi in res + 1:
 				var idx := yi * (res + 1) + xi
 				coarse_pos[idx] = (grid_dirs[yi][xi] as Vector3) * (radius + grid_h[idx])
+	# How far the rim snap slid each corner off its grid direction (unit-sphere
+	# offset, zero for a corner left in place). The re-sampled sub-vertices of a
+	# cell follow its corners by the bilinear blend of these: on the grid, a
+	# corner slid 35 m onto the rim stretched its sub-triangles over the
+	# neighbouring cells, two floors a few cm apart that flickered in turn —
+	# the road's corundum over the bare ground, a triangle coming and going with
+	# the sun and the viewpoint (tarsis_3, 39.521 W 24.747 N). On a cell edge only
+	# its two ends weigh, so the cells (and chunks) sharing it agree; a cell no
+	# corner of which moved is sampled exactly as before.
+	var slide: Array[Vector3] = []
+	slide.resize(n_coarse)
+	slide.fill(Vector3.ZERO)
+	if coarse_world.size() == n_coarse:
+		for yi in res + 1:
+			for xi in res + 1:
+				var idx := yi * (res + 1) + xi
+				var off: Vector3 = coarse_pos[idx].normalized() - (grid_dirs[yi][xi] as Vector3)
+				# Below 1 mm on the ground: rounding, not a snap.
+				if off.length_squared() * radius * radius > 1e-6:
+					slide[idx] = off
 
 	for yi in res:
 		for xi in res:
 			var qi := yi * res + xi
 			if quads[qi] == 0:
 				continue
+			var s00: Vector3 = slide[yi * (res + 1) + xi]
+			var s10: Vector3 = slide[yi * (res + 1) + xi + 1]
+			var s01: Vector3 = slide[(yi + 1) * (res + 1) + xi]
+			var s11: Vector3 = slide[(yi + 1) * (res + 1) + xi + 1]
+			var slid := s00 != Vector3.ZERO or s10 != Vector3.ZERO \
+					or s01 != Vector3.ZERO or s11 != Vector3.ZERO
 			# Global index of every sub-grid node (a, b) of this cell.
 			var node := PackedInt32Array()
 			node.resize((k + 1) * (k + 1))
@@ -261,7 +287,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 						else:
 							if other_refined:
 								p = _resample(face, base_ix, base_iy, hp_nside, xi, yi, a, b,
-										inv_res, inv_k, radius, sampler, rw_ctx)
+										inv_res, inv_k, radius, sampler, rw_ctx,
+										_slide_at(slid, s00, s10, s01, s11, a, b, inv_k))
 							else:
 								p = coarse_pos[c_from].lerp(coarse_pos[c_to], float(j) * inv_k)
 							gidx = n_coarse + pos.size()
@@ -273,7 +300,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 							edge_cache[key] = gidx
 					else:
 						p = _resample(face, base_ix, base_iy, hp_nside, xi, yi, a, b,
-								inv_res, inv_k, radius, sampler, rw_ctx)
+								inv_res, inv_k, radius, sampler, rw_ctx,
+								_slide_at(slid, s00, s10, s01, s11, a, b, inv_k))
 						gidx = n_coarse + pos.size()
 						pos.append(p)
 						dirs.append(p.normalized())
@@ -422,13 +450,28 @@ static func _outer_near_track(gx: int, gy: int, res: int, grid_dirs: Array, piec
 
 static func _resample(face: int, base_ix: float, base_iy: float, nside: int,
 		xi: int, yi: int, a: int, b: int, inv_res: float, inv_k: float,
-		radius: float, sampler: Callable, rw_ctx: Dictionary) -> Vector3:
+		radius: float, sampler: Callable, rw_ctx: Dictionary, slide: Vector3) -> Vector3:
 	var fx := base_ix + (float(xi) + float(a) * inv_k) * inv_res
 	var fy := base_iy + (float(yi) + float(b) * inv_k) * inv_res
 	var dir := HEALPix._face_xy_to_vec(face, fx, fy, nside)
+	if slide != Vector3.ZERO:
+		dir = (dir + slide).normalized()
 	var h: float = float(sampler.call(dir))
 	h = GradeBed.apply(h, HEALPix.vec2lonlat(dir), rw_ctx)
 	return dir * (radius + h)
+
+
+## The slide of sub-node (a, b) of a cell: the bilinear blend of its corners'
+## (see build). On an edge the far corners' weights are exactly 0, so both
+## cells sharing it compute the same sum.
+static func _slide_at(slid: bool, s00: Vector3, s10: Vector3, s01: Vector3, s11: Vector3,
+		a: int, b: int, inv_k: float) -> Vector3:
+	if not slid:
+		return Vector3.ZERO
+	var u := float(a) * inv_k
+	var v := float(b) * inv_k
+	return s00 * ((1.0 - u) * (1.0 - v)) + s10 * (u * (1.0 - v)) \
+			+ s01 * ((1.0 - u) * v) + s11 * (u * v)
 
 
 ## Append one sub-triangle unless it crosses a bore.

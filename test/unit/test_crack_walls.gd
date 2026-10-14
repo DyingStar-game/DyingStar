@@ -162,6 +162,24 @@ func test_a_lone_corner_stays_off_the_diagonal() -> void:
 		assert_eq(PlanetChunk._quad_takes_other_diagonal(carved, 0, 1), cases[flags], str(flags))
 
 
+## A quad's cell, from its six indices, whichever diagonal and winding it was
+## written with: the flipped quad starts with i10, and reading its cell from
+## that first index named the cell to its right (a wall quad of a road's
+## corundum surface dropped as refined, a hole in the canyon wall).
+func test_a_flipped_quad_names_its_own_cell() -> void:
+	var res := 4
+	for qi in [0, 5, 10, 15]:
+		@warning_ignore("integer_division")
+		var i: int = (qi / res) * (res + 1) + qi % res
+		var default := PackedInt32Array([i, i + res + 1, i + 1, i + 1, i + res + 1, i + res + 2])
+		var flipped := PackedInt32Array([i + 1, i, i + res + 2, i + res + 2, i, i + res + 1])
+		var rewound := PackedInt32Array([i + 1, i + res + 2, i, i + res + 2, i + res + 1, i])
+		for quad: PackedInt32Array in [default, flipped, rewound]:
+			var tris := PackedInt32Array([0, 1, 2, 3, 4, 5])
+			tris.append_array(quad)
+			assert_eq(PlanetChunk._quad_of_indices(tris, 6, res), qi, str(quad))
+
+
 ## Is [param snapped] (a crack_rim_snap result) on the wall — its rim or its foot, 5 cm apart?
 func _on_wall(snapped: Vector4) -> bool:
 	var half := _pd.crack_width_m * 0.5
