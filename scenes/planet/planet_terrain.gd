@@ -718,6 +718,23 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# image, every baked vertex moves to its east-west mirror.
 		# v59 → v60: roads re-exported — the road part has no fingerprint in
 		# the key. An exported build also keys on its own BuildInfo id (below).
+		# v60 → v61: a cell refined around a line or a pad meets its unrefined
+		# neighbour at the SNAPPED corners (GradeRefine coarse_world): beside a
+		# crack rim the patch's edges ran between the grid corners and left
+		# strips open, mesh and collision (tarsis_3, 39.556 W 24.785 N).
+		# v61 → v62: the refinement patch, the bed, the road ribbon and the lava
+		# crust read the CANONICAL tile on an export-tile border (sample_height_boundary),
+		# as the coarse border vertices do: each chunk read its own and they met
+		# with a 26 cm step (tarsis_3, 39.556 W 24.784 N).
+		# v62 → v63: a zone's tile-clip edges are inclusive (PlanetChunk._on_clip_edge):
+		# the four export tiles meeting at a diamond's corner answered in, in, out,
+		# out for one zone, a 14 cm relief step there (tarsis_3, crack floor). And
+		# the collision reads a vertex's zone at its GRID direction, as the mesh
+		# does, not where the rim snap slid it (possibly into the next tile).
+		# v63 → v64: GradeRefine asked a TOP border's neighbour cell about the wrong
+		# outer corners (its cell row, not res + 1): the chunk below re-sampled the
+		# shared edge, the one above interpolated it — a 10 cm open slit in village
+		# M0001 (tarsis_3), and wherever a line or a pad refines a top border.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -726,13 +743,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v60%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v64%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
 		# The same key without the parts that only change how the ground looks (skirts, rock tints):
 		# what a building's persisted pad altitude (terrain_settled) is checked against.
-		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v60%s%s%s%s%s%s" % [
+		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v64%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt]).md5_text().substr(0, 16)

@@ -45,6 +45,12 @@ class_name GradeRefine
 ## [param skip_quads] — cells that must stay coarse (overlay-covered), may be
 ## empty. [param sampler] — `func(dir) -> raw height`. [param outward] — wind
 ## the sub-triangles with the geometric normal pointing out of the planet.
+## [param coarse_world] — where the coarse vertices really stand (world,
+## double, (res+1)² entries): the crack rim snap slides them up to 1.6 pitches
+## off [param grid_dirs], and a refined cell's edge interpolated between the
+## GRID corners left a strip open against the unrefined neighbour drawn
+## between the snapped ones (cells a road refines beside a crack rim, on
+## tarsis_3). Empty = grid_dirs × (radius + grid_h), for a grid nothing moved.
 ##
 ## Returns {} when nothing is refined, else
 ##   { quads: PackedByteArray (res*res, 1 = refined),
@@ -57,7 +63,7 @@ class_name GradeRefine
 static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 		grid_dirs: Array, grid_h: PackedFloat64Array, band: PackedByteArray,
 		rw_ctx: Dictionary, skip_quads: PackedByteArray, sampler: Callable,
-		outward: bool) -> Dictionary:
+		outward: bool, coarse_world: Array[Vector3] = []) -> Dictionary:
 	if rw_ctx.is_empty() or res < 1 or band.size() != (res + 1) * (res + 1):
 		return {}
 	var n_coarse := (res + 1) * (res + 1)
@@ -183,13 +189,16 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	# shared by up to six triangles).
 	var local_cache := {}
 
-	# Coarse world positions (double), for interpolation and normals.
-	var coarse_pos: Array[Vector3] = []
-	coarse_pos.resize(n_coarse)
-	for yi in res + 1:
-		for xi in res + 1:
-			var idx := yi * (res + 1) + xi
-			coarse_pos[idx] = (grid_dirs[yi][xi] as Vector3) * (radius + grid_h[idx])
+	# Coarse world positions (double), for interpolation and normals: the
+	# vertices the unrefined neighbours are drawn with, rim snap included.
+	var coarse_pos: Array[Vector3] = coarse_world
+	if coarse_pos.size() != n_coarse:
+		coarse_pos = []
+		coarse_pos.resize(n_coarse)
+		for yi in res + 1:
+			for xi in res + 1:
+				var idx := yi * (res + 1) + xi
+				coarse_pos[idx] = (grid_dirs[yi][xi] as Vector3) * (radius + grid_h[idx])
 
 	for yi in res:
 		for xi in res:
@@ -226,8 +235,12 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 							if oy >= 0 and oy < res:
 								other_refined = quads[oy * res + xi] == 1
 							else:
+								# The neighbour cell's OUTER corners: row -1 or res + 1 of the
+								# extended grid — not its cell row (res), which read the
+								# top-right corner's column instead (p214960188, M0001).
+								var gy := -1 if oy < 0 else res + 1
 								other_refined = _border_cell_shared(near_track, res, xi, yi,
-										xi, oy, xi + 1, oy, outer_nt, grid_dirs, pieces,
+										xi, gy, xi + 1, gy, outer_nt, grid_dirs, pieces,
 										profiles, pads, mpd, floor_margin, pitch)
 						else:
 							c_from = yi * (res + 1) + (xi + a_end)
@@ -237,8 +250,9 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 							if ox >= 0 and ox < res:
 								other_refined = quads[yi * res + ox] == 1
 							else:
+								var gx := -1 if ox < 0 else res + 1
 								other_refined = _border_cell_shared(near_track, res, xi, yi,
-										ox, yi, ox, yi + 1, outer_nt, grid_dirs, pieces,
+										gx, yi, gx, yi + 1, outer_nt, grid_dirs, pieces,
 										profiles, pads, mpd, floor_margin, pitch)
 						var key := (c_from * n_coarse + c_to) * (k + 1) + j
 						if edge_cache.has(key):
