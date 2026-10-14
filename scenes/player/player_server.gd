@@ -2989,6 +2989,14 @@ func _catch_if_below_surface(area: Area3D) -> void:
 	surface_dist = pdata.carved_surface_dist(dir)
 	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
 		return
+	# The theoretical surface is the relief at this very point; the collision is a grid of
+	# triangles that runs metres under it on a sharp crest (SurfaceCatch). The real ground decides.
+	var ground: float = SurfaceCatch.ground_dist(player.get_world_3d().direct_space_state, planet, dir,
+			surface_dist, player_dist, player._SURFACE_CATCH_MARGIN, [player.get_rid()])
+	if ground > 0.0:
+		if player_dist >= ground - player._SURFACE_CATCH_MARGIN:
+			return  # standing on the collision, under the theoretical crest: nothing fell through
+		surface_dist = ground
 	player.global_position = planet.global_position + planet_basis * (dir * surface_dist)
 	var up_world: Vector3 = (planet_basis * dir).normalized()
 	var radial: float = player.velocity.dot(up_world)
