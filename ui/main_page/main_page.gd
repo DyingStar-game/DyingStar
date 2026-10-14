@@ -24,8 +24,15 @@ const _QUALITY_MARGIN_PX : float = 40.0
 const _NOTICE_WIDTH_SHARE : float = 0.6
 const _NOTICE_FONT_SIZE : int = 18
 
+## The settings page, LOADED when it is first opened — never preloaded. A preload closed a loop:
+## the settings preload their Graphics tab, which knows the menu stage (its hour slider), which knows
+## this page, which preloaded the settings. In an exported build the scene caught in that loop loads
+## EMPTY ("node count is 0"): from a fresh launch Settings, Credits and Back did nothing until a visit
+## to the game had loaded the settings another way. The editor loads scripts differently and never
+## showed it.
+const SETTINGS_SCENE_PATH : String = "res://ui/settings_page/settings_page.tscn"
+
 var is_ready: bool = false
-var settings_scene : PackedScene = preload("res://ui/settings_page/settings_page.tscn")
 ## The settings (or credits) overlay while it is open, else null — so Esc closes it (back to the main
 ## menu) the same way it does in the pause menu, instead of doing nothing.
 var _settings_overlay: Node = null
@@ -116,7 +123,7 @@ func _open_overlay(entry: StringName) -> void:
 			return
 		_settings_overlay.queue_free()
 	# Track the overlay so Esc or the bar's arrow closes it (back).
-	var overlay : Node = settings_scene.instantiate()
+	var overlay : Node = (load(SETTINGS_SCENE_PATH) as PackedScene).instantiate()
 	overlay.show_credits = entry == CREDITS
 	overlay.see_through = _stage_mode
 	_settings_overlay = overlay
