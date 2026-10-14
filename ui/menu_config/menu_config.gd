@@ -313,7 +313,9 @@ func _add_column_titles() -> void:
 func _build_tabs() -> void:
 	if _tab_bar != null:
 		_tab_bar.queue_free()
-	_tab_bar = TabStrip.new(TAB_FONT_SIZE, 28)
+	# 20 px between tabs: at 28 the five families (Général … Débogage) asked for 610 px, more than the
+	# settings' column at the largest interface size (600 px at 120 %), and the page lost its left edge.
+	_tab_bar = TabStrip.new(TAB_FONT_SIZE, 20)
 	_tab_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
 	# Reached like any other item, with the cross or the arrows, which then open the tab beside: the
 	# shoulder buttons are the settings' categories and the triggers the bar's entries.

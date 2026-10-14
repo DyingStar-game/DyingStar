@@ -40,6 +40,21 @@ func _ready() -> void:
 	_watch(self)
 	for node in find_children("*", "Control", true, false):
 		_watch(node as Control)
+	_wrap_caption()
+
+
+## The row's caption — the first item of its line, a Label — breaks between words rather than
+## widening the row. The settings stand in a column beside the scene, narrower as the interface size
+## grows: from 105 % an unwrapped caption ("Menu principal animé (Tarsis 3, au prochain affichage du
+## menu)" beside its 200 px button) made the page wider than its column, and the page, growing both
+## ways, lost its left side off screen. A value label after the control ("110") is left alone.
+func _wrap_caption() -> void:
+	var line : HBoxContainer = get_child(0) as HBoxContainer if get_child_count() > 0 else null
+	if line == null or line.get_child_count() == 0:
+		return
+	var caption : Label = line.get_child(0) as Label
+	if caption != null:
+		SettingsRowFactory.wrap_caption(caption)
 
 
 func _watch(control: Control) -> void:
