@@ -33,6 +33,8 @@ func _ready() -> void:
 	sfx.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("sfx", v))
 	voip.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("voip", v))
 	interface.value_changed.connect(func(v: float) -> void: SettingsManager.set_audio_volume("ui", v))
+	for selector: OptionButton in [microphone_device, speaker_device]:
+		SettingsRowFactory.fit_names(selector)
 	load_microphone_devices()
 	load_speaker_devices()
 	microphone_device.item_selected.connect(
@@ -75,6 +77,7 @@ func load_microphone_devices() -> void:
 		microphone_device.add_item(devices[i])
 		if devices[i] == AudioServer.input_device:
 			microphone_device.select(i)
+	SettingsRowFactory.show_name(microphone_device)
 
 ## List the output devices and pre-select the active one.
 func load_speaker_devices() -> void:
@@ -84,6 +87,7 @@ func load_speaker_devices() -> void:
 		speaker_device.add_item(devices[i])
 		if devices[i] == AudioServer.output_device:
 			speaker_device.select(i)
+	SettingsRowFactory.show_name(speaker_device)
 
 ## Mic test: play the microphone back so you hear yourself, and turn the button green while on.
 func _on_test_toggled(on: bool) -> void:
