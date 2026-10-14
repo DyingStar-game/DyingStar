@@ -963,9 +963,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if InputCombo.pressed(event, "toggle_flashlight"):
 		# Toggle the player's torch — on foot AND while seated (driver or passenger), so it must
-		# sit before the walk guard. By default it shares the L key with vehicle_lights, so one
-		# press toggles both the torch and the head lights; rebind it to a separate key in
-		# Settings > Controls to control the torch independently.
+		# sit before the walk guard. U and D-pad up by default; the vehicle's head lights are L and
+		# D-pad down (prone's, which is not read while seated): sharing one key, one press lit the
+		# torch with the head lights.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
 	if InputCombo.pressed(event, "god_mode") and Globals.is_dev_tool_enabled("god_mode"):
