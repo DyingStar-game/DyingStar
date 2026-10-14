@@ -1581,9 +1581,14 @@ static func generate_mesh(
 		# chunk's tile it IS that tile, but a sub-vertex on an export-tile border
 		# read from each chunk's own tile put the two sides 26 cm apart (tarsis_3,
 		# 39.556 W 24.784 N). The bed, ribbon and lava samplers below do the same.
+		# With the crack (AUTO, the coarse vertex's zone rule and pitch): the corners
+		# are carved by the vertex loop, and a sub-vertex read without the crack came
+		# back at the plateau's height — the bed's cutting floor laid INSIDE the
+		# canyon under a bridge (tarsis_3, 39.519 W 24.738 N). The cutting rule
+		# (GradeBed.apply, a min) runs on the carved height, as on the corners.
 		var _rw_ref_sampler := func(d: Vector3) -> float:
 			return data.sample_height_boundary(d, _export_ipix, -1,
-					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
+					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.AUTO)
 		# Overlay quads stay coarse (lava, meadow… are drawn by their own
 		# surface on the coarse grid) — EXCEPT the surface-override quads: an
 		# outcrop's rock is a full replacement of the base surface, so its
@@ -1617,10 +1622,7 @@ static func generate_mesh(
 			var _src: PackedInt32Array = surface_override_indices[_k]
 			var _kept := PackedInt32Array()
 			for oi in range(0, _src.size(), 6):
-				# The quad id is recovered from its first index (row-major grid).
-				var _v0 := _src[oi]
-				@warning_ignore("integer_division")
-				var _qi_idx := (_v0 / (res + 1)) * res + (_v0 % (res + 1))
+				var _qi_idx := _quad_of_indices(_src, oi, res)
 				if _qi_idx < _grid_quad_count and _rw_ref_quads[_qi_idx] == 1:
 					continue
 				for j in 6:
@@ -3248,10 +3250,11 @@ static func generate_collision_shape(
 		var _rw_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
 				/ float(res) * 0.5
 		var _rw_mpd := data.radius * PI / 180.0
-		# The canonical tile on an export-tile border, as the mesh's samplers.
+		# The canonical tile on an export-tile border, as the mesh's samplers;
+		# crack carved like the mesh's patch (CrackCarve.AUTO, see generate_mesh).
 		var _rw_sampler := func(d: Vector3) -> float:
 			return data.sample_height_boundary(d, _height_ipix, -1,
-					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.NONE)
+					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.AUTO)
 		# The same patch the mesh builder gets (same grid, same inputs): the
 		# refined cells' coarse faces are dropped and the patch's appended.
 		if not _col_rw_ctx.is_empty():
@@ -3982,6 +3985,21 @@ static func _quad_takes_other_diagonal(carved: PackedByteArray, i: int, res: int
 	# The lone corner is the one that differs from the other three.
 	var lone := 1 if n == 1 else 0
 	return c10 == lone or c01 == lone
+
+
+## The grid cell of the quad written at [param oi] in [param tris] (six
+## indices, either diagonal, either winding): its (0,0) corner is its SMALLEST
+## index, the grid being row-major. Not its first index: a quad flipped by
+## _quad_takes_other_diagonal starts with i10, which named the cell to its
+## right — where that one was refined, a crack-wall quad of the road's
+## corundum surface was dropped as "drawn by the patch" and drawn by nothing
+## (a 180 m triangular hole in the canyon wall, tarsis_3, 39.521 W 24.746 N).
+static func _quad_of_indices(tris: PackedInt32Array, oi: int, res: int) -> int:
+	var v00 := tris[oi]
+	for j in range(1, 6):
+		v00 = mini(v00, tris[oi + j])
+	@warning_ignore("integer_division")
+	return (v00 / (res + 1)) * res + (v00 % (res + 1))
 
 
 ## Every triangle of [param tris] that stands between a carved and an uncarved

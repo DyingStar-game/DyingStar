@@ -69,10 +69,23 @@ public partial class TileFrameNative : RefCounted
     private double[] _poiZ = Array.Empty<double>();
     private double[] _poiR = Array.Empty<double>();
     private double _poiMargin;
-    /// <summary>CRACKS_AUTO's zone rule over the export tile _zoneIpix: 1 carved, 0 not, -1 ask GDScript.</summary>
+    /// <summary>CRACKS_AUTO's zone rule over the export tile _zoneIpix: 1 carved, 0 not, -1 per zone
+    /// (SetCrackZones) or, without them, ask GDScript.</summary>
     private int _crackZone = -1;
     private long _zoneIpix = -1;
     private long _zoneNside;
+    /// <summary>The tile's populate zones in their order, those that can match (SetCrackZones).</summary>
+    private bool _zonesSet;
+    private int _zoneNoneCarves;
+    private int[] _zoneFull = Array.Empty<int>();
+    private int[] _zoneCarves = Array.Empty<int>();
+    /// <summary>Zone i's outline: lon/lat pairs [_zoneStart[i], _zoneStart[i + 1]) of _zoneVerts.</summary>
+    private int[] _zoneStart = Array.Empty<int>();
+    private double[] _zoneVerts = Array.Empty<double>();
+    /// <summary>Zone i's lon/lat box, widened by ClipEdgeTolDeg: min lon, min lat, max lon, max lat.</summary>
+    private double[] _zoneBox = Array.Empty<double>();
+    /// <summary>PlanetChunk.CLIP_EDGE_TOL_DEG.</summary>
+    private const double ClipEdgeTolDeg = 2.0e-7;
 
     public void Configure(double maxHeight, double heightOffset, double exaggeration, double radius)
     {
@@ -122,6 +135,49 @@ public partial class TileFrameNative : RefCounted
         _zoneIpix = zoneIpix;
         _zoneNside = zoneNside;
         _crackPrepared = true;
+        _zonesSet = false;
+    }
+
+    /// <summary>
+    /// CRACKS_AUTO's zone rule over a tile that HAS populate zones (zone -1 in SetCrackFrame): the zones
+    /// of PlanetData.first_zone_at in their order, each with PlanetData.cracks_apply_to_zone's verdict
+    /// (carves[i], 1 or 0) — decided once by GDScript, which owns the biome and rock tables — and
+    /// noneCarves, the verdict where no zone holds the direction. full[i] = 1 for a "full" coverage zone,
+    /// else zone i is the outline starts[i] .. starts[i + 1] (lon/lat pairs) of verts. Zones that can
+    /// never match ("point", fewer than three vertices) are left out by the caller.
+    /// </summary>
+    public void SetCrackZones(int[] full, int[] carves, int[] starts, double[] verts, int noneCarves)
+    {
+        int n = Math.Min(full?.Length ?? 0, carves?.Length ?? 0);
+        _zoneFull = full ?? Array.Empty<int>();
+        _zoneCarves = carves ?? Array.Empty<int>();
+        _zoneStart = starts ?? Array.Empty<int>();
+        _zoneVerts = verts ?? Array.Empty<double>();
+        _zoneNoneCarves = noneCarves;
+        if (_zoneStart.Length < n + 1)
+            return;
+        _zoneBox = new double[n * 4];
+        for (int i = 0; i < n; i++)
+        {
+            double minLon = double.PositiveInfinity, minLat = double.PositiveInfinity;
+            double maxLon = double.NegativeInfinity, maxLat = double.NegativeInfinity;
+            for (int k = _zoneStart[i]; k < _zoneStart[i + 1]; k++)
+            {
+                double lon = _zoneVerts[2 * k];
+                double lat = _zoneVerts[2 * k + 1];
+                minLon = Math.Min(minLon, lon);
+                maxLon = Math.Max(maxLon, lon);
+                minLat = Math.Min(minLat, lat);
+                maxLat = Math.Max(maxLat, lat);
+            }
+            // Wider than the outline by the clip-edge tolerance: a direction outside cannot be inside
+            // (no edge straddles its parallel, or every crossing lies on one side) nor on a clip edge.
+            _zoneBox[4 * i] = minLon - 2.0 * ClipEdgeTolDeg;
+            _zoneBox[4 * i + 1] = minLat - 2.0 * ClipEdgeTolDeg;
+            _zoneBox[4 * i + 2] = maxLon + 2.0 * ClipEdgeTolDeg;
+            _zoneBox[4 * i + 3] = maxLat + 2.0 * ClipEdgeTolDeg;
+        }
+        _zonesSet = true;
     }
 
     /// <summary>The frame's mountain set, and the floor of the mountains' LOD gate.</summary>
@@ -215,12 +271,90 @@ public partial class TileFrameNative : RefCounted
             return double.NaN;
         if (cracks == CracksAuto)
         {
-            if (_crackZone < 0 || HealpixNative.Vec2PixNest(_zoneNside, dir.X, dir.Y, dir.Z) != _zoneIpix)
+            if ((_crackZone < 0 && !_zonesSet)
+                || HealpixNative.Vec2PixNest(_zoneNside, dir.X, dir.Y, dir.Z) != _zoneIpix)
                 return double.NaN;
-            if (_crackZone == 0)
+            int carves = _crackZone >= 0 ? _crackZone : ZoneCarves(dir);
+            if (carves == 0)
                 return 0.0;
         }
         return off * Factor(dir);
+    }
+
+    /// <summary>
+    /// PlanetData.cracks_apply_at over the frame's tile: cracks_apply_to_zone of the first zone holding
+    /// dir (PlanetChunk._dir_in_populate_zone), as 1 or 0.
+    /// </summary>
+    private int ZoneCarves(Vector3 dir)
+    {
+        // BiomeQuery._dir_to_lonlat
+        Vector3 d = dir.Normalized();
+        double lon = Math.Atan2(-(double)d.Z, (double)d.X) * (180.0 / Math.PI);
+        double y = d.Y;
+        double lat = Math.Asin(y < -1.0 ? -1.0 : (y > 1.0 ? 1.0 : y)) * (180.0 / Math.PI);
+        int n = Math.Min(_zoneFull.Length, _zoneCarves.Length);
+        for (int i = 0; i < n; i++)
+        {
+            if (_zoneFull[i] == 0)
+            {
+                if (lon < _zoneBox[4 * i] || lat < _zoneBox[4 * i + 1]
+                    || lon > _zoneBox[4 * i + 2] || lat > _zoneBox[4 * i + 3])
+                    continue;
+                int a = _zoneStart[i];
+                int count = _zoneStart[i + 1] - a;
+                if (!PointInPolygon(lon, lat, a, count) && !OnClipEdge(lon, lat, a, count))
+                    continue;
+            }
+            return _zoneCarves[i];
+        }
+        return _zoneNoneCarves;
+    }
+
+    /// <summary>PlanetChunk._point_in_polygon_lonlat, same arithmetic in the same order.</summary>
+    private bool PointInPolygon(double lon, double lat, int a, int n)
+    {
+        if (n < 3)
+            return false;
+        bool inside = false;
+        int j = n - 1;
+        for (int i = 0; i < n; i++)
+        {
+            double vix = _zoneVerts[2 * (a + i)];
+            double viy = _zoneVerts[2 * (a + i) + 1];
+            double vjx = _zoneVerts[2 * (a + j)];
+            double vjy = _zoneVerts[2 * (a + j) + 1];
+            if ((viy > lat) != (vjy > lat) && lon < (vjx - vix) * (lat - viy) / (vjy - viy) + vix)
+                inside = !inside;
+            j = i;
+        }
+        return inside;
+    }
+
+    /// <summary>PlanetChunk._on_clip_edge: on an outline edge along a meridian or a parallel.</summary>
+    private bool OnClipEdge(double lon, double lat, int a, int n)
+    {
+        int j = n - 1;
+        for (int i = 0; i < n; i++)
+        {
+            double ax = _zoneVerts[2 * (a + j)];
+            double ay = _zoneVerts[2 * (a + j) + 1];
+            double bx = _zoneVerts[2 * (a + i)];
+            double by = _zoneVerts[2 * (a + i) + 1];
+            j = i;
+            if (Math.Abs(ax - bx) <= ClipEdgeTolDeg)
+            {
+                if (Math.Abs(lon - ax) <= ClipEdgeTolDeg
+                    && lat >= Math.Min(ay, by) - ClipEdgeTolDeg && lat <= Math.Max(ay, by) + ClipEdgeTolDeg)
+                    return true;
+            }
+            else if (Math.Abs(ay - by) <= ClipEdgeTolDeg)
+            {
+                if (Math.Abs(lat - ay) <= ClipEdgeTolDeg
+                    && lon >= Math.Min(ax, bx) - ClipEdgeTolDeg && lon <= Math.Max(ax, bx) + ClipEdgeTolDeg)
+                    return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>PlanetData.crack_factor over the frame's POI subset and mountain set.</summary>

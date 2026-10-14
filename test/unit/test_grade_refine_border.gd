@@ -98,3 +98,88 @@ func test_both_chunks_treat_a_shared_edge_alike() -> void:
 						worst_at = "%s t %.1f u %.1f at %s" % [side, t, u, k]
 	assert_gt(compared, 0, "the two patches share border sub-vertices")
 	assert_lt(worst, 0.001, "one height per shared sub-vertex (worst %.4f m, %s)" % [worst, worst_at])
+
+
+## A corner the crack rim snap slid off the grid drags its cells' sub-vertices
+## along: the patch of each refined cell covers that cell as it really stands,
+## once. On the grid, the sub-triangles fanned from a corner slid 35 m onto the
+## rim spread over the next cells — two floors a few cm apart flickering in turn
+## (tarsis_3, 39.521 W 24.747 N). Measured as plan areas: the sub-triangles of a
+## cell add up to its real quad, no more (an overlap counts twice).
+func test_a_slid_corner_takes_its_cells_along() -> void:
+	var pd := PlanetData.new()
+	pd.radius = RADIUS
+	var mpd := RADIUS * PI / 180.0
+	var ipix := HEALPix.vec2pix_nest(NSIDE, HEALPix.lonlat2vec(CENTRE_LON, CENTRE_LAT))
+	var grid_dirs: Array = HEALPix.get_pixel_grid(NSIDE, ipix, RES)
+	var pitch := HEALPix.pixel_side_length(NSIDE, RADIUS) / float(RES)
+	# A pad on corner (16, 16): the four cells around it are refined.
+	var cx := 16
+	var cy := 16
+	var ll := HEALPix.vec2lonlat(grid_dirs[cy][cx])
+	var rec := PadBed.record("slide", ll.x, ll.y, 0.0, 2.0, 2.0, 0.0, 0.0)
+	rec["z"] = 5600.0
+	rec["talus_m"] = 0.0
+	var ctx := {"pieces": [], "profiles": {}, "pads": [rec], "m_per_deg": mpd}
+	var n := (RES + 1) * (RES + 1)
+	var grid_h := PackedFloat64Array()
+	var band := PackedByteArray()
+	grid_h.resize(n)
+	band.resize(n)
+	var f := _sampler()
+	var world: Array[Vector3] = []
+	world.resize(n)
+	for yi in RES + 1:
+		for xi in RES + 1:
+			var dir: Vector3 = grid_dirs[yi][xi]
+			var raw: float = f.call(dir)
+			var h := GradeBed.apply(raw, HEALPix.vec2lonlat(dir), ctx)
+			grid_h[yi * (RES + 1) + xi] = h
+			band[yi * (RES + 1) + xi] = 1 if h != raw else 0
+			world[yi * (RES + 1) + xi] = dir * (RADIUS + h)
+	# Slide the corner 0.4 pitch towards its (+1, +1) neighbour, as the rim snap does.
+	var c := cy * (RES + 1) + cx
+	var toward: Vector3 = (grid_dirs[cy + 1][cx + 1] as Vector3) - (grid_dirs[cy][cx] as Vector3)
+	var slid_dir: Vector3 = ((grid_dirs[cy][cx] as Vector3)
+			+ toward.normalized() * (0.4 * pitch / RADIUS)).normalized()
+	world[c] = slid_dir * (RADIUS + grid_h[c])
+	var ref := GradeRefine.build(pd, NSIDE, ipix, RES, grid_dirs, grid_h, band, ctx,
+			PackedByteArray(), f, true, world)
+	assert_false(ref.is_empty(), "the pad refines its cells")
+	if ref.is_empty():
+		return
+	var quads: PackedByteArray = ref["quads"]
+	var pos: Array = ref["pos"]
+	var quad_of: PackedInt32Array = ref["quad_of"]
+	var tris: PackedInt32Array = ref["tris"]
+	var up: Vector3 = grid_dirs[cy][cx]
+	# Summed over every refined cell: a sub-vertex on an edge two refined cells
+	# share belongs to the first that made it, so a triangle cannot be told its
+	# cell from its vertices — but an overlap anywhere shows in the total.
+	var covered := 0.0
+	for t in range(0, tris.size(), 3):
+		var p: Array[Vector3] = []
+		for j in 3:
+			var ti := tris[t + j]
+			p.append(world[ti] if ti < n else pos[ti - n])
+		covered += absf((p[1] - p[0]).cross(p[2] - p[0]).dot(up)) * 0.5
+	var real := 0.0
+	var cells := 0
+	for qi in RES * RES:
+		if quads[qi] == 0:
+			continue
+		@warning_ignore("integer_division")
+		var yi: int = qi / RES
+		var xi: int = qi % RES
+		var c00: Vector3 = world[yi * (RES + 1) + xi]
+		var c10: Vector3 = world[yi * (RES + 1) + xi + 1]
+		var c01: Vector3 = world[(yi + 1) * (RES + 1) + xi]
+		var c11: Vector3 = world[(yi + 1) * (RES + 1) + xi + 1]
+		real += (absf((c10 - c00).cross(c01 - c00).dot(up))
+				+ absf((c10 - c11).cross(c01 - c11).dot(up))) * 0.5
+		cells += 1
+	for yi in [cy - 1, cy]:
+		for xi in [cx - 1, cx]:
+			assert_eq(quads[yi * RES + xi], 1, "cell (%d, %d) is refined" % [xi, yi])
+	assert_almost_eq(covered, real, real * 0.001,
+			"the sub-triangles of the %d refined cells cover them once" % cells)
