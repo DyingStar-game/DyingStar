@@ -1037,7 +1037,7 @@ class TileFrame:
 	## every level (misses are not cached) — 0.6 to 1 s of tile reads a chunk when done per sample.
 	var climbs: Dictionary = {}
 	## The crack carve of this chunk (CrackCarve.prepare_frame): POI subset, and the zone
-	## rule over export tile crack_zone_ipix — 1 carved, -1 looked up per direction.
+	## rule over export tile crack_zone_ipix — 1 carved, -1 looked up per direction (C#: SetCrackZones).
 	var crack_pois: Array = []
 	var crack_zone := -1
 	var crack_zone_ipix := -1
@@ -1065,8 +1065,8 @@ class TileFrame:
 		if not _native_tried:
 			_native_tried = true
 			_native_script = NativeScript.load_usable("res://scenes/planet/native/TileFrameNative.cs",
-					["Configure", "SetMountains", "SetCracks", "SetCrackFrame", "AddTile", "Redirect", "Sample",
-					"SampleBoundary", "Sample4"])
+					["Configure", "SetMountains", "SetCracks", "SetCrackFrame", "SetCrackZones", "AddTile",
+					"Redirect", "Sample", "SampleBoundary", "Sample4"])
 		return _native_script != null
 
 	## Tout ce qui ne dépend que de la tuile, calculé au premier accès.

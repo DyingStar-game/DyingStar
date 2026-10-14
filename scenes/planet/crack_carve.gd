@@ -78,6 +78,7 @@ static func prepare_frame(data: PlanetData, frame: PlanetData.TileFrame,
 	frame.crack_pois = data.crack_pois_near(HEALPix.pix2vec_nest(hp_nside, hp_ipix),
 			HEALPix.pixel_side_length(hp_nside, 1.0) * data.radius * 0.8)
 	frame.crack_zone = -1
+	var zones: Array = []
 	if hp_nside >= data.export_nside:
 		var eipix := hp_ipix
 		var ns := hp_nside
@@ -86,9 +87,10 @@ static func prepare_frame(data: PlanetData, frame: PlanetData.TileFrame,
 			ns >>= 1
 		frame.crack_zone_ipix = eipix
 		frame.crack_zone_nside = data.export_nside
+		zones = data.get_chunk_populate_zones(eipix)
 		# No zone at all: first_zone_at is empty over the whole tile, and
 		# cracks_apply_to_zone({}) is the corundum default — carved.
-		if data.get_chunk_populate_zones(eipix).is_empty():
+		if zones.is_empty():
 			frame.crack_zone = 1
 	frame.crack_ready = true
 	if frame.native != null:
@@ -99,3 +101,38 @@ static func prepare_frame(data: PlanetData, frame: PlanetData.TileFrame,
 			radii.append(float(p["radius"]))
 		frame.native.SetCrackFrame(dirs, radii, data.crack_poi_margin_m, frame.crack_zone,
 				frame.crack_zone_ipix, frame.crack_zone_nside)
+		if not zones.is_empty():
+			_send_zones(data, frame, zones)
+
+
+## The tile's zones to the C# half, so that it decides the zone rule per direction as
+## PlanetData.cracks_apply_at does (first_zone_at, then cracks_apply_to_zone) instead of
+## leaving every crack sample of a zoned tile to GDScript — 77 µs a sample against 8 on
+## tarsis_3, where a refined cell re-reads 64 sub-vertices. The verdict of each zone is
+## decided here, once; the C# only finds which zone holds the direction
+## (PlanetChunk._dir_in_populate_zone). A "point" zone, or an outline of fewer than three
+## vertices, never holds one and is left out; past a "full" zone none is reached.
+static func _send_zones(data: PlanetData, frame: PlanetData.TileFrame, zones: Array) -> void:
+	var full := PackedInt32Array()
+	var carves := PackedInt32Array()
+	var starts := PackedInt32Array([0])
+	var verts := PackedFloat64Array()
+	for z: Dictionary in zones:
+		var coverage: String = z.get("coverage", "")
+		if coverage == "point":
+			continue
+		var outline: Array = z.get("vertices", [])
+		if coverage != "full" and outline.size() < 3:
+			continue
+		full.append(1 if coverage == "full" else 0)
+		carves.append(1 if data.cracks_apply_to_zone(z) else 0)
+		if coverage != "full":
+			for v: Variant in outline:
+				verts.append(float(v[0]))
+				verts.append(float(v[1]))
+		@warning_ignore("integer_division")
+		starts.append(verts.size() / 2)
+		if coverage == "full":
+			break
+	frame.native.SetCrackZones(full, carves, starts, verts,
+			1 if data.cracks_apply_to_zone({}) else 0)

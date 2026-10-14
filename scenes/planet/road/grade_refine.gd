@@ -30,9 +30,11 @@ class_name GradeRefine
 ##
 ## The same function builds the mesh and the collision patch from the same
 ## inputs (same grid, same sampler, same carve rule), so the two agree; the
-## caller only turns the world positions into its own local frame. Only the
-## railway rule is applied to the re-sampled sub-vertices, not the other
-## terrain modifiers (rivers, craters, cracks): where one of those crosses a
+## caller only turns the world positions into its own local frame. The
+## re-sampled sub-vertices get the sampler's height — the chunk builders' carve
+## the crack network there (CrackCarve.AUTO), else a line crossing a canyon laid
+## its cutting floor inside it — then the railway rule; the other terrain
+## modifiers (rivers, craters) are not applied: where one of those crosses a
 ## cutting the patch border may show a step.
 
 
@@ -43,8 +45,9 @@ class_name GradeRefine
 ## [param band] — 1 for every coarse vertex the railway rule moved.
 ## [param rw_ctx] — GradeBed.make_ctx() of this chunk (non-empty).
 ## [param skip_quads] — cells that must stay coarse (overlay-covered), may be
-## empty. [param sampler] — `func(dir) -> raw height`. [param outward] — wind
-## the sub-triangles with the geometric normal pointing out of the planet.
+## empty. [param sampler] — `func(dir) -> height`, crack carved, before the
+## railway rule. [param outward] — wind the sub-triangles with the geometric
+## normal pointing out of the planet.
 ## [param coarse_world] — where the coarse vertices really stand (world,
 ## double, (res+1)² entries): the crack rim snap slides them up to 1.6 pitches
 ## off [param grid_dirs], and a refined cell's edge interpolated between the

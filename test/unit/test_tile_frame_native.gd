@@ -339,6 +339,87 @@ func test_the_cracks_sample_identically() -> void:
 						CrackCarve.NONE), "no crack at a 130 m pitch")
 
 
+## The crack zone rule in a tile that HAS populate zones (CrackCarve.AUTO): the C# finds the first zone
+## holding each direction (TileFrameNative.SetCrackZones) where it used to hand every crack sample of
+## such a tile back to GDScript — 77 µs a sample instead of 8 on tarsis_3. Zones of every kind: an
+## uncarved rock and a carved one (emery) overlapping, in that order, a point zone (never holds a
+## direction), and on some tiles a "full" zone, before or after the outlines. One outline edge runs
+## exactly along a sample's meridian and another along a sample's parallel: the inclusive clip edge
+## (PlanetChunk._on_clip_edge) is met. Bit for bit, and the C# answers nearly everything.
+func test_the_crack_zone_rule_samples_identically() -> void:
+	var setup: Array = _whole_sphere()
+	var pd = setup[0]
+	var dirs: PackedVector3Array = setup[1]
+	pd.corundum_default_biome = true
+	pd.crack_spacing_m = 4000.0
+	pd.crack_width_m = 250.0
+	pd.crack_depth_m = 180.0
+	pd.crack_poi_margin_m = 300.0
+	# A biome the planet knows: a zone naming it is not the corundum default, its rock decides.
+	pd._biome_by_type["test_rock_ground"] = BiomeDefinition.new()
+	pd._biome_cache_built = true
+	var chunks: Array = []
+	for i: int in range(24):
+		var ipix: int = HEALPix.vec2pix_nest(1024, dirs[i])
+		chunks.append(ipix)
+		var eipix: int = ipix >> 8
+		var grid: PackedVector3Array = _grid_dirs(1024, ipix, 48)
+		var c: Vector2 = BiomeQuery._dir_to_lonlat(HEALPix.pix2vec_nest(1024, ipix))
+		var on_lon: Vector2 = BiomeQuery._dir_to_lonlat(grid[24 * 49 + 30])
+		var on_lat: Vector2 = BiomeQuery._dir_to_lonlat(grid[10 * 49 + 20])
+		var zones: Array = []
+		if i % 3 == 2:
+			zones.append({"coverage": "full", "biome_type": "test_rock_ground", "rock_type": "granite"})
+		zones.append({"coverage": "point", "biome_type": "test_rock_ground", "rock_type": "granite"})
+		zones.append({"coverage": "partial", "biome_type": "test_rock_ground", "rock_type": "granite",
+				"vertices": [[c.x - 0.05, on_lat.y], [on_lon.x, on_lat.y], [on_lon.x, c.y + 0.012],
+					[c.x - 0.05, c.y + 0.012]]})
+		zones.append({"coverage": "partial", "biome_type": "test_rock_ground", "rock_type": "emery",
+				"vertices": [[c.x - 0.02, c.y - 0.03], [c.x + 0.04, c.y - 0.01], [c.x - 0.01, c.y + 0.03]]})
+		if i % 3 == 1:
+			zones.append({"coverage": "full", "biome_type": "test_rock_ground", "rock_type": "granite"})
+		pd._chunk_populate_zones["hp_n64_p%d" % eipix] = zones
+	var differ: int = 0
+	var served: int = 0
+	var carved: int = 0
+	var spared: int = 0
+	var total: int = 0
+	var first: String = ""
+	for ipix: int in chunks:
+		var frames: Array = _frames(pd, 1024, ipix)
+		var fast: PlanetData.TileFrame = frames[0]
+		var slow: PlanetData.TileFrame = frames[1]
+		CrackCarve.prepare_frame(pd, fast, 1024, ipix)
+		CrackCarve.prepare_frame(pd, slow, 1024, ipix)
+		var grid: PackedVector3Array = _grid_dirs(1024, ipix, 48)
+		for d: Vector3 in grid:  # the GDScript registers every tile the C# will need
+			pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, fast, 25.0, CrackCarve.AUTO)
+		for d: Vector3 in grid:
+			total += 1
+			var b: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow, 25.0,
+					CrackCarve.AUTO)
+			var bare: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow,
+					25.0, CrackCarve.NONE)
+			var forced: float = pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, 64, slow,
+					25.0, CrackCarve.CARVE)
+			if b != bare:
+				carved += 1
+			elif forced != bare:
+				spared += 1
+			var h: float = fast.native.Sample(d, -1, 64, 25.0, CrackCarve.AUTO) if fast.native != null else NAN
+			if not is_nan(h):
+				served += 1
+				if h != b and (OS.get_name() == "Linux" or absf(h - b) > 1.0e-6):
+					differ += 1
+					if first == "":
+						first = "%s: C# %s, GDScript %s" % [str(d), String.num(h, 14), String.num(b, 14)]
+	assert_eq(differ, 0, "every sample equal: %s" % first)
+	# A rim sample in the NEXT export tile is still left to GDScript (the frame holds its own tile's zones).
+	assert_gt(served, int(total * 0.97), "the C# answered (%d of %d)" % [served, total])
+	assert_gt(carved, 300, "samples carved, the default or the emery (%d)" % carved)
+	assert_gt(spared, 300, "and crack samples a granite zone keeps whole (%d)" % spared)
+
+
 ## The same heights against a reference machine's, frozen in fixtures/tile_frame_linux.b64 (Fedora,
 ## glibc 2.43). Equal to the local GDScript is not enough across machines: a Windows client and the
 ## Linux server have to stand on the same ground, and libms differ in their last bits (the crack

@@ -1581,9 +1581,14 @@ static func generate_mesh(
 		# chunk's tile it IS that tile, but a sub-vertex on an export-tile border
 		# read from each chunk's own tile put the two sides 26 cm apart (tarsis_3,
 		# 39.556 W 24.784 N). The bed, ribbon and lava samplers below do the same.
+		# With the crack (AUTO, the coarse vertex's zone rule and pitch): the corners
+		# are carved by the vertex loop, and a sub-vertex read without the crack came
+		# back at the plateau's height — the bed's cutting floor laid INSIDE the
+		# canyon under a bridge (tarsis_3, 39.519 W 24.738 N). The cutting rule
+		# (GradeBed.apply, a min) runs on the carved height, as on the corners.
 		var _rw_ref_sampler := func(d: Vector3) -> float:
 			return data.sample_height_boundary(d, _export_ipix, -1,
-					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
+					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.AUTO)
 		# Overlay quads stay coarse (lava, meadow… are drawn by their own
 		# surface on the coarse grid) — EXCEPT the surface-override quads: an
 		# outcrop's rock is a full replacement of the base surface, so its
@@ -3245,10 +3250,11 @@ static func generate_collision_shape(
 		var _rw_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
 				/ float(res) * 0.5
 		var _rw_mpd := data.radius * PI / 180.0
-		# The canonical tile on an export-tile border, as the mesh's samplers.
+		# The canonical tile on an export-tile border, as the mesh's samplers;
+		# crack carved like the mesh's patch (CrackCarve.AUTO, see generate_mesh).
 		var _rw_sampler := func(d: Vector3) -> float:
 			return data.sample_height_boundary(d, _height_ipix, -1,
-					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.NONE)
+					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.AUTO)
 		# The same patch the mesh builder gets (same grid, same inputs): the
 		# refined cells' coarse faces are dropped and the patch's appended.
 		if not _col_rw_ctx.is_empty():
