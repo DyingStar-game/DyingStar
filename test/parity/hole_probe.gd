@@ -111,9 +111,16 @@ func _fetch_tiles(data: PlanetData, dir: Vector3) -> void:
 		if int(v) >= 0:
 			want[int(v)] = true
 	for t: int in want:
-		if not TileResidency.tile_available(data, t, data.export_nside) \
-				and data.remote_source != null:
-			data.remote_source.fetch_now(data.export_nside, t)
+		# A pruned tile is read from its finest PUBLISHED ancestor, which nothing
+		# here downloads: walk up until the tile is readable (the village's pads
+		# sat on one and were all set aside, untested).
+		var ns: int = data.export_nside
+		var ip := t
+		while data.remote_source != null and ns >= data.export_nside_min \
+				and not TileResidency.tile_available(data, t, data.export_nside):
+			data.remote_source.fetch_now(ns, ip)
+			ns >>= 1
+			ip >>= 2
 
 
 ## Register the pads of [param path]: one per line, "uuid width length apron
@@ -129,9 +136,14 @@ func _register_pads(data: PlanetData, path: String, yaw: float) -> void:
 		if line == "" or line.begins_with("#"):
 			continue
 		var a := line.split(" ", false)
+		# The tiles under the pad first: a pad whose relief is not readable is
+		# set aside (PlanetData._pads_starved) and levels nothing — the village
+		# site tested no pad at all while only the site's own tiles were fetched.
+		_fetch_tiles(data, HEALPix.lonlat2vec(float(a[4]), float(a[5])))
 		data.register_pad(PadBed.record(a[0], float(a[4]), float(a[5]), yaw,
 				0.5 * float(a[1]), 0.5 * float(a[2]), float(a[3]), 0.0))
 		n += 1
+	data.retry_starved_pads()
 	say("PROBE   %d pad(s) lus, %d enregistré(s), %d en attente de tuiles"
 			% [n, data._pads.size() if data._pads != null else 0, data._pads_starved.size()])
 

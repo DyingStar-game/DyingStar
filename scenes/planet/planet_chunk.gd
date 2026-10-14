@@ -50,6 +50,9 @@ const STITCH_BLEND_ROWS := 3
 ## spreads over 3 rows of 400 m at n1024 well under it; a 160 m one — the
 ## mesa's edge seen from 15 km — does not, and stays a curtain.
 const STITCH_MAX_SLOPE := 0.05
+## A zone edge along a meridian or a parallel is inclusive within this
+## (_on_clip_edge): two pack coordinate quanta (dsmp.COORD_SCALE = 1e-7 deg, ~1.1 cm).
+const CLIP_EDGE_TOL_DEG := 2.0e-7
 
 # One-shot guard for the corundum-default-biome debug print (temporary).
 static var _corundum_logged := false
@@ -1574,8 +1577,12 @@ static func generate_mesh(
 	# base surface and the patch's triangles join it below.
 	var _rw_ref: Dictionary = {}
 	if not _rw_ctx.is_empty():
+		# The canonical tile, as the coarse border vertices read it: inside this
+		# chunk's tile it IS that tile, but a sub-vertex on an export-tile border
+		# read from each chunk's own tile put the two sides 26 cm apart (tarsis_3,
+		# 39.556 W 24.784 N). The bed, ribbon and lava samplers below do the same.
 		var _rw_ref_sampler := func(d: Vector3) -> float:
-			return data.sample_height_for_direction(d, _export_ipix, -1,
+			return data.sample_height_boundary(d, _export_ipix, -1,
 					Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 		# Overlay quads stay coarse (lava, meadow… are drawn by their own
 		# surface on the coarse grid) — EXCEPT the surface-override quads: an
@@ -1594,8 +1601,14 @@ static func generate_mesh(
 						or surface_override_vertex[indices[qi + 1]] > 0 \
 						or surface_override_vertex[indices[qi + 5]] > 0:
 					_rw_skip[qi_idx] = 0
+		# The corners where the vertices stand (rim snap included), not the grid:
+		# the patch's edges must meet the unrefined cells beside it.
+		var _rw_world: Array[Vector3] = []
+		_rw_world.resize(_rw_h.size())
+		for _wi in _rw_h.size():
+			_rw_world[_wi] = _vdirs[_wi] * (data.radius + _rw_h[_wi])
 		_rw_ref = GradeRefine.build(data, hp_nside, hp_ipix, res, grid_dirs, _rw_h,
-				_rw_band, _rw_ctx, _rw_skip, _rw_ref_sampler, true)
+				_rw_band, _rw_ctx, _rw_skip, _rw_ref_sampler, true, _rw_world)
 	var _rw_ref_quads: PackedByteArray = _rw_ref.get("quads", PackedByteArray())
 	# A refined override quad is drawn by its patch triangles, not by the
 	# coarse quad: drop those from the override lists.
@@ -2026,7 +2039,7 @@ static func generate_mesh(
 		# so the slab the client draws is the slab the server collides with.
 		var _rd_height_at := func(d: Vector3) -> float:
 			if hp_mode:
-				return data.sample_height_for_direction(d, _export_ipix,
+				return data.sample_height_boundary(d, _export_ipix,
 						-1, Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 			var _fuv := PlanetData.sphere_to_cube(d)
 			return data.sample_height_for_chunk(
@@ -2109,7 +2122,7 @@ static func generate_mesh(
 			var _rw_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
 					/ float(res) * 0.5
 			var _rw_sampler := func(d: Vector3) -> float:
-				return data.sample_height_for_direction(d, _export_ipix, -1,
+				return data.sample_height_boundary(d, _export_ipix, -1,
 						Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 			var _rw_smat := GradeSettings.STRUCTURE_MATERIAL_PATH
 			var _rw_stile := RoadTerrain.get_tile_size("railway")
@@ -2159,7 +2172,7 @@ static func generate_mesh(
 			var _lv_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
 					/ float(res) * 0.5
 			var _lv_sampler := func(d: Vector3) -> float:
-				return data.sample_height_for_direction(d, _export_ipix, -1,
+				return data.sample_height_boundary(d, _export_ipix, -1,
 						Vector2i(-1, -1), null, _sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
 			for _lv_zone in _lava_arr:
 				var _lv_cl: PackedVector2Array = _lv_zone.get("centerline", PackedVector2Array())
@@ -2930,11 +2943,19 @@ static func generate_collision_shape(
 			# Voronoi per vertex.
 			var _cor_here := data.corundum_default_biome
 			var _col_crack_d := INF
+			# The zone of a vertex is read at its GRID direction, as the mesh does
+			# (first_zone, before the snap): the zone lists are clipped to this
+			# chunk's export tile, and a vertex the snap slid into the next tile
+			# found none there — no relief, a 14 cm step against the chunks of
+			# that tile (tarsis_3, 39.551 W 24.789 N, crack floor). Distances
+			# (relief, cliff edge, point centre) still use the snapped dir.
+			var _zone_dir: Vector3
 			if hp_mode:
 				dir = grid_dirs[yi][xi]
+				_zone_dir = dir
 				var _is_border := xi == 0 or xi == res or yi == 0 or yi == res
 				if _cor_here and not _col_pz_zones.is_empty():
-					var _cor_zones := _query_zones_at_direction(dir, _col_pz_zones)
+					var _cor_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 					_cor_here = data.cracks_apply_to_zone(
 							_cor_zones[0] if not _cor_zones.is_empty() else {})
 				if _cor_here:
@@ -2968,6 +2989,7 @@ static func generate_collision_shape(
 				else:
 					v = v_min + yi * v_step
 				dir = PlanetData.cube_to_sphere(face, u, v)
+				_zone_dir = dir
 				height = data.sample_height_for_chunk(
 						face, u, v, u_min, u_max, v_min, v_max)
 			# Depress liquid biome zones below the water surface.
@@ -3002,14 +3024,14 @@ static func generate_collision_shape(
 					height -= zdepth * (1.0 - best_t * best_t)
 				elif has_liquid_overlap:
 					# Not inside a river — check populate zones for liquid.
-					var _lq_zones := _query_zones_at_direction(dir, _col_pz_zones)
+					var _lq_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 					for _lq_z in _lq_zones:
 						var _lq_bd := data.get_biome_by_type(_lq_z.get("biome_type", ""))
 						if _lq_bd and _lq_bd.is_liquid:
 							height -= 10.0
 							break
 			elif has_liquid_overlap:
-				var _lq_zones := _query_zones_at_direction(dir, _col_pz_zones)
+				var _lq_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 				for _lq_z in _lq_zones:
 					var _lq_bd := data.get_biome_by_type(_lq_z.get("biome_type", ""))
 					if _lq_bd and _lq_bd.is_liquid:
@@ -3054,7 +3076,7 @@ static func generate_collision_shape(
 			# Point depression — query populate zones for point biomes.
 			var _is_hole_vertex := false
 			if has_point_overlap:
-				var _pt_zones := _query_zones_at_direction(dir, _col_pz_zones)
+				var _pt_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 				for pz in _pt_zones:
 					var pbd := data.get_biome_by_type(pz.get("biome_type", ""))
 					if pbd == null:
@@ -3113,7 +3135,7 @@ static func generate_collision_shape(
 
 			# ── Cliff displacement (collision) ─────────────────────
 			if has_cliff_overlap:
-				var _cl_zones := _query_zones_at_direction(dir, _col_pz_zones)
+				var _cl_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 				for _clz in _cl_zones:
 					var _clbd := data.get_biome_by_type(_clz.get("biome_type", ""))
 					if _clbd and RockyLandformCliffTerrain.matches_zone(_clbd):
@@ -3132,7 +3154,7 @@ static func generate_collision_shape(
 			# The mesh takes the FIRST zone containing the vertex and its biome;
 			# same rule here, same pure offset, same road flattening.
 			if has_relief_overlap:
-				var _rl_zones := _query_zones_at_direction(dir, _col_pz_zones)
+				var _rl_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 				if not _rl_zones.is_empty():
 					var _rl_bd := data.get_biome_by_type(_rl_zones[0].get("biome_type", ""))
 					if BiomeRelief.visible_at(_rl_bd, _col_crack_spacing):
@@ -3150,7 +3172,7 @@ static func generate_collision_shape(
 			# containing the vertex leaves the ground corundum
 			# (PlanetData.cracks_apply_to_zone).
 			if _cor_here and not hp_mode and not _col_pz_zones.is_empty():
-				var _cor_zones := _query_zones_at_direction(dir, _col_pz_zones)
+				var _cor_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 				_cor_here = data.cracks_apply_to_zone(
 						_cor_zones[0] if not _cor_zones.is_empty() else {})
 			if _cor_here:
@@ -3226,15 +3248,16 @@ static func generate_collision_shape(
 		var _rw_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
 				/ float(res) * 0.5
 		var _rw_mpd := data.radius * PI / 180.0
+		# The canonical tile on an export-tile border, as the mesh's samplers.
 		var _rw_sampler := func(d: Vector3) -> float:
-			return data.sample_height_for_direction(d, _height_ipix, -1,
+			return data.sample_height_boundary(d, _height_ipix, -1,
 					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.NONE)
 		# The same patch the mesh builder gets (same grid, same inputs): the
 		# refined cells' coarse faces are dropped and the patch's appended.
 		if not _col_rw_ctx.is_empty():
 			var _rw_ref := GradeRefine.build(data, hp_nside, hp_ipix, res, grid_dirs,
 					_col_rw_h, _col_rw_band, _col_rw_ctx, PackedByteArray(),
-					_rw_sampler, _rw_outward)
+					_rw_sampler, _rw_outward, grid)
 			if not _rw_ref.is_empty():
 				var _rq: PackedByteArray = _rw_ref["quads"]
 				var _kept := PackedVector3Array()
@@ -3810,7 +3833,36 @@ static func _dir_in_populate_zone(dir: Vector3, zone: Dictionary) -> bool:
 	if vertices.size() < 3:
 		return false
 	var lonlat := BiomeQuery._dir_to_lonlat(dir)
-	return _point_in_polygon_lonlat(lonlat.x, lonlat.y, vertices)
+	return _point_in_polygon_lonlat(lonlat.x, lonlat.y, vertices) \
+			or _on_clip_edge(lonlat.x, lonlat.y, vertices)
+
+
+## Does ([param lon], [param lat]) lie on an edge of [param vertices] that runs
+## along a meridian or a parallel — the export tile's lon/lat box a zone is
+## clipped to (biomes.py)? The point-in-polygon test is half-open, and the
+## extreme corner of a tile's diamond sits ON that box: the four export tiles
+## meeting there answered in, in, out, out for the same zone, so their chunks
+## gave the shared vertex different reliefs (14 cm, tarsis_3 39.551 W 24.789 N).
+## Inclusive within [constant CLIP_EDGE_TOL_DEG] on those edges, every tile
+## holding the zone says in.
+static func _on_clip_edge(lon: float, lat: float, vertices: Array) -> bool:
+	var n := vertices.size()
+	var j := n - 1
+	for i in n:
+		var ax: float = vertices[j][0]
+		var ay: float = vertices[j][1]
+		var bx: float = vertices[i][0]
+		var by: float = vertices[i][1]
+		j = i
+		if absf(ax - bx) <= CLIP_EDGE_TOL_DEG:
+			if absf(lon - ax) <= CLIP_EDGE_TOL_DEG \
+					and lat >= minf(ay, by) - CLIP_EDGE_TOL_DEG and lat <= maxf(ay, by) + CLIP_EDGE_TOL_DEG:
+				return true
+		elif absf(ay - by) <= CLIP_EDGE_TOL_DEG:
+			if absf(lat - ay) <= CLIP_EDGE_TOL_DEG \
+					and lon >= minf(ax, bx) - CLIP_EDGE_TOL_DEG and lon <= maxf(ax, bx) + CLIP_EDGE_TOL_DEG:
+				return true
+	return false
 
 
 ## Outline of a populate zone as a PackedVector2Array of lon/lat points.

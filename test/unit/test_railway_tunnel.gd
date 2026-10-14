@@ -178,7 +178,9 @@ func test_piece_without_a_tunnel_builds_nothing() -> void:
 
 ## A synthetic chunk: a flat (res+1)² grid of directions around the track,
 ## with the coarse carve already applied, and the patch built on it.
-func _patch(res: int, f: Callable, outward: bool = true) -> Dictionary:
+## [param snap_m]: the coarse vertices of odd columns stand that far north of
+## their grid direction, the way the crack rim snap moves them (coarse_world).
+func _patch(res: int, f: Callable, outward: bool = true, snap_m: float = 0.0) -> Dictionary:
 	var road := _road(2000.0)
 	var p := GradeProfile.compute(road, _sampler(f), false)
 	var pd := PlanetData.new()
@@ -213,9 +215,17 @@ func _patch(res: int, f: Callable, outward: bool = true) -> Dictionary:
 	# only uses it to place its re-sampled sub-vertices.
 	var centre: Vector3 = grid_dirs[res / 2][res / 2]
 	var ipix := HEALPix.vec2pix_nest(8192, centre)
+	var world: Array[Vector3] = []
+	if snap_m != 0.0:
+		for yi in res + 1:
+			for xi in res + 1:
+				var ll := HEALPix.vec2lonlat(grid_dirs[yi][xi])
+				var moved := ll.y + (snap_m / MPD if xi % 2 == 1 else 0.0)
+				world.append(RoadBridge.lonlat_to_dir(ll.x, moved) * (RADIUS + grid_h[yi * (res + 1) + xi]))
 	var out := GradeRefine.build(pd, 8192, ipix, res, grid_dirs, grid_h, band, ctx,
-			PackedByteArray(), sampler, outward)
-	return {"patch": out, "profile": p, "grid_h": grid_h, "grid_dirs": grid_dirs, "band": band}
+			PackedByteArray(), sampler, outward, world)
+	return {"patch": out, "profile": p, "grid_h": grid_h, "grid_dirs": grid_dirs, "band": band,
+			"world": world}
 
 
 func test_patch_refines_the_carved_cells_and_seals_their_borders() -> void:
@@ -259,6 +269,41 @@ func test_patch_refines_the_carved_cells_and_seals_their_borders() -> void:
 					"border sub-vertex interpolated on the coarse edge")
 			checked += 1
 	assert_gt(checked, 0)
+
+
+## The crack rim snap moves coarse vertices off the grid (tarsis_3, 39.556 W
+## 24.785 N): a refined cell's edge against an unrefined one must run between
+## the corners where they STAND, or the two cells leave a strip open.
+func test_patch_edges_follow_the_snapped_corners() -> void:
+	var res := 8
+	var r := _patch(res, func(s: float) -> float: return 109.0 if s >= 500.0 else 100.0, true, 6.0)
+	var patch: Dictionary = r["patch"]
+	assert_false(patch.is_empty())
+	var world: Array = r["world"]
+	var quads: PackedByteArray = patch["quads"]
+	var pos: Array = patch["pos"]
+	var frac: PackedVector2Array = patch["frac"]
+	var quad_of: PackedInt32Array = patch["quad_of"]
+	var checked := 0
+	for i in pos.size():
+		var qi: int = quad_of[i]
+		@warning_ignore("integer_division")
+		var yi: int = qi / res
+		var xi: int = qi % res
+		var f: Vector2 = frac[i]
+		# A bottom / top edge (b = 0 or k) whose cell across is not refined.
+		if f.y != 0.0 and f.y != 1.0:
+			continue
+		var oy := yi - 1 if f.y == 0.0 else yi + 1
+		if oy < 0 or oy >= res or quads[oy * res + xi] == 1:
+			continue
+		var ia := (yi + int(f.y)) * (res + 1) + xi
+		var a: Vector3 = world[ia]
+		var b: Vector3 = world[ia + 1]
+		assert_almost_eq((pos[i] as Vector3).distance_to(a.lerp(b, f.x)), 0.0, 1e-3,
+				"edge sub-vertex on the snapped coarse edge")
+		checked += 1
+	assert_gt(checked, 0, "the band has a long edge against unrefined cells")
 
 
 func test_patch_drops_the_triangles_crossing_the_bore() -> void:
