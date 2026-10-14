@@ -154,22 +154,8 @@ func _process(_delta: float) -> void:
 		for rock in collect_rocks:
 			_collect_rock(rock)
 
-		if state == "collect":
-			var desired_velocity = -rock_detector.global_basis.z * 2
-			# move rocks on conveyor
-			for rock: RigidBody3D in conveyor_rocks:
-				var velocity_diff = desired_velocity - rock.linear_velocity
-				rock.apply_central_force(velocity_diff * rock.mass * 10.0)
-				#rock.global_position += (-rock_detector.global_basis.z * 0.5 * delta)
-			if conveyor_rocks.is_empty():
-				state = "idle"
-
-		if state == "extract":
-			var bodies_on_conveyor = box_detector.get_overlapping_bodies()
-			var desired_velocity = box_detector.global_basis.z * 2
-			for body: RigidBody3D in bodies_on_conveyor:
-				var velocity_diff = desired_velocity - body.linear_velocity
-				body.apply_central_force(velocity_diff * body.mass * 10.0)
+		if state == "collect" and conveyor_rocks.is_empty():
+			state = "idle"
 
 		rocks_on_conveyor = conveyor_rocks.size()
 		# Sum the rock + ore volume currently on the input conveyor (preview for SEND).
@@ -239,6 +225,25 @@ func _process(_delta: float) -> void:
 			danger_light_box.enabled = true
 			box_conveyorbelt.set_instance_shader_parameter("animation_speed", -1.0)
 
+
+## Server: drive the belts. In _physics_process, never _process: a force lasts ONE physics step (Jolt
+## clears it after each), so pushed from _process it only acts on the first of the steps a slow frame
+## catches up — the other steps are pure friction. With 2 steps per frame (any server frame over
+## 16.7 ms) a rock crept 0.29 m in 4 s instead of reaching the collector: "the belt sometimes works".
+func _physics_process(_delta: float) -> void:
+	if not GameOrchestrator.is_server():
+		return
+	if state == "collect":
+		_push_belt(get_rocks_on_conveyor(), -rock_detector.global_basis.z * 2)
+	elif state == "extract":
+		_push_belt(box_detector.get_overlapping_bodies(), box_detector.global_basis.z * 2)
+
+## Pull every body on a belt towards [param desired_velocity] (m/s, world space).
+func _push_belt(bodies: Array, desired_velocity: Vector3) -> void:
+	for body in bodies:
+		if body is RigidBody3D:
+			var rb: RigidBody3D = body
+			rb.apply_central_force((desired_velocity - rb.linear_velocity) * rb.mass * 10.0)
 
 func get_rocks_on_conveyor():
 	return filter_rocks(rock_detector.get_overlapping_bodies())
