@@ -33,12 +33,24 @@ var conveyor_rock_volume := 0.0
 var conveyor_ore_volume := 0.0
 var active_player: Player
 
+## Ore still in the depot, per mineral id ("gold" -> m3). The totals above are what the screen shows,
+## but a crate has to be ONE mineral: a crate of blended ore is not a good anybody can be paid in,
+## and service-inventory trades by goodType. So the split lives here, on the server only, and a
+## crate is packed from the first mineral (alphabetical, so two servers agree) that has a full one
+## left. A depot fed gold and iron therefore yields gold crates until gold runs dry, then iron.
+var _stock: Dictionary = {}
+
 # Throttle: only replicate the depot state when it actually changes.
 var _last_sent_conveyor := -1
 var _last_sent_state := ""
 var _last_sent_ore := -1.0
 var _last_sent_extracted := -1.0
 var _last_sent_conv := -1.0
+var _last_sent_packable := false
+## Whether a whole crate of ONE mineral is ready, which is what the EXTRACT button is gated on and
+## what handle_extract() actually tests. The screen's `available` total can clear the crate volume
+## while no single mineral can — blended ore — so the gate cannot be computed from the total alone.
+var packable := false
 # Cached fillable volume of one crate (crate_container), read from its scene.
 var _crate_volume := -1.0
 
@@ -154,6 +166,10 @@ func _process(_delta: float) -> void:
 		for rock in collect_rocks:
 			_collect_rock(rock)
 
+		# Whether a crate is ready is a SERVER fact: it is per mineral, and the client only ever sees
+		# the blended total. Computed before the throttle so a single frame of change is not missed.
+		packable = mineral_to_pack(_stock, MissionHeartbeat.units_of_volume(crate_volume())) != ""
+
 		if state == "collect" and conveyor_rocks.is_empty():
 			state = "idle"
 
@@ -168,12 +184,13 @@ func _process(_delta: float) -> void:
 				conveyor_ore_volume += r.get_ore_volume()
 		if rocks_on_conveyor != _last_sent_conveyor or ore_volume != _last_sent_ore \
 				or extracted_volume != _last_sent_extracted or conveyor_ore_volume != _last_sent_conv \
-				or state != _last_sent_state:
+				or state != _last_sent_state or packable != _last_sent_packable:
 			_last_sent_conveyor = rocks_on_conveyor
 			_last_sent_ore = ore_volume
 			_last_sent_extracted = extracted_volume
 			_last_sent_conv = conveyor_ore_volume
 			_last_sent_state = state
+			_last_sent_packable = packable
 			server_prop_update({
 				"rocks_on_conveyor": rocks_on_conveyor,
 				"rock_volume": rock_volume,
@@ -181,7 +198,8 @@ func _process(_delta: float) -> void:
 				"extracted_volume": extracted_volume,
 				"conveyor_rock_volume": conveyor_rock_volume,
 				"conveyor_ore_volume": conveyor_ore_volume,
-				"state": state
+				"state": state,
+				"packable": packable
 			})
 		#print("on server rock count", rocks.size())
 	else:
@@ -204,7 +222,9 @@ func _process(_delta: float) -> void:
 			# an extract keeps filling the next one (extracted_volume grows by exactly one
 			# crate per extract, so `available` keeps the remainder).
 			var cv := crate_volume()
-			var extract_ready: bool = cv > 0.0 and available >= cv
+			# The server's `packable`, not the local total: the total clears the crate volume while
+			# the ore is split gold/iron, and a blended crate is not a crate the server will pack.
+			var extract_ready: bool = cv > 0.0 and packable
 			rock_depot_ui.get_node("VB/Splashscreen/TriggerExtract").visible = extract_ready
 			var splash_label: Label = rock_depot_ui.get_node("VB/Splashscreen/Label3")
 			if available <= 0.0:
@@ -277,12 +297,44 @@ func crate_volume() -> float:
 	return _crate_volume
 
 ## Accumulate a collected rock's volume into the refining stats, then remove it.
+## The ore half is ALSO banked per mineral (see [member _stock]): a crate is one mineral, so the
+## total alone cannot say which one to pack.
 func _collect_rock(rock: Node) -> void:
 	if rock.has_method("get_volume"):
 		rock_volume += rock.get_volume()
-	if rock.has_method("get_ore_volume"):
-		ore_volume += rock.get_ore_volume()
+	var ore: float = rock.get_ore_volume() if rock.has_method("get_ore_volume") else 0.0
+	if ore > 0.0:
+		ore_volume += ore
+		var mineral_id := mineral_id_of(rock)
+		if mineral_id != "":
+			_stock[mineral_id] = float(_stock.get(mineral_id, 0.0)) + ore
 	rock.queue_free()
+
+
+## The mineral this rock actually carries ("gold"), or "" for barren rock and for anything the depot
+## cannot name. An inert mineral's `get_ore_volume()` is already 0, so this mostly guards a rock
+## node that never had its mineral applied.
+static func mineral_id_of(rock: Node) -> String:
+	var mineral: Variant = rock.get("mineral")
+	if mineral == null or not (mineral is Resource):
+		return ""
+	var id: Variant = (mineral as Resource).get("id")
+	return "" if id == null else str(id)
+
+
+## The first mineral (alphabetical, so it does not depend on Dictionary order) holding at least
+## [param units_needed] of ore, or "" when none does. Static and pure so a test can hand it two
+## dicts — the depot's own `_stock` is a Dictionary like any other, and building the scene to ask
+## would drag every @onready node in with it.
+static func mineral_to_pack(stock: Dictionary, units_needed: int) -> String:
+	var need_m3: float = units_needed / MissionHeartbeat.LITRES_PER_M3
+	var keys := stock.keys()
+	keys.sort()
+	for key: Variant in keys:
+		if float(stock[key]) >= need_m3:
+			return str(key)
+	return ""
+
 
 # Server-side state update: forward to the PropSync component, preserving the {"data": ...} envelope
 # that the client half (apply_prop_data) expects. PropSync emits it with the depot's uuid/type_name.
@@ -304,16 +356,26 @@ func apply_prop_data(_data: Dictionary) -> void:
 		extracted_volume = metadata.get("extracted_volume", extracted_volume)
 		conveyor_rock_volume = metadata.get("conveyor_rock_volume", conveyor_rock_volume)
 		conveyor_ore_volume = metadata.get("conveyor_ore_volume", conveyor_ore_volume)
+		packable = bool(metadata.get("packable", packable))
 
 
 func handle_extract():
-	# Need a full crate's worth of available ore to pack one (the EXTRACT button is
-	# gated on this too). Bail out gracefully otherwise.
-	var cv := crate_volume()
-	if ore_volume - extracted_volume < cv:
+	# Who is extracting, captured BEFORE the belt await below: active_player is whoever stands at
+	# the screen in two and a half seconds' time, which is not the player being credited.
+	var extractor: String = active_player.client_uuid if active_player != null else ""
+	# One crate is ONE mineral, so the totals cannot say what to pack — the per-mineral stock can.
+	# A crate is ≈0.0657 m3, i.e. ZERO in whole metres, hence the litre unit service-inventory trades.
+	var units := MissionHeartbeat.units_of_volume(crate_volume())
+	var mineral_id := mineral_to_pack(_stock, units)
+	if mineral_id == "":
 		state = "idle"
 		return
-	extracted_volume += cv
+	# Spend exactly what will be credited, in whole litres, rather than the float volume: the two
+	# differ by under half a litre and the difference would otherwise leak out of the depot's pool
+	# on every single extract.
+	var packed_m3: float = units / MissionHeartbeat.LITRES_PER_M3
+	_stock[mineral_id] = float(_stock[mineral_id]) - packed_m3
+	extracted_volume += packed_m3
 	# Spawn the crate both in Horizon (other clients) and locally on this game server
 	# (so it has a physics body that falls onto the belt and replicates). See
 	# NetworkOrchestrator.spawn_prop_authoritative.
@@ -326,16 +388,31 @@ func handle_extract():
 			"z": box_spawn_origin.position.z
 		},
 		"rotation": {"x": 0, "y": 0, "z": 0},
-		"content": {"ore_volume": cv},
+		"content": {"ore_volume": packed_m3, "mineral": mineral_id, "units": units},
 		"scenename": CRATE_SCENENAME,
 		"parent_id": uuid,
 	}
 	NetworkOrchestrator.spawn_prop_authoritative(data)
+	# The crate is the world object; the inventory is where the GOODS live. Crediting here, on the
+	# server, under the player's service identity is what makes the ore a deliver_material
+	# objective — a client route would be a minting bug (see MissionHeartbeat.credit_mined).
+	_credit_extracted(extractor, mineral_id, units)
 	# One-shot delivery: the crate spawns at the belt end, so it never transits
 	# BoxDetector. Run the belt briefly for feedback, then return to idle.
 	await get_tree().create_timer(2.5).timeout
 	if state == "extract":
 		state = "idle"
+
+
+## Hand the packed crate to service-inventory as goods the player now carries. Detached on purpose:
+## the crate is already in the world, and a service that is down must not also cost the player their
+## belt run — the warning on the failure already says the goods are not accounted for.
+func _credit_extracted(player_id: String, mineral_id: String, units: int) -> void:
+	var good_type := MissionHeartbeat.good_type_for_mineral(mineral_id)
+	if player_id == "" or good_type == "":
+		return
+	MissionHeartbeat.credit_mined(player_id, good_type, units)
+	print("[mining] packed %d x %s for %s" % [units, good_type, player_id])
 
 
 func _on_rock_depot_ui_action_triggered(type: String) -> void:

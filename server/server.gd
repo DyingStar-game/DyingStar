@@ -1667,6 +1667,11 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 		prep["out_of_zone"] = serverinfo_uuid
 		print("erase player (2): %s" % client_uuid)
 		players_list.erase(client_uuid)
+		# A hand-over, NOT a disembark: _unseat_for_transfer below nulls the seat and the seat flags
+		# must stay as they were until the destination server re-seats the player and calls
+		# on_player_live. Forget only the bookkeeping — a state left here would keep a body that has
+		# left this server inside every zone until the service's 30 s TTL expired.
+		MissionHeartbeat.forget(client_uuid)
 		_release_carried_for_transfer(player)
 		_unseat_for_transfer(player)
 		player.queue_free()
@@ -2159,6 +2164,11 @@ func _register_player(spawned_entity_instance: Node, player_uuid: String, adopte
 		if seat_name != "":
 			seat_parent.server_enter(spawned_entity_instance, seat_name, true)
 			print("[zone] player %s re-seated in %s of vehicle %s" % [player_uuid, seat_name, seat_parent.uuid])
+	# HERE and not next to on_player_joined above: that is the re-seat this had to happen after.
+	# MissionHeartbeat reads the seat ONCE and stores it, and this is the only place the seat is
+	# already the one the player landed in — a dormant hand-over was never seated, so reading
+	# before this line would call every arriving driver a passenger on foot.
+	MissionHeartbeat.on_player_live(player_uuid, spawned_entity_instance)
 	# Updates wired and seat settled: the posture this server holds, sent even at its defaults.
 	spawned_entity_instance.server_publish_spawn_state()
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
@@ -3612,6 +3622,30 @@ func social_presence_location(node: Node3D) -> Dictionary:
 			_true_position(node))
 
 
+## The SAME location for service-mission's player-state push (see [MissionHeartbeat]), in the shape
+## that service wants: {system, scene, x, y, z} flat, its Place carrying no radius. Built from the
+## same [method _true_position] as the presence above on purpose — two services handed two different
+## geometries for one body is the bug this shares the computation to prevent.
+##
+## Null when the position is not a real number, where [method social_presence_location] would have
+## written a 0. That 0 is right for a presence (a rough "somewhere" beats dropping the player out
+## of the friends list) and WRONG here: service-mission reads a coordinate as a place and matches
+## zones against it, so a body mid-transfer would read as the origin and could satisfy a `visit`
+## aimed at a POI sitting on it. Nothing is the honest answer — the service treats a null place as
+## outside every zone.
+func mission_place_of(node: Node3D) -> Variant:
+	if node == null or not is_instance_valid(node):
+		return null
+	var position := _true_position(node)
+	if not (is_finite(position.x) and is_finite(position.y) and is_finite(position.z)):
+		return null
+	var planet := _planet_ancestor_of(node)
+	if planet == null:
+		return MissionHeartbeat.build_place(SocialHeartbeat.build_location("", "space", position))
+	return MissionHeartbeat.build_place(SocialHeartbeat.build_location(
+			_system_key_for(planet), _body_key_of(planet), position))
+
+
 ## The body's key — "tarsis_3" — which is what SystemScenes and the services speak in.
 ##
 ## ⚠️ NOT str(planet.name): that is the name the node carries on the wire, which is the body's
@@ -3683,6 +3717,11 @@ func remove_player(event: Dictionary) -> void:
 		# another server whose own beat takes over, and racing it would flicker them offline
 		# mid-hand-over (the presence TTL covers the gap either way).
 		SocialHeartbeat.on_player_left(str(player_uuid))
+		# Same rule for the mission store, and the same reason: a state must not outlive the body it
+		# describes. Kept here it would hold the player inside every zone until the service's 30 s TTL
+		# expired. The hand-over path in _on_player_move forgets for the same reason — there the next
+		# server is already pushing that player's state, which is exactly what must not be raced.
+		MissionHeartbeat.forget(str(player_uuid))
 		players_list.erase(player_uuid)
 		# A player who quits while SEATED leaves the seat first, the same way as on foot: the seat
 		# is freed now (not by the vehicle noticing a dead reference a tick later), the body gets its

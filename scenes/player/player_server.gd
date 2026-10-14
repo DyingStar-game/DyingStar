@@ -527,6 +527,9 @@ func server_action_received(data: Dictionary) -> void:
 				if is_instance_valid(player._seat_node):  # enter succeeded (seat free, door open)
 					_seat_count += 1
 					var role := "driver" if player._seat_node.is_driver_seat() else "passenger"
+					# The driver is NOT a passenger to service-mission: it counts a disembark as the
+					# end of a passenger transport only for a non-driver seat.
+					MissionHeartbeat.on_player_seated(player.client_uuid, role == "driver")
 					# `seat` is the STATE, `action` the EVENT, and both ride ONE message so Horizon cannot
 					# interleave them. The event is what makes a live observer switch pose now; the state is
 					# the only thing a LATER arrival ever reads. `action` is a single field shared by seven
@@ -553,6 +556,10 @@ func server_action_received(data: Dictionary) -> void:
 				# parented to the cab, and the reply cemented the split instead of healing it.
 				_seat_count += 1
 				if not is_instance_valid(player._seat_node):
+					# A real disembark: the player asked to get out and is out. This is the ONLY place
+					# that is true — GameServer._unseat_for_transfer nulls the same seat on a zone
+					# crossing, and feeding that here would end a passenger transport at every border.
+					MissionHeartbeat.on_player_dismounted(player.client_uuid)
 					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
 				else:
 					# Refused (door shut). Re-announce the seat we are STILL in, so a client that believes
