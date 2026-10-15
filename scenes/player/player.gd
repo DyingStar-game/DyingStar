@@ -350,7 +350,8 @@ static func of(node: Node) -> Player:
 	return walk as Player
 var input_from_server: Dictionary = {
 	"input_direction": Vector2.ZERO,
-	"rotation": Vector3.ZERO
+	"rotation": Vector3.ZERO,
+	"frame": null,  # uuid of the frame `rotation` is local to on the owner's client ("" = world)
 }
 var new_input_from_server: bool = false
 ## SERVER: the number of the last move packet applied (MoveOrder): an older one arriving late is dropped.

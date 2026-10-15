@@ -77,6 +77,25 @@ func test_an_authored_range_is_kept() -> void:
 	building.free()
 
 
+func test_an_authored_lod_chain_keeps_its_hand_off() -> void:
+	var building := NetStaticBody.new()
+	var near_lod := MeshInstance3D.new()
+	near_lod.visibility_range_end = 50.0
+	building.add_child(near_lod)
+	var far_lod := MeshInstance3D.new()
+	far_lod.visibility_range_begin = 50.0
+	building.add_child(far_lod)
+	StructureDrawRange.attach_to(building)
+	assert_true(DrawRange.is_tracked(far_lod), "the far level gets a draw distance")
+	for mult in [0.5, 1.5]:
+		DrawRange.rescale(far_lod, mult)
+		assert_almost_eq(far_lod.visibility_range_begin, 50.0, 0.001,
+				"x%s: it still takes over where the near level stops" % mult)
+		assert_almost_eq(far_lod.visibility_range_end, StructureDrawRange.FAR_M * mult, 0.001,
+				"x%s: its far cap follows the option" % mult)
+	building.free()
+
+
 func test_a_planet_brings_its_own_buildings() -> void:
 	var planet := Node3D.new()
 	var depot := NetStaticBody.new()

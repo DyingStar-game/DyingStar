@@ -1027,7 +1027,7 @@ func _physics_process_impl(delta: float) -> void:
 
 	if player.new_input_from_server:
 		player.input_direction = player.input_from_server["input_direction"]
-		player.rotation = player.input_from_server["rotation"]  # LOCAL rotation (planet-relative), see player_client send
+		_apply_client_rotation(player.input_from_server["rotation"], player.input_from_server["frame"])
 		if player.piloting:
 			player.input_direction = Vector2.ZERO  # seated in a vehicle: no walking
 
@@ -1195,6 +1195,29 @@ func _physics_process_impl(delta: float) -> void:
 	player.emit_move()
 	if PropNet.prof_on:
 		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
+
+## The owner's body rotation, sent LOCAL to the frame the body has on its client ([param frame], its
+## uuid; null from a client that does not say, taken as ours).
+##
+## The two frames differ for a round trip after every server-side reparent: boarding a vehicle lift's
+## platform (or a truck bed) moves the body under the carrier here first, and the client keeps sending
+## rotations local to the planet until it hears of it. Applied as local to the carrier, they turned the
+## body by the turn between the two frames — a backflip for everyone watching — and walked it partly
+## into the deck, slowly, until the next rotation came in. Same planet: converted through the global
+## bases. Anything else (a frame not here, across planet and space, whose "global" differ on the
+## server): ignored — the reparent kept the body's own, and the client sends again once it follows.
+func _apply_client_rotation(rot: Vector3, frame: Variant) -> void:
+	if frame == null or str(frame) == PropSpawn.parent_frame_uuid(player):
+		player.rotation = rot
+		return
+	var server = NetworkOrchestrator.network_agent
+	if server == null or not server.has_method("_search_parent_node"):
+		return
+	var node: Node = server._search_parent_node(str(frame))
+	var planet: Planet = Planet.of(player)
+	if node is Node3D and (node as Node3D).is_inside_tree() and planet != null and Planet.of(node) == planet:
+		player.global_basis = (node as Node3D).global_basis.orthonormalized() * Basis.from_euler(rot)
+
 
 ## Hold a freshly created body still until the terrain under it actually exists. Returns true while
 ## it is being held, and the caller must then do nothing else this tick.

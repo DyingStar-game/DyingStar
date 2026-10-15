@@ -145,6 +145,14 @@ const HELP_HOLD_S: float = 0.35
 ## Full-screen services terminal (F3): the same modal treatment, for the social/mission/economy REST
 ## services. Local player only.
 var _services: TerminalUI = null
+## Where the owner's full-screen layers hang (the chart, the tablet, the notifications, the graphics
+## and debug overlays): under the tree root, OUT of the body. The server reparents the body (a
+## building, a truck bed, the lift's platform), and a reparent takes it out of the tree and back with
+## everything under it: the tablet alone is 1 400 hidden Controls, and re-entering the UI cost
+## 330 ms — the hitch stepping onto the lift (2026-10-15, test/perf/reparent_probe: 20 ms without
+## them); the chart also dropped its ground's tile service each time. A CanvasLayer draws the same
+## wherever it hangs. Freed with this role (see _notification).
+var _screens: Node = null
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -238,7 +246,7 @@ func setup() -> void:
 	_placement_marker.setup(player)
 	# System chart (F2): every body as a plain sphere, with its orbit and current spin.
 	_star_map = StarMap.new()
-	player.get_node("UserInterface").add_child(_star_map)
+	_screens_root().add_child(_star_map)
 	_star_map.setup(player)  # so the chart can mark where you are
 	_help = ControlsHelp.new()
 	player.add_child(_help)
@@ -246,7 +254,7 @@ func setup() -> void:
 	# the chart's face: the tablet shows the tab and asks, the chart opens there (F2 opens that tab);
 	# the tab left, the chart closes. The tablet never reaches for the chart on its own.
 	_services = TerminalUI.new()
-	player.get_node("UserInterface").add_child(_services)
+	_screens_root().add_child(_services)
 	_star_map.host_in(_services.navigation_slot())
 	_services.navigation_requested.connect(_open_navigation)
 	_services.navigation_closed.connect(_close_navigation)
@@ -257,7 +265,7 @@ func setup() -> void:
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
-	player.get_node("UserInterface").add_child(_notifications)
+	_screens_root().add_child(_notifications)
 	ChatNetwork.notification_received.connect(_on_notification)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
@@ -267,7 +275,7 @@ func setup() -> void:
 	for panel: OverlayPanel in [graphics, DevOverlay.create(player,
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
 			_driven_vehicle, _star_map)]:
-		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
+		_screens_root().add_child(panel.setup(can_take_pointer, _menu_open))
 	# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
 	# the graphics panel.
 	var hints := PlayHintsPanel.new()
@@ -1595,6 +1603,16 @@ func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float)
 ## `sharedtag`). The labels are still owned by this role: freed with it (see _notification).
 static var _tag_layer: CanvasLayer = null
 
+## The node the owner's full-screen layers hang from ([member _screens]), made on first use.
+func _screens_root() -> Node:
+	if _screens == null:
+		_screens = Node.new()
+		_screens.name = "OwnerScreens"
+		# Deferred for the same reason as the tag layer below: the root may be busy setting up a scene.
+		get_tree().root.add_child.call_deferred(_screens)
+	return _screens
+
+
 static func _name_tag_layer(tree: SceneTree) -> CanvasLayer:
 	if not is_instance_valid(_tag_layer):
 		_tag_layer = CanvasLayer.new()
@@ -1702,6 +1720,8 @@ func _notification(what: int) -> void:
 			_name_tag.queue_free()
 		if is_instance_valid(_conversation_text):
 			_conversation_text.queue_free()
+		if is_instance_valid(_screens):
+			_screens.queue_free()
 
 ## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
 ## centered over the head and hidden when the player is behind the camera.

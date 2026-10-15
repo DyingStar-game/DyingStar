@@ -1453,6 +1453,8 @@ func player_move(message: Dictionary):
 		player.input_from_server.rotation = Vector3(
 			float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"])
 		)
+		# The frame that rotation is local to; null from a client that does not say (taken as ours).
+		player.input_from_server.frame = message["data"].get("frame")
 		player.new_input_from_server = true
 	else:
 		print("Player move not found: " + str(message["player_id"]))

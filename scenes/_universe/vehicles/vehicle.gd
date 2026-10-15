@@ -1551,6 +1551,7 @@ func _make_wheel(wheel_name: String, pos: Vector3, is_front: bool, with_csg_tire
 	wheel.name = wheel_name
 	wheel.set_meta(GENERATED, true)
 	wheel.position = pos
+	wheel.set_meta(WHEEL_MOUNT_META, wheel.transform)  # restored at every tree entry (_enter_tree)
 	wheel.use_as_steering = is_front
 	var traction := true
 	match drive_mode:
@@ -2849,8 +2850,28 @@ func _seat_occupancy_now() -> Dictionary:
 		occ[VehicleNetKey.of(seat)] = seat.occupant_uuid
 	return occ
 
+## A wheel's mount as built (_make_wheel). See [method _restore_wheel_mounts].
+const WHEEL_MOUNT_META := &"wheel_mount"
+
+
 func _enter_tree() -> void:
 	server_reparenting = false
+	_restore_wheel_mounts()
+
+
+## Put every wheel back on its mount before the wheels enter the tree with us.
+##
+## A VehicleWheel3D reads its suspension mount AND the direction of its ray from its own transform
+## when it enters the tree — and VehicleBody3D rewrites that transform every physics step with the
+## hanging, steered, SPINNING wheel. Any reparent (onto a vehicle lift's platform, the teleporter)
+## therefore re-mounted each wheel where its hub hung, its ray along whatever way the wheel had
+## rolled: sideways, up into the engine bay. No ray met the ground, the truck sat on its chassis with
+## the engine roaring — stuck and looking broken (2026-10-15). The parent's ENTER_TREE runs before its
+## children's, so the wheels read their mount again.
+func _restore_wheel_mounts() -> void:
+	for wheel in _wheels:
+		if is_instance_valid(wheel) and wheel.has_meta(WHEEL_MOUNT_META):
+			wheel.transform = wheel.get_meta(WHEEL_MOUNT_META)
 
 
 ## Server: a truck leaving the tree stops blocking NPCs where it stood — whether it is gone or only
