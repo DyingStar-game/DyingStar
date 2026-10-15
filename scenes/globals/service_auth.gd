@@ -9,7 +9,8 @@ extends Node
 ## `client_secret`, exchanges them at Keycloak's token endpoint for a short-lived access token, and
 ## renews it before it expires.
 ##
-## Credentials come from the environment (the container passes them in), with a `server.ini [auth]`
+## Credentials come from the environment (`DS_AUTH_URL`, `DS_AUTH_REALM`, `DS_AUTH_CLIENT_ID`,
+## `DS_AUTH_CLIENT_SECRET`, passed in by the container), with a `server.ini [auth]`
 ## fallback for a run straight from a config file. When neither is present the provider is simply
 ## "not configured": [method is_configured] is false and [method get_token] answers "", so a
 ## token-less local dev session behaves like the rest of the backend surface (clean failure, no
@@ -20,10 +21,10 @@ extends Node
 
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
 
-const ENV_URL: String = "KEYCLOAK_URL"
-const ENV_REALM: String = "KEYCLOAK_REALM"
-const ENV_CLIENT_ID: String = "KEYCLOAK_CLIENT_ID"
-const ENV_CLIENT_SECRET: String = "KEYCLOAK_CLIENT_SECRET"
+const ENV_URL: String = "DS_AUTH_URL"
+const ENV_REALM: String = "DS_AUTH_REALM"
+const ENV_CLIENT_ID: String = "DS_AUTH_CLIENT_ID"
+const ENV_CLIENT_SECRET: String = "DS_AUTH_CLIENT_SECRET"
 
 const DEFAULT_REALM: String = "dyingstar"
 ## Refresh this many seconds before the token's own `exp`, so a call made right after a renew never
