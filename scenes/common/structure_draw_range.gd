@@ -62,6 +62,8 @@ static func _track(mesh: GeometryInstance3D) -> void:
 	DrawRange.track(mesh, OPTION, mesh.visibility_range_begin, FAR_M, false)
 
 
-## Vehicles and loose props parked in a building keep their own rules.
+## Vehicles, loose props and players in a building keep their own rules. A player walks into one (a
+## city, the lift's Platform System) by a reparent: covered, its whole body and UI were walked on
+## entry (~30 ms) and its meshes kept the building's draw distance after it left.
 static func _moves(node: Node) -> bool:
-	return node is Vehicle or node is RigidBody3D
+	return node is Vehicle or node is RigidBody3D or node is Player
