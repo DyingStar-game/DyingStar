@@ -55,7 +55,11 @@ static func _track(mesh: GeometryInstance3D) -> void:
 	# Already tracked, or given a range by its own scene: a deliberate range is left alone.
 	if DrawRange.is_tracked(mesh) or mesh.visibility_range_end > 0.0:
 		return
-	DrawRange.track(mesh, OPTION, mesh.visibility_range_begin, FAR_M)
+	# A begin with no end is the far level of an authored LOD chain (the vehicle lift's rails,
+	# landings, railings): its begin is the hand-off from the level before, whose end is authored and
+	# never scaled. Only its far cap follows the option — scaling the begin too left the whole lift
+	# undrawn between the two at x1.5 (rails missing from 50 to 75 m).
+	DrawRange.track(mesh, OPTION, mesh.visibility_range_begin, FAR_M, false)
 
 
 ## Vehicles and loose props parked in a building keep their own rules.
