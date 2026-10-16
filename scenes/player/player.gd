@@ -504,7 +504,8 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 @onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
 @onready var puppet: Node3D = $Puppet
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
-@onready var interact_label: Label = $UserInterface/HUD/InteractLabel
+## null on the dedicated server, which frees the whole UserInterface (see _drop_server_ui).
+@onready var interact_label: Label = get_node_or_null(^"UserInterface/HUD/InteractLabel")
 @onready var camera_pivot: Node3D = $CameraPivot
 ## The camera pivot's RESTING offset from the body, captured once from the scene.
 ##
@@ -548,7 +549,8 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 ## differs, it defaults to no change at all, and the driver's tuning stays the single reference.
 @export var passenger_eye_offset: float = 0.0
 
-@onready var direct_chat: DirectChat = $UserInterface/DirectChat
+## null on the dedicated server, which frees the whole UserInterface (see _drop_server_ui).
+@onready var direct_chat: DirectChat = get_node_or_null(^"UserInterface/DirectChat")
 
 @onready var box4m: PackedScene = preload("res://scenes/_universe/props/containers/box_4m.tscn")
 @onready var box50m: PackedScene = preload("res://scenes/_universe/props/containers/box_50cm.tscn")
@@ -608,8 +610,20 @@ func _enter_tree() -> void:
 			NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 	else:
 		# server side
-		$UserInterface.visible = false
+		_drop_server_ui()
 		$CameraPivot.visible = false
+
+## The dedicated server never draws a screen, yet every player and NPC it creates is a full player.tscn,
+## UserInterface included (HUD, chat, pause menu: 49 of the scene's 88 nodes). Hidden, that subtree
+## still entered the tree and ran its _ready: 26 of the 27 ms the server spent adding a player
+## (test/perf/server_ingest_bench, 2026-10-16), paid by every arrival and every hand-over. Freed here,
+## before it enters; on a later reparent there is nothing left to drop.
+func _drop_server_ui() -> void:
+	var ui: Node = get_node_or_null(^"UserInterface")
+	if ui == null:
+		return
+	remove_child(ui)
+	ui.free()
 
 func _ready() -> void:
 	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
@@ -628,7 +642,9 @@ func _ready() -> void:
 	# relay its replicated-state requests to the server + its aim signal to the UI.
 	mining_tool.setup(camera_pivot, camera)
 	mining_tool.sync_requested.connect(client_send_action_to_server)
-	mining_tool.aiming_changed.connect($UserInterface.set_aiming)
+	var ui: Node = get_node_or_null(^"UserInterface")
+	if ui != null:
+		mining_tool.aiming_changed.connect(ui.set_aiming)
 
 	# Strategy: pick this player's behaviour ONCE — authority on the dedicated server, presentation
 	# (owner + remote) on a client. The role is a child node driving this body; each role's setup()

@@ -1706,7 +1706,7 @@ func _server_god_mode_move(delta: float) -> void:
 	player.global_position += player.velocity * delta
 
 ## An NPC is a full player.tscn instance, and on the server most of it is dead weight that still runs
-## every frame: the UI (22 labels + debug scripts, only HIDDEN on the server), the mining tool with its
+## every frame (the UI is already gone: Player._drop_server_ui frees it on every server body): the mining tool with its
 ## equipment mount and the perforator GLB (two Skeleton3D each, processed every frame), two RayCast3D
 ## (interaction + camera aim, one physics cast per tick each) and a NavigationAgent3D the server path
 ## never uses. Measured with 47 NPCs: ~0.7 ms of TIME_PROCESS per NPC, i.e. 30-70 ms per frame, which
@@ -1717,7 +1717,7 @@ func _npc_trim() -> void:
 	if _npc_trimmed:
 		return
 	_npc_trimmed = true
-	for path in ["UserInterface", "MiningTool", "NavigationAgent3D"]:
+	for path in ["MiningTool", "NavigationAgent3D"]:
 		var n: Node = player.get_node_or_null(path)
 		if n != null:
 			n.process_mode = Node.PROCESS_MODE_DISABLED
