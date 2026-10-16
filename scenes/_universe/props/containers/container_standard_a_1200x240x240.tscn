@@ -1,59 +1,63 @@
 [gd_scene format=3 uid="uid://dbgj4o4hffedt"]
 
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/_universe/props/containers/generic_storagebox.gd" id="1_eljka"]
-[ext_resource type="PackedScene" uid="uid://bw3andciinyj8" path="res://assets/_universe/props/containers/container_standard_1200x240x240_a.glb" id="2_hugvf"]
-[ext_resource type="Material" uid="uid://iu6yviv6ftqn" path="res://assets/_universe/_shared/materials/mat_metal_yellow_hauling/mat_metal_yellow_hauling.tres" id="3_hugvf"]
+[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="4_cbir0"]
+[ext_resource type="PackedScene" uid="uid://bk68xyhicvhwh" path="res://assets/_universe/props/containers/container_standard_1220x260x260_a_rework.glb" id="5_pbj6n"]
+[ext_resource type="Texture2D" uid="uid://dch5uq2s5ejv6" path="res://assets/textures/decals/ares_logo/ares_logo_decal_crop.png" id="ares_logo"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
-[ext_resource type="Texture2D" path="res://assets/textures/decals/ares_logo/ares_logo_decal_crop.png" id="ares_logo"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_eljka"]
-size = Vector3(12, 2.5, 2.4)
+size = Vector3(12.2, 2.6, 2.6)
 
 [node name="ContainerStandardA1200x240x240" type="StaticBody3D" unique_id=243122821]
 script = ExtResource("1_eljka")
 
-[node name="PropSync" type="Node" parent="."]
+[node name="PropSync" type="Node" parent="." unique_id=20809820]
 script = ExtResource("propsync_ds")
 type_name = "simple_building"
 
-[node name="container_standard_1200x240x240_a" parent="." unique_id=1543792511 instance=ExtResource("2_hugvf")]
+[node name="container_standard_1220x260x260_a_rework" parent="." unique_id=765785657 instance=ExtResource("5_pbj6n")]
 
-[node name="container_standard_1200x240x240_a_LOD0" parent="container_standard_1200x240x240_a" index="0" unique_id=1343065182]
-surface_material_override/0 = ExtResource("3_hugvf")
+[node name="container_standard_1220x260x260_a_LOD0" parent="container_standard_1220x260x260_a_rework" index="0" unique_id=1270518328]
+visibility_parent = NodePath("../container_standard_1220x260x260_a_LOD1")
+visibility_range_end = 15.0
+visibility_range_end_margin = 1.0
+surface_material_override/0 = ExtResource("4_cbir0")
 
-[node name="container_standard_1200x240x240_a_LOD1" parent="container_standard_1200x240x240_a" index="1" unique_id=37268461]
-surface_material_override/0 = ExtResource("3_hugvf")
+[node name="container_standard_1220x260x260_a_LOD1" parent="container_standard_1220x260x260_a_rework" index="1" unique_id=656525844]
+visibility_parent = NodePath("../container_standard_1220x260x260_a_LOD2")
+visibility_range_begin = 15.0
+visibility_range_begin_margin = 1.0
+visibility_range_end = 40.0
+visibility_range_end_margin = 1.0
+surface_material_override/0 = ExtResource("4_cbir0")
 
-[node name="container_standard_1200x240x240_a_LOD2" parent="container_standard_1200x240x240_a" index="2" unique_id=901761632]
-surface_material_override/0 = ExtResource("3_hugvf")
-
-[node name="container_standard_1200x240x240_a_LOD3" parent="container_standard_1200x240x240_a" index="3" unique_id=2026710637]
-surface_material_override/0 = ExtResource("3_hugvf")
+[node name="container_standard_1220x260x260_a_LOD2" parent="container_standard_1220x260x260_a_rework" index="2" unique_id=2070179166]
+visibility_range_begin = 40.0
+visibility_range_begin_margin = 1.0
+visibility_range_end = 150.0
+surface_material_override/0 = ExtResource("4_cbir0")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1868462076]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3000000000029104, 0)
 shape = SubResource("BoxShape3D_eljka")
 
-[node name="AresLogoFront" type="Decal" parent="."]
+[node name="AresLogoFront" type="Decal" parent="." unique_id=1825823796]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 1.4, 1.2)
 size = Vector3(3.6, 0.3, 1.22)
 texture_albedo = ExtResource("ares_logo")
 modulate = Color(0.12, 0.12, 0.12, 1)
-upper_fade = 0.0
-lower_fade = 0.0
 distance_fade_enabled = true
 distance_fade_begin = 180.0
 distance_fade_length = 20.0
 
-[node name="AresLogoBack" type="Decal" parent="."]
+[node name="AresLogoBack" type="Decal" parent="." unique_id=432440553]
 transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 1.4, -1.2)
 size = Vector3(3.6, 0.3, 1.22)
 texture_albedo = ExtResource("ares_logo")
 modulate = Color(0.12, 0.12, 0.12, 1)
-upper_fade = 0.0
-lower_fade = 0.0
 distance_fade_enabled = true
 distance_fade_begin = 180.0
 distance_fade_length = 20.0
 
-[editable path="container_standard_1200x240x240_a"]
+[editable path="container_standard_1220x260x260_a_rework"]
