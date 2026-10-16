@@ -349,6 +349,13 @@ var belt_mount: Node3D = null
 ## CharacterAnimator, with the bone's rest rotation cancelled so a child faces the way the body faces).
 ## The torch rides it, so the beam follows the animated head. Null on the dedicated server (no puppet).
 var head_mount: Node3D = null
+## The DataPad worn on the left forearm (a node on the puppet's forearm bone, created by CharacterAnimator,
+## +Y out of the arm's outer side). The wrist device's model hangs there. Null on the dedicated server.
+var wrist_mount: Node3D = null
+## Replicated STATE: the wrist is raised before the eyes, reading the DataPad. The owner sets it as it
+## starts the gesture (WristDatapad) and tells the server, which replicates it ("datapad") so every
+## avatar raises the same arm -- a late joiner included, which an event would miss.
+var datapad_raised: bool = false
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
@@ -561,6 +568,9 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 ## base of the skull, so the lamp has to come forward (-Z) and up to clear the face instead of shining
 ## from inside it. Tune live in the Inspector.
 @export var torch_head_offset: Vector3 = Vector3(0, 0.08, -0.2)
+## How long (s) the left wrist takes to come up before the eyes to read the DataPad (F3), and to go back
+## down. The view then closes in on its screen (WristDatapad) before the full tablet shows.
+@export_range(0.1, 1.5, 0.05) var datapad_raise_time: float = 0.4
 
 # Mining gameplay (perforator equip, aim, perforation) is encapsulated in the
 # MiningTool component (scene child). Networking stays here (see _ready wiring).

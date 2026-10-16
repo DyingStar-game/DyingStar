@@ -121,6 +121,21 @@ func pointer_at(point: Vector3) -> void:
 	_push_at(motion, point)
 
 
+## Hand the interface a real mouse event (a motion, any button, the wheel) as if it happened at
+## [param point] (a hit()): a screen read with a free cursor (the wrist DataPad, WristDatapad), whose
+## pointer is the mouse itself rather than the crosshair. A copy is pushed: the caller's event is left as
+## the window gave it.
+func push_at(input_event: InputEventMouse, point: Vector3) -> void:
+	_push_at(input_event.duplicate(), point)
+
+
+## The point (world) on the screen mesh at [param uv] (0..1, (0, 0) the top-left corner): the inverse
+## of _uv_of, for a pointer kept in the screen's own coordinates (the wrist DataPad, WristDatapad).
+func point_at_uv(uv: Vector2) -> Vector3:
+	var size: Vector2 = _surface_size()
+	return node_quad.global_transform * Vector3((uv.x - 0.5) * size.x, (0.5 - uv.y) * size.y, 0.0)
+
+
 ## Press or release ([param pressed]) the left button at [param point] (a hit()).
 func click_at(point: Vector3, pressed: bool) -> void:
 	var click := InputEventMouseButton.new()

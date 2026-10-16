@@ -48,6 +48,12 @@ func _setup_crosshair_manager() -> void:
 	crosshair_manager.name = "CrosshairManager"
 	crosshair.get_parent().add_child(crosshair_manager)
 
+## Show or hide the whole reticle, the dot and any overlay: hidden while the wrist DataPad is up,
+## the view being the DataPad's own and the cursor its pointer.
+func set_crosshair_shown(shown: bool) -> void:
+	crosshair.get_parent().visible = shown
+
+
 ## Enable/disable the aim crosshair (aim mode / right-click).
 func set_aiming(aiming: bool) -> void:
 	if crosshair_manager:

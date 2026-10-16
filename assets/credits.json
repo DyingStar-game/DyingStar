@@ -489,6 +489,15 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "notification.ogg",
+			"path": "res://assets/_universe/audio/sfx/ui/notification.ogg",
+			"author": "thehorriblejoke",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/583554/",
+			"license": "CC0"
+		},
+		{
 			"asset": "pneumatic_suspension_1.ogg",
 			"path": "res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_1.ogg",
 			"author": "WarpZone",

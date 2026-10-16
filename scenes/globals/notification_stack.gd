@@ -28,6 +28,10 @@ extends CanvasLayer
 
 var _column: VBoxContainer = null
 
+## A line was shown: something happened the player has not looked at yet (the wrist DataPad beeps
+## and blinks, see PlayerClient._on_notification_pushed).
+signal pushed
+
 
 func _init() -> void:
 	layer = 128
@@ -65,6 +69,7 @@ func push(text: String, on_click: Callable = Callable()) -> void:
 	# The tween dies with the node it animates; killing it first avoids a callback on a freed line
 	# when the line is dismissed early by a click.
 	line.tree_exiting.connect(tween.kill)
+	pushed.emit()
 
 
 ## One line. NOT a Button, and deliberately so: a clickable Control at the top of the screen takes
