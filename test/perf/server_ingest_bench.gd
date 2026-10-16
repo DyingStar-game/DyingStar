@@ -60,6 +60,8 @@ var _ground_pos: Vector3 = VILLAGE_POS
 var _samples: Dictionary = {}
 ## [pads already registered, usec of one registration, road features it cuts], in order.
 var _pad_growth: Array = []
+## Per registration, what PadLevels.settle had to walk: see _settle_stats.
+var _settle_shape: Array = []
 ## The quantised records registered, for the road-query probe.
 var _pad_recs: Array = []
 
@@ -524,6 +526,7 @@ func _register_terrain_pad_steps(terrain: PlanetTerrain, rec_in: Dictionary, typ
 	t = _lap(k, "announce caught up", t)
 	_note(k + "|TOTAL steps", t - t0)
 	_pad_growth.append([n_pads, t - t0, cuts.size(), cuts_usec, settle_usec])
+	_settle_shape.append(_settle_stats(pd._pads, rec, 1 << maxi(pd.max_quadtree_depth, 0), pd.radius * PI / 180.0))
 	_pad_recs.append(rec)
 
 
@@ -666,6 +669,45 @@ func _top_children(n: Node) -> String:
 	return " ".join(parts)
 
 
+## What PadLevels.settle walks for [param rec] in the published index [param idx], measured apart
+## (not timed): [group size, candidates per touching() call (gather), share of them within the cheap
+## centre-distance bound, aprons_touch calls the settle makes, usec per aprons_touch].
+func _settle_stats(idx: PadIndex, rec: Dictionary, finest: int, mpd: float) -> Array:
+	var comp := {str(rec["uuid"]): true}
+	var queue: Array = [str(rec["uuid"])]
+	var gathered: int = 0
+	var close: int = 0
+	var calls: int = 0
+	var touch_usec: int = 0
+	while not queue.is_empty():
+		var u: String = queue.pop_back()
+		var r: Dictionary = idx.get_rec(u)
+		if r.is_empty():
+			continue
+		var ip := HEALPix.vec2pix_nest(finest, HEALPix.lonlat2vec(float(r["lon"]), float(r["lat"])))
+		var cands: Array = idx.gather(finest, ip)
+		gathered += cands.size()
+		var ls := maxf(cos(deg_to_rad(float(r["lat"]))), 1e-6)
+		var ra: float = Vector2(float(r["hx"]), float(r["hy"])).length() + float(r["apron_m"])
+		for c: Dictionary in cands:
+			if str(c["uuid"]) == u:
+				continue
+			var dm := Vector2(wrapf(float(c["lon"]) - float(r["lon"]), -180.0, 180.0) * ls * mpd,
+					(float(c["lat"]) - float(r["lat"])) * mpd).length()
+			if dm <= ra + Vector2(float(c["hx"]), float(c["hy"])).length() + float(c["apron_m"]):
+				close += 1
+			var t0: int = Time.get_ticks_usec()
+			var touch: bool = PadBed.aprons_touch(r, c, mpd)
+			touch_usec += Time.get_ticks_usec() - t0
+			calls += 1
+			if touch and not comp.has(str(c["uuid"])):
+				comp[str(c["uuid"])] = true
+				queue.append(str(c["uuid"]))
+	# settle runs touching() once per member in its flood fill and once more in level(): twice the calls.
+	return [comp.size(), float(gathered) / maxf(comp.size(), 1), float(close) / maxf(gathered, 1),
+			2 * calls, float(touch_usec) / maxf(calls, 1)]
+
+
 ## Does one pad registration get dearer as pads pile up? Means by bucket of already-registered pads.
 func _report_growth() -> void:
 	var buckets: Dictionary = {}
@@ -685,7 +727,34 @@ func _report_growth() -> void:
 		say("BENCH pad growth: %3d-%3d pads already: n=%3d mean=%6.2f ms (road cuts %.2f, settle %.2f), road features cut %.1f" % [
 				b, b + 24, buckets[b][0], buckets[b][1] / 1000.0 / nb, buckets[b][3] / 1000.0 / nb,
 				buckets[b][4] / 1000.0 / nb, float(buckets[b][2]) / nb])
+	_report_settle_shape()
 	_road_query_probe()
+
+
+func _report_settle_shape() -> void:
+	var buckets: Dictionary = {}
+	for i in _settle_shape.size():
+		var b: int = int(_pad_growth[i][0]) / 50 * 50
+		if not buckets.has(b):
+			buckets[b] = [0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0]
+		var st: Array = _settle_shape[i]
+		var row: Array = buckets[b]
+		row[0] += 1
+		row[1] += st[0]
+		row[2] += st[1]
+		row[3] += st[2]
+		row[4] += st[3]
+		row[5] += st[4]
+		row[6] += float(_pad_growth[i][4]) / 1000.0
+		row[7] = maxi(row[7], int(st[0]))
+	var keys: Array = buckets.keys()
+	keys.sort()
+	for b in keys:
+		var r: Array = buckets[b]
+		var nb: float = float(r[0])
+		say(("BENCH settle shape: %3d-%3d pads: n=%3d group=%.1f (max %d) candidates/touching=%.1f within distance bound=%.0f%%"
+				+ " aprons_touch calls=%.0f at %.1f us -> %.2f ms | settle measured %.2f ms") % [b, b + 49, r[0], r[1] / nb, r[7],
+				r[2] / nb, 100.0 * r[3] / nb, r[4] / nb, r[5] / nb, r[4] / nb * r[5] / nb / 1000.0, r[6] / nb])
 
 
 ## Where _pad_cuts_of's time goes: get_roads_for_chunk on the 9 finest pixels around a pad, each
