@@ -3,7 +3,7 @@ extends GutTest
 ## crouched (in EVA, at the wheel), the next session's client and Horizon still held it, the server
 ## stood, and the stand-up asked was no change to it — no answer, stuck crouched.
 
-const STANDING := {"stance": 0, "floating": false, "seat": ""}
+const STANDING := {"stance": 0, "floating": false, "thrusting": false, "seat": ""}
 
 
 class FakeSeat extends Node3D:
@@ -33,7 +33,7 @@ func test_the_published_posture_is_the_one_the_server_holds() -> void:
 	var role := _role_of(player)
 	role._stance = 2
 	player.floating = true
-	assert_eq(role.spawn_state(), {"stance": 2, "floating": true, "seat": ""},
+	assert_eq(role.spawn_state(), {"stance": 2, "floating": true, "thrusting": false, "seat": ""},
 			"a body handed over keeps its posture")
 	role.free()
 	player.free()

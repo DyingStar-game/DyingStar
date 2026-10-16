@@ -20,6 +20,13 @@
 [ext_resource type="AudioStream" uid="uid://cawb3sua28b7t" path="res://assets/_universe/audio/sfx/machine/tools/hammer-drill-equip.ogg" id="44_ttakn"]
 [ext_resource type="AudioStream" uid="uid://cwd8j2b2kw5m5" path="res://assets/_universe/audio/sfx/machine/tools/hammer-drill-fail.ogg" id="45_hyqqp"]
 [ext_resource type="Resource" uid="uid://6f0gseklfmuj" path="res://scenes/common/footsteps.tres" id="sfx_steps"]
+[ext_resource type="AudioStream" uid="uid://phrk7e54jbq2" path="res://assets/_universe/audio/sfx/characters/eva-thrust-loop.ogg" id="sfx_eva_thrust"]
+[ext_resource type="AudioStream" uid="uid://bydsk32s8ujl7" path="res://assets/_universe/audio/sfx/characters/clothes-short-1.ogg" id="sfx_clothes_short_1"]
+[ext_resource type="AudioStream" uid="uid://c4sfsi3mun6h8" path="res://assets/_universe/audio/sfx/characters/clothes-short-2.ogg" id="sfx_clothes_short_2"]
+[ext_resource type="AudioStream" uid="uid://bu27c80exvn0a" path="res://assets/_universe/audio/sfx/characters/clothes-long-1.ogg" id="sfx_clothes_long_1"]
+[ext_resource type="AudioStream" uid="uid://bsdgdkoadmvq3" path="res://assets/_universe/audio/sfx/characters/clothes-long-2.ogg" id="sfx_clothes_long_2"]
+[ext_resource type="AudioStream" uid="uid://d1egv2mo0l8nm" path="res://assets/_universe/audio/sfx/characters/clothes-long-3.ogg" id="sfx_clothes_long_3"]
+[ext_resource type="AudioStream" uid="uid://qaioc13ridm4" path="res://assets/_universe/audio/sfx/characters/clothes-long-4.ogg" id="sfx_clothes_long_4"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_2jk7f"]
 radius = 0.26542
@@ -49,6 +56,9 @@ sfx_climb_1m = ExtResource("9_ds1xl")
 sfx_climb_1m_db = -19.0
 sfx_climb_2m = ExtResource("10_1u1sw")
 sfx_climb_2m_db = -19.0
+sfx_eva_thrust = ExtResource("sfx_eva_thrust")
+sfx_clothes_short = Array[AudioStream]([ExtResource("sfx_clothes_short_1"), ExtResource("sfx_clothes_short_2")])
+sfx_clothes_long = Array[AudioStream]([ExtResource("sfx_clothes_long_1"), ExtResource("sfx_clothes_long_2"), ExtResource("sfx_clothes_long_3"), ExtResource("sfx_clothes_long_4")])
 seat_eye_height = 0.02
 passenger_eye_offset = 0.05
 metadata/client_uuid = ""

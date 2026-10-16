@@ -11,6 +11,16 @@ func test_the_viewport_takes_the_screens_shape() -> void:
 	assert_eq(VehicleDashboard.viewport_size_for(Vector2.ZERO).y, VehicleDashboard.SCREEN_HEIGHT_PX, "no screen: a sane default")
 
 
+func test_the_power_bar_turns_red_as_the_motor_gives_all() -> void:
+	assert_eq(VehicleDashboard.power_colour(0.0), VehicleDashboard.GREEN, "cruising: green")
+	assert_true(VehicleDashboard.power_colour(0.5).is_equal_approx(VehicleDashboard.AMBER), "half its force: amber")
+	assert_true(VehicleDashboard.power_colour(1.0).is_equal_approx(VehicleDashboard.RED), "all of it: red")
+	assert_true(VehicleDashboard.power_colour(1.7).is_equal_approx(VehicleDashboard.RED), "never past red")
+	var quarter: Color = VehicleDashboard.power_colour(0.25)
+	assert_ne(quarter, VehicleDashboard.GREEN, "a gradient, not steps")
+	assert_ne(quarter, VehicleDashboard.AMBER)
+
+
 func test_the_lights_colours() -> void:
 	assert_eq(VehicleDashboard.light_colour(true), VehicleDashboard.GREEN)
 	assert_eq(VehicleDashboard.light_colour(false), VehicleDashboard.OFF_COLOR, "off: faint, still in place")

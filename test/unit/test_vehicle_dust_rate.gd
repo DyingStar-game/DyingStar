@@ -45,3 +45,12 @@ func test_the_trail_is_laid_by_distance_not_by_time() -> void:
 	assert_almost_eq(VehicleDust.puffs_owed(spacing * 3.0, 0.0, 0.1), 3.0, 1e-6, "the frame time does not count")
 	assert_eq(VehicleDust.puffs_owed(0.0, 0.0, 0.5), 0.0, "standing still: nothing")
 	assert_gt(VehicleDust.puffs_owed(0.0, 1.0, 0.5), 0.0, "spinning in place still digs")
+
+
+func test_the_dust_fades_off_the_ground_and_is_whole_on_landing() -> void:
+	var fade := VehicleDust.AIRBORNE_FADE_S
+	assert_eq(VehicleDust.ground_share(0.3, true, 0.016), 1.0, "a wheel on the ground: all of it, at once")
+	var half: float = VehicleDust.ground_share(1.0, false, fade * 0.5)
+	assert_almost_eq(half, 0.5, 1e-6, "off the ground: it thins out, not stops dead")
+	assert_eq(VehicleDust.ground_share(half, false, fade), 0.0, "then none, all the way down a fall")
+	assert_eq(VehicleDust.rate(40.0, 40.0, 0.0, 40.0), 0.0, "no contact share, no stir")

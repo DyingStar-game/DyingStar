@@ -81,6 +81,7 @@ var _sprint_held: bool = false
 var _vertical_thrust: float = 0.0
 ## eva_stabilize held (X by default): the weightless brake. Only weightless movement reads it.
 var _stabilizing: bool = false
+var _rolling: bool = false  # roll_left / roll_right held: the roll itself is the client's, the hiss is ours
 ## How long the body has had no gravity area, to publish `floating` only once it is real (a reparent
 ## drops and re-enters every area for a frame or two).
 var _weightless_time: float = 0.0
@@ -325,7 +326,7 @@ func spawn_state() -> Dictionary:
 	var seat: Node = player._seat_node
 	var role: String = "" if not is_instance_valid(seat) \
 			else ("driver" if seat.is_driver_seat() else "passenger")
-	return {"stance": _stance, "floating": player.floating, "seat": role}
+	return {"stance": _stance, "floating": player.floating, "thrusting": player.thrusting, "seat": role}
 
 ## Physics step: apply a pending stance change now that the space state is valid. Standing up to a taller
 ## stance needs headroom (else we drop the request and stay low). Replicates only on an actual change.
@@ -369,6 +370,8 @@ func server_action_received(data: Dictionary) -> void:
 			_vertical_thrust = clampf(float(data.get("value", 0.0)), -1.0, 1.0)  # weightless up / down
 		"eva_stabilize":
 			_stabilizing = bool(data.get("held", false))  # weightless brake
+		"thrust_roll":
+			_rolling = bool(data.get("held", false))  # EVA roll keys (only heard: see Player.thrusting)
 		"stance":
 			# Movement stance toggle (0 standing / 1 crouched / 2 prone). Server-authoritative: we set it,
 			# cap the speed + resize the collider from it, and replicate so remotes show the pose. We run in
@@ -587,10 +590,19 @@ func server_action_received(data: Dictionary) -> void:
 				var claimed_side: String = str(data.get("side", ""))
 				var side_ok: bool = claimed_side == "" or claimed_side == ("indoor" if inside_d else "outdoor")
 				if side_ok and (handle_d == null or _can_see(handle_d)):
-					veh_d.server_toggle_door(str(data.get("door_id", "")))
-					if not inside_d:  # operated ON FOOT -> play the reach-out gesture for everyone
+					var door_id: String = str(data.get("door_id", ""))
+					if inside_d:
+						veh_d.server_toggle_door(door_id)  # from the seat: no gesture, at once
+					else:
+						# On foot: the reach-out gesture for everyone, and the door moves when the hand gets
+						# there -- not the instant the key is pressed, ahead of the arm. What the press asked
+						# for is kept: if the wind slams the door meanwhile, the hand does not reopen it.
 						_emote_count += 1
 						player.server_send_properties_to_client({"action": "emote:interact:%d" % _emote_count})
+						var want_open: bool = not veh_d.is_door_open(door_id)
+						get_tree().create_timer(DOOR_REACH_S).timeout.connect(func() -> void:
+							if is_instance_valid(veh_d) and veh_d.is_door_open(door_id) != want_open:
+								veh_d.server_toggle_door(door_id))
 		"npc_go_to_position":
 			# Server-authoritative: set the NPC's target position (the AI sets it on the Player facade,
 			# then this role drives the body toward it). The AI can change it at any time, and the NPC
@@ -1004,6 +1016,7 @@ func _physics_process_impl(delta: float) -> void:
 		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
 		# the player follows the vehicle (camera rides too).
 		player._ride_seat(player._seat_node)
+		_replicate_thrusting(false)  # seated: the vehicle moves us, not our thrusters
 		player.new_input_from_server = false
 		player.emit_move()
 		return
@@ -1035,6 +1048,7 @@ func _physics_process_impl(delta: float) -> void:
 		# God mode (dev free-flight): fly the body where the camera looks, gravity off, collision off.
 		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
 		_replicate_floating(true)
+		_replicate_thrusting(false)  # dev flight, not EVA: no thrusters
 		_server_god_mode_move(delta)
 		player.new_input_from_server = false
 		player.emit_move()
@@ -1083,6 +1097,10 @@ func _physics_process_impl(delta: float) -> void:
 		# until you are still RELATIVE TO YOUR FRAME (the station, when beside one: station-keeping).
 		if _stabilizing:
 			player.velocity = player.velocity.move_toward(Vector3.ZERO, player.player_thruster_force * delta)
+	# On the debounced `floating`, not the raw lack of a gravity area: a reparent drops every area for a
+	# tick or two, and a player walking through one (a lift, a truck bed) blipped a hiss for everyone.
+	_replicate_thrusting(player.floating and eva_thrusting(
+			player.input_direction, _vertical_thrust, _rolling, _stabilizing, player.velocity.length()))
 
 	var move_direction = (player.global_transform.basis * Vector3(player.input_direction.x, 0, player.input_direction.y)).normalized()
 
@@ -1617,6 +1635,28 @@ func _replicate_floating(now: bool) -> void:
 		return
 	player.floating = now
 	player.server_send_properties_to_client({"floating": now})
+
+
+## Seconds between pressing a door's handle on foot and the door moving: the reach-out gesture
+## ("emote:interact") gets the hand to the handle first.
+const DOOR_REACH_S := 0.35
+
+## Below this speed (m/s) the EVA brake has nothing left to cancel: held at rest, it fires nothing.
+const STABILIZED_SPEED := 0.05
+
+
+## Whether a weightless body's thrusters fire: a move key, the vertical axis, a roll key, or the brake
+## while there is still motion to cancel. Pure, for the tests.
+static func eva_thrusting(move: Vector2, vertical: float, rolling: bool, stabilizing: bool, speed: float) -> bool:
+	return move != Vector2.ZERO or vertical != 0.0 or rolling or (stabilizing and speed > STABILIZED_SPEED)
+
+
+## Publish `thrusting` when it changes — a replicated STATE (see Player.thrusting), never every tick.
+func _replicate_thrusting(now: bool) -> void:
+	if now == player.thrusting:
+		return
+	player.thrusting = now
+	player.server_send_properties_to_client({"thrusting": now})
 
 
 ## God mode integration (dev free-flight). Moves the body straight along the camera's look

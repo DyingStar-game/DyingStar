@@ -262,6 +262,39 @@ var stand_body_height: float = 1.8
 ## How the 2 m climb sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_climb_2m_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
+@export_subgroup("EVA thrusters")
+## Looped while the player's EVA thrusters fire (Player.thrusting), faded in and out (EvaThrusterSound).
+@export var sfx_eva_thrust: AudioStream
+## Loudness (dB) of the EVA thrusters at their Falloff distance.
+@export_range(-40.0, 12.0, 0.5) var sfx_eva_thrust_db: float = -19.0
+## Reference distance (m) of the EVA thrusters: past it the sound starts really fading.
+@export_range(0.5, 200.0, 0.5) var sfx_eva_thrust_falloff: float = 3.0
+## Hard cut-off (m) of the EVA thrusters: further away they are not played at all.
+@export_range(1.0, 500.0, 1.0) var sfx_eva_thrust_distance: float = 25.0
+## How the EVA thrusters fade with distance (see Sfx3D.Attenuation).
+@export var sfx_eva_thrust_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Clothes rustle")
+## Short takes, one picked at random (never the same twice running), as the body starts a quick action:
+## taking a crate or a tool, opening a door or a hatch.
+@export var sfx_clothes_short: Array[AudioStream] = []
+## Long takes, the same way, for a whole-body move: getting into or out of a seat, crouching, lying down,
+## standing back up.
+@export var sfx_clothes_long: Array[AudioStream] = []
+## Pitch spread (±) of the clothes rustle: the same take never sounds quite the same twice.
+@export_range(0.0, 0.5, 0.01) var sfx_clothes_pitch_jitter: float = 0.06
+## Loudness (dB) of a SHORT rustle at its Falloff distance. Higher than the long ones: it plays with the
+## sound of what is taken (a crate, a door), which covered it entirely at -18 dB (playtest 2026-10-16).
+@export_range(-40.0, 12.0, 0.5) var sfx_clothes_short_db: float = -10.0
+## Loudness (dB) of a LONG rustle (a whole-body move) at its Falloff distance.
+@export_range(-40.0, 12.0, 0.5) var sfx_clothes_long_db: float = -18.0
+## Reference distance (m) of the clothes rustle: past it the sound starts really fading.
+@export_range(0.5, 200.0, 0.5) var sfx_clothes_falloff: float = 2.0
+## Hard cut-off (m) of the clothes rustle: further away it is not played at all.
+@export_range(1.0, 500.0, 1.0) var sfx_clothes_distance: float = 8.0
+## How the clothes rustle fades with distance (see Sfx3D.Attenuation).
+@export var sfx_clothes_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
 @export_group("Ground dust")
 ## How much dust each kind of ground gives up under the feet (see SurfaceDust): a puff per step, a
 ## bigger one on landing. Null = no dust.
@@ -304,6 +337,10 @@ var stance: int = 0
 ## takes no steps. The server is the only one that knows: a client neither tracks another avatar's
 ## gravity areas nor is ever told about god_mode.
 var floating: bool = false
+## Replicated STATE, owned by the server: true while the weightless body's thrusters fire (a move key, the
+## vertical axis, the brake while there is motion left to cancel). Every client hears it on every avatar
+## (EvaThrusterSound); the owner also predicts it from its own keys, so the hiss starts with the press.
+var thrusting: bool = false
 ## Shared belt attachment point (a BoneAttachment3D on the puppet's hip bone, created by CharacterAnimator):
 ## any tool holsters onto it with its own offset, so a stowed tool follows the animated body. Null on the
 ## dedicated server (no puppet).

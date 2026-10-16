@@ -1,6 +1,7 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://cgf76q1irwpt6"]
 
-[ext_resource type="PackedScene" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="1_base"]
+[ext_resource type="PackedScene" uid="uid://bqc3pjlv1nipw" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="1_base"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_4f1k0"]
 
 [sub_resource type="BoxShape3D" id="Shape_upper_food"]
 size = Vector3(1, 0.83, 0.8)
@@ -14,7 +15,7 @@ size = Vector3(1, 0.22, 0.52)
 [sub_resource type="BoxShape3D" id="Shape_side_food"]
 size = Vector3(0.27, 0.22, 0.28)
 
-[node name="FoodDispenser" instance=ExtResource("1_base")]
+[node name="FoodDispenser" unique_id=768588184 instance=ExtResource("1_base")]
 brand = 7
 catalogue_dir = "res://scenes/_universe/props/food/dispenser_items/"
 title_key = "%%DISPENSER_FOOD_TITLE"
@@ -22,44 +23,57 @@ batch_spacing_m = 0.11
 tray_box_size = Vector3(0.42, 0.15, 0.24)
 tray_box_lift = -0.035
 
-[node name="UpperCollision" parent="."]
+[node name="UpperCollision" parent="." index="0" unique_id=84473199]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.585, 0)
 shape = SubResource("Shape_upper_food")
 
-[node name="BaseCollision" parent="."]
+[node name="BaseCollision" parent="." index="1" unique_id=1778921341]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.475, 0)
 shape = SubResource("Shape_base_food")
 
-[node name="BackCollision" parent="."]
+[node name="BackCollision" parent="." index="2" unique_id=1556215691]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.06, -0.14)
 shape = SubResource("Shape_back_food")
 
-[node name="LeftCollision" parent="."]
+[node name="LeftCollision" parent="." index="3" unique_id=1366501898]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.365, 1.06, 0.26)
 shape = SubResource("Shape_side_food")
 
-[node name="RightCollision" parent="."]
+[node name="RightCollision" parent="." index="4" unique_id=623183878]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.365, 1.06, 0.26)
 shape = SubResource("Shape_side_food")
 
-[node name="Tray" parent="Blockout/Body"]
+[node name="Tray" parent="Blockout/Body" parent_id_path=PackedInt32Array(2069941822) index="0" unique_id=312912723]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.26)
 size = Vector3(0.46, 0.22, 0.28)
 
-[node name="TrayLip" parent="Blockout"]
+[node name="TrayLip" parent="Blockout" parent_id_path=PackedInt32Array(2082912553) index="4" unique_id=1775529636]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.94, 0.41)
 size = Vector3(0.54, 0.03, 0.05)
 
-[node name="FlapHinge" parent="."]
+[node name="FlapHinge" parent="." index="6" unique_id=1455107971]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.955, 0.42)
 
-[node name="Flap" parent="FlapHinge"]
+[node name="Flap" parent="FlapHinge" index="0" unique_id=1288189095]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
 size = Vector3(0.44, 0.2, 0.02)
 
-[node name="FlapStripe" parent="FlapHinge/Flap"]
+[node name="FlapStripe" parent="FlapHinge/Flap" index="0" unique_id=401586873]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07, 0.012)
 size = Vector3(0.36, 0.02, 0.005)
 
-[node name="TrayMarker" parent="."]
+[node name="TrayMarker" parent="." index="7" unique_id=1850341490]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.995, 0.26)
+
+[node name="TerrainPad" type="Node3D" parent="." index="14" unique_id=116100022]
+script = ExtResource("2_4f1k0")
+apron_m = 2.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" index="0" unique_id=2007951752]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007144549489021296, -0.21046824956811683, -0.022582932710647596)
+size = Vector3(0.985710935960924, 0.42862953095573175, 0.7651658864606361)
+
+[node name="Ground2" type="CSGBox3D" parent="TerrainPad" index="1" unique_id=2117869749]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007144549489021296, -0.21046824956811683, -0.022582932710647596)
+size = Vector3(0.985710935960924, 0.42862953095573175, 0.7651658864606361)

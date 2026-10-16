@@ -34,13 +34,23 @@ func pick(family: StringName, avoid: AudioStream = null) -> AudioStream:
 		list = default_samples  # the generic take on this sound
 	if list == null or not (list is Array) or list.is_empty():
 		return missing
+	return pick_from(list, avoid)
+
+
+## A sample from [param list] (null when empty), never [param avoid] twice in a row when there is a
+## choice. The variety rule of every sound with several takes, surfaces or not (the clothes rustle).
+static func pick_from(list: Array, avoid: AudioStream = null) -> AudioStream:
+	if list.is_empty():
+		return null
 	if list.size() == 1:
 		return list[0]
-	var choice: AudioStream = list[randi() % list.size()]
-	if choice == avoid:
-		# One re-draw is enough: with n >= 2 samples the odds of drawing `avoid` twice are 1/n².
-		choice = list[randi() % list.size()]
-	return choice
+	var skip: int = list.find(avoid)
+	if skip == -1:
+		return list[randi() % list.size()]
+	# Drawn among the OTHERS: a re-draw on a repeat still repeated one time in n² -- with the two short
+	# rustles, one press in four.
+	var i: int = randi() % (list.size() - 1)
+	return list[i + 1 if i >= skip else i]
 
 
 ## A playback speed around 1.0, spread by pitch_jitter. Sfx3D.play_pitched wants an ABSOLUTE pitch
