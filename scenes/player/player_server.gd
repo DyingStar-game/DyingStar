@@ -610,7 +610,7 @@ func server_action_received(data: Dictionary) -> void:
 				else:
 					# The position is local to the referenced object (a building, a vehicle, ...):
 					# rebase it onto the NPC parent's referential so the target and the body share a frame.
-					var ref_node := _find_node_by_uuid(get_tree().get_root(), str(ref_uuid))
+					var ref_node := _node_by_uuid(str(ref_uuid))
 					if ref_node is Node3D:
 						var world_pos: Vector3 = (ref_node as Node3D).global_transform * npc_position
 						var npc_parent = player.get_parent()
@@ -631,7 +631,7 @@ func server_action_received(data: Dictionary) -> void:
 				if fref == null or str(fref) == "":
 					player.npc_face_position = face_position
 				else:
-					var fref_node := _find_node_by_uuid(get_tree().get_root(), str(fref))
+					var fref_node := _node_by_uuid(str(fref))
 					if fref_node is Node3D:
 						var face_world: Vector3 = (fref_node as Node3D).global_transform * face_position
 						var face_parent = player.get_parent()
@@ -653,7 +653,7 @@ func server_action_received(data: Dictionary) -> void:
 			if player.is_npc:
 				var depot_uuid = data.get("uuid", null)
 				if depot_uuid != null and str(depot_uuid) != "":
-					var depot := _find_node_by_uuid(get_tree().get_root(), str(depot_uuid))
+					var depot := _node_by_uuid(str(depot_uuid))
 					if depot != null and depot.has_method("try_claim_reception"):
 						depot.try_claim_reception(player.client_uuid)
 					else:
@@ -664,7 +664,7 @@ func server_action_received(data: Dictionary) -> void:
 			if player.is_npc:
 				var rel_uuid = data.get("uuid", null)
 				if rel_uuid != null and str(rel_uuid) != "":
-					var rel_depot := _find_node_by_uuid(get_tree().get_root(), str(rel_uuid))
+					var rel_depot := _node_by_uuid(str(rel_uuid))
 					if rel_depot != null and rel_depot.has_method("release_reception"):
 						rel_depot.release_reception(player.client_uuid)
 		"dialog":
@@ -904,8 +904,39 @@ func _to_parent_rotation(net_parent: Node, world_basis: Basis) -> Vector3:
 		return (parent_basis.inverse() * world_basis).orthonormalized().get_euler()
 	return world_basis.orthonormalized().get_euler()
 
-## Recursive search for a node whose `uuid` matches (server-side helper).
-func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
+## uuid -> node found by a tree walk, shared by every PlayerServer: the NPC brain names the same few
+## buildings for all its NPCs. Entries are re-checked on read (freed or out of the tree = walk again).
+static var _uuid_walk_cache: Dictionary = {}
+
+## The node (spatial host) carrying [param target_uuid] on this server, or null.
+func _node_by_uuid(target_uuid: String) -> Node:
+	return node_by_uuid(get_tree().get_root(), NetworkOrchestrator.network_agent, target_uuid)
+
+## [method _node_by_uuid] with its sources given: [param server]'s `props_list` (type -> uuid -> node,
+## every object Horizon materialised here) first, then the walk cache, and only then a walk from
+## [param root]. The walk alone cost 5 ms per call at 41 000 nodes (200 NPCs), paid by every
+## npc_go_to_position the brain sends: 290 ms of each second on preprod.
+static func node_by_uuid(root: Node, server: Object, target_uuid: String) -> Node:
+	if target_uuid == "":
+		return null
+	if server != null and "props_list" in server:
+		for ptype in server.props_list:
+			var indexed = server.props_list[ptype].get(target_uuid)
+			if is_instance_valid(indexed) and indexed is Node and (indexed as Node).is_inside_tree():
+				return indexed
+	var cached = _uuid_walk_cache.get(target_uuid)
+	if is_instance_valid(cached) and (cached as Node).is_inside_tree():
+		return cached
+	var found: Node = _find_node_by_uuid(root, target_uuid)
+	if found != null:
+		_uuid_walk_cache[target_uuid] = found
+	else:
+		_uuid_walk_cache.erase(target_uuid)
+	return found
+
+## Recursive search for a node whose `uuid` matches (server-side helper). Walks the whole subtree:
+## prefer [method _node_by_uuid].
+static func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 	if "uuid" in node and str(node.uuid) == target_uuid:
 		# The uuid now lives on the PropSync component (a plain Node); callers
 		# want the spatial host, so hop to its Node3D parent.
