@@ -30,12 +30,17 @@ const TELEPORT_M: float = 30.0
 const THROW_BACK: float = 0.12
 ## Upward kick (m/s) of the dust off the tyre.
 const THROW_UP: float = 0.9
+## Seconds the tyres keep shedding dust once no driven wheel touches the ground, fading out: off a ramp
+## or a cliff the trail thins away rather than stopping dead, and stops there -- it used to run all the
+## way down a fall (2026-10-16). Back on the ground it is whole at once: the landing kicks it up.
+const AIRBORNE_FADE_S: float = 0.4
 
 var _vehicle: Vehicle = null
 var _emitter: DustEmitter = null
 var _accum: float = 0.0  # puffs owed to each driven wheel, fractional
 var _last_pos: Vector3 = Vector3.ZERO
 var _has_last: bool = false
+var _ground: float = 1.0  # 0..1: how much of the dust the wheels' contact still allows (ground_share)
 
 
 func _init(vehicle: Vehicle) -> void:
@@ -49,6 +54,15 @@ static func rate(speed_kmh: float, wheel_kmh: float, amount: float, full_kmh: fl
 	var roll: float = clampf(absf(speed_kmh) / full, 0.0, 1.0)
 	var slip: float = clampf((absf(wheel_kmh) - absf(speed_kmh)) / full, 0.0, 1.0)
 	return clampf(amount, 0.0, 1.0) * (roll + SLIP_GAIN * slip)
+
+
+## How much (0..1) of the tyres' dust the ground contact allows this frame, from [param share] last
+## frame: whole while a driven wheel is [param grounded], fading to nothing over AIRBORNE_FADE_S once
+## none is. Static and pure: tested without a vehicle.
+static func ground_share(share: float, grounded: bool, delta: float) -> float:
+	if grounded:
+		return 1.0
+	return move_toward(share, 0.0, maxf(delta, 0.0) / AIRBORNE_FADE_S)
 
 
 ## Once per frame, from the vehicle's client _process (after the wheels are posed).
@@ -66,13 +80,16 @@ func update(delta: float, family: StringName) -> void:
 	# (counted twice, it squared: rock and corundum raised no visible dust). The speed is the one the
 	# wheels are SHOWN rolling at: the replicated motion on a networked truck, and the only speed a menu
 	# truck has (frozen and carried, its physics speed is zero; it does not spin, so no slip).
-	var stir: float = rate(_vehicle.shown_speed_kmh, _vehicle.get_wheel_kmh(), 1.0, _vehicle.dust_full_kmh)
-	var roll: float = rate(_vehicle.shown_speed_kmh, _vehicle.shown_speed_kmh, 1.0, _vehicle.dust_full_kmh)
+	_ground = ground_share(_ground, _vehicle.wheels_grounded, delta)
+	var stir: float = rate(_vehicle.shown_speed_kmh, _vehicle.get_wheel_kmh(), _ground, _vehicle.dust_full_kmh)
+	var roll: float = rate(_vehicle.shown_speed_kmh, _vehicle.shown_speed_kmh, _ground, _vehicle.dust_full_kmh)
 	var distance: float = moved.length()
 	if stir <= 0.0 or dust.amount(family) <= 0.0 or distance > TELEPORT_M:
 		_accum = 0.0
 		return
-	_accum += puffs_owed(distance, (stir - roll) / SLIP_GAIN, delta)
+	# The trail is laid by distance rolled: in the air nothing rolls, so the fall's distance owes only
+	# what the fading contact still allows.
+	_accum += puffs_owed(distance * _ground, (stir - roll) / SLIP_GAIN, delta)
 	var count: int = mini(floori(_accum), MAX_PUFFS_PER_FRAME)
 	if count <= 0:
 		return

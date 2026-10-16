@@ -103,6 +103,7 @@ var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + =
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
 var _vertical_sent: float = 0.0  # last strafe_up/strafe_down axis sent (weightless thrust)
 var _stabilize_sent: bool = false  # last eva_stabilize state sent (weightless brake)
+var _roll_sent: bool = false  # last roll_left/roll_right held state sent (EVA thrusters' hiss)
 var _roll_rate: float = 0.0  # weightless roll, rad/s, with momentum (see _update_roll)
 ## Path of the camera last caught holding the view, so the warning is printed on CHANGE only.
 var _camera_thief: String = ""
@@ -126,6 +127,8 @@ var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end 
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
+var _thruster: EvaThrusterSound = null  # the EVA hiss of this avatar, built on first use
+var _last_clothes: Dictionary = {}  # whole_body (bool) -> the take of that kind played last
 var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar (owner reads _owner_carrying)
 var _placement_marker: CarryPlacementMarker = null  # owner-only: the carry placement disc (see setup)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
@@ -366,6 +369,7 @@ func _process(_delta: float) -> void:
 			return
 		_sample_locomotion(dt)  # one shared computation for the footsteps AND the puppet animator
 		_update_footsteps(dt)  # remote avatars too: everyone hears everyone walk
+		_update_thruster(player.thrusting, dt)
 		player._interp.update(player, dt)  # entity interpolation: glide between server updates
 		_update_name_tag()
 		return
@@ -373,6 +377,12 @@ func _process(_delta: float) -> void:
 	_update_god_mode_label()
 	_sample_locomotion(_delta)
 	_update_footsteps(_delta)
+	# The owner's own keys start the hiss with the press; the server's state adds the brake (it alone
+	# knows whether there is motion left to cancel) and wins if a key is refused.
+	# God mode is the dev flight, not EVA: no thrusters (the server says the same to everyone else).
+	_update_thruster(player.thrusting or (player.floating and not _in_god_mode()
+			and not is_instance_valid(player._seat_node)
+			and (player.input_direction != Vector2.ZERO or _vertical_sent != 0.0 or _roll_sent)), _delta)
 	_weather_listener_of().update(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
@@ -394,6 +404,10 @@ func _process(_delta: float) -> void:
 		if seated_handle != null:
 			player.interact_label.text = _door_prompt(seated_handle)
 			player.interact_label.show()
+		# Seated, the crosshair points at screens too: a console beside the truck, a dispenser from the
+		# passenger seat. It only ever pointed -- the view stays the player's, the mouse stays captured --
+		# so "driving with a freed mouse", the reason seats once dropped screens, no longer holds.
+		_point_screen(seated_focus)
 		return
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
 	# the mouse look stays immediate.
@@ -615,6 +629,12 @@ func _physics_process(delta: float) -> void:
 	if stabilize != _stabilize_sent:
 		_stabilize_sent = stabilize
 		player.client_send_action_to_server({"action": "eva_stabilize", "held": stabilize})
+	# roll_left / roll_right (A / E): the roll is turned here (_update_roll); the server only needs to know
+	# the thrusters fire, so that everyone else hears them. Same wire, same rule.
+	var rolling: bool = not input_locked and Input.get_axis("roll_left", "roll_right") != 0.0
+	if rolling != _roll_sent:
+		_roll_sent = rolling
+		player.client_send_action_to_server({"action": "thrust_roll", "held": rolling})
 
 	# Crouch / prone are TOGGLES, server-authoritative: each press cycles standing <-> that stance. The
 	# server owns `stance`; we only request the change (from the last echoed value) and apply the reply.
@@ -823,13 +843,14 @@ func _replicate_look() -> void:
 ## The crosshair on 3D screens (ScreenTarget): the nearest screen the ray from the eye meets within
 ## SCREEN_REACH_M is hovered every frame, and becomes the screen in use (Player.set_screen_in_use)
 ## until the player steps out of ScreenTarget.USE_RANGE_M. Nothing while a panel has the pointer
-## ([param ui_focus]) or seated. Walking up to a screen used to free the cursor and freeze the view; the
-## view stays the player's now. True while it points at one.
+## ([param ui_focus]). Seated as well as on foot: walking up to a screen used to free the cursor and
+## freeze the view, which a seat could not allow while driving; the view stays the player's now, and a
+## seated player reaches the consoles around the seat like anyone else. True while it points at one.
 func _point_screen(ui_focus: bool) -> bool:
 	var eye: Vector3 = player.camera.global_position if player.camera != null else player.global_position
 	var gui: Node3D = null
 	var point: Variant = null
-	if not ui_focus and player.camera != null and not is_instance_valid(player._seat_node):
+	if not ui_focus and player.camera != null:
 		var ray: Vector3 = -player.camera.global_basis.z
 		var nearest: float = INF
 		for candidate: Node in get_tree().get_nodes_in_group(ScreenTarget.GROUP):
@@ -867,10 +888,10 @@ func _flash_prompt(text: String) -> void:
 ## The `perforate` action (left click, right trigger) clicks the screen under the crosshair, before
 ## anything else sees it: the tool in hand must not fire into the console. While a screen's field
 ## holds the keyboard, the click first gives the keyboard back to the game, then acts on what is
-## under the crosshair, if anything (another field takes the keyboard again).
+## under the crosshair, if anything (another field takes the keyboard again). Seated too: no vehicle
+## control is on the left button or the right trigger.
 func _input(event: InputEvent) -> void:
-	if player.remote_player or event.is_echo() or not event.is_action(&"perforate") \
-			or _ui_focus() or is_instance_valid(player._seat_node):
+	if player.remote_player or event.is_echo() or not event.is_action(&"perforate") or _ui_focus():
 		return
 	var typing: bool = _screen_typing()
 	if typing and event.is_pressed():
@@ -1074,6 +1095,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var handle = _aimed_door_handle()
 		if handle != null and not player._owner_carrying:
 			_toggle_door(handle)
+			# Heard by us only: who works a door is not replicated, the door's own sound is.
+			_play_clothes_sfx(false)
 			return
 		# Looking at a seat: E boards — but only once the seat's gating door is open (open it first by
 		# looking at the handle). A seat with no door_id boards directly. The server checks reach and
@@ -1091,6 +1114,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var aim = player._aimed_carriable()
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
+		# Reaching for something, or putting the load down: the clothes rustle on the key, for the owner
+		# (the others hear the pick-up from the replicated `carrying`).
+		if aim != null or player._owner_carrying:
+			_play_clothes_sfx(false)
 		_predict_carry_stow(aim)
 
 ## True when the seat is occupied (E won't work). Only the DRIVER seat's occupancy is
@@ -1779,6 +1806,10 @@ func _predict_carry_stow(aim: Node) -> void:
 ## Apply a server->client property update (position, rotation, torch, carry prompt, mining state,
 ## carry reconciliation). Only a client receives this for a player; the Player facade delegates here.
 func client_channel_data_update(data: Dictionary) -> void:
+	# Whether this update is a live change rather than the spawn snapshot, as it was on arrival:
+	# _sfx_live turns true halfway down, and a sound decided after that line must not take the
+	# snapshot of a crouched or carrying avatar for a move it just made.
+	var live: bool = _sfx_live
 	if data.has("position"):
 		player.position = Vector3(
 			data["position"]["x"],
@@ -1801,7 +1832,10 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("carry_prompt") and not player.remote_player:
 		player._carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
 	if data.has(Player.MINING_TOOL_KEY):
-		player.owns_mining_tool = bool(data[Player.MINING_TOOL_KEY])  # the server's say, owner and remotes
+		var owns := bool(data[Player.MINING_TOOL_KEY])
+		if _sfx_live and player.remote_player and owns and not player.owns_mining_tool:
+			_play_clothes_sfx(false)  # took a tool (the owner heard it on the key: _predict_carry_stow)
+		player.owns_mining_tool = owns  # the server's say, owner and remotes
 	if data.has("screen_event") and data["screen_event"] is Dictionary:
 		# What a 3D screen near this player is doing (ScreenTarget.announce), whoever used it: every
 		# client around shows it. Stamped, so a re-broadcast of an old one is ignored.
@@ -1829,10 +1863,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key
 		elif action.begins_with("seat:") and action != _last_seat_action:
 			_last_seat_action = action
+			if _sfx_live:
+				_play_clothes_sfx(true)  # sitting down
 			if player.remote_player:
 				player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
 		elif action.begins_with("unseat") and action != _last_seat_action:
 			_last_seat_action = action
+			if _sfx_live:
+				_play_clothes_sfx(true)  # getting up
 			if player.remote_player:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
 			elif player._seat_vehicle_uuid != "":
@@ -1854,9 +1892,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 				_play_vault_sfx(action.split(":")[1])
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	if data.has("stance"):
-		player.stance = int(data["stance"])  # server-owned: owner reads the echo AND remotes get the pose
+		var stance := int(data["stance"])
+		if live and stance != player.stance:
+			_play_clothes_sfx(true)  # crouching, lying down, standing back up
+		player.stance = stance  # server-owned: owner reads the echo AND remotes get the pose
 	if data.has("floating"):
 		player.floating = bool(data["floating"])  # weightless: no footsteps (see _update_footsteps)
+	if data.has("thrusting"):
+		player.thrusting = bool(data["thrusting"])  # EVA hiss (see _update_thruster)
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
 	# The OWNER obeys the authoritative tool state as well. It used to be applied on remote avatars
@@ -1877,7 +1920,10 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["tools"] = ""  # a record from before the dispensers: no tool shown that is not owned
 		player.mining_tool.apply_remote(data)
 		if data.has("carrying"):
-			_remote_carrying = bool(data["carrying"])  # drives the remote avatar's carry pose
+			var carrying := bool(data["carrying"])
+			if live and carrying and not _remote_carrying:
+				_play_clothes_sfx(false)  # took a crate (the owner heard it on the key: _predict_carry_stow)
+			_remote_carrying = carrying  # drives the remote avatar's carry pose
 		if data.has("seat"):
 			# The seat STATE ("driver" / "passenger" / ""), not the "seat:"/"unseat:" EVENT handled
 			# above. Both arrive together on a live change, and only this one survives in Horizon's
@@ -2066,6 +2112,30 @@ func _play_torch_sfx(on: bool) -> void:
 	else:
 		Sfx3D.play(player, player.sfx_torch_off, player.sfx_torch_off_db, player.sfx_torch_off_falloff,
 				player.sfx_torch_off_distance, player.sfx_torch_off_attenuation)
+
+## The body starts an action: its clothes rustle, a [param whole_body] move (into or out of a seat, a
+## stance change) with a long take, a quick one (a crate, a tool, a door) with a short take.
+func _play_clothes_sfx(whole_body: bool) -> void:
+	var take: AudioStream = SurfaceSounds.pick_from(
+			player.sfx_clothes_long if whole_body else player.sfx_clothes_short, _last_clothes.get(whole_body))
+	if take == null:
+		return
+	_last_clothes[whole_body] = take
+	var jitter: float = player.sfx_clothes_pitch_jitter
+	var db: float = player.sfx_clothes_long_db if whole_body else player.sfx_clothes_short_db
+	Sfx3D.play_pitched(player, take, db, player.sfx_clothes_falloff,
+			player.sfx_clothes_distance, player.sfx_clothes_attenuation, 1.0 + randf_range(-jitter, jitter))
+
+## The EVA thrusters' hiss follows [param on] (built on first use, never without a stream).
+func _update_thruster(on: bool, delta: float) -> void:
+	if _thruster == null:
+		if not on or player.sfx_eva_thrust == null or Sfx3D.muted():
+			return
+		_thruster = EvaThrusterSound.new()
+		_thruster.setup(player.sfx_eva_thrust, player.sfx_eva_thrust_db, player.sfx_eva_thrust_falloff,
+				player.sfx_eva_thrust_distance, player.sfx_eva_thrust_attenuation)
+		player.add_child(_thruster)
+	_thruster.update(on, delta)
 
 ## The jump effort (not the landing).
 func _play_jump_sfx() -> void:

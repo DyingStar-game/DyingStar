@@ -204,6 +204,14 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## The steering wheel's OWN local axis it spins about (its disc/column axis). Intrinsic to the mesh,
 ## so it's tilt-independent: try a cardinal axis (0,0,1)/(0,1,0)/(1,0,0) — one matches the disc.
 @export var steering_wheel_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
+## Where the driver's hands hold the rim, in degrees either side of its top: 60 = "ten to two", 90 =
+## "quarter to three", on the sides. The rim itself (radius, plane) is measured on the wheel mesh (see
+## _make_steering_grips).
+@export_range(0.0, 90.0, 1.0) var steering_grip_angle_deg: float = 85.0
+## How far (degrees) the hands turn WITH the wheel before they slide on the rim: past it a driver
+## shuffles the rim through their hands rather than crossing their arms. On a wheel the hands hold, the
+## wheel itself turns no further at full lock (visual_steering_ratio caps steering_wheel_ratio).
+@export_range(0.0, 180.0, 1.0) var steering_grip_follow_deg: float = 90.0
 
 @export_group("Speed limiter")
 ## One step of the limiter selector (Alt + wheel), in km/h.
@@ -738,6 +746,11 @@ var _net_speed: float = 0.0  # client: real speed (km/h) replicated from the ser
 ## server sent it at all — a Horizon that does not relay "wheel_kmh" yet leaves the gauge on _net_speed.
 var _net_wheel_kmh: float = 0.0
 var _net_wheel_seen: bool = false
+## Whether a driven wheel touches the ground: the server's _driven_wheels_grounded, replicated
+## ("grounded"), because a replica has no physics and the client no terrain collision to find out. The
+## tyres' dust follows it (VehicleDust): off a cliff they rose a trail all the way down (2026-10-16).
+## True until told otherwise -- a Horizon that does not relay it yet keeps the dust as it was.
+var wheels_grounded: bool = true
 var _net_cargo_mass: float = 0.0  # client: real cargo load (kg) replicated from the server
 ## The real "up" for this vehicle: opposite the gravity acting on it (radial on a planet, world-up on
 ## the bench). Read from state.total_gravity in _integrate_forces; the rollover check + reset_upright
@@ -798,6 +811,11 @@ var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under 
 var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
 var _steering_wheel: Node3D = null          # GLB "steering_wheel" mesh that turns with the steer angle
 var _steering_wheel_rest: Basis = Basis.IDENTITY  # its closed/centered orientation
+## The two points the driver's hands hold (CharacterAnimator -> HandsOnWheel): siblings of the wheel mesh,
+## moved with it in _update_steering_wheel. Empty when the model has no wheel mesh to measure.
+var _steering_grips: Array[Node3D] = []
+var _steering_grip_points: Array[Vector3] = []  # the same two points, in the wheel mesh's own frame
+var _steering_hub: Node3D = null  # the rim's centre, on the spin axis (how the hands face the rim)
 var _anim: AnimationPlayer = null           # the GLB's AnimationPlayer (door open/close clips)
 var _engine_on: bool = false                # engine running (server state; mirrored on each replica)
 ## Client: false until _ready is done. Replicated state that lands BEFORE that is the spawn snapshot
@@ -1799,7 +1817,93 @@ func _discover_steering_wheel() -> void:
 			# Spin the visual mesh: a child mesh if "steering" is a VehicleWheel3D wrapper, else itself.
 			_steering_wheel = _first_mesh_child(n) if (n is VehicleWheel3D) else (n as Node3D)
 			_steering_wheel_rest = _steering_wheel.transform.basis
+			_make_steering_grips()
 			return
+
+
+## The two points a driver's hands hold the wheel at, for whoever drives (CharacterAnimator). Either order:
+## each hand takes the one on its own side.
+func steering_grips() -> Array[Node3D]:
+	return _steering_grips
+
+
+## The rim's centre, on the wheel's spin axis (null without grips): the hands turn their palms to it.
+func steering_hub() -> Node3D:
+	return _steering_hub
+
+
+## Build the two grips on the wheel's rim, measured on its mesh: the outermost ring of vertices around
+## the spin axis gives the rim's radius and its plane; "up" is the vehicle's up laid in that plane, and
+## the grips sit steering_grip_angle_deg either side of it. Client only: nothing on the server holds them.
+func _make_steering_grips() -> void:
+	if OS.has_feature("dedicated_server") or Engine.is_editor_hint() or not (_steering_wheel is MeshInstance3D):
+		return
+	var mesh: Mesh = (_steering_wheel as MeshInstance3D).mesh
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var up_in_wheel: Vector3 = (LocalFrame.of(_steering_wheel.get_parent(), self).basis * _steering_wheel_rest) \
+			.inverse() * Vector3.UP
+	_steering_grip_points = steering_grip_points(vertices, steering_wheel_axis.normalized(), up_in_wheel,
+			deg_to_rad(steering_grip_angle_deg))
+	if _steering_grip_points.is_empty():
+		return
+	for i in _steering_grip_points.size():
+		var grip := Node3D.new()
+		grip.name = "SteeringGrip%d" % i
+		_steering_wheel.get_parent().add_child(grip)
+		_steering_grips.append(grip)
+	_steering_hub = Node3D.new()
+	_steering_hub.name = "SteeringHub"
+	_steering_wheel.get_parent().add_child(_steering_hub)
+	_place_steering_grips(0.0)
+
+
+## The two grip points of a wheel mesh, in its own frame, from its [param vertices]: on the rim (the ring
+## of vertices furthest from [param axis]), [param angle] either side of [param up] laid in the rim's
+## plane. Empty for a mesh with no rim to measure. Pure, for the tests.
+static func steering_grip_points(vertices: PackedVector3Array, axis: Vector3, up: Vector3,
+		angle: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var top: Vector3 = up - axis * up.dot(axis)
+	if vertices.is_empty() or top.length() < 1e-6:
+		return out
+	top = top.normalized()
+	var reach := 0.0
+	for p in vertices:
+		reach = maxf(reach, (p - axis * p.dot(axis)).length())
+	var radius := 0.0
+	var height := 0.0
+	var count := 0
+	for p in vertices:
+		var r: float = (p - axis * p.dot(axis)).length()
+		if r >= reach * 0.85:  # the rim: its tube, inside and out
+			radius += r
+			height += p.dot(axis)
+			count += 1
+	radius /= count
+	height /= count
+	var side: Vector3 = axis.cross(top).normalized()
+	for s: float in [-1.0, 1.0]:
+		out.append(axis * height + (top * cos(angle) + side * sin(angle) * s) * radius)
+	return out
+
+
+## Move the grips with the wheel turned by [param spin] (radians about its axis), the hands following it
+## only up to steering_grip_follow_deg: past it the rim slides through them.
+func _place_steering_grips(spin: float) -> void:
+	if _steering_grips.is_empty():
+		return
+	var limit: float = deg_to_rad(steering_grip_follow_deg)
+	var hands := Transform3D(_steering_wheel_rest * Basis(steering_wheel_axis.normalized(), clampf(spin, -limit, limit)),
+			_steering_wheel.transform.origin)
+	for i in _steering_grips.size():
+		_steering_grips[i].position = hands * _steering_grip_points[i]
+	# On the spin axis, level with the rim: the turn does not move it.
+	var axis: Vector3 = steering_wheel_axis.normalized()
+	_steering_hub.position = hands * (axis * _steering_grip_points[0].dot(axis))
+
+
 
 ## Turn the steering wheel mesh to match the steer angle (cosmetic). No-op if there is none.
 ## Rotates in the wheel's OWN LOCAL frame (post-multiply), so the axis is intrinsic to the mesh (its
@@ -1809,8 +1913,22 @@ func _update_steering_wheel(angle: float) -> void:
 	if _steering_wheel == null:
 		return
 	var t := _steering_wheel.transform
-	t.basis = _steering_wheel_rest * Basis(steering_wheel_axis.normalized(), -angle * steering_wheel_ratio)
+	var ratio: float = visual_steering_ratio(steering_wheel_ratio, max_steer_deg, steering_grip_follow_deg,
+			not _steering_grips.is_empty())
+	t.basis = _steering_wheel_rest * Basis(steering_wheel_axis.normalized(), -angle * ratio)
 	_steering_wheel.transform = t
+	_place_steering_grips(-angle * ratio)
+
+
+## How far the steering wheel turns per radian of front-wheel steer, on screen: [param ratio], capped,
+## on a wheel the hands hold, so that full lock ([param max_steer_deg]) turns it no further than the
+## hands follow ([param hands_follow_deg]). Past that the rim spun on under still hands (playtest
+## 2026-10-16). Cosmetic only: the road wheels steer as before. Pure, for the tests.
+static func visual_steering_ratio(ratio: float, max_steer_deg: float, hands_follow_deg: float,
+		held: bool) -> float:
+	if not held or max_steer_deg <= 0.0:
+		return ratio
+	return minf(ratio, hands_follow_deg / max_steer_deg)
 
 ## The GLB's AnimationPlayer (door open/close clips), or null (then doors use the code tween).
 func _find_anim_player() -> AnimationPlayer:
@@ -2671,7 +2789,7 @@ func _replicate_transform() -> void:
 	var my_pos: Vector3 = snapped(position, Vector3(0.005, 0.005, 0.005))
 	var my_rot: Vector3 = snapped(rotation, Vector3(0.005, 0.005, 0.005))
 	var my_parent_id: String = _net_parent_id()
-	odometer.track(position, my_parent_id)
+	odometer.track(position, my_parent_id, _driven_wheels_grounded())  # a fall is not a drive
 	if _full_resend_in > 0.0:
 		_full_resend_in -= get_physics_process_delta_time()
 		if _full_resend_in <= 0.0:
@@ -2711,6 +2829,7 @@ func full_state() -> Dictionary:
 		"pilot_uuid": _pilot_uuid_now(),
 		"speed": snappedf(linear_velocity.length() * 3.6, 0.1),
 		"wheel_kmh": snappedf(get_wheel_kmh(), 0.1),
+		"grounded": _driven_wheels_grounded(),
 		"power": snappedf(_power_share, POWER_STEP),
 		"cargo_mass": snappedf(get_cargo_mass(), 0.1),
 		"handbrake": _handbrake,
@@ -2992,6 +3111,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("wheel_kmh"):
 		_net_wheel_kmh = float(data["wheel_kmh"])
 		_net_wheel_seen = true
+	if data.has("grounded"):
+		wheels_grounded = bool(data["grounded"])
 	if data.has("power"):
 		_net_power = float(data["power"])
 	if data.has("cargo_mass"):

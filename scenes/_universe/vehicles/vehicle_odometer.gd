@@ -6,7 +6,9 @@ extends VehicleNetPart
 ## Counted by the server from the vehicle's LOCAL position, the one relative to its parent: the
 ## planet it drives on moves and spins, and the local frame is the one in which "driving 1 m" means
 ## 1 m of ground. A step is skipped when the parent changes (a new frame, the two positions do not
-## compare) or when it is too long to have been driven (a reset, a teleport, a restore).
+## compare) or when it is too long to have been driven (a reset, a teleport, a restore) -- and when
+## no driven wheel touches the ground: off a cliff, the truck falls, it does not drive, and the
+## kilometres climbed all the way down (playtest 2026-10-16). A real odometer counts the wheels.
 
 const KEY := "odometer_km"
 ## Longer than any vehicle drives in one physics tick (50 m at 60 Hz is 10 800 km/h).
@@ -26,9 +28,11 @@ func km() -> float:
 	return _metres / 1000.0
 
 
-## Server, every physics tick: account for the move from the previous position.
-func track(local_pos: Vector3, parent_id: String) -> void:
-	if _has_last and parent_id == _last_parent:
+## Server, every physics tick: account for the move from the previous position, if the wheels were
+## `rolling` on the ground (Vehicle._driven_wheels_grounded). In the air the position is still taken,
+## so the count resumes from where the vehicle lands, not from where it left the road.
+func track(local_pos: Vector3, parent_id: String, rolling: bool = true) -> void:
+	if rolling and _has_last and parent_id == _last_parent:
 		var step: float = local_pos.distance_to(_last_pos)
 		if step <= MAX_STEP_M:
 			_metres += step

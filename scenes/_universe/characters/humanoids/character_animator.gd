@@ -74,6 +74,11 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## first-person view is unaffected.
 @export var seated_puppet_offset: Vector3 = Vector3(0, 0.38, -0.34)
 
+@export_group("Hands on the wheel")
+## Seconds for a driver's hands to reach the steering wheel once seated (HandsOnWheel). Getting up lets
+## go at once: the stand-up clip takes over.
+@export_range(0.0, 2.0, 0.05) var hands_on_wheel_time: float = 0.35
+
 ## Body-frame shift of the puppet WHILE a climb clip plays, so each clip lines up on its obstacles — ONE
 ## pair PER TYPE. Total shift for a type = its base + its per_m * (obstacle height, m), so it adjusts both
 ## by type and by height. Default 0 = no shift. Tune live.
@@ -174,6 +179,8 @@ var _warp_max: float = 3.0    # fastest walk playback, = walk_speed_max / WALK_R
 var _sprint_min: float = 4.0  # walk -> sprint boundary (m/s), midpoint of walk_speed_max and sprint_speed
 
 var _dormant: bool = false  # frozen off-screen / hidden (see set_dormant)
+var _hands: HandsOnWheel = null  # a driver's hands on the steering wheel (IK), null on a rig without arms
+var _hands_weight: float = 0.0  # 0 = the Driving clip alone, 1 = hands on the grips
 
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
@@ -218,6 +225,7 @@ func setup(player_body, is_local: bool) -> void:
 		_head_bone = _resolve_bone([&"Head", &"head"])
 		_neck_bone = _resolve_bone([&"Neck", &"neck"])
 		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
+		_hands = HandsOnWheel.attach(_skeleton)
 		if _is_local:
 			add_head_shadow(_skeleton, _head_bone, _neck_bone)
 	if _anim != null:
@@ -376,6 +384,7 @@ func _process(delta: float) -> void:
 		var pivot := Vector3(0.0, float_pivot_height, 0.0)
 		_puppet.basis = tip * _puppet_base_basis
 		_puppet.position = _puppet_base_position + offset + pivot - tip * pivot
+	_drive_hands(delta)  # after the puppet moved: the grips are taken in the skeleton's space as it is now
 	# First-person camera placed from the head bone (position only; the mouse still owns orientation), so
 	# the animated body never clips through a fixed camera — without the stride's bob (see HeadCam). Owner
 	# on foot only — the seat ride owns the camera position when seated, so restore the base there.
@@ -412,6 +421,41 @@ func _process(delta: float) -> void:
 			if not bool(_player.locomotion_sample.get("driver", false)):
 				eye += _player.passenger_eye_offset
 			_player.camera_pivot.position = _head_cam.camera_base + Vector3(0.0, eye, 0.0)
+
+## A driver's hands go to the wheel's grips, faded in over hands_on_wheel_time; off the driver's seat they
+## let go at once. On every avatar: the seat and the vehicle are known to every client.
+func _drive_hands(delta: float) -> void:
+	if _hands == null:
+		return
+	var wheel: Array = _wheel_in_skeleton()
+	if wheel.is_empty():
+		if _hands_weight > 0.0 or _hands.active:  # once, on letting go: idle avatars cost nothing
+			_hands_weight = 0.0
+			_hands.drive(0.0, [], Vector3.ZERO)
+		return
+	_hands_weight = move_toward(_hands_weight, 1.0, delta / maxf(hands_on_wheel_time, 0.01))
+	_hands.drive(_hands_weight, [wheel[0], wheel[1]], wheel[2])
+
+
+## The wheel this avatar drives, in its skeleton's space -- [left or right grip, the other grip, the rim's
+## centre] -- or [] when it does not drive.
+## Both are taken through the vehicle, which the driver is a child of (Vehicle.server_enter): multiplied
+## up from local transforms, exact where world coordinates are not (see HandsOnWheel).
+func _wheel_in_skeleton() -> Array:
+	var s: Dictionary = _player.locomotion_sample
+	if s.is_empty() or not bool(s.get("seated", false)) or not bool(s.get("driver", false)):
+		return []
+	var vehicle: Node = _player.get_parent()
+	if vehicle == null or not vehicle.has_method("steering_grips"):
+		return []
+	var grips: Array = vehicle.steering_grips()
+	var hub: Node3D = vehicle.steering_hub()
+	if grips.size() != 2 or hub == null:
+		return []
+	var to_skeleton: Transform3D = LocalFrame.of(_skeleton, vehicle).affine_inverse()
+	return [to_skeleton * LocalFrame.of(grips[0], vehicle).origin,
+			to_skeleton * LocalFrame.of(grips[1], vehicle).origin,
+			to_skeleton * LocalFrame.of(hub, vehicle).origin]
 
 ## Local only: cache the vault probe here — the physics space state it needs is null in _process, so the
 ## debug panel reads this snapshot instead. Cheap, and only while the movement debug is on.

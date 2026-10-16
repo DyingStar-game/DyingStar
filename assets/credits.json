@@ -264,6 +264,60 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "clothes-long-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/clothes-long-1.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "clothes-long-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/clothes-long-2.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "clothes-long-3.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/clothes-long-3.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "clothes-long-4.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/clothes-long-4.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "clothes-short-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/clothes-short-1.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "clothes-short-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/clothes-short-2.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "crate-pick-up.mp3",
 			"path": "res://assets/_universe/audio/sfx/props/crate-pick-up.mp3",
 			"author": "WarpZone",
@@ -316,6 +370,15 @@
 			"id": "",
 			"url": "https://freesound.org/s/861546/",
 			"license": "CC0"
+		},
+		{
+			"asset": "eva-thrust-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/characters/eva-thrust-loop.ogg",
+			"author": "Plx",
+			"source": "Discord",
+			"id": "1111179092734259200",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
 		},
 		{
 			"asset": "generator-loop.ogg",

@@ -134,7 +134,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.966, 0.079, 0.485)
 shape = SubResource("BoxShape3D_seat")
 
 [node name="SitPoint" type="Marker3D" parent="SeatDriver" unique_id=1846020284]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9660000000003492, 0.4290000000037253, 0.4349999999976717)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9660000000003492, 0.4290000000037253, 0.355)
 
 [node name="SeatPassenger" type="Area3D" parent="." unique_id=418211017 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 1, -1.1050032463626582)

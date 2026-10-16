@@ -140,8 +140,13 @@ func _process(delta: float) -> void:
 		return
 	modulate = Color(1, 1, 1, 1)
 	_set_state("live")
+	# The digits read the WHEELS' speed, as a real speedometer does (and as the rev counter already
+	# does): the body's speed counted a fall off a cliff as driving, and climbed at ~35 km/h a second
+	# all the way down (playtest 2026-10-16). In the air the free wheels spin down, so do the digits.
+	# Everything else stays on the BODY's speed: the wind on an open door, the limiter (which acts on
+	# it) and the handbrake warning are about how fast the truck moves, not how fast its wheels spin.
+	_speed.text = "%.0f" % absf(_vehicle.get_wheel_kmh())
 	var speed: float = _vehicle.get_display_speed_kmh()
-	_speed.text = "%.0f" % absf(speed)
 	_odometer.text = "%s km" % _km_text(_vehicle.odometer.km())
 	_lights.modulate = light_colour(_vehicle.is_headlights_on())
 	_handbrake.modulate = handbrake_colour(_vehicle.is_handbraked(), speed, Time.get_ticks_msec() * 0.001)
@@ -157,7 +162,7 @@ func _process(delta: float) -> void:
 		_beep()
 	_doors.modulate = door_colour(doors.x > 0.0, speed, doors.y, _door_alarm.lit())
 	_drive.text = _vehicle.get_drive_mode_name()
-	_power.value = _vehicle.get_power_share() * 100.0
+	_show_power(_vehicle.get_power_share())
 	_rpm.text = tr("%%HUD_RPM") % _vehicle.get_engine_rpm()
 	_show_batteries(_vehicle.energy.levels())
 	_show_bays(_vehicle.bays.all())
@@ -174,7 +179,7 @@ func _preview() -> void:
 	_odometer.text = "1 234.5 km"
 	_drive.text = "4x4"
 	_rpm.text = "2400 rpm"
-	_power.value = 60.0
+	_show_power(0.6)
 	_limiter_cap.text = "60"
 	_load_text.text = "800 / 4000 kg"
 	_lights.modulate = GREEN
@@ -192,6 +197,23 @@ static func baseline_lift(font: Font, big: int, small: int) -> int:
 	if font == null:
 		return 0
 	return maxi(roundi(font.get_descent(big) - font.get_descent(small)), 0)
+
+
+## The motor's power bar: how much of its force the drive asks for ([param share], 0..1), and the colour
+## that says how hard -- green cruising, amber half way, red at full force. It used to stay green
+## whatever the motor gave (2026-10-16).
+func _show_power(share: float) -> void:
+	_power.value = clampf(share, 0.0, 1.0) * 100.0
+	(_power.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = power_colour(share)
+
+
+## The power bar's colour for a [param share] (0..1) of the motor's force: a gradient from GREEN through
+## AMBER (half) to RED (full).
+static func power_colour(share: float) -> Color:
+	var s: float = clampf(share, 0.0, 1.0)
+	if s < 0.5:
+		return GREEN.lerp(AMBER, s * 2.0)
+	return AMBER.lerp(RED, (s - 0.5) * 2.0)
 
 
 ## The headlights' light: green on, faint off.

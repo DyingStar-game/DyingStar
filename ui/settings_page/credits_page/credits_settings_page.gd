@@ -245,6 +245,7 @@ func _line(factory: SettingsRowFactory, line: Dictionary, playable: bool) -> Set
 	else:
 		hbox.add_child(title)
 	var row := SettingsRow.new()
+	row.caption_first = false  # author | work: two halves, not a caption beside its control
 	row.focus_mode = Control.FOCUS_ALL
 	row.add_child(hbox)
 	if toggle != null:
