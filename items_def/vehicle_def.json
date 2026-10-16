@@ -48,6 +48,14 @@
 			]
 		},
 		{
+			"zone": 2,
+			"distance": 200.0,
+			"frequency": 30.0,
+			"properties": [
+				"suspension_shocks"
+			]
+		},
+		{
 			"zone": 6,
 			"distance": 200.0,
 			"frequency": 1.0,
