@@ -1166,6 +1166,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "path_asphalt.tres",
+			"path": "res://assets/_universe/environment/terrain/path_asphalt.tres",
+			"author": "ddurieux",
+			"source": "Discord",
+			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "Platform.glb",
 			"path": "res://assets/_universe/structures/industrial/vehicle_lift/platform/Platform.glb",
 			"author": "The_Moye",
