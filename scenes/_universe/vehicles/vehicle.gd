@@ -618,17 +618,55 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## It must LOOP cleanly: unlike the manoeuvre scuffs it runs for as long as the drive lasts, so a seam
 ## comes back every few seconds and is unmistakable.
 @export var sfx_wheel_roll: AudioStream
-## Loudness in decibels once the roll is at full level (0 = the sample's own level, negative = quieter).
-## Its falloff, distance and attenuation are the Tyre scrub ones.
+## Loudness in decibels at the top speed (sfx_wheel_roll_top_kmh); slower, it is quieter (see
+## sfx_wheel_roll_db_per_doubling). Its falloff, distance and attenuation are the Tyre scrub ones.
 @export_range(-40.0, 12.0, 0.5) var sfx_wheel_roll_db: float = -6.0
-## Speed (km/h) at which the rolling noise reaches FULL volume. It is a ramp, not a switch: the sound
-## rises with the speed from standstill to here, then holds. Tyres do not start making noise at some
-## particular speed, they get louder as they turn faster, and a loop appearing at full level would be
-## heard as a sound effect being triggered rather than as a vehicle picking up.
+## Speed (km/h) by which the rolling noise has faded in from standstill. A ramp, not a switch: a loop
+## appearing at once would be heard as a sound effect being triggered rather than as a vehicle picking
+## up. From this speed on the noise follows the speed (VehicleTyreSound).
 @export_range(1.0, 120.0, 1.0) var sfx_wheel_roll_kmh: float = 20.0
+## Speed (km/h) of the loudest and highest rolling noise; it holds past it.
+@export_range(5.0, 200.0, 1.0) var sfx_wheel_roll_top_kmh: float = 80.0
+## Decibels the rolling noise loses each time the speed is halved below the top speed. Real tyres lose
+## about 10; a game wants less, or a slow drive is silent.
+@export_range(0.0, 12.0, 0.5) var sfx_wheel_roll_db_per_doubling: float = 4.0
+## Playback speed of the rolling noise at sfx_wheel_roll_kmh (1 = as recorded, below 1 = lower).
+@export_range(0.5, 2.0, 0.01) var sfx_wheel_roll_low_pitch: float = 0.85
+## Playback speed of the rolling noise at the top speed: the tread strikes the ground faster.
+@export_range(0.5, 2.0, 0.01) var sfx_wheel_roll_high_pitch: float = 1.15
 ## Longest the level may take (s) to cross its whole range. A speed limiter on the ramp, not a fade:
 ## it only bites when the speed jumps rather than climbs -- a vehicle spawning mid-drive, or landing.
 @export_range(0.0, 2.0, 0.01) var sfx_wheel_roll_attack_secs: float = 0.25
+@export_subgroup("Suspension shocks")
+## The suspension answering a knock: a bump, a pothole, a landing. Played at the wheel's suspension
+## mount, as a reaction to how fast the wheel was driven up towards the body (VehicleSuspensionShocks).
+## List the samples from the SOFTEST to the HARDEST: a light knock plays one from the start of the
+## list, a hard one from its end (one of the three nearest, never the same twice in a row).
+@export var sfx_suspension_shocks: Array[AudioStream] = []
+## Loudness in decibels of the lightest knock that is heard at all.
+@export_range(-40.0, 12.0, 0.5) var sfx_suspension_soft_db: float = 0.0
+## Loudness in decibels of a full-strength knock (see suspension_shock_full_speed).
+@export_range(-40.0, 12.0, 0.5) var sfx_suspension_hard_db: float = 8.0
+## Playback speed of the lightest knock (1 = as recorded, above 1 = higher and shorter).
+@export_range(0.5, 2.0, 0.01) var sfx_suspension_soft_pitch: float = 1.1
+## Playback speed of a full-strength knock: below 1, lower and longer -- a heavy hit.
+@export_range(0.5, 2.0, 0.01) var sfx_suspension_hard_pitch: float = 0.9
+## Random spread of the playback speed (share, 0.04 = +/-4 %), so two equal knocks never sound alike.
+@export_range(0.0, 0.3, 0.01) var sfx_suspension_pitch_jitter: float = 0.04
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
+@export_range(0.5, 200.0, 0.5) var sfx_suspension_falloff: float = 5.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
+@export_range(1.0, 500.0, 1.0) var sfx_suspension_distance: float = 40.0
+## How the sound fades with distance.
+@export var sfx_suspension_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+## Speed (m/s) at which a wheel must be pushed up towards the body for its suspension to be heard.
+## Below it the suspension is just following the ground. Measured by the game server, on its physics.
+@export_range(0.05, 10.0, 0.05) var suspension_shock_min_speed: float = 0.8
+## Compression speed (m/s) of a full-strength knock: loudest, lowest, hardest sample.
+@export_range(0.1, 20.0, 0.1) var suspension_shock_full_speed: float = 3.0
+## Shortest time (s) between two knocks of the same wheel: on a washboard track the suspension works
+## all the time, and a sound per ripple would be a rattle.
+@export_range(0.0, 2.0, 0.01) var suspension_shock_cooldown_secs: float = 0.25
 
 @export_group("Ground dust")
 ## How much dust each kind of ground gives up under the tyres (see SurfaceDust). Null = no dust.
@@ -672,6 +710,7 @@ var _scrub_slow_player: AudioStreamPlayer3D = null   # manoeuvre scuff (sample s
 var _scrub_slow_level: float = 0.0                   # its envelope, 0 = silent, 1 = full
 var _roll_player: AudioStreamPlayer3D = null         # rolling noise (constant loop) while driving
 var _roll_level: float = 0.0
+var _tyre_ground: float = 1.0  # 0..1: how much of the tyre noise the ground contact still allows
 var _scrub_family: StringName = &""
 var _scrub_family_age: float = 999.0
 var _dust: VehicleDust = null  # client: the tyres' dust, built on first use (see VehicleDust)
@@ -798,6 +837,17 @@ var limiter: VehicleSpeedLimiter:
 			_limiter.taper_kmh = limiter_taper_kmh
 		return _limiter
 var _limiter: VehicleSpeedLimiter = null
+## The knocks the suspensions take: detected by the server, heard by the clients (VehicleNetPart).
+var shocks: VehicleSuspensionShocks:
+	get:
+		if _shocks == null:
+			_shocks = VehicleSuspensionShocks.new()
+			_shocks.min_speed = suspension_shock_min_speed
+			_shocks.full_speed = suspension_shock_full_speed
+			_shocks.cooldown_s = suspension_shock_cooldown_secs
+		return _shocks
+var _shocks: VehicleSuspensionShocks = null
+var _shock_last_sample: int = -1  # client: index of the last knock sample played, never twice in a row
 ## The batteries fitted and what the motors draw on them (VehicleEnergy): one at a time, in bay order.
 ## A property like bays, for the same reason.
 var energy: VehicleEnergy:
@@ -1782,13 +1832,48 @@ func _wheel_visual(wheel: VehicleWheel3D) -> Node3D:
 ## changing, the change test above stops sending it, and a yard full of parked trucks costs nothing.
 func _sample_suspension() -> Array:
 	var heights: Array = []
+	for h in _wheel_heights():
+		heights.append(roundi(h * 100.0))
+	return heights
+
+
+## SERVER: each wheel mesh's height in the vehicle's own frame (m), unrounded: what the suspension
+## shocks are measured on (a centimetre a tick is 0.6 m/s, too coarse for a speed).
+func _wheel_heights() -> PackedFloat32Array:
+	var heights := PackedFloat32Array()
 	for wheel in _wheels:
 		var visual: Node3D = _wheel_visual(wheel)
-		if visual == null:
-			heights.append(0)
-			continue
-		heights.append(roundi(to_local(visual.global_position).y * 100.0))
+		heights.append(to_local(visual.global_position).y if visual != null else 0.0)
 	return heights
+
+
+## SERVER: look for this tick's suspension knocks (VehicleSuspensionShocks); they replicate with the
+## state. A vehicle off the network (dropped straight into a scene) simulates itself: it plays them.
+func _track_suspension_shocks(delta: float) -> void:
+	for shot: Vector2i in shocks.track(_wheel_heights(), delta):
+		if OS.is_debug_build():
+			print("[Vehicle shock] %s %s: %.2f m/s -> %d %%" % [name, _wheels[shot.x].name,
+					shocks.fired_speed(shot.x), shot.y])
+		if not _is_networked():
+			_play_suspension_shock(shot.x, float(shot.y) / 100.0)
+
+
+## CLIENT: one suspension knock of [param strength] (0..1), heard where the suspension is: at the top
+## mount of wheel [param wheel_index] -- the wheel node itself, which a replica never moves. Harder =
+## louder, lower and a heavier sample.
+func _play_suspension_shock(wheel_index: int, strength: float) -> void:
+	if _sfx_muted() or sfx_suspension_shocks.is_empty() or wheel_index < 0 or wheel_index >= _wheels.size():
+		return
+	var index: int = VehicleSuspensionShocks.pick_sample(strength, sfx_suspension_shocks.size(),
+			_shock_last_sample, randf())
+	_shock_last_sample = index
+	var pitch: float = lerpf(sfx_suspension_soft_pitch, sfx_suspension_hard_pitch, strength) \
+			* (1.0 + randf_range(-sfx_suspension_pitch_jitter, sfx_suspension_pitch_jitter))
+	# Hosted by the vehicle, not the wheel: a wheel's first Node3D child is taken for its visual
+	# (_wheel_visual), and a sound player there would be spun and dropped in its place.
+	Sfx3D.play_pitched(self, sfx_suspension_shocks[index],
+			lerpf(sfx_suspension_soft_db, sfx_suspension_hard_db, strength), sfx_suspension_falloff,
+			sfx_suspension_distance, sfx_suspension_attenuation, pitch, _wheels[wheel_index].position)
 
 
 ## CLIENT: where to place wheel [param index]'s mesh, as a local height under its wheel node.
@@ -2449,6 +2534,7 @@ func _physics_process_impl(delta: float) -> void:
 			return
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
 		_apply_adopted_velocity()
+		_track_suspension_shocks(delta)  # before the parked early-return: a knock wakes nothing up
 		# Parked (asleep, no pilot) <-> moving edge for the NPC navmesh. Detected HERE, on the actual
 		# `sleeping` state, rather than where the settle block below sets it: Jolt also sleeps a body
 		# on its own and wakes it on any collision, and neither passes through that block.
@@ -2508,6 +2594,7 @@ func _physics_process_impl(delta: float) -> void:
 		return
 	# Standalone (a vehicle dropped straight into a scene, with no uuid): it still holds its load
 	# and rights itself, but nobody can take the wheel — driving is the server's, through a seat.
+	_track_suspension_shocks(delta)
 	_apply_surface_grip()
 	_check_rollover_unlock()
 	_pin_locked_cargo()
@@ -2673,7 +2760,13 @@ func _update_tyre_audio(delta: float) -> void:
 	# The scuff still stands down once the roll is at full level: past that speed a manoeuvre scuff is
 	# not what the tyres are doing any more.
 	var turning: bool = rate >= sfx_wheel_scrub_min_rate
-	var want_slow: bool = turning and roll_target < 1.0 and sfx_wheel_scrub != null
+	# Off the ground the tyres touch nothing: no scuff at all, and the roll fades out like their dust
+	# (VehicleDust.ground_share) -- after a big bump it kept rubbing all the way through the air
+	# (2026-10-16). Back on the ground it is whole again at once: the landing.
+	var grounded: bool = wheels_grounded if _is_networked() else _driven_wheels_grounded()
+	_tyre_ground = VehicleDust.ground_share(_tyre_ground, grounded, delta)
+	var want_slow: bool = turning and grounded and roll_target < 1.0 and sfx_wheel_scrub != null
+	roll_target *= _tyre_ground
 	# Started only from silence: a turn held for seconds keeps the sound it began with. That IS the
 	# no-overlap rule -- and it is also when a fresh sample is drawn, the only moment variation is heard
 	# as variation rather than as a stutter.
@@ -2685,8 +2778,15 @@ func _update_tyre_audio(delta: float) -> void:
 	# over from scuff to roll as a crossfade instead of a cut.
 	_scrub_slow_level = _drive_tyre_loop(_scrub_slow_player, _scrub_slow_level, 1.0 if want_slow else 0.0,
 			0.0, sfx_wheel_scrub_fade_secs, sfx_wheel_scrub_db, delta)
+	# The roll's level follows the speed, and so does its pitch: the faster the tyres turn, the louder
+	# and higher (VehicleTyreSound). Under the configured sfx_wheel_roll_db, which is the top and the cap.
+	var roll_db: float = sfx_wheel_roll_db + VehicleTyreSound.roll_db(speed_kmh, sfx_wheel_roll_kmh,
+			sfx_wheel_roll_top_kmh, sfx_wheel_roll_db_per_doubling)
 	_roll_level = _drive_tyre_loop(_roll_player, _roll_level, roll_target,
-			sfx_wheel_roll_attack_secs, sfx_wheel_scrub_fade_secs, sfx_wheel_roll_db, delta)
+			sfx_wheel_roll_attack_secs, sfx_wheel_scrub_fade_secs, roll_db, delta)
+	if _roll_level > 0.0:
+		_roll_player.pitch_scale = VehicleTyreSound.roll_pitch(speed_kmh, sfx_wheel_roll_kmh,
+				sfx_wheel_roll_top_kmh, sfx_wheel_roll_low_pitch, sfx_wheel_roll_high_pitch)
 
 
 ## Move one held loop toward `target` (0 = silent, 1 = full), no faster than `attack` going up or
@@ -2709,6 +2809,10 @@ func _drive_tyre_loop(player: AudioStreamPlayer3D, level: float, target: float,
 			player.stop()
 		return 0.0
 	player.volume_db = db + linear_to_db(next_level)
+	# The cap follows the level (see Sfx3D.configure). Left at the top level it was set to, the distance
+	# gain lifted the driver -- a metre from the source, well inside the falloff -- straight onto it: in
+	# the cab the roll sounded at full from walking pace, its speed curve and its fades flattened away.
+	player.max_db = player.volume_db
 	return next_level
 
 
@@ -2861,7 +2965,7 @@ func _forget_sent() -> void:
 ## The state that replicates as parts of its own (VehicleNetPart): written by _replicate_transform,
 ## read back by client_channel_data_update and server_adopt_state.
 func _net_parts() -> Array[VehicleNetPart]:
-	return [odometer, limiter]
+	return [odometer, limiter, shocks]
 
 ## CLIENT: mirror the replicated bay table onto our own bays, so the HUD and the rev counter tell
 ## the truth about a truck someone else has been working on.
@@ -3096,6 +3200,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# still arrives here — it runs before the uuid is set, so _is_networked() is still false.
 	for part in _net_parts():
 		part.read(data)
+	for shot: Vector2i in shocks.take_heard():
+		_play_suspension_shock(shot.x, float(shot.y) / 100.0)
 	if data.has("position"):
 		var pos := Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
 		var rot := rotation
@@ -3357,6 +3463,7 @@ func _exit_position_for_seat(seat: Node) -> Vector3:
 func server_adopt_state(data: Dictionary) -> void:
 	for part in _net_parts():
 		part.read(data)
+	shocks.take_heard()  # the sender's past knocks: its clients heard them, the server has no audio
 	if data.has("engine"):
 		set_engine(bool(data["engine"]))
 	if data.has("headlights"):

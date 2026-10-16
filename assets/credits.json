@@ -489,6 +489,51 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "pneumatic_suspension_1.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "pneumatic_suspension_3.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_3.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "pneumatic_suspension_4.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_4.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "pneumatic_suspension_5.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_5.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "pneumatic_suspension_6.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_6.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "sandstorm_001.ogg",
 			"path": "res://assets/_universe/audio/ambience/sandstorm_001.ogg",
 			"author": "bernhoftbret",
