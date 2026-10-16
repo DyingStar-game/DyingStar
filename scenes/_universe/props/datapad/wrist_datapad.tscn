@@ -1,0 +1,110 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/props/datapad/wrist_datapad.gd" id="1_script"]
+[ext_resource type="Script" path="res://scenes/interactables/gui_3d.gd" id="2_gui"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_band"]
+albedo_color = Color(0.06, 0.065, 0.075, 1)
+metallic = 0.6
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_housing"]
+albedo_color = Color(0.13, 0.14, 0.16, 1)
+metallic = 0.85
+roughness = 0.35
+
+[sub_resource type="StandardMaterial3D" id="Mat_accent"]
+albedo_color = Color(1, 0.73, 0.03, 1)
+emission_enabled = true
+emission = Color(1, 0.73, 0.03, 1)
+emission_energy_multiplier = 2.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_led"]
+albedo_color = Color(0.08, 0.22, 0.1, 1)
+metallic_specular = 0.8
+roughness = 0.2
+
+[sub_resource type="CylinderMesh" id="Mesh_band"]
+material = SubResource("Mat_band")
+top_radius = 0.041
+bottom_radius = 0.041
+height = 0.045
+radial_segments = 24
+rings = 1
+
+[sub_resource type="BoxMesh" id="Mesh_housing"]
+material = SubResource("Mat_housing")
+size = Vector3(0.085, 0.016, 0.058)
+
+[sub_resource type="BoxMesh" id="Mesh_bezel"]
+material = SubResource("Mat_band")
+size = Vector3(0.078, 0.004, 0.05)
+
+[sub_resource type="BoxMesh" id="Mesh_rail"]
+material = SubResource("Mat_accent")
+size = Vector3(0.085, 0.003, 0.003)
+
+[sub_resource type="BoxMesh" id="Mesh_button"]
+material = SubResource("Mat_housing")
+size = Vector3(0.012, 0.008, 0.006)
+
+[sub_resource type="SphereMesh" id="Mesh_led"]
+material = SubResource("Mat_led")
+radius = 0.0018
+height = 0.0036
+radial_segments = 16
+rings = 8
+
+[sub_resource type="QuadMesh" id="Mesh_screen"]
+size = Vector2(0.072, 0.0405)
+
+[node name="WristDatapad" type="Node3D" node_paths=PackedStringArray("screen", "viewport", "gui", "led")]
+script = ExtResource("1_script")
+screen = NodePath("Screen")
+viewport = NodePath("ScreenViewport")
+gui = NodePath("Gui")
+led = NodePath("Led")
+
+[node name="Band" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("Mesh_band")
+
+[node name="Housing" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.044, 0)
+mesh = SubResource("Mesh_housing")
+
+[node name="Bezel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0525, 0)
+mesh = SubResource("Mesh_bezel")
+
+[node name="RailNear" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.051, 0.0285)
+mesh = SubResource("Mesh_rail")
+
+[node name="RailFar" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.051, -0.0285)
+mesh = SubResource("Mesh_rail")
+
+[node name="Button" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.022, 0.044, 0.031)
+mesh = SubResource("Mesh_button")
+
+[node name="Led" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0375, 0.0545, -0.0235)
+mesh = SubResource("Mesh_led")
+
+[node name="Screen" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0548, 0)
+cast_shadow = 0
+mesh = SubResource("Mesh_screen")
+
+[node name="ScreenViewport" type="SubViewport" parent="."]
+disable_3d = true
+gui_embed_subwindows = true
+size = Vector2i(320, 180)
+render_target_update_mode = 1
+
+[node name="Gui" type="Node3D" parent="." node_paths=PackedStringArray("node_viewport", "node_quad")]
+script = ExtResource("2_gui")
+node_viewport = NodePath("../ScreenViewport")
+node_quad = NodePath("../Screen")

@@ -280,6 +280,10 @@ const DAY_ENERGY: float = 1.35
 var _viewport: SubViewport
 ## The chart's face: the 3D view and every panel over it. Hosted, it lives in the DataPad's tab.
 var _surface: Control = null
+## The mouse is on the face. Hosted in the DataPad, the face is drawn on the wrist's screen and only
+## hears the mouse while the cursor is on that screen: off it, its mouse stays where it last was, and
+## the readout went on writing that longitude with the cursor off the chart (playtest 2026-10-15).
+var _mouse_on_face: bool = false
 var _hosted: bool = false
 var _world_root: Node3D
 var _camera: Camera3D
@@ -612,6 +616,8 @@ func _build_ui() -> void:
 	_surface.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_surface.mouse_filter = Control.MOUSE_FILTER_STOP
 	_surface.gui_input.connect(_on_surface_input)
+	_surface.mouse_entered.connect(func() -> void: _mouse_on_face = true)
+	_surface.mouse_exited.connect(func() -> void: _mouse_on_face = false)
 	_surface.visible = false
 	add_child(_surface)
 
@@ -2419,8 +2425,9 @@ func _refresh_cursor_readout() -> void:
 				sphere.basis.orthonormalized(), key)
 		if local != Vector3.ZERO:
 			text = cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"]))
-	# On the pad the cross stays with nothing to write: it is what hovers and selects.
-	if text == "" and not on_pad:
+	# On the pad the cross stays with nothing to write: it is what hovers and selects. The mouse off the
+	# face reads nothing, whatever lies under where it last was.
+	if not on_pad and (text == "" or not _mouse_on_face):
 		_cursor_readout.hide_readout()
 	else:
 		_cursor_readout.show_at(at, text, on_pad)

@@ -390,6 +390,11 @@ func server_action_received(data: Dictionary) -> void:
 			# see the torch (replicated as a state, not the action — a missed event can't desync it).
 			player.flashlight.visible = not player.flashlight.visible
 			player.server_send_properties_to_client({"flashlight": player.flashlight.visible})
+		"datapad":
+			# The wrist raised to read the DataPad (or lowered): the state the owner asks for, replicated as
+			# a state so every avatar, a late joiner included, holds the same arm up (WristRaise).
+			player.datapad_raised = bool(data.get("on", false))
+			player.server_send_properties_to_client({"datapad": player.datapad_raised})
 		"god_mode":
 			# God mode (dev free-flight): flip the authoritative state; _physics_process then flies
 			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't

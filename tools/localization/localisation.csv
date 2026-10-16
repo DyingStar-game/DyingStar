@@ -39,6 +39,8 @@ keys,en,fr,es
 %%MENU_VEHICLE_HUD,Vehicle dashboard (speed / rpm / weight / bays),Tableau de bord du véhicule (vitesse / tr-min / poids / baies),
 %%MENU_MOVEMENT_DEBUG,Movement debug (speed / wheel / animation),Débogage du déplacement (vitesse / molette / animation),
 %%MENU_SAFETY_NET_DEBUG,Safety nets above the ground (red: fallback sphere / magenta: fall catch),Filets de sécurité au-dessus du sol (rouge : sphère de secours / magenta : rattrapage de chute),
+%%MENU_NOTIFICATION_DEBUG,Test notification (every 10 s: sound / wrist light),Notification de test (toutes les 10 s : son / voyant du poignet),
+%%DEBUG_TEST_NOTIFICATION,Test notification (Settings > Debug),Notification de test (Paramètres > Debug),
 %%MENU_MONITOR,Monitor,Écran,
 %%MENU_MONITOR_N,Monitor %d,Écran %d,
 %%MENU_DISPLAY_MODE,Display Mode,Mode d'affichage,

@@ -32,6 +32,9 @@ const DEFAULTS : Dictionary = {
 	# The server's safety nets where they stand above the ground: the fallback collision under the
 	# planet (base sphere, safety shell) in red, the below-surface catch's threshold in magenta.
 	&"safety_net_debug": false,
+	# A test notification now and every PlayerClient.DEBUG_NOTIFICATION_S: the line, its sound, the wrist
+	# DataPad's light -- tried without waiting for a friend request.
+	&"notification_debug": false,
 }
 ## Switches a dedicated server reads from its own ini ([section, key]), since it never loads
 ## settings.ini: the movement trace is the server's to give, collision being server-only.
