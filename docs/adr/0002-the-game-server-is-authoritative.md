@@ -1,10 +1,10 @@
 # 0002. Keep the game server authoritative; clients send intents
 
 - **Status:** Accepted
-- **Date:** 2025-08-09 · **Recorded:** 2026-10-04 · **Updated:** —
+- **Date:** 2025-08-09 · **Recorded:** 2026-10-04 · **Updated:** 2026-10-16
 - **Deciders:** David Durieux, WarpZone, KiFouine
 - **Evidence:** 53866907 (#25), e7c439d0, a5a0d1c6, af0df6b2, 1427db64, afa69ac0, d015cb14,
-  4bfbfa52 (#297), 9f55068c, 5475eac5
+  4bfbfa52 (#297), 9f55068c, 5475eac5, cd50f590 (#404)
 
 ## Context
 
@@ -33,6 +33,9 @@ reparent raced the server's, applying a planet-local 6 361 km position inside a 
   may swap them) and an input is marked read only where it is applied (5475eac5).
 - A new gameplay action is a `client_action` handled in `PlayerServer`. Client guesses (an
   optimistic seat, the owner's carry flag) are cosmetic and yield to the next replicated value.
+- Feedback the owner gives itself from its own keys is cosmetic too and allowed: its EVA thrusters'
+  hiss starts with the press, a pick-up rustles on the key (#404). The others hear the same from
+  the replicated state (`thrusting`, `carrying`); the owner's guess never becomes state.
 
 ## Rejected alternatives
 

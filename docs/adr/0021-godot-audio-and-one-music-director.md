@@ -1,9 +1,9 @@
 # 0021. Use Godot's own audio, and let one MusicDirector play all the music
 
 - **Status:** Accepted
-- **Date:** 2026-05-04 (Godot audio), 2026-09-30 (music) · **Recorded:** 2026-10-04 · **Updated:** —
+- **Date:** 2026-05-04 (Godot audio), 2026-09-30 (music) · **Recorded:** 2026-10-04 · **Updated:** 2026-10-16
 - **Deciders:** Nicolas Rozlonkowski (FMOD to Wwise), David Durieux (Godot audio), WarpZone (music)
-- **Evidence:** 13f064e7, 01f9573a, 4f2081f7, 43d4c256, d65e0f24, 2822b2e7, e0c09e6c
+- **Evidence:** 13f064e7, 01f9573a, 4f2081f7, 43d4c256, d65e0f24, 2822b2e7, e0c09e6c, cd50f590 (#404)
 
 ## Context
 
@@ -18,6 +18,10 @@ rationale. Music was later started from several places with nothing to arbitrate
   Music, VoIP, UI), one volume slider per bus.
 - Positional effects are played or configured through `Sfx3D`: the same volume and falloff knobs
   everywhere, silent in the editor and on the dedicated server (clients play from replicated state).
+- A sound with several takes draws them with `SurfaceSounds.pick_from`: never the same take twice
+  running (footsteps, clothes rustle). The takes of one sound are matched by loudness (LUFS), not
+  by peak, and a family that plays over other sounds gets its own volume knob: peak-matched short
+  rustles at -18 dB were drowned by the crate they picked up (playtest 2026-10-16).
 - `MusicDirector` (autoload) is the only thing that plays music. Twice a second it reads where the
   player is, asks `MusicTable` for the playlist, and cross-fades to it.
 - `music_table.tres` pairs a situation with music: menu, zone tag, weightless, station, point of

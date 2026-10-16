@@ -1,10 +1,10 @@
 # 0011. Build in double precision, and keep world positions out of float32
 
 - **Status:** Accepted
-- **Date:** 2025-08-13 · **Recorded:** 2026-10-04 · **Updated:** —
+- **Date:** 2025-08-13 · **Recorded:** 2026-10-04 · **Updated:** 2026-10-16
 - **Deciders:** David Durieux, WarpZone, KiFouine (who first chose the double build is not recorded)
 - **Evidence:** 1c8a2ea9 (#36), 85e13d9e (#168), 84852ebe, 39328bc7, 59aa1a68, ef7a84d6, 27c0e818,
-  259e1cf0 (#210), e6d55f38, 0f6183f6, 64820f6f, 6fa19cef, b2060e60
+  259e1cf0 (#210), e6d55f38, 0f6183f6, 64820f6f, 6fa19cef, b2060e60, cd50f590 (#404)
 
 ## Context
 
@@ -24,7 +24,10 @@ narrowphase (relative to body origins) and broadphase, physics hit points and th
   - shaders work camera-relative (the CPU subtracts the camera position in float64) or in model
     space ("up" from the model matrix with w = 0, never `normalize(world_pos)`);
   - labels and markers are faced or projected on the CPU, not by a GPU billboard;
-  - transforms that travel stay parent-local ([0005](0005-replicate-in-the-parent-local-frame.md)).
+  - transforms that travel stay parent-local ([0005](0005-replicate-in-the-parent-local-frame.md));
+  - a point from one subtree used in another (an IK target on a steering wheel, a marker) is worked
+    out by multiplying LOCAL transforms up to their common ancestor (`LocalFrame.of`, #404), never
+    from two global transforms: at ~4e10 m a double tells positions apart by ~8 µm only.
 
 ## Consequences
 
@@ -42,6 +45,9 @@ narrowphase (relative to body origins) and broadphase, physics hit points and th
   and vehicles "danced", vehicles never slept (A/B test, 2026-07-07).
 - Trusting a ray's hit point or the collider's origin: phantom hits, grabs through walls (27c0e818).
 - 3D billboard labels for names and markers: they shimmer as the camera moves (259e1cf0).
+- An IK target set from global positions: it came back a few µm off each frame, the arm multiplied
+  it, and a wrist-worn screen shook by up to 0.08 mm in a vehicle, a pixel once zoomed in
+  (measured 2026-10-15).
 - `normalize(world_pos)` or world Y as "up" in a shader: half the terrain read as cliff (0f6183f6).
 
 ## In the code
