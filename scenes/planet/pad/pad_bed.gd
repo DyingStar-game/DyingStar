@@ -154,6 +154,9 @@ static func settled_stats(rec: Dictionary, entry: Dictionary) -> Dictionary:
 	return quantise_stats(entry)
 
 
+## Rounding allowance (m) of the circle rejection in aprons_touch: the pairs it lets through still get the
+## exact separating-axis test, so it only has to clear the rounding of the distance.
+const APRONS_REJECT_SLACK_M := 1.0
 ## Rounding allowance (m) of the segment rejection in road_exclusion: the bound is computed in a
 ## different order than sdf_m, so it must clear the limit by more than any rounding of either.
 const ROAD_REJECT_SLACK_M := 1.0
@@ -241,6 +244,13 @@ static func sdf_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
 ## buildings share their flat ground, and PlanetData puts them on ONE level.
 ## The aprons are taken as rectangles (square corners, a little generous at the
 ## corners) and tested with separating axes on the tangent plane at [param a].
+##
+## Two rectangles whose circumscribed circles are apart do not touch, so the
+## separating-axis test (trigonometry included) is only run inside that bound,
+## plus a metre against rounding. PadLevels.settle asks this of every pad of a
+## village for every pad it re-levels — up to 1 600 calls, 8 µs each, for one
+## building, with 8-21 % of the pairs inside the bound
+## (test/perf/server_ingest_bench, 2026-10-16). Same answer, pair for pair.
 static func aprons_touch(a: Dictionary, b: Dictionary, m_per_deg: float) -> bool:
 	if is_notch(a) or is_notch(b):
 		return false  # a notch has no level to share
@@ -248,12 +258,14 @@ static func aprons_touch(a: Dictionary, b: Dictionary, m_per_deg: float) -> bool
 	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
 	var t := Vector2(wrapf(float(b["lon"]) - float(a["lon"]), -180.0, 180.0) * ls * m_per_deg,
 			(float(b["lat"]) - lat0) * m_per_deg)
+	var ea := Vector2(float(a["hx"]), float(a["hy"])) + Vector2.ONE * float(a["apron_m"])
+	var eb := Vector2(float(b["hx"]), float(b["hy"])) + Vector2.ONE * float(b["apron_m"])
+	if t.length() > ea.length() + eb.length() + APRONS_REJECT_SLACK_M:
+		return false
 	var ya: float = float(a["yaw"])
 	var yb: float = float(b["yaw"])
 	var axes := [Vector2(cos(ya), sin(ya)), Vector2(-sin(ya), cos(ya)),
 			Vector2(cos(yb), sin(yb)), Vector2(-sin(yb), cos(yb))]
-	var ea := Vector2(float(a["hx"]), float(a["hy"])) + Vector2.ONE * float(a["apron_m"])
-	var eb := Vector2(float(b["hx"]), float(b["hy"])) + Vector2.ONE * float(b["apron_m"])
 	for l: Vector2 in axes:
 		var ra: float = ea.x * absf((axes[0] as Vector2).dot(l)) + ea.y * absf((axes[1] as Vector2).dot(l))
 		var rb: float = eb.x * absf((axes[2] as Vector2).dot(l)) + eb.y * absf((axes[3] as Vector2).dot(l))
