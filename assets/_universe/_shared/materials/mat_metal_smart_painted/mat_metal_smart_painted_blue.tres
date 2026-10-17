@@ -1,0 +1,21 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://b24pyc3nck5q7"]
+
+[ext_resource type="Shader" uid="uid://bdb0hrfumlpwd" path="res://assets/_universe/_shared/shaders/painted_metal_smart.gdshader" id="1_241m7"]
+[ext_resource type="Texture2D" uid="uid://bgnamkyiouiyy" path="res://assets/_universe/props/furniture/iron_plate_0.5x0_metal_iron_041A_4K_Metalness-metal_iron_041A_4K_Roughness.png" id="2_0mrui"]
+[ext_resource type="Texture2D" uid="uid://qr4nm0gwackl" path="res://assets/textures/grunge/scratch_tile.png" id="2_sqcr0"]
+
+[resource]
+resource_name = "metal"
+render_priority = 0
+shader = ExtResource("1_241m7")
+shader_parameter/paint_color = Color(0.4524, 0.49834684, 0.52, 1)
+shader_parameter/paint_roughness = 0.80999998189488
+shader_parameter/paint_metallic = 0.999999977648
+shader_parameter/metal_color = Color(0.84505206, 0.84505206, 0.84505206, 1)
+shader_parameter/metal_roughness = 0.96999997831856
+shader_parameter/metal_orm_texture = ExtResource("2_0mrui")
+shader_parameter/emission_color = Color(0.92578125, 0.9207012, 0.85466003, 1)
+shader_parameter/emission_strength = 4.0
+shader_parameter/scratch_texture = ExtResource("2_sqcr0")
+shader_parameter/scratch_amount = 0.3999999910592
+shader_parameter/uv1_blend_sharpness = 2.71
