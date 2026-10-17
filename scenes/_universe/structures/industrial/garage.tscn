@@ -6,7 +6,7 @@
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_dtmlv"]
 [ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://scenes/_universe/structures/spawn_kiosk/spawn_kiosk.tscn" id="4_u0y64"]
 [ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/_universe/vehicles/ground/trucks/truck.tscn" id="5_truck"]
-[ext_resource type="Texture2D" uid="uid://bkdgy355wbt83" path="res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg" id="6_5left"]
+[ext_resource type="Texture2D" uid="uid://bkdgy355wbt83" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/floor/hazard_stripes.jpg" id="6_5left"]
 [ext_resource type="Script" uid="uid://db0rt5lmk5ogb" path="res://scenes/_universe/vehicles/charging_zone.gd" id="7_5iueg"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="8_neon"]
 [ext_resource type="PackedScene" uid="uid://bqc3pjlv1nipw" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="disp_scene"]

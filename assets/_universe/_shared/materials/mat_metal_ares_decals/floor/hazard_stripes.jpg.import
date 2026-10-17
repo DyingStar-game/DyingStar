@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bkdgy355wbt83"
-path="res://.godot/imported/hazard_stripes.jpg-e63748a7da91ed69e6824673b28b9ff1.ctex"
+path="res://.godot/imported/hazard_stripes.jpg-8e06177f80b5e64b62e9d4ecf8829790.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg"
-dest_files=["res://.godot/imported/hazard_stripes.jpg-e63748a7da91ed69e6824673b28b9ff1.ctex"]
+source_file="res://assets/_universe/_shared/materials/mat_metal_ares_decals/floor/hazard_stripes.jpg"
+dest_files=["res://.godot/imported/hazard_stripes.jpg-8e06177f80b5e64b62e9d4ecf8829790.ctex"]
 
 [params]
 

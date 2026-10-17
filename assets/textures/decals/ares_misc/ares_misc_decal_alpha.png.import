@@ -2,14 +2,11 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://do5ypjlfrhjht"
+uid="uid://mdm7mb4rwq1h"
 path.s3tc="res://.godot/imported/ares_misc_decal_alpha.png-8b97147f50bededc564f1728dd523e26.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
-}
-generator_parameters={
-"md5": "18d04288c3fb246553c24a7112cda3e2"
 }
 
 [deps]

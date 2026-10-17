@@ -797,6 +797,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "bathroom_sink.glb",
+			"path": "res://assets/_universe/props/furniture/hygene/bathroom_sink.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "battery.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/battery.png",
 			"author": "WarpZone",
@@ -811,6 +820,15 @@
 			"author": "The_Moye",
 			"source": "Discord",
 			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "bed.glb",
+			"path": "res://assets/_universe/props/furniture/chamber/bed.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -969,7 +987,7 @@
 		},
 		{
 			"asset": "hazard_stripes.jpg",
-			"path": "res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg",
+			"path": "res://assets/_universe/_shared/materials/mat_metal_ares_decals/floor/hazard_stripes.jpg",
 			"author": "Kjpargeter",
 			"source": "Freepik",
 			"id": "",
@@ -1034,6 +1052,15 @@
 			"asset": "mat_concrete_wall_smooth",
 			"path": "res://assets/_universe/_shared/materials/mat_concrete_wall_smooth",
 			"author": "DDurieux",
+			"source": "",
+			"id": "",
+			"url": "",
+			"license": "CC0-1.0"
+		},
+		{
+			"asset": "mat_fabric_alu_mesh",
+			"path": "res://assets/_universe/_shared/materials/mat_fabric_alu_mesh",
+			"author": "irong",
 			"source": "",
 			"id": "",
 			"url": "",
@@ -1148,6 +1175,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "mirror.glb",
+			"path": "res://assets/_universe/props/furniture/hygene/mirror.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "motor.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/motor.png",
 			"author": "WarpZone",
@@ -1229,6 +1265,33 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "restroom_cabin.glb",
+			"path": "res://assets/_universe/props/furniture/hygene/restroom_cabin.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "shower_cabin.glb",
+			"path": "res://assets/_universe/props/furniture/hygene/shower_cabin.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "table_bed.glb",
+			"path": "res://assets/_universe/props/furniture/chamber/table_bed.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "test_containers_12x2.6.blend",
 			"path": "res://assets_blender/_universe/props/containers/test_containers_12x2.6.blend",
 			"author": "Kankan",
@@ -1261,6 +1324,15 @@
 			"author": "Kankan",
 			"source": "Discord",
 			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "wardrobe.glb",
+			"path": "res://assets/_universe/props/furniture/chamber/wardrobe.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
