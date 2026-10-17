@@ -2,9 +2,9 @@
 
 [ext_resource type="PackedScene" uid="uid://62owkh6ghwx1" path="res://assets/_universe/props/food/food_biscuit.glb" id="1_qdpmo"]
 [ext_resource type="Material" uid="uid://ho5sk1nm4wo2" path="res://assets/_universe/_shared/materials/food/biscuit_material.tres" id="2_7ul2k"]
-[ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/_universe/_shared/materials/decals/ares_logo_decal_material.tres" id="3_6ebdc"]
+[ext_resource type="Material" uid="uid://dbpo3aspw1eb1" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/ares_logo_decal_material.tres" id="3_6ebdc"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="food_propsync"]
-[ext_resource type="Script" path="res://scenes/globals/generic_prop.gd" id="food_generic"]
+[ext_resource type="Script" uid="uid://df11ppr1ft83" path="res://scenes/globals/generic_prop.gd" id="food_generic"]
 [ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="food_landing"]
 [ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="food_pick"]
 

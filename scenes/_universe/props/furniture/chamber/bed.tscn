@@ -1,0 +1,67 @@
+[gd_scene format=3 uid="uid://0o84g0nqo8b"]
+
+[ext_resource type="Script" uid="uid://c1dv6rpo1e6os" path="res://scenes/globals/net_static_body.gd" id="1_me15w"]
+[ext_resource type="PackedScene" uid="uid://dfqihru31xob6" path="res://assets/_universe/props/furniture/chamber/bed.glb" id="2_ynwee"]
+[ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_5nqpg"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/mat_metal_ares_misc_decal.tres" id="4_m3088"]
+[ext_resource type="Material" uid="uid://2wdc033an07q" path="res://assets/_universe/_shared/materials/mat_fabric_alu_mesh/mat_fabric_alu_mesh.tres" id="5_eyd72"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0s4u6"]
+size = Vector3(0.98535156, 0.5135498, 2.0212402)
+
+[node name="Bed" type="StaticBody3D" unique_id=931220610]
+script = ExtResource("1_me15w")
+metadata/_custom_type_script = "uid://c1dv6rpo1e6os"
+
+[node name="bed" parent="." unique_id=2095631751 instance=ExtResource("2_ynwee")]
+
+[node name="bed_frame" parent="bed" index="0" unique_id=1077222943]
+surface_material_override/0 = ExtResource("3_5nqpg")
+
+[node name="bed_matress" parent="bed" index="1" unique_id=1451617768]
+surface_material_override/0 = ExtResource("5_eyd72")
+
+[node name="bed_pillow" parent="bed" index="2" unique_id=495058132]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.50481755, -0.77265507)
+surface_material_override/0 = ExtResource("5_eyd72")
+
+[node name="bed_decal_frame" parent="bed" index="3" unique_id=591966213]
+visibility_range_end = 8.0
+surface_material_override/0 = ExtResource("4_m3088")
+
+[node name="bed_sheet" parent="bed" index="4" unique_id=1451131594]
+surface_material_override/0 = ExtResource("5_eyd72")
+
+[node name="bed_under_frame" parent="bed" index="5" unique_id=1263604111]
+surface_material_override/0 = ExtResource("3_5nqpg")
+
+[node name="bed_under_storage_1" parent="bed" index="6" unique_id=690554255]
+surface_material_override/0 = ExtResource("3_5nqpg")
+surface_material_override/1 = ExtResource("4_m3088")
+
+[node name="bed_under_storage_2" parent="bed" index="7" unique_id=1828938348]
+surface_material_override/0 = ExtResource("3_5nqpg")
+surface_material_override/1 = ExtResource("4_m3088")
+
+[node name="bed_under_storage_3" parent="bed" index="8" unique_id=1692402421]
+surface_material_override/0 = ExtResource("3_5nqpg")
+surface_material_override/1 = ExtResource("4_m3088")
+
+[node name="bed_under_storage_4" parent="bed" index="9" unique_id=1652481264]
+surface_material_override/0 = ExtResource("3_5nqpg")
+surface_material_override/1 = ExtResource("4_m3088")
+
+[node name="bed_under_storage_5" parent="bed" index="10" unique_id=1963151427]
+surface_material_override/0 = ExtResource("3_5nqpg")
+surface_material_override/1 = ExtResource("4_m3088")
+
+[node name="bed_under_storage_6" parent="bed" index="11" unique_id=259249220]
+surface_material_override/0 = ExtResource("3_5nqpg")
+surface_material_override/1 = ExtResource("4_m3088")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=677317878]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25726318, 0)
+visible = false
+shape = SubResource("BoxShape3D_0s4u6")
+
+[editable path="bed"]

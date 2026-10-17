@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://cdw47e4be0uko"]
+
+[ext_resource type="Script" uid="uid://c1dv6rpo1e6os" path="res://scenes/globals/net_static_body.gd" id="1_nab6o"]
+[ext_resource type="PackedScene" uid="uid://ce73py5sm1p8s" path="res://assets/_universe/props/furniture/hygene/bathroom_sink.glb" id="2_3gsxc"]
+[ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_esco0"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/mat_metal_ares_misc_decal.tres" id="4_mfsfa"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0s4u6"]
+size = Vector3(1, 0.8166504, 0.7103882)
+
+[node name="BathroomSink" type="StaticBody3D" unique_id=548032774]
+script = ExtResource("1_nab6o")
+metadata/_custom_type_script = "uid://c1dv6rpo1e6os"
+
+[node name="bathroom_sink" parent="." unique_id=291254318 instance=ExtResource("2_3gsxc")]
+
+[node name="bathroom_sink" parent="bathroom_sink" index="0" unique_id=2130878130]
+surface_material_override/0 = ExtResource("3_esco0")
+
+[node name="bathroom_sink_storage" parent="bathroom_sink" index="1" unique_id=200511743]
+surface_material_override/0 = ExtResource("3_esco0")
+surface_material_override/1 = ExtResource("4_mfsfa")
+
+[node name="bathroom_sink_decals" parent="bathroom_sink" index="2" unique_id=827066251]
+surface_material_override/0 = ExtResource("4_mfsfa")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=142597089]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.39831543, -0.0018005371)
+shape = SubResource("BoxShape3D_0s4u6")
+
+[editable path="bathroom_sink"]
