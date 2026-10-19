@@ -941,6 +941,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "beacon.png",
+			"path": "res://assets/textures/map_markers/beacon.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "building_apartment_002.blend",
 			"path": "res://assets_blender/_universe/structures/buildings/building_apartment_002.blend",
 			"author": "Mapper",
@@ -1427,6 +1436,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "module.png",
+			"path": "res://assets/textures/map_markers/module.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "motor.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/motor.png",
 			"author": "WarpZone",
@@ -1571,6 +1589,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "recycling.png",
+			"path": "res://assets/textures/map_markers/recycling.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "shower_cabin.glb",
 			"path": "res://assets/_universe/props/furniture/hygene/shower_cabin.glb",
 			"author": "Irong",
@@ -1598,11 +1625,38 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "refinery.png",
+			"path": "res://assets/textures/map_markers/refinery.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "table_bed.glb",
 			"path": "res://assets/_universe/props/furniture/chamber/table_bed.glb",
 			"author": "Irong",
 			"source": "Discord",
 			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "shop.png",
+			"path": "res://assets/textures/map_markers/shop.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "terminal.png",
+			"path": "res://assets/textures/map_markers/terminal.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -1693,6 +1747,51 @@
 			"author": "Irong",
 			"source": "Discord",
 			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "tool_dispenser.png",
+			"path": "res://assets/textures/map_markers/tool_dispenser.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck.png",
+			"path": "res://assets/textures/map_markers/truck.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "vehicle_lift.png",
+			"path": "res://assets/textures/map_markers/vehicle_lift.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "warehouse.png",
+			"path": "res://assets/textures/map_markers/warehouse.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "water_tank.png",
+			"path": "res://assets/textures/map_markers/water_tank.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
