@@ -2,7 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://cgiss4kb50rwb" path="res://assets/_universe/props/containers/crate_canister.glb" id="1_0xiy0"]
 [ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_yellow.tres" id="2_f3r07"]
-[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/mat_metal_ares_misc_decal.tres" id="3_7qd2s"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="3_7qd2s"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_f3r07"]
 size = Vector3(0.6678779286044119, 0.8347990335498707, 1.0182035127832023)

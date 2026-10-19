@@ -19,6 +19,7 @@
 [ext_resource type="PackedScene" uid="uid://dlvo567apcx4g" path="res://scenes/_universe/props/furniture/hygene/restroom_cabin.tscn" id="18_6lu6x"]
 [ext_resource type="PackedScene" uid="uid://cdw47e4be0uko" path="res://scenes/_universe/props/furniture/hygene/bathroom_sink.tscn" id="19_slh8q"]
 [ext_resource type="PackedScene" uid="uid://bvdqhi3prphfw" path="res://scenes/_universe/props/furniture/hygene/mirror.tscn" id="20_8ev6q"]
+[ext_resource type="PackedScene" uid="uid://c21kv16wh1y4q" path="res://scenes/_universe/characters/humanoids/human_puppet.tscn" id="21_8ev6q"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
@@ -143,13 +144,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.0656443, 0, -4.1390066)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.069624, 0, -4.1390066)
 
 [node name="BathroomSink" parent="." unique_id=548032774 instance=ExtResource("19_slh8q")]
-transform = Transform3D(-1, 0, 8.742278e-08, 0, 1, 0, -8.742278e-08, 0, -1, 10.828902, 0, -0.16502869)
+transform = Transform3D(1.3113416e-07, 0, 1, 0, 1, 0, -1, 0, 1.3113416e-07, 9.923633, 0, -0.16502869)
 
 [node name="Mirror" parent="BathroomSink" unique_id=429523463 instance=ExtResource("20_8ev6q")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4135183, -0.43927217)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0024983883, 1.6557426, -0.43927193)
 
 [node name="ReflectionProbe" type="ReflectionProbe" parent="." unique_id=665745358]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.5600605, 0.92082405, -2.5020347)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.609621, 0.92082405, -0.7275748)
 blend_distance = 0.16
-size = Vector3(13.487305, 20, 6.4766235)
+size = Vector3(15.388184, 20, 10.025543)
 box_projection = true
+
+[node name="human_puppet" parent="." unique_id=1701771454 instance=ExtResource("21_8ev6q")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 10.503088, 0, -0.13157058)

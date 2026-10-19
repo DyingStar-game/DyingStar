@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://c1dv6rpo1e6os" path="res://scenes/globals/net_static_body.gd" id="1_e4eb7"]
 [ext_resource type="PackedScene" uid="uid://4yk7vlsja1d4" path="res://assets/_universe/props/furniture/hygene/mirror.glb" id="2_ft418"]
 [ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_pk4ln"]
-[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/mat_metal_ares_misc_decal.tres" id="4_sfen6"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="4_sfen6"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ulufk"]
 metallic = 1.0

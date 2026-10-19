@@ -7,7 +7,7 @@
 resource_name = "panel_trim"
 albedo_color = Color(0.37217352, 0.37217352, 0.37217352, 1)
 metallic = 1.0
-roughness = 0.5692521
+roughness = 0.52
 normal_enabled = true
 normal_texture = ExtResource("2_765ne")
 heightmap_enabled = true

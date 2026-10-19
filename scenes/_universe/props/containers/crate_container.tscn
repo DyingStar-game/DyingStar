@@ -3,7 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://tk27ud5kcl38" path="res://assets/_universe/props/containers/crate_container.glb" id="1_i7idy"]
 [ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/_universe/props/containers/crate_container.gd" id="1_ync2l"]
 [ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_yellow.tres" id="2_pe8a8"]
-[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/mat_metal_ares_misc_decal.tres" id="3_i7idy"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="3_i7idy"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
 [ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]

@@ -1,13 +1,13 @@
 [gd_resource type="StandardMaterial3D" format=3 uid="uid://2wdc033an07q"]
 
-[ext_resource type="Texture2D" uid="uid://4aisqlc7qgyc" path="res://assets/_universe/_shared/materials/mat_fabric_alu_mesh/tex_fabric_alu_mesh_orm.png" id="2"]
-[ext_resource type="Texture2D" uid="uid://bebwfrq1qwah7" path="res://assets/_universe/_shared/materials/mat_fabric_alu_mesh/tex_fabric_alu_mesh_normal.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://c5wnfxbkbox80" path="res://assets/_universe/_shared/materials/mat_fabric_alu_mesh/tex_fabric_alu_mesh_albedo.png" id="1_x6ngt"]
+[ext_resource type="Texture2D" uid="uid://di0q0ih5gxyvf" path="res://assets/_universe/_shared/materials/mat_fabric_alu_mesh/tex_fabric_alu_mesh_normal.png" id="3"]
+[ext_resource type="Texture2D" uid="uid://cy6ovxvjhoij7" path="res://assets/_universe/_shared/materials/mat_fabric_alu_mesh/tex_fabric_alu_mesh_roughness.png" id="3_6iyrd"]
 
 [resource]
-albedo_color = Color(0.28776044, 0.28776044, 0.28776044, 1)
-metallic = 1.0
-roughness_texture = ExtResource("2")
-roughness_texture_channel = 1
+resource_name = "mat_fabric_alu_mesh"
+albedo_color = Color(0.6966146, 0.6966146, 0.6966146, 1)
+albedo_texture = ExtResource("1_x6ngt")
+roughness_texture = ExtResource("3_6iyrd")
 normal_enabled = true
 normal_texture = ExtResource("3")
-uv1_scale = Vector3(70, 70, 70)
