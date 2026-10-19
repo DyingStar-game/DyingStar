@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="LoopSound" format=3 uid="uid://b4y6t7mrpd7f7"]
+
+[ext_resource type="Script" uid="uid://diyncoyyks1lr" path="res://scenes/common/loop_sound.gd" id="1"]
+[ext_resource type="AudioStream" uid="uid://0x1hoplwp7y0" path="res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-rolling.ogg" id="2"]
+
+[resource]
+script = ExtResource("1")
+stream = ExtResource("2")
+volume_db = -4.0
+falloff = 6.0
+distance = 70.0

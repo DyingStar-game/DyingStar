@@ -93,8 +93,10 @@ var _speed: Label
 var _odometer: Label
 var _lights: TextureRect
 var _handbrake: TextureRect
-var _limiter: TextureRect
+var _limiter: TextureRect  # the speed cell: the limiter's icon, or the cruise control's while it holds
 var _limiter_cap: Label
+var _limiter_icon: Texture2D = null
+var _cruise_icon: Texture2D = null
 var _load: TextureRect
 var _load_text: Label
 var _doors: TextureRect
@@ -150,10 +152,14 @@ func _process(delta: float) -> void:
 	_odometer.text = "%s km" % _km_text(_vehicle.odometer.km())
 	_lights.modulate = light_colour(_vehicle.is_headlights_on())
 	_handbrake.modulate = handbrake_colour(_vehicle.is_handbraked(), speed, Time.get_ticks_msec() * 0.001)
+	# One cell for the two speed systems, which are never on together: the cruise control's icon and set
+	# speed while it holds the truck, the limiter's otherwise (on or off: its limit is always shown).
 	var limiter: VehicleSpeedLimiter = _vehicle.limiter
-	_limiter.modulate = limiter_colour(limiter.enabled, limiter.is_over(speed))
-	_limiter_cap.text = "%d" % limiter.cap_kmh
-	_limiter_cap.modulate = _limiter.modulate if limiter.enabled else OFF_COLOR
+	var cruise: VehicleCruiseControl = _vehicle.cruise
+	_limiter.texture = _cruise_icon if cruise.enabled else _limiter_icon
+	_limiter.modulate = speed_colour(limiter.enabled, limiter.is_over(speed), cruise.enabled)
+	_limiter_cap.text = "%d" % (cruise.set_kmh if cruise.enabled else limiter.cap_kmh)
+	_limiter_cap.modulate = _limiter.modulate if limiter.enabled or cruise.enabled else OFF_COLOR
 	_load.modulate = load_colour(_vehicle.is_overloaded())
 	_load_text.text = "%.0f / %.0f kg" % [_vehicle.get_cargo_mass(), _vehicle.max_payload]
 	_load_text.modulate = _load.modulate
@@ -240,6 +246,10 @@ static func limiter_colour(enabled: bool, over_limit: bool) -> Color:
 	if over_limit:
 		return RED
 	return AMBER if enabled else OFF_COLOR
+
+## The speed cell's light: green while the cruise control holds the speed, else the limiter's.
+static func speed_colour(limiter_on: bool, over_limit: bool, cruise_on: bool) -> Color:
+	return GREEN if cruise_on else limiter_colour(limiter_on, over_limit)
 
 
 ## The doors' light: faint with every door shut, orange with one open, red once the speed
@@ -358,6 +368,8 @@ func _status() -> Control:
 	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
 	bottom.add_theme_constant_override("separation", 40)
 	_limiter = _icon("limiter", ICON_PX)
+	_limiter_icon = _limiter.texture
+	_cruise_icon = load(ICON_DIR + "cruise.png")
 	_limiter_cap = _label("", SMALL_FONT, AMBER)
 	bottom.add_child(_side_cell(_limiter, _limiter_cap))
 	_load = _icon("load", ICON_PX)

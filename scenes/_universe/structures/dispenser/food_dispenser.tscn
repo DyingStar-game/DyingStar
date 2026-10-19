@@ -2,6 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://bqc3pjlv1nipw" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="1_base"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_4f1k0"]
+[ext_resource type="Texture2D" uid="uid://dipksn18foa56" path="res://assets/textures/map_markers/food_dispenser.png" id="mm_icon"]
 
 [sub_resource type="BoxShape3D" id="Shape_upper_food"]
 size = Vector3(1, 0.83, 0.8)
@@ -71,9 +72,13 @@ apron_m = 2.0
 metadata/_custom_type_script = "uid://custckqbhkkow"
 
 [node name="Ground" type="CSGBox3D" parent="TerrainPad" index="0" unique_id=2007951752]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007144549489021296, -0.21046824956811683, -0.022582932710647596)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00714454948902129, -0.21046824956811683, -0.02258293271064759)
 size = Vector3(0.985710935960924, 0.42862953095573175, 0.7651658864606361)
 
 [node name="Ground2" type="CSGBox3D" parent="TerrainPad" index="1" unique_id=2117869749]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.007144549489021296, -0.21046824956811683, -0.022582932710647596)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00714454948902129, -0.21046824956811683, -0.02258293271064759)
 size = Vector3(0.985710935960924, 0.42862953095573175, 0.7651658864606361)
+
+[node name="MapMarker" parent="." index="15"]
+label = "%%MAP_MARKER_FOOD_DISPENSER"
+icon = ExtResource("mm_icon")

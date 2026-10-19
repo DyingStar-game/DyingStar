@@ -1,7 +1,8 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://i2esxxslgnhb"]
 
-[ext_resource type="PackedScene" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="1_base"]
-[ext_resource type="Script" path="res://scenes/_universe/structures/dispenser/tool_dispenser.gd" id="2_tool"]
+[ext_resource type="PackedScene" uid="uid://bqc3pjlv1nipw" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="1_base"]
+[ext_resource type="Script" uid="uid://cwtn6frx0d302" path="res://scenes/_universe/structures/dispenser/tool_dispenser.gd" id="2_tool"]
+[ext_resource type="Texture2D" uid="uid://d21cyc5b4ypgs" path="res://assets/textures/map_markers/tool_dispenser.png" id="mm_icon"]
 
 [sub_resource type="BoxShape3D" id="Shape_upper_tool"]
 size = Vector3(1, 0.92, 0.8)
@@ -12,7 +13,12 @@ size = Vector3(1, 0.3, 0.38)
 [sub_resource type="BoxShape3D" id="Shape_side_tool"]
 size = Vector3(0.07, 0.3, 0.42)
 
-[node name="ToolDispenser" instance=ExtResource("1_base")]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qjcm5"]
+albedo_color = Color(1, 0.7294118, 0.03137255, 1)
+metallic = 0.2
+roughness = 0.45
+
+[node name="ToolDispenser" unique_id=2003692474 instance=ExtResource("1_base")]
 script = ExtResource("2_tool")
 brand = 2
 catalogue_dir = "res://scenes/_universe/props/tools/dispenser_items/"
@@ -20,40 +26,41 @@ title_key = "%%DISPENSER_TOOL_TITLE"
 tray_box_size = Vector3(0.8, 0.2, 0.38)
 tray_box_lift = -0.05
 
-[node name="UpperCollision" parent="."]
+[node name="UpperCollision" parent="." index="0" unique_id=84473199]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.54, 0)
 shape = SubResource("Shape_upper_tool")
 
-[node name="BackCollision" parent="."]
+[node name="BackCollision" parent="." index="2" unique_id=1556215691]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.93, -0.21)
 shape = SubResource("Shape_back_tool")
 
-[node name="LeftCollision" parent="."]
+[node name="LeftCollision" parent="." index="3" unique_id=1366501898]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.465, 0.93, 0.19)
 shape = SubResource("Shape_side_tool")
 
-[node name="RightCollision" parent="."]
+[node name="RightCollision" parent="." index="4" unique_id=623183878]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.465, 0.93, 0.19)
 shape = SubResource("Shape_side_tool")
 
-[node name="Tray" parent="Blockout/Body"]
+[node name="Tray" parent="Blockout/Body" parent_id_path=PackedInt32Array(2069941822) index="0" unique_id=312912723]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.13, 0.19)
 size = Vector3(0.86, 0.3, 0.42)
 
-[node name="TrayLip" parent="Blockout"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.77, 0.41)
+[node name="TrayLip" parent="Blockout" parent_id_path=PackedInt32Array(2082912553) index="4" unique_id=1775529636]
 size = Vector3(0.92, 0.04, 0.05)
 
-[node name="FlapHinge" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.79, 0.42)
-
-[node name="Flap" parent="FlapHinge"]
+[node name="Flap" parent="FlapHinge" parent_id_path=PackedInt32Array(1455107971) index="0" unique_id=1288189095]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.14, 0)
 size = Vector3(0.84, 0.28, 0.02)
 
-[node name="FlapStripe" parent="FlapHinge/Flap"]
+[node name="FlapStripe" parent="FlapHinge/Flap" index="0" unique_id=401586873]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0.012)
 size = Vector3(0.7, 0.02, 0.005)
+material = SubResource("StandardMaterial3D_qjcm5")
 
-[node name="TrayMarker" parent="."]
+[node name="TrayMarker" parent="." index="7" unique_id=1850341490]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.84, 0.2)
+
+[node name="MapMarker" parent="." index="14"]
+label = "%%MAP_MARKER_TOOL_DISPENSER"
+icon = ExtResource("mm_icon")

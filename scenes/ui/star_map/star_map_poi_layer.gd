@@ -27,17 +27,20 @@ const VISIBLE_RATIO: float = 0.085
 ## 0.032 of the distance is 2.1 % of the screen height — about twenty-three pixels on a 1080p display.
 ## Enough to recognise a pictogram already familiar, and small enough that twenty-seven of them sit on
 ## a planet without becoming the planet. The first pass at 0.055 turned the globe into a sheet of
-## badges, which is the opposite of what a marker is for.
-const ICON_SIZE: float = 0.032
+## badges, which is the opposite of what a marker is for. 0.065 since the chart carries the buildings'
+## pictograms too (StarMapMarkers, 0.05 of their depth): a town is the most important thing on it and
+## must read bigger than a garage, and at 0.032 it was the smallest sign on the ground (playtest
+## 2026-10-19).
+const ICON_SIZE: float = 0.065
 ## What hovering adds. Enough to be unmistakable without shifting the layout under the cursor.
 const ICON_HOVER_SCALE: float = 1.30
 ## Label clearance above the badge, as a fraction of the view. Kept proportional to the badge, so
 ## shrinking one does not leave the other floating away from what it names.
-const LABEL_GAP: float = 0.026
+const LABEL_GAP: float = 0.05
 ## Pick tolerance as a fraction of the distance. A little MORE than half the badge, on purpose: the
 ## picture is now small, and a target that shrinks with the artwork becomes a target you have to aim at
 ## rather than one you simply point at.
-const PICK_TOLERANCE: float = 0.022
+const PICK_TOLERANCE: float = 0.04
 
 ## How far apart two names must be on screen, in pixels, for both to be printed.
 ##
@@ -49,8 +52,8 @@ const PICK_TOLERANCE: float = 0.022
 ## The vertical clearance is TWO LINES, because a label is two lines: the name, and the altitude under
 ## it. It stood at one and the names went back to overlapping the moment the second line was added — a
 ## clearance sized on what a label used to be is no clearance at all.
-const LABEL_CLEAR_X: float = 96.0
-const LABEL_CLEAR_Y: float = 34.0
+const LABEL_CLEAR_X: float = 150.0
+const LABEL_CLEAR_Y: float = 56.0
 
 ## How close two badges must come, in badge heights, to be drawn as one: a little more than touching,
 ## so what is left on screen is badges with air between them. See [StarMapPoiCluster].
@@ -326,7 +329,8 @@ func _place_labels(drawn: Array[int], camera: Camera3D, selected: int, hovered: 
 		# Along the CAMERA's up, like every other label on this chart: an offset along the surface normal
 		# reads well from the equator and collapses onto the badge as soon as the town nears a limb.
 		label.position = world + camera.global_basis.y * (eye.distance_to(world) * LABEL_GAP)
-		label.pixel_size = 0.00042 if is_selected or is_hovered else 0.00034
+		# Read at a glance (playtest 2026-10-19: at 0.00034 the names were unreadable).
+		label.pixel_size = 0.00072 if is_selected or is_hovered else 0.0006
 		label.show()
 
 
@@ -370,7 +374,7 @@ func _grow_pool(index: int) -> void:
 func _grow_cluster_pool(index: int) -> void:
 	while _cluster_icons.size() <= index:
 		_cluster_icons.append(_new_badge())
-		_cluster_counts.append(_new_text(0.00034))
+		_cluster_counts.append(_new_text(0.0006))
 
 
 func _new_badge() -> Sprite3D:
@@ -390,7 +394,7 @@ func _new_text(pixel_size: float) -> Label3D:
 	label.no_depth_test = true
 	label.fixed_size = true
 	label.pixel_size = pixel_size
-	label.outline_size = 12
+	label.outline_size = 16
 	label.outline_modulate = Color(0.0, 0.0, 0.0, 0.9)
 	add_child(label)
 	return label

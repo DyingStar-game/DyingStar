@@ -17,6 +17,8 @@ var _mesh_at : Callable
 var _fallback : Callable
 ## Mesh instance id -> its TriangleMesh.
 var _trees : Dictionary = {}
+## Most triangle trees kept: the star chart's tiles come and go, and each tree is a whole mesh's worth.
+const TREES_KEPT : int = 256
 
 
 ## [param frame] is the planet node (directions are in its local space), [param mesh_at] takes a
@@ -45,5 +47,7 @@ func dist(dir: Vector3) -> float:
 func _tree_of(mi: MeshInstance3D) -> TriangleMesh:
 	var key : int = mi.mesh.get_instance_id()
 	if not _trees.has(key):
+		if _trees.size() >= TREES_KEPT:
+			_trees.clear()  # rebuilt as asked: one or two meshes are under the camera at a time
 		_trees[key] = mi.mesh.generate_triangle_mesh()
 	return _trees[key]

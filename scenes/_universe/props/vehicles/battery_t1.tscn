@@ -4,8 +4,8 @@
 [ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/battery_t1.tres" id="2_spec"]
 [ext_resource type="Material" uid="uid://p707b21svvtm" path="res://assets/_universe/_shared/materials/iron_001.tres" id="6_0088b"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
-[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
-[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
+[ext_resource type="Resource" path="res://scenes/common/metal_box_landing.tres" id="sfx_landing"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/props/metal-box-pick-up.mp3" id="sfx_pick"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_battery"]
 size = Vector3(0.3, 0.4, 0.6)
@@ -29,6 +29,7 @@ icon_fill = 0.45
 id_type = "BAT"
 id_short_display = true
 sfx_pick_up = ExtResource("sfx_pick")
+sfx_pick_up_db = -10.0
 sfx_landing = ExtResource("sfx_landing")
 
 [node name="PropSync" type="Node" parent="." unique_id=1840273362]

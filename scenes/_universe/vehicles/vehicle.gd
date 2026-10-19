@@ -87,16 +87,14 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## are built for ~0.7 g at full load. The tyres' grip still caps it (wheel_friction_slip_default, under
 ## the body's own gravity): ask more than they hold and the wheels lock and slide.
 @export_range(0.5, 15.0, 0.1) var brake_deceleration: float = 7.0
-## Engine braking + rolling resistance: brake force applied per wheel when coasting (no throttle,
-## no brake). VehicleWheel3D models neither, so without this the truck rolls forever on the flat.
+## Engine braking: brake force applied per wheel when coasting (no throttle, no brake). The tyres'
+## rolling resistance and the air are real forces now (VehicleResistance); this is the motor alone.
 ## Keep it well below the brakes (_full_brake) — it should bleed speed off gently, not stop the truck dead.
 @export var engine_brake: float = 6.0
-## Throttle released: share of the speed lost per second on top of engine_brake (1/s; 0.1 = 10 %/s, a
-## drag that grows with speed). It stands in for Godot's global linear damping, switched off on the
-## vehicle (linear_damp_mode = Replace, linear_damp = 0) because that damping also held the truck back
-## with the pedal down: it capped top speed at force / (0.1 x mass), so the top speed followed the
-## number of engines instead of the drive model. 0 = only engine_brake slows a coasting vehicle.
-@export_range(0.0, 1.0, 0.01) var coast_drag: float = 0.1
+## Throttle released: share of the speed lost per second on top of engine_brake (1/s; 0.1 = 10 %/s).
+## It stood in for a drag the game did not model; the air and the tyres now hold the vehicle back at
+## every throttle (VehicleResistance), so it is 0 -- kept for a vehicle that wants more engine braking.
+@export_range(0.0, 1.0, 0.01) var coast_drag: float = 0.0
 ## Parking brake hold (m/s per second): how hard the engaged hand brake damps motion ABOVE the
 ## release speed — a real collision impulse exceeds this so a hit truck still gets pushed (it
 ## just re-settles). Kept dynamic, never frozen.
@@ -169,9 +167,8 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ##
 ## The design sheet is an EQUILIBRIUM model: it predicts the speed a vehicle settles at, not a
 ## torque curve. Used as a curve it has no constant-power region at all, so the force would fall
-## from 100%% to 0 in 0.1 km/h — a wall, not a taper. The game models no aerodynamic drag, so that
-## wall is the ONLY thing holding the speed down, and pointing downhill at full throttle there is
-## nothing left to limit it. A short band gives the truck somewhere to run out of breath.
+## from 100%% to 0 in 0.1 km/h — a wall, not a taper. The band is the motor reaching its top revs;
+## the air (VehicleResistance) usually settles the speed just before it, the motors still pushing.
 @export_range(0.0, 30.0, 0.5) var speed_taper_kmh: float = 10.0
 ## Air density (kg/m3) used when the planet's atmosphere cannot say (a profile imported before it
 ## carried its pressure, or no planet): Tarsis 3's 1.26 at its reference sphere. air_density_now()
@@ -214,7 +211,7 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 @export_range(0.0, 180.0, 1.0) var steering_grip_follow_deg: float = 90.0
 
 @export_group("Speed limiter")
-## One step of the limiter selector (Alt + wheel), in km/h.
+## One step of the limiter / cruise selector (the wheel), in km/h.
 @export var limiter_step_kmh: int = 5
 ## Highest limit the pilot can select, in km/h.
 @export var limiter_max_kmh: int = 130
@@ -402,8 +399,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 @export var max_payload: float = 1300.0
 ## Above max_payload x this factor the vehicle is immobilized (won't move) — GDD. 1.2 = 20%.
 @export var overload_immobilize: float = 1.2
-## Size of the cargo bay box. Any massive body that comes to rest inside is absorbed into
-## the truck (its mass is added once). Defaults roughly match the bed; tune to taste.
+## Size of the cargo bay box -- ONLY for a vehicle whose model has no bed collision (a blockout): a
+## real model's bed is read off its own col_bed* pieces (see _bay_box). Any massive body that comes to
+## rest inside is absorbed into the truck (its mass is added once).
 @export var cargo_bay_size: Vector3 = Vector3(2.0, 1.5, 3.1):
 	set(v):
 		cargo_bay_size = v
@@ -413,11 +411,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 	set(v):
 		cargo_bay_offset = v
 		_rebuild_deferred()
-## Designer-placed box (a CollisionShape3D with a BoxShape3D) marking WHERE a dropped item is allowed
-## to load/stick. Drop a crate inside it (from in the bed or reaching over) and it loads. Leave unset
-## to fall back to the cargo_bay box. Its physics collision is turned off at runtime — it is only a
-## zone marker. (The truck wires its "CargoLoadingZone" node here.)
-@export var cargo_loading_zone: CollisionShape3D
+## How far above the top of the side boards (m) a load still counts as in the bed: a crate stacked
+## proud of them, or put down reaching over from outside.
+@export_range(0.0, 2.0, 0.05) var bed_headroom_m: float = 0.4
 ## A body is locked into the bed once it slows below this speed (m/s).
 @export var cargo_settle_speed: float = 0.6
 ## Tilt (degrees from upright) past which the bed unlocks and spills its load — a rollover drops
@@ -748,6 +744,7 @@ var _locked_cargo: Dictionary = {}  # RigidBody3D cargo -> its mass (kg), summed
 var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL transform in the bed
 var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
 var _cargo_area: Area3D = null
+var _bed_box: AABB = AABB()  # the model's bed pieces, vehicle frame (empty = none: see _bay_box)
 var _bay_scan_tick: int = 0  # throttles _scan_bay_for_settled_cargo (see BAY_SCAN_FRAMES)
 var _cargo_debug: bool = false  # Settings > General: draw a green envelope on really-locked cargo
 var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off by default)
@@ -837,6 +834,32 @@ var limiter: VehicleSpeedLimiter:
 			_limiter.taper_kmh = limiter_taper_kmh
 		return _limiter
 var _limiter: VehicleSpeedLimiter = null
+## The pilot's cruise control (Ctrl+T, the wheel), exclusive with the limiter: same steps and range.
+var cruise: VehicleCruiseControl:
+	get:
+		if _cruise == null:
+			_cruise = VehicleCruiseControl.new()
+			_cruise.step_kmh = limiter_step_kmh
+			_cruise.max_kmh = limiter_max_kmh
+			_cruise.min_kmh = mini(limiter_step_kmh, limiter_max_kmh)
+		return _cruise
+var _cruise: VehicleCruiseControl = null
+var _air_density_tick: int = -1  # air_density_now: the tick it was last read, and what it read
+var _air_density_seen: float = 0.0
+## What the cab's switchable screen shows (camera, chart, off): the same for everyone aboard.
+var screen_mode: VehicleScreenMode:
+	get:
+		if _screen_mode == null:
+			_screen_mode = VehicleScreenMode.new()
+		return _screen_mode
+var _screen_mode: VehicleScreenMode = null
+## The chart's view on that screen, shared by everyone aboard (whoever handles it drives it).
+var chart_view: VehicleChartView:
+	get:
+		if _chart_view == null:
+			_chart_view = VehicleChartView.new()
+		return _chart_view
+var _chart_view: VehicleChartView = null
 ## The knocks the suspensions take: detected by the server, heard by the clients (VehicleNetPart).
 var shocks: VehicleSuspensionShocks:
 	get:
@@ -931,7 +954,6 @@ func _ready() -> void:
 	_door_state = _own_doors(_door_state)  # every door in the state from the start, shut
 	_server_live = GameOrchestrator.is_server()
 	add_to_group("vehicle")  # so a pilot can find and enter us
-	_setup_loading_zone()  # designer "can load here" box: turn off its physics, keep it as a marker
 	if not OS.has_feature("dedicated_server"):
 		_cargo_debug = SettingsManager.debug.is_on(&"cargo_debug")  # dev aid: green envelope on locked cargo
 		SettingsManager.debug.watch(&"cargo_debug", _on_cargo_debug_changed)
@@ -998,6 +1020,7 @@ func _rebuild() -> void:
 			remove_child(child)
 			child.free()
 	_wheels.clear()
+	_bed_box = AABB()  # read again off the model's col_bed* pieces (_build_model_collision)
 	_cargo_area = null
 	_cab_cam = null
 	_nav_footprint_valid = false  # the collision shapes are about to be regenerated
@@ -1090,6 +1113,7 @@ func _build_model_collision() -> bool:
 	if root == null:
 		return false
 	var found := false
+	var bed_points := PackedVector3Array()  # the bed pieces' corners, in the vehicle's frame
 	for n in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi.mesh == null or not _strip_lod(mi.name).begins_with("col_"):
@@ -1101,6 +1125,10 @@ func _build_model_collision() -> bool:
 		add_child(col)
 		mi.visible = false  # collision-only mesh: never rendered (hidden in the editor AND in game)
 		found = true
+		if _strip_lod(mi.name).begins_with("col_bed") and col.shape is ConvexPolygonShape3D:
+			for point in (col.shape as ConvexPolygonShape3D).points:
+				bed_points.append(col.transform * point)
+	_bed_box = points_box(bed_points)
 	return found
 
 func _add_collision_box(box_size: Vector3, pos: Vector3) -> void:
@@ -1127,11 +1155,12 @@ func _build_cargo_area() -> void:
 	area.collision_mask = 0
 	area.monitoring = false
 	area.monitorable = true
+	var bay: AABB = _bay_box()
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = cargo_bay_size
+	box.size = bay.size
 	col.shape = box
-	col.position = cargo_bay_offset
+	col.position = bay.get_center()
 	area.add_child(col)
 	add_child(area)
 	_cargo_area = area
@@ -1139,9 +1168,9 @@ func _build_cargo_area() -> void:
 		var ghost := MeshInstance3D.new()
 		ghost.set_meta(GENERATED, true)
 		var ghost_mesh := BoxMesh.new()
-		ghost_mesh.size = cargo_bay_size
+		ghost_mesh.size = bay.size
 		ghost.mesh = ghost_mesh
-		ghost.position = cargo_bay_offset
+		ghost.position = bay.get_center()
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = Color(0.2, 0.8, 1.0, 0.12)
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -1231,14 +1260,11 @@ func _scan_bay_for_settled_cargo() -> void:
 	q.collide_with_bodies = true
 	q.collide_with_areas = false
 	q.collision_mask = 1 << (Globals.LAYER_PROP - 1)  # props only (crates/rocks live on LAYER_PROP)
-	if cargo_loading_zone != null and cargo_loading_zone.shape is BoxShape3D:
-		q.shape = cargo_loading_zone.shape
-		q.transform = cargo_loading_zone.global_transform
-	else:
-		var box := BoxShape3D.new()
-		box.size = cargo_bay_size
-		q.shape = box
-		q.transform = global_transform.translated_local(cargo_bay_offset)
+	var bay: AABB = _bay_box()
+	var box := BoxShape3D.new()
+	box.size = bay.size
+	q.shape = box
+	q.transform = global_transform.translated_local(bay.get_center())
 	for hit in space.intersect_shape(q, 16):
 		var body = hit.get("collider")
 		if not (body is RigidBody3D) or _locked_cargo.has(body):
@@ -1254,26 +1280,36 @@ func _scan_bay_for_settled_cargo() -> void:
 		if rb.linear_velocity.length() <= cargo_settle_speed:
 			lock_dropped_cargo(rb)  # settled inside the bay → weigh it in
 
-## Resolve the designer loading zone (explicit @export, else a child named "CargoLoadingZone") and
-## turn OFF its physics collision: a CollisionShape3D under this VehicleBody3D would otherwise be a
-## real (huge) collider. We only read its box to test where loading is allowed.
-func _setup_loading_zone() -> void:
-	if cargo_loading_zone == null:
-		cargo_loading_zone = get_node_or_null("CargoLoadingZone") as CollisionShape3D
-	if cargo_loading_zone != null:
-		cargo_loading_zone.disabled = true
-
-## True when a world point is inside the loading zone (where a dropped item is allowed to stick).
-## Uses the designer's CargoLoadingZone box if set, else falls back to the cargo_bay box (blockout).
+## True when a world point is inside the bed (where a dropped item is allowed to stick): the same box
+## the settled loads and the walkers are counted in (_bay_box). The point is where the carry placement
+## ray put the item, so loading is decided by where you aim -- the way a part finds its hatch.
 func is_point_in_loading_zone(world_point: Vector3) -> bool:
-	if cargo_loading_zone != null and cargo_loading_zone.shape is BoxShape3D:
-		var local := cargo_loading_zone.global_transform.affine_inverse() * world_point
-		var half: Vector3 = (cargo_loading_zone.shape as BoxShape3D).size * 0.5
-		return absf(local.x) <= half.x and absf(local.y) <= half.y and absf(local.z) <= half.z
-	var bay := to_local(world_point) - cargo_bay_offset
-	return absf(bay.x) <= cargo_bay_size.x * 0.5 \
-		and absf(bay.y) <= cargo_bay_size.y * 0.5 \
-		and absf(bay.z) <= cargo_bay_size.z * 0.5
+	return _bay_box().has_point(to_local(world_point))
+
+
+## The bed, in the vehicle's frame: the box around the model's own bed collision (col_bed, col_bed_left,
+## col_bed_rear...), raised by bed_headroom_m above the side boards. One truth, the model, instead of
+## boxes placed and kept in step by hand; a model without bed pieces (a blockout) uses cargo_bay_size /
+## cargo_bay_offset.
+func _bay_box() -> AABB:
+	return bay_box(_bed_box, bed_headroom_m, cargo_bay_size, cargo_bay_offset)
+
+
+## See _bay_box. Static and pure: tested without a vehicle.
+static func bay_box(bed: AABB, headroom: float, fallback_size: Vector3, fallback_centre: Vector3) -> AABB:
+	if bed.has_volume():
+		return AABB(bed.position, bed.size + Vector3(0.0, maxf(headroom, 0.0), 0.0))
+	return AABB(fallback_centre - fallback_size * 0.5, fallback_size)
+
+
+## The box around [param points] (an empty AABB for none). Static and pure.
+static func points_box(points: PackedVector3Array) -> AABB:
+	if points.is_empty():
+		return AABB()
+	var box := AABB(points[0], Vector3.ZERO)
+	for point in points:
+		box = box.expand(point)
+	return box
 
 ## A player walked into the bed on foot: count them in the load (and let them ride). Seated players
 ## are handled by _occupant_mass, so they are skipped in get_bed_mass — no double-count.
@@ -2106,13 +2142,30 @@ func door_leaf(handle: VehicleDoorHandle) -> Vector2:
 
 ## The air's density (kg/m3) where the vehicle is: its planet's atmosphere at its altitude, else the
 ## air_density export.
+## Read once per physics tick: the drag and the drive model both ask for it every tick.
 func air_density_now() -> float:
+	var tick: int = Engine.get_physics_frames()
+	if tick == _air_density_tick:
+		return _air_density_seen
+	_air_density_tick = tick
+	_air_density_seen = air_density
 	var planet := Planet.of(self)
 	if planet != null and planet.planet_data != null and planet.planet_data.atmosphere_profile != null:
 		var rho : float = planet.planet_data.atmosphere_profile.air_density(planet.elevation_of(global_position))
 		if rho > 0.0:
-			return rho
-	return air_density
+			_air_density_seen = rho
+	return _air_density_seen
+
+
+## The cab's screens have power: the engine runs and the battery holds. ONE rule for the screens that
+## show it (RearCamera) and for the server that refuses to switch a dark one.
+func screens_powered() -> bool:
+	return is_engine_on() and energy.has_energy()
+
+
+## The signed speed along the vehicle's heading (km/h; negative backing up), where the physics runs.
+func forward_speed_kmh() -> float:
+	return _forward_speed_kmh()
 
 
 ## The doors of this vehicle: the door_ids of its VehicleDoorHandle nodes (seats and bays name these
@@ -2965,7 +3018,7 @@ func _forget_sent() -> void:
 ## The state that replicates as parts of its own (VehicleNetPart): written by _replicate_transform,
 ## read back by client_channel_data_update and server_adopt_state.
 func _net_parts() -> Array[VehicleNetPart]:
-	return [odometer, limiter, shocks]
+	return [odometer, limiter, cruise, shocks, screen_mode, chart_view]
 
 ## CLIENT: mirror the replicated bay table onto our own bays, so the HUD and the rev counter tell
 ## the truth about a truck someone else has been working on.
@@ -3360,6 +3413,7 @@ func server_exit(player: Node) -> void:
 		_net_steer = 0.0
 		_net_brake = false
 		_throttle = 0.0
+		cruise.cancel()  # nobody at the wheel: no speed held
 		engine_force = 0.0
 		set_horn(false)  # a driver bailing out mid-honk must not leave the horn stuck on
 		# NOTE: the hand brake stays engaged on exit (real parking brake) — _hold_handbrake keeps
@@ -3403,6 +3457,7 @@ func server_release_seat(player: Node) -> void:
 		_net_steer = 0.0
 		_net_brake = false
 		_throttle = 0.0
+		cruise.cancel()  # nobody at the wheel: no speed held
 		engine_force = 0.0
 		set_horn(false)
 	print("🚚 Vehicle %s: seat released (player handed over)" % uuid)
@@ -3574,6 +3629,12 @@ func _apply_drive(delta: float) -> void:
 	# forward does nothing — not even releasing the hand brake, which stays on until the engine runs.
 	if not _engine_on:
 		throttle_in = 0.0
+	# The cruise control holds the speed with the pedal released (VehicleCruiseControl). Before the hand
+	# brake's release below: its throttle must never let a hand brake off, so a hand brake, like the
+	# brake and a dead engine, switches it off.
+	if braking or _handbrake or not _engine_on:
+		cruise.cancel()
+	throttle_in = cruise.drive_throttle(throttle_in, _forward_speed_kmh())
 	# Hand brake holds the vehicle until the pilot presses the throttle again.
 	if _handbrake and absf(throttle_in) > 0.05:
 		set_handbrake(false)  # goes through the setter, so the release is heard too
@@ -3603,8 +3664,8 @@ func _apply_drive(delta: float) -> void:
 	# gentle caster drift back while rolling), inside a lock that shrinks with speed.
 	_sync_steering()
 	steering = _steering_model.step(steering, turn, forward_kmh, delta)
-	# Coasting (no throttle, no brake): apply engine braking + rolling resistance so the truck bleeds
-	# speed instead of rolling forever — VehicleWheel3D models neither on its own. Running over the
+	# Coasting (no throttle, no brake): apply engine braking (the tyres and the air hold the truck back
+	# on their own, VehicleResistance). Running over the
 	# speed limiter counts as a closed throttle, exactly like lifting the foot.
 	var throttle_closed: bool = absf(throttle_in) < 0.05 or limiter.overspeed(_throttle, forward_kmh)
 	var coasting: bool = throttle_closed and not braking and service <= 0.0
@@ -3669,6 +3730,12 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if g.length_squared() > 0.001:
 		_gravity_up = -g.normalized()
 		gravity_magnitude = g.length()  # the REAL local g: climbing is harder on a heavy world, for free
+	# The air and the tyres hold the vehicle back (VehicleResistance), where the physics runs: the game
+	# server, or a vehicle off the network simulating itself.
+	if (not _is_networked() or _server_live) and state.linear_velocity.length_squared() > 1e-6:
+		state.apply_central_force(VehicleResistance.force(state.linear_velocity, air_density_now(),
+				drag_coefficient, frontal_area_m2, mass, gravity_magnitude, rolling_coefficient * rolling_factor,
+				_driven_wheels_grounded()))
 	if not _handbrake:
 		return
 	var up: Vector3 = global_transform.basis.y
@@ -3939,13 +4006,16 @@ func _sync_powertrain() -> void:
 	# identical rigs, four driven wheels against two, accelerated 6.995 against 3.673 m/s2, a ratio
 	# of 1.904. So the sheet's TOTAL pull is divided here.
 	#
-	# Rolling resistance comes off here too. Godot models none while accelerating (engine_brake
-	# only applies when coasting), and the sheet defines acc_max as (F_av - F_roll)/m — taking it
-	# off at the source is what makes the two agree.
-	var top_kmh: float = spec.v_max_ms(mass) * 3.6
+	# The motors' full pull: the rolling resistance is a real force now (VehicleResistance, with the
+	# air), so it is no longer taken off here in advance -- it acted only on a pushing motor that way,
+	# and the batteries paid nothing for it.
+	# The motor's own top speed, not the air's: drag is a real force now (VehicleResistance), and a taper
+	# ending at the speed the air allows counted the air twice -- an air-limited truck settled km/h under
+	# its sheet. Where the air holds it back first, that force alone stops it, below this.
+	var top_kmh: float = spec.v_max_motor_ms() * 3.6
 	var electric: bool = engine.propulsion == VehicleEngineSpec.Propulsion.ELECTRIC
 	_powertrain.type = VehiclePowertrain.Type.ELECTRIC if electric else VehiclePowertrain.Type.THERMAL
-	_powertrain.engine_power = spec.net_force_n(mass) / float(_driven_wheel_count())
+	_powertrain.engine_power = spec.tractive_force_n() / float(_driven_wheel_count())
 	_powertrain.max_speed_kmh = top_kmh
 	_powertrain.base_speed_kmh = maxf(0.0, top_kmh - speed_taper_kmh)
 	_powertrain.reverse_max_kmh = top_kmh * reverse_max_ratio
@@ -4006,7 +4076,11 @@ func _rolling_wheel_kmh() -> float:
 		if wheel.use_as_traction:
 			rpms.append(wheel.get_rpm())
 			radii.append(wheel.wheel_radius)
-	return wheel_kmh_of(rpms, radii)
+	# Godot's wheels turn positive rolling toward the body's +Z, and our vehicles drive toward -Z
+	# (_forward_speed_kmh): negated, forward is positive and reverse negative, as get_wheel_kmh says.
+	# Every reading took its absolute value until the reversing camera read the sign, and showed the
+	# feed driving forwards (playtest 2026-10-19).
+	return -wheel_kmh_of(rpms, radii)
 
 
 ## The road speed (km/h) of wheels turning at [param rpms] (rev/min) with [param radii] (m), averaged:

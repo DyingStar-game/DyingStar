@@ -79,8 +79,11 @@ func test_the_ways_around_a_village_are_drawn() -> void:
 	assert_eq(colours.size(), points.size(), "one colour per vertex, or the surface is rejected")
 	# On the ground, not on the reference sphere: the lift is a fraction of a percent, so a point that
 	# ignored the relief would sit outside this band on a body whose ground runs from 0.997 to 1.010.
+	# The mesh is laid around its own middle (float32 precision): back to the body frame first.
+	var origin: Vector3 = roads.position / roads.scale.x
+	assert_gt(origin.length(), 0.5 * StarMapRelief.MESH_RADIUS, "the mesh is laid around its ground, not the centre")
 	for p: Vector3 in points:
-		var factor: float = p.length() / StarMapRelief.MESH_RADIUS
+		var factor: float = (p + origin).length() / StarMapRelief.MESH_RADIUS
 		assert_between(factor, 0.99, 1.02, "every point of a way stands on the body's own ground")
 
 

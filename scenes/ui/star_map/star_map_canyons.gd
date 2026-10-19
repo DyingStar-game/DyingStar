@@ -50,6 +50,11 @@ var _data: PlanetData = null
 var _looked: bool = false
 
 
+## The canyons float UNDER_THE_ROADS, not LIFT (see StarMapTileLines.own_lift).
+func own_lift() -> float:
+	return UNDER_THE_ROADS
+
+
 func _priority() -> int:
 	return RENDER_PRIORITY
 

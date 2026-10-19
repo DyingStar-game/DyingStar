@@ -451,3 +451,56 @@ func test_a_travel_starts_upright() -> void:
 	_cam.lean(Vector2(120.0, 200.0))
 	_cam.watch(1, PLANET_RADIUS_UNITS, PLANET_RADIUS_UNITS, Vector3.ZERO)
 	assert_false(_cam.is_leaning(), "a lean belongs to the place it was made over")
+
+# ---------------------------------------------------------------------------
+# Down to the metre
+# ---------------------------------------------------------------------------
+
+func test_the_camera_comes_down_to_two_metres_over_a_planet() -> void:
+	_cam.set_zoom(0.0, PLANET_RADIUS_UNITS)
+	assert_almost_eq((_cam.zoom - PLANET_RADIUS_UNITS) / StarMapCamera.METRE, 2.0, 0.01)
+
+
+func test_two_metres_up_a_drag_moves_the_ground_by_a_share_of_the_view() -> void:
+	_cam.set_zoom(PLANET_RADIUS_UNITS + 2.0 * StarMapCamera.METRE, PLANET_RADIUS_UNITS)
+	var before: Vector3 = _cam.direction()
+	_cam.orbit(Vector2(100.0, 0.0), PLANET_RADIUS_UNITS)
+	var swept_m: float = before.angle_to(_cam.direction()) * PLANET_RADIUS_UNITS / StarMapCamera.METRE
+	var view_m: float = SCREEN_SPAN * 2.0  # the ground across the screen, two metres up
+	assert_lt(swept_m, view_m * 0.5, "100 px of mouse: a third of the view (1 cm a pixel), not 6 km")
+
+
+func test_the_origin_is_the_ground_under_the_camera() -> void:
+	var subject := Vector3(3.0, -1.0, 2.0)
+	var origin: Vector3 = _cam.origin_point(subject, PLANET_RADIUS_UNITS)
+	assert_almost_eq(origin.distance_to(subject), PLANET_RADIUS_UNITS, 1e-12)
+	assert_almost_eq((origin - subject).normalized().dot(_cam.direction()), 1.0, 1e-9, "towards the camera")
+
+
+func test_two_metres_up_the_near_plane_lets_the_ground_be_seen() -> void:
+	var gap: float = 2.0 * StarMapCamera.METRE
+	var planes: Vector2 = StarMapCamera.clip_planes(gap, PLANET_RADIUS_UNITS + gap, gap,
+			PLANET_RADIUS_UNITS, 5000.0 * StarMapCamera.METRE, 0.0, 0.0)
+	assert_lte(planes.x / StarMapCamera.METRE, 0.2, "near: a tenth of a metre, not 254 m")
+	var horizon: float = sqrt(gap * (2.0 * PLANET_RADIUS_UNITS + gap))
+	assert_gt(planes.y, horizon, "far: past the horizon")
+	assert_lte(planes.y / planes.x, 1.0 / StarMapCamera.DEPTH_RATIO + 1.0, "inside the depth buffer's range")
+
+
+func test_out_in_space_the_planes_are_the_old_ones() -> void:
+	var view: float = 2.0
+	var planes: Vector2 = StarMapCamera.clip_planes(view, view, view, 0.0, 0.0, 0.0, 0.0)
+	assert_almost_eq(planes.y, maxf(view * 20.0, minf(StarMapCamera.LOCAL_REACH, view * 400.0)), 1e-9)
+	assert_almost_eq(planes.x, view * StarMapCamera.NEAR_PER_GAP, 1e-9)
+
+
+func test_a_hundred_km_up_the_moons_stay_in_frame() -> void:
+	var gap: float = 100000.0 * StarMapCamera.METRE
+	var planes: Vector2 = StarMapCamera.clip_planes(gap, PLANET_RADIUS_UNITS + gap, gap,
+			PLANET_RADIUS_UNITS, 0.0, 0.0, 0.0)
+	assert_gt(planes.y, 1.0, "a million km of reach: the planet's own moons")
+
+
+func test_the_player_marker_is_never_cut() -> void:
+	var planes: Vector2 = StarMapCamera.clip_planes(1.0e-3, 1.0e-3, 1.0e-3, 0.0, 0.0, 0.0, 1.0e-4)
+	assert_lte(planes.x, 0.5e-4)

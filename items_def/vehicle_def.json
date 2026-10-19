@@ -31,7 +31,11 @@
 				"seats",
 				"components",
 				"limiter_on",
-				"limiter_kmh"
+				"limiter_kmh",
+				"cruise_on",
+				"cruise_kmh",
+				"rear_screen",
+				"chart_view"
 			]
 		},
 		{

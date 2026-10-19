@@ -8,12 +8,20 @@
 [ext_resource type="PackedScene" uid="uid://bg4jnjpbvyb56" path="res://scenes/_universe/structures/industrial/vehicle_lift/rail/rail_head.tscn" id="9_urbxg"]
 [ext_resource type="PackedScene" uid="uid://cxblcc8fd5rha" path="res://scenes/_universe/structures/industrial/vehicle_lift/rail/rail_segment.tscn" id="10_siq7q"]
 [ext_resource type="PackedScene" uid="uid://dxd4y8meoyuug" path="res://scenes/_universe/structures/industrial/vehicle_lift/dynamic_bridge/dynamic_bridges.tscn" id="11_nk67g"]
+[ext_resource type="Texture2D" uid="uid://0yunrn1mlrl6" path="res://assets/textures/map_markers/vehicle_lift.png" id="mm_icon"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/alarm.tres" id="snd_alarm"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/rolling.tres" id="snd_rolling"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/winch.tres" id="snd_winch"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_m5d5e"]
 size = Vector3(2.67, 6, 0.5)
 
 [node name="Vehicle Lift" type="Node3D" unique_id=749990997]
 script = ExtResource("1_uycjk")
+sound_winch = ExtResource("snd_winch")
+sound_rolling = ExtResource("snd_rolling")
+sound_alarm = ExtResource("snd_alarm")
 
 [node name="PropSync" type="Node" parent="." unique_id=2064241619]
 script = ExtResource("2_m5d5e")
@@ -44,3 +52,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3, 2.25)
 shape = SubResource("BoxShape3D_m5d5e")
 
 [node name="Dynamic Bridges" parent="." unique_id=1956084928 instance=ExtResource("11_nk67g")]
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=2074243414]
+script = ExtResource("mm_script")
+label = "%%MAP_MARKER_VEHICLE_LIFT"
+icon = ExtResource("mm_icon")
+importance = 1
+max_view_m = 5000.0

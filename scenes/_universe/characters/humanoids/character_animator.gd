@@ -57,6 +57,12 @@ const TIER_MIN_HOLD: float = 0.25
 const IDLE_GAP_MIN: float = 8.0
 const IDLE_GAP_MAX: float = 18.0
 const IDLE_VARIATION_DURATION: float = 6.0
+## The raised-wrist rig. Preloaded rather than named by its class, so a client started before the editor
+## registered the class still compiles the puppet (same as PlayerClient's PROMPT_SHADE).
+const WRIST_RAISE := preload("res://scenes/_universe/characters/humanoids/wrist_raise.gd")
+## How far from the shoulder (m) a raised wrist may be asked to go: just short of this rig's reach (two
+## 0.24 m bones), so the arm never locks straight.
+const DATAPAD_REACH_M: float = 0.45
 
 
 ## Clip names per state, grouped by family. Assign the UAL set in the puppet scene.
@@ -134,6 +140,30 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## the camera drifts back over its own throat and you see it. Moving the eye to the front of the skull, the
 ## way a real eye sits, leaves the neck behind the camera where it belongs. 0 = eye on the head bone.
 @export_range(0.0, 0.4, 0.005) var head_cam_forward: float = 0.12
+## Catch-up rate (per second) of the FORWARD lean alone, walking or running: lower = a gentler shift of
+## the view when the gait changes. The lean is ~24 cm between a walk and a run, and followed at
+## head_cam_smooth it pushed the view that far in 80 ms -- the jolt felt on every walk / run switch,
+## while the stride itself moves the camera under 3 cm (MovementProbe "cam swing", playtest
+## 2026-10-19). Too low and the neck shows for a moment as a run starts: head_cam_forward is the margin.
+@export_range(0.5, 30.0, 0.5) var head_cam_lean_smooth: float = 5.0
+
+@export_group("Wrist DataPad")
+## Where the raised wrist goes, from the LEFT SHOULDER as the animation holds it, in the body's axes (m;
+## -Z forward, +X right): before the chest, under the chin. From the shoulder, not the feet, so the pose
+## follows the body standing, crouched or seated -- taken from the feet, a seated arm reached for a spot
+## out of range and stretched (2026-10-15). Measured standing on this rig: the screen faces the eye (0.97)
+## and reads level (0.98) from 0.26 m. Past the arm's reach (about 0.45 m) the arm simply stretches.
+@export var datapad_wrist: Vector3 = Vector3(0.13, -0.03, -0.36)
+## Where the raised elbow points, from the same shoulder in the same axes: out to the left at shoulder
+## height. Moves the elbow (and so the forearm's slant: how level the screen reads), never the wrist.
+@export var datapad_pole: Vector3 = Vector3(-0.73, -0.05, 0.02)
+## Crouched or prone, the head leans out over the knees, a third of a metre ahead of the shoulder: a
+## wrist placed from the shoulder came up beside, even behind, the eyes (yaw 108 degrees, measured). There
+## it is placed from the EYE instead, by this offset (m, body axes: the standing pose seen from the eye),
+## and pulled back within the arm's reach. Standing and seated keep the shoulder: steadier under a nod.
+@export var datapad_wrist_from_eye: Vector3 = Vector3(-0.043, -0.292, -0.227)
+## How far up the forearm from the wrist (m) the DataPad is worn.
+@export_range(0.0, 0.15, 0.005) var datapad_wrist_back: float = 0.07
 
 @export_group("Turn in place")
 ## Turn rate (rad/s) above which a STANDING, still player plays the in-place turn clip (Turn90_L/R) instead
@@ -181,6 +211,21 @@ var _sprint_min: float = 4.0  # walk -> sprint boundary (m/s), midpoint of walk_
 var _dormant: bool = false  # frozen off-screen / hidden (see set_dormant)
 var _hands: HandsOnWheel = null  # a driver's hands on the steering wheel (IK), null on a rig without arms
 var _hands_weight: float = 0.0  # 0 = the Driving clip alone, 1 = hands on the grips
+var _wrist_raise = null  # WristRaise: the raised-wrist rig (IK + forearm twist), see _create_mounts
+var _wrist_mount_xf: Transform3D = Transform3D.IDENTITY  # where the DataPad hangs on the forearm bone
+var _wrist_weight: float = 0.0  # 0 = arm down (animation alone) .. 1 = wrist up before the eyes
+var _wrist_shoulder: int = -1  # the left upper arm: its joint is where the raised wrist is placed from
+var _wrist_elbow: int = -1  # the left lower arm and hand: read by the wrist probe only
+var _wrist_hand: int = -1
+var _wrist_probe_s: float = 0.0
+## client.ini debug_wrist_probe=true: "[WristProbe]" lines -- the pose taken as a wrist rises, then twice a
+## second how far the hand is from it and how bent the elbow is, on every avatar (a remote arm left
+## straight on its first raise, playtest 2026-10-19). Off: nothing measured, nothing printed.
+static var _wrist_probe_on: bool = ClientConfig.get_bool("debug_wrist_probe", false)
+var _wrist_held: bool = false  # the raised pose is taken (_hold_wrist_pose), held until the arm is down
+var _wrist_hold_wrist: Vector3 = Vector3.ZERO  # skeleton space: where the wrist is held
+var _wrist_hold_pole: Vector3 = Vector3.ZERO  # skeleton space: where the elbow points
+var _wrist_hold_eye: Vector3 = Vector3.ZERO  # skeleton space: the eye the screen faces
 
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
@@ -224,8 +269,12 @@ func setup(player_body, is_local: bool) -> void:
 		# Local: hidden in first person; every avatar: tilted to the look pitch.
 		_head_bone = _resolve_bone([&"Head", &"head"])
 		_neck_bone = _resolve_bone([&"Neck", &"neck"])
-		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
+		# The hands on the wheel BEFORE the mounts: modifiers run in tree order, and the wrist raise (made
+		# with the mounts) must come after the hands, or a driver's left hand stayed on the wheel while the
+		# DataPad was read (playtest 2026-10-19). After them, it takes the left arm off the wheel as it
+		# rises, blended by its own weight; the right hand keeps driving.
 		_hands = HandsOnWheel.attach(_skeleton)
+		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
 		if _is_local:
 			add_head_shadow(_skeleton, _head_bone, _neck_bone)
 	if _anim != null:
@@ -288,6 +337,37 @@ func _create_mounts() -> void:
 	var hip: int = _resolve_bone([belt_bone, &"Hips", &"pelvis"])
 	_player.belt_mount = _create_bone_mount("BeltMount", hip, false)
 	_player.head_mount = _create_bone_mount("HeadMount", _head_bone, true)
+	_create_wrist()
+
+## The DataPad worn on the left forearm, and the rig that raises it before the eyes (WristRaise). The
+## mount is placed from the arm's rest geometry, not its bone axes; see WristRaise.mount_transform.
+func _create_wrist() -> void:
+	var upper: int = _resolve_bone([&"LeftUpperArm", &"upperarm_l"])
+	var lower: int = _resolve_bone([&"LeftLowerArm", &"lowerarm_l"])
+	var hand: int = _resolve_bone([&"LeftHand", &"hand_l"])
+	var attachment: Node3D = _create_bone_mount("WristMount", lower, false)
+	if attachment == null or hand == -1:
+		return
+	_wrist_mount_xf = WRIST_RAISE.mount_transform(_skeleton, lower, hand, datapad_wrist_back)
+	var device := Node3D.new()
+	device.name = "Device"
+	attachment.add_child(device)
+	device.transform = _wrist_mount_xf
+	_player.wrist_mount = device
+	_wrist_raise = WRIST_RAISE.attach(_skeleton, upper, lower, hand)
+	_wrist_shoulder = upper
+	_wrist_elbow = lower
+	_wrist_hand = hand
+
+## The device worn on the wrist names where its screen is (its own frame, +Y the screen's normal), so the
+## raised forearm turns that screen, and not just the arm, towards the eye.
+func set_wrist_screen(screen_centre: Vector3) -> void:
+	if _wrist_raise != null:
+		_wrist_raise.set_screen(_wrist_mount_xf, screen_centre)
+
+## How far the wrist is raised, 0 (down) .. 1 (before the eyes): WristDatapad waits for 1 to zoom in.
+func wrist_weight() -> float:
+	return _wrist_weight
 
 ## A point on the animated body that a prop can hang from. `body_aligned` adds a child that cancels the
 ## bone's rest rotation, so whatever mounts there starts out facing the way the BODY faces instead of
@@ -343,6 +423,10 @@ func _resolve_bone(candidates: Array[StringName]) -> int:
 func _process(delta: float) -> void:
 	_play(_select_clip(delta))
 	_anim.speed_scale = _target_speed_scale  # walk speed-warp (1.0 for every other clip)
+	if _wrist_weight >= 1.0:
+		# Reading the wrist: the clip holds still. Its breathing moved the shoulder, and so the arm, by a
+		# few millimetres -- a sway, on a screen the view is closed in on (playtest 2026-10-15).
+		_anim.speed_scale = 0.0
 	# First person only: shrink our own head every frame (the animation rewrote the pose just before us).
 	# Collapse the head AND the neck for the owner. Hiding the head alone left the throat standing, and
 	# no camera height fixes that: looking up or to the side simply swept the view through it. Collapsing
@@ -366,6 +450,7 @@ func _process(delta: float) -> void:
 		var look_q: Quaternion = Quaternion(head_look_yaw_axis.normalized(), yaw) \
 				* Quaternion(head_look_axis.normalized(), pitch)
 		_skeleton.set_bone_pose_rotation(_head_bone, animated * look_q)
+	_drive_wrist(delta)
 	# Seated: drop the whole puppet so the sit pose sits IN the seat (the body origin rides at standing
 	# height). Owner camera is a sibling of the puppet, so its first-person view is unaffected.
 	if _puppet != null:
@@ -404,7 +489,13 @@ func _process(delta: float) -> void:
 					and _current != anim_set.turn_left and _current != anim_set.turn_right
 			var target: Vector3 = _head_cam.target(head_now, _shown_stance, one_shot, moving, still,
 					is_instance_valid(_player.screen_in_use), head_cam_forward)
-			_player.camera_pivot.position = _player.camera_pivot.position.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
+			var pivot: Vector3 = _player.camera_pivot.position
+			var eased: Vector3 = pivot.lerp(target, 1.0 - exp(-head_cam_smooth * delta))
+			# The forward lean at its own, gentler pace (head_cam_lean_smooth), into a gait and out of it
+			# to a stop alike; a posture change or a vault still moves the whole view at head_cam_smooth.
+			if not one_shot:
+				eased.z = lerpf(pivot.z, target.z, 1.0 - exp(-head_cam_lean_smooth * delta))
+			_player.camera_pivot.position = eased
 		else:
 			# NOT gated on _head_rest_captured. That reference is only taken on an idle frame ON FOOT, so a
 			# player who sat down before it was captured never entered this branch at all: the pivot kept
@@ -434,6 +525,7 @@ func _drive_hands(delta: float) -> void:
 			_hands.drive(0.0, [], Vector3.ZERO)
 		return
 	_hands_weight = move_toward(_hands_weight, 1.0, delta / maxf(hands_on_wheel_time, 0.01))
+	_hands.left_released = _wrist_weight  # reading the DataPad: the left hand leaves the wheel
 	_hands.drive(_hands_weight, [wheel[0], wheel[1]], wheel[2])
 
 
@@ -456,6 +548,75 @@ func _wheel_in_skeleton() -> Array:
 	return [to_skeleton * LocalFrame.of(grips[0], vehicle).origin,
 			to_skeleton * LocalFrame.of(grips[1], vehicle).origin,
 			to_skeleton * LocalFrame.of(hub, vehicle).origin]
+
+## Raise or lower the wrist towards Player.datapad_raised, in Player.datapad_raise_time, every avatar alike.
+## The pose is taken ONCE, as the arm starts up, then held in the SKELETON's space (it rides the puppet,
+## so a seat, a vehicle, a weightless tip) until the arm is down again: the wrist stays put while the
+## eyes move over its screen and the idle breathes -- a screen that swam under the crosshair could not be
+## read (playtest 2026-10-15). Held there, it is handed to the rig as it is each frame (WristRaise.drive).
+func _drive_wrist(delta: float) -> void:
+	if _wrist_raise == null or _player.camera == null or _puppet == null:
+		return
+	var goal: float = 1.0 if _player.datapad_raised else 0.0
+	_wrist_weight = move_toward(_wrist_weight, goal, delta / maxf(_player.datapad_raise_time, 0.01))
+	if _wrist_weight <= 0.0:
+		_wrist_held = false  # down: the next raise takes its pose afresh
+		_wrist_raise.drive(0.0, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO)
+		return
+	if not _wrist_held:
+		_hold_wrist_pose()
+	_wrist_raise.drive(_wrist_weight, _wrist_hold_wrist, _wrist_hold_pole, _wrist_hold_eye)
+	if _wrist_probe_on:
+		_wrist_probe_s += delta
+		if _wrist_probe_s >= 0.5:
+			_wrist_probe_s = 0.0
+			# Measured once the skeleton is POSED: read here, the bones are still the clip's -- the IK runs at
+			# the end of the frame -- and every arm read 0.6 m off its target, raised or not.
+			if not _skeleton.skeleton_updated.is_connected(_print_wrist_probe):
+				_skeleton.skeleton_updated.connect(_print_wrist_probe, CONNECT_ONE_SHOT)
+
+
+func _print_wrist_probe() -> void:
+	print(_wrist_probe_line())
+
+
+## The wrist probe's twice-a-second line: the hand against the target the IK was given, the elbow's bend.
+func _wrist_probe_line() -> String:
+	var shoulder: Vector3 = _skeleton.get_bone_global_pose(_wrist_shoulder).origin
+	var elbow: Vector3 = _skeleton.get_bone_global_pose(_wrist_elbow).origin
+	var hand: Vector3 = _skeleton.get_bone_global_pose(_wrist_hand).origin
+	var bend: float = rad_to_deg((shoulder - elbow).angle_to(hand - elbow))
+	return "[WristProbe] %s %s weight %.2f | hand %.3f m from its target | elbow %.0f deg | clip %s x%.2f" % [
+			_player.name, "local" if _is_local else "remote", _wrist_weight,
+			hand.distance_to(_wrist_hold_wrist), bend, _anim.current_animation, _anim.speed_scale]
+
+## Take the raised pose from the body as it stands now, into the skeleton's space, through local
+## transforms only: the wrist from the left shoulder (datapad_wrist), or from the eye when crouched or
+## prone (datapad_wrist_from_eye, within reach); the elbow's pole; and the eye the screen turns to --
+## our camera, or a remote avatar's head, whose camera is not placed by the seat or the head like ours is.
+## The offsets are in metres along the BODY's axes: the puppet without the rotation it is instanced with.
+func _hold_wrist_pose() -> void:
+	var skeleton_in_puppet: Transform3D = WRIST_RAISE.local_to(_skeleton, _puppet)
+	var body_in_puppet := Transform3D(_puppet_base_basis, _puppet_base_position).affine_inverse()
+	var axes: Basis = (skeleton_in_puppet.affine_inverse() * body_in_puppet).basis  # body metres -> skeleton
+	var shoulder: Vector3 = _skeleton.get_bone_global_pose(_wrist_shoulder).origin
+	var skeleton_in_player: Transform3D = _puppet.transform * skeleton_in_puppet
+	var camera_in_player: Transform3D = _player.camera_pivot.transform * (_player.camera as Node3D).transform
+	var eye: Vector3 = skeleton_in_player.affine_inverse() * camera_in_player.origin
+	if not _is_local and _head_bone != -1:
+		# Where our own camera sits for that head: in front of the skull (head_cam_forward), a little up.
+		eye = _skeleton.get_bone_global_pose(_head_bone).origin + axes * Vector3(0.0, 0.06, -head_cam_forward)
+	var wrist: Vector3 = datapad_wrist
+	if _shown_stance != 0:
+		wrist = (axes.inverse() * (eye - shoulder) + datapad_wrist_from_eye).limit_length(DATAPAD_REACH_M)
+	_wrist_hold_wrist = shoulder + axes * wrist
+	_wrist_hold_pole = shoulder + axes * datapad_pole
+	_wrist_hold_eye = eye
+	_wrist_held = true
+	if _wrist_probe_on:
+		print("[WristProbe] %s %s hold | stance %d | target %.2f m from the shoulder | eye %.2f m | clip %s" % [
+				_player.name, "local" if _is_local else "remote", _shown_stance, wrist.length(),
+				eye.distance_to(shoulder), _anim.current_animation])
 
 ## Local only: cache the vault probe here — the physics space state it needs is null in _process, so the
 ## debug panel reads this snapshot instead. Cheap, and only while the movement debug is on.
@@ -571,6 +732,9 @@ func _select_clip(delta: float) -> StringName:
 
 ## Standing idle: mostly the base idle, with an occasional variation (look around, fold arms…) for life.
 func _idle_clip(delta: float) -> StringName:
+	if _player.datapad_raised:
+		_reset_idle()  # reading the wrist: no folding the arms or looking around under it
+		return _idle
 	_idle_timer += delta
 	if _idle_variation != &"":
 		if _idle_timer < _idle_variation_end:

@@ -13,6 +13,8 @@
 [ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="led_1x1"]
 [ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="light_group_script"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
+[ext_resource type="Script" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/hangar.png" id="mm_icon"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
 size = Vector3(15.98678550078057, 1, 41.15108700777546)
@@ -200,3 +202,10 @@ transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.03
 transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.030244222750913, 0.01096325825641919, -37.58315279186995)
 
 [editable path="garage"]
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("mm_script")
+label = "%%MAP_MARKER_GARAGE"
+importance = 1
+max_view_m = 5000.0
+icon = ExtResource("mm_icon")

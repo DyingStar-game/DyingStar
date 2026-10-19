@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b3hlyftcu0jwf"]
 
-[ext_resource type="Script" uid="uid://bkmet5fi5fn0v" path="res://scenes/_universe/structures/industrial/vehicle_lift/landings/lower_landing/lower_landing.gd" id="1_h5sj0"]
+[ext_resource type="Script" uid="uid://cyuoy1jwii232" path="res://scenes/_universe/structures/industrial/vehicle_lift/landings/lift_landing.gd" id="1_h5sj0"]
 [ext_resource type="ArrayMesh" uid="uid://br2iakdf4ydfl" path="res://scenes/_universe/structures/industrial/vehicle_lift/landings/lower_landing/lower_landing_p01_lod0.mesh" id="2_mmf5p"]
 [ext_resource type="Material" uid="uid://dvj28cdo3457a" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/materials/platform_principal.material" id="3_327fs"]
 [ext_resource type="Material" uid="uid://drwxh8d1wae6q" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/materials/platform_walk.material" id="4_u7hay"]
@@ -20,13 +20,17 @@
 [ext_resource type="ArrayMesh" uid="uid://c0j587jkhrtiy" path="res://assets/_universe/structures/industrial/vehicle_lift/railing/railing_type02_lod2.mesh" id="17_1vhs6"]
 [ext_resource type="PackedScene" uid="uid://duni0rc7ofqdu" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/kiosk/kiosk.tscn" id="18_0mqw1"]
 [ext_resource type="PackedScene" uid="uid://ls2ntiaejh3w" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/beacon/beacon.tscn" id="18_1vhs6"]
+[ext_resource type="Script" path="res://scenes/common/ambient_loop_3d.gd" id="alarm_loop"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/alarm.tres" id="snd_alarm"]
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_fti8b"]
 height = 0.9
 radius = 0.05
 
-[node name="Lower Landing" type="StaticBody3D" unique_id=814693587]
+[node name="Lower Landing" type="StaticBody3D" unique_id=814693587 node_paths=PackedStringArray("landing_interface")]
 collision_mask = 0
 script = ExtResource("1_h5sj0")
+railing_json_path = "res://scenes/_universe/structures/industrial/vehicle_lift/landings/lower_landing/railing_datas.json"
+landing_interface = NodePath("Screen Display Interface/Lower Landing Interface")
 
 [node name="Visuals" type="Node3D" parent="." unique_id=697792308]
 
@@ -407,3 +411,10 @@ size = Vector2i(500, 300)
 unique_name_in_owner = true
 button_group_scene = ExtResource("6_7hahd")
 landing = 2
+
+[node name="Departure Alarm" type="Node3D" parent="."]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.905, 1.39)
+script = ExtResource("alarm_loop")
+sound = ExtResource("snd_alarm")
+autoplay = false
