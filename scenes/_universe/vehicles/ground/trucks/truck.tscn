@@ -21,10 +21,15 @@
 [ext_resource type="PackedScene" uid="uid://cjkq1jpjbgd6a" path="res://assets/_universe/vehicles/ground/flatbed_small_mini_truck.glb" id="19_lnse2"]
 [ext_resource type="Resource" path="res://scenes/common/wheel_scrub.tres" id="90_scrub"]
 [ext_resource type="Resource" uid="uid://cr7m3w86e4bsq" path="res://scenes/_universe/vehicles/specs/engine_t1.tres" id="90_t1"]
-[ext_resource type="Resource" path="res://scenes/_universe/vehicles/specs/battery_t1.tres" id="91_battery"]
+[ext_resource type="Resource" uid="uid://bw4ggp8iug06d" path="res://scenes/_universe/vehicles/specs/battery_t1.tres" id="91_battery"]
 [ext_resource type="AudioStream" uid="uid://dxl4bmbemj1bx" path="res://assets/_universe/audio/sfx/vehicles/ground/wheel_struck_constant.mp3" id="91_scrubfast"]
 [ext_resource type="Script" uid="uid://blyv56ducsrlp" path="res://scenes/_universe/vehicles/vehicle_component_slot.gd" id="91_slot"]
 [ext_resource type="Script" uid="uid://fd76vdxmrck4" path="res://scenes/_universe/vehicles/vehicle_component_spec.gd" id="92_component_spec"]
+[ext_resource type="AudioStream" uid="uid://csjfk0kxnq5ut" path="res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_1.ogg" id="95_susp1"]
+[ext_resource type="AudioStream" uid="uid://dumghph0l6yph" path="res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_3.ogg" id="95_susp3"]
+[ext_resource type="AudioStream" uid="uid://lia20p6b58f5" path="res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_4.ogg" id="95_susp4"]
+[ext_resource type="AudioStream" uid="uid://cj1ycuex1o141" path="res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_5.ogg" id="95_susp5"]
+[ext_resource type="AudioStream" uid="uid://b3dk26hsgxwg6" path="res://assets/_universe/audio/sfx/vehicles/ground/pneumatic_suspension_6.ogg" id="95_susp6"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
 size = Vector3(0.6, 0.9, 0.6)
@@ -96,10 +101,13 @@ sfx_horn_special_db = -5.5
 sfx_horn_special_distance = 100.0
 sfx_horn_special_attenuation = 0
 sfx_wheel_scrub = ExtResource("90_scrub")
-sfx_wheel_scrub_db = -15.0
+sfx_wheel_scrub_db = -27.0
 sfx_wheel_roll = ExtResource("91_scrubfast")
-sfx_wheel_roll_db = -15.0
+sfx_wheel_roll_db = -9.5
 sfx_wheel_roll_kmh = 5.0
+sfx_suspension_shocks = Array[AudioStream]([ExtResource("95_susp1"), ExtResource("95_susp4"), ExtResource("95_susp5"), ExtResource("95_susp3"), ExtResource("95_susp6")])
+sfx_suspension_soft_db = 11.0
+sfx_suspension_pitch_jitter = 0.1
 
 [node name="Model" parent="." unique_id=327486982 groups=["vehicle_model"] instance=ExtResource("7_d2vf6")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.10000000000582077, 0.4349999999976717, -0.5050000000046566)
@@ -169,16 +177,16 @@ size_2d_override_stretch = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5855397533027074, 0.5199967536373418)
 
 [node name="SpotLight3DL" type="SpotLight3D" parent="Light" unique_id=850312889 groups=["vehicle_light"]]
-transform = Transform3D(1, 0, 0, 0, 0.936556004583576, 0.35051797425873765, 0, -0.35051797425873765, 0.936556004583576, -0.5162292259297776, 0.08516206603119336, -1.9202990869528531)
-light_energy = 2.0
+transform = Transform3D(1, 0, 0, 0, 0.9993908270, 0.0348994967, 0, -0.0348994967, 0.9993908270, -0.5162292259297776, 0.08516206603119336, -1.9202990869528531)
+light_energy = 7.0
 shadow_enabled = true
 distance_fade_enabled = true
 spot_range = 150.0
 spot_angle = 37.0
 
 [node name="SpotLight3DR" type="SpotLight3D" parent="Light" unique_id=889490272 groups=["vehicle_light"]]
-transform = Transform3D(1, 0, 0, 0, 0.9612616959383188, 0.2756373558169992, 0, -0.2756373558169992, 0.9612616959383188, 0.5184703329305984, 0.07619763802790991, -1.9202990869528531)
-light_energy = 2.0
+transform = Transform3D(1, 0, 0, 0, 0.9993908270, 0.0348994967, 0, -0.0348994967, 0.9993908270, 0.5184703329305984, 0.07619763802790991, -1.9202990869528531)
+light_energy = 7.0
 shadow_enabled = true
 distance_fade_enabled = true
 spot_range = 150.0
@@ -205,9 +213,10 @@ spot_angle = 33.29
 [node name="RearCameraRear" parent="." unique_id=984847245 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
 transform = Transform3D(-1, -2.4651903e-32, 1.2246063538223775e-16, 8.634337199246993e-17, 0.7091372917707068, 0.705070423021777, -8.684140332348007e-17, 0.705070423021777, -0.7091372917707068, -0.00059340561188747, 1.515455978092255, 0.09343121015790744)
 screen = NodePath("../Model/Carrosserie/Screen_Rear")
+mirror = true
 
 [node name="RearCameraRetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
-transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.060540212046014e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
+transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.0605402120460141e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
 screen = NodePath("../Model/Carrosserie/ScreenL_Retro")
 resolution = Vector2i(320, 320)
 mirror = true

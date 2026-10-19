@@ -40,14 +40,16 @@ static func play(host: Node3D, stream: AudioStream, db: float, falloff: float, d
 	player.play()
 
 ## Same as play(), with a playback speed: 1.0 = as recorded, 1.1 = slightly higher/faster. Used to
-## give repeated samples (footsteps) a bit of natural variation.
+## give repeated samples (footsteps) a bit of natural variation. [param offset] places the sound in
+## the host's own frame (a vehicle's wheel), so it rides with the host from there.
 static func play_pitched(host: Node3D, stream: AudioStream, db: float, falloff: float, distance: float,
-		attenuation: Attenuation, pitch: float) -> void:
+		attenuation: Attenuation, pitch: float, offset: Vector3 = Vector3.ZERO) -> void:
 	if stream == null or host == null or not host.is_inside_tree():
 		return
 	var player := AudioStreamPlayer3D.new()
 	configure(player, stream, db, falloff, distance, attenuation)
 	player.pitch_scale = maxf(pitch, 0.01)
+	player.position = offset
 	player.finished.connect(player.queue_free)
 	host.add_child(player)
 	player.play()
