@@ -43,11 +43,14 @@ class ExtractionResult:
     images: dict[str, bpy.types.Image] = field(default_factory=dict)
     # real-world size covered by one UV tile, derived from the Mapping node
     physical_size_m: tuple[float, float] = (1.0, 1.0)
+    # sRGB base colour of a Base Color left unlinked (a plain-coloured surface), else None
+    albedo_color: tuple[float, float, float] | None = None
     warnings: list[str] = field(default_factory=list)
 
     def is_usable(self) -> bool:
-        """A library material needs at least a base colour and a normal."""
-        return "albedo" in self.images and "normal" in self.images
+        """A library material needs a base colour (an image or a plain colour) and a normal."""
+        has_base = "albedo" in self.images or self.albedo_color is not None
+        return has_base and "normal" in self.images
 
 
 def find_principled(material: bpy.types.Material) -> bpy.types.Node | None:
@@ -114,13 +117,22 @@ def _separated_channel(socket) -> tuple[bpy.types.Image | None, str]:
     return image_node.image, socket.links[0].from_socket.name
 
 
+def _linear_to_srgb(channel: float) -> float:
+    """Blender's colour sockets are linear; albedo_color is written in sRGB."""
+    channel = min(max(float(channel), 0.0), 1.0)
+    if channel <= 0.0031308:
+        return channel * 12.92
+    return 1.055 * channel ** (1.0 / 2.4) - 0.055
+
+
 def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) -> None:
     """Base Color may come straight from an image, or through an AO multiply."""
     socket = principled.inputs["Base Color"]
     node = _linked_node(socket)
 
     if node is None:
-        result.warnings.append("Base Color is not connected to any texture")
+        # A plain colour: written as albedo_color (sRGB, as Godot reads it), no texture needed.
+        result.albedo_color = tuple(round(_linear_to_srgb(c), 4) for c in socket.default_value[:3])
         return
 
     if node.bl_idname == _IMAGE:

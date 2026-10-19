@@ -78,3 +78,19 @@ func _model_with(material_name: String) -> Node3D:
 	var model := Node3D.new()
 	model.add_child(mesh_instance)
 	return model
+
+
+## albedo_color (sRGB) is the material's base colour: a tint over the albedo map, or the surface's whole
+## colour when it has none -- a plain-coloured fabric needs no texture, nor a hand edit of the generated
+## resource (which this suite then reports out of date: PR #409).
+func test_albedo_color_is_the_base_colour() -> void:
+	var builder := SharedMaterialBuilder.new()
+	var report := SharedMaterialBuilder.Report.new()
+	var material := StandardMaterial3D.new()
+	builder._apply_albedo_color(material, {"albedo_color": [0.2878, 0.2878, 0.2878]}, "mat_test", report)
+	assert_true(material.albedo_color.is_equal_approx(Color(0.2878, 0.2878, 0.2878)))
+	assert_eq(report.warnings, PackedStringArray())
+	var white := StandardMaterial3D.new()
+	builder._apply_albedo_color(white, {"albedo_color": [1, 2]}, "mat_test", report)
+	assert_eq(white.albedo_color, Color.WHITE, "malformed: left white")
+	assert_eq(report.warnings.size(), 1, "and said so")

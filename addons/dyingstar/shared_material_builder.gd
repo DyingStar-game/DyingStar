@@ -145,6 +145,7 @@ func _build_material(folder_name: String, report: Report, write: bool) -> void:
 	material.resource_name = material_id
 	_apply_tiling(material, manifest, material_id, report)
 	_apply_maps(material, folder_path, manifest, material_id, report)
+	_apply_albedo_color(material, manifest, material_id, report)
 
 	var output_path := Resolver.resource_path(material_id)
 	if _matches_saved(material, output_path):
@@ -202,6 +203,21 @@ func _apply_tiling(
 		return
 
 	material.uv1_scale = Vector3(1.0 / width, 1.0 / height, 1.0)
+
+
+## albedo_color is the base colour (sRGB, 0 to 1): Godot's albedo_color, which tints the albedo map
+## when there is one and is the surface's colour when there is none -- a plain-coloured surface (a grey
+## fabric mesh) needs no texture to be grey, and no hand edit of the generated resource either.
+func _apply_albedo_color(
+	material: StandardMaterial3D, manifest: Dictionary, material_id: String, report: Report
+) -> void:
+	var colour: Variant = manifest.get("albedo_color")
+	if colour == null:
+		return
+	if not (colour is Array) or (colour as Array).size() != 3:
+		report.warnings.append("%s: albedo_color must be [r, g, b] from 0 to 1, left white." % material_id)
+		return
+	material.albedo_color = Color(float(colour[0]), float(colour[1]), float(colour[2]))
 
 
 # --- Import settings ----------------------------------------------------------

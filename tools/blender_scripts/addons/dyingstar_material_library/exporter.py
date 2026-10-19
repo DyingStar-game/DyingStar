@@ -167,10 +167,12 @@ def _build_manifest(
         "display_name": metadata["display_name"],
         "tags": metadata["tags"],
         "physical_size_m": list(metadata["physical_size_m"]),
-        "license": metadata["license"],
-        "author": metadata["author"],
-        "ai_generated": False,
     }
+    if metadata.get("albedo_color") is not None:
+        manifest["albedo_color"] = list(metadata["albedo_color"])
+    manifest["license"] = metadata["license"]
+    manifest["author"] = metadata["author"]
+    manifest["ai_generated"] = False
 
     notes = metadata.get("notes", "").strip()
     if notes:
@@ -207,8 +209,11 @@ def export(
     Raises:
         ExportError: on an invalid name, a missing map or an unwritable file.
     """
-    if "albedo" not in images or "normal" not in images:
-        raise ExportError("A library material needs at least an albedo and a normal map")
+    has_base = "albedo" in images or metadata.get("albedo_color") is not None
+    if not has_base or "normal" not in images:
+        raise ExportError(
+            "A library material needs a base colour (an albedo map or a plain colour) and a normal map"
+        )
 
     target_root = materials_dir or preferences.materials_dir()
     if target_root is None:
