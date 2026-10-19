@@ -72,9 +72,14 @@ const OBJECTIVE_TYPE_ENTRIES: Array = [
 const PREREQ_FALLBACK: PackedStringArray = [
 	"has_credits", "owns_items", "min_reputation", "corporation_member",
 ]
-## Sentence variables, `{name}` first (the convention the catalogue now ships) with the legacy
-## `` `name` `` still matched so an older summary keeps rendering mid-transition.
-const TEMPLATE_PATTERN := "\\{([A-Za-z_][A-Za-z0-9_]*)\\}|`([^`]+)`"
+## Sentence variables: `{name}` (the convention the catalogue now ships) and `{path.to.value}` for a
+## param the service documents as a nested object — `{zone.poiId}`, `{source.poiId}` — with the
+## legacy `` `name` `` still matched so an older summary keeps rendering mid-transition.
+##
+## The dot is not decoration. Without it the OBJECTIVE kinds shipped `{zone.poiId}` as literal text:
+## the variable was never recognised, so no picker was offered for it and the uuid it names went
+## out in the title exactly as written.
+const TEMPLATE_PATTERN := "\\{([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\}|`([^`]+)`"
 
 ## Segment 0-2 left columns.
 var _filter_status: OptionButton
@@ -103,13 +108,11 @@ var _create_escrow: OptionButton
 var _create_amount: LineEdit
 var _create_max: LineEdit
 ## Zone block — the availability zones (no row = the service's "global" mission): a titled box of
-## repeatable rows, each {panel, index, kind, system, poi, radius, fields: Array[LineEdit]}.
+## repeatable rows, each {panel, index, kind, system, poi, fields, controls}.
 var _create_zones: VBoxContainer
 var _zone_rows: Array = []
 ## The caller's own points of interest, fetched the first time a zone row needs to name one: the
 ## zone points at a POI rather than at coordinates the player would have to type.
-var _zone_pois: Array = []
-var _zone_pois_loaded: bool = false
 var _create_objectives: VBoxContainer
 var _create_prereqs: VBoxContainer
 ## Editable clauses, each {panel, index, kind, badge, qty?, flow, fallback_box, with_title,
@@ -118,6 +121,80 @@ var _objective_rows: Array = []
 var _prereq_rows: Array = []
 ## The catalogue (categories, objectiveKinds, prerequisiteKinds), fetched once.
 var _catalog: Dictionary = {}
+## The market catalogue, fetched once and shared by every [GoodTypePicker] on this panel. A clause
+## that names a goodType (deliver_material, transport) needs it, and so does the market tab — one
+## fetch between them.
+var _goods: Array = []
+var _goods_loaded: bool = false
+
+
+## The structured widget a clause param deserves, or null when the param is an ordinary scalar and
+## the caller should fall back to a text field.
+##
+## The service's objective kinds carry their params as a JSON Schema, and the four that place
+## something name their place as a nested OBJECT — `{ zone: { kind: "poi", poiId } }`,
+## `{ goodType, source: {…}, zone: {…} }`. Until now [method _rebuild_params] skipped every
+## non-primitive type and the builder fell through to a raw JSON box, so the one thing a delivery
+## contract is made of had to be typed by hand. These four names are what the service documents, so
+## they get the widget that makes them pickable.
+## [param param_name], not `name`: Node owns a `name`, and a parameter of that name shadows it in
+## every warning the editor prints for this file.
+func structured_param_widget(param_name: String, width: float = 240.0) -> Control:
+	match param_name:
+		"zone", "source":
+			var place := MissionPlacePicker.new()
+			place.setup("%%SVC_POI_MISSION_DEFAULT", width)
+			return place
+		"passengerId":
+			# The passenger is a PLAYER, so the player picker answers it — collapsed, because a
+			# clause is a sentence and a full picker would swallow the line.
+			var who := ServiceTargetPicker.new()
+			who.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+			# Shrink, not fill: setup asks to expand, which is what a FORM row wants — and exactly
+			# what a sentence does not. This control sits between two labels of a clause, so its
+			# minimum width is the whole of its answer.
+			who.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			adopt_field(who.search_field())
+			return who
+		"goodType", "itemId":
+			var good := GoodTypePicker.new()
+			# setup() is not optional: without it the picker has no field and no list, so it draws
+			# as an empty box in the middle of the sentence and its own param_value() reads a
+			# `_field` that was never made. The market tab calls it; this branch forgot to.
+			good.setup(width)
+			# Shrink, for the same reason the passenger picker does: a clause control takes its own
+			# width and leaves the rest of the line to the words around it.
+			good.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			return good
+	return null
+
+
+## Fill a [GoodTypePicker] with the catalogue, fetching it the first time. Safe to call on any
+## widget: a picker created before the catalogue arrives fills itself when the fetch lands.
+func _feed_goods(picker: Control) -> void:
+	if not (picker is GoodTypePicker):
+		return
+	if _goods_loaded:
+		(picker as GoodTypePicker).fill(_goods)
+		return
+	_load_goods()
+
+
+func _load_goods() -> void:
+	if _goods_loaded:
+		return
+	_goods_loaded = true
+	var result: Dictionary = await PlayerServices.market_catalog()
+	if bool(result.get("ok", false)) and result.get("data") is Array:
+		_goods = result["data"]
+	else:
+		# Not fatal: the picker keeps its text field, and a goodType the catalogue does not carry is
+		# still one the service would accept.
+		_goods = []
+	for row: Dictionary in _objective_rows:
+		for widget: Control in row.get("params_widgets", []):
+			if widget is GoodTypePicker:
+				(widget as GoodTypePicker).fill(_goods)
 
 
 func _build() -> void:
@@ -136,9 +213,20 @@ func _build() -> void:
 	_build_create_page(_side_page(3))
 	add_chrome(_status_line())
 
-	# One clause up front: the contract is never empty.
+	# One clause up front: the contract is never empty. Built AFTER the places are in hand, because
+	# its place picker reads the cache as it is created and would otherwise open on "no point of
+	# interest yet" — a sentence about a destination the builder has several of.
+	_preload_builder_data()
 	_add_objective_row()
 	_update_corp_field()
+
+
+## Fetch what the builder's first clause draws on. Detached on purpose: [method _build] runs while
+## the panel is still being assembled, and the panel must appear immediately; [method refresh] lands
+## the same data a moment later and refills anything built in between.
+func _preload_builder_data() -> void:
+	_load_goods()
+	MissionPoiCache.ensure_loaded()
 
 
 # ---------------------------------------------------------------------------------------------
@@ -388,6 +476,22 @@ func refresh() -> void:
 		return
 	if _catalog.is_empty():
 		await _load_catalog()
+	# The place pickers and the zone rows draw from one shared list of the caller's POIs; the goods
+	# pickers from the market catalogue. Both are fetched once and reused, so a builder that opens
+	# six clauses costs one round trip between them rather than twelve.
+	await MissionPoiCache.ensure_loaded()
+	await _load_goods()
+	for row: Dictionary in _objective_rows:
+		for entry: Dictionary in row.get("params_widgets", []):
+			var control: Variant = entry.get("control")
+			if control is MissionPlacePicker:
+				(control as MissionPlacePicker).refresh_list()
+			elif control is GoodTypePicker:
+				(control as GoodTypePicker).fill(_goods)
+	for row: Dictionary in _zone_rows:
+		var zone_picker: Variant = row.get("poi")
+		if zone_picker is MissionPlacePicker:
+			(zone_picker as MissionPlacePicker).refresh_list()
 	await _load_mine()
 	await _load_browse()
 	await _load_created()
@@ -434,7 +538,7 @@ func _load_created() -> void:
 	var result: Dictionary = await PlayerServices.missions_created(
 			_enum_value(_created_status), _page_created.limit, at)
 	if _land(_page_created, at, result):
-		_fill_missions_list(_page_created, _created, result, tr("%%SVC_MSG_NO_CREATED"))
+		_fill_missions_list(_page_created, _created, result, tr("%%SVC_MSG_NO_CREATED"), true)
 
 
 func _load_mine() -> void:
@@ -445,8 +549,11 @@ func _load_mine() -> void:
 
 
 ## Shared loader for the two mission-dict lists (browse + created).
+## [param own] marks every row as the player's contract: true for "My contracts", where the server
+## has already done the selecting. The ids are recorded because the CATALOGUE needs them later and
+## has no way to ask for them — see [method _mark_mine].
 func _fill_missions_list(page: ServicePage, list: ItemList, result: Dictionary,
-		empty_text: String) -> void:
+		empty_text: String, own: bool = false) -> void:
 	if not bool(result.get("ok", false)):
 		_fill_list(list, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
 		return
@@ -455,10 +562,39 @@ func _fill_missions_list(page: ServicePage, list: ItemList, result: Dictionary,
 	for mission: Dictionary in page.rows(result):
 		lines.append(ServiceTypes.mission_line(mission))
 		metadata.append(mission)
+		if own:
+			_record_mine(mission)
 	if lines.is_empty():
 		lines.append(empty_text)
 	_fill_list(list, lines, metadata)
+	_mark_mine(list)
 	_say(tr("%%SVC_FMT_MISSION_COUNT") % page.total, DIM)
+
+
+## Colour the rows whose contract this player raised, so one line says "yours" without opening it.
+##
+## Two answers, because the catalogue cannot be relied on to carry the owner: a row is the player's
+## when its own fields say so ([method _is_mine] — createdBy or issuerId) OR when it has been seen in
+## "My contracts", where the server already filtered by it. Only the second needs no field at all,
+## and without it the marker could sit dark over the player's own contract simply because the list
+## shape says nothing about who raised it — a marker that never lights reads as a broken one.
+##
+## A colour rather than a prefix or an icon: the line already carries title, kind, status and reward,
+## so the marker must stay out of the text, and tinting a row is how the bank's own list already marks
+## money coming in. No artwork, so nothing new to credit.
+func _mark_mine(list: ItemList) -> void:
+	for i: int in range(list.item_count):
+		var meta: Variant = list.get_item_metadata(i)
+		if not (meta is Dictionary):
+			continue
+		var row := meta as Dictionary
+		if _is_mine(row) or _mine_ids.has(str(row.get("id", ""))):
+			list.set_item_custom_fg_color(i, ServiceStyle.ACCENT)
+
+
+## Ids of contracts the player raised, learned whenever a list of them has been read.
+func _record_mine(mission: Dictionary) -> void:
+	_mine_ids[str(mission.get("id", ""))] = true
 
 
 func _apply_mine(page: ServicePage, result: Dictionary) -> void:
@@ -613,13 +749,74 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	doc.add_child(_titled(tr("%%SVC_LBL_OBJECTIVES"), objectives))
 
 	doc.add_child(_rule())
-	doc.add_child(_contract_actions(mission_id, mission, assignment, contract))
+	doc.add_child(_contract_actions(mission_id, mission, assignment, contract,
+			items if items is Array else []))
 	card.add_child(doc)
 	return card
 
 
-## One numbered objective clause: the sentence, its progress, the evaluation badge, and — on my
-## own contracts — the issuer confirmation button.
+## The point of interest an objective names, as {id, name}, or {} when it names none.
+##
+## `zone` before `source`: a transport carries both a departure and an arrival, and only the arrival
+## is "where this clause happens". The keys are the ones the service documents for the objective
+## kinds (visit, deliver_material, transport, transport_passenger) — see
+## docs/MISSION_PLACE_FRAME.md §1.3 — read rather than guessed from the sentence, which is written
+## by the service and may say anything.
+##
+## The name is resolved here so the clause reads as a place, not as a uuid: [method MissionPoiCache]
+## holds the player's own points, which covers every mission the player can build or has taken from
+## themselves. A point belonging to someone else's contract is simply not known by name yet — the
+## chart fetches it on the click, and the link says what it is rather than what it is called.
+static func _objective_poi(objective: Dictionary) -> Dictionary:
+	var params: Variant = objective.get("params")
+	if not (params is Dictionary):
+		return {}
+	for field: String in ["zone", "source"]:
+		var place: Variant = (params as Dictionary).get(field)
+		if not (place is Dictionary):
+			continue
+		var poi_id := str((place as Dictionary).get("poiId", ""))
+		if poi_id != "":
+			return {"id": poi_id, "name": _poi_name_of(poi_id)}
+	return {}
+
+
+static func _poi_name_of(poi_id: String) -> String:
+	for poi: Dictionary in MissionPoiCache.entries():
+		if str(poi.get("id", "")) == poi_id:
+			return MissionPoiCache.label_of(poi)
+	return ""
+
+
+## A word you can click, inside a sentence that is otherwise not clickable. Flat, so it takes no room
+## beside the objective — a boxed button per clause would outweigh the clause it points at — and
+## lit on hover, which is the one thing on screen that says "this word goes somewhere". That is the
+## rest of the terminal's own answer to the same question (ServiceStyle.apply_button), so the link
+## reads as part of the same screen rather than as a borrowed control.
+func _poi_link(text: String, poi_id: String) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.add_theme_stylebox_override("normal", ServiceStyle.flat(Color.TRANSPARENT,
+			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
+	button.add_theme_stylebox_override("hover", ServiceStyle.flat(ServiceStyle.ACCENT_SOFT,
+			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
+	button.add_theme_stylebox_override("pressed", ServiceStyle.flat(ServiceStyle.ACCENT_SOFT,
+			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
+	button.add_theme_stylebox_override("focus", ServiceStyle.flat(Color.TRANSPARENT,
+			ServiceStyle.RADIUS_SMALL, ServiceStyle.ACCENT, 1, 6.0, 4.0))
+	button.add_theme_color_override("font_color", ServiceStyle.ACCENT)
+	button.add_theme_color_override("font_hover_color", ServiceStyle.ACCENT_HOVER)
+	button.add_theme_color_override("font_pressed_color", ServiceStyle.ACCENT_PRESSED)
+	button.add_theme_color_override("font_focus_color", ServiceStyle.ACCENT_HOVER)
+	# The sentence's own size, so the word does not grow when it becomes a control.
+	ServiceStyle.font_of(button, 15)
+	button.tooltip_text = tr("%%SVC_TIP_SHOW_POI_ON_CHART")
+	button.pressed.connect(func() -> void: focus_poi_requested.emit(poi_id))
+	return button
+
+
+## One numbered objective clause: the sentence, where it happens, its progress, the evaluation badge,
+## and — on my own contracts — the issuer confirmation button.
 func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dictionary,
 		objective: Dictionary, index: int) -> Control:
 	var card := PanelContainer.new()
@@ -642,6 +839,21 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 	line.add_child(sentence)
 	box.add_child(line)
 
+	# Where this clause happens, as a word that takes you there. A clause you cannot locate is a
+	# sentence about somewhere you have never seen, which is the difference between a contract you
+	# can take and one you can only hope about.
+	var poi := _objective_poi(objective)
+	if not poi.is_empty():
+		var where := _row(4)
+		var indent := Control.new()
+		indent.custom_minimum_size = Vector2(26, 0)
+		where.add_child(indent)
+		where.add_child(_label(tr("%%SVC_LBL_AT"), DIM))
+		var poi_name := str(poi["name"])
+		where.add_child(_poi_link(
+				poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), str(poi["id"])))
+		box.add_child(where)
+
 	var footer := _row(10)
 	footer.add_child(_label(_objective_progress(objective), DIM))
 	var entry := _kind_entry("objectiveKinds", str(objective.get("type", "")))
@@ -658,6 +870,24 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 				func() -> void: _confirm(mission_id, str(objective.get("id", "")), contract))
 	box.add_child(footer)
 	return card
+
+
+## The contract's clauses as a picker, for the progress line: a uuid is not an input a player can
+## produce, and the clause is on screen above it.
+func _objective_picker(objectives: Array) -> OptionButton:
+	var picker := OptionButton.new()
+	picker.custom_minimum_size = Vector2(320, 40)
+	ServiceStyle.apply_option(picker)
+	for objective: Dictionary in objectives:
+		var label := "%s. %s" % [str(ServiceTypes.num((objective as Dictionary).get("order", 0)) + 1),
+				ServiceTypes.dash((objective as Dictionary).get("title"))]
+		picker.add_item(label)
+		picker.set_item_metadata(picker.item_count - 1, str((objective as Dictionary).get("id", "")))
+	if picker.item_count == 0:
+		picker.add_item("%%SVC_MSG_NO_OBJECTIVES")
+		picker.set_item_metadata(0, "")
+	picker.select(0)
+	return picker
 
 
 ## "2/5 units · in progress" — language-neutral numbers, localized objective status.
@@ -687,6 +917,10 @@ func _can_confirm(mission: Dictionary, objective: Dictionary) -> bool:
 	return str(entry.get("evaluation", "")) == "issuer"
 
 
+## Ids of the player's own contracts, from "My contracts" (see [method _record_mine]).
+var _mine_ids: Dictionary = {}
+
+
 ## Whether the caller is the one who raised [param mission] — by creation (a player contract) or by
 ## issuance (a corporation contract). One question, answered the two ways the service records it.
 func _is_mine(mission: Dictionary) -> bool:
@@ -706,7 +940,7 @@ func _confirm(mission_id: String, objective_id: String, contract: VBoxContainer)
 
 ## Footer: contextual lifecycle actions + the group share line.
 func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dictionary,
-		contract: VBoxContainer) -> Control:
+		contract: VBoxContainer, objectives: Array) -> Control:
 	var actions := VBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -730,12 +964,17 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 		actions.add_child(lifecycle)
 		var progress := _row()
 		progress.add_child(_label(tr("%%SVC_LBL_PROGRESS"), DIM))
-		var objective_id := _field(tr("%%SVC_PH_OBJECTIVE_ID"), 240.0)
+		# The objective, chosen by what it SAYS. This used to be a field for the objective's uuid —
+		# an id assigned by the service, printed nowhere, knowable only by copying it out of a
+		# network answer, and typed into a contract whose clauses are listed on screen a few rows
+		# above. The list is right there, so the list is the input.
+		var objective_pick := _objective_picker(objectives)
 		var quantity := _number_field(tr("%%SVC_PH_QUANTITY"), 100.0)
-		progress.add_child(objective_id)
+		if objective_pick != null:
+			progress.add_child(objective_pick)
 		progress.add_child(quantity)
 		_action_button(progress, tr("%%SVC_ACT_REPORT_PROGRESS"),
-				func() -> void: _progress(mission_id, contract, objective_id, quantity))
+				func() -> void: _progress(mission_id, contract, objective_pick, quantity))
 		actions.add_child(progress)
 
 	# The share line is the CREATOR's business: handing a contract to a group is a decision about
@@ -801,10 +1040,12 @@ func _complete(mission_id: String, contract: VBoxContainer) -> void:
 		refresh()
 
 
-func _progress(mission_id: String, contract: VBoxContainer, objective_field: LineEdit,
+func _progress(mission_id: String, contract: VBoxContainer, objective_pick: OptionButton,
 		quantity_field: LineEdit) -> void:
 	release_fields()
-	var objective_id: String = objective_field.text.strip_edges()
+	var objective_id := ""
+	if objective_pick != null and objective_pick.selected >= 0:
+		objective_id = str(objective_pick.get_item_metadata(objective_pick.selected))
 	if objective_id == "" or not quantity_field.text.strip_edges().is_valid_int():
 		_say(tr("%%SVC_MSG_NEED_OBJECTIVE_QUANTITY"), WARN)
 		return
@@ -915,6 +1156,7 @@ func _new_zone_row(kind_value: String = "") -> PanelContainer:
 	row["kind"] = kind
 	row["flow"] = flow
 	row["fields"] = []
+	row["controls"] = []
 	_create_zones.add_child(panel)
 	_zone_rows.append(row)
 	_renumber_zones()
@@ -926,10 +1168,13 @@ func _new_zone_row(kind_value: String = "") -> PanelContainer:
 func _remove_zone_row(row: Dictionary) -> void:
 	_zone_rows.erase(row)
 	for field: Variant in row.get("fields", []):
-		# Only the free-text inputs were registered for the keyboard contract; the POI picker is a
-		# select and has nothing to give back.
+		# Only the free-text inputs were registered for the keyboard contract; the place picker is
+		# a widget and has nothing to give back.
 		if field is LineEdit:
 			_forget_field(field as LineEdit)
+	for control: Variant in row.get("controls", []):
+		if control is Node and is_instance_valid(control):
+			(control as Node).queue_free()
 	var panel: Variant = row.get("panel")
 	if panel is Node and is_instance_valid(panel):
 		(panel as Node).queue_free()
@@ -958,67 +1203,61 @@ func _rebuild_zone_fields(row: Dictionary) -> void:
 			_forget_field(field as LineEdit)
 	var flow: FlowContainer = row["flow"]
 	_clear(flow)
-	for key: String in ["system", "poi", "radius"]:
+	for key: String in ["system", "poi"]:
 		row[key] = null
 	row["fields"] = []
+	# The place picker of the previous kind: not a LineEdit, so the loop above did not catch it.
+	# Freed here rather than leaked, since _clear(flow) only detaches children.
+	for control: Variant in row.get("controls", []):
+		if control is Node and is_instance_valid(control):
+			(control as Node).queue_free()
+	row["controls"] = []
 	# Every kind carries only its own fields: the service's union is strict, so a field this kind
 	# does not own is not ignored, it is a validation error.
 	if _enum_value(row["kind"] as OptionButton) == "system":
 		_zone_edit(row, flow, "system", tr("%%SVC_PH_ZONE_SYSTEM"), 150.0, false)
 		return
 	_zone_poi_picker(row, flow)
-	_zone_edit(row, flow, "radius", tr("%%SVC_PH_ZONE_RADIUS"), 90.0, true)
+	# NO radius field here any more. The service refuses a zone radius that does not fit the POI's
+	# own (POI_RADIUS_EXCEEDED), and a POI placed from the chart is a POINT with no radius at all —
+	# so a typed radius was a guaranteed 400. The radius now belongs to the POI itself, edited where
+	# the POI is chosen (see MissionPlacePicker): one place, one rule.
 
 
-## The POI a `poi` zone points at: the caller's own points of interest, by name. The picker is the
-## one field this row owns that is not a free-text input, so it is built here rather than through
-## [method _zone_edit].
+## The POI a `poi` zone points at, and the ways to put one there.
+##
+## What to call the points of interest this panel creates, so two on one body are not named alike.
+##
+## Asked by a place picker at the moment it creates one rather than kept in sync: the title is free
+## text the player is still typing while the picker sits open, so a single question at the one
+## instant it matters beats a signal on every keystroke. Empty while the title is blank, which the
+## picker takes as "no prefix".
+func mission_name_for_poi() -> String:
+	return _create_title.text.strip_edges()
+
+
+## The same [MissionPlacePicker] an objective's `zone` param uses, so an availability zone and a
+## delivery target are chosen the same way: a POI that already exists, one placed « Ici » where the
+## builder stands, or one placed « Carte » where the click lands. Before this, a zone could only
+## name a POI that existed somewhere else — so making a delivery zone meant leaving the builder,
+## creating a POI in another tab, and coming back to find it in a list.
 func _zone_poi_picker(row: Dictionary, flow: FlowContainer) -> void:
-	var picker := OptionButton.new()
-	picker.custom_minimum_size = Vector2(220, 40)
-	ServiceStyle.apply_option(picker)
+	var picker := MissionPlacePicker.new()
+	picker.setup("%%SVC_POI_MISSION_ZONE", 220.0)
+	picker.placement_requested.connect(
+			func(radius: float, pick: bool) -> void: placement_requested.emit(radius, pick))
 	row["poi"] = picker
-	(row["fields"] as Array).append(picker)
 	flow.add_child(picker)
-	_fill_zone_poi_picker(picker)
-
-
-## Put every one of the caller's points of interest in [param picker]. The first fetch costs a
-## round trip; after that the list is already in hand when another zone names one.
-func _fill_zone_poi_picker(picker: OptionButton) -> void:
-	picker.clear()
-	if not _zone_pois_loaded:
-		_load_zone_pois()
-	for poi: Dictionary in _zone_pois:
-		var poi_id := str(poi.get("id", ""))
-		var label := str(poi.get("name", "")).strip_edges()
-		picker.add_item(label if label != "" else poi_id)
-		picker.set_item_metadata(picker.item_count - 1, poi_id)
-	if picker.item_count == 0:
-		picker.add_item(tr("%%SVC_MSG_ZONE_NO_POI"))
-		picker.set_item_metadata(0, "")
-	picker.select(0)
-
-
-## The caller's own points of interest, for the zone rows to name. One fetch per panel life.
-func _load_zone_pois() -> void:
-	_zone_pois_loaded = true
-	var result: Dictionary = await PlayerServices.poi_list(100, 0)
-	_zone_pois = ServicePage.items_of(result) if bool(result.get("ok", false)) else []
-	for row: Dictionary in _zone_rows:
-		var picker: Variant = row.get("poi")
-		if picker is OptionButton:
-			_fill_zone_poi_picker(picker as OptionButton)
+	# The zone row's own teardown only walks LineEdits; this one is not one, so it is queued for the
+	# panel to free with the row rather than left dangling in a cleared flow.
+	(row["controls"] as Array).append(picker)
 
 
 ## The id the [param picker] names, or "" when it carries no POI (nothing to point a zone at).
 static func _picked_poi_id(picker: Variant) -> String:
-	if not (picker is OptionButton):
-		return ""
-	var option := picker as OptionButton
-	if option.selected < 0 or option.selected >= option.item_count:
-		return ""
-	return str(option.get_item_metadata(option.selected))
+	if picker is MissionPlacePicker:
+		return (picker as MissionPlacePicker).picked_id()
+	return ""
 
 
 ## One zone field: registered with the keyboard contract, named on the row, and listed in the
@@ -1032,38 +1271,63 @@ func _zone_edit(row: Dictionary, flow: FlowContainer, key: String, placeholder: 
 	flow.add_child(field)
 
 
-## Prefill the first zone row from the player's own presence location (`/api/me` →
-## `presence.location` = {system, scene, position}). A zone can only carry a star system or a point
-## of interest, so this fills the SYSTEM kind — a point of interest is named from the picker,
-## after being placed in Propriétés (« Ici » or the chart).
+## Use the player's own presence location (`/api/me` → `presence.location` =
+## {system, scene, position}) on the first zone row.
+##
+## Which kind that row ends up on depends on what a place CAN be. A `system` zone names a star
+## system, so it can be filled straight from the presence — but only where there IS a system: off-
+## world there is none, and the place that actually matters is a point of interest. Since the zone
+## row now carries the same place picker as an objective, that case is no longer a dead end — it
+## becomes a POI placed right here, and the off-world message only stays for a player who is nowhere
+## at all.
 func _use_my_position() -> void:
+	var loc: Dictionary = await _my_presence()
+	if loc.is_empty():
+		return
+	var system := str(loc.get("system", "")).strip_edges()
+	if _zone_rows.is_empty():
+		_new_zone_row("system" if system != "" else "poi")
+	var row: Dictionary = _zone_rows[0]
+	var kind: Variant = row.get("kind")
+	var wanted := "system" if system != "" else "poi"
+	if kind is OptionButton and _enum_value(kind as OptionButton) != wanted:
+		(kind as OptionButton).select(_zone_kind_index(wanted))
+		_rebuild_zone_fields(row)
+	if system != "":
+		_prefill_zone_field(row.get("system"), system)
+		var where := ServiceTypes.location_text(loc)
+		_say(where if where != "" else system, GOOD)
+		return
+	var picker: Variant = row.get("poi")
+	if picker is MissionPlacePicker:
+		(picker as MissionPlacePicker).place_here()
+	else:
+		_say(tr("%%SVC_MSG_ZONE_OFFWORLD"), DIM)
+
+
+## The caller's presence location, or {} when there is none to take a place from.
+func _my_presence() -> Dictionary:
 	var result: Dictionary = await PlayerServices.profile_get()
 	if not bool(result.get("ok", false)):
 		_say(HttpClient.describe_error(result), WARN)
-		return
+		return {}
 	var data: Variant = result.get("data")
 	var presence: Variant = (data as Dictionary).get("presence") if data is Dictionary else null
 	var location: Variant = (presence as Dictionary).get("location") if presence is Dictionary \
 			else null
 	if not (location is Dictionary):
 		_say(tr("%%SVC_MSG_NO_POSITION"), WARN)
-		return
-	var loc: Dictionary = location
-	var system := str(loc.get("system", "")).strip_edges()
-	if system == "":
-		# Off-world the body itself is the place, and a body is a point of interest, not a system.
-		_say(tr("%%SVC_MSG_ZONE_OFFWORLD"), DIM)
-		return
-	if _zone_rows.is_empty():
-		_new_zone_row("system")
-	var row: Dictionary = _zone_rows[0]
-	var kind: Variant = row.get("kind")
-	if kind is OptionButton and _enum_value(kind as OptionButton) != "system":
-		(kind as OptionButton).select(0)
-		_rebuild_zone_fields(row)
-	_prefill_zone_field(row.get("system"), system)
-	var where := ServiceTypes.location_text(loc)
-	_say(where if where != "" else system, GOOD)
+		return {}
+	return location
+
+
+## The row of [constant ZONE_ENTRIES] a zone kind sits at, so a row can be switched without
+## searching the list by hand.
+static func _zone_kind_index(kind_value: String) -> int:
+	for i: int in range(ZONE_ENTRIES.size()):
+		if str((ZONE_ENTRIES[i] as Array)[0]) == kind_value:
+			return i
+	return 0
 
 
 ## One clause card: numbered head (N. kind ▾ · evaluation badge · quantity · ×) over the sentence
@@ -1123,6 +1387,7 @@ func _new_clause(catalog_key: String, with_title: bool, rows: Array) -> PanelCon
 	row["title_field"] = null
 	row["param_fields"] = []
 	row["param_raw"] = null
+	row["params_widgets"] = []
 	row["schema_required"] = []
 	row["schema_has_required"] = false
 	kind.item_selected.connect(func(i: int) -> void: _kind_changed(row, i))
@@ -1153,6 +1418,7 @@ func _kind_changed(row: Dictionary, index: int) -> void:
 	row["title_field"] = null
 	row["param_fields"] = []
 	row["param_raw"] = null
+	row["params_widgets"] = []
 	row["schema_required"] = []
 	row["schema_has_required"] = false
 	_clear(row["flow"])
@@ -1211,10 +1477,19 @@ func _render_sentence(row: Dictionary, segments: Array, entry: Dictionary, drop_
 	for i: int in range(segments.size()):
 		var segment: Dictionary = segments[i]
 		if segment.has("var"):
-			var name := str(segment["var"])
-			var parts := _var_control(name, entry, objective)
+			# `var_name`, not `name`: Node owns a `name`, and shadowing it makes every warning in
+			# this file harder to read than the code it is about.
+			var var_name := str(segment["var"])
+			# `{zone.poiId}` is a path INTO a param, not a param of its own: the widget is the
+			# object `zone`, and one object takes one control however many times a summary names
+			# it — the transport clause names `source` and `zone`, each once, but a wording that
+			# named a place twice would otherwise put two pickers on one line.
+			var root := var_name.split(".")[0]
+			if _has_var(row, root):
+				continue
+			var parts := _var_control(root, entry, objective)
 			flow.add_child(parts[0])
-			(row["vars"] as Array).append({"name": name, "control": parts[0], "meta": parts[1]})
+			(row["vars"] as Array).append({"name": root, "control": parts[0], "meta": parts[1]})
 		else:
 			var literal := str(segment["text"]).strip_edges()
 			if literal == "":
@@ -1225,19 +1500,39 @@ func _render_sentence(row: Dictionary, segments: Array, entry: Dictionary, drop_
 			flow.add_child(_label(literal, DIM if note else ServiceStyle.TEXT))
 
 
+## Whether the clause already holds a control for [param root] — a path such as `{zone.poiId}` is
+## answered by the object it points into, and an object takes one control.
+static func _has_var(row: Dictionary, root: String) -> bool:
+	for variable: Variant in row["vars"]:
+		if variable is Dictionary and str((variable as Dictionary).get("name", "")) == root:
+			return true
+	return false
+
+
 ## One inline control for a sentence variable, and where its value must land: the kind's params
 ## schema first, then the objective's own fields, then params in the open. A prerequisite is only
 ## {kind, params} — its variables never reach an objective field.
-func _var_control(name: String, entry: Dictionary, objective: bool) -> Array:
+func _var_control(var_name: String, entry: Dictionary, objective: bool) -> Array:
 	var properties := {}
 	var schema: Variant = entry.get("params")
 	if schema is Dictionary:
 		var declared: Variant = (schema as Dictionary).get("properties")
 		if declared is Dictionary:
 			properties = declared
-	if properties.has(name):
-		var property: Dictionary = properties[name] if properties[name] is Dictionary else {}
-		var hint := str(property.get("title", property.get("description", name)))
+	# A place, a passenger, a good — the params the service documents as something other than a
+	# scalar. Checked BEFORE the primitive types below, because these are exactly the ones that used
+	# to fall through to a typed field (or, being objects, to the raw JSON box).
+	var widget := structured_param_widget(var_name, 240.0)
+	if widget != null:
+		if widget is GoodTypePicker:
+			_feed_goods(widget)
+		if widget.has_signal("placement_requested"):
+			widget.connect("placement_requested",
+				func(radius: float, pick: bool) -> void: placement_requested.emit(radius, pick))
+		return [widget, {"name": var_name, "target": "param_object"}]
+	if properties.has(var_name):
+		var property: Dictionary = properties[var_name] if properties[var_name] is Dictionary else {}
+		var hint := str(property.get("title", property.get("description", var_name)))
 		var enum_values: Variant = property.get("enum")
 		if enum_values is Array and not (enum_values as Array).is_empty():
 			var option := OptionButton.new()
@@ -1254,32 +1549,32 @@ func _var_control(name: String, entry: Dictionary, objective: bool) -> Array:
 						chosen = i
 						break
 			option.select(chosen)
-			return [option, {"name": name, "target": "param",
+			return [option, {"name": var_name, "target": "param",
 					"ptype": str(property.get("type", "string"))}]
 		var ptype: String = str(property.get("type", "string"))
 		if ptype == "boolean":
 			var check := CheckBox.new()
 			check.button_pressed = bool(property.get("default", false))
-			return [check, {"name": name, "target": "param", "ptype": "boolean"}]
+			return [check, {"name": var_name, "target": "param", "ptype": "boolean"}]
 		var field: LineEdit = _number_field(hint, 110.0) if ptype in ["integer", "number"] \
 				else _field(hint, 150.0)
 		var default_scalar: Variant = property.get("default")
 		if default_scalar != null:
 			field.text = str(default_scalar)
-		return [field, {"name": name, "target": "param", "ptype": ptype}]
+		return [field, {"name": var_name, "target": "param", "ptype": ptype}]
 	if not objective:
-		var free := _field(name, 140.0)
-		return [free, {"name": name, "target": "param", "ptype": "string"}]
-	match name:
+		var free := _field(var_name, 140.0)
+		return [free, {"name": var_name, "target": "param", "ptype": "string"}]
+	match var_name:
 		"targetQuantity":
-			return [_number_field(name, 90.0), {"name": name, "target": "targetQuantity",
+			return [_number_field(var_name, 90.0), {"name": var_name, "target": "targetQuantity",
 					"ptype": "integer"}]
 		"locationTo", "locationFrom":
-			return [_field(tr("%%SVC_PH_LOCATION"), 150.0), {"name": name, "target": name,
+			return [_field(tr("%%SVC_PH_LOCATION"), 150.0), {"name": var_name, "target": name,
 					"ptype": "location"}]
 		"unit":
-			return [_field(name, 90.0), {"name": name, "target": "unit", "ptype": "string"}]
-	return [_field(name, 140.0), {"name": name, "target": "param", "ptype": "string"}]
+			return [_field(name, 90.0), {"name": var_name, "target": "unit", "ptype": "string"}]
+	return [_field(var_name, 140.0), {"name": var_name, "target": "param", "ptype": "string"}]
 
 
 ## Catalogue-less kinds: the params schema still rendered as stacked fields under the summary
@@ -1291,20 +1586,41 @@ func _rebuild_params(row: Dictionary, entry: Dictionary) -> void:
 	if not (properties is Dictionary) or (properties as Dictionary).is_empty():
 		return
 	var rendered: bool = false
-	for name: Variant in properties:
-		var property: Variant = properties[name]
+	var skipped: int = 0
+	for key: Variant in properties:
+		var property: Variant = properties[key]
 		if not (property is Dictionary):
+			continue
+		var param_name := str(key)
+		var hint: String = str((property as Dictionary).get("title",
+				(property as Dictionary).get("description", param_name)))
+		# A place, a passenger, a good: the params the service documents as something other than a
+		# scalar. These get a widget, and a widget that picks — never a field to type an id into.
+		var widget := structured_param_widget(param_name, 260.0)
+		if widget != null:
+			var labelled := _titled(hint, widget)
+			box.add_child(labelled)
+			(row["params_widgets"] as Array).append({"name": param_name, "control": widget})
+			if widget is GoodTypePicker:
+				_feed_goods(widget)
+			if widget.has_signal("placement_requested"):
+				widget.connect("placement_requested",
+					func(radius: float, pick: bool) -> void: placement_requested.emit(radius, pick))
+			rendered = true
 			continue
 		var ptype: String = str((property as Dictionary).get("type", "string"))
 		if not (ptype in ["string", "integer", "number", "boolean"]):
+			# An object or an array we have no widget for: counted, so the raw box below still
+			# appears rather than the clause silently losing the field.
+			skipped += 1
 			continue
-		var hint: String = str((property as Dictionary).get("title",
-				(property as Dictionary).get("description", name)))
 		var field := _field(hint, 160.0)
 		box.add_child(field)
-		(row["param_fields"] as Array).append([str(name), ptype, field])
+		(row["param_fields"] as Array).append([param_name, ptype, field])
 		rendered = true
-	if not rendered:
+	if skipped > 0 or not rendered:
+		# Either nothing was renderable, or something was but is not fully understood: both leave a
+		# way to send the rest by hand. The widgets above still go; this only adds to them.
 		var raw := _field(tr("%%SVC_PH_PARAMS_JSON"), 320.0)
 		box.add_child(raw)
 		row["param_raw"] = raw
@@ -1360,10 +1676,10 @@ static func _split_template(text: String) -> Array:
 		var before := text.substr(cursor, found.get_start() - cursor)
 		if before != "":
 			out.append({"text": before})
-		var name := found.get_string(1)
-		if name == "":
-			name = found.get_string(2)
-		out.append({"var": name})
+		var captured := found.get_string(1)
+		if captured == "":
+			captured = found.get_string(2)
+		out.append({"var": captured})
 		cursor = found.get_end()
 	var tail := text.substr(cursor)
 	if tail != "":
@@ -1377,8 +1693,15 @@ static func _sentence_title(row: Dictionary, values: Dictionary) -> String:
 	var out := ""
 	for segment: Dictionary in row.get("segments", []):
 		if segment.has("var"):
-			var name := str(segment["var"])
-			out += str(values.get(name, name))
+			var var_name := str(segment["var"])
+			if values.has(var_name):
+				out += str(values[var_name])
+				continue
+			# A path into an object: `{zone.poiId}` reads what the OBJECT carries, and what it
+			# carries is its picker's LABEL — "Depot — tarsis_3" — where the uuid under it would be
+			# unreadable in a sentence the player is about to restate out loud.
+			var root := var_name.split(".")[0]
+			out += str(values.get(root, root))
 		else:
 			out += str(segment["text"])
 	return out.strip_edges()
@@ -1425,7 +1748,7 @@ func _create() -> void:
 		return
 	var result: Dictionary = await PlayerServices.mission_create(body)
 	if _report(result, tr("%%SVC_MSG_MISSION_CREATED")):
-		_reset_create()
+		await _reset_create()
 		refresh()
 
 
@@ -1548,6 +1871,14 @@ func _collect_zones() -> Variant:
 
 ## One row's MissionZone payload, carrying only the keys the service's strict schema accepts for
 ## its kind — a `.strict()` union, so an extra key is a validation error, not an ignored field.
+## One POI zone, and nothing else. The shape is the whole contract: a service union that is strict
+## (`MissionZone`), so an extra key is a validation error rather than an ignored field — which is
+## exactly why the radius is NOT here. It is a property of the POI, edited where the POI is chosen;
+## a zone radius could only ever ask for more than the POI allows (POI_RADIUS_EXCEEDED).
+static func _poi_zone(poi_id: String) -> Dictionary:
+	return {"kind": "poi", "poiId": poi_id}
+
+
 func _collect_zone(row: Dictionary) -> Variant:
 	if _enum_value(row["kind"] as OptionButton) == "system":
 		var system := _zone_text(row.get("system"))
@@ -1561,14 +1892,10 @@ func _collect_zone(row: Dictionary) -> Variant:
 		return null
 	# The radius is the one number here, and it is optional: without it the zone is the POI's whole
 	# scene subtree, which needs no coordinates to agree between the services.
-	var zone := {"kind": "poi", "poiId": poi_id}
-	var radius := _zone_text(row.get("radius"))
-	if radius.strip_edges() != "":
-		if not radius.is_valid_int() or int(radius) < 1 or int(radius) > 1000000:
-			_say(tr("%%SVC_MSG_ZONE_RADIUS_INVALID"), WARN)
-			return null
-		zone["radiusM"] = int(radius)
-	return zone
+	# No radiusM: it lives on the POI now (MissionPlacePicker), and the service takes it from there.
+	# Sending one from the zone could only ever be refused — POI_RADIUS_EXCEEDED is exactly a zone
+	# radius asking for more than the POI allows.
+	return _poi_zone(poi_id)
 
 
 ## The inline variables of one sentence: display values for the title substitution plus their typed
@@ -1582,18 +1909,36 @@ func _collect_vars(row: Dictionary) -> Variant:
 	var has_required := bool(row.get("schema_has_required", false))
 	var required_names: Array = row.get("schema_required", [])
 	for variable: Dictionary in row["vars"]:
-		var name := str(variable["name"])
+		var var_name := str(variable["name"])
 		var control: Control = variable["control"]
 		var target := str((variable["meta"] as Dictionary).get("target", "param"))
 		var ptype := str((variable["meta"] as Dictionary).get("ptype", "string"))
 		# Every objective word must be filled; a prerequisite only owes what its schema requires
 		# (and everything when the schema is silent).
-		var required: bool = objective or not has_required or name in required_names
+		var required: bool = objective or not has_required or var_name in required_names
 		if control is CheckBox:
 			var pressed := (control as CheckBox).button_pressed
-			values[name] = "true" if pressed else "false"
+			values[var_name] = "true" if pressed else "false"
 			if target == "param":
-				params[name] = pressed
+				params[var_name] = pressed
+			continue
+		if target == "param_object":
+			# A structured widget: a place picker ({kind:"poi",poiId}), a player picker (an id), a
+			# good picker (a goodType). They answer `param_value`, so the collector does not have to
+			# know which is which — and the label it gives is what the title prints, so a clause
+			# reads "deliver to Depot — tarsis_3", never a uuid.
+			var value: Variant = null
+			if control.has_method("param_value"):
+				value = control.call("param_value")
+			if value == null:
+				values[var_name] = var_name
+				if required:
+					_say(tr("%%SVC_MSG_CLAUSE_NEEDS_VALUE") % var_name, WARN)
+					return null
+				continue
+			values[var_name] = str(control.call("param_label")) if control.has_method("param_label") \
+					else str(value)
+			params[var_name] = value
 			continue
 		var raw := ""
 		var is_set := false
@@ -1605,7 +1950,7 @@ func _collect_vars(row: Dictionary) -> Variant:
 		elif control is LineEdit:
 			raw = (control as LineEdit).text.strip_edges()
 			is_set = raw != ""
-		values[name] = raw if is_set else name
+		values[var_name] = raw if is_set else name
 		if not is_set:
 			if required:
 				return null
@@ -1617,7 +1962,7 @@ func _collect_vars(row: Dictionary) -> Variant:
 					if required:
 						return null
 					continue
-				params[name] = typed
+				params[var_name] = typed
 			"targetQuantity":
 				if raw.is_valid_int() and int(raw) >= 1:
 					out["targetQuantity"] = int(raw)
@@ -1641,9 +1986,29 @@ static func _merge_clause(objective: Dictionary, got: Variant) -> void:
 			objective[key] = collected[key]
 
 
-## The typed params of one stacked row: every filled primitive field, plus the raw JSON fallback.
+## The params of one stacked row: the structured widgets (a place, a passenger, a good), then every
+## filled primitive field, then the raw JSON fallback for whatever the schema held that has no
+## widget. Null means the row cannot be sent — either nothing was filled, or a REQUIRED structured
+## widget is empty, which is said out loud here rather than left to fail at validate time with an
+## error that does not name the field.
 func _collect_params(row: Dictionary) -> Variant:
 	var params := {}
+	var missing: PackedStringArray = []
+	var required_names: Array = row.get("schema_required", [])
+	for entry: Dictionary in row.get("params_widgets", []):
+		var param_name := str(entry.get("name", ""))
+		var control: Variant = entry.get("control")
+		var value: Variant = null
+		if control is Control and (control as Control).has_method("param_value"):
+			value = (control as Control).call("param_value")
+		if value == null:
+			if param_name in required_names:
+				missing.append(param_name)
+			continue
+		params[param_name] = value
+	if not missing.is_empty():
+		_say(tr("%%SVC_MSG_CLAUSE_NEEDS_VALUE") % ", ".join(missing), WARN)
+		return null
 	for entry: Array in row.get("param_fields", []):
 		var field: LineEdit = entry[2]
 		var raw: String = field.text.strip_edges()
@@ -1662,11 +2027,18 @@ func _collect_params(row: Dictionary) -> Variant:
 
 
 static func _typed(raw: String, ptype: String) -> Variant:
+	# Written as `if` rather than `x if test else y`: the branches disagree on type (an int against
+	# null, a float against null), and a ternary has to pick one. Written out, each return is
+	# simply its own type.
 	match ptype:
 		"integer":
-			return int(raw) if raw.is_valid_int() else null
+			if raw.is_valid_int():
+				return int(raw)
+			return null
 		"number":
-			return float(raw) if raw.is_valid_float() else null
+			if raw.is_valid_float():
+				return float(raw)
+			return null
 		"boolean":
 			var lowered := raw.to_lower()
 			if lowered in ["true", "1", "yes", "oui"]:
@@ -1698,7 +2070,69 @@ func _reset_create() -> void:
 	_clear(_create_objectives)
 	_clear(_create_prereqs)
 	_clear(_create_zones)
+	# The builder is a fresh contract: the places it had open are closed with it. Kept in the panel
+	# rather than the widget so the very next clause draws from a list that does not still offer
+	# the last mission's delivery points.
+	#
+	# AWAITED BEFORE the clause is built, not after: [method _add_objective_row] builds its place
+	# picker, which reads the cache the moment it appears. Loading afterwards left the fresh clause
+	# showing "no point of interest yet" over a list that already held the player's places — and
+	# nothing on screen would say so, because the list only fills when someone opens the panel again.
+	MissionPoiCache.clear()
+	await MissionPoiCache.ensure_loaded()
 	_add_objective_row()
+
+
+## The chart named a place for one of this panel's place pickers. It cannot tell which asked, so
+## every one gets it and each decides whether it is waiting: a picker with a place already chosen is
+## left alone, so a stray click never overwrites a decision already taken.
+##
+## Answers whether one of them took it, so the console can hand the chart back to the app that asked
+## rather than to whichever was built first.
+func set_placed(place: Dictionary) -> bool:
+	if place.is_empty():
+		return false
+	var taken := false
+	for row: Dictionary in _objective_rows:
+		for entry: Dictionary in row.get("params_widgets", []):
+			taken = _deliver_place(entry.get("control"), place) or taken
+	for row: Dictionary in _zone_rows:
+		taken = _deliver_place(row.get("poi"), place) or taken
+	return taken
+
+
+## The chart named a point of interest that ALREADY exists — one of the player's own. Same rule as
+## a place: a picker with a choice already made is left alone.
+func set_picked_poi(poi_id: String) -> bool:
+	if poi_id == "":
+		return false
+	var taken := false
+	for row: Dictionary in _objective_rows:
+		for entry: Dictionary in row.get("params_widgets", []):
+			taken = _pick_for(entry.get("control"), poi_id) or taken
+	for row: Dictionary in _zone_rows:
+		taken = _pick_for(row.get("poi"), poi_id) or taken
+	return taken
+
+
+func _pick_for(control: Variant, poi_id: String) -> bool:
+	if not (control is MissionPlacePicker):
+		return false
+	var picker := control as MissionPlacePicker
+	if picker.picked_id() != "":
+		return false
+	return picker.select_poi(poi_id)
+
+
+## Answers whether the picker took the place, for the same reason [method set_picked_poi] does.
+func _deliver_place(control: Variant, place: Dictionary) -> bool:
+	if not (control is MissionPlacePicker):
+		return false
+	var picker := control as MissionPlacePicker
+	if picker.picked_id() != "":
+		return false
+	picker.accept_place(place)
+	return true
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1750,8 +2184,8 @@ func _kind_options(catalog_key: String, category: String) -> Array:
 ## A kind's dropdown caption: the catalogue's localized `name` when it carries one, the raw kind
 ## otherwise (an old service, or a kind the catalogue never heard of).
 static func _kind_label(entry: Dictionary, kind: String) -> String:
-	var name: String = str(entry.get("name", "")).strip_edges()
-	return name if name != "" else kind
+	var label: String = str(entry.get("name", "")).strip_edges()
+	return label if label != "" else kind
 
 
 ## Does this catalogue entry allow [param category]? `all` covers everything, a list is an

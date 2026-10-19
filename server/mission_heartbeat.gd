@@ -6,8 +6,10 @@ extends Node
 ## `transport_passenger` — and matches a mission's availability `zones[]` against this store
 ## ([code]PUT /api/internal/missions/player-states[/code]). It reads nothing else: not Social's
 ## presence, not the game's props. That is what makes a mission independent of the server sharding:
-## the frame pushed here is the TRUE UNIVERSE frame, identical before and after a hand-over, so the
-## same place measures the same wherever the body happens to be simulated.
+## a place is measured from the BODY named by `scene` (see [method GameServer.mission_place_of]),
+## which is a frame that rides along with that body whether it is orbiting or spinning — and which
+## reads the same number before and after a hand-over, so the same spot measures the same wherever
+## the body happens to be simulated.
 ##
 ## Three rules this node exists to enforce, each of them a bug otherwise:
 ##
@@ -22,10 +24,11 @@ extends Node
 ##     service expires a state after 30 s and treats it as "outside every zone", fail-closed. A
 ##     player standing still past the TTL would otherwise silently vanish from the mission list: the
 ##     store feeds availability zones too, so this is not only about objectives.
-##  3. **The place is the same geometry Social already sends.** [method GameServer.mission_place_of]
-##     is the single owner of the true-universe frame; this file only flattens it into the shape
-##     the mission schema wants. Two services can therefore never be handed two different
-##     coordinates for the same body.
+##  3. **The place is ONE frame, shared with service-social.** [method GameServer.mission_place_of]
+##     owns it: measured from the body named by `scene`, so it cannot drift with that body's orbit or
+##     its daily turn. service-social's presence is the SAME frame — one place, one convention across
+##     the game — and this file only flattens it into the shape the mission schema wants (a POI's
+##     x/y/z are stored in that frame too, so the service can compare the two directly).
 ##
 ## Dormant by default, exactly like [SocialHeartbeat]: without a url or a service identity the whole
 ## thing is a clean no-op. It is the server's own service-account traffic ([ServiceAuth], client
@@ -446,36 +449,81 @@ static func build_entry(player_id: String, place: Variant, seat: Dictionary,
 	}
 
 
+## Whether [param value] is a number at all. A null is not a number, and this is the family of bug
+## that cost an hour: `float(null)` has no constructor, and a service serialising SQL NULL as JSON
+## null reached it once (a POI with no radius). Every coordinate read from data this file does not
+## itself build goes through here or through [method coordf].
+static func is_number(value: Variant) -> bool:
+	return value is float or value is int
+
+
+## [param value] as a float, or 0.0 when it is not one — never a crash, and never a warning nobody
+## would see either.
+static func coordf(value: Variant) -> float:
+	if value is float:
+		return value
+	return float(value) if value is int else 0.0
+
+
 ## [param location] is a [SocialHeartbeat.build_location] answer; this is its mission twin.
 ## Empty when the answer carries no position: there is no place to report, and inventing one would
 ## be worse than reporting none (see [method build_entry] on why an origin is never the answer).
+##
+## Also empty when a coordinate is unreadable (null, a string): a place with a hole in it is not a
+## place at zero — an origin is a real spot a POI can sit on, which is exactly how a body
+## mid-transfer would satisfy a `visit` aimed at one.
 static func build_place(location: Dictionary) -> Dictionary:
 	var position: Variant = location.get("position")
 	if not (position is Dictionary):
 		return {}
 	var coords: Dictionary = position as Dictionary
+	if not (is_number(coords.get("x")) and is_number(coords.get("y")) and is_number(coords.get("z"))):
+		return {}
 	return {
 		"system": str(location.get("system", "")),
 		"scene": str(location.get("scene", "")),
-		"x": float(coords.get("x", 0.0)),
-		"y": float(coords.get("y", 0.0)),
-		"z": float(coords.get("z", 0.0)),
+		# No default here on purpose: the guard above proved all three are numbers.
+		"x": float(coords.get("x")),
+		"y": float(coords.get("y")),
+		"z": float(coords.get("z")),
 	}
 
 
 ## [param node]'s mission place, or null when there is no body to read or the agent cannot say
-## where it is. Asks the game server, the single owner of the true-universe frame.
+## where it is. Asks the game server, the single owner of this frame.
 static func place_of(node: Node3D) -> Variant:
 	if node == null or not is_instance_valid(node):
 		return null
 	var agent = NetworkOrchestrator.network_agent
 	if not (agent is GameServer) or not agent.has_method("mission_place_of"):
 		return null
-	var location: Variant = agent.mission_place_of(node)
+	return as_mission_place(agent.mission_place_of(node))
+
+
+## The mission shape of [param location], or null when there is none.
+##
+## Accepts BOTH shapes the project produces on purpose, and this is not redundancy — it closed a bug
+## that failed silently and completely:
+##   • **flat**, `{system, scene, x, y, z}` — what [method GameServer.mission_place_of] returns;
+##   • **nested**, `{system, scene, position: {x, y, z}}` — what a social presence is built as.
+##
+## [method place_of] used to run the flat answer through [method build_place], which looks for the
+## NESTED key and, finding none, returned an EMPTY dictionary — which read as null here, and null
+## means "outside every zone" to service-mission. Every player would have been pushed as belonging
+## nowhere, no mission zone would ever have matched, and nothing anywhere would have said so: no
+## error, no warning, no crash. A shape confusion is cheap and lethal, hence a normaliser that says
+## what it is doing instead of a bare `if`.
+static func as_mission_place(location: Variant) -> Variant:
 	if not (location is Dictionary):
 		return null
-	var place := build_place(location as Dictionary)
-	return null if place.is_empty() else place
+	var source := location as Dictionary
+	# Already flat: x/y/z at the top is the mission shape — hand it back untouched. Detecting it by
+	# the coordinates rather than by "no position key" keeps a social presence with no position
+	# from being mistaken for a mission place.
+	if source.has("x") or source.has("y") or source.has("z"):
+		return source
+	var flat := build_place(source)
+	return null if flat.is_empty() else flat
 
 
 ## The seat state of [param node] right now: seated in a driver seat, seated as a passenger, or on
@@ -513,10 +561,12 @@ static func place_moved(old: Variant, current: Variant) -> bool:
 		return true
 	if str(previous.get("scene", "")) != str(now.get("scene", "")):
 		return true
-	var was := Vector3(float(previous.get("x", 0.0)), float(previous.get("y", 0.0)),
-			float(previous.get("z", 0.0)))
-	return was.distance_to(Vector3(float(now.get("x", 0.0)), float(now.get("y", 0.0)),
-			float(now.get("z", 0.0)))) > PLACE_EPSILON_M
+	# coordf, not float(): a place can come back from outside this file (see [method
+	# as_mission_place]), and a coordinate nobody built may be null.
+	var was := Vector3(coordf(previous.get("x")), coordf(previous.get("y")),
+			coordf(previous.get("z")))
+	return was.distance_to(Vector3(coordf(now.get("x")), coordf(now.get("y")),
+			coordf(now.get("z")))) > PLACE_EPSILON_M
 
 
 # ── Logging ────────────────────────────────────────────────────────────────────────────────────

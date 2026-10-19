@@ -37,7 +37,7 @@ var _catalog: ItemList
 var _book: Label
 var _orders: ItemList
 var _page_orders: ServicePage
-var _order_good: LineEdit
+var _order_good: GoodTypePicker
 var _order_side: OptionButton
 var _order_status: OptionButton
 var _order_new_side: OptionButton
@@ -45,14 +45,14 @@ var _order_kind: OptionButton
 var _order_qty: LineEdit
 var _order_price: LineEdit
 var _order_currency: LineEdit
-var _order_instance: LineEdit
+var _order_instance: InstancePicker
 var _order_corp_picker: ServiceTargetPicker
 var _demands: ItemList
 var _page_demands: ServicePage
-var _demand_good: LineEdit
+var _demand_good: GoodTypePicker
 var _demand_status: OptionButton
 var _demand_kind: OptionButton
-var _demand_instance: LineEdit
+var _demand_instance: InstancePicker
 var _demand_qty: LineEdit
 var _demand_max: LineEdit
 var _demand_currency: LineEdit
@@ -93,7 +93,8 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	# card beside them.
 	var side := _side_page(1)
 	var filters := _row()
-	_order_good = _field(tr("%%SVC_PH_GOOD_TYPE"), 180.0)
+	_order_good = GoodTypePicker.new()
+	_order_good.setup(180.0)
 	_order_side = _option_enum(_with_all(SIDE_ENTRIES), 130.0)
 	_order_status = _option_enum(ORDER_STATUS_ENTRIES, 150.0)
 	filters.add_child(_label(tr("%%SVC_LBL_GOOD_TYPE"), DIM))
@@ -116,7 +117,7 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	_order_qty = _number_field(tr("%%SVC_PH_QUANTITY"), 140.0)
 	_order_price = _number_field(tr("%%SVC_PH_PRICE"), 140.0)
 	_order_currency = _field(tr("%%SVC_PH_CURRENCY"), 140.0)
-	_order_instance = _field(tr("%%SVC_PH_INSTANCE_ID"), 240.0)
+	_order_instance = InstancePicker.new()
 	_order_corp_picker = ServiceTargetPicker.new()
 	_order_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
 	adopt_field(_order_corp_picker.search_field())
@@ -131,7 +132,6 @@ func _build_orders_page(page: VBoxContainer) -> void:
 	form.add_child(_order_price)
 	form.add_child(_label(tr("%%SVC_LBL_CURRENCY"), DIM))
 	form.add_child(_order_currency)
-	form.add_child(_label(tr("%%SVC_LBL_INSTANCE_ID"), DIM))
 	form.add_child(_order_instance)
 	form.add_child(_label(tr("%%SVC_LBL_CORPORATION"), DIM))
 	form.add_child(_order_corp_picker)
@@ -142,7 +142,8 @@ func _build_orders_page(page: VBoxContainer) -> void:
 func _build_demands_page(page: VBoxContainer) -> void:
 	var side := _side_page(2)
 	var filters := _row()
-	_demand_good = _field(tr("%%SVC_PH_GOOD_TYPE"), 180.0)
+	_demand_good = GoodTypePicker.new()
+	_demand_good.setup(180.0)
 	_demand_status = _option_enum(DEMAND_STATUS_ENTRIES, 150.0)
 	filters.add_child(_label(tr("%%SVC_LBL_GOOD_TYPE"), DIM))
 	filters.add_child(_demand_good)
@@ -162,7 +163,7 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	var form := VBoxContainer.new()
 	form.add_theme_constant_override("separation", 10)
 	_demand_kind = _option_enum(KIND_ENTRIES)
-	_demand_instance = _field(tr("%%SVC_PH_INSTANCE_ID"), 240.0)
+	_demand_instance = InstancePicker.new()
 	_demand_qty = _number_field(tr("%%SVC_PH_QUANTITY"), 140.0)
 	_demand_max = _number_field(tr("%%SVC_PH_MAX_PRICE"), 140.0)
 	_demand_currency = _field(tr("%%SVC_PH_CURRENCY"), 140.0)
@@ -173,7 +174,6 @@ func _build_demands_page(page: VBoxContainer) -> void:
 	form.add_child(_label(tr("%%SVC_LBL_KIND"), DIM))
 	form.add_child(_demand_kind)
 	form.add_child(_label(tr("%%SVC_HINT_STACK_INSTANCE"), DIM))
-	form.add_child(_label(tr("%%SVC_LBL_INSTANCE_ID"), DIM))
 	form.add_child(_demand_instance)
 	form.add_child(_label(tr("%%SVC_LBL_QUANTITY"), DIM))
 	form.add_child(_demand_qty)
@@ -223,6 +223,25 @@ func _apply_catalog(result: Dictionary) -> void:
 	if lines.is_empty():
 		lines.append(tr("%%SVC_MSG_NO_GOODS"))
 	_fill_list(_catalog, lines, metadata)
+	# One catalogue, four goodType fields: the filter and the form of each side read the same rows,
+	# so a buyer picks a good once and the form agrees with the list they were just reading.
+	for picker: Variant in [_order_good, _demand_good]:
+		if picker is GoodTypePicker:
+			(picker as GoodTypePicker).fill(result.get("data", []))
+	for picker: Variant in [_order_instance, _demand_instance]:
+		if picker is InstancePicker:
+			(picker as InstancePicker).refresh()
+
+
+## The goodType a picker holds, or "" when it holds none. The widget speaks the same protocol the
+## mission builder uses, so a form never reads a control's internals.
+static func _picked_good_type(picker: Variant) -> String:
+	if picker is GoodTypePicker:
+		var value: Variant = (picker as GoodTypePicker).param_value()
+		return "" if value == null else str(value)
+	if picker is LineEdit:
+		return (picker as LineEdit).text.strip_edges()
+	return ""
 
 
 func _load_book() -> void:
@@ -250,7 +269,7 @@ func _search_orders() -> void:
 
 func _load_orders() -> void:
 	var at: int = _page_orders.offset
-	var result: Dictionary = await PlayerServices.market_orders(_order_good.text.strip_edges(),
+	var result: Dictionary = await PlayerServices.market_orders(_picked_good_type(_order_good),
 			_enum_value(_order_side), _enum_value(_order_status), _page_orders.limit, at)
 	if _land(_page_orders, at, result):
 		_apply(_page_orders, result, _orders, ServiceTypes.order_line, tr("%%SVC_MSG_NO_ORDERS"))
@@ -263,7 +282,7 @@ func _search_demands() -> void:
 
 func _load_demands() -> void:
 	var at: int = _page_demands.offset
-	var result: Dictionary = await PlayerServices.market_demands(_demand_good.text.strip_edges(),
+	var result: Dictionary = await PlayerServices.market_demands(_picked_good_type(_demand_good),
 			_enum_value(_demand_status), _page_demands.limit, at)
 	if _land(_page_demands, at, result):
 		_apply(_page_demands, result, _demands, ServiceTypes.demand_line, tr("%%SVC_MSG_NO_DEMANDS"))
@@ -299,7 +318,7 @@ func _apply(page: ServicePage, result: Dictionary, list: ItemList, formatter: Ca
 
 func _place_order() -> void:
 	release_fields()
-	var good_type: String = _order_good.text.strip_edges() if _order_good != null else ""
+	var good_type: String = _picked_good_type(_order_good)
 	if good_type == "" or not _order_qty.text.strip_edges().is_valid_int() \
 			or not _order_price.text.strip_edges().is_valid_int():
 		_say(tr("%%SVC_MSG_NEED_ORDER_FIELDS"), WARN)
@@ -312,8 +331,10 @@ func _place_order() -> void:
 		"price": int(_order_price.text),
 		"currency": _order_currency.text.strip_edges() if _order_currency.text.strip_edges() != "" else "credits",
 	}
-	if _order_instance.text.strip_edges() != "":
-		body["instanceId"] = _order_instance.text.strip_edges()
+	# Sent only when the seller named one object; the picker's default is "any unit of that good",
+	# which is what most orders mean, and an absent instanceId is how the service is told so.
+	if _order_instance != null and _order_instance.picked_id() != "":
+		body["instanceId"] = _order_instance.picked_id()
 	if _order_corp_picker.picked_id() != "":
 		body["corporationId"] = _order_corp_picker.picked_id()
 	if _report(await PlayerServices.market_order_create(body), tr("%%SVC_MSG_ORDER_PLACED")):
@@ -334,7 +355,7 @@ func _cancel_order() -> void:
 
 func _create_demand() -> void:
 	release_fields()
-	var good_type: String = _demand_good.text.strip_edges() if _demand_good != null else ""
+	var good_type: String = _picked_good_type(_demand_good)
 	if good_type == "" or not _demand_qty.text.strip_edges().is_valid_int() \
 			or not _demand_max.text.strip_edges().is_valid_int():
 		_say(tr("%%SVC_MSG_NEED_DEMAND_FIELDS"), WARN)
@@ -348,8 +369,8 @@ func _create_demand() -> void:
 	}
 	if _demand_message.text.strip_edges() != "":
 		body["message"] = _demand_message.text.strip_edges()
-	if _demand_instance.text.strip_edges() != "":
-		body["instanceId"] = _demand_instance.text.strip_edges()
+	if _demand_instance != null and _demand_instance.picked_id() != "":
+		body["instanceId"] = _demand_instance.picked_id()
 	if _demand_corp_picker.picked_id() != "":
 		body["corporationId"] = _demand_corp_picker.picked_id()
 	if _report(await PlayerServices.market_demand_create(body), tr("%%SVC_MSG_DEMAND_CREATED")):

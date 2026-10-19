@@ -17,7 +17,15 @@ signal home_requested
 ## A section wants the chart to name a place for it (a point of interest being created asks for a
 ## point to be picked). Relayed up through the shells that host it (see [method mount_segment]) so
 ## the console — which owns the chart — can act on it; this file never reaches for [StarMap].
-signal placement_requested
+signal placement_requested(radius_m: float, pick_existing: bool)
+
+## A section wants the chart to SHOW a point of interest that already exists — a clause naming one,
+## offered as a word to click. Relayed the same way and for the same reason as
+## [signal placement_requested]: the console owns the chart, this file never reaches for [StarMap].
+##
+## Asking to SEE one is not asking to CHOOSE one: nothing comes back, and no form is filled. Which
+## is why this is a signal of its own rather than another argument on the one above.
+signal focus_poi_requested(poi_id: String)
 
 ## How the tablet should split the screen for the segment now on show: data on the left, this
 ## segment's actions in the right-hand column. Emitted when a segment is switched to, and once more
@@ -110,8 +118,17 @@ func refresh() -> void:
 
 ## The chart named a place for whatever asked for it (see [signal placement_requested]). Sections
 ## that can take one override; the default is to have nothing to say about it.
-func set_placed(_place: Dictionary) -> void:
-	pass
+##
+## Answers whether the place was TAKEN, because the chart came from one form and has to be handed
+## back to it: a no-answer lets the console try the next app rather than guessing which one asked.
+func set_placed(_place: Dictionary) -> bool:
+	return false
+
+
+## The chart named a point of interest that already exists. Same contract as [method set_placed]:
+## sections that can point at one override and answer true.
+func set_picked_poi(_poi_id: String) -> bool:
+	return false
 
 
 # ---------------------------------------------------------------------------------------------
@@ -412,15 +429,6 @@ func _action_button(parent: Node, text: String, handler: Callable, min_width: fl
 	return button
 
 
-func _option(items: PackedStringArray, min_width: float = 160.0) -> OptionButton:
-	var option := OptionButton.new()
-	for item: String in items:
-		option.add_item(item)
-	option.custom_minimum_size = Vector2(min_width, 40)
-	ServiceStyle.apply_option(option)
-	return option
-
-
 ## An OptionButton whose labels are localized and whose item metadata keeps the raw API value.
 ## [param entries] is an array of `[value, translation key]` pairs.
 func _option_enum(entries: Array, min_width: float = 160.0) -> OptionButton:
@@ -621,8 +629,10 @@ func mount_segment(index: int, script_path: String) -> ServicePanel:
 	# A form-only segment of the section asks for the column: the shell relays it so the tablet splits
 	# the way the section on show needs, not the way the shell itself would.
 	panel.pane_layout.connect(_relay_pane.bind(panel))
-	# A section may ask the chart for a place; the shell carries that up, never to the chart itself.
+	# A section may ask the chart for a place, or to show one; the shell carries both up, never to
+	# the chart itself.
 	panel.placement_requested.connect(placement_requested.emit)
+	panel.focus_poi_requested.connect(focus_poi_requested.emit)
 	return panel
 
 

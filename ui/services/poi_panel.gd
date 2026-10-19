@@ -367,7 +367,9 @@ func _take_here() -> void:
 func _take_on_chart() -> void:
 	if _placed == null or (_placed as Dictionary).is_empty():
 		_take_here()
-	placement_requested.emit()
+	# No pick-existing here: this form is CREATING a point of interest, so pointing at one that
+	# already exists is not an answer but something to build on top of. The chart keeps placing.
+	placement_requested.emit(maxf(_coordinate_of(_form_radius.text), 0.0), false)
 	_say(tr("%%SVC_MSG_PICK_ON_CHART"), DIM)
 
 
@@ -460,12 +462,16 @@ func _form_body() -> Dictionary:
 
 ## The chart handed a place over: what the player picked is now where the form says it is.
 ## Called by PlayerClient, which owns the chart (this file never reaches for [StarMap]).
-func set_placed(place: Dictionary) -> void:
+##
+## Answers true whenever the form is the one that can hold a place, which it always is: the chart
+## can only have been armed by this form asking for one.
+func set_placed(place: Dictionary) -> bool:
 	if place.is_empty() or not place.has("position"):
-		return
+		return false
 	_placed = place.duplicate()
 	_render_where()
 	_say(tr("%%SVC_MSG_PLACE_CHART"), GOOD)
+	return true
 
 
 # ---------------------------------------------------------------------------------------------

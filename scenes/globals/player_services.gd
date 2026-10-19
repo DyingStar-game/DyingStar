@@ -735,6 +735,42 @@ func poi_create(body: Dictionary) -> Dictionary:
 	if _ok(r): changed.emit("pois")
 	return r
 
+## Create the POI a MISSION names as its zone or its objective's target, owned by the mission rather
+## than by a social entity (see [MissionPlacePicker]).
+##
+## `owner.type = "mission"` is the one owner kind that is NOT an inventory holder: the POI belongs to
+## no player, corporation or political body — the service records the caller in `createdBy` and keeps
+## it private. That is what lets a mission designate a delivery point without borrowing someone's
+## address book. It is also why [param owner_id] is an arbitrary uuid and not a mission id: the
+## objective params that will name this POI are IMMUTABLE after the mission is created, so the POI
+## has to exist first and the uuid cannot be the mission's. A builder that is abandoned leaves one
+## behind (the service sweeps those).
+##
+## [param place] is what [PlayerLocation.presence_of] or the star map produced: `system`, `scene` and
+## `position` in the body named by `scene`.
+func mission_poi_create(owner_id: String, place: Dictionary, name: String) -> Dictionary:
+	var position: Variant = place.get("position", Vector3.ZERO)
+	var coords: Vector3 = position as Vector3 if position is Vector3 else Vector3.ZERO
+	var body := {
+		"name": name,
+		"owner": {"type": "mission", "id": owner_id},
+		"x": coords.x,
+		"y": coords.y,
+		"z": coords.z,
+	}
+	# Sent only when the place carries them: the service rejects a `system` that is not empty AND a
+	# `scene` under it (POI_SCENE_SYSTEM_MISMATCH), and off-world there is no system to name.
+	var system := str(place.get("system", "")).strip_edges()
+	var scene := str(place.get("scene", "")).strip_edges()
+	if scene != "":
+		body["scene"] = scene
+	if system != "":
+		body["system"] = system
+	var radius: Variant = place.get("radiusM")
+	if radius is float or radius is int:
+		body["radiusM"] = float(radius)
+	return await poi_create(body)
+
 ## One POI with its shares (owned, granted or public).
 func poi_get(poi_id: String) -> Dictionary:
 	return await _http_get(SERVICE_INVENTORY, "/api/me/pois/%s" % poi_id)

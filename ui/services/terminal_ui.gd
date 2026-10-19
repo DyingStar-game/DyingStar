@@ -70,7 +70,11 @@ signal navigation_closed
 ## A section wants the chart to name a place for it (a point of interest being created). Relayed
 ## from whichever app asked; PlayerClient opens the chart in placement mode and answers through
 ## [method set_placed]. The tablet never reaches for the chart itself.
-signal placement_requested
+signal placement_requested(radius_m: float, pick_existing: bool)
+
+## A section wants the chart to SHOW a point of interest. Relayed from whichever app asked;
+## PlayerClient opens the chart and frames it. The tablet never reaches for the chart itself.
+signal focus_poi_requested(poi_id: String)
 
 var _overview: ServiceOverviewScreen = null
 ## id -> ServicePanel, and id -> the `area` its mutations announce on.
@@ -315,6 +319,7 @@ func _build() -> void:
 		panel.visible = false
 		panel.home_requested.connect(_go_home)
 		panel.placement_requested.connect(placement_requested.emit)
+		panel.focus_poi_requested.connect(focus_poi_requested.emit)
 		_content.add_child(panel)
 		_panels[id] = panel
 		_areas[id] = str(app["area"])
@@ -587,12 +592,30 @@ func open_app(id: String, segment: int = -1) -> void:
 		(_panels[id] as ServicePanel).goto_segment(segment)
 
 
-## The chart named a place: hand it to the app that asked for one (the points of interest form).
-func set_placed(place: Dictionary) -> void:
+## The chart named a place: hand it to the app that asked for one, and say which.
+##
+## Returns the id of the first app that took the place, or "" when none did. "Which one asked" is
+## not knowable here — several forms can be asking at once and they all get a chance — but answering
+## with the one that acted is what lets the chart go back to that form instead of opening whichever
+## one happened to be built first.
+func set_placed(place: Dictionary) -> String:
 	if not _built:
-		return
+		return ""
 	for id: Variant in _panels:
-		(_panels[id] as ServicePanel).set_placed(place)
+		if (_panels[id] as ServicePanel).set_placed(place):
+			return str(id)
+	return ""
+
+
+## The chart named a point of interest that already exists: hand it to the app that asked, and say
+## which, for the same reason [method set_placed] does.
+func set_picked_poi(poi_id: String) -> String:
+	if not _built:
+		return ""
+	for id: Variant in _panels:
+		if (_panels[id] as ServicePanel).set_picked_poi(poi_id):
+			return str(id)
+	return ""
 
 
 func _open_plus() -> void:

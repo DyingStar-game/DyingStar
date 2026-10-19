@@ -3610,37 +3610,57 @@ func _true_position(node: Node3D) -> Vector3:
 	return _planet_orbital_abs(planet) + node.global_position
 
 
-## Where [param node] is, for service-social's presence payload (see [SocialHeartbeat]): the true
-## universe position plus a readable {system, scene} pair — the star system and body key of the
-## planet it stands on ("tarsis", "tarsis_3"), or "" / "space" in open space. The UI renders the
-## pair as "system · scene" on a contact card.
+## Where [param node] is, for service-social's presence payload (see [SocialHeartbeat]): a readable
+## {system, scene} pair — the star system and body key of the planet it stands on ("tarsis",
+## "tarsis_3"), or "" / "space" in open space — plus the position IN THAT BODY'S FRAME. The UI
+## renders the pair as "system · scene" on a contact card.
+##
+## The same frame [method mission_place_of] uses, deliberately: one place, one frame, everywhere in
+## the game. It costs nothing here and buys the thing that matters — a presence and a POI sitting on
+## the same spot are stored the same way, so "where is my contact" and "where is that contract" can
+## never disagree about a frame, and neither has to be re-projected as the body moves. What made
+## absolute attractive here (a presence is compared to nothing, so staleness only blurs a dot) was
+## never worth a second convention.
 func social_presence_location(node: Node3D) -> Dictionary:
 	var planet := _planet_ancestor_of(node)
 	if planet == null:
-		return SocialHeartbeat.build_location("", "space", _true_position(node))
+		# No body to be relative to; the parent there is the system, whose frame is the universe one.
+		return SocialHeartbeat.build_location("", "space", node.global_position)
 	return SocialHeartbeat.build_location(_system_key_for(planet), _body_key_of(planet),
-			_true_position(node))
+			planet.to_local(node.global_position))
 
 
-## The SAME location for service-mission's player-state push (see [MissionHeartbeat]), in the shape
-## that service wants: {system, scene, x, y, z} flat, its Place carrying no radius. Built from the
-## same [method _true_position] as the presence above on purpose — two services handed two different
-## geometries for one body is the bug this shares the computation to prevent.
+## Where [param node] is for service-mission's player-state push (see [MissionHeartbeat]), in the
+## shape that service wants: {system, scene, x, y, z} flat, its Place carrying no radius.
 ##
-## Null when the position is not a real number, where [method social_presence_location] would have
-## written a 0. That 0 is right for a presence (a rough "somewhere" beats dropping the player out
-## of the friends list) and WRONG here: service-mission reads a coordinate as a place and matches
-## zones against it, so a body mid-transfer would read as the origin and could satisfy a `visit`
-## aimed at a POI sitting on it. Nothing is the honest answer — the service treats a null place as
-## outside every zone.
+## THE SAME frame as [method social_presence_location] above — measured from the body named by
+## `scene`, which is [method PlayerLocation.presence_of] on the client. One frame everywhere; read
+## the reason before "simplifying" it back to an absolute triple:
+##
+##   a planet both ORBITS and SPINS. Its node position is rewritten from the Kepler elements on the
+##   client every tick and its basis from the daily turn, so an absolute triple describes a spot the
+##   terrain has already left — stale the moment it is written, and more wrong every second after. A
+##   body-local place cannot drift: the frame rides along with the body.
+##
+## Here `to_local` is the identity (every body sits at the origin of its own physics world with an
+## identity basis — see create_planet), which is exactly what makes the client's `to_local` produce
+## the same NUMBER for the same spot: the client subtracts the orbit and the spin, and the server has
+## neither to subtract. The two sides agree without ever exchanging a pose.
+##
+## Null when the position is not a real number, where the presence above would have written a 0.
+## That 0 is defensible for a presence and WRONG here: service-mission reads a coordinate as a place
+## and matches zones against it, so a body mid-transfer would read as the origin — and the origin of
+## a planet is a perfectly ordinary spot — and could satisfy a `visit` aimed at a POI sitting there.
+## Nothing is the honest answer: a null place reads as outside every zone.
 func mission_place_of(node: Node3D) -> Variant:
 	if node == null or not is_instance_valid(node):
 		return null
-	var position := _true_position(node)
+	var planet := _planet_ancestor_of(node)
+	var position: Vector3 = node.global_position if planet == null else planet.to_local(node.global_position)
 	if not (is_finite(position.x) and is_finite(position.y) and is_finite(position.z)):
 		return null
-	var planet := _planet_ancestor_of(node)
 	if planet == null:
+		# No body to be relative to; the parent there is the system, whose frame is the universe one.
 		return MissionHeartbeat.build_place(SocialHeartbeat.build_location("", "space", position))
 	return MissionHeartbeat.build_place(SocialHeartbeat.build_location(
 			_system_key_for(planet), _body_key_of(planet), position))

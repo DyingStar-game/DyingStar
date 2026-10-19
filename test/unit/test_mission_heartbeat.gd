@@ -276,3 +276,75 @@ func test_carried_of_an_unreadable_answer_is_zero() -> void:
 	assert_eq(MISSION_HEARTBEAT.carried_of({}), 0)
 	assert_eq(MISSION_HEARTBEAT.carried_of(null), 0)
 	assert_eq(MISSION_HEARTBEAT.carried_of("not a view"), 0)
+
+
+# ── The shape: a flat place and a social presence both become a mission place ────────────────────
+
+func test_a_flat_mission_place_passes_through_untouched() -> void:
+	# THE regression this normaliser exists for. GameServer.mission_place_of returns the shape
+	# ALREADY FLAT, and passing it through build_place — which looks for a nested `position` key —
+	# found none, returned an EMPTY dictionary, and read as null. null means "outside every zone"
+	# to service-mission: every player pushed as belonging nowhere, every zone dead, and no error
+	# printed anywhere to say so.
+	var flat := {"system": "tarsis", "scene": "tarsis_3", "x": 120.0, "y": 6000000.0, "z": -35.0}
+	var place: Variant = MISSION_HEARTBEAT.as_mission_place(flat)
+	assert_not_null(place, "a flat place must not be dropped as an empty one")
+	assert_eq(place, flat, "and must come back exactly as it went in")
+
+
+func test_a_social_presence_is_flattened_into_a_mission_place() -> void:
+	# The other shape, the one a presence is built as: nested coordinates.
+	var nested := {"system": "tarsis", "scene": "tarsis_3",
+			"position": {"x": 1.5, "y": -2.0, "z": 3.25}}
+	assert_eq(MISSION_HEARTBEAT.as_mission_place(nested),
+			{"system": "tarsis", "scene": "tarsis_3", "x": 1.5, "y": -2.0, "z": 3.25})
+
+
+func test_nothing_to_read_is_null_and_never_empty() -> void:
+	# "" empty would look like a place with zeroed coordinates if anything downstream confused the
+	# two; null is the only answer for "unknown", and the service reads it as outside every zone.
+	assert_null(MISSION_HEARTBEAT.as_mission_place(null))
+	assert_null(MISSION_HEARTBEAT.as_mission_place("not a place"))
+	assert_null(MISSION_HEARTBEAT.as_mission_place({}))
+	assert_null(MISSION_HEARTBEAT.as_mission_place({"system": "tarsis", "scene": "tarsis_3"}))
+
+
+# ── Unreadable numbers: the crash family, closed ────────────────────────────────────────────────
+
+func test_a_null_coordinate_is_no_coordinate_and_not_the_origin() -> void:
+	# The origin is a real spot a POI can sit on: reporting a place with a hole in it as "here"
+	# would make a body mid-transfer satisfy a visit aimed at one. A place with an unreadable
+	# coordinate is unknown, which is null.
+	assert_eq(MISSION_HEARTBEAT.build_place({"system": "tarsis", "scene": "tarsis_3",
+			"position": {"x": null, "y": 1.0, "z": 2.0}}), {})
+	assert_eq(MISSION_HEARTBEAT.build_place({"system": "tarsis", "scene": "tarsis_3",
+			"position": {"x": 1.0, "y": 1.0, "z": "three"}}), {})
+	assert_eq(MISSION_HEARTBEAT.build_place({"system": "tarsis", "scene": "tarsis_3",
+			"position": {"x": 1.0, "y": 2.0, "z": 3.0}}),
+			{"system": "tarsis", "scene": "tarsis_3", "x": 1.0, "y": 2.0, "z": 3.0},
+			"a place whose three coordinates are readable is passed through")
+
+
+func test_is_number_and_coordf_do_not_crash_on_null() -> void:
+	# float(null) has no constructor: it raised once on a service's JSON null (a POI with no
+	# radius) and could do it again on any coordinate, which is why every read from data this file
+	# did not build goes through these two.
+	assert_false(MISSION_HEARTBEAT.is_number(null))
+	assert_false(MISSION_HEARTBEAT.is_number("12"))
+	assert_true(MISSION_HEARTBEAT.is_number(1))
+	assert_true(MISSION_HEARTBEAT.is_number(1.5))
+	assert_eq(MISSION_HEARTBEAT.coordf(null), 0.0)
+	assert_eq(MISSION_HEARTBEAT.coordf("12"), 0.0, "a string is not a coordinate")
+	assert_eq(MISSION_HEARTBEAT.coordf(7), 7.0)
+	assert_eq(MISSION_HEARTBEAT.coordf(1.5), 1.5)
+
+
+func test_two_places_with_unreadable_coordinates_do_not_move() -> void:
+	# And place_moved — the one function that reads a place it did not build — survives it: no
+	# crash, and no pointless push for two answers that are equally unknown.
+	var before := {"system": "t", "scene": "s", "x": null, "y": null, "z": null}
+	var after := {"system": "t", "scene": "s", "x": null, "y": null, "z": null}
+	assert_false(MISSION_HEARTBEAT.place_moved(before, after))
+	assert_true(MISSION_HEARTBEAT.place_moved(before,
+			{"system": "t", "scene": "s", "x": 9.0, "y": 9.0, "z": 9.0}),
+			"but a real coordinate after an unreadable one IS a move")

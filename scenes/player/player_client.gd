@@ -326,6 +326,10 @@ func setup() -> void:
 	player.add_child(_wrist)
 	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
 	_wrist.up_changed.connect(func(up: bool) -> void: player.get_node("UserInterface").set_crosshair_shown(not up))
+	_star_map.poi_chosen.connect(_on_poi_chosen)
+	# A clause naming a point of interest: the chart opens and goes to it. Nothing is asked of the
+	# chart but to LOOK, so nothing is armed and nothing comes back.
+	_services.focus_poi_requested.connect(_show_poi)
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
@@ -1717,12 +1721,23 @@ func _close_navigation() -> void:
 
 ## A section asked for a place: show the chart in placement mode. The tablet opens its NAVIGATION
 ## tab, which is where the chart lives, and arms it so the next click names a point rather than
-## selecting whatever it lands on.
-func _begin_placement() -> void:
+## selecting whatever it lands on — or, when the asker said so, names one that already exists, which
+## is the same question asked of the same screen.
+##
+## The view comes to the body first: a chart left looking at the whole system draws no point of
+## interest at all, and one framed at ground level fills the screen with sky you cannot click. The
+## body as a disc, turned towards the player, so a click anywhere on it places a point.
+func _begin_placement(radius_m: float, pick_existing: bool) -> void:
 	if _star_map == null or _services == null:
 		return
 	_wrist.open_with(_services.open_navigation)  # already up: the tablet asked, from the wrist
 	_star_map.begin_poi_place()
+	_services.open_navigation()
+	if pick_existing:
+		_star_map.begin_poi_pick(radius_m)
+	else:
+		_star_map.begin_poi_place(radius_m)
+	_star_map.frame_body_for_placement()
 
 
 ## The chart named the place: hand it back to the form that asked (through the tablet), leave the
@@ -1733,9 +1748,46 @@ func _on_poi_placed(place: Dictionary) -> void:
 		_star_map.end_poi_place()
 	if _services == null or place.is_empty():
 		return
-	_services.set_placed(place)
-	# Properties -> the POI section -> its creating segment.
-	_services.open_app("properties", 1)
+	# The chart knows which app took it, and goes back to THAT one: several forms can be asking at
+	# once, and opening the properties tab when it was the mission builder that asked is how the
+	# player loses the thread of what they were doing.
+	var app: String = _services.set_placed(place)
+	_services.open_app(app if app != "" else "properties", 1)
+
+
+## The chart named a point of interest that already exists: the mission builder takes it and comes
+## back to the front, with nothing created and nothing to name.
+func _on_poi_chosen(poi_id: String) -> void:
+	if _star_map != null:
+		_star_map.end_poi_place()
+	if _services == null or poi_id == "":
+		return
+	var app: String = _services.set_picked_poi(poi_id)
+	if app == "":
+		# Nobody was waiting for a point of interest: say so rather than leaving the chart's answer
+		# nowhere. The properties tab is where POIs are managed, which is the closest thing to a home.
+		if _notifications != null:
+			_notifications.push(tr("%%SVC_MSG_POI_NO_WAITING"))
+		_services.open_app("properties", 1)
+		return
+	_services.open_app(app)
+
+
+## A clause pointed at a point of interest: show it on the chart, which means going to the body it
+## stands on and turning that body until the point faces you.
+func _show_poi(poi_id: String) -> void:
+	if _star_map == null or _services == null or poi_id == "":
+		return
+	_services.open_navigation()
+	# Nothing armed, nothing to end: this is a request to look, not to pick. The chart fetches the
+	# point itself if the session's list does not hold it, so a point belonging to someone else's
+	# mission can still be shown as long as the player can READ it.
+	if await _star_map.focus_service_poi(poi_id):
+		return
+	# It could not be shown — outside this player's reach, or on a body the chart has no data for.
+	# An open chart that happens to show nothing is not an answer to a click that asked for a point.
+	if _notifications != null:
+		_notifications.push(tr("%%SVC_MSG_POI_NOT_SHOWN"))
 
 
 ## The mouse/camera is taken over: a menu, a wheel, the chat, the chart or the tablet is up, OR AltGr

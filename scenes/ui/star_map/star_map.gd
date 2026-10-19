@@ -6,6 +6,10 @@ extends CanvasLayer
 ## answers with, and the shape the inventory service stores. The mode stays on until cancelled, so
 ## a player who missed their click simply clicks again.
 signal poi_placed(place: Dictionary)
+## The chart named a point of interest the player already owns (see [method begin_poi_pick]): the
+## id the service files it under. Same reason as [signal poi_placed] — one gesture asking "where" —
+## but the answer already exists, so nothing is created and nothing has a name to invent.
+signal poi_chosen(poi_id: String)
 ## The chart's face shows ([param open]) or goes: on every [method open] and [method close]. The layer
 ## itself never hides — hosted in the DataPad only the face comes and goes — so visibility_changed
 ## says nothing of it.
@@ -32,6 +36,22 @@ const SYSTEM: String = "tarsis"
 
 ## One unit = one million km. The system is ~16 AU across (2400 units), a planet ~6000 km (0.006).
 const UNITS_PER_METRE: float = 1.0e-9
+
+## The preview ring: a unit circle of this many segments, scaled to the radius the form will send.
+const PREVIEW_SEGMENTS: int = 96
+## Its colour. Warm and half-see-through: it marks a spot that is NOT there yet, and a solid ring
+## would read as ground the chart is drawing.
+const PREVIEW_TINT: Color = Color(1.0, 0.85, 0.45, 0.5)
+## How long a sentence stays on the chart. A refusal is read once and then it is clutter.
+const NOTICE_MS: int = 3200
+## How far above the bottom edge a sentence sits, so it clears the play hints without hiding them.
+const NOTICE_OFFSET_Y: float = 96.0
+## Its colour: the preview ring's own, so a sentence and the disc it explains read as one thing.
+const NOTICE_TINT: Color = Color(1.0, 0.85, 0.55, 1.0)
+## How many frames [method focus_service_poi] waits for the camera's travel to bring its body big
+## enough for the layer to draw its points. A second at 60 fps: the travels here are short and the
+## poll costs one comparison a frame, but it must not run forever on a view that never comes.
+const FOCUS_WAIT_FRAMES: int = 60
 ## A body is drawn at its REAL radius times a boost that grows with the camera distance, so the
 ## relative sizes are always honest — a gas giant really does read as eleven times SandBox — while
 ## still being visible on a chart 2400 units wide where a planet is 0.006.
@@ -344,6 +364,10 @@ var _info_text: RichTextLabel = null
 ## The towns of whichever body is close enough to read. One layer, reused: only ever one body is being
 ## looked at, and loading nineteen sets of markers to draw one of them would be waste.
 var _poi_layer: StarMapPoiLayer = null
+## The points of interest of the SERVICE, as the cache holds them. Pushed to the layer, which draws
+## them, and read by the search index, which names them — the two must see the same list, so the
+## chart owns it rather than each asking the service on its own.
+var _service_pois: Array = []
 ## Index into _poi_layer.entries of the selected point of interest, or -1. Independent of the body
 ## focus: selecting a town does NOT move the camera, it only changes what the info panel describes.
 var _poi_focus: int = -1
@@ -353,6 +377,17 @@ var _poi_key: String = ""
 ## Placement mode for a point of interest: the next click names a place instead of selecting
 ## whatever it lands on. Stays on until [method end_poi_place], so a missed click is just a click.
 var _placing_poi: bool = false
+## Picking mode: while armed, the next click on one of the player's own points of interest names it
+## instead of placing a new one — the same gesture answering "where" either way.
+var _picking_poi: bool = false
+## The radius the POI about to be placed will carry, in metres (0 for a point), so the chart can draw
+## the disc a click would create. Read from whoever armed it, never guessed from the cursor.
+var _place_radius_m: float = 0.0
+## The disc a click would place, drawn while armed. Built on its first frame of use and hidden after.
+var _preview: MeshInstance3D = null
+## The sentence said on the chart when a click could not name a place.
+var _notice: Label = null
+var _notice_until_ms: int = 0
 ## The relief of the body being looked at — its tiles, their levels, their life cycle. ONE object,
 ## where there were seventeen fields and ten functions here.
 ##
@@ -460,6 +495,45 @@ func _ready() -> void:
 	if _surface == null:
 		_build_ui()
 	_offer_play_hints()
+	# The service's POIs belong to the player, so they arrive AFTER the chart is built: on open, and
+	# again whenever a POI is created, edited or deleted. Answering `changed` rather than polling is
+	# the same contract the services terminal keeps.
+	open_changed.connect(_on_open_changed)
+	PlayerServices.changed.connect(_on_services_changed)
+
+
+## Something the player owns changed in a service. Only the points of interest concern the chart.
+func _on_services_changed(area: String) -> void:
+	if area != "pois":
+		return
+	# A mutation happened, so the cache is REBUILT rather than re-read: ensure_loaded answers
+	# "already loaded" and would keep the list the mutation just made wrong. It is refreshed even
+	# while the chart is closed, or the next opening would show what the player used to own.
+	await MissionPoiCache.refresh()
+	if is_instance_valid(self) and is_open():
+		_push_service_pois()
+
+
+## The chart is up: it now needs the player's points of interest, which is an await. The layer marks
+## itself dirty from the answer, so the list is drawn on the next frame and nothing about the open
+## waits on a round trip.
+func _on_open_changed(open: bool) -> void:
+	if open:
+		var ok: bool = await MissionPoiCache.ensure_loaded()
+		if ok and is_instance_valid(self):
+			_push_service_pois()
+
+
+## Hand the cache's list to the layer, which draws it, and to the search index, which names it.
+##
+## The cache is the picker's own list, so the chart shows exactly what the mission builder can point
+## at — that is the point of the merge. An unanswered fetch leaves whatever the chart already had:
+## "the service is down" must not empty a chart that was already showing the player's POIs.
+func _push_service_pois() -> void:
+	_service_pois = MissionPoiCache.entries().duplicate()
+	if _poi_layer != null:
+		_poi_layer.set_service_pois(_service_pois)
+	_build_search_index()
 
 
 ## The chart's keys, for its own hints panel (_hints) while it is open. Select carries "twice: go
@@ -565,6 +639,155 @@ func is_open() -> bool:
 	return _surface != null and _surface.is_visible_in_tree()
 
 
+## Bring the view to where the player is, as if the Moi button had been pressed.
+##
+## Public because a host that opens the chart to ASK FOR A PLACE has a need [method open] does not
+## meet: the chart is found where it was last left, and a chart left looking at the whole system
+## shows no point of interest at all — they are drawn only for the body that looms largest on screen.
+## Opening the chart to place a POI while looking at nothing in particular is the plainest way to
+## ask "where can I put this?" and be told "nowhere", with no error to explain it.
+func frame_on_player() -> void:
+	# One refresh first: framing reads where the bodies ARE and how they are turned, and right after
+	# a rebuild nothing has been tracked yet — framing then aims at the origin, inside the star.
+	_process(0.0)
+	_on_me_pressed()
+
+
+## Put the WHOLE body you are on, turned towards you, for the click that is about to place a point
+## of interest on it.
+##
+## Deliberately not [method frame_on_player]: that one lands you 7 km above the ground
+## ([constant PLAYER_FOCUS_ALTITUDE_M]), which is the view of somebody standing there — and it puts
+## the horizon four and a half degrees under the horizontal, so four fifths of the screen is SKY.
+## A click on sky hits no body, and "point at a planet" over a planet filling the lower screen is
+## the chart telling you off while you are looking straight at it.
+##
+## The framing asked for here is [constant POI_FOCUS_ZOOM] (1.05 radii), the one the double click on a
+## town already uses: the body as a disc that fits, with everything on its face inside the screen. It
+## is also the view a POI picker needs, since the whole point is to see where the points are.
+func frame_body_for_placement() -> void:
+	_process(0.0)
+	var host: int = _nearest_body_to_player()
+	if host < 0:
+		# No body under you — open space. Nothing to frame, and the chart says so at the click rather
+		# than pretending there was a planet to miss.
+		_frame_on_player()
+		return
+	# No altitude: with 0, _frame_on_surface asks for POI_FOCUS_ZOOM rather than a height, which is
+	# the difference between a disc you can click anywhere on and a horizon you cannot.
+	_frame_on_surface(host, _player_local_dir(host))
+
+
+## Show one of the player's own points of interest on the chart: go to the body it stands on, wait
+## for the chart to have got there, then turn the body until the point faces you.
+##
+## A coroutine, and the wait is the whole of the difficulty. The camera TRAVELS (StarMapCamera
+## animates the move), and the layer only reloads a body's points once that body is the one looms
+## largest on screen ([method _poi_body]) — so asking for the marker one frame after framing answers
+## with whatever the chart was looking at before. Hence the poll: it ends the moment the index shows
+## up, and gives up rather than hanging on a view that never came.
+##
+## Answers whether the point could be shown. A false means either the point is not in the scope this
+## player can read, or its body is not in the chart at all — both of which the caller should say out
+## loud rather than opening an empty view.
+func focus_service_poi(poi_id: String) -> bool:
+	if poi_id == "" or not is_instance_valid(_camera):
+		return false
+	# The list is fetched when the chart opens, and that fetch is an await: asking a moment after the
+	# chart came up would otherwise find it empty and fall through to a fetch of its own for a point
+	# the list already holds.
+	if _service_pois.is_empty():
+		if await MissionPoiCache.ensure_loaded():
+			_push_service_pois()
+	# Looked up, and fetched when this session has no record of it: a point belonging to someone
+	# else's contract is not in the player's own list, yet the player can still read it and should
+	# still be shown it. This is the one await of the lookup.
+	var entry: Dictionary = await _adopt_service_poi(poi_id)
+	if entry.is_empty():
+		return false
+	var key := str(entry.get("scene", ""))
+	var body := _body_index_of(key)
+	if body < 0:
+		return false
+	_cam.select(body, key)
+	# Framed FROM the point, not merely at the body: the same call a double click on a town makes, so
+	# a point asked for from a list lands on the chart exactly where a click on its badge would.
+	_frame_on_surface(body, entry["dir"] as Vector3)
+	for step: int in range(FOCUS_WAIT_FRAMES):
+		if not is_open():
+			return false
+		var found := _poi_index_of(poi_id)
+		if found >= 0:
+			_poi_focus = found
+			_frame_poi(found)
+			return true
+		await get_tree().process_frame
+	return false
+
+
+## The chart's own entry for [param poi_id], or {} when this session holds no record of it.
+##
+## Pure by design: it only reads what the chart already has, so it cannot be a coroutine and cannot
+## need an [code]await[/code] at the call site. Fetching is [method _adopt_service_poi]'s job — an
+## await has no business hiding inside a lookup, where a caller reasonably types the call without one
+## and Godot only says so at compile time.
+func _service_poi_entry(poi_id: String) -> Dictionary:
+	var record := _service_poi_record(poi_id)
+	if record.is_empty():
+		return {}
+	return StarMapPoi.service_entry(record, str(record.get("scene", "")))
+
+
+## Look [param poi_id] up and, when this session has no record of it, fetch it from the service.
+##
+## A point can be readable — public, or one a mission grants — without being in the caller's own
+## list, and answering "you have no such point" because it was not in a list nobody asked for would
+## be a lie. The record joins the chart's own list rather than [MissionPoiCache]: the mission builder
+## offers only the player's own points, and adopting someone else's there would put it in a list
+## meant for choosing.
+func _adopt_service_poi(poi_id: String) -> Dictionary:
+	var entry := _service_poi_entry(poi_id)
+	if not entry.is_empty():
+		return entry
+	var fetched: Dictionary = await PlayerServices.poi_get(poi_id)
+	if not bool(fetched.get("ok", false)):
+		return {}
+	var data: Variant = fetched.get("data")
+	if not (data is Dictionary):
+		return {}
+	var record := data as Dictionary
+	_service_pois.append(record)
+	if _poi_layer != null:
+		_poi_layer.set_service_pois(_service_pois)
+	_build_search_index()
+	return StarMapPoi.service_entry(record, str(record.get("scene", "")))
+
+
+func _service_poi_record(poi_id: String) -> Dictionary:
+	for record: Variant in _service_pois:
+		if record is Dictionary and str((record as Dictionary).get("id", "")) == poi_id:
+			return record as Dictionary
+	return {}
+
+
+## Index of the layer's entry carrying [param poi_id], or -1 when the body being drawn has not
+## loaded it (or is not its body).
+func _poi_index_of(poi_id: String) -> int:
+	for i: int in range(_poi_layer.entries.size()):
+		if str(_poi_layer.entries[i].get("service_id", "")) == poi_id:
+			return i
+	return -1
+
+
+func _body_index_of(key: String) -> int:
+	if key == "":
+		return -1
+	for i: int in range(_bodies.size()):
+		if str(_bodies[i]["key"]) == key:
+			return i
+	return -1
+
+
 ## The canvas layer the chart's face is drawn on: its host's (the DataPad's) once hosted, else its own.
 ## What goes over the open chart goes over THAT one.
 func drawn_layer() -> int:
@@ -631,30 +854,66 @@ func is_typing() -> bool:
 	return is_instance_valid(_search) and _search.has_focus()
 
 
-## The next clicks name places rather than select what they land on: each one emits
-## [signal poi_placed] with the point under the cursor, and the mode stays on until
-## [method end_poi_place]. A player placing a point of interest misses the first time; making them
-## re-arm for every attempt would be the interface asking them to be perfect.
-func begin_poi_place() -> void:
+## Arm the chart to answer with a PLACE: the next click names a point of interest and emits it as
+## [signal poi_placed], and the mode stays on until [method end_poi_place]. A player placing a point
+## misses the first time; re-arming for every attempt would be the interface asking them to be
+## perfect.
+##
+## [param radius_m] is the radius the POI about to be placed will carry, so the chart can show WHERE
+## it will land and how wide it will be before the click. 0 means a point.
+func begin_poi_place(radius_m: float = 0.0) -> void:
 	_placing_poi = true
+	_place_radius_m = radius_m
 
 
+## Arm the chart to answer with a POINT OF INTEREST that already exists, or with a place when the
+## click lands on nothing. One gesture for both answers, because a builder pointing a mission at a
+## place is asking the same question either way: "where".
+func begin_poi_pick(radius_m: float = 0.0) -> void:
+	_picking_poi = true
+	begin_poi_place(radius_m)
+
+
+## Both answers are one switch: whoever asked came for a place, and either kind of answer ends it.
 func end_poi_place() -> void:
 	_placing_poi = false
+	_picking_poi = false
+	_place_radius_m = 0.0
 
 
 func is_placing_poi() -> bool:
 	return _placing_poi
 
 
-## The place under [param screen_pos], or an empty dictionary when the cursor is over nothing a
-## point could stand on. The position is the point on the body's own sphere the ray meets, expressed
-## the way the services store a place (see [PlayerLocation]): the body's true position plus the
-## offset that reaches the surface, in game units.
-func _place_at(screen_pos: Vector2) -> Dictionary:
+func is_picking_poi() -> bool:
+	return _picking_poi
+
+
+## The service's id of the point of interest under [param at], or "" when the cursor is not on one of
+## them.
+##
+## A town of the level design has no id to hand back to a service, so it never answers: the click
+## falls through to placing, which is what clicking a town-shaped thing means while armed.
+func _service_poi_at(at: Vector2) -> String:
+	var ray_from: Vector3 = _camera.project_ray_origin(at)
+	var ray_dir: Vector3 = _camera.project_ray_normal(at)
+	var poi: int = _poi_layer.pick(ray_from, ray_dir)
+	if poi < 0 or poi >= _poi_layer.entries.size():
+		return ""
+	return str(_poi_layer.entries[poi].get("service_id", ""))
+
+
+## What the cursor is over that a point could stand on: the body's index and the world spot on its
+## surface, or {} when the cursor is over nothing — empty space, or a body seen from behind.
+##
+## Split out of [method _place_at] because the preview and the click ask the same question and must
+## agree to the metre: a disc drawn where the click does not land is worse than no disc.
+func _surface_hit(screen_pos: Vector2) -> Dictionary:
 	var origin: Vector3 = _camera.project_ray_origin(screen_pos)
 	var dir: Vector3 = _camera.project_ray_normal(screen_pos)
-	var index: int = _pick_pass(origin, dir, true)
+	# placeable_only, always: this answer is turned into {system, scene, position} against a REAL
+	# body, and the two bodies this excludes are exactly the two with no surface to turn it against.
+	var index: int = _pick_pass(origin, dir, true, true)
 	if index < 0:
 		return {}  # empty space: a point of interest needs a body to belong to
 	var entry: Dictionary = _bodies[index]
@@ -668,12 +927,119 @@ func _place_at(screen_pos: Vector2) -> Dictionary:
 	var closest: Vector3 = origin + dir * along
 	var away: Vector3 = closest - centre
 	var distance: float = maxf(away.length(), radius)
-	var surface: Vector3 = centre + away.normalized() * distance
+	return {"body": index, "world": centre + away.normalized() * distance}
+
+
+## The place under [param screen_pos], or an empty dictionary when the cursor is over nothing a
+## point could stand on. The position is the point on the body's own sphere the ray meets, expressed
+## the way the services store a place (see [PlayerLocation]): the body's key plus the offset that
+## reaches its surface, in game units, measured FROM that body rather than across the universe.
+func _place_at(screen_pos: Vector2) -> Dictionary:
+	var hit := _surface_hit(screen_pos)
+	if hit.is_empty():
+		return {}
+	var entry: Dictionary = _bodies[int(hit["body"])]
+	var centre: Vector3 = entry["true_pos"]
+	var surface: Vector3 = hit["world"] as Vector3
 	return {
 		"system": SystemScenes.system_of(str(entry["key"])),
 		"scene": str(entry["key"]),
-		"position": surface / UNITS_PER_METRE,
+		# The offset FROM THE BODY'S CENTRE, not its absolute spot on the chart: `surface - centre` is
+		# the same arithmetic to_local does, and the body is what a place is stored against (see
+		# PlayerLocation). The chart's `true_pos` is rewritten from the Kepler elements every tick, so
+		# handing the form an absolute number would record a point the body has already left. A sphere
+		# carries no visible spin, so nothing is lost by not composing the daily turn here.
+		"position": (surface - centre) / UNITS_PER_METRE,
 	}
+
+
+## Put the disc where the cursor is, as wide as the POI about to be placed will be.
+##
+## A POINT has a radius of zero, and a zero-sized ring is not a hint that the answer is missing — it
+## is the honest picture of a point, and the badge the cursor sits on already says "here". So a point
+## hides the ring rather than drawing nothing where a disc was expected.
+func _refresh_placement_preview() -> void:
+	if _preview == null:
+		_preview = _new_preview_ring()
+	var hit := _surface_hit(_pointer())
+	if hit.is_empty() or _place_radius_m <= 0.0:
+		_preview.visible = false
+		return
+	var entry: Dictionary = _bodies[int(hit["body"])]
+	var surface: Vector3 = hit["world"] as Vector3
+	var centre: Vector3 = entry["true_pos"]
+	var normal: Vector3 = (surface - centre).normalized()
+	# Clamped to the body: a POI wider than the world it sits on is a number the form accepted, not
+	# something the chart can draw, and a ring wrapping the whole planet would say the opposite of
+	# what a click there means.
+	var units: float = minf(_place_radius_m * UNITS_PER_METRE,
+			float(entry["radius_m"]) * UNITS_PER_METRE)
+	_preview.position = surface
+	_preview.transform = Transform3D(Basis(Quaternion(Vector3.UP, normal)), surface)
+	_preview.scale = Vector3(units, units, units)
+	_preview.visible = units > 0.0
+
+
+## The ring, drawn once and scaled per frame. A LINE, not a disc: the ring is the answer to "how
+## wide", and a filled disc would paint over the ground it is measuring.
+func _new_preview_ring() -> MeshInstance3D:
+	var mesh := MeshInstance3D.new()
+	var circle := PackedVector3Array()
+	for i: int in range(PREVIEW_SEGMENTS + 1):
+		var angle := TAU * float(i) / float(PREVIEW_SEGMENTS)
+		circle.append(Vector3(cos(angle), 0.0, sin(angle)))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = circle
+	var ring := ArrayMesh.new()
+	ring.add_surface_from_arrays(Mesh.PRIMITIVE_LINE_STRIP, arrays)
+	mesh.mesh = ring
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# Over everything, including the ground it lies on: the chart's near and far planes sit seven
+	# orders of magnitude apart and a ring that z-fights is a ring that flickers out.
+	material.no_depth_test = true
+	material.albedo_color = PREVIEW_TINT
+	mesh.material_override = material
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_world_root.add_child(mesh)
+	mesh.visible = false
+	return mesh
+
+
+## Say something on the chart for a few seconds. The answer to "why did my click do nothing" is not
+## a log line, it is a sentence where the player is already looking.
+func _say(message: String) -> void:
+	if _notice == null:
+		_notice = Label.new()
+		_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		# Anchors written out rather than asked of a preset: a preset's own resize mode sets the
+		# size the control HAS, and the sentence only arrives afterwards, so the label would be laid
+		# out as nothing and then grow somewhere else. Centred on the bottom edge and grown upwards
+		# is the whole intent, so that is what the four numbers say.
+		_notice.anchor_left = 0.5
+		_notice.anchor_right = 0.5
+		_notice.anchor_top = 1.0
+		_notice.anchor_bottom = 1.0
+		_notice.offset_top = -NOTICE_OFFSET_Y
+		_notice.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_notice.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		_notice.add_theme_color_override("font_color", NOTICE_TINT)
+		# The chart is a photograph of ground with no depth buffer to spare: text over relief needs
+		# an outline of its own rather than the shadow a UI theme would give it.
+		_notice.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
+		_notice.add_theme_constant_override("outline_size", 8)
+		_surface.add_child(_notice)
+	_notice.text = message
+	_notice.visible = true
+	_notice_until_ms = Time.get_ticks_msec() + NOTICE_MS
+
+
+## A click that could not name a place. The cursor was on empty space, which is not a fault — it is
+## simply not where a point of interest can stand, and the chart says so instead of doing nothing.
+func _refuse_placement(_at: Vector2) -> void:
+	_say(tr("%%HUD_MAP_PLACE_NEED_BODY"))
 
 
 func _build_ui() -> void:
@@ -866,8 +1232,10 @@ func _rebuild() -> void:
 	# Everything EXCEPT the two fixtures built once with the world. Forgetting the light here is what
 	# made the day/night faces never appear: it was created, then freed by the very first open().
 	for child: Node in _world_root.get_children():
+		# The preview ring is built on first use and lives across rebuilds, like the layer and the
+		# light: freeing it here would leave the armed chart with a member pointing at a freed node.
 		if child != _camera and child != _sunlight and child != _poi_layer and child != _halo \
-				and child != _grid and child != _stalks:
+				and child != _grid and child != _stalks and child != _preview:
 			child.queue_free()
 	_bodies.clear()
 	_cam.focus = -1  # re-resolved from the key at the end, once the bodies exist again
@@ -1006,7 +1374,7 @@ func _rebuild() -> void:
 	_build_search_index()
 
 
-## Everything typing can reach: every body, and every town of every body.
+## Everything typing can reach: every body, and every point of interest of every body.
 ##
 ## Rebuilt with the chart rather than kept, because the body list is rebuilt and the indices stored here
 ## point into it.
@@ -1018,9 +1386,13 @@ func _build_search_index() -> void:
 			"body": i, "poi": -1,
 		})
 		var key: String = str(_bodies[i]["key"])
-		if not _has_towns(_bodies[i]):
+		if not _bears_places(_bodies[i]):
 			continue
-		var pois: Array[Dictionary] = StarMapPoi.load_for(key)
+		# The SAME list the layer draws, not the export on its own: the index stores positions in the
+		# layer's entries (a search result is read back with _poi_focus, an index into that array),
+		# so counting only the export's towns would send the camera to whichever service POI had
+		# taken that slot. See [method StarMapPoi.merged_for].
+		var pois: Array[Dictionary] = StarMapPoi.merged_for(key, _service_pois)
 		for p: int in range(pois.size()):
 			_search_index.append({
 				"label": str(pois[p]["label"]), "alt": str(pois[p]["name"]),
@@ -1213,13 +1585,6 @@ static func _ground_rock_of(data: PlanetData) -> String:
 	return data.corundum_default_rock
 
 
-## The colour a body is drawn in when nothing better is known about its ground.
-func _body_colour(index: int) -> Color:
-	if index < 0 or index >= _bodies.size():
-		return Color.WHITE
-	return _bodies[index]["colour"]
-
-
 func _orbit_from(props: Dictionary) -> KeplerOrbit:
 	return KeplerOrbit.new(
 			float(props.get("orbit_periapsis_au", 0.0)) / Planet.DISTANCE_FACTOR,
@@ -1306,6 +1671,16 @@ func _process(delta: float) -> void:
 	if not is_open():
 		return
 	_live_cache.clear()
+	# The disc a click would place, kept where the cursor is: the chart moves every frame the camera
+	# does, so a preview drawn once on hover would drift off its own spot the moment the player
+	# turned the view. Only while armed — nothing else to keep up with.
+	if _placing_poi:
+		_refresh_placement_preview()
+	elif _preview != null:
+		_preview.visible = false
+	# A sentence that never goes away stops being an answer and becomes furniture.
+	if _notice != null and _notice.visible and Time.get_ticks_msec() > _notice_until_ms:
+		_notice.visible = false
 	# Held rather than tapped: zooming across four orders of magnitude one notch at a time is tedious.
 	# POLLED, not consumed — and that is why the search box has to be asked first. A LineEdit eats the
 	# key events it receives, but it cannot eat a poll: typing "-" in the box would have zoomed the chart
@@ -2002,11 +2377,25 @@ func _drop_ground() -> void:
 	_ground_key = ""
 
 
-## Can [param entry] have towns on it? Not the star, not your marker, not a station: those are
-## drawn at a fixed size on screen, and one of them would otherwise be elected the body to read.
-func _has_towns(entry: Dictionary) -> bool:
+## Can [param entry] be WHERE A PLACE STANDS? Not the star, not your marker, not a station: those are
+## drawn at a fixed size on screen, have no surface to stand on, and one of them would otherwise be
+## elected the body to read.
+##
+## One rule, one name, two uses: which bodies can carry towns (so one of them can be elected) and
+## which a CLICK may place a POI on. They were the same question before, asked twice, and the second
+## copy that was missing is what made a click on the ground turn into "point at a planet" — see
+## [method _surface_hit]. Anything needing the test uses this; nothing re-states it.
+func _bears_places(entry: Dictionary) -> bool:
 	var key: String = str(entry["key"])
-	return key != STAR_KEY and key != PLAYER_KEY and not entry.has("station")
+	if key == STAR_KEY or key == PLAYER_KEY or entry.has("station"):
+		return false
+	# A radius is not implied by "not a station": everything this method excludes is also the only
+	# thing here with none, but _surface_hit does arithmetic that a radius of zero sends off the body
+	# entirely, so the condition is stated rather than assumed.
+	return float(entry.get("radius_m", 0.0)) > 0.0
+
+
+
 
 
 ## Whose towns to draw: simply the body that looms largest on screen, selected or not.
@@ -2018,7 +2407,7 @@ func _poi_body() -> int:
 	var best_ratio: float = 0.0
 	var eye: Vector3 = _camera.global_position
 	for i: int in range(_bodies.size()):
-		if not _has_towns(_bodies[i]):
+		if not _bears_places(_bodies[i]):
 			continue
 		var sphere: MeshInstance3D = _bodies[i]["sphere"]
 		if not is_instance_valid(sphere):
@@ -3092,10 +3481,21 @@ func _pick(screen_pos: Vector2) -> int:
 ## Nearest body along the ray. With [param tolerant], a body counts as hit when it falls inside a
 ## small cone around the ray rather than under it — without which anything drawn a couple of pixels
 ## wide, which at system scale is most of them, would be unclickable.
-func _pick_pass(origin: Vector3, dir: Vector3, tolerant: bool) -> int:
+##
+## With [param placeable_only], only bodies [method _bears_places] may win — the answer a PLACEMENT
+## asks for. Your own marker and the stations are drawn at a fixed size on screen and stand on no
+## surface, so they are hittable from a wide cone while carrying a radius of zero: a click near you
+## hands back your own marker, and [method _surface_hit] then does the surface arithmetic on a body
+## that has none and answers "nowhere", which read as "point at a planet" while the planet was under
+## the cursor the whole time. Selecting you still wants you (a double click on the marker is the Moi
+## button), which is why this is a parameter rather than the only answer.
+func _pick_pass(origin: Vector3, dir: Vector3, tolerant: bool,
+		placeable_only: bool = false) -> int:
 	var best: int = -1
 	var best_offset: float = INF
 	for i: int in range(_bodies.size()):
+		if placeable_only and not _bears_places(_bodies[i]):
+			continue
 		var sphere: MeshInstance3D = _bodies[i]["sphere"]
 		if not is_instance_valid(sphere) or not sphere.visible:
 			continue  # what is not shown cannot be clicked (a far station, your marker behind a planet)
@@ -3423,10 +3823,19 @@ func _select_pressed(event: InputEvent) -> void:
 ## ...except YOU, before them. Your marker is drawn over everything, so whatever lies under it, what
 ## the cursor is on is you — the dot or its name (see _player_under).
 func _click_at(at: Vector2, double: bool) -> void:
-	# Placing a point of interest swallows the click: it is a name, not a selection.
+	# Answering "where" swallows the click: it is a name, not a selection.
 	if _placing_poi:
+		# An existing point of interest is the better answer to "where" — it is one the player already
+		# named — so it wins over placing a second one on top of it. Disarming is the host's job, as
+		# it is for a place: the chart answers, it does not decide whether the answer was wanted.
+		if _picking_poi:
+			var chosen := _service_poi_at(at)
+			if chosen != "":
+				poi_chosen.emit(chosen)
+				return
 		var place: Dictionary = _place_at(at)
 		if place.is_empty():
+			_refuse_placement(at)
 			return  # nothing under the cursor: the mode stays armed for another try
 		poi_placed.emit(place)
 		return
