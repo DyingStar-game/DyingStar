@@ -70,9 +70,9 @@ func test_a_village_re_seated_on_its_ground_changes_nothing() -> void:
 	# The server stands the village on the ground (a radial move): same zone, nothing to re-carve.
 	var t := _terrain()
 	t.set_poi_zone("v1", "mining_village_01", _at(-39.555, 24.857, 8363.0), 1000.0)
-	var before: Array = t.planet_data._crack_pois
+	var before: Array = t.planet_data.crack_pois()
 	t.set_poi_zone("v1", "mining_village_01", _at(-39.555, 24.857, 5632.0), 1000.0)
-	assert_same(t.planet_data._crack_pois, before, "the published list is not even replaced")
+	assert_same(t.planet_data.crack_pois(), before, "the published list is not even replaced")
 
 
 func test_the_json_pois_and_the_networked_ones_add_up() -> void:

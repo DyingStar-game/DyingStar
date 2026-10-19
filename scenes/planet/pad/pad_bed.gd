@@ -154,6 +154,26 @@ static func settled_stats(rec: Dictionary, entry: Dictionary) -> Dictionary:
 	return quantise_stats(entry)
 
 
+## Rounding allowance (m) of the circle rejection in aprons_touch: the pairs it lets through still get the
+## exact separating-axis test, so it only has to clear the rounding of the distance.
+const APRONS_REJECT_SLACK_M := 1.0
+## Rounding allowance (m) of the segment rejection in road_exclusion: the bound is computed in a
+## different order than sdf_m, so it must clear the limit by more than any rounding of either.
+const ROAD_REJECT_SLACK_M := 1.0
+## A segment whose ends are farther apart in longitude than this (deg) is crossing the longitude wrap
+## in the pad's frame (no road segment is that long): it is walked, never rejected.
+const ROAD_REJECT_MAX_SEGMENT_DEG := 90.0
+
+
+## Where [param lonlat] lies on the tangent plane at [param rec]'s centre, in metres (east, north):
+## the frame sdf_m measures in, before its rotation by the pad's yaw.
+static func _tangent_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> Vector2:
+	var lat0: float = float(rec["lat"])
+	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
+	return Vector2(wrapf(lonlat.x - float(rec["lon"]), -180.0, 180.0) * ls * m_per_deg,
+			(lonlat.y - lat0) * m_per_deg)
+
+
 ## How far each field may drift from the measured geometry before the measure is
 ## taken again: one quantum and a half, so one rounding step passes and two do not.
 const SETTLED_TOLERANCE := {
@@ -224,6 +244,13 @@ static func sdf_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
 ## buildings share their flat ground, and PlanetData puts them on ONE level.
 ## The aprons are taken as rectangles (square corners, a little generous at the
 ## corners) and tested with separating axes on the tangent plane at [param a].
+##
+## Two rectangles whose circumscribed circles are apart do not touch, so the
+## separating-axis test (trigonometry included) is only run inside that bound,
+## plus a metre against rounding. PadLevels.settle asks this of every pad of a
+## village for every pad it re-levels — up to 1 600 calls, 8 µs each, for one
+## building, with 8-21 % of the pairs inside the bound
+## (test/perf/server_ingest_bench, 2026-10-16). Same answer, pair for pair.
 static func aprons_touch(a: Dictionary, b: Dictionary, m_per_deg: float) -> bool:
 	if is_notch(a) or is_notch(b):
 		return false  # a notch has no level to share
@@ -231,12 +258,14 @@ static func aprons_touch(a: Dictionary, b: Dictionary, m_per_deg: float) -> bool
 	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
 	var t := Vector2(wrapf(float(b["lon"]) - float(a["lon"]), -180.0, 180.0) * ls * m_per_deg,
 			(float(b["lat"]) - lat0) * m_per_deg)
+	var ea := Vector2(float(a["hx"]), float(a["hy"])) + Vector2.ONE * float(a["apron_m"])
+	var eb := Vector2(float(b["hx"]), float(b["hy"])) + Vector2.ONE * float(b["apron_m"])
+	if t.length() > ea.length() + eb.length() + APRONS_REJECT_SLACK_M:
+		return false
 	var ya: float = float(a["yaw"])
 	var yb: float = float(b["yaw"])
 	var axes := [Vector2(cos(ya), sin(ya)), Vector2(-sin(ya), cos(ya)),
 			Vector2(cos(yb), sin(yb)), Vector2(-sin(yb), cos(yb))]
-	var ea := Vector2(float(a["hx"]), float(a["hy"])) + Vector2.ONE * float(a["apron_m"])
-	var eb := Vector2(float(b["hx"]), float(b["hy"])) + Vector2.ONE * float(b["apron_m"])
 	for l: Vector2 in axes:
 		var ra: float = ea.x * absf((axes[0] as Vector2).dot(l)) + ea.y * absf((axes[1] as Vector2).dot(l))
 		var rb: float = eb.x * absf((axes[2] as Vector2).dot(l)) + eb.y * absf((axes[3] as Vector2).dot(l))
@@ -579,6 +608,15 @@ static func near(pads: Array, lonlat: Vector2, m_per_deg: float, pitch: float) -
 ## is walked, but it is the ribbon's CORNER that pokes through the wall, and on
 ## a road crossing at an angle that corner reaches half a width further in
 ## (measured: 55 cm of asphalt left inside a depot when the width was ignored).
+##
+## A road piece is long (median 12.7 km, up to 40 km on tarsis_3) and a pad is
+## tens of metres wide: walking every piece of the 9 pixels around it at 25 cm
+## cost 23-31 ms a building, for nothing in nearly every case (0 of 40 pads cut a
+## road; test/perf/server_ingest_bench, 2026-10-16). A segment that stays farther
+## from the footprint's centre than its half-diagonal + the margin holds no
+## inside sample (the box distance is at least the distance to the centre minus
+## the half-diagonal), so its walk is skipped — while no run is open, which is
+## the only state a skipped walk could have changed. Same intervals, bit for bit.
 static func road_exclusion(rec: Dictionary, cl: PackedVector2Array,
 		cum: PackedFloat64Array, m_per_deg: float,
 		half_width_m: float = 0.0) -> Array:
@@ -589,12 +627,21 @@ static func road_exclusion(rec: Dictionary, cl: PackedVector2Array,
 	var limit: float = PadSettings.ROAD_CUT_MARGIN_M + maxf(half_width_m, 0.0)
 	var step: float = PadSettings.ROAD_CUT_STEP_M
 	var half := 0.5 * step
+	var reach: float = Vector2(float(rec["hx"]), float(rec["hy"])).length() + limit + ROAD_REJECT_SLACK_M
+	var lat0: float = float(rec["lat"])
+	var east_m_per_deg: float = maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6) * m_per_deg
+	var wrap_guard_m: float = ROAD_REJECT_MAX_SEGMENT_DEG * east_m_per_deg
 	var run_lo := INF
 	var prev := INF
+	var pa := _tangent_m(rec, cl[0], m_per_deg)
 	for i in n - 1:
 		var a: float = cum[i]
 		var b: float = cum[i + 1]
-		if b - a <= 1e-9:
+		var pb := _tangent_m(rec, cl[i + 1], m_per_deg)
+		var far: bool = run_lo == INF and absf(pb.x - pa.x) < wrap_guard_m \
+				and Geometry2D.get_closest_point_to_segment(Vector2.ZERO, pa, pb).length() > reach
+		pa = pb
+		if b - a <= 1e-9 or far:
 			continue
 		var s := a
 		while s <= b:

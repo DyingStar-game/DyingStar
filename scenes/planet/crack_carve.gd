@@ -41,7 +41,7 @@ static func offset(data: PlanetData, dir: Vector3, frame: PlanetData.TileFrame,
 		return 0.0
 	if cracks == AUTO and not _applies(data, dir, frame):
 		return 0.0
-	var pois: Array = frame.crack_pois if frame != null and frame.crack_ready else data._crack_pois
+	var pois: Array = frame.crack_pois if frame != null and frame.crack_ready else data.crack_pois()
 	return off * data.crack_factor(dir, pois, frame)
 
 
@@ -54,7 +54,7 @@ static func offset(data: PlanetData, dir: Vector3, frame: PlanetData.TileFrame,
 static func depth_factor(data: PlanetData, dir: Vector3, frame: PlanetData.TileFrame) -> float:
 	if not _applies(data, dir, frame):
 		return 0.0
-	var pois: Array = frame.crack_pois if frame != null and frame.crack_ready else data._crack_pois
+	var pois: Array = frame.crack_pois if frame != null and frame.crack_ready else data.crack_pois()
 	return data.crack_factor(dir, pois, frame)
 
 

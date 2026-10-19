@@ -72,7 +72,7 @@ func _ready() -> void:
 	data.remote_source = RemoteTileSource.for_planet(PLANET)
 	say("PROBE %s : rayon %.0f m, export n%d, grille la plus fine n%d, %d POI"
 			% [PLANET, data.radius, data.export_nside, 1 << data.max_quadtree_depth,
-			data._crack_pois.size()])
+			data.crack_pois().size()])
 
 	var sites: Array = []
 	var forced := OS.get_environment("HOLE_PROBE_LONLAT")
