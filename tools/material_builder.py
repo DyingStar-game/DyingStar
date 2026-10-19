@@ -138,32 +138,77 @@ def _resolve_scalar_sources(
     }
 
 
+def _srgb_to_linear(channel: float) -> float:
+    """Blender's colour sockets are linear; albedo_color is written in sRGB, as Godot reads it."""
+    if channel <= 0.04045:
+        return channel / 12.92
+    return ((channel + 0.055) / 1.055) ** 2.4
+
+
+def _base_color_source(
+    node_tree: bpy.types.NodeTree,
+    principled: bpy.types.Node,
+    albedo_node: bpy.types.Node | None,
+    albedo_color: list[float] | None,
+) -> bpy.types.NodeSocket | None:
+    """The base colour as a socket: the albedo map, tinted by albedo_color when both are given.
+
+    A plain-coloured material (albedo_color, no map) has no socket: its colour is set on the
+    Principled input itself, and None is returned.
+    """
+    colour = None
+    if albedo_color is not None:
+        colour = (*(_srgb_to_linear(float(c)) for c in albedo_color), 1.0)
+    if albedo_node is None:
+        if colour is not None:
+            principled.inputs["Base Color"].default_value = colour
+        return None
+    if colour is None:
+        return albedo_node.outputs["Color"]
+    tint = node_tree.nodes.new("ShaderNodeMix")
+    tint.data_type = "RGBA"
+    tint.blend_type = "MULTIPLY"
+    tint.label = "Albedo x albedo_color"
+    tint.location = (-COLUMN_WIDTH * 1.5, albedo_node.location.y)
+    tint.inputs["Factor"].default_value = 1.0
+    node_tree.links.new(albedo_node.outputs["Color"], tint.inputs["A"])
+    tint.inputs["B"].default_value = colour
+    return tint.outputs["Result"]
+
+
 def _connect_base_color(
     node_tree: bpy.types.NodeTree,
     principled: bpy.types.Node,
-    albedo_node: bpy.types.Node,
+    albedo_node: bpy.types.Node | None,
     ao_source: tuple[bpy.types.Node, str] | None,
+    albedo_color: list[float] | None = None,
 ) -> None:
-    """Wire albedo, multiplying ambient occlusion into it when available.
+    """Wire albedo (tinted by albedo_color, or that colour alone), multiplying ambient occlusion
+    into it when available.
 
     Trade-off worth knowing: Godot applies AO to ambient light only, while
     multiplying it into base colour darkens direct light too. It is the usual
     look-dev approximation, not a physically exact match. Set the Mix factor to
     0 in the shader graph to compare.
     """
+    base = _base_color_source(node_tree, principled, albedo_node, albedo_color)
     if ao_source is None:
-        node_tree.links.new(albedo_node.outputs["Color"], principled.inputs["Base Color"])
+        if base is not None:
+            node_tree.links.new(base, principled.inputs["Base Color"])
         return
 
     mix = node_tree.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     mix.blend_type = "MULTIPLY"
     mix.label = "Albedo x AO"
-    mix.location = (-COLUMN_WIDTH, albedo_node.location.y)
+    mix.location = (-COLUMN_WIDTH, albedo_node.location.y if albedo_node is not None else 0)
     mix.inputs["Factor"].default_value = 1.0
 
     ao_node, ao_output = ao_source
-    node_tree.links.new(albedo_node.outputs["Color"], mix.inputs["A"])
+    if base is not None:
+        node_tree.links.new(base, mix.inputs["A"])
+    else:
+        mix.inputs["A"].default_value = principled.inputs["Base Color"].default_value
     node_tree.links.new(ao_node.outputs[ao_output], mix.inputs["B"])
     node_tree.links.new(mix.outputs["Result"], principled.inputs["Base Color"])
 
@@ -276,7 +321,11 @@ def build_material(manifest: dict, folder: Path) -> bpy.types.Material:
     scalar_sources = _resolve_scalar_sources(node_tree, texture_nodes)
 
     _connect_base_color(
-        node_tree, principled, texture_nodes["albedo"], scalar_sources.get("ao")
+        node_tree,
+        principled,
+        texture_nodes.get("albedo"),
+        scalar_sources.get("ao"),
+        manifest.get("albedo_color"),
     )
     _connect_scalar_inputs(node_tree, principled, scalar_sources)
     _connect_surface_normal(node_tree, principled, texture_nodes)
