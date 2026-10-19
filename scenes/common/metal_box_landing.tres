@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="SurfaceSounds" format=3]
+
+[ext_resource type="Script" uid="uid://bui2t3eqpyye8" path="res://scenes/common/surface_sounds.gd" id="1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/props/metal-box-put-down.mp3" id="put"]
+[ext_resource type="AudioStream" uid="uid://dnqohk4goy70l" path="res://assets/_universe/audio/sfx/ui/missing-sound.wav" id="miss"]
+
+[resource]
+script = ExtResource("1")
+default_samples = Array[AudioStream]([ExtResource("put")])
+missing = ExtResource("miss")
+pitch_jitter = 0.06

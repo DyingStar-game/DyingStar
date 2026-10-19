@@ -8,7 +8,10 @@
 [ext_resource type="AudioStream" uid="uid://c1n5krj4wo076" path="res://assets/_universe/audio/sfx/structures/dispenser-delivery.ogg" id="7_delivery"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="8_sync"]
 [ext_resource type="Script" uid="uid://q5rm52iyeiak" path="res://scenes/common/ambient_loop_3d.gd" id="9_hum"]
-[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/structures/dispenser-idle-hum.ogg" id="10_idle"]
+[ext_resource type="AudioStream" uid="uid://cx4wvskq3o03s" path="res://assets/_universe/audio/sfx/structures/dispenser-idle-hum.ogg" id="10_idle"]
+[ext_resource type="Texture2D" uid="uid://ddhkv6crn7eue" path="res://assets/textures/map_markers/parts_dispenser.png" id="mm_icon"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="Script" uid="uid://diyncoyyks1lr" path="res://scenes/common/loop_sound.gd" id="loop_sound"]
 
 [sub_resource type="BoxShape3D" id="Shape_upper"]
 size = Vector3(1, 0.67, 0.8)
@@ -37,7 +40,7 @@ albedo_color = Color(0.03, 0.03, 0.035, 1)
 roughness = 0.9
 
 [sub_resource type="StandardMaterial3D" id="Mat_amber"]
-albedo_color = Color(1, 0.73, 0.03, 1)
+albedo_color = Color(1, 0.8, 0, 1)
 metallic = 0.2
 roughness = 0.45
 
@@ -50,6 +53,14 @@ size = Vector2(0.56, 0.56)
 
 [sub_resource type="BoxShape3D" id="Shape_touch"]
 size = Vector3(0.56, 0.56, 0.02)
+
+[sub_resource type="Resource" id="LoopSound_idle"]
+script = ExtResource("loop_sound")
+stream = ExtResource("10_idle")
+volume_db = -12.0
+falloff = 1.5
+distance = 8.0
+attenuation = 1
 
 [node name="ItemDispenser" type="StaticBody3D" unique_id=1089814030 node_paths=PackedStringArray("tray_marker", "flap")]
 script = ExtResource("1_disp")
@@ -288,8 +299,10 @@ type_name = "simple_building"
 [node name="IdleHum" type="Node3D" parent="." unique_id=1716204588]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -0.2)
 script = ExtResource("9_hum")
-stream = ExtResource("10_idle")
-volume_db = -12.0
-falloff = 1.5
-distance = 8.0
-attenuation = 1
+sound = SubResource("LoopSound_idle")
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=1986961059]
+script = ExtResource("mm_script")
+label = "%%MAP_MARKER_PARTS_DISPENSER"
+icon = ExtResource("mm_icon")
+max_view_m = 300.0

@@ -44,3 +44,24 @@ func test_each_kiosk_is_a_screen_the_crosshair_and_the_server_find() -> void:
 	for err in get_errors():
 		if "material" in str(err.code) or "material" in str(err.rationale):
 			err.handled = true
+
+
+## Both landings run one script (LiftLanding); what tells them apart is set on each scene's root: the
+## end they call the platform to, their railing layout and the screen that shows the trip.
+func test_each_landing_knows_its_end_and_its_screen() -> void:
+	for at: Array in [[SCREENS[0], false, "Lower Landing Interface"], [SCREENS[1], true, "Upper Landing Interface"]]:
+		var landing := (load(str(at[0])) as PackedScene).instantiate() as LiftLanding
+		assert_not_null(landing, "%s: a LiftLanding" % str(at[0]).get_file())
+		if landing == null:
+			continue
+		assert_eq(landing.is_upper, at[1], "%s: its end of the lift" % landing.name)
+		assert_not_null(landing.landing_interface, "%s: its screen" % landing.name)
+		if landing.landing_interface != null:
+			assert_eq(str(landing.landing_interface.name), str(at[2]))
+		assert_true(FileAccess.file_exists(landing.railing_json_path), "%s: its railing layout" % landing.name)
+		landing.free()
+	# Headless (dummy renderer), freeing the models reports "Parameter material is null": the engine's,
+	# not ours (see test_vehicle_lift_screens). Those, and only those, are expected.
+	for err in get_errors():
+		if "material" in str(err.code) or "material" in str(err.rationale):
+			err.handled = true

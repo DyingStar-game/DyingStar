@@ -42,7 +42,9 @@ func test_its_generator_hums() -> void:
 			hum = child
 	assert_not_null(hum, "the electrical box at its base hums")
 	if hum != null:
-		assert_eq(hum.stream.resource_path, HUM, "the generator loop")
+		assert_not_null(hum.sound, "with its sound")
+		if hum.sound != null:
+			assert_eq(hum.sound.stream.resource_path, HUM, "the generator loop")
 		assert_lt(hum.position.y, 1.0, "the sound comes from the box at the base, not the lamps")
 	lamp.free()
 

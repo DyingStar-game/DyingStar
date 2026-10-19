@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="LoopSound" format=3]
+
+[ext_resource type="Script" path="res://scenes/common/loop_sound.gd" id="1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-departure-alarm.ogg" id="2"]
+
+[resource]
+script = ExtResource("1")
+stream = ExtResource("2")
+volume_db = -4.0
+falloff = 6.0
+distance = 80.0
+attenuation = 0

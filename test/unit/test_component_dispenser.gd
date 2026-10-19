@@ -150,8 +150,10 @@ func test_every_machine_hums_for_who_walks_past() -> void:
 		var hum := machine.get_node_or_null("IdleHum") as AmbientLoop3D
 		assert_not_null(hum, "%s: an idle hum" % path.get_file())
 		if hum != null:
-			assert_not_null(hum.stream, "with its sound")
-			assert_lte(hum.distance, 10.0, "heard passing by, not across the garage")
+			assert_not_null(hum.sound, "with its sound")
+			if hum.sound != null:
+				assert_not_null(hum.sound.stream, "with its sample")
+				assert_lte(hum.sound.distance, 10.0, "heard passing by, not across the garage")
 		machine.free()
 
 

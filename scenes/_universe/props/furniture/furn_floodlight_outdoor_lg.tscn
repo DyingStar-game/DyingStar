@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://q5rm52iyeiak" path="res://scenes/common/ambient_loop_3d.gd" id="4_hum"]
 [ext_resource type="AudioStream" uid="uid://c0k0knpfpojnu" path="res://assets/_universe/audio/sfx/machine/generator-loop.ogg" id="5_generator"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
+[ext_resource type="Script" uid="uid://diyncoyyks1lr" path="res://scenes/common/loop_sound.gd" id="loop_sound"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_plate"]
 size = Vector3(0.8, 0.14, 1.1)
@@ -19,6 +20,10 @@ radius = 0.06
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_head"]
 size = Vector3(0.7, 0.67, 0.17)
+
+[sub_resource type="Resource" id="LoopSound_hum"]
+script = ExtResource("loop_sound")
+stream = ExtResource("5_generator")
 
 [node name="FloodlightOutdoor" type="StaticBody3D" unique_id=714726914]
 
@@ -57,7 +62,7 @@ shape = SubResource("BoxShape3D_head")
 [node name="GeneratorHum" type="Node3D" parent="." unique_id=1932504718]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.105, 0.37, -0.445)
 script = ExtResource("4_hum")
-stream = ExtResource("5_generator")
+sound = SubResource("LoopSound_hum")
 
 [node name="SpotLight3D" type="SpotLight3D" parent="." unique_id=310351402]
 transform = Transform3D(1, 0, 0, 0, -0.9854532445146164, 0.16994676482832977, 0, -0.16994676482832977, -0.9854532445146164, 0, 4.403532448902638, 0.23604006380648213)
