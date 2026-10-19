@@ -62,6 +62,8 @@ static func nice_length(metres: float) -> float:
 ## Metres, kilometres, or thousands of kilometres — written out rather than pushed through
 ## [code]Globals.format_distance[/code], which says "million km" in English whatever the language.
 static func label_for(metres: float) -> String:
+	if metres < 1.0:
+		return "%d cm" % int(round(metres * 100.0))  # metre zoom: a bar of 20 or 50 cm
 	if metres < 1000.0:
 		return "%d m" % int(round(metres))
 	return "%s km" % Globals.format_thousands(metres / 1000.0)

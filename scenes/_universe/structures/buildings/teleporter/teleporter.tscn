@@ -8,6 +8,8 @@
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="7_neon"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
 [ext_resource type="Script" uid="uid://cvsvr52nn75xd" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
+[ext_resource type="Script" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/beacon.png" id="mm_icon"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(2.8, 1.44)
@@ -107,3 +109,10 @@ light_offset = 5.0
 
 [node name="Photocell" type="Node3D" parent="NeonSign" unique_id=1597114316]
 script = ExtResource("pc_photocell")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("mm_script")
+label = "%%MAP_MARKER_TELEPORTER"
+importance = 1
+max_view_m = 5000.0
+icon = ExtResource("mm_icon")

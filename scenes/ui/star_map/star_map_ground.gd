@@ -140,6 +140,21 @@ func mesh_material(colour: Color = Color.WHITE) -> void:
 	_material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 
 
+## The finest tile on screen drawing [param dir] (a unit direction in the body's frame), or null.
+func mesh_at(dir: Vector3) -> MeshInstance3D:
+	var best: MeshInstance3D = null
+	var best_nside: int = 0
+	for id: int in _active:
+		var node: MeshInstance3D = _active[id] as MeshInstance3D
+		var nside: int = id_nside(id)
+		if nside <= best_nside or not is_instance_valid(node) or not node.visible:
+			continue
+		if HEALPix.vec2pix_nest(nside, dir) == id_ipix(id):
+			best = node
+			best_nside = nside
+	return best
+
+
 ## Is anything drawn yet? The chart hides the smooth sphere only once the ground can replace it.
 func has_tiles() -> bool:
 	return not _active.is_empty()
@@ -400,7 +415,7 @@ func _pump() -> void:
 		var paint: Dictionary = zones.tile_of(id_nside(paint_id), id_ipix(paint_id)) \
 				if zones != null else {}
 		var task: int = WorkerThreadPool.add_task(func() -> void:
-			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint, reader))
+			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint, reader, true))
 		_in_flight[id] = {"task": task, "slot": slot}
 
 
@@ -434,6 +449,7 @@ func _harvest() -> void:
 		var node := MeshInstance3D.new()
 		node.mesh = mesh
 		node.material_override = _material
+		node.position = mesh.get_meta("origin", Vector3.ZERO)  # its vertices are around it (build_tile)
 		add_child(node)
 		_active[id] = node
 		if is_instance_valid(old):
@@ -474,6 +490,7 @@ func _reinstate(id: int) -> bool:
 	var node := MeshInstance3D.new()
 	node.mesh = kept["mesh"]
 	node.material_override = _material
+	node.position = (kept["mesh"] as Mesh).get_meta("origin", Vector3.ZERO)
 	add_child(node)
 	_active[id] = node
 	var from: int = int(kept["from"])

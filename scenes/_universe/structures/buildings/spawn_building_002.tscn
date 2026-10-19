@@ -6,6 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://d18v1s487ex3b" path="res://assets/_universe/structures/buildings/building_apartment_001_concrete_wall_normal.png" id="4_ig2qq"]
 [ext_resource type="Texture2D" uid="uid://c18nry2rakjmg" path="res://assets/_universe/structures/buildings/building_apartment_001_concrete_wall_rough.png" id="5_i48je"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
+[ext_resource type="Script" path="res://scenes/common/map_marker.gd" id="mm_script"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jc3i8"]
 albedo_texture = ExtResource("3_17gf7")
@@ -84,3 +85,9 @@ collision_layer = 16
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.625, 0)
 shape = SubResource("BoxShape3D_htkwp")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("mm_script")
+label = "%%MAP_MARKER_HOUSING_BLOCK"
+importance = 2
+max_view_m = 1500.0

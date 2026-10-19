@@ -113,18 +113,18 @@ const AMBIENT_CLOSE_RATIO: float = 0.35
 ## all of its towns, which only exist while it is elected. Measured by the user: it starts at a zoom of
 ## 0.07 and not before, and 0.085 is exactly where the threshold sits.
 const POI_BODY_KEEP: float = 0.75
-## How high above your own feet the chart settles when you ask it to show you where you are, in metres.
+## How high above a PLACE (a station, a town's extent) the chart settles when it frames one, in metres.
 ##
-## An absolute height, where a town gets a proportional one, and the difference is what each is for. A
-## town is a place on a map and wants its surroundings in frame; YOU are a person standing somewhere,
-## and the useful view is the one that shows the ground you are actually on.
-##
-## Seven km, not the five hundred metres this began at. The screen holds about 1.53 times the height, so
-## five hundred metres framed 765 m of ground — NARROWER THAN THE VILLAGE it was meant to be showing,
+## An absolute height, where a town gets a proportional one. Seven km, not the five hundred metres this
+## began at (it framed YOU too, then: see PLAYER_FOCUS_ALTITUDE_M). The screen holds about 1.53 times
+## the height, so five hundred metres framed 765 m of ground — NARROWER THAN THE VILLAGE it was meant to be showing,
 ## whose own extent the chart reports as a kilometre. Seven km holds some eleven, which puts a
 ## settlement in its surroundings, and it is also where the ground is drawn at the finest level Tarsis
 ## III publishes: 198 m per sample, so the extra height costs no detail at all.
-const PLAYER_FOCUS_ALTITUDE_M: float = 7000.0
+const PLACE_FOCUS_ALTITUDE_M: float = 7000.0
+## How high above YOUR feet "Moi" (and opening the chart) frames you: 150 m, the village's buildings and
+## dispensers read one by one (playtest 2026-10-19) -- the chart now goes down to the metre.
+const PLAYER_FOCUS_ALTITUDE_M: float = 150.0
 ## The right stick pushed all the way turns the view like a drag of this many pixels a second.
 const STICK_ORBIT_PX_PER_S: float = 600.0
 ## Two presses of A this close together are the pad's double click (travel to what is selected).
@@ -133,6 +133,9 @@ const DOUBLE_PRESS_MS: int = 400
 const LAYER: int = 10
 ## The info panel's place from the right edge, before any inset (set_right_inset).
 const INFO_PANEL_X: float = -360.0
+## The Moi / Reset buttons under the search box: their height (px) and their text's size.
+const BUTTON_HEIGHT: float = 40.0
+const BUTTON_FONT_SIZE: int = 22
 ## How nearly on a station's vertical the camera must stand to turn about it, as the cosine of the
 ## angle at the world's centre: two degrees. Going to a station puts the camera on that vertical and
 ## following keeps it there; this only tells that apart from a station selected from elsewhere.
@@ -171,6 +174,9 @@ const STATION_VISIBLE_RADII: float = 16.0
 ## to stop a DISTANT body vanishing, drew it a single pixel across as soon as you came close. The stem
 ## was visible and the marker at its foot was not.
 const PLAYER_MARKER: float = 0.0045
+## The marker's true size (m): close to the ground it is drawn as big as you are, no smaller -- at two
+## metres up, the share of the distance alone drew it nine millimetres across.
+const PLAYER_TRUE_SPAN_M: float = 0.6
 ## Length of the "you" stem, as a fraction of the distance from the camera to the MARKER — so it stays the
 ## same size on screen whatever the zoom, exactly like the labels. Once a fraction of the view (the
 ## distance to the body's CENTRE): 376 km of stem over a station 87 km from the camera, which put its tip,
@@ -197,12 +203,12 @@ const PLAYER_RENDER_PRIORITY: int = Material.RENDER_PRIORITY_MAX
 ## A first pass faded them from 50 units down to 5 and that was far too eager — five to fifty units is
 ## the range you spend most of your time in, looking at a planet and its neighbours, and the rings went
 ## out while they were still the whole point of the picture.
+## How high the roads and canyons float over the ground once close to it: a share of the gap, and a floor
+## in metres (see _refresh_ground).
+const LINE_LIFT_PER_GAP: float = 0.02
+const LINE_LIFT_MIN_M: float = 0.05
 const ORBIT_FADE_FULL: float = 2.0
 const ORBIT_FADE_NONE: float = 0.15
-## What the far plane must always reach, in units, however close the camera gets: enough to keep a
-## body's own moons and their rings inside the frustum, since those are exactly what stays drawn when
-## everything else has faded.
-const LOCAL_REACH: float = 5.0
 ## Where the star is DRAWN once it would otherwise fall outside the frustum, as a multiple of the view.
 ##
 ## The star is the one thing that must never leave the chart: it is what the whole system is arranged
@@ -285,6 +291,10 @@ var _surface: Control = null
 ## the readout went on writing that longitude with the cursor off the chart (playtest 2026-10-15).
 var _mouse_on_face: bool = false
 var _hosted: bool = false
+## The chart reads its keys and the pad (zoom keys, stick, triggers, Tab, key gestures). Off while it is
+## shown on a screen in the world -- the truck's (RearCamera.switchable): those are the driver's then,
+## and only the mouse events the crosshair pushes into its face reach it.
+var keys_live: bool = true
 var _world_root: Node3D
 var _camera: Camera3D
 ## The star's light. Held because _rebuild() empties the world and would otherwise destroy it: it is
@@ -350,6 +360,16 @@ var _placing_poi: bool = false
 ## drift test and a staleness test, none of which owned the question "what should be on screen". The
 ## ground owns it now, and this file only tells it where the camera is.
 var _ground: StarMapGround = null
+## The METRES frame: a child of the body's sphere scaled from metres to its MESH_RADIUS units, where what
+## is placed in metres on the planet (the MapMarkers) is hung. And the one reading of the ground the
+## camera stops on: the chart's tiles as DRAWN, so a two-metre floor never stands below a facet.
+var _metres: Node3D = null
+var _marker_hover: int = -1  # the MapMarker the pointer is on (StarMapMarkers.pick), -1 for none
+var _markers: StarMapMarkers = null  # under _metres: what carries a MapMarker (buildings, dispensers, vehicles)
+var _drawn: DrawnGround = null
+## The guard measured this frame, for the direction it was measured in: asked a dozen times a frame, and
+## each answer is a ray cast on the drawn ground.
+var _guard_memo: Array = [-1, Vector3.ZERO, 0.0, -1]  # frame, direction, guard, body
 ## The ways drawn over that ground. Its own node, with its own file handle, so the ground knows nothing
 ## about roads and the roads know nothing about how a tile is built.
 var _roads: StarMapRoads = null
@@ -395,6 +415,9 @@ var _spin_body: int = -1
 var _grid: EclipticGrid = null
 var _stalks: MeshInstance3D = null
 var _search: LineEdit = null
+## The mouse's press, drag and click, and the context menu (StarMapGestures). Built with the face.
+var _gestures: StarMapGestures = null
+var _pins: StarMapPins = null
 var _results: VBoxContainer = null
 ## Everything that can be reached by typing: the bodies, and every point of interest in the system.
 ## Built once per open — all nineteen point files together weigh eight kilobytes, so there is nothing
@@ -448,6 +471,9 @@ func _offer_play_hints() -> void:
 				&"star_map_zoom_out"], "%%HINT_MAP_ZOOM"),
 		PlayHints.row([&"star_map_orbit", &"star_map_orbit_left", &"star_map_orbit_right",
 				&"star_map_orbit_up", &"star_map_orbit_down"], "%%HINT_MAP_TURN"),
+		PlayHints.row(&"star_map_menu", "%%HINT_MAP_MENU"),
+		PlayHints.row(&"star_map_tilt", "%%HINT_MAP_TILT"),
+		PlayHints.row(&"star_map_search", "%%HINT_MAP_SEARCH"),
 		PlayHints.row(&"star_map_reset", "%%HINT_MAP_RESET"),
 		PlayHints.row(&"star_map", "%%HINT_MAP_CLOSE"),
 	], is_open, 50)
@@ -509,12 +535,17 @@ func _open_on_player() -> void:
 
 func close() -> void:
 	_dragging = false
+	if _gestures != null:
+		_gestures.reset()
+	_marker_hover = -1
+	if _pins != null:
+		_pins.clear_pin()
 	_close_armed = false  # closed by F2 with B half down: the next opening must not close on its release
 	_clear_search()
 	if is_instance_valid(_player):
 		_left_body = Planet.of(_player)
 		_left_at = _place_in(_left_body)
-		_left_span = maxf(_view - _guard_radius(), _view * 1.0e-5)
+		_left_span = _gap()
 	# The ground is KEPT. Dropping it here threw away every tile, both pack handles and the tile service
 	# with its queue, so each F2 paid for the whole view again — a few hundred tiles rebuilt, a network
 	# round trip for a version that had not changed — to redraw exactly what was on screen a second ago.
@@ -550,8 +581,45 @@ func host_in(slot: Control) -> void:
 		_build_ui()
 	_surface.get_parent().remove_child(_surface)
 	slot.add_child(_surface)
-	_surface.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hosted = true
+
+
+## The view as data, for another viewer to see the same (the cab screen shared by everyone aboard,
+## VehicleChartView): the camera (StarMapCamera.snapshot), and what is watched and selected by KEY --
+## two charts list the same bodies, but nothing promises the same order.
+func view_state() -> Dictionary:
+	var view: Dictionary = _cam.snapshot()
+	view["watch"] = _key_at(_cam.anchor_body)
+	view["select"] = _cam.focus_key
+	view["poi"] = _poi_focus
+	return view
+
+
+## Show [param view] (view_state of another chart) as it is: watched and selected bodies found by key,
+## the camera put there at once. What this chart does not know (another body list) is left alone.
+func show_view(view: Dictionary) -> void:
+	var watched: int = _index_of_key(str(view.get("watch", "")))
+	if watched >= 0:
+		_cam.anchor_body = watched
+	var selected: String = str(view.get("select", ""))
+	if selected != _cam.focus_key:
+		_select(_index_of_key(selected) if selected != "" else -1)
+	_poi_focus = int(view.get("poi", _poi_focus))
+	_cam.restore(view)
+
+
+func _key_at(index: int) -> String:
+	return str(_bodies[index]["key"]) if index >= 0 and index < _bodies.size() else ""
+
+
+func _index_of_key(key: String) -> int:
+	if key == "":
+		return -1
+	for i: int in _bodies.size():
+		if str(_bodies[i]["key"]) == key:
+			return i
+	return -1
 
 
 ## Is the player typing into the chart's search box?
@@ -708,32 +776,15 @@ func _build_ui() -> void:
 	_surface.add_child(_view_cone)
 	_cursor_readout = StarMapCursorReadout.new()
 	_surface.add_child(_cursor_readout)
+	_pins = StarMapPins.new()
+	_surface.add_child(_pins)
+	_gestures = StarMapGestures.new(self, _surface)
 	# The chart's own numbers (bodies, zoom, relief tiles) are debug: they go to the debug panel
 	# (debug_lines, Settings > Debug). What stays on the chart is for players: how to drive it, as play
-	# hints (left, under the two buttons), gone once learnt.
+	# hints (top left), gone once learnt.
 	_hints = PlayHintsPanel.new()
 	_hints.contexts = [&"star_map"]
 	_surface.add_child(_hints)
-
-	# Two shortcuts, in the top left corner. Buttons rather than keys: rare, deliberate actions — and a
-	# Control consumes its own click, so picking a body is never triggered underneath.
-	var buttons := HBoxContainer.new()
-	buttons.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	buttons.position = Vector2(16, 16)
-	buttons.add_theme_constant_override("separation", 8)
-	# The row itself must not eat the mouse; each Button still receives its own clicks.
-	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_surface.add_child(buttons)
-	var me_button := Button.new()
-	me_button.text = "%%HUD_MAP_ME"
-	me_button.tooltip_text = "%%HUD_MAP_ME_TIP"
-	me_button.pressed.connect(_on_me_pressed)
-	buttons.add_child(me_button)
-	var reset_button := Button.new()
-	reset_button.text = "%%HUD_MAP_RESET"
-	reset_button.tooltip_text = "%%HUD_MAP_RESET_TIP"
-	reset_button.pressed.connect(_on_reset_pressed)
-	buttons.add_child(reset_button)
 
 	# The search box, under the buttons.
 	#
@@ -757,6 +808,24 @@ func _build_ui() -> void:
 	_search.text_changed.connect(_on_search_changed)
 	_search.text_submitted.connect(_on_search_submitted)
 	search_box.add_child(_search)
+	# The two shortcuts, right under the search box and as wide: Moi and Reset are what you reach for
+	# after a search, and in the corner they were small and far from it (playtest 2026-10-19). Buttons
+	# rather than keys: rare, deliberate actions, and a Control consumes its own click, so a body is never
+	# picked underneath.
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 8)
+	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE  # the row must not eat the mouse; each Button does
+	search_box.add_child(buttons)
+	for spec: Array in [["%%HUD_MAP_ME", "%%HUD_MAP_ME_TIP", _on_me_pressed],
+			["%%HUD_MAP_RESET", "%%HUD_MAP_RESET_TIP", _on_reset_pressed]]:
+		var button := Button.new()
+		button.text = spec[0]
+		button.tooltip_text = spec[1]
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.custom_minimum_size = Vector2(0, BUTTON_HEIGHT)
+		button.add_theme_font_size_override("font_size", BUTTON_FONT_SIZE)
+		button.pressed.connect(spec[2])
+		buttons.add_child(button)
 	_results = VBoxContainer.new()
 	_results.add_theme_constant_override("separation", 0)
 	_results.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1242,7 +1311,7 @@ func _process(delta: float) -> void:
 	# key events it receives, but it cannot eat a poll: typing "-" in the box would have zoomed the chart
 	# out under the cursor while the character appeared in the field. Same defect, same remedy, as the
 	# in-world screens.
-	if not is_typing():
+	if keys_live and not is_typing():
 		if Input.is_action_pressed("star_map_zoom_in"):
 			_zoom_by(pow(StarMapCamera.KEY_ZOOM_RATE, -delta))
 		if Input.is_action_pressed("star_map_zoom_out"):
@@ -1265,8 +1334,10 @@ func _process(delta: float) -> void:
 	_track_bodies(t)
 	_follow_place(t)
 	_follow_ground(t)
-	# The origin goes wherever the camera is aimed, so the subject is always AT it.
-	_shift = _cam.look_point(_watch_position())
+	# The origin goes on the GROUND under the camera (StarMapCamera.origin_point): everything drawn near
+	# the camera is then within metres of zero, where float32 is exact to the millimetre. At the subject's
+	# centre, 6 356 km below, the ground was drawn to half a metre and swam at metre zoom.
+	_shift = _cam.origin_point(_watch_position(), _guard_radius())
 	_place_bodies()
 	_place_camera()
 	_dress_bodies(t)
@@ -1283,9 +1354,11 @@ func _process(delta: float) -> void:
 	_refresh_scale()
 	# The mouse hovers as it moves (_unhandled_input); the pad's pointer stands still while the chart
 	# turns under it, so it hovers once a frame.
-	if _pad_points() and not is_typing():
+	if keys_live and _pad_points() and not is_typing():
 		_hover_at(_pointer())
 	_refresh_cursor_readout()
+	if _pins != null:
+		_pins.refresh(_point_on_screen, _point_text)
 
 
 ## Where every body IS this frame — true positions only, nothing drawn yet. Runs before the origin is
@@ -1572,7 +1645,7 @@ func _place_player_marker() -> void:
 	var tint: Color = StarMapPoiLayer.lift(PLAYER_COLOR, selected, hovered)
 	(marker.material_override as StandardMaterial3D).albedo_color = tint
 	var to_marker: float = _camera.global_position.distance_to(marker.position)
-	var span: float = to_marker * PLAYER_MARKER * grow
+	var span: float = maxf(to_marker * PLAYER_MARKER * grow, PLAYER_TRUE_SPAN_M * UNITS_PER_METRE)
 	marker.basis = Basis().scaled(Vector3.ONE * span / MESH_RADIUS)
 	# The arrow points along that LOCAL up, never along the world's +Y.
 	#
@@ -1729,7 +1802,7 @@ func _local_under_camera(body: int) -> Vector3:
 func _altitude_m(body: int) -> float:
 	if _cam.anchor_body != body:
 		return -1.0
-	return maxf(_cam.distance() - _guard_radius(), 0.0) / UNITS_PER_METRE
+	return maxf(_cam.distance() - _field_guard_radius(), 0.0) / UNITS_PER_METRE
 
 
 ## Which body the chart draws GROUND for — which is not the same question as which body it labels.
@@ -1770,6 +1843,7 @@ func _refresh_ground() -> void:
 			_adopt(sphere, _ground)
 			_adopt(sphere, _roads)
 			_adopt(sphere, _canyons)
+			_adopt(sphere, _metres)
 	else:
 		_drop_ground()
 		_ground = StarMapGround.new()
@@ -1791,6 +1865,17 @@ func _refresh_ground() -> void:
 		# rock's and every ground would come out the colour of the chart's palette anyway.
 		_ground.mesh_material(Color.WHITE if _zones.default_rock != ""
 				else _bodies[index]["colour"])
+		# The TERRAIN's radius, the one the tiles are built against: not the system file's, which differs
+		# for some bodies (Sandbox: 6 356 km, the file says 6 371).
+		var radius_m: float = StarMapRelief.terrain_radius_m(key, float(_bodies[index]["radius_m"]))
+		_metres = Node3D.new()
+		_metres.name = "Metres"
+		_metres.scale = Vector3.ONE * (MESH_RADIUS / radius_m)
+		sphere.add_child(_metres)
+		_markers = StarMapMarkers.new()
+		_metres.add_child(_markers)
+		_drawn = DrawnGround.new(_metres, radius_m, _ground.mesh_at,
+				func(dir: Vector3) -> float: return radius_m * StarMapRelief.surface_factor(key, dir))
 		_roads = StarMapRoads.new()
 		_roads.body_key = key
 		sphere.add_child(_roads)
@@ -1804,17 +1889,29 @@ func _refresh_ground() -> void:
 	# — see StarMapRelief.finest_nside() — so the altitude can no longer be moved by the very level it
 	# chooses. That cycle is what this rewrite exists to remove.
 	_ground.refresh(_local_under_camera(index), _altitude_m(index), _view_half_angle(index))
+	var shown: Dictionary = _ground.wanted()
 	# What is drawn over the ground, and what is asked of the tile service, goes by the tiles as the
 	# body PUBLISHES them: near the ground the chart cuts finer than that to hold the canyons, and
 	# neither a pack nor the service has anything at a level nobody exported.
-	var published: Dictionary = StarMapRelief.published(key, _ground.wanted())
 	if _roads != null:
-		_roads.show_over(published, _ground_scale(), float(_bodies[index]["radius_m"]))
+		_roads.show_over(StarMapRelief.published(key, shown), _ground_scale(), float(_bodies[index]["radius_m"]))
 	# The ground's OWN tiles here, not the published ones: a tile cut fine enough to carve the canyons
 	# needs no line over them, and only the ground's set says which those are.
 	if _canyons != null:
-		_canyons.show_over(_ground.wanted(), _ground_scale())
+		_canyons.show_over(shown, _ground_scale())
+	if _markers != null:
+		_markers.refresh(_live_planet(key), _camera, _gap() / UNITS_PER_METRE)
+	# The lines float LIFT over the ground (190 m on Tarsis III) so that a fold between two facets never
+	# hides them; close in, that is above the camera. They come down with the gap: 2 % of it, no less than
+	# 5 cm, never more than they were laid at.
+	var sphere_m: float = float(_bodies[index]["radius_m"])
+	var lift: float = clampf(_gap() / UNITS_PER_METRE * LINE_LIFT_PER_GAP, LINE_LIFT_MIN_M,
+			StarMapTileLines.LIFT * sphere_m) / sphere_m
+	for lines: StarMapTileLines in [_roads, _canyons]:
+		if lines != null:
+			lines.set_lift(lift)
 	# And ask for what is wanted but has never been downloaded.
+	var published: Dictionary = StarMapRelief.published(key, shown)
 	_stream.want(key, published)
 	# The answers land in the disk cache behind the ground's back, so it has to be told: a tile drawn
 	# from a coarser ancestor a second before its own data arrived would otherwise stand for ever.
@@ -1860,7 +1957,7 @@ func _view_half_angle(index: int) -> float:
 ## spheres. The ground keeps its tiles, its queue and its builds in flight; [method _refresh_ground]
 ## hangs it back on the new sphere of the same body.
 func _park_ground() -> void:
-	for node: Node in [_ground, _roads, _canyons]:
+	for node: Node in [_ground, _roads, _canyons, _metres]:
 		if node != null and is_instance_valid(node) and node.get_parent() != null:
 			node.get_parent().remove_child(node)
 	_ground_body = -1
@@ -1896,6 +1993,11 @@ func _drop_ground() -> void:
 		if is_instance_valid(_ground):
 			_ground.queue_free()
 	_ground = null
+	if _metres != null and is_instance_valid(_metres):
+		_metres.queue_free()
+	_metres = null
+	_markers = null  # freed with _metres
+	_drawn = null
 	_ground_body = -1
 	_ground_key = ""
 
@@ -2425,12 +2527,16 @@ func _refresh_cursor_readout() -> void:
 				sphere.basis.orthonormalized(), key)
 		if local != Vector3.ZERO:
 			text = cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"]))
+	# Over an object on the ground: its name first, then where it stands.
+	var title: String = ""
+	if _marker_hover != -1 and _markers != null and not _dragging:  # a group is -2 - i (group_id)
+		title = _markers.name_of(_marker_hover)
 	# On the pad the cross stays with nothing to write: it is what hovers and selects. The mouse off the
 	# face reads nothing, whatever lies under where it last was.
-	if not on_pad and (text == "" or not _mouse_on_face):
+	if not on_pad and ((text == "" and title == "") or not _mouse_on_face):
 		_cursor_readout.hide_readout()
 	else:
-		_cursor_readout.show_at(at, text, on_pad)
+		_cursor_readout.show_at(at, text, on_pad, title)
 
 
 ## On the gamepad the cursor is put away (InputDevice.fit_cursor): the centre of the screen points
@@ -2454,7 +2560,7 @@ static func cursor_text(body_key: String, local: Vector3, metres_per_pixel: floa
 	var decimals: int = 3
 	if metres_per_pixel > 0.0 and radius_m > 0.0:
 		var degrees_per_pixel: float = rad_to_deg(metres_per_pixel / radius_m)
-		decimals = clampi(ceili(-log(degrees_per_pixel) / log(10.0)), 1, 5)
+		decimals = clampi(ceili(-log(degrees_per_pixel) / log(10.0)), 1, 6)  # 6: ~0.1 m, for metre zoom
 	var number: String = "%." + str(decimals) + "f"
 	var lon: String = number % lonlat.x
 	var lat: String = number % lonlat.y
@@ -2472,7 +2578,8 @@ func _refresh_info() -> void:
 	if _poi_focus >= 0 and _poi_focus < _poi_layer.entries.size():
 		_show_poi_info(_poi_layer.entries[_poi_focus])
 		return
-	if _cam.focus < 0 or _cam.focus >= _bodies.size():
+	# Nor for YOU: a panel saying only "no orbit of its own" tells nothing (playtest 2026-10-19).
+	if _cam.focus < 0 or _cam.focus >= _bodies.size() or _cam.focus == _player_index:
 		_info_panel.hide()
 		return
 	var e: Dictionary = _bodies[_cam.focus]
@@ -2577,8 +2684,9 @@ func _info_row(label_key: String, value: String) -> String:
 ## Turns around the FOCUSED body — which is moving, so the target is re-read every frame rather than
 ## captured on click. That is what makes "follow this planet" work at all.
 func _place_camera() -> void:
-	# The subject is AT the origin by construction — _shift was just set to it — so the camera hangs off
-	# zero and never carries a large coordinate of its own.
+	# The camera hangs off the subject, which sits just under the origin -- the origin is the ground
+	# beneath the camera (see _shift) -- so neither carries a large coordinate of its own.
+	var subject: Vector3 = _cam.look_point(_watch_position()) - _shift
 	var upright: Vector3 = _cam.direction() * _view
 	# ...unless it is leaning about a station: then it has swung off that spot, around the station, and
 	# looks at it. Stood upright again the moment there is no station under it to lean about.
@@ -2586,10 +2694,10 @@ func _place_camera() -> void:
 	if station < 0:
 		_cam.stand_upright()
 	if _cam.is_leaning():
-		var leaned: Array[Vector3] = _cam.leaning(upright, _bodies[station]["true_pos"] - _shift)
-		_camera.look_at_from_position(leaned[0], leaned[1], leaned[2])
+		var leaned: Array[Vector3] = _cam.leaning(upright, _bodies[station]["true_pos"] - _shift - subject)
+		_camera.look_at_from_position(subject + leaned[0], subject + leaned[1], leaned[2])
 	else:
-		_camera.look_at_from_position(upright, Vector3.ZERO, Vector3.UP)
+		_camera.look_at_from_position(subject + upright, subject, Vector3.UP)
 	# Both planes move with the view: no fixed pair can serve a chart spanning five orders of
 	# magnitude. `near` follows the ZOOM — at a fixed 0.05 units, following a moon from 0.01 put it
 	# behind the near plane and the screen went black. `far` follows the SYSTEM, not the zoom: tied to
@@ -2603,25 +2711,27 @@ func _place_camera() -> void:
 	# km moon, whose surface sits twenty-five km from the camera at full approach, it clipped the very
 	# thing you had come to look at. Nothing is lost by pulling it in: past this range the outer rings
 	# are already gone and the other bodies are sub-pixel.
-	# LOCAL_REACH itself gives way once you are right down on a surface: keeping moons in frame stops
-	# being worth anything a kilometre above the ground, and every unit of far plane costs near plane.
-	var reach: float = minf(LOCAL_REACH, _view * 400.0)
-	_camera.far = maxf(maxf(_view * 20.0, reach), _system_radius * 3.0 * _orbit_fade())
-	# The near plane follows the GAP TO THE SURFACE, not the distance to the body's centre. Tied to the
-	# centre it stood at a thousandth of the distance — six km out over a planet — so descending to one
-	# kilometre would have clipped away the ground being descended towards. The two agree to within a
-	# hair anywhere but the last few km, which is precisely where it matters.
-	var gap: float = maxf(_view - _guard_radius(), _view * 1.0e-5)
-	var near: float = gap * 0.05
-	# ...and never in front of YOUR marker, which is drawn over everything. Off the ground the two part
-	# company: over a station the surface is 400 km down, the plane stood 20 km out, and Moi — which
-	# brings the camera 7 km above you — cut your marker away.
-	var to_you: float = _protected_distance()
-	if to_you > 0.0:
-		near = minf(near, to_you * 0.5)
-	# Kept off the floor of the depth buffer: a near/far ratio past ~1e7 starts costing precision, and
-	# orbit lines crossing at a shallow angle are exactly what would flicker.
-	_camera.near = maxf(near, _camera.far * 1.0e-7)
+	# StarMapCamera.LOCAL_REACH itself gives way right down on a surface: keeping moons in frame is worth
+	# nothing a few metres above the ground, and every unit of far plane costs near plane. The rule is the
+	# camera's (StarMapCamera.clip_planes): the near plane follows the GAP to the ground,
+	# never the distance to the body's centre, and never stands in front of YOUR marker, which is drawn
+	# over everything (over a station the ground is 400 km down, and Moi brings the camera 7 km above you).
+	var radius: float = 0.0
+	var peak: float = 0.0
+	var index: int = _cam.anchor_body
+	if index >= 0 and index < _bodies.size():
+		radius = float(_bodies[index]["radius_m"]) * UNITS_PER_METRE
+		peak = StarMapRelief.peak_m(str(_bodies[index]["key"])) * UNITS_PER_METRE
+	var planes: Vector2 = StarMapCamera.clip_planes(_gap(), _view, _view - radius, radius, peak,
+			_system_radius * 3.0 * _orbit_fade(), _protected_distance())
+	_camera.far = planes.y
+	_camera.near = planes.x
+
+
+## The camera's gap to the ground under it, in units: the height everything near the surface is decided
+## from -- the zoom step, the near plane, the scale bar. Kept a hair above zero so nothing divides by it.
+func _gap() -> float:
+	return maxf(_view - _guard_radius(), StarMapCamera.SURFACE_CLEARANCE_M * StarMapCamera.METRE * 0.5)
 
 
 ## The selected station the camera is standing over, or -1: the one case where the orbit gesture turns
@@ -2682,6 +2792,8 @@ func _watch_position() -> Vector3:
 ## decides how close, this only decides towards what. Every zoom goes through here, so the rule cannot
 ## hold for the wheel and not for the keys.
 func _zoom_by(factor: float) -> void:
+	if _pins != null:
+		_pins.clear_pin()
 	_anchor_on_selection()
 	_cam.scale_zoom(factor, _guard_radius())
 
@@ -2724,8 +2836,30 @@ func _guard_radius() -> float:
 	# km higher than it needed to be. The local ground gives both — never inside the planet, and as low
 	# over a plain as the plain allows.
 	#
-	# Floored at the sphere so a basin can never pull the guard below the reference surface.
-	var here: float = maxf(_surface_at(index, _cam.direction()), 1.0)
+	# Not floored at the reference sphere: in a basin (Tarsis III goes 1 700 m below it) that floor held
+	# the camera up to 1.7 km above the ground it was approaching.
+	var dir: Vector3 = _cam.direction()
+	var frame: int = Engine.get_process_frames()
+	if int(_guard_memo[0]) == frame and _guard_memo[1] == dir and int(_guard_memo[3]) == index:
+		return float(_guard_memo[2])
+	var here: float = _surface_at(index, dir)
+	var guard: float = float(_bodies[index]["radius_m"]) * UNITS_PER_METRE * here
+	_guard_memo = [frame, dir, guard, index]
+	return guard
+
+
+## The guard as the height FIELD gives it, floored at the reference sphere: what chooses the ground's
+## level (_altitude_m). Never the drawn surface: the drawn surface depends on the level, the level on
+## the altitude -- the very cycle the ground rewrite removed.
+func _field_guard_radius() -> float:
+	var index: int = _cam.anchor_body
+	if index < 0 or index >= _bodies.size():
+		return 0.0
+	var sphere: MeshInstance3D = _bodies[index]["sphere"]
+	if not is_instance_valid(sphere):
+		return float(_bodies[index]["radius_m"]) * UNITS_PER_METRE
+	var local: Vector3 = sphere.basis.orthonormalized().inverse() * _cam.direction()
+	var here: float = maxf(StarMapRelief.surface_factor(str(_bodies[index]["key"]), local), 1.0)
 	return float(_bodies[index]["radius_m"]) * UNITS_PER_METRE * here
 
 
@@ -2753,6 +2887,11 @@ func _surface_at(index: int, world_up: Vector3) -> float:
 	# Being told about relief that is not yet drawn costs a little distance for a frame or two. Not
 	# being told costs the inside of a mountain.
 	var local: Vector3 = sphere.basis.orthonormalized().inverse() * world_up
+	# On the body whose ground is drawn: the SURFACE DRAWN, where you see it -- the game's chunks near the
+	# player, the chart's tiles elsewhere (DrawnGround) -- so the camera stops two metres above what is on
+	# screen, not above a reading that disagrees with it by tens of metres between samples.
+	if index == _ground_body and _drawn != null:
+		return _drawn.dist(local.normalized()) / StarMapRelief.terrain_radius_m(key, float(_bodies[index]["radius_m"]))
 	# At a level fixed for the body, never at the level being drawn. Asking at the drawn level is what
 	# closed the loop: the reading set the guard, the guard set the altitude, the altitude chose the
 	# level, and the level chose the reading. And because that fixed level is also the finest the chart
@@ -2823,7 +2962,7 @@ func _frame_body(index: int) -> void:
 	# the station faces you. Framed as a body it has no radius, and the camera ended up next to a dot
 	# with the planet filling the screen behind it.
 	#
-	# From PLAYER_FOCUS_ALTITUDE_M above the STATION, not the towns' standard framing: that one stops 1.05
+	# From PLACE_FOCUS_ALTITUDE_M above the STATION, not the towns' standard framing: that one stops 1.05
 	# radii out — 318 km over the ground — and a station 400 km up was behind the camera. The same rule as
 	# yours (_frame_on_player), from the same height helper. Followed afterwards: see _followed_normal.
 	if _bodies[index].has("station"):
@@ -2832,7 +2971,7 @@ func _frame_body(index: int) -> void:
 		var outward: Vector3 = (_bodies[index]["true_pos"] - _bodies[body]["true_pos"]).normalized()
 		var height_m: float = _height_above_ground_m(body, _bodies[index]["true_pos"], outward)
 		_frame_on_surface(body, sphere.basis.orthonormalized().inverse() * outward,
-				height_m + PLAYER_FOCUS_ALTITUDE_M)
+				height_m + PLACE_FOCUS_ALTITUDE_M)
 		return
 	var radius_units: float = float(_bodies[index]["radius_m"]) * UNITS_PER_METRE
 	_cam.watch(index, radius_units, radius_units, _watch_position())
@@ -2856,7 +2995,7 @@ func _open_poi_cluster(first: int) -> void:
 	if extent.is_empty() or _blocker < 0:
 		return
 	var across_m: float = 2.0 * float(extent["spread"]) * float(_bodies[_blocker]["radius_m"])
-	_frame_on_surface(_blocker, extent["dir"], maxf(PLAYER_FOCUS_ALTITUDE_M,
+	_frame_on_surface(_blocker, extent["dir"], maxf(PLACE_FOCUS_ALTITUDE_M,
 			across_m / (StarMapCamera.SCREEN_SPAN * CLUSTER_OPEN_FILL)))
 
 
@@ -3026,7 +3165,9 @@ func _ground_scale() -> float:
 		across = up.cross(_camera.global_basis.y)
 	if across.length() <= 1.0e-12 or _camera.is_position_behind(ground):
 		return fallback
-	var step: float = surface * 1.0e-4
+	# A tenth of the gap to the ground, and never more than that ten-thousandth: two metres up, a stick of
+	# 635 m reached far beyond the screen and projected to nothing measurable.
+	var step: float = clampf(_gap() * 0.1, 1.0e-3 * UNITS_PER_METRE, surface * 1.0e-4)
 	var pixels: float = _camera.unproject_position(ground).distance_to(
 			_camera.unproject_position(ground + across.normalized() * step))
 	if pixels <= 0.001:
@@ -3130,6 +3271,15 @@ func _input(event: InputEvent) -> void:
 			close()
 			get_viewport().set_input_as_handled()
 			return
+	# Tab: straight into the search box, as in Google Maps.
+	if keys_live and not is_typing() and is_instance_valid(_search) and _search.is_visible_in_tree() \
+			and event.is_action_pressed("star_map_search", false, true):
+		_search.grab_focus()
+		get_viewport().set_input_as_handled()
+		return
+	if _gestures != null and _gestures.input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if not _dragging:
 		return
 	# The release too: the button may come back up over a panel, which would keep it from the chart.
@@ -3166,7 +3316,7 @@ func _on_surface_input(event: InputEvent) -> void:
 ## The keys and the pad. The mouse never comes this way: the face stops it (_on_surface_input). A key
 ## typed into the search box is a letter, not a gesture.
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_open() or event is InputEventMouse or is_typing():
+	if not is_open() or not keys_live or event is InputEventMouse or is_typing():
 		return
 	if _gesture(event):
 		get_viewport().set_input_as_handled()
@@ -3175,9 +3325,24 @@ func _unhandled_input(event: InputEvent) -> void:
 ## One gesture of the chart from [param event], true when it was one. Every gesture is an action
 ## (Settings > Controls > Star map), so any of them can be moved to another button, a key or the pad.
 func _gesture(event: InputEvent) -> bool:
-	if event.is_action_pressed("star_map_select"):
-		_select_pressed(event)
-	elif event.is_action_pressed("star_map_reset"):
+	var mouse := event as InputEventMouseButton
+	# Exact: Ctrl + left is the turn, never a select as well (InputCombo's rule, for buttons).
+	if event.is_action_pressed("star_map_tilt", false, true) and mouse != null:
+		_gestures.begin_press(&"star_map_tilt", mouse)
+	elif event.is_action_pressed("star_map_select", false, true):
+		if mouse == null:
+			_select_pressed(event)  # a key or the pad: a click at once, at the pointer
+		elif mouse.double_click:
+			_pins.clear_pin()
+			_click_at(mouse.position, true)  # twice: go there
+		else:
+			_gestures.begin_press(&"star_map_select", mouse)  # a click or a drag: told apart as it moves
+	elif event.is_action_pressed("star_map_menu", false, true):
+		if mouse == null:
+			_gestures.open_context(_pointer())
+		else:
+			_gestures.begin_press(&"star_map_menu", mouse)
+	elif event.is_action_pressed("star_map_reset", false, true):
 		# The way home. Select having been reduced to selecting, something still has to back the view
 		# out — and a gesture beats hunting for the button, which on an ultrawide is a long way from
 		# where you are looking.
@@ -3191,6 +3356,47 @@ func _gesture(event: InputEvent) -> bool:
 	else:
 		return false
 	return true
+
+
+## Is one of the chart's named things under [param at] -- you, a town, a group, an object on the
+## ground? A click there is about it, not about the ground.
+func _named_under(at: Vector2) -> bool:
+	var ray_from: Vector3 = _camera.project_ray_origin(at)
+	var ray_dir: Vector3 = _camera.project_ray_normal(at)
+	return _player_under(at) or _poi_layer.pick(ray_from, ray_dir) >= 0 \
+			or _poi_layer.pick_cluster(ray_from, ray_dir) >= 0 \
+			or (_markers != null and _markers.pick(at) != -1)
+
+
+## The point of ground under [param at], on the body filling the view: {"body", "local"}, or {}.
+func _point_under(at: Vector2) -> Dictionary:
+	var body: int = _blocker
+	if body < 0 or body >= _bodies.size() or not is_instance_valid(_bodies[body]["sphere"]):
+		return {}
+	var sphere: MeshInstance3D = _bodies[body]["sphere"]
+	var local: Vector3 = StarMapRelief.surface_hit(_camera.project_ray_origin(at),
+			_camera.project_ray_normal(at), sphere.position, sphere.scale.x * MESH_RADIUS,
+			sphere.basis.orthonormalized(), str(_bodies[body]["key"]))
+	return {} if local == Vector3.ZERO else {"body": body, "local": local.normalized()}
+
+
+## Where [param point] (StarMapPins) is on screen this frame, or null when out of view.
+func _point_on_screen(point: Dictionary) -> Variant:
+	var body: int = int(point["body"])
+	if body < 0 or body >= _bodies.size() or not is_instance_valid(_bodies[body]["sphere"]):
+		return null
+	var sphere: MeshInstance3D = _bodies[body]["sphere"]
+	var up: Vector3 = sphere.basis.orthonormalized() * (point["local"] as Vector3)
+	var world: Vector3 = sphere.position + up * (sphere.scale.x * MESH_RADIUS * _surface_at(body, up))
+	if _camera.is_position_behind(world) or _behind_sphere(world, sphere):
+		return null
+	return _camera.unproject_position(world)
+
+
+func _point_text(point: Dictionary) -> String:
+	var body: int = int(point["body"])
+	return cursor_text(str(_bodies[body]["key"]), point["local"], _ground_scale(),
+			float(_bodies[body]["radius_m"]))
 
 
 ## Select, from whatever it is bound to. A mouse button clicks where the cursor is and has its own
@@ -3257,3 +3463,8 @@ func _hover_at(at: Vector2) -> void:
 		_hover = _player_index
 	else:
 		_hover = -1 if _poi_hover >= 0 or _poi_cluster_hover >= 0 else _pick(at)
+	# The objects on the ground (MapMarker) under the towns and you: those win the pointer.
+	var unclaimed: bool = not on_you and _poi_hover < 0 and _poi_cluster_hover < 0
+	_marker_hover = _markers.pick(at) if _markers != null and unclaimed else -1
+	if _markers != null:
+		_markers.hovered = _marker_hover

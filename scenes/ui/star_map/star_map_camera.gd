@@ -33,13 +33,11 @@ const ZOOM_STEP: float = 1.15
 ## How fast the +/- keys zoom, as a factor per second held.
 const KEY_ZOOM_RATE: float = 6.0
 const ORBIT_SENSITIVITY: float = 0.005
-## Floor on how far the sensitivity may fall as you close in, so orbiting never becomes unusable.
-##
-## 0.03 was far too high and defeated the formula exactly where it was needed: hard against the surface
-## it still swept nine hundred metres of ground per pixel over a patch a kilometre and a half wide —
-## most of the screen for one pixel of mouse. Two thousandths gives sixty metres a pixel there, and the
-## floor only ever binds within a whisker of the ground.
-const ORBIT_MIN_SCALE: float = 0.002
+## Floor on how far the sensitivity may fall as you close in -- a backstop only. The rate follows the gap
+## to the ground (see _orbit_scale), which already gives ground moved per pixel = 0.005 x gap: a
+## centimetre a pixel two metres up. Any real floor defeats it right where it is needed: at 0.002 a pixel
+## still swept sixty metres of ground with the camera a few metres up, the whole screen and more.
+const ORBIT_MIN_SCALE: float = 1.0e-9
 ## Pitch is clamped short of the poles: straight down the axis, the rings collapse to lines.
 const PITCH_LIMIT: float = 1.45
 ## How far a selected body is framed from, in multiples of its own radius.
@@ -73,11 +71,18 @@ const METRE: float = 1.0e-9
 ## the body's centre; at three hundred km, where this used to stop, the two are indistinguishable, and
 ## past that the old near plane would have clipped away the very surface you were descending towards.
 ##
-## A kilometre since the chart cuts its ground by the planet's own rule. The finest the ground is known to
-## is n1024, some 190 m per sample: from a hundred metres up a single sample filled the screen, which is
-## a view of the interpolation and not of the ground. A kilometre up still leaves several samples across
-## the view, and is what a ship arriving from orbit wants to see before it is flying rather than charting.
-const SURFACE_CLEARANCE_M: float = 1000.0
+## Two metres since the floor is measured against the surface the chart DRAWS (DrawnGround) -- one
+## surface for what you see and where you stop -- and the origin sits on the ground, not at the body's
+## centre (origin_point), so it holds still. The chart's ground is n1024, some 190 m per sample: from two
+## metres up that is a facet, flat but steady; the buildings and vehicles on it (MapMarker) are true size.
+const SURFACE_CLEARANCE_M: float = 2.0
+## The near plane as a share of the gap to the ground, and the depth range the buffer is asked to span:
+## past a ratio of ~1e7 between the planes, lines crossing at a shallow angle start to flicker.
+const NEAR_PER_GAP: float = 0.05
+const DEPTH_RATIO: float = 1.0e-7
+## What the far plane must always reach out in space, in units: a body's own moons and rings, which stay
+## drawn when everything else has faded. It gives way down near a surface (see clip_planes).
+const LOCAL_REACH: float = 5.0
 
 ## The view the chart opens on, and the one Reset returns to. Constants rather than literals, so the
 ## button and the initial state cannot drift apart.
@@ -263,6 +268,24 @@ func leaning(upright: Vector3, place: Vector3) -> Array[Vector3]:
 	return [position, look_at, up * sin(lean_angle) - side * cos(lean_angle)]
 
 
+## The camera's own part of a view, as data (StarMap.view_state): how far, which way round, how leant.
+func snapshot() -> Dictionary:
+	return {"zoom": zoom, "yaw": yaw, "pitch": pitch, "lean_turn": lean_turn, "lean_angle": lean_angle}
+
+
+## Stand where [param view] (snapshot) says, at once: another viewer's view is shown as it is, not
+## travelled to -- it comes ten times a second and each step is small. Missing fields stay as they are.
+func restore(view: Dictionary) -> void:
+	zoom = float(view.get("zoom", zoom))
+	yaw = float(view.get("yaw", yaw))
+	pitch = float(view.get("pitch", pitch))
+	lean_turn = float(view.get("lean_turn", lean_turn))
+	lean_angle = float(view.get("lean_angle", lean_angle))
+	_point_blend = 1.0
+	_zoom_blend = 1.0
+	_angle_blend = 1.0
+
+
 ## Select without moving a thing. A click answers "what is that?", and answering a question is no
 ## reason to throw away the view the question was asked from.
 func select(index: int, key: String) -> void:
@@ -394,6 +417,38 @@ func distance() -> float:
 	var from: float = maxf(_from_zoom, ZOOM_MIN)
 	var goal: float = maxf(zoom, ZOOM_MIN)
 	return exp(lerp(log(from), log(goal), _ease(_zoom_blend)))
+
+
+## The point on the ground under the camera, [param guard_radius] out from the subject's centre towards
+## the camera: where the chart puts its origin. Close to a surface, everything drawn sits within metres
+## of it, so float32 -- all a GPU has -- holds them to the millimetre; at the subject's centre, 6 356 km
+## off, it held them to half a metre, and the ground swam at metre zoom.
+func origin_point(live_target: Vector3, guard_radius: float) -> Vector3:
+	return look_point(live_target) + direction() * maxf(guard_radius, 0.0)
+
+
+## The camera's near and far planes, as Vector2(near, far), in units: from the [param gap] to the ground
+## below, the camera's [param view] distance to the subject's centre and [param height] above its
+## reference sphere of [param radius], the highest [param peak] of its relief above that sphere, the far
+## plane the system itself asks for ([param system_far]) and the distance to the player's marker that must
+## never be cut ([param protected], 0 for none). Static and pure: tested without a camera.
+##
+## The near plane follows the GAP: tied to the body's centre it stood 254 m out over Tarsis III and cut
+## away the ground at metre zoom. The far plane keeps its reach -- the body's moons, LOCAL_REACH -- until
+## the gap is too small for the depth buffer to span both (NEAR_PER_GAP / DEPTH_RATIO): then it comes in to
+## what the near plane leaves room for, but never short of the horizon and the horizon of the highest
+## summit behind it (a line of sight grazing a sphere). Out in space this is the old rule exactly.
+static func clip_planes(gap: float, view: float, height: float, radius: float, peak: float,
+		system_far: float, protected: float) -> Vector2:
+	var h: float = maxf(height, 0.0)
+	var top: float = maxf(peak, 0.0)
+	var ground_far: float = sqrt(h * (2.0 * radius + h)) + sqrt(top * (2.0 * radius + top))
+	var reach: float = minf(minf(LOCAL_REACH, view * 400.0), gap * NEAR_PER_GAP / DEPTH_RATIO)
+	var far: float = maxf(maxf(gap * 20.0, reach), maxf(system_far, ground_far))
+	var near: float = gap * NEAR_PER_GAP
+	if protected > 0.0:
+		near = minf(near, protected * 0.5)
+	return Vector2(maxf(near, far * DEPTH_RATIO), far)
 
 
 ## Unit vector from the subject to the camera, in the chart's world.
