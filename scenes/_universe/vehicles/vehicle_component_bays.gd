@@ -273,6 +273,7 @@ func rebind() -> int:
 func drive_spec() -> VehicleDriveSpec:
 	if vehicle != null:
 		_drive_spec.gravity = vehicle.gravity_magnitude
+		_drive_spec.air_density = vehicle.air_density_now()  # the planet's air, where the truck is
 	return _drive_spec
 
 

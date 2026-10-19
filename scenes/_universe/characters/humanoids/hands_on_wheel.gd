@@ -52,6 +52,10 @@ const FINGERS: Array[String] = ["Index", "Middle", "Ring", "Little"]
 const JOINTS: Array[String] = ["Proximal", "Intermediate", "Distal"]
 
 var _ik: TwoBoneIK3D = null
+## How far (0..1) the LEFT hand has been taken off the wheel -- the wrist raised to read the DataPad. Past
+## half way it is no longer turned to hold the rim nor closed round it: the wrist raise, which runs after
+## this rig, has the arm, and a fist held before the eyes read as a hand still gripping nothing.
+var left_released: float = 0.0
 var _lean: Lean = null
 var _arms: Array[Arm] = []
 var _grips: Array = []  # the two grips, either order, skeleton's space (drive)
@@ -330,7 +334,10 @@ func _process_modification_with_delta(_delta: float) -> void:
 	var skeleton: Skeleton3D = get_skeleton()
 	if skeleton == null:
 		return
-	for arm: Arm in _arms:
+	for i: int in _arms.size():
+		var arm: Arm = _arms[i]
+		if i == 0 and left_released > 0.5:
+			continue  # the left hand is off the wheel (see left_released)
 		var forearm: Transform3D = skeleton.get_bone_global_pose(arm.lower)
 		var hand_pose: Transform3D = skeleton.get_bone_pose(arm.hand)
 		var was: Transform3D = forearm * hand_pose

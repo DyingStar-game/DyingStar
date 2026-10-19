@@ -63,8 +63,8 @@ func target(head_now: Vector3, stance: int, follows_head: bool, moving: bool, st
 		eye = offset
 	else:
 		var point : Vector2 = _eye_point(stance, offset, still)
-		# Moving: the lean, in full and at once (a low-pass slow enough to ignore the stride would lag a
-		# whole gait change, and the neck would show meanwhile). Not moving, nothing leans.
+		# Moving: the lean in full -- the stride moves it under 3 cm, the gait ~24 cm, and the animator
+		# eases the camera to it (head_cam_lean_smooth). Not moving, nothing leans.
 		var lean : float = offset.z if moving and not at_screen else point.y
 		eye = Vector3(0.0, point.x, lean)
 	return camera_base + eye + Vector3(0.0, 0.0, -forward)

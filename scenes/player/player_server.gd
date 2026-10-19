@@ -547,15 +547,42 @@ func server_action_received(data: Dictionary) -> void:
 			if veh_h != null and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
 		"vehicle_limiter":
-			# T: speed limiter on/off. The limit itself is kept, so the same one comes back.
+			# T: speed limiter on/off. The limit itself is kept, so the same one comes back. Exclusive
+			# with the cruise control: switching the limiter on switches the cruise off.
 			var veh_sl = _piloted_vehicle(data)
 			if veh_sl != null and "limiter" in veh_sl:
 				veh_sl.limiter.toggle()
+				if veh_sl.limiter.enabled:
+					veh_sl.cruise.cancel()
+		"vehicle_cruise":
+			# Ctrl+T: cruise control on at the speed driven, or off. Exclusive with the limiter.
+			var veh_cc = _piloted_vehicle(data)
+			if veh_cc != null and "cruise" in veh_cc:
+				veh_cc.cruise.toggle(veh_cc.forward_speed_kmh())  # signed: no cruise backing up
+				if veh_cc.cruise.enabled:
+					veh_cc.limiter.enabled = false
 		"vehicle_limiter_step":
-			# Alt + wheel: move the limit one step (5 km/h) up or down, on or off alike.
+			# Wheel: one step (5 km/h) up or down of whichever holds the speed -- the cruise control
+			# when it is on, else the limiter (on or off alike, so the limit is set before it is used).
 			var veh_ss = _piloted_vehicle(data)
 			if veh_ss != null and "limiter" in veh_ss:
-				veh_ss.limiter.step(int(signf(float(data.get("dir", 0)))))
+				var dir: int = int(signf(float(data.get("dir", 0))))
+				if veh_ss.cruise.enabled:
+					veh_ss.cruise.step(dir)
+				else:
+					veh_ss.limiter.step(dir)
+		"vehicle_screen_mode":
+			# F at the cab's switchable screen: offline -> chart -> camera -> offline. Anyone seated in the
+			# vehicle, driver or passenger: the screen is the cab's, not the driver's.
+			# A dark screen (engine off, battery flat) is not switched: there is nothing on it to change.
+			var veh_sm = _boarded_vehicle(data)
+			if veh_sm != null and "screen_mode" in veh_sm and veh_sm.screens_powered():
+				veh_sm.screen_mode.cycle()
+		"vehicle_chart_view":
+			# The chart on the cab screen, handled by someone seated: everyone aboard sees that view.
+			var veh_cv = _boarded_vehicle(data)
+			if veh_cv != null and "chart_view" in veh_cv and data.get("view") is Dictionary:
+				veh_cv.chart_view.set_view(data["view"])
 		"carry_rotate":
 			# Spin the carried object around the vertical by one notch. The crate is pinned to its mount
 			# each tick, so the rotation goes into _carry_basis (body-local) rather than the body's own
@@ -814,6 +841,15 @@ func server_adopt_carried(item: Node) -> void:
 func _piloted_vehicle(data: Dictionary) -> Node:
 	var veh = _find_vehicle(str(data.get("target_uuid", "")))
 	if veh != null and veh._pilot == player:
+		return veh
+	return null
+
+## The vehicle an action targets, but ONLY when this player sits in it (any seat): what the cab
+## offers everyone aboard, its screens. null otherwise.
+func _boarded_vehicle(data: Dictionary) -> Node:
+	var veh = _find_vehicle(str(data.get("target_uuid", "")))
+	var seat: Node = player._seat_node
+	if veh != null and is_instance_valid(seat) and seat.has_method("vehicle") and seat.vehicle() == veh:
 		return veh
 	return null
 
@@ -1153,18 +1189,9 @@ func _physics_process_impl(delta: float) -> void:
 		_server_update_vault(delta)
 		return
 
-	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed.
-	var speed = player.sprint_speed if _sprint_held else _walk_speed_target
-	if _stance == 1:  # crouched: capped to crouch_speed (no sprint)
-		speed = minf(speed, player.crouch_speed)
-	elif _stance == 2:  # prone: even slower
-		speed = minf(speed, player.prone_speed)
-	if player.mining_tool.is_aiming:
-		speed *= player.mining_tool.aim_speed_factor  # slowed down in aim mode
-	if player.mining_tool.is_perforating:
-		speed = 0.0  # frozen during perforation
-	if player.hands_item != null:
-		speed *= player.carry_speed_factor  # carrying an ore slows you down (issue #124)
+	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed (Player.gait_speed,
+	# the same rule the owner's animation follows from its keys).
+	var speed: float = player.gait_speed(_sprint_held, _walk_speed_target, _stance, player.hands_item != null)
 
 	# GDD: no air control. Only the grounded branch below steers the horizontal velocity; once airborne
 	# we leave it alone, so a jump carries the run-up momentum and its distance follows the take-off

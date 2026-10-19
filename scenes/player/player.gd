@@ -79,8 +79,10 @@ var stand_body_height: float = 1.8
 @export var carry_speed_factor: float = 0.5
 ## How fast (m/s²) the horizontal velocity is steered toward the target speed, so the body ramps up
 ## and coasts to a stop instead of snapping. Applied ON THE FLOOR only — the GDD gives the jump no air
-## control, so an airborne body keeps the velocity it took off with.
-@export var acceleration: float = 10.0
+## control, so an airborne body keeps the velocity it took off with. 30 = a sprint reached or stopped
+## in 0.17 s: at 10 the body took half a second, and the round trip came on top of it (playtest
+## 2026-10-19, "the character is heavy").
+@export var acceleration: float = 30.0
 
 @export_subgroup("Vault / climb")
 ## Vault / climb: pressing JUMP while walking forward into a low obstacle or a ledge climbs ONTO it
@@ -459,6 +461,8 @@ var _last_head_yaw_sent: float = INF
 # gravity at all: see PlayerServer._server_update_frame.
 var _no_gravity_time: float = 0.0
 var _interp := NetInterpolator.new()  # smooths a REMOTE player's replicated movement
+## The owner's on-foot stutter probe (client.ini debug_move_probe=true, MovementProbe); null when off.
+var move_probe: MovementProbe = null
 # Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
 # (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
 var _owner_carrying: bool = false
@@ -717,6 +721,8 @@ func set_seated(seated: bool) -> void:
 ## no saccades.
 func net_set_local_target(local_pos: Vector3) -> void:
 	_interp.set_position_target(self, local_pos)
+	if move_probe != null and not is_instance_valid(_seat_node):
+		move_probe.on_target(local_pos, Time.get_ticks_usec())
 
 
 func net_set_target(local_pos: Vector3, local_rot: Vector3) -> void:
@@ -730,6 +736,8 @@ func net_set_target(local_pos: Vector3, local_rot: Vector3) -> void:
 ## Re-snap the interpolation after a reparent (the local frame changed).
 func net_reset_interp() -> void:
 	_interp.snap_next()
+	if move_probe != null:
+		move_probe.on_snap(Time.get_ticks_usec(), str(get_parent().name) if get_parent() != null else "")
 
 func _ride_seat(seat: Node3D) -> void:
 	var eye: Transform3D = seat.sit_transform()
@@ -860,6 +868,25 @@ func npc_goal_keep_world(new_parent: Node) -> void:
 	if old_parent is Node3D and new_parent is Node3D:
 		var goal_world: Vector3 = (old_parent as Node3D).global_transform * npc_go_to_position
 		npc_go_to_position = (new_parent as Node3D).global_transform.affine_inverse() * goal_world
+
+## The speed (m/s) the gait asks for: sprint or the wheel-chosen walk speed, capped by the stance,
+## slowed while aiming or carrying, nothing while perforating. ONE rule for the server, which moves
+## the body by it, and for the owner, whose animation and footsteps follow it from the keys.
+func gait_speed(sprint_held: bool, walk_target: float, stance_now: int, carrying: bool) -> float:
+	var speed: float = sprint_speed if sprint_held else walk_target
+	if stance_now == 1:  # crouched: capped to crouch_speed (no sprint)
+		speed = minf(speed, crouch_speed)
+	elif stance_now == 2:  # prone: even slower
+		speed = minf(speed, prone_speed)
+	if mining_tool != null:
+		if mining_tool.is_aiming:
+			speed *= mining_tool.aim_speed_factor  # slowed down in aim mode
+		if mining_tool.is_perforating:
+			speed = 0.0  # frozen during perforation
+	if carrying:
+		speed *= carry_speed_factor  # carrying an ore slows you down (issue #124)
+	return speed
+
 
 ## The ONE way a server-authoritative move leaves this body. Position and rotation are sampled LOCAL
 ## to whatever node we are a child of at this instant; the frame that goes on the wire is derived

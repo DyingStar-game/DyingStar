@@ -13,6 +13,8 @@ const ALLOWED : Dictionary = {
 	"res://ui/settings_page/settings_page.tscn": "the page exists only while the menu is open",
 	# Asked only within max_distance of the view, with the engine on, and refresh_hz <= 0.
 	"res://scenes/_universe/vehicles/rear_camera.gd": "gated by distance, power and refresh rate",
+	# Live only while the tablet is up and read (set_live); resting, it draws when the clock turns.
+	"res://scenes/_universe/props/datapad/wrist_datapad.gd": "live only while the tablet is open on it",
 	# Does not ask for it: names the mode of each SubViewport in the benchmark report.
 	"res://scenes/benchmark/benchmark_facts.gd": "names the mode in the report, never sets it",
 }

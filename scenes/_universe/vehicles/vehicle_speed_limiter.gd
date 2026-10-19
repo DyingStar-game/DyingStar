@@ -5,10 +5,9 @@ extends VehicleNetPart
 ## over the limit, and slowing down is still the driver's job.
 ##
 ## Over the limit it does what a real one does, though: it closes the throttle, and a closed throttle
-## holds the engine back (see overspeed). That is not a nicety. The game models no drag at all — no
-## air, and no rolling resistance while the pedal is down — so an engine that merely stops pushing
-## leaves a truck already above the limit rolling at that speed for ever: switching the limiter on at
-## 50 km/h with a 30 limit did nothing visible.
+## holds the engine back (see overspeed). The air and the tyres alone (VehicleResistance) would take
+## far too long to bring a truck already over the limit back down: switching the limiter on at 50 km/h
+## with a 30 limit has to be felt at once.
 ##
 ## The chosen speed is kept when the limiter is off, so the dashboard can always show it and T turns
 ## the same limit back on. Server-authoritative: the pilot only asks (toggle, one step up or down).
