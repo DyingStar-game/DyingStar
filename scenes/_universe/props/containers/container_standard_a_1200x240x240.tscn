@@ -35,7 +35,6 @@ surface_material_override/0 = ExtResource("4_cbir0")
 [node name="container_standard_1220x260x260_a_LOD2" parent="container_standard_1220x260x260_a_rework" index="2" unique_id=2070179166]
 visibility_range_begin = 40.0
 visibility_range_begin_margin = 1.0
-visibility_range_end = 150.0
 surface_material_override/0 = ExtResource("4_cbir0")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1868462076]
