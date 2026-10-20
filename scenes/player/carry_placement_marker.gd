@@ -32,6 +32,10 @@ var _built_radius: float = -1.0  # radius the current mesh was built for (-1 = n
 
 ## Wire the marker to its owner player. Called right after instancing (NOT in _ready, which runs on
 ## add_child before `player` is injected), exactly like AdminCleanupTool.setup.
+## Where the load would land now (CarryPlacement.resolve), as the disc shows it; empty when not carrying.
+var place: Dictionary = {}
+
+
 func setup(player: Node) -> void:
 	_player = player
 	_fill_mat = _make_material(FILL_COLOR)
@@ -58,6 +62,7 @@ func _physics_process(_delta: float) -> void:
 	if _player == null or _disc == null:
 		return
 	if not _player._owner_carrying:
+		place = {}
 		_held = null
 		_disc.visible = false
 		return
@@ -68,7 +73,7 @@ func _physics_process(_delta: float) -> void:
 	var excl: Array[RID] = [_player.get_rid()]
 	if _held is CollisionObject3D:
 		excl.append((_held as CollisionObject3D).get_rid())
-	var place: Dictionary = CarryPlacement.resolve(_player.get_world_3d().direct_space_state,
+	place = CarryPlacement.resolve(_player.get_world_3d().direct_space_state,
 			_player.camera_pivot.global_transform, _player.up_direction, excl, get_tree(), _held)
 	var normal: Vector3 = place["normal"]
 	_disc.global_transform = Transform3D(

@@ -5,8 +5,16 @@
 [ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_wb7vr"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="4_fq1pg"]
 
+[ext_resource type="Script" uid="uid://c1q53e1a4jpjv" path="res://scenes/_universe/props/furniture/parts/moving_part.gd" id="part_moving"]
+[ext_resource type="Script" uid="uid://8q12wied4qom" path="res://scenes/_universe/props/furniture/parts/light_switch.gd" id="part_light"]
 [sub_resource type="BoxShape3D" id="BoxShape3D_0s4u6"]
 size = Vector3(0.5213623, 0.49682617, 0.52246094)
+
+[sub_resource type="BoxShape3D" id="Box_drawer_aim"]
+size = Vector3(0.38, 0.3, 0.1)
+
+[sub_resource type="BoxShape3D" id="Box_lamp_aim"]
+size = Vector3(0.43, 0.16, 0.18)
 
 [node name="TableBed" type="StaticBody3D" unique_id=308906781]
 script = ExtResource("1_tx6w4")
@@ -35,5 +43,32 @@ surface_material_override/0 = ExtResource("4_fq1pg")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0025024414, 0.19812012, 0)
 visible = false
 shape = SubResource("BoxShape3D_0s4u6")
+
+[node name="Drawer" type="Area3D" parent="table_bed/bed_table_drawer"]
+script = ExtResource("part_moving")
+label_off = "%%HUD_DRAWER_OPEN"
+label_on = "%%HUD_DRAWER_CLOSE"
+open_slide = Vector3(0, 0, 0.2)
+duration_s = 0.4
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="table_bed/bed_table_drawer/Drawer"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.075, 0.23)
+shape = SubResource("Box_drawer_aim")
+
+[node name="Lamp" type="Area3D" parent="table_bed/bed_table_lamp"]
+script = ExtResource("part_light")
+label_off = "%%HUD_LAMP_ON"
+label_on = "%%HUD_LAMP_OFF"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="table_bed/bed_table_lamp/Lamp"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.27, -0.167)
+shape = SubResource("Box_lamp_aim")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="table_bed/bed_table_lamp/Lamp"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.36, -0.05)
+visible = false
+light_color = Color(1, 0.78, 0.55, 1)
+light_energy = 0.8
+omni_range = 3.0
 
 [editable path="table_bed"]

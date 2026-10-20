@@ -40,8 +40,16 @@ extends NetStaticBody  # the uuid facade (see NetStaticBody)
 
 var total: int = 1
 var available: int = 0
+## The furniture parts switched on in its apartments -- doors and drawers open, lamps lit -- as
+## {"<apartment>/<part>": true} (ToggledPart.state_key): replicated, kept across restarts. Off when
+## not listed, so the state of a building nobody touched is empty.
+var furniture: Dictionary = {}
 
 var _apartments_created: bool = false
+## The furniture has been shown once: from then on a change moves (a door swings), before it is set.
+var _furniture_shown: bool = false
+## Every ToggledPart of the apartments, gathered once they exist.
+var _parts: Array[ToggledPart] = []
 
 ## Margin of the levelled footprint past the walls, as in the box drawn in the scene.
 const PAD_MARGIN_M := 0.5
@@ -144,6 +152,16 @@ func apartment_of(node: Node) -> Node:
 	return node
 
 
+## True when [param surface] -- a body a load would be put down on -- is in an apartment
+## [param player_uuid] does not live in (a neighbour's, a free one): a home is its occupant's.
+static func is_foreign_home(surface: Node, player_uuid: String) -> bool:
+	var home := MarkerSpawn.building_of(surface) as SpawnBuilding if surface != null else null
+	if home == null:
+		return false
+	var room: Node = home.apartment_of(surface)
+	return room != null and home.occupant_of(room) != player_uuid
+
+
 ## The player_uuid of whoever lives in [param apartment], "" when it is free.
 func occupant_of(apartment: Node) -> String:
 	if apartment == null:
@@ -152,6 +170,47 @@ func occupant_of(apartment: Node) -> String:
 		if slot_name(apt) == str(apartment.name):
 			return str(apt.get("player_uuid", ""))
 	return ""
+
+
+## [param state] with the part [param key] flipped: listed (on) when it was not, dropped when it was.
+static func furniture_toggled(state: Dictionary, key: String) -> Dictionary:
+	var out: Dictionary = state.duplicate()
+	if out.has(key):
+		out.erase(key)
+	else:
+		out[key] = true
+	return out
+
+
+## SERVER: a validated use of [param part] (PlayerServer "furniture_use"): flip it, show it here (a
+## door's body moves with it) and replicate the new state.
+func server_toggle_part(part: ToggledPart) -> void:
+	var before: Dictionary = furniture
+	furniture = furniture_toggled(furniture, part.state_key())
+	_apply_furniture(before)
+	PropSync.of(self).server_prop_update({"furniture": furniture})
+
+
+## Show the parts as [member furniture] says: all of them at once the first time (arriving in the
+## zone, a restart), then only those that changed since [param before], moving.
+func _apply_furniture(before: Dictionary) -> void:
+	if not _apartments_created:
+		return  # shown once the apartments exist (the state can arrive first)
+	if _parts.is_empty():
+		_gather_parts(self)
+	for part in _parts:
+		var key := part.state_key()
+		var on := furniture.has(key)
+		if not _furniture_shown or on != before.has(key):
+			part.show_state(on, _furniture_shown)
+	_furniture_shown = true
+
+
+func _gather_parts(node: Node) -> void:
+	for child in node.get_children():
+		if child is ToggledPart:
+			_parts.append(child)
+		_gather_parts(child)
 
 
 ## Write each occupant's name on their door plate, and clear the plates of the free apartments.
@@ -204,8 +263,15 @@ func apply_prop_data(data: Dictionary) -> void:
 
 	_fit_terrain_pad()
 
+	var furniture_before: Dictionary = furniture
+	if data.get("furniture") is Dictionary:
+		furniture = data["furniture"]
+
 	if data.has("apartments"):
 		apartments = data["apartments"]
 		_create_apartments()
 		if not GameOrchestrator.is_server():
 			_label_plates()
+
+	if data.has("furniture") or data.has("apartments"):
+		_apply_furniture(furniture_before)

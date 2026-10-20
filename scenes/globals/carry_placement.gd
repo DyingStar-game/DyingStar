@@ -56,6 +56,7 @@ static func resolve(space: PhysicsDirectSpaceState3D, eye: Transform3D, up: Vect
 	result["position"] = pos
 	result["normal"] = (hit["normal"] as Vector3).normalized()
 	result["on_surface"] = true
+	result["collider"] = hit.get("collider")
 	_snap(result, tree, held)
 	return result
 

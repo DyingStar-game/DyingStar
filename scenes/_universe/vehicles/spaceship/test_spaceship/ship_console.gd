@@ -17,3 +17,8 @@ func _ready() -> void:
 
 func interact(interactor: Node = null):
 	emit_signal("interacted", interactor)
+
+## May [param _player] use it now? Its prompt is shown, and the action key goes to it, only then: a
+## target that says no lets the key do what it would do elsewhere (put a load down).
+func usable_by(_player: Node) -> bool:
+	return true

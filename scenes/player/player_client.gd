@@ -1197,6 +1197,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _seat_door_open(seat):
 				_enter_seat(seat)
 			return
+		# Not into someone else's home (the server refuses it too): say so, keep the load.
+		if player._owner_carrying and _placement_marker != null and SpawnBuilding.is_foreign_home(
+				_placement_marker.place.get("collider") as Node, player.client_uuid):
+			_flash_prompt(tr("%%HUD_NOT_YOUR_HOME"))
+			return
 		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
 		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
 		var aim = player._aimed_carriable()
@@ -1334,7 +1339,8 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 func _aimed_interactable() -> Interactable:
 	if not player.interact_ray.is_colliding():
 		return null
-	return player.interact_ray.get_collider() as Interactable
+	var aimed := player.interact_ray.get_collider() as Interactable
+	return aimed if aimed != null and aimed.usable_by(player) else null
 
 
 ## The cab screen under the crosshair, from the seat in [param vehicle] (null on foot: none, and the

@@ -486,6 +486,17 @@ func server_action_received(data: Dictionary) -> void:
 				kiosk.server_request_spawn()
 			else:
 				print("🏪 Kiosk spawn refused: unknown kiosk or out of range (%s)" % str(data.get("kiosk", "")))
+		"furniture_use":
+			# A door, drawer, lamp or bed of a home: the client names it (building uuid + path inside it),
+			# the server checks the player lives there, reaches it and sees it.
+			var home: Node = _find_deletable_prop(str(data.get("target_uuid", "")))
+			var part: Node = home.get_node_or_null(NodePath(str(data.get("part", "")))) \
+					if home != null else null
+			if part is FurnitureTarget and _may_use_furniture(part as FurnitureTarget):
+				(part as FurnitureTarget).server_use(player)
+			else:
+				print("🛏️ Furniture use refused for %s: not their home, out of reach or out of sight (%s)"
+						% [player.client_uuid, str(data.get("part", ""))])
 		"enter_vehicle":
 			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
@@ -720,8 +731,12 @@ func server_action_received(data: Dictionary) -> void:
 		"action":
 			print("action key pressed by player")
 			if player.hands_item != null:
-				# In hands (always solid now): release it (drop / bed-load). Shared with the auto-drop.
-				_server_drop_carried_item()
+				if _aims_into_foreign_home():
+					# Not into someone else's home: keep it, and set back the client that predicted the drop.
+					player.server_send_properties_to_client({"carrying": true})
+				else:
+					# In hands (always solid now): release it (drop / bed-load). Shared with the auto-drop.
+					_server_drop_carried_item()
 			else:
 				# Pick up the carriable the CLIENT aimed at: it sends the uuid under its crosshair, so we
 				# grab exactly that one (our own server ray can be a hair off — pitch is throttled). (#124)
@@ -2774,6 +2789,13 @@ func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
 			return false
 	return true
 
+## May this player use [param target] now: it is in their own home, within its reach of the eye, and
+## in sight.
+func _may_use_furniture(target: FurnitureTarget) -> bool:
+	return target.is_home_of(player.client_uuid) \
+			and player.interact_ray.global_position.distance_to(target.aim_point()) <= target.use_range \
+			and _can_see(target)
+
 ## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
 ## door handles): nothing solid may stand in front of the target. MUST run on the server — the client
 ## has no collisions, so its answer would always be "clear" and be trivially cheatable.
@@ -2803,6 +2825,11 @@ func _can_see(target: Node) -> bool:
 	if target is VehicleSeat:
 		var seat_veh: Node = (target as VehicleSeat).vehicle()
 		return not _line_of_sight_blocked((target as VehicleSeat).aim_point(), [seat_veh])
+	# A furniture part: the piece of furniture itself (the wardrobe around its door, the door's own
+	# leaf) never hides it; the walls of the home do.
+	if target is FurnitureTarget:
+		var part := target as FurnitureTarget
+		return not _line_of_sight_blocked(part.aim_point(), part.los_exceptions())
 	# Otherwise the target IS the solid we look at (a carriable): a solids ray must reach IT first — a
 	# wall, a bed side or the bodywork in front is hit instead, so the target is not visible.
 	return _first_solid_hit_is(target)
@@ -2946,6 +2973,13 @@ func _rotate_held(rot: Basis) -> void:
 	if not is_instance_valid(player.hands_item):
 		return
 	_carry_basis = (rot * _carry_basis).orthonormalized()
+
+## True when the load would be put down in an apartment the player does not live in (a neighbour's
+## wardrobe, a free container): a home is its occupant's. Only the action key asks; a forced drop (a
+## jump, a crouch) still lets go wherever the player stands.
+func _aims_into_foreign_home() -> bool:
+	var place: Dictionary = _place if _place.has("position") else _resolve_placement()
+	return SpawnBuilding.is_foreign_home(place.get("collider") as Node, player.client_uuid)
 
 ## Where the crate would be put down right now, from the player's replicated aim. Shared by the tick
 ## (for the E prompt) and the drop itself; the owner's client runs the very same resolution to draw
