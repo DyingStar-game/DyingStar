@@ -678,6 +678,33 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "touchscreen-tap-1.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/touchscreen-tap-1.mp3",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "touchscreen-tap-2.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/touchscreen-tap-2.mp3",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "touchscreen-tap-3.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/touchscreen-tap-3.mp3",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "truck-door-alarm.ogg",
 			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-door-alarm.ogg",
 			"author": "RanneM",
@@ -1144,6 +1171,15 @@
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "habitat_container.glb",
+			"path": "res://assets/_universe/structures/buildings/habitat_container.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
