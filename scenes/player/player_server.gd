@@ -193,7 +193,8 @@ var _npc_box_pending: NpcNavCache.NavBox = null
 var _npc_cov_ticks: int = 0
 const _NPC_COV_SLOW_EVERY: int = 30
 ## Safety-net repath period (s) while a valid route is being followed; a lost / exhausted route, a new
-## goal or a tile landing in our block repaths within half a second (see _on_npc_box_baked).
+## goal or a tile landing in our block that may change the route repaths within half a second (see
+## _on_npc_box_baked).
 const _NPC_REPATH_S: float = 3.0
 ## NPCs run their tick every Nth physics step (see _physics_process_impl); `_npc_tick_phase` spreads
 ## the crowd evenly over the N step slots.
@@ -2557,11 +2558,38 @@ func _on_npc_box_baked(box: NpcNavCache.NavBox) -> void:
 		_npc_switch_box(box)
 		_npc_path_retry_timer = randf() * 0.5
 	elif _npc_box != null and box.block == _npc_box.block:
-		# Our own tile re-baked, or a NEIGHBOUR tile of the block landed: the map just grew, and the
-		# route around the building we were stuck against may exist now.
-		_npc_path = PackedVector3Array()
-		_npc_path_idx = 0
-		_npc_path_retry_timer = randf() * 0.5
+		# Our own tile or a NEIGHBOUR tile of the block landed. Re-route only when that can change the
+		# route: the world changed in a tile our route crosses (a truck parked on it), or our route does
+		# not reach its target yet (the map just grew: the way round the building may exist now). A TTL
+		# refresh of an unchanged world changes nothing, and dropping every NPC's path on each landing
+		# was the whole block repathing at ~3 ms a query (preprod 2026-10-20: 74-123 queries/s, 30 tps).
+		if (box.world_changed and _npc_route_crosses(box)) or _npc_route_incomplete():
+			_npc_path = PackedVector3Array()
+			_npc_path_idx = 0
+			_npc_path_retry_timer = randf() * 0.5
+
+## True when there is no route left to follow, the one we have stops short of its target (partial path
+## against a wall, a gap in the map), or the recovery ladder is running (the route is not working).
+func _npc_route_incomplete() -> bool:
+	if _npc_path_idx >= _npc_path.size() or _npc_recover_step > 0 or player.npc_go_to_position == null:
+		return true
+	var _d: Vector3 = _npc_from_nav(_npc_path[_npc_path.size() - 1]) - _npc_route_target_global()
+	_d -= player.up_direction * _d.dot(player.up_direction)
+	return _d.length() > _NPC_ARRIVED_DIST
+
+## True when a leg of the rest of our route may cross `box`'s cell: each leg's XZ bounding rectangle is
+## tested against the cell (nav space, same sector), so a leg cutting a corner of the cell with no
+## waypoint inside it still counts. Conservative: a long diagonal leg may count without crossing.
+## Same block, so the path points and the cell centre are both in the block's sector frame.
+func _npc_route_crosses(box: NpcNavCache.NavBox) -> bool:
+	var _h: float = NpcNavCache.HALF
+	for i in range(maxi(_npc_path_idx - 1, 0), _npc_path.size()):
+		var _a: Vector3 = _npc_path[i]
+		var _b: Vector3 = _npc_path[mini(i + 1, _npc_path.size() - 1)]
+		if minf(_a.x, _b.x) <= box.centre.x + _h and maxf(_a.x, _b.x) >= box.centre.x - _h \
+				and minf(_a.z, _b.z) <= box.centre.z + _h and maxf(_a.z, _b.z) >= box.centre.z - _h:
+			return true
+	return false
 
 func _npc_debug_now() -> float:
 	return _npc_cache.clock.call() if _npc_cache != null else 0.0
@@ -2586,17 +2614,26 @@ func _npc_from_nav(nav_point: Vector3) -> Vector3:
 		return nav_point
 	return _npc_box.from_local(nav_point)
 
-## Ask the server for a fresh route to the goal, in nav space. Cheap enough to re-issue on a timer.
+## Ask the server for a fresh route to the goal, in nav space. Re-issued on a timer; over the server's
+## path-query budget of this tick (NpcNavCache.take_path_query) the route we have is kept and the
+## query is retried on our next tick.
 func _npc_repath() -> void:
-	_npc_path = PackedVector3Array()
-	_npc_path_idx = 0
 	if _npc_box == null or not _npc_box.published or _npc_box.freed or player.npc_go_to_position == null:
+		_npc_path = PackedVector3Array()
+		_npc_path_idx = 0
 		return
 	if NavigationServer3D.map_get_iteration_id(_npc_box.map) == 0:
+		_npc_path = PackedVector3Array()
+		_npc_path_idx = 0
 		return  # map not synced yet (async iteration); queries would silently return nothing
-	var _tq: int = Time.get_ticks_usec() if PropNet.prof_on else 0
+	if not NpcNavCache.take_path_query():
+		_npc_path_retry_timer = 0.0
+		return
+	_npc_path_idx = 0
+	var _tq: int = Time.get_ticks_usec()
 	_npc_path = NavigationServer3D.map_get_path(_npc_box.map,
 			_npc_to_nav(player.global_position), _npc_to_nav(_npc_route_target_global()), true)
+	NpcNavCache.spent_path_query(Time.get_ticks_usec() - _tq)
 	if PropNet.prof_on:
 		var _tq2: int = Time.get_ticks_usec()
 		PropNet.prof_npc_nav_usec += _tq2 - _tq

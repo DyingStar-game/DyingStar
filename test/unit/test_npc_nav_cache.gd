@@ -150,6 +150,7 @@ func test_corridor_to_the_goal_is_prefetched_within_the_block() -> void:
 
 func test_expired_box_is_rebaked_lazily_on_request_and_stays_published() -> void:
 	var box := _cache.request_box(Vector3.ZERO, Vector3(10.0, 0.0, 0.0), UP)
+	_cache.acquire(box)  # an NPC stands on it: box_ttl_s may exceed box_evict_s, a held box stays
 	_cache._pump()
 	_land_all()
 	assert_eq(box.baked_at, 0.0)
@@ -400,3 +401,43 @@ func test_perf_snapshot_counts_and_resets() -> void:
 	assert_eq(snap["bakes"], 1)
 	assert_eq(snap["bake_usec"], 250000)
 	assert_eq(NpcNavCache.perf_snapshot(false)["bakes"], 0, "reset")
+
+
+func test_world_changed_only_for_an_invalidated_published_box() -> void:
+	var box := _cache.request_box(Vector3.ZERO, Vector3(10.0, 0.0, 0.0), UP)
+	_cache.acquire(box)
+	_cache._pump()
+	assert_false(box.world_changed, "first bake: the map only grows")
+	_land_all()
+	# TTL refresh of an unchanged world.
+	_now = NpcNavCache.box_ttl_s + 10.0
+	_cache.request_box(Vector3.ZERO, Vector3(10.0, 0.0, 0.0), UP)
+	_next_frame()
+	_cache._pump()
+	assert_eq(_jobs.size(), 1, "expired: re-baked")
+	assert_false(box.world_changed, "a TTL refresh changes no route")
+	_land_all()
+	# The world changed in the box (a truck parked).
+	_now += NpcNavCache.REBAKE_MIN_INTERVAL_S + 1.0
+	_cache.invalidate_around(Vector3.ZERO, 1.0)
+	_cache.request_box(Vector3.ZERO, Vector3(10.0, 0.0, 0.0), UP)
+	_next_frame()
+	_cache._pump()
+	assert_eq(_jobs.size(), 1, "invalidated: re-baked")
+	assert_true(box.world_changed, "an invalidation may block a route")
+
+
+func test_path_queries_stop_once_the_tick_budget_is_spent() -> void:
+	var budget: float = NpcNavCache.path_query_budget_ms
+	NpcNavCache.path_query_budget_ms = 4.0
+	NpcNavCache._path_query_frame = -1
+	NpcNavCache.prof_path_deferred = 0
+	assert_true(NpcNavCache.take_path_query(), "the first query of a tick always runs")
+	NpcNavCache.spent_path_query(3000)
+	assert_true(NpcNavCache.take_path_query(), "3 ms spent of 4")
+	NpcNavCache.spent_path_query(3000)
+	assert_false(NpcNavCache.take_path_query(), "6 ms spent: the rest waits for the next tick")
+	assert_eq(NpcNavCache.prof_path_deferred, 1)
+	NpcNavCache._path_query_frame = -1  # next physics tick
+	assert_true(NpcNavCache.take_path_query(), "a new tick has a fresh budget")
+	NpcNavCache.path_query_budget_ms = budget

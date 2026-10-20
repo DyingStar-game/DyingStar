@@ -468,14 +468,15 @@ func _perf_tick(delta: float) -> void:
 			npcs += 1
 	# NPC navmesh cache: boxes = shared bakes alive, q/inflight = bakes waiting / running, parses =
 	# main-thread geometry collections in the window (with their main-thread ms), bakes = bakes landed
-	# (with wall ms from collection start to publish), obst = registered obstacles (parked vehicles).
+	# (with wall ms from collection start to publish), obst = registered obstacles (parked vehicles),
+	# deferred = NPC path queries pushed to the next tick by the per-tick budget.
 	# With 50 NPCs on one spot this must read boxes=1 parses=1 bakes=1 then ~0 — it was 50 maps and
 	# ~5 bakes/s before the cache, and that alone held the server at 5 TPS.
 	var _nav: Dictionary = NpcNavCache.perf_snapshot(true)
 	print(("[Perf] %s up=%.0fs win=%.1fs tps=%.0f/%d fps=%.0f"
 			+ "  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d"
 			+ " | chunks res=%d (on %d/%d planets) loading=%d queued=%d | planet spaces awake=%d/%d"
-			+ " | players=%d npcs=%d navmaps=%d | nav boxes=%d q=%d inflight=%d parses=%d(%.0fms) bakes=%d(%.0fms) obst=%d"
+			+ " | players=%d npcs=%d navmaps=%d | nav boxes=%d q=%d inflight=%d parses=%d(%.0fms) bakes=%d(%.0fms) obst=%d deferred=%d"
 			+ " | pending upd props=%d players=%d") % [
 		Time.get_time_string_from_system(),
 		float(Time.get_ticks_msec()) / 1000.0,
@@ -493,7 +494,7 @@ func _perf_tick(delta: float) -> void:
 		players_list.size(), npcs, NavigationServer3D.get_maps().size(),
 		_nav["boxes"], _nav["queued"], _nav["inflight"],
 		_nav["parses"], float(_nav["parse_usec"]) / 1000.0, _nav["bakes"], float(_nav["bake_usec"]) / 1000.0,
-		_nav["obstacles"],
+		_nav["obstacles"], _nav["path_deferred"],
 		props_update.size(), players_newposition.size(),
 	])
 	# Replication cost, split into the three layers the engine profiler conflates into one
