@@ -99,6 +99,9 @@ var _emote_count: int = 0
 ## Seat state: replicated the same way ("seat:<role>:<n>" / "unseat:<n>") so every remote avatar shows the
 ## sit/drive pose (a seated remote is not reparented, so this is its only seat signal).
 var _seat_count: int = 0
+## Screen taps relayed (ScreenPoke.tap_action), and when the last one was (ms).
+var _tap_count: int = 0
+var _last_tap_ms: int = -1000000
 ## Vault (climb-onto): a scripted forward+up slide over a low obstacle / ledge, replicated like the
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
@@ -488,6 +491,17 @@ func server_action_received(data: Dictionary) -> void:
 				kiosk.server_request_spawn()
 			else:
 				print("🏪 Kiosk spawn refused: unknown kiosk or out of range (%s)" % str(data.get("kiosk", "")))
+		"screen_tap":
+			# The arm taps a screen (ScreenPoke): an EVENT for the others to see and hear, nothing to
+			# validate but its bounds -- within an arm's reach of the body, no faster than a finger.
+			var p_data = data.get("p")
+			if p_data is Dictionary:
+				var p := Vector3(float(p_data.get("x", 0.0)), float(p_data.get("y", 0.0)), float(p_data.get("z", 0.0)))
+				var now: int = Time.get_ticks_msec()
+				if may_relay_tap(p, now - _last_tap_ms):
+					_last_tap_ms = now
+					_tap_count += 1
+					player.server_send_properties_to_client({"action": ScreenPoke.tap_action(_tap_count, p)})
 		"furniture_use":
 			# A door, drawer, lamp or bed of a home: the client names it (building uuid + path inside it),
 			# the server checks the player lives there, reaches it and sees it.
@@ -1728,6 +1742,10 @@ func _replicate_floating(now: bool) -> void:
 ## Seconds between pressing a door's handle on foot and the door moving: the reach-out gesture
 ## ("emote:interact") gets the hand to the handle first.
 const DOOR_REACH_S := 0.35
+## Shortest time (ms) between two relayed screen taps.
+const TAP_MIN_MS := 150
+## Farthest a tapped point may be from the body's origin (m): its eye's height and an arm's reach.
+const TAP_BODY_REACH_M := 2.6
 
 ## Below this speed (m/s) the EVA brake has nothing left to cancel: held at rest, it fires nothing.
 const STABILIZED_SPEED := 0.05
@@ -2797,6 +2815,11 @@ func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
 		if hit_dist > box_dist + 2.0:
 			return false
 	return true
+
+## True when a screen tap at [param p] (the body's frame, from its feet) [param since_ms] after the last
+## one may be relayed: within the eye's height plus an arm's reach, not faster than TAP_MIN_MS. Pure.
+static func may_relay_tap(p: Vector3, since_ms: int) -> bool:
+	return since_ms >= TAP_MIN_MS and p.length() <= TAP_BODY_REACH_M
 
 ## A bed was used (BedSpot.server_use): lie on it with empty hands when nobody does, or get up from it
 ## when lying there -- standing at its stand point, solid again. Replicated as the seat state ("bed"),

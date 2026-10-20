@@ -22,6 +22,9 @@
 [ext_resource type="Resource" uid="uid://6f0gseklfmuj" path="res://scenes/common/footsteps.tres" id="sfx_steps"]
 [ext_resource type="AudioStream" uid="uid://phrk7e54jbq2" path="res://assets/_universe/audio/sfx/characters/eva-thrust-loop.ogg" id="sfx_eva_thrust"]
 [ext_resource type="AudioStream" uid="uid://bydsk32s8ujl7" path="res://assets/_universe/audio/sfx/characters/clothes-short-1.ogg" id="sfx_clothes_short_1"]
+[ext_resource type="AudioStream" uid="uid://brhkfflu4q7ex" path="res://assets/_universe/audio/sfx/ui/touchscreen-tap-1.mp3" id="sfx_screen_tap_1"]
+[ext_resource type="AudioStream" uid="uid://daaj8l44r562t" path="res://assets/_universe/audio/sfx/ui/touchscreen-tap-2.mp3" id="sfx_screen_tap_2"]
+[ext_resource type="AudioStream" uid="uid://cyskn0p7d262m" path="res://assets/_universe/audio/sfx/ui/touchscreen-tap-3.mp3" id="sfx_screen_tap_3"]
 [ext_resource type="AudioStream" uid="uid://c4sfsi3mun6h8" path="res://assets/_universe/audio/sfx/characters/clothes-short-2.ogg" id="sfx_clothes_short_2"]
 [ext_resource type="AudioStream" uid="uid://bu27c80exvn0a" path="res://assets/_universe/audio/sfx/characters/clothes-long-1.ogg" id="sfx_clothes_long_1"]
 [ext_resource type="AudioStream" uid="uid://bsdgdkoadmvq3" path="res://assets/_universe/audio/sfx/characters/clothes-long-2.ogg" id="sfx_clothes_long_2"]
@@ -58,6 +61,7 @@ sfx_climb_2m = ExtResource("10_1u1sw")
 sfx_climb_2m_db = -19.0
 sfx_eva_thrust = ExtResource("sfx_eva_thrust")
 sfx_clothes_short = Array[AudioStream]([ExtResource("sfx_clothes_short_1"), ExtResource("sfx_clothes_short_2")])
+sfx_screen_tap = Array[AudioStream]([ExtResource("sfx_screen_tap_1"), ExtResource("sfx_screen_tap_2"), ExtResource("sfx_screen_tap_3")])
 sfx_clothes_long = Array[AudioStream]([ExtResource("sfx_clothes_long_1"), ExtResource("sfx_clothes_long_2"), ExtResource("sfx_clothes_long_3"), ExtResource("sfx_clothes_long_4")])
 seat_eye_height = 0.02
 passenger_eye_offset = 0.05

@@ -297,6 +297,16 @@ var stand_body_height: float = 1.8
 ## How the clothes rustle fades with distance (see Sfx3D.Attenuation).
 @export var sfx_clothes_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
+@export_subgroup("Screen tap")
+## The finger on a screen, one picked at random each tap, heard where it touches.
+@export var sfx_screen_tap: Array[AudioStream] = []
+## Loudness (dB) of a screen tap at its Falloff distance.
+@export_range(-40.0, 12.0, 0.5) var sfx_screen_tap_db: float = -12.0
+## Reference distance (m) of a screen tap: past it the sound starts really fading.
+@export_range(0.5, 50.0, 0.5) var sfx_screen_tap_falloff: float = 1.5
+## Hard cut-off (m) of a screen tap: further away it is not played at all.
+@export_range(1.0, 100.0, 1.0) var sfx_screen_tap_distance: float = 6.0
+
 @export_group("Ground dust")
 ## How much dust each kind of ground gives up under the feet (see SurfaceDust): a puff per step, a
 ## bigger one on landing. Null = no dust.
@@ -358,6 +368,11 @@ var wrist_mount: Node3D = null
 ## starts the gesture (WristDatapad) and tells the server, which replicates it ("datapad") so every
 ## avatar raises the same arm -- a late joiner included, which an event would miss.
 var datapad_raised: bool = false
+## The last screen tap (ScreenPoke): its point in this body's frame, and a counter that changes with
+## each one -- an EVENT, which CharacterAnimator plays once. Set on the owner as it clicks, on the others
+## by the server's "tap:" event.
+var tap_point: Vector3 = Vector3.ZERO
+var tap_serial: int = 0
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP

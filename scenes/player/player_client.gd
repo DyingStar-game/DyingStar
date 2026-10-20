@@ -140,6 +140,8 @@ var _surface_age: float = 0.0              # seconds since that sample
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
+var _last_tap_action: String = ""  # last "tap:<n>:x:y:z" seen (ScreenPoke.tap_action)
+var _last_tap_sound: AudioStream = null  # never the same tap sound twice running
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _thruster: EvaThrusterSound = null  # the EVA hiss of this avatar, built on first use
@@ -1000,8 +1002,35 @@ func _input(event: InputEvent) -> void:
 			used.release_keyboard()
 	if is_instance_valid(_pointed_gui):
 		_pointed_gui.click_at(_pointed_at, event.is_pressed())
+		if event.is_pressed():
+			_screen_tap(_pointed_at)
 	if typing or is_instance_valid(_pointed_gui):
 		get_viewport().set_input_as_handled()
+
+
+## The arm taps the screen clicked at [param at] (world): within an arm's reach of the eye
+## (ScreenPoke.REACH_M) the gesture plays here at once and the server tells the others; further, the
+## click alone.
+func _screen_tap(at: Vector3) -> void:
+	if player.camera == null or player.camera.global_position.distance_to(at) > ScreenPoke.REACH_M:
+		return
+	var p: Vector3 = player.to_local(at)
+	show_screen_tap(p)
+	player.client_send_action_to_server({"action": "screen_tap", "p": {"x": p.x, "y": p.y, "z": p.z}})
+
+
+## Play a tap at [param p] (this body's frame): the arm (CharacterAnimator reads tap_serial), and the
+## finger's sound where it touches, as it touches.
+func show_screen_tap(p: Vector3) -> void:
+	player.tap_point = p
+	player.tap_serial += 1
+	var take: AudioStream = SurfaceSounds.pick_from(player.sfx_screen_tap, _last_tap_sound)
+	if take == null:
+		return
+	_last_tap_sound = take
+	get_tree().create_timer(ScreenPoke.REACH_S).timeout.connect(func() -> void:
+		Sfx3D.play_pitched(player, take, player.sfx_screen_tap_db, player.sfx_screen_tap_falloff,
+				player.sfx_screen_tap_distance, Sfx3D.Attenuation.VERY_SHORT, randf_range(0.95, 1.05), p))
 
 
 ## The mouse turns the view, unless a panel has the pointer (_ui_focus).
@@ -1985,6 +2014,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 			if _airborne and _sfx_live:
 				_kick_dust(1.0, LAND_DUST_GRAINS)  # the landing raises more than a step
 			_airborne = false  # crisp: the server just touched ground -> end the jump loop now
+		elif action.begins_with("tap:") and action != _last_tap_action:
+			_last_tap_action = action
+			# Another body tapping a screen. Ours already played on the click; an arrival sees none (old).
+			var tapped: Variant = ScreenPoke.parse_tap(action)
+			if player.remote_player and _sfx_live and tapped != null:
+				show_screen_tap(tapped)
 		elif action.begins_with("emote:") and action != _last_emote_action:
 			_last_emote_action = action
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key

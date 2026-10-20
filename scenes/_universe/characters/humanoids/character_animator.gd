@@ -212,6 +212,9 @@ var _dormant: bool = false  # frozen off-screen / hidden (see set_dormant)
 var _hands: HandsOnWheel = null  # a driver's hands on the steering wheel (IK), null on a rig without arms
 var _hands_weight: float = 0.0  # 0 = the Driving clip alone, 1 = hands on the grips
 var _wrist_raise = null  # WristRaise: the raised-wrist rig (IK + forearm twist), see _create_mounts
+var _poke: ScreenPoke = null  # the right index tapping a screen, null on a rig without a right arm
+var _poke_serial: int = 0  # the Player.tap_serial last played
+var _poke_t: float = INF  # seconds since that tap began (INF: none playing)
 var _wrist_mount_xf: Transform3D = Transform3D.IDENTITY  # where the DataPad hangs on the forearm bone
 var _wrist_weight: float = 0.0  # 0 = arm down (animation alone) .. 1 = wrist up before the eyes
 var _wrist_shoulder: int = -1  # the left upper arm: its joint is where the raised wrist is placed from
@@ -275,6 +278,7 @@ func setup(player_body, is_local: bool) -> void:
 		# rises, blended by its own weight; the right hand keeps driving.
 		_hands = HandsOnWheel.attach(_skeleton)
 		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
+		_poke = ScreenPoke.attach(_skeleton)  # after the wrist raise: the right arm, over the clip
 		if _is_local:
 			add_head_shadow(_skeleton, _head_bone, _neck_bone)
 	if _anim != null:
@@ -451,6 +455,7 @@ func _process(delta: float) -> void:
 				* Quaternion(head_look_axis.normalized(), pitch)
 		_skeleton.set_bone_pose_rotation(_head_bone, animated * look_q)
 	_drive_wrist(delta)
+	_drive_poke(delta)
 	# Seated: drop the whole puppet so the sit pose sits IN the seat (the body origin rides at standing
 	# height). Owner camera is a sibling of the puppet, so its first-person view is unaffected.
 	if _puppet != null:
@@ -550,6 +555,26 @@ func _wheel_in_skeleton() -> Array:
 			to_skeleton * LocalFrame.of(hub, vehicle).origin]
 
 ## Raise or lower the wrist towards Player.datapad_raised, in Player.datapad_raise_time, every avatar alike.
+## A new Player.tap_serial starts the tap's envelope (ScreenPoke.envelope); its point and the elbow's
+## pole go to the rig in the SKELETON's space, through local transforms only (see _hold_wrist_pose).
+func _drive_poke(delta: float) -> void:
+	if _poke == null or _puppet == null:
+		return
+	if _player.tap_serial != _poke_serial:
+		_poke_serial = _player.tap_serial
+		_poke_t = 0.0
+	else:
+		_poke_t += delta
+	var weight: float = ScreenPoke.envelope(_poke_t)
+	if weight <= 0.0:
+		_poke.drive(0.0, Vector3.ZERO, Vector3.ZERO)
+		return
+	var skeleton_in_puppet: Transform3D = WRIST_RAISE.local_to(_skeleton, _puppet)
+	var body_in_puppet := Transform3D(_puppet_base_basis, _puppet_base_position).affine_inverse()
+	var axes: Basis = (skeleton_in_puppet.affine_inverse() * body_in_puppet).basis  # body metres -> skeleton
+	var point: Vector3 = (_puppet.transform * skeleton_in_puppet).affine_inverse() * _player.tap_point
+	_poke.drive(weight, point, _poke.shoulder() + axes * ScreenPoke.POLE_OFFSET)
+
 ## The pose is taken ONCE, as the arm starts up, then held in the SKELETON's space (it rides the puppet,
 ## so a seat, a vehicle, a weightless tip) until the arm is down again: the wrist stays put while the
 ## eyes move over its screen and the idle breathes -- a screen that swam under the crosshair could not be
