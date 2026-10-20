@@ -213,12 +213,23 @@ func _gather_parts(node: Node) -> void:
 		_gather_parts(child)
 
 
-## Write each occupant's name on their door plate, and clear the plates of the free apartments.
+## Write each occupant's name on their door plate, and clear the plates of the free apartments. Our
+## own apartment is our home on the chart (HomeLocation): its own marker steps aside for that one.
 func _label_plates() -> void:
 	var names := {}
+	var occupants := {}
 	for apt in apartments:
 		names[slot_name(apt)] = str(apt.get("player_name", ""))
+		occupants[slot_name(apt)] = str(apt.get("player_uuid", ""))
 	for apartment in $MultiMeshInstance3D.get_children():
+		var mine: bool = Globals.player_uuid != "" and occupants.get(str(apartment.name), "") == Globals.player_uuid
+		var marker := apartment.get_node_or_null("MapMarker") as MapMarker
+		if marker != null and mine:
+			marker.remove_from_group(MapMarker.GROUP)
+		elif marker != null:
+			marker.add_to_group(MapMarker.GROUP)
+		if mine:
+			HomeLocation.remember(apartment, Globals.player_uuid)
 		var plate := apartment.find_child("PlateLabel", true, false) as Label3D
 		if plate == null:
 			continue
