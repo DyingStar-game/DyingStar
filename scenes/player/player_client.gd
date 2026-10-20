@@ -6,6 +6,11 @@ const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
 ## before the editor has registered a new class_name must still compile the player.
 const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
+## The DataPad worn on the wrist, and the owner's gesture into it -- preloaded for the same reason.
+const WRIST_DATAPAD_SCENE := preload("res://scenes/_universe/props/datapad/wrist_datapad.tscn")
+const WRIST_DATAPAD := preload("res://scenes/player/wrist_datapad_controller.gd")
+## Settings > Debug > test notification: one at once, then one every this many seconds.
+const DEBUG_NOTIFICATION_S: float = 10.0
 ## Hide a remote player's name tag beyond this distance from the local camera.
 const NAME_TAG_MAX_DISTANCE: float = 25.0
 ## Gap (m) between the HEAD BONE and the label. Measured from the crown of the animated skull, not
@@ -55,6 +60,16 @@ const MAX_LANDED_CLIMB_SPEED: float = 1.0
 ## the interpolator settles between updates, so raw per-frame speed is bursty and would flicker the walk
 ## animation on and off. Exponential smoothing at this rate keeps it steady (also stabilizes Jog direction).
 const LOCO_SMOOTH_RATE: float = 8.0
+## OWNER: how long (s) the keys may ask for a gait the body does not take -- walking into a wall --
+## before the animation falls back on the motion measured. Above the round trip plus the smoothing of
+## a pull-away, or every start would be read as blocked.
+const INTENT_BLOCKED_S: float = 0.4
+## OWNER: the body counts as not following the keys while it moves at less than this share of their
+## gait (see INTENT_BLOCKED_S).
+const INTENT_FOLLOW_SHARE: float = 0.35
+## OWNER: catch-up rate (1/s) of our own drawn position on the server's. The remote avatars keep the
+## interpolator's default: their updates come in bursts, ours follow our keys (see NetInterpolator).
+const OWN_CATCH_UP_RATE: float = 25.0
 
 ## Client-side logic for a player — runs on every client instance, never on the server. Covers the
 ## OWNER (local input, camera, HUD prompts, prediction) and a REMOTE avatar (interpolation, name tag).
@@ -103,6 +118,7 @@ var _smooth_yaw_rate: float = 0.0  # low-passed turn rate (rad/s) around up: + =
 var _sprint_sent: bool = false       # last sprint-held state sent to the server (owner) — send on change
 var _vertical_sent: float = 0.0  # last strafe_up/strafe_down axis sent (weightless thrust)
 var _stabilize_sent: bool = false  # last eva_stabilize state sent (weightless brake)
+var _roll_sent: bool = false  # last roll_left/roll_right held state sent (EVA thrusters' hiss)
 var _roll_rate: float = 0.0  # weightless roll, rad/s, with momentum (see _update_roll)
 ## Path of the camera last caught holding the view, so the warning is printed on CHANGE only.
 var _camera_thief: String = ""
@@ -126,13 +142,21 @@ var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end 
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
+var _thruster: EvaThrusterSound = null  # the EVA hiss of this avatar, built on first use
+var _last_clothes: Dictionary = {}  # whole_body (bool) -> the take of that kind played last
 var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar (owner reads _owner_carrying)
 var _placement_marker: CarryPlacementMarker = null  # owner-only: the carry placement disc (see setup)
 var _airborne: bool = false        # jumping: no footsteps until the landing (see _update_footsteps)
 var _air_time: float = 0.0         # seconds spent in the air since that jump
+## OWNER: the gait the keys ask for, in the body's frame (x right, y forward, m/s), ramped like the
+## server ramps the body; and how long the body has not been following it (see INTENT_BLOCKED_S).
+var _intent: Vector2 = Vector2.ZERO
+var _intent_blocked_s: float = 0.0
 ## Full-screen system chart (F2). Built at runtime for the local player only, like the admin tool:
 ## it is a client-side view, and no remote avatar has any use for one.
 var _star_map: StarMap = null
+## The crosshair on the cab's switchable screen (camera / chart / off), and the chart hosted there.
+var _cab: CabScreenPointer = null
 ## The controls help (F1, or a long press of the chart's pad button), open until closed like the chart.
 ## Local player only.
 var _help: ControlsHelp = null
@@ -145,6 +169,18 @@ const HELP_HOLD_S: float = 0.35
 ## Full-screen services terminal (F3): the same modal treatment, for the social/mission/economy REST
 ## services. Local player only.
 var _services: TerminalUI = null
+## Where the owner's full-screen layers hang (the chart, the tablet, the notifications, the graphics
+## and debug overlays): under the tree root, OUT of the body. The server reparents the body (a
+## building, a truck bed, the lift's platform), and a reparent takes it out of the tree and back with
+## everything under it: the tablet alone is 1 400 hidden Controls, and re-entering the UI cost
+## 330 ms — the hitch stepping onto the lift (2026-10-15, test/perf/reparent_probe: 20 ms without
+## them); the chart also dropped its ground's tile service each time. A CanvasLayer draws the same
+## wherever it hangs. Freed with this role (see _notification).
+var _screens: Node = null
+## The DataPad worn on the wrist (every avatar), and, for the owner, the gesture that opens the
+## terminal from it: wrist up before the eyes, the view closing in on its screen (WristDatapad).
+var _wrist_model: Node3D = null  # WristDatapadModel
+var _wrist: Node = null  # WristDatapad
 
 ## One-time spawn init, called by Player._ready() once `player` is wired and both are in the tree.
 ## Remote avatar: just a screen-space name tag. Owner: build the dev tools, place the body, take over
@@ -159,6 +195,18 @@ func _mount_torch() -> void:
 	# The mount cancels the head bone rest AND the first-person hide scale, so this offset is plain
 	# metres in body axes on every avatar: forward is -Z, exactly as it reads in the Inspector.
 	player.flashlight.transform = Transform3D(Basis(), player.torch_head_offset)
+
+
+## Put the DataPad on the left forearm, and tell the animator where its screen is, so the raised wrist
+## turns that screen towards the eye (WristRaise).
+func _mount_wrist_datapad(animator) -> void:
+	if player.wrist_mount == null:
+		return
+	_wrist_model = WRIST_DATAPAD_SCENE.instantiate()
+	_wrist_model.carries_tablet = not player.remote_player  # ours shows the tablet (setup hands it over)
+	player.wrist_mount.add_child(_wrist_model)
+	if animator != null:
+		animator.set_wrist_screen(_wrist_model.screen_centre())
 
 
 ## Our own torch leaves our own body out of its shadows: worn on the head, it sits behind the
@@ -180,6 +228,7 @@ func setup() -> void:
 	if animator != null:
 		animator.setup(player, not player.remote_player)
 	_mount_torch()  # every avatar, owner and remote alike: the beam belongs on the head, not on a camera
+	_mount_wrist_datapad(animator)  # every avatar too, before our own body moves to its render layer
 	if player.remote_player:
 		player.camera.current = false
 		# No shadow until the owner's TorchShadowBudget hands one out (the nearest few only).
@@ -191,6 +240,9 @@ func setup() -> void:
 		_puppet_meshes.assign(player.puppet.find_children("*", "MeshInstance3D", true, false))
 		return
 	keep_out_of_torch_shadow(player.puppet, player.flashlight)
+	player._interp.speed = OWN_CATCH_UP_RATE
+	if MovementProbe.wanted():
+		player.move_probe = MovementProbe.new()
 
 	# Start at the scene's walk speed, mirrored for the debug HUD. It used to start at 0 as a "never
 	# set" marker, so the HUD read 0.0 m/s while the body actually walked at walk_speed.
@@ -238,26 +290,46 @@ func setup() -> void:
 	_placement_marker.setup(player)
 	# System chart (F2): every body as a plain sphere, with its orbit and current spin.
 	_star_map = StarMap.new()
-	player.get_node("UserInterface").add_child(_star_map)
+	_screens_root().add_child(_star_map)
 	_star_map.setup(player)  # so the chart can mark where you are
 	_help = ControlsHelp.new()
 	player.add_child(_help)
-	# Services terminal (F3): social / mission / economie, a full-screen modal. Its NAVIGATION tab hosts
+	# Services terminal (F3): social / mission / economie, a modal. Its NAVIGATION tab hosts
 	# the chart's face: the tablet shows the tab and asks, the chart opens there (F2 opens that tab);
 	# the tab left, the chart closes. The tablet never reaches for the chart on its own.
+	# It is read on the wrist: it draws on the DataPad's screen, not over the game, so it lives in that
+	# screen's viewport from the start (TerminalUI drops its autoload signals when it leaves the tree).
 	_services = TerminalUI.new()
-	player.get_node("UserInterface").add_child(_services)
+	var tablet_host: Node = _screens_root()
+	if _wrist_model != null:
+		# Read on the wrist, but its viewport hangs with the owner's other screens, OUT of the body: the
+		# arm rides the body the server reparents, and the tablet's 1 400 Controls re-entering the tree
+		# each time was the 330 ms hitch _screens removed. The arm's screen still draws it: Gui3D holds
+		# the viewport itself, not a path to it.
+		_wrist_model.viewport.reparent(tablet_host, false)
+		tablet_host = _wrist_model.viewport
+	tablet_host.add_child(_services)
 	_star_map.host_in(_services.navigation_slot())
+	_cab = CabScreenPointer.new(_star_map, _services.navigation_slot(), _send_vehicle_action)
 	_services.navigation_requested.connect(_open_navigation)
 	_services.navigation_closed.connect(_close_navigation)
 	# A section wants a place named on the chart (a point of interest being created): the chart
 	# opens in placement mode, the point comes back the same way the chart itself does.
 	_services.placement_requested.connect(_begin_placement)
 	_star_map.poi_placed.connect(_on_poi_placed)
+	# F3 and F2 open it through the wrist: arm up, view in, tablet on, pointed with the crosshair
+	# (WristDatapad).
+	_wrist = WRIST_DATAPAD.new()
+	_wrist.name = "WristDatapad"
+	player.add_child(_wrist)
+	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
+	_wrist.up_changed.connect(func(up: bool) -> void: player.get_node("UserInterface").set_crosshair_shown(not up))
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
-	player.get_node("UserInterface").add_child(_notifications)
+	_screens_root().add_child(_notifications)
+	_notifications.pushed.connect(_on_notification_pushed)
+	_watch_debug_notification()
 	ChatNetwork.notification_received.connect(_on_notification)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
@@ -267,7 +339,7 @@ func setup() -> void:
 	for panel: OverlayPanel in [graphics, DevOverlay.create(player,
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
 			_driven_vehicle, _star_map)]:
-		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
+		_screens_root().add_child(panel.setup(can_take_pointer, _menu_open))
 	# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
 	# the graphics panel.
 	var hints := PlayHintsPanel.new()
@@ -358,6 +430,7 @@ func _process(_delta: float) -> void:
 			return
 		_sample_locomotion(dt)  # one shared computation for the footsteps AND the puppet animator
 		_update_footsteps(dt)  # remote avatars too: everyone hears everyone walk
+		_update_thruster(player.thrusting, dt)
 		player._interp.update(player, dt)  # entity interpolation: glide between server updates
 		_update_name_tag()
 		return
@@ -365,6 +438,12 @@ func _process(_delta: float) -> void:
 	_update_god_mode_label()
 	_sample_locomotion(_delta)
 	_update_footsteps(_delta)
+	# The owner's own keys start the hiss with the press; the server's state adds the brake (it alone
+	# knows whether there is motion left to cancel) and wins if a key is refused.
+	# God mode is the dev flight, not EVA: no thrusters (the server says the same to everyone else).
+	_update_thruster(player.thrusting or (player.floating and not _in_god_mode()
+			and not is_instance_valid(player._seat_node)
+			and (player.input_direction != Vector2.ZERO or _vertical_sent != 0.0 or _roll_sent)), _delta)
 	_weather_listener_of().update(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
@@ -375,6 +454,7 @@ func _process(_delta: float) -> void:
 		if not seated_focus:
 			player.mouse_motion += _stick_look(_delta)  # free look at the wheel, from the stick too
 		player._ride_seat(player._seat_node)
+		_update_cab_screen(player._seat_node.vehicle() if player._seat_node.has_method("vehicle") else null)
 		if not player.gravity_parents.is_empty():
 			_refresh_up_direction(player.gravity_parents.back())  # the sunlight follows the drive
 		_replicate_look()  # seated: the body is locked, so send pitch+yaw for the remote head-look
@@ -386,10 +466,24 @@ func _process(_delta: float) -> void:
 		if seated_handle != null:
 			player.interact_label.text = _door_prompt(seated_handle)
 			player.interact_label.show()
+		elif _cab != null and _cab.aimed():
+			player.interact_label.text = _prompt(&"action", _cab.prompt_text())  # what F switches it to
+			player.interact_label.show()
+		# Seated, the crosshair points at screens too: a console beside the truck, a dispenser from the
+		# passenger seat. It only ever pointed -- the view stays the player's, the mouse stays captured --
+		# so "driving with a freed mouse", the reason seats once dropped screens, no longer holds.
+		_point_screen(seated_focus)
 		return
+	_update_cab_screen(null)  # on foot: no cab screen, the chart goes home
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
 	# the mouse look stays immediate.
-	player._interp.update_position(player, _delta)
+	player._interp.update_position(player, _delta, player.input_direction != Vector2.ZERO)
+	if player.move_probe != null:
+		if player.camera_pivot != null:
+			player.move_probe.on_camera(player.camera_pivot.position, player.input_direction != Vector2.ZERO)
+		for line: String in player.move_probe.on_frame(player.position, _delta,
+				player.input_direction != Vector2.ZERO, Time.get_ticks_usec()):
+			print(line)
 	if !player.active:
 		player.interact_label.hide()
 		return
@@ -418,6 +512,8 @@ func _process(_delta: float) -> void:
 	_apply_cursor_mode(ui_focus)
 	if not ui_focus:
 		_handle_camera_motion()
+	else:
+		_replicate_look()  # a panel holds the view, but the wrist gesture turns it to the DataPad: send it
 
 
 	player.interact_label.hide()
@@ -607,6 +703,12 @@ func _physics_process(delta: float) -> void:
 	if stabilize != _stabilize_sent:
 		_stabilize_sent = stabilize
 		player.client_send_action_to_server({"action": "eva_stabilize", "held": stabilize})
+	# roll_left / roll_right (A / E): the roll is turned here (_update_roll); the server only needs to know
+	# the thrusters fire, so that everyone else hears them. Same wire, same rule.
+	var rolling: bool = not input_locked and Input.get_axis("roll_left", "roll_right") != 0.0
+	if rolling != _roll_sent:
+		_roll_sent = rolling
+		player.client_send_action_to_server({"action": "thrust_roll", "held": rolling})
 
 	# Crouch / prone are TOGGLES, server-authoritative: each press cycles standing <-> that stance. The
 	# server owns `stance`; we only request the change (from the last echoed value) and apply the reply.
@@ -661,13 +763,17 @@ func _send_horn_input(event: InputEvent) -> void:
 	_send_vehicle_action("vehicle_horn", {"pressed": pressed, "special": special})
 
 
-## Driver: the speed limiter. T turns it on/off, Alt + wheel moves the limit one step. All three are
-## matched EXACTLY: Godot ignores modifiers otherwise, so Alt+T (the spawn wheel) would toggle the
-## limiter and a bare wheel would step it. Returns true when the event was ours, so the caller stops
-## there — a wheel notch spent on the limiter must not also change the walk speed.
+## Driver: the speed limiter and the cruise control, exclusive. T turns the limiter on/off, Ctrl+T
+## the cruise control at the speed driven, the bare wheel steps whichever holds the speed. All are
+## matched EXACTLY: Godot ignores modifiers otherwise, so Ctrl+T or Alt+T (the spawn wheel) would also
+## toggle the limiter. Returns true when the event was ours, so the caller stops there — a wheel
+## notch spent on the limiter must not also change the walk speed.
 func _handle_limiter_input(event: InputEvent) -> bool:
 	if event.is_action_pressed("vehicle_speed_limiter", false, true):
 		_send_vehicle_action("vehicle_limiter")
+		return true
+	if event.is_action_pressed("vehicle_cruise_control", false, true):
+		_send_vehicle_action("vehicle_cruise")
 		return true
 	var up: bool = event.is_action_pressed("vehicle_limiter_up", false, true)
 	if up or event.is_action_pressed("vehicle_limiter_down", false, true):
@@ -815,13 +921,14 @@ func _replicate_look() -> void:
 ## The crosshair on 3D screens (ScreenTarget): the nearest screen the ray from the eye meets within
 ## SCREEN_REACH_M is hovered every frame, and becomes the screen in use (Player.set_screen_in_use)
 ## until the player steps out of ScreenTarget.USE_RANGE_M. Nothing while a panel has the pointer
-## ([param ui_focus]) or seated. Walking up to a screen used to free the cursor and freeze the view; the
-## view stays the player's now. True while it points at one.
+## ([param ui_focus]). Seated as well as on foot: walking up to a screen used to free the cursor and
+## freeze the view, which a seat could not allow while driving; the view stays the player's now, and a
+## seated player reaches the consoles around the seat like anyone else. True while it points at one.
 func _point_screen(ui_focus: bool) -> bool:
 	var eye: Vector3 = player.camera.global_position if player.camera != null else player.global_position
 	var gui: Node3D = null
 	var point: Variant = null
-	if not ui_focus and player.camera != null and not is_instance_valid(player._seat_node):
+	if not ui_focus and player.camera != null:
 		var ray: Vector3 = -player.camera.global_basis.z
 		var nearest: float = INF
 		for candidate: Node in get_tree().get_nodes_in_group(ScreenTarget.GROUP):
@@ -859,10 +966,21 @@ func _flash_prompt(text: String) -> void:
 ## The `perforate` action (left click, right trigger) clicks the screen under the crosshair, before
 ## anything else sees it: the tool in hand must not fire into the console. While a screen's field
 ## holds the keyboard, the click first gives the keyboard back to the game, then acts on what is
-## under the crosshair, if anything (another field takes the keyboard again).
+## under the crosshair, if anything (another field takes the keyboard again). Seated too: no vehicle
+## control is on the left button or the right trigger.
 func _input(event: InputEvent) -> void:
-	if player.remote_player or event.is_echo() or not event.is_action(&"perforate") \
-			or _ui_focus() or is_instance_valid(player._seat_node):
+	# Only buttons are ours here (the cab chart's mouse buttons, the click): a mouse motion -- a
+	# thousand a second -- goes no further than this test.
+	if not (event is InputEventMouseButton or event.is_action(&"perforate")):
+		return
+	if player.remote_player or event.is_echo() or _ui_focus():
+		return
+	# The crosshair on the chart a cab screen shows: every mouse button is the chart's, the wheel too
+	# (not the limiter's then).
+	if _cab != null and _cab.input(event):
+		get_viewport().set_input_as_handled()
+		return
+	if not event.is_action(&"perforate"):
 		return
 	var typing: bool = _screen_typing()
 	if typing and event.is_pressed():
@@ -909,28 +1027,25 @@ func _unhandled_input(event: InputEvent) -> void:
 	if InputCombo.pressed(event, "toggle_microphone"):
 		player.get_node("UserInterface").toggle_microphone()
 	if InputCombo.pressed(event, "star_map") and _star_map != null and _services != null:
-		if _star_map.is_open():
+		if _star_map_open():
 			_services.close()  # the tablet goes, its NAVIGATION tab with it, the chart with the tab
 		elif event is InputEventJoypadButton:
 			# On the pad the press is only noted: let go soon, it opens the chart; held, the help shows.
 			_map_pad_down = true
 			_map_pad_held_s = 0.0
 		else:
-			_services.open_navigation()
+			_wrist.open(true)  # through the wrist, like F3: the tablet opens on its chart
 		return
 	if _map_pad_down and event is InputEventJoypadButton and event.is_action_released(&"star_map"):
 		_map_pad_down = false  # let go before HELP_HOLD_S (past it, _update_controls_help took the press)
-		if _services != null:
-			_services.open_navigation()
+		if _wrist != null:
+			_wrist.open(true)
 		return
 	if InputCombo.pressed(event, "controls_help"):
 		_open_controls_help(InputDevice.Kind.KEYBOARD_MOUSE)
 		return
-	if InputCombo.pressed(event, "toggle_services") and _services != null:
-		if _services.is_open():
-			_services.close()
-		else:
-			_services.open()
+	if InputCombo.pressed(event, "toggle_services") and _wrist != null:
+		_wrist.toggle()  # wrist up, view in, tablet on -- or all of it back
 		return
 	if _star_map_open() or _services_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y. We only ASK: the server owns the gate
@@ -1017,7 +1132,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var seated_handle = _aimed_door_handle()
 		if seated_handle != null:
 			_toggle_door(seated_handle)
-		return  # seated: `action` only operates doors, never carry
+		elif _cab != null and _cab.aimed():
+			_send_vehicle_action("vehicle_screen_mode")  # the cab screen: offline -> chart -> camera
+		return  # seated: `action` operates doors and the cab screen, never carry
 
 	# Dev instruments: they only LOOK at the world, they never act on it, so they sit before the walk
 	# guard. A seated player has player.active = false, which used to swallow every one of them at the
@@ -1066,6 +1183,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var handle = _aimed_door_handle()
 		if handle != null and not player._owner_carrying:
 			_toggle_door(handle)
+			# Heard by us only: who works a door is not replicated, the door's own sound is.
+			_play_clothes_sfx(false)
 			return
 		# Looking at a seat: E boards — but only once the seat's gating door is open (open it first by
 		# looking at the handle). A seat with no door_id boards directly. The server checks reach and
@@ -1083,6 +1202,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var aim = player._aimed_carriable()
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
+		# Reaching for something, or putting the load down: the clothes rustle on the key, for the owner
+		# (the others hear the pick-up from the replicated `carrying`).
+		if aim != null or player._owner_carrying:
+			_play_clothes_sfx(false)
 		_predict_carry_stow(aim)
 
 ## True when the seat is occupied (E won't work). Only the DRIVER seat's occupancy is
@@ -1212,6 +1335,19 @@ func _aimed_interactable() -> Interactable:
 	if not player.interact_ray.is_colliding():
 		return null
 	return player.interact_ray.get_collider() as Interactable
+
+
+## The cab screen under the crosshair, from the seat in [param vehicle] (null on foot: none, and the
+## chart goes home).
+func _update_cab_screen(vehicle: Node) -> void:
+	if _cab == null:
+		return
+	var cam: Camera3D = player.camera
+	if cam == null:
+		vehicle = null
+	var eye: Vector3 = cam.global_position if cam != null else Vector3.ZERO
+	var dir: Vector3 = -cam.global_basis.z if cam != null else Vector3.FORWARD
+	_cab.update(vehicle, eye, dir, _services_open())
 
 
 ## Prompt for a door handle under the crosshair: close it if open, else open it.
@@ -1482,6 +1618,7 @@ func _offer_play_hints() -> void:
 		PlayHints.row(&"vehicle_ignition"), PlayHints.row(&"brake"),
 		PlayHints.row(&"vehicle_lights"), PlayHints.row(&"vehicle_horn"), PlayHints.row(&"exit"),
 		PlayHints.row(&"vehicle_speed_limiter", "", 1),
+		PlayHints.row(&"vehicle_cruise_control", "", 1),
 		PlayHints.row([&"vehicle_limiter_up", &"vehicle_limiter_down"], "%%HELP_LIMITER_SET", 1),
 		PlayHints.row(&"vehicle_horn_special", "", 1), PlayHints.row(&"vehicle_reset", "", 1),
 	], _is_driving, 10)
@@ -1499,17 +1636,22 @@ func _offer_play_hints() -> void:
 ## The system chart is modal: while it is up the mouse belongs to it, so gameplay input is frozen the
 ## same way a menu freezes it.
 func _star_map_open() -> bool:
-	return _star_map != null and _star_map.is_open()
+	# On a cab screen, the chart is part of the cab, not a screen over the game: driving goes on.
+	return _star_map != null and _star_map.is_open() and not (_cab != null and _cab.hosting())
 
-## The services terminal is modal in the same way (F3).
+## The services terminal is modal in the same way (F3) -- and so is the gesture that brings it up, the
+## wrist rising and the view closing in on it.
 func _services_open() -> bool:
-	return _services != null and _services.is_open()
+	return (_services != null and _services.is_open()) or (_wrist != null and _wrist.is_busy())
+
 
 
 ## The tablet's NAVIGATION tab: it closes itself and asks for the chart, which is exactly what F2
 ## does — one full-screen modal hands over to the other, they never stand side by side.
 ## The tablet shows its NAVIGATION tab: the chart, hosted there, opens; the tab left, it closes.
 func _open_navigation() -> void:
+	if _cab != null:
+		_cab.release()  # the DataPad wants the chart: off the cab screen first
 	if _star_map != null and not _star_map.is_open():
 		_star_map.open()
 
@@ -1525,7 +1667,7 @@ func _close_navigation() -> void:
 func _begin_placement() -> void:
 	if _star_map == null or _services == null:
 		return
-	_services.open_navigation()
+	_wrist.open_with(_services.open_navigation)  # already up: the tablet asked, from the wrist
 	_star_map.begin_poi_place()
 
 
@@ -1594,6 +1736,16 @@ func spawn_box(_boxscene: String, _type: String, _coeffz: float, _coeffy: float)
 ## screen — the same 30 labels on one layer cost nothing measurable (test/perf/remote_players_bench,
 ## `sharedtag`). The labels are still owned by this role: freed with it (see _notification).
 static var _tag_layer: CanvasLayer = null
+
+## The node the owner's full-screen layers hang from ([member _screens]), made on first use.
+func _screens_root() -> Node:
+	if _screens == null:
+		_screens = Node.new()
+		_screens.name = "OwnerScreens"
+		# Deferred for the same reason as the tag layer below: the root may be busy setting up a scene.
+		get_tree().root.add_child.call_deferred(_screens)
+	return _screens
+
 
 static func _name_tag_layer(tree: SceneTree) -> CanvasLayer:
 	if not is_instance_valid(_tag_layer):
@@ -1702,6 +1854,8 @@ func _notification(what: int) -> void:
 			_name_tag.queue_free()
 		if is_instance_valid(_conversation_text):
 			_conversation_text.queue_free()
+		if is_instance_valid(_screens):
+			_screens.queue_free()
 
 ## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
 ## centered over the head and hidden when the player is behind the camera.
@@ -1759,6 +1913,10 @@ func _predict_carry_stow(aim: Node) -> void:
 ## Apply a server->client property update (position, rotation, torch, carry prompt, mining state,
 ## carry reconciliation). Only a client receives this for a player; the Player facade delegates here.
 func client_channel_data_update(data: Dictionary) -> void:
+	# Whether this update is a live change rather than the spawn snapshot, as it was on arrival:
+	# _sfx_live turns true halfway down, and a sound decided after that line must not take the
+	# snapshot of a crouched or carrying avatar for a move it just made.
+	var live: bool = _sfx_live
 	if data.has("position"):
 		player.position = Vector3(
 			data["position"]["x"],
@@ -1781,7 +1939,10 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("carry_prompt") and not player.remote_player:
 		player._carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
 	if data.has(Player.MINING_TOOL_KEY):
-		player.owns_mining_tool = bool(data[Player.MINING_TOOL_KEY])  # the server's say, owner and remotes
+		var owns := bool(data[Player.MINING_TOOL_KEY])
+		if _sfx_live and player.remote_player and owns and not player.owns_mining_tool:
+			_play_clothes_sfx(false)  # took a tool (the owner heard it on the key: _predict_carry_stow)
+		player.owns_mining_tool = owns  # the server's say, owner and remotes
 	if data.has("screen_event") and data["screen_event"] is Dictionary:
 		# What a 3D screen near this player is doing (ScreenTarget.announce), whoever used it: every
 		# client around shows it. Stamped, so a re-broadcast of an old one is ignored.
@@ -1809,10 +1970,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key
 		elif action.begins_with("seat:") and action != _last_seat_action:
 			_last_seat_action = action
+			if _sfx_live:
+				_play_clothes_sfx(true)  # sitting down
 			if player.remote_player:
 				player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
 		elif action.begins_with("unseat") and action != _last_seat_action:
 			_last_seat_action = action
+			if _sfx_live:
+				_play_clothes_sfx(true)  # getting up
 			if player.remote_player:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
 			elif player._seat_vehicle_uuid != "":
@@ -1834,9 +1999,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 				_play_vault_sfx(action.split(":")[1])
 	_sfx_live = true  # from now on, replicated changes are real events → they get their sound
 	if data.has("stance"):
-		player.stance = int(data["stance"])  # server-owned: owner reads the echo AND remotes get the pose
+		var stance := int(data["stance"])
+		if live and stance != player.stance:
+			_play_clothes_sfx(true)  # crouching, lying down, standing back up
+		player.stance = stance  # server-owned: owner reads the echo AND remotes get the pose
 	if data.has("floating"):
 		player.floating = bool(data["floating"])  # weightless: no footsteps (see _update_footsteps)
+	if data.has("thrusting"):
+		player.thrusting = bool(data["thrusting"])  # EVA hiss (see _update_thruster)
 	# Replicated mining state (tool visibility, camera aim, perforation) is applied
 	# on remote players by the MiningTool component.
 	# The OWNER obeys the authoritative tool state as well. It used to be applied on remote avatars
@@ -1857,7 +2027,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["tools"] = ""  # a record from before the dispensers: no tool shown that is not owned
 		player.mining_tool.apply_remote(data)
 		if data.has("carrying"):
-			_remote_carrying = bool(data["carrying"])  # drives the remote avatar's carry pose
+			var carrying := bool(data["carrying"])
+			if live and carrying and not _remote_carrying:
+				_play_clothes_sfx(false)  # took a crate (the owner heard it on the key: _predict_carry_stow)
+			_remote_carrying = carrying  # drives the remote avatar's carry pose
+		if data.has("datapad"):
+			player.datapad_raised = bool(data["datapad"])  # its wrist up, reading its DataPad (WristRaise)
 		if data.has("seat"):
 			# The seat STATE ("driver" / "passenger" / ""), not the "seat:"/"unseat:" EVENT handled
 			# above. Both arrive together on a live change, and only this one survives in Horizon's
@@ -1930,11 +2105,24 @@ func _sample_locomotion(delta: float) -> void:
 			yaw_rate = prev_flat.normalized().signed_angle_to(now_flat.normalized(), up) / dt
 	_loco_last_forward = forward_now
 	_smooth_yaw_rate = 0.0 if teleport else lerpf(_smooth_yaw_rate, yaw_rate, clampf(delta * LOCO_SMOOTH_RATE, 0.0, 1.0))
+	var shown := Vector2(_smooth_right, _smooth_forward)  # x right, y forward (m/s)
+	var shown_speed: float = _smooth_speed
+	if _owner_gait_from_keys() and not teleport:
+		var asked: float = player.gait_speed(_sprint_sent, _walk_speed_target, player.stance, player._owner_carrying)
+		_intent = intent_step(_intent, player.input_direction, asked, player.acceleration, delta)
+		var following: bool = _smooth_speed >= _intent.length() * INTENT_FOLLOW_SHARE
+		_intent_blocked_s = 0.0 if following else _intent_blocked_s + delta
+		if _intent_blocked_s < INTENT_BLOCKED_S:
+			shown = _intent
+			shown_speed = _intent.length()
+	else:
+		_intent = Vector2(_smooth_right, _smooth_forward)  # the keys take over from the motion as it is
+		_intent_blocked_s = 0.0
 	player.locomotion_sample = {
-		"planar_speed": _smooth_speed,
+		"planar_speed": shown_speed,
 		"climb_speed": absf(climb) / dt,
-		"forward": _smooth_forward,
-		"right": _smooth_right,
+		"forward": shown.y,
+		"right": shown.x,
 		"airborne": _airborne,
 		"seated": player.seated_role != "",  # replicated seat state (see Player.seated_role)
 		"driver": player.seated_role == "driver",
@@ -1943,6 +2131,27 @@ func _sample_locomotion(delta: float) -> void:
 		"yaw_rate": _smooth_yaw_rate,  # turn rate (rad/s) around up, for the in-place turn animation
 		"teleport": teleport,
 	}
+
+## OWNER on foot: the animation and the footsteps follow the gait OUR KEYS ask for, instead of the
+## motion measured on the body -- which only moves once the server has answered (a round trip), and is
+## smoothed on top (LOCO_SMOOTH_RATE) because it arrives in 30 Hz bursts. Pressing Shift showed the
+## run 0.6 s later (playtest 2026-10-19). Only we see our own animation, so this guess never becomes
+## state (ADR 0002); the remote avatars keep the measured motion. Not seated, weightless, in the air
+## or in god mode: there the keys do not set the gait.
+func _owner_gait_from_keys() -> bool:
+	return not player.remote_player and player.seated_role == "" and not player.floating \
+			and not player.god_mode and not _airborne
+
+
+## The gait the keys ask for after one frame, in the body's frame (x right, y forward, m/s): from
+## [param current] toward [param input] (the move axes, -y forward as the server reads them) at
+## [param speed], no faster than [param acceleration] -- the ramp the server gives the body. Static and
+## pure: tested without a player.
+static func intent_step(current: Vector2, input: Vector2, speed: float, acceleration: float,
+		delta: float) -> Vector2:
+	var target: Vector2 = Vector2(input.x, -input.y).normalized() * speed if input != Vector2.ZERO else Vector2.ZERO
+	return current.move_toward(target, acceleration * maxf(delta, 0.0))
+
 
 ## Roll (roll_left / roll_right) about the view axis, weightless only: with a gravity area the body is
 ## held upright by orient_player. With momentum: the key accelerates the roll, and a released roll dies out
@@ -2047,6 +2256,30 @@ func _play_torch_sfx(on: bool) -> void:
 		Sfx3D.play(player, player.sfx_torch_off, player.sfx_torch_off_db, player.sfx_torch_off_falloff,
 				player.sfx_torch_off_distance, player.sfx_torch_off_attenuation)
 
+## The body starts an action: its clothes rustle, a [param whole_body] move (into or out of a seat, a
+## stance change) with a long take, a quick one (a crate, a tool, a door) with a short take.
+func _play_clothes_sfx(whole_body: bool) -> void:
+	var take: AudioStream = SurfaceSounds.pick_from(
+			player.sfx_clothes_long if whole_body else player.sfx_clothes_short, _last_clothes.get(whole_body))
+	if take == null:
+		return
+	_last_clothes[whole_body] = take
+	var jitter: float = player.sfx_clothes_pitch_jitter
+	var db: float = player.sfx_clothes_long_db if whole_body else player.sfx_clothes_short_db
+	Sfx3D.play_pitched(player, take, db, player.sfx_clothes_falloff,
+			player.sfx_clothes_distance, player.sfx_clothes_attenuation, 1.0 + randf_range(-jitter, jitter))
+
+## The EVA thrusters' hiss follows [param on] (built on first use, never without a stream).
+func _update_thruster(on: bool, delta: float) -> void:
+	if _thruster == null:
+		if not on or player.sfx_eva_thrust == null or Sfx3D.muted():
+			return
+		_thruster = EvaThrusterSound.new()
+		_thruster.setup(player.sfx_eva_thrust, player.sfx_eva_thrust_db, player.sfx_eva_thrust_falloff,
+				player.sfx_eva_thrust_distance, player.sfx_eva_thrust_attenuation)
+		player.add_child(_thruster)
+	_thruster.update(on, delta)
+
 ## The jump effort (not the landing).
 func _play_jump_sfx() -> void:
 	Sfx3D.play(player, player.sfx_jump, player.sfx_jump_db, player.sfx_jump_falloff,
@@ -2097,27 +2330,60 @@ func _on_notification(envelope: Dictionary) -> void:
 		ChatNetwork.resolve_peer_name(unknown)
 
 
+## A notification landed: the wrist DataPad beeps, and while it is unread blinks and beeps again every
+## few seconds until it is next read (WristDatapadModel.set_notified). Being read right now -- the wrist
+## up before the eyes -- the one beep is enough.
+func _on_notification_pushed() -> void:
+	if _wrist_model == null:
+		return
+	if _wrist != null and _wrist.is_up():
+		_wrist_model.beep()
+	else:
+		_wrist_model.set_notified(true)
+
+
+## Settings > Debug > test notification: while it is on, a line now and one every DEBUG_NOTIFICATION_S,
+## with its sound and the wrist's light -- the whole path of a notification, without waiting for one.
+func _watch_debug_notification() -> void:
+	var timer := Timer.new()
+	timer.wait_time = DEBUG_NOTIFICATION_S
+	timer.timeout.connect(func() -> void: _notifications.push(tr("%%DEBUG_TEST_NOTIFICATION")))
+	add_child(timer)
+	var follow := func(on: bool) -> void:
+		if on:
+			_notifications.push(tr("%%DEBUG_TEST_NOTIFICATION"))
+			timer.start()
+		else:
+			timer.stop()
+	SettingsManager.debug.watch(&"notification_debug", follow)
+	if SettingsManager.debug.is_on(&"notification_debug"):
+		follow.call(true)
+
+
 ## Open what the notification is about, so the toast is a shortcut and not a dead end. The id is
 ## [param app] of TerminalUI.APPS and [param segment] the tab to land on.
 func _on_notification_clicked(envelope: Dictionary) -> void:
 	if _services == null:
 		return
 	var type := str(envelope.get("type", ""))
+	var segment: int = -1
 	match type:
 		"friend_request_received":
 			# The contacts segment carries the requests too: one page, requests at the top.
-			_services.open_app("social", 0)
+			segment = 0
 		"friend_request_accepted":
 			# The contacts segment: the list just gained them.
-			_services.open_app("social", 0)
+			segment = 0
 		"corporation_joined":
 			# No roster tab for us — the corporations segment shows the members.
-			_services.open_app("social", 2)
+			segment = 2
 		_:
 			# A type we do not know has no screen behind it. Open the app whose area owns it rather
 			# than dropping the click: something is better than nothing, and it cannot be wrong in a
 			# harmful way (the app is merely opened, nothing is sent).
-			_services.open_app("social", -1)
+			segment = -1
+	# The tablet is read on the wrist: the arm comes up first, the app opens once it is there.
+	_wrist.open_with(_services.open_app.bind("social", segment))
 
 
 ## Display names we already hold for social ids: ChatNetwork's own DM registry (a friend the player

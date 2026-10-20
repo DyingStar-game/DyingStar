@@ -81,10 +81,19 @@ extends Node3D
 ## trips (a short run may never reach max_speed).
 @export_range(0.1, 10.0, 0.01, "suffix:m/s") var acceleration: float = 2.0
 
-@export_group("Start / stop sound")
+@export_group("Sounds")
+## The winch's hum at the top while the lift runs: the very resource Base/Animated Axis/WinchHum plays
+## (sounds/winch.tres), shown here so the lift's sounds are tuned from the lift. Edit its values here;
+## picking another resource here changes nothing (the node keeps its own).
+@export var sound_winch: LoopSound
+## The cart's rolling while the platform drawn here moves: the very resource Platform System/RollingNoise
+## plays (sounds/rolling.tres) -- that node is only spawned at run time, so here is where it is reached.
+## Edit its values here; picking another resource here changes nothing.
+@export var sound_rolling: LoopSound
+## The departure alarm at both landings while the lift runs: the very resource both <landing>/Departure
+## Alarm play (sounds/alarm.tres). Edit its values here; picking another resource here changes nothing.
+@export var sound_alarm: LoopSound
 ## Played at the platform when it starts or stops (each client, as it hears the lift change state).
-## The winch's hum (Base/Animated Axis/WinchHum) and the cart's rolling (Platform System/RollingNoise)
-## run in between: set them on those nodes.
 @export var sfx_start_stop: AudioStream = preload(
 		"res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-start-stop.mp3")
 ## Loudness in decibels (0 = the sample's own level, negative = quieter).

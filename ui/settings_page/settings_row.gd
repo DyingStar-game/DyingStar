@@ -7,6 +7,12 @@ extends PanelContainer
 ## change. The controls page already reads well for this exact reason — each of its lines IS a
 ## button, so the whole row highlights.
 
+## True (the default) when the line's first Label is a caption, which then breaks between words rather
+## than widen the row (_wrap_caption). False for a line laid out otherwise: a credit line's first label
+## is an author, one of two equal halves; taken for a caption it grabbed three quarters of the width and
+## pushed every work to the right edge (2026-10-16).
+var caption_first : bool = true
+
 var _idle : StyleBoxFlat
 var _hover : StyleBoxFlat
 
@@ -40,7 +46,8 @@ func _ready() -> void:
 	_watch(self)
 	for node in find_children("*", "Control", true, false):
 		_watch(node as Control)
-	_wrap_caption()
+	if caption_first:
+		_wrap_caption()
 
 
 ## The row's caption — the first item of its line, a Label — breaks between words rather than

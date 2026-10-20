@@ -22,6 +22,7 @@
 				"speed",
 				"velocity_local",
 				"wheel_kmh",
+				"grounded",
 				"power",
 				"handbrake",
 				"headlights",
@@ -30,7 +31,11 @@
 				"seats",
 				"components",
 				"limiter_on",
-				"limiter_kmh"
+				"limiter_kmh",
+				"cruise_on",
+				"cruise_kmh",
+				"rear_screen",
+				"chart_view"
 			]
 		},
 		{
@@ -44,6 +49,14 @@
 				"cargo_mass",
 				"suspension",
 				"odometer_km"
+			]
+		},
+		{
+			"zone": 2,
+			"distance": 200.0,
+			"frequency": 30.0,
+			"properties": [
+				"suspension_shocks"
 			]
 		},
 		{

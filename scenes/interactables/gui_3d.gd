@@ -8,6 +8,13 @@ extends Node3D
 @export var node_quad: MeshInstance3D
 ## Area3D picked by the mouse ray: its hover/input events are converted and pushed into node_viewport.
 @export var node_area: Area3D
+## Map a hit to the screen through the mesh's own UVs instead of its local XY plane: for a screen
+## modelled tilted inside its mesh (the truck's middle one leans ~33 degrees in its own frame, and the
+## XY reading pointed beside the crosshair). Needs a flat mesh whose UVs span the face linearly 0..1 --
+## what a screen showing a viewport has anyway. Off: the XY plane, as every other screen.
+@export var uv_frame: bool = false
+
+var _frame: Array = []  # uv_frame: [origin, du, dv] in the mesh's frame, P(u, v) = origin + u du + v dv
 
 ## Used for checking if the mouse is inside the Area3D.
 var is_mouse_inside: bool = false
@@ -104,10 +111,16 @@ func hit(from: Vector3, dir: Vector3, reach: float) -> Variant:
 		return null
 	var xf: Transform3D = node_quad.global_transform
 	var normal: Vector3 = xf.basis.z.normalized()
+	var on_plane: Vector3 = xf.origin
+	if uv_frame:
+		var frame: Array = _uv_frame()
+		# A normal goes through the inverse-transpose: a screen scaled unevenly would tilt it otherwise.
+		normal = (xf.basis.inverse().transposed() * (frame[1] as Vector3).cross(frame[2])).normalized()
+		on_plane = xf * (frame[0] as Vector3)
 	var facing: float = dir.dot(normal)
 	if is_zero_approx(facing):
 		return null
-	var t: float = (xf.origin - from).dot(normal) / facing
+	var t: float = (on_plane - from).dot(normal) / facing
 	if t < 0.0 or t > reach:
 		return null
 	var point: Vector3 = from + dir * t
@@ -119,6 +132,24 @@ func hit(from: Vector3, dir: Vector3, reach: float) -> Variant:
 func pointer_at(point: Vector3) -> void:
 	var motion := InputEventMouseMotion.new()
 	_push_at(motion, point)
+
+
+## Hand the interface a real mouse event (a motion, any button, the wheel) as if it happened at
+## [param point] (a hit()): a screen read with a free cursor (the wrist DataPad, WristDatapad), whose
+## pointer is the mouse itself rather than the crosshair. A copy is pushed: the caller's event is left as
+## the window gave it.
+func push_at(input_event: InputEventMouse, point: Vector3) -> void:
+	_push_at(input_event.duplicate(), point)
+
+
+## The point (world) on the screen mesh at [param uv] (0..1, (0, 0) the top-left corner): the inverse
+## of _uv_of, for a pointer kept in the screen's own coordinates (the wrist DataPad, WristDatapad).
+func point_at_uv(uv: Vector2) -> Vector3:
+	if uv_frame:
+		var frame: Array = _uv_frame()
+		return node_quad.global_transform * ((frame[0] as Vector3) + uv.x * frame[1] + uv.y * frame[2])
+	var size: Vector2 = _surface_size()
+	return node_quad.global_transform * Vector3((uv.x - 0.5) * size.x, (0.5 - uv.y) * size.y, 0.0)
 
 
 ## Press or release ([param pressed]) the left button at [param point] (a hit()).
@@ -147,8 +178,55 @@ func release_keyboard() -> void:
 ## orientation (see _mouse_input_event).
 func _uv_of(point: Vector3) -> Vector2:
 	var local: Vector3 = node_quad.global_transform.affine_inverse() * point
+	if uv_frame:
+		return uv_in_frame(local, _uv_frame())
 	var size: Vector2 = _surface_size()
 	return Vector2(local.x / size.x + 0.5, -local.y / size.y + 0.5)
+
+
+## The mesh's UV frame (uv_frame), taken once from its first surface: three of its vertices whose UVs
+## are not in a line give where UV (0, 0) is and which way u and v run.
+func _uv_frame() -> Array:
+	if _frame.is_empty():
+		var arrays: Array = node_quad.mesh.surface_get_arrays(0)
+		_frame = frame_from(arrays[Mesh.ARRAY_VERTEX], arrays[Mesh.ARRAY_TEX_UV])
+	return _frame
+
+
+## [origin, du, dv] such that P(u, v) = origin + u du + v dv runs through [param verts] at their
+## [param uvs] (a flat mesh mapped linearly). Static and pure.
+static func frame_from(verts: PackedVector3Array, uvs: PackedVector2Array) -> Array:
+	var a: int = 0
+	for b: int in range(1, verts.size()):
+		for c: int in range(b + 1, verts.size()):
+			var ub: Vector2 = uvs[b] - uvs[a]
+			var uc: Vector2 = uvs[c] - uvs[a]
+			var det: float = ub.x * uc.y - uc.x * ub.y
+			if absf(det) < 1e-6:
+				continue
+			var pb: Vector3 = verts[b] - verts[a]
+			var pc: Vector3 = verts[c] - verts[a]
+			var du: Vector3 = (uc.y * pb - ub.y * pc) / det
+			var dv: Vector3 = (ub.x * pc - uc.x * pb) / det
+			return [verts[a] - uvs[a].x * du - uvs[a].y * dv, du, dv]
+	return [Vector3(-0.5, 0.5, 0.0), Vector3.RIGHT, Vector3.DOWN]  # degenerate: a unit quad's frame
+
+
+## The UV of [param local] (the mesh's frame) in [param frame] (frame_from): its least-squares
+## coordinates along du and dv. Static and pure.
+static func uv_in_frame(local: Vector3, frame: Array) -> Vector2:
+	var rel: Vector3 = local - (frame[0] as Vector3)
+	var du: Vector3 = frame[1]
+	var dv: Vector3 = frame[2]
+	var uu: float = du.dot(du)
+	var uv: float = du.dot(dv)
+	var vv: float = dv.dot(dv)
+	var det: float = uu * vv - uv * uv
+	if is_zero_approx(det):
+		return Vector2(-1.0, -1.0)
+	var ru: float = rel.dot(du)
+	var rv: float = rel.dot(dv)
+	return Vector2((ru * vv - rv * uv) / det, (rv * uu - ru * uv) / det)
 
 
 ## Place [param input_event] at [param point] in the viewport's pixels, relative motion included, and push it.

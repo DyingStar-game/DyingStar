@@ -155,6 +155,7 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
                     "license": metadata.license,
                     "author": metadata.author,
                     "notes": metadata.notes,
+                    "albedo_color": result.albedo_color,
                 },
             )
         except exporter.ExportError as error:

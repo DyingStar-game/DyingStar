@@ -106,6 +106,17 @@ func test_a_line_is_the_author_and_the_work() -> void:
 	assert_eq(texts, ["Koothka", "A starry night"])
 
 
+## Author and work share the line in two equal halves, cut with an ellipsis, never wrapped: taken for a
+## settings caption, the author grabbed three quarters of the width and the works hugged the right edge.
+func test_the_author_and_the_work_are_two_equal_halves() -> void:
+	var page := _page()
+	await wait_process_frames(1)
+	var labels : Array[Node] = _rows(page)[0].find_children("*", "Label", true, false)
+	for label: Label in labels:
+		assert_eq(label.autowrap_mode, TextServer.AUTOWRAP_OFF, "%s: on one line" % label.text)
+		assert_eq(label.size_flags_stretch_ratio, 1.0, "%s: an equal half" % label.text)
+
+
 func test_lines_sorted_by_author_then_work() -> void:
 	var lines : Array[Dictionary] = CreditsSettingsPage.lines_of(FIXTURE.sfx)
 	assert_eq(lines.map(func(l: Dictionary) -> String: return "%s %s" % [l.author, l.work]),

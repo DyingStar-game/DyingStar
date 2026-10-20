@@ -81,6 +81,7 @@ var _sprint_held: bool = false
 var _vertical_thrust: float = 0.0
 ## eva_stabilize held (X by default): the weightless brake. Only weightless movement reads it.
 var _stabilizing: bool = false
+var _rolling: bool = false  # roll_left / roll_right held: the roll itself is the client's, the hiss is ours
 ## How long the body has had no gravity area, to publish `floating` only once it is real (a reparent
 ## drops and re-enters every area for a frame or two).
 var _weightless_time: float = 0.0
@@ -325,7 +326,7 @@ func spawn_state() -> Dictionary:
 	var seat: Node = player._seat_node
 	var role: String = "" if not is_instance_valid(seat) \
 			else ("driver" if seat.is_driver_seat() else "passenger")
-	return {"stance": _stance, "floating": player.floating, "seat": role}
+	return {"stance": _stance, "floating": player.floating, "thrusting": player.thrusting, "seat": role}
 
 ## Physics step: apply a pending stance change now that the space state is valid. Standing up to a taller
 ## stance needs headroom (else we drop the request and stay low). Replicates only on an actual change.
@@ -369,6 +370,8 @@ func server_action_received(data: Dictionary) -> void:
 			_vertical_thrust = clampf(float(data.get("value", 0.0)), -1.0, 1.0)  # weightless up / down
 		"eva_stabilize":
 			_stabilizing = bool(data.get("held", false))  # weightless brake
+		"thrust_roll":
+			_rolling = bool(data.get("held", false))  # EVA roll keys (only heard: see Player.thrusting)
 		"stance":
 			# Movement stance toggle (0 standing / 1 crouched / 2 prone). Server-authoritative: we set it,
 			# cap the speed + resize the collider from it, and replicate so remotes show the pose. We run in
@@ -390,6 +393,11 @@ func server_action_received(data: Dictionary) -> void:
 			# see the torch (replicated as a state, not the action — a missed event can't desync it).
 			player.flashlight.visible = not player.flashlight.visible
 			player.server_send_properties_to_client({"flashlight": player.flashlight.visible})
+		"datapad":
+			# The wrist raised to read the DataPad (or lowered): the state the owner asks for, replicated as
+			# a state so every avatar, a late joiner included, holds the same arm up (WristRaise).
+			player.datapad_raised = bool(data.get("on", false))
+			player.server_send_properties_to_client({"datapad": player.datapad_raised})
 		"god_mode":
 			# God mode (dev free-flight): flip the authoritative state; _physics_process then flies
 			# the body where the camera looks with no gravity. Zero the velocity so leaving EVA doesn't
@@ -539,15 +547,42 @@ func server_action_received(data: Dictionary) -> void:
 			if veh_h != null and veh_h.has_method("toggle_handbrake"):
 				veh_h.toggle_handbrake()
 		"vehicle_limiter":
-			# T: speed limiter on/off. The limit itself is kept, so the same one comes back.
+			# T: speed limiter on/off. The limit itself is kept, so the same one comes back. Exclusive
+			# with the cruise control: switching the limiter on switches the cruise off.
 			var veh_sl = _piloted_vehicle(data)
 			if veh_sl != null and "limiter" in veh_sl:
 				veh_sl.limiter.toggle()
+				if veh_sl.limiter.enabled:
+					veh_sl.cruise.cancel()
+		"vehicle_cruise":
+			# Ctrl+T: cruise control on at the speed driven, or off. Exclusive with the limiter.
+			var veh_cc = _piloted_vehicle(data)
+			if veh_cc != null and "cruise" in veh_cc:
+				veh_cc.cruise.toggle(veh_cc.forward_speed_kmh())  # signed: no cruise backing up
+				if veh_cc.cruise.enabled:
+					veh_cc.limiter.enabled = false
 		"vehicle_limiter_step":
-			# Alt + wheel: move the limit one step (5 km/h) up or down, on or off alike.
+			# Wheel: one step (5 km/h) up or down of whichever holds the speed -- the cruise control
+			# when it is on, else the limiter (on or off alike, so the limit is set before it is used).
 			var veh_ss = _piloted_vehicle(data)
 			if veh_ss != null and "limiter" in veh_ss:
-				veh_ss.limiter.step(int(signf(float(data.get("dir", 0)))))
+				var dir: int = int(signf(float(data.get("dir", 0))))
+				if veh_ss.cruise.enabled:
+					veh_ss.cruise.step(dir)
+				else:
+					veh_ss.limiter.step(dir)
+		"vehicle_screen_mode":
+			# F at the cab's switchable screen: offline -> chart -> camera -> offline. Anyone seated in the
+			# vehicle, driver or passenger: the screen is the cab's, not the driver's.
+			# A dark screen (engine off, battery flat) is not switched: there is nothing on it to change.
+			var veh_sm = _boarded_vehicle(data)
+			if veh_sm != null and "screen_mode" in veh_sm and veh_sm.screens_powered():
+				veh_sm.screen_mode.cycle()
+		"vehicle_chart_view":
+			# The chart on the cab screen, handled by someone seated: everyone aboard sees that view.
+			var veh_cv = _boarded_vehicle(data)
+			if veh_cv != null and "chart_view" in veh_cv and data.get("view") is Dictionary:
+				veh_cv.chart_view.set_view(data["view"])
 		"carry_rotate":
 			# Spin the carried object around the vertical by one notch. The crate is pinned to its mount
 			# each tick, so the rotation goes into _carry_basis (body-local) rather than the body's own
@@ -587,10 +622,19 @@ func server_action_received(data: Dictionary) -> void:
 				var claimed_side: String = str(data.get("side", ""))
 				var side_ok: bool = claimed_side == "" or claimed_side == ("indoor" if inside_d else "outdoor")
 				if side_ok and (handle_d == null or _can_see(handle_d)):
-					veh_d.server_toggle_door(str(data.get("door_id", "")))
-					if not inside_d:  # operated ON FOOT -> play the reach-out gesture for everyone
+					var door_id: String = str(data.get("door_id", ""))
+					if inside_d:
+						veh_d.server_toggle_door(door_id)  # from the seat: no gesture, at once
+					else:
+						# On foot: the reach-out gesture for everyone, and the door moves when the hand gets
+						# there -- not the instant the key is pressed, ahead of the arm. What the press asked
+						# for is kept: if the wind slams the door meanwhile, the hand does not reopen it.
 						_emote_count += 1
 						player.server_send_properties_to_client({"action": "emote:interact:%d" % _emote_count})
+						var want_open: bool = not veh_d.is_door_open(door_id)
+						get_tree().create_timer(DOOR_REACH_S).timeout.connect(func() -> void:
+							if is_instance_valid(veh_d) and veh_d.is_door_open(door_id) != want_open:
+								veh_d.server_toggle_door(door_id))
 		"npc_go_to_position":
 			# Server-authoritative: set the NPC's target position (the AI sets it on the Player facade,
 			# then this role drives the body toward it). The AI can change it at any time, and the NPC
@@ -610,7 +654,7 @@ func server_action_received(data: Dictionary) -> void:
 				else:
 					# The position is local to the referenced object (a building, a vehicle, ...):
 					# rebase it onto the NPC parent's referential so the target and the body share a frame.
-					var ref_node := _find_node_by_uuid(get_tree().get_root(), str(ref_uuid))
+					var ref_node := _node_by_uuid(str(ref_uuid))
 					if ref_node is Node3D:
 						var world_pos: Vector3 = (ref_node as Node3D).global_transform * npc_position
 						var npc_parent = player.get_parent()
@@ -631,7 +675,7 @@ func server_action_received(data: Dictionary) -> void:
 				if fref == null or str(fref) == "":
 					player.npc_face_position = face_position
 				else:
-					var fref_node := _find_node_by_uuid(get_tree().get_root(), str(fref))
+					var fref_node := _node_by_uuid(str(fref))
 					if fref_node is Node3D:
 						var face_world: Vector3 = (fref_node as Node3D).global_transform * face_position
 						var face_parent = player.get_parent()
@@ -653,7 +697,7 @@ func server_action_received(data: Dictionary) -> void:
 			if player.is_npc:
 				var depot_uuid = data.get("uuid", null)
 				if depot_uuid != null and str(depot_uuid) != "":
-					var depot := _find_node_by_uuid(get_tree().get_root(), str(depot_uuid))
+					var depot := _node_by_uuid(str(depot_uuid))
 					if depot != null and depot.has_method("try_claim_reception"):
 						depot.try_claim_reception(player.client_uuid)
 					else:
@@ -664,7 +708,7 @@ func server_action_received(data: Dictionary) -> void:
 			if player.is_npc:
 				var rel_uuid = data.get("uuid", null)
 				if rel_uuid != null and str(rel_uuid) != "":
-					var rel_depot := _find_node_by_uuid(get_tree().get_root(), str(rel_uuid))
+					var rel_depot := _node_by_uuid(str(rel_uuid))
 					if rel_depot != null and rel_depot.has_method("release_reception"):
 						rel_depot.release_reception(player.client_uuid)
 		"dialog":
@@ -800,6 +844,15 @@ func _piloted_vehicle(data: Dictionary) -> Node:
 		return veh
 	return null
 
+## The vehicle an action targets, but ONLY when this player sits in it (any seat): what the cab
+## offers everyone aboard, its screens. null otherwise.
+func _boarded_vehicle(data: Dictionary) -> Node:
+	var veh = _find_vehicle(str(data.get("target_uuid", "")))
+	var seat: Node = player._seat_node
+	if veh != null and is_instance_valid(seat) and seat.has_method("vehicle") and seat.vehicle() == veh:
+		return veh
+	return null
+
 func _find_vehicle(target_uuid: String) -> Node:
 	if target_uuid == "":
 		return null
@@ -904,8 +957,39 @@ func _to_parent_rotation(net_parent: Node, world_basis: Basis) -> Vector3:
 		return (parent_basis.inverse() * world_basis).orthonormalized().get_euler()
 	return world_basis.orthonormalized().get_euler()
 
-## Recursive search for a node whose `uuid` matches (server-side helper).
-func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
+## uuid -> node found by a tree walk, shared by every PlayerServer: the NPC brain names the same few
+## buildings for all its NPCs. Entries are re-checked on read (freed or out of the tree = walk again).
+static var _uuid_walk_cache: Dictionary = {}
+
+## The node (spatial host) carrying [param target_uuid] on this server, or null.
+func _node_by_uuid(target_uuid: String) -> Node:
+	return node_by_uuid(get_tree().get_root(), NetworkOrchestrator.network_agent, target_uuid)
+
+## [method _node_by_uuid] with its sources given: [param server]'s `props_list` (type -> uuid -> node,
+## every object Horizon materialised here) first, then the walk cache, and only then a walk from
+## [param root]. The walk alone cost 5 ms per call at 41 000 nodes (200 NPCs), paid by every
+## npc_go_to_position the brain sends: 290 ms of each second on preprod.
+static func node_by_uuid(root: Node, server: Object, target_uuid: String) -> Node:
+	if target_uuid == "":
+		return null
+	if server != null and "props_list" in server:
+		for ptype in server.props_list:
+			var indexed = server.props_list[ptype].get(target_uuid)
+			if is_instance_valid(indexed) and indexed is Node and (indexed as Node).is_inside_tree():
+				return indexed
+	var cached = _uuid_walk_cache.get(target_uuid)
+	if is_instance_valid(cached) and (cached as Node).is_inside_tree():
+		return cached
+	var found: Node = _find_node_by_uuid(root, target_uuid)
+	if found != null:
+		_uuid_walk_cache[target_uuid] = found
+	else:
+		_uuid_walk_cache.erase(target_uuid)
+	return found
+
+## Recursive search for a node whose `uuid` matches (server-side helper). Walks the whole subtree:
+## prefer [method _node_by_uuid].
+static func _find_node_by_uuid(node: Node, target_uuid: String) -> Node:
 	if "uuid" in node and str(node.uuid) == target_uuid:
 		# The uuid now lives on the PropSync component (a plain Node); callers
 		# want the spatial host, so hop to its Node3D parent.
@@ -1004,6 +1088,7 @@ func _physics_process_impl(delta: float) -> void:
 		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
 		# the player follows the vehicle (camera rides too).
 		player._ride_seat(player._seat_node)
+		_replicate_thrusting(false)  # seated: the vehicle moves us, not our thrusters
 		player.new_input_from_server = false
 		player.emit_move()
 		return
@@ -1027,7 +1112,7 @@ func _physics_process_impl(delta: float) -> void:
 
 	if player.new_input_from_server:
 		player.input_direction = player.input_from_server["input_direction"]
-		player.rotation = player.input_from_server["rotation"]  # LOCAL rotation (planet-relative), see player_client send
+		_apply_client_rotation(player.input_from_server["rotation"], player.input_from_server["frame"])
 		if player.piloting:
 			player.input_direction = Vector2.ZERO  # seated in a vehicle: no walking
 
@@ -1035,6 +1120,7 @@ func _physics_process_impl(delta: float) -> void:
 		# God mode (dev free-flight): fly the body where the camera looks, gravity off, collision off.
 		# Skips the whole walk/gravity/idle-sleep path below, then replicates like the normal tick.
 		_replicate_floating(true)
+		_replicate_thrusting(false)  # dev flight, not EVA: no thrusters
 		_server_god_mode_move(delta)
 		player.new_input_from_server = false
 		player.emit_move()
@@ -1083,6 +1169,10 @@ func _physics_process_impl(delta: float) -> void:
 		# until you are still RELATIVE TO YOUR FRAME (the station, when beside one: station-keeping).
 		if _stabilizing:
 			player.velocity = player.velocity.move_toward(Vector3.ZERO, player.player_thruster_force * delta)
+	# On the debounced `floating`, not the raw lack of a gravity area: a reparent drops every area for a
+	# tick or two, and a player walking through one (a lift, a truck bed) blipped a hiss for everyone.
+	_replicate_thrusting(player.floating and eva_thrusting(
+			player.input_direction, _vertical_thrust, _rolling, _stabilizing, player.velocity.length()))
 
 	var move_direction = (player.global_transform.basis * Vector3(player.input_direction.x, 0, player.input_direction.y)).normalized()
 
@@ -1099,18 +1189,9 @@ func _physics_process_impl(delta: float) -> void:
 		_server_update_vault(delta)
 		return
 
-	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed.
-	var speed = player.sprint_speed if _sprint_held else _walk_speed_target
-	if _stance == 1:  # crouched: capped to crouch_speed (no sprint)
-		speed = minf(speed, player.crouch_speed)
-	elif _stance == 2:  # prone: even slower
-		speed = minf(speed, player.prone_speed)
-	if player.mining_tool.is_aiming:
-		speed *= player.mining_tool.aim_speed_factor  # slowed down in aim mode
-	if player.mining_tool.is_perforating:
-		speed = 0.0  # frozen during perforation
-	if player.hands_item != null:
-		speed *= player.carry_speed_factor  # carrying an ore slows you down (issue #124)
+	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed (Player.gait_speed,
+	# the same rule the owner's animation follows from its keys).
+	var speed: float = player.gait_speed(_sprint_held, _walk_speed_target, _stance, player.hands_item != null)
 
 	# GDD: no air control. Only the grounded branch below steers the horizontal velocity; once airborne
 	# we leave it alone, so a jump carries the run-up momentum and its distance follows the take-off
@@ -1195,6 +1276,29 @@ func _physics_process_impl(delta: float) -> void:
 	player.emit_move()
 	if PropNet.prof_on:
 		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
+
+## The owner's body rotation, sent LOCAL to the frame the body has on its client ([param frame], its
+## uuid; null from a client that does not say, taken as ours).
+##
+## The two frames differ for a round trip after every server-side reparent: boarding a vehicle lift's
+## platform (or a truck bed) moves the body under the carrier here first, and the client keeps sending
+## rotations local to the planet until it hears of it. Applied as local to the carrier, they turned the
+## body by the turn between the two frames — a backflip for everyone watching — and walked it partly
+## into the deck, slowly, until the next rotation came in. Same planet: converted through the global
+## bases. Anything else (a frame not here, across planet and space, whose "global" differ on the
+## server): ignored — the reparent kept the body's own, and the client sends again once it follows.
+func _apply_client_rotation(rot: Vector3, frame: Variant) -> void:
+	if frame == null or str(frame) == PropSpawn.parent_frame_uuid(player):
+		player.rotation = rot
+		return
+	var server = NetworkOrchestrator.network_agent
+	if server == null or not server.has_method("_search_parent_node"):
+		return
+	var node: Node = server._search_parent_node(str(frame))
+	var planet: Planet = Planet.of(player)
+	if node is Node3D and (node as Node3D).is_inside_tree() and planet != null and Planet.of(node) == planet:
+		player.global_basis = (node as Node3D).global_basis.orthonormalized() * Basis.from_euler(rot)
+
 
 ## Hold a freshly created body still until the terrain under it actually exists. Returns true while
 ## it is being held, and the caller must then do nothing else this tick.
@@ -1596,6 +1700,28 @@ func _replicate_floating(now: bool) -> void:
 	player.server_send_properties_to_client({"floating": now})
 
 
+## Seconds between pressing a door's handle on foot and the door moving: the reach-out gesture
+## ("emote:interact") gets the hand to the handle first.
+const DOOR_REACH_S := 0.35
+
+## Below this speed (m/s) the EVA brake has nothing left to cancel: held at rest, it fires nothing.
+const STABILIZED_SPEED := 0.05
+
+
+## Whether a weightless body's thrusters fire: a move key, the vertical axis, a roll key, or the brake
+## while there is still motion to cancel. Pure, for the tests.
+static func eva_thrusting(move: Vector2, vertical: float, rolling: bool, stabilizing: bool, speed: float) -> bool:
+	return move != Vector2.ZERO or vertical != 0.0 or rolling or (stabilizing and speed > STABILIZED_SPEED)
+
+
+## Publish `thrusting` when it changes — a replicated STATE (see Player.thrusting), never every tick.
+func _replicate_thrusting(now: bool) -> void:
+	if now == player.thrusting:
+		return
+	player.thrusting = now
+	player.server_send_properties_to_client({"thrusting": now})
+
+
 ## God mode integration (dev free-flight). Moves the body straight along the camera's look
 ## direction at god_mode_speed by writing the position directly — NO move_and_slide, so hundreds of m/s
 ## can't tunnel the thin terrain trimesh or trip the below-surface catch, and no gravity is applied
@@ -1612,7 +1738,7 @@ func _server_god_mode_move(delta: float) -> void:
 	player.global_position += player.velocity * delta
 
 ## An NPC is a full player.tscn instance, and on the server most of it is dead weight that still runs
-## every frame: the UI (22 labels + debug scripts, only HIDDEN on the server), the mining tool with its
+## every frame (the UI is already gone: Player._drop_server_ui frees it on every server body): the mining tool with its
 ## equipment mount and the perforator GLB (two Skeleton3D each, processed every frame), two RayCast3D
 ## (interaction + camera aim, one physics cast per tick each) and a NavigationAgent3D the server path
 ## never uses. Measured with 47 NPCs: ~0.7 ms of TIME_PROCESS per NPC, i.e. 30-70 ms per frame, which
@@ -1623,7 +1749,7 @@ func _npc_trim() -> void:
 	if _npc_trimmed:
 		return
 	_npc_trimmed = true
-	for path in ["UserInterface", "MiningTool", "NavigationAgent3D"]:
+	for path in ["MiningTool", "NavigationAgent3D"]:
 		var n: Node = player.get_node_or_null(path)
 		if n != null:
 			n.process_mode = Node.PROCESS_MODE_DISABLED

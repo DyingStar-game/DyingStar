@@ -23,7 +23,27 @@ const SEGMENTS_KEPT: int = 1024
 
 var body_key: String = ""
 
+
+## How high this kind of line is laid over the ground, as a fraction of the radius (LIFT for the roads).
+func own_lift() -> float:
+	return LIFT
+
+
+## Bring the lines down to [param fraction] of the radius over the ground (the roads' share; the other
+## kinds keep their proportion to it), without laying them again: scaled about the body's centre, they
+## all come down together. 190 m over a plain is nothing seen from orbit and above the camera from two
+## metres up; the chart sets this from the gap to the ground. Off by (ground - 1) x LIFT, some decimetres.
+func set_lift(fraction: float) -> void:
+	var target: float = fraction * own_lift() / LIFT
+	scale = Vector3.ONE * ((1.0 + target) / (1.0 + own_lift()))
+	position = _origin * scale.x  # the vertices are around _origin: scaled about the body's centre too
+
 var _drawn: Dictionary = {}
+## What the vertices of the mesh are laid around (body frame): the middle of what is drawn. Close in, the
+## lines of the few tiles around the camera are then a few hundred metres off zero instead of half a
+## sphere, and float32 -- all the GPU has -- holds them still: around the body's centre they were drawn
+## to 0.76 m and the roads and canyons hopped at metre zoom (playtest 2026-10-19).
+var _origin := Vector3.ZERO
 ## The lines of each tile already laid on the ground, id -> [points, colours]. The expensive half of a
 ## refresh is not concatenating lines, it is working out where they go — and the wanted set changes by
 ## a handful of tiles, so almost all of it is the same as last time.
@@ -229,11 +249,25 @@ func _assemble() -> void:
 	if points.is_empty():
 		mesh = null
 		return
+	_origin = middle_of(points)
+	for i: int in points.size():
+		points[i] -= _origin
+	for i: int in faces.size():
+		faces[i] -= _origin
+	position = _origin * scale.x
 	var built := ArrayMesh.new()
 	_add_surface(built, Mesh.PRIMITIVE_LINES, points, colours, _material)
 	if not faces.is_empty():
 		_add_surface(built, Mesh.PRIMITIVE_TRIANGLES, faces, face_colours, _strip_material)
 	mesh = built
+
+
+## The middle of [param points] (their mean): what the mesh is laid around. Static and pure.
+static func middle_of(points: PackedVector3Array) -> Vector3:
+	var sum := Vector3.ZERO
+	for point in points:
+		sum += point
+	return sum / float(maxi(points.size(), 1))
 
 
 static func _add_surface(to: ArrayMesh, primitive: Mesh.PrimitiveType, points: PackedVector3Array,

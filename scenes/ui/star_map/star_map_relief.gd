@@ -475,7 +475,7 @@ static func has_data(body_key: String) -> bool:
 ## [param reader] is where the heights come from, resolved on the main thread by the caller — see
 ## [StarMapTiles]. Left out, the disk alone is read, which is what a test or a worker without one gets.
 static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
-		paint: Dictionary = {}, reader: StarMapTiles = null) -> ArrayMesh:
+		paint: Dictionary = {}, reader: StarMapTiles = null, local_origin: bool = false) -> ArrayMesh:
 	var manifest: Dictionary = _manifest(body_key)
 	var radius: float = float(manifest.get("radius", 0.0))
 	if radius <= 0.0 or grid_res <= 0 or body_key == "":
@@ -594,6 +594,16 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 		for i: int in _rim_ring(stride):
 			colours.append(colours[i])
 
+	# Around the tile's own middle, which the node is then placed at (meta "origin"): a vertex is a few
+	# tile-widths off zero instead of half a sphere, and float32 -- all the GPU has -- holds it to the
+	# millimetre instead of to 0.76 m, which is a ground that swims at metre zoom. Subtracted in double,
+	# after the skirt and the normals, which need the radii.
+	var origin := Vector3.ZERO
+	if local_origin and not points.is_empty():
+		origin = StarMapTileLines.middle_of(points)
+		for i: int in points.size():
+			points[i] -= origin
+
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = points
@@ -607,6 +617,7 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	# there is has all the data it will ever have: it is not standing in for anything.
 	var published: int = maxi(int(manifest.get("nside_max", TILE_NSIDE)), TILE_NSIDE)
 	mesh.set_meta("source_nside", nside if int(from[0]) >= published else int(from[0]))
+	mesh.set_meta("origin", origin)
 	if StarMapGround.DEBUG_GROUND:
 		StarMapTiles.stat_add("tiles", 1)
 		StarMapTiles.stat_add("provisional", 1 if int(from[0]) < nside else 0)
@@ -723,6 +734,21 @@ static func _field_for(body_key: String, nside: int) -> Dictionary:
 ## Manifests, by body key. Cached because [method plan_patch] asks for one every frame now, and parsing
 ## the same JSON sixty times a second to be told the same radius is waste with a disk read attached.
 static var _manifests: Dictionary = {}
+
+
+## The highest the ground of [param body_key] rises above its reference sphere, in metres (0 when
+## nothing is known): how far the line of sight to its tallest summit reaches past the horizon.
+static func peak_m(body_key: String) -> float:
+	var manifest: Dictionary = _manifest(body_key)
+	return maxf(float(manifest.get("max_height", 0.0)) + float(manifest.get("height_offset", 0.0)), 0.0)
+
+
+## The radius (m) the ground of [param body_key] is built on -- the reference its tiles are drawn
+## against, the game's terrain radius -- or [param fallback] when nothing is known. NOT the system file's
+## radius, which is wrong for some bodies (Sandbox: 6 356 km, not 6 371).
+static func terrain_radius_m(body_key: String, fallback: float) -> float:
+	var radius: float = float(_manifest(body_key).get("radius", 0.0))
+	return radius if radius > 0.0 else fallback
 
 
 static func _manifest(body_key: String) -> Dictionary:

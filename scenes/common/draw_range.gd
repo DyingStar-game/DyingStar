@@ -12,14 +12,22 @@ extends RefCounted
 ## Client-only in effect: in the editor and on a dedicated server the multiplier is 1.0.
 
 const _BAND : StringName = &"draw_range_band"
+const _FIXED_BEGIN : StringName = &"draw_range_fixed_begin"
 const _GROUP_PREFIX : String = "draw_range_"
 
 static var _listening : bool = false
 
 
 ## Draw `node` over [begin, end] scaled by the option `option_key` — now and after every change.
-static func track(node: GeometryInstance3D, option_key: String, begin: float, end: float) -> void:
+## `scale_begin` false keeps `begin` as it is: the hand-off from a sibling LOD level whose own end
+## is not scaled — scaling only one side of the hand-off opens a gap (x > 1) or an overlap (x < 1).
+static func track(node: GeometryInstance3D, option_key: String, begin: float, end: float,
+		scale_begin: bool = true) -> void:
 	node.set_meta(_BAND, Vector2(begin, end))
+	if scale_begin:
+		node.remove_meta(_FIXED_BEGIN)
+	else:
+		node.set_meta(_FIXED_BEGIN, true)
 	node.add_to_group(group(option_key))
 	rescale(node, multiplier(option_key))
 	_listen()
@@ -36,7 +44,7 @@ static func rescale(node: Variant, mult: float) -> void:
 	if not (is_instance_valid(node) and node is GeometryInstance3D and node.has_meta(_BAND)):
 		return
 	var band: Vector2 = node.get_meta(_BAND)
-	node.visibility_range_begin = band.x * mult
+	node.visibility_range_begin = band.x if node.has_meta(_FIXED_BEGIN) else band.x * mult
 	node.visibility_range_end = band.y * mult
 
 

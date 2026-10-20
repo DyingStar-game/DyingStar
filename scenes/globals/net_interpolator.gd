@@ -11,9 +11,24 @@ extends RefCounted
 ## Catch-up rate (1/s). Higher = snappier (less lag), lower = smoother (more lag).
 var speed: float = 15.0
 
+## Longest the position is carried ahead of the last one received (s): a stream that stopped is not
+## run after for more than this.
+const LEAD_MAX_S: float = 0.15
+## The lead runs this many times the last gap between targets: they come every 70 ms give or take 10,
+## and a lead that stopped at exactly the last gap stopped the body ~50 ms whenever the next one came a
+## little later than the one before (MovementProbe "stall" in bursts, playtest 2026-10-19). Past it the
+## lead comes back as fast as it went: the server sends nothing for a body that stopped (a wall, a
+## step), and a lead held there kept the view half a metre inside the wall for as long as the key was.
+const LEAD_GAP_SHARE: float = 1.5
+
 var _pos: Vector3 = Vector3.ZERO
 var _basis: Basis = Basis.IDENTITY
 var _has: bool = false
+# The lead of update_position: how fast the targets have been moving, when the last one came, and how
+# long the one before it took.
+var _vel: Vector3 = Vector3.ZERO
+var _target_us: int = -1
+var _gap_s: float = 0.0
 
 ## Feed the latest target as a LOCAL transform (position relative to the parent + local basis).
 ## Snaps the node to it on the first call so it never interpolates from the world origin.
@@ -36,16 +51,46 @@ func update(node: Node3D, delta: float) -> void:
 ## Position-only variant: smooth the position toward the target but leave rotation untouched —
 ## for a locally-controlled entity whose look must stay immediate (the local player on foot:
 ## smooth the server-driven position while mouse-look stays responsive).
-func set_position_target(node: Node3D, local_pos: Vector3) -> void:
+##
+## [param usec] is when it came (Time.get_ticks_usec, the default): with the one before, it gives the
+## speed update_position leads by.
+func set_position_target(node: Node3D, local_pos: Vector3, usec: int = -1) -> void:
+	var now: int = Time.get_ticks_usec() if usec < 0 else usec
+	if _has and _target_us >= 0 and now - _target_us > 5000:
+		_gap_s = float(now - _target_us) / 1e6
+		_vel = (local_pos - _pos) / _gap_s
 	_pos = local_pos
+	_target_us = now
 	if not _has:
 		node.position = local_pos
 		_has = true
 
-func update_position(node: Node3D, delta: float) -> void:
+## [param lead]: carry the target on at the speed of the last two, for at most LEAD_GAP_SHARE times
+## the time between them (and LEAD_MAX_S) -- for the owner while its move keys are held. Gliding after positions that come
+## every 70 ms, the body caught each one in 40 and waited for the next: it moved in steps, 14 times a
+## second (MovementProbe "stall", playtest 2026-10-19). Led, it keeps going between them. Never past a
+## stop: keys released, no lead, and the body settles on what the server said.
+func update_position(node: Node3D, delta: float, lead: bool = false, usec: int = -1) -> void:
 	if not _has:
 		return
-	node.position = node.position.lerp(_pos, clampf(speed * delta, 0.0, 1.0))
+	node.position = node.position.lerp(lead_target(lead, usec), clampf(speed * delta, 0.0, 1.0))
+
+
+## Where update_position glides to now: the last target, carried on when [param lead] (see there).
+func lead_target(lead: bool, usec: int = -1) -> Vector3:
+	if not lead or _target_us < 0:
+		return _pos
+	var now: int = Time.get_ticks_usec() if usec < 0 else usec
+	var age: float = float(now - _target_us) / 1e6
+	return _pos + _vel * lead_time(age, minf(_gap_s * LEAD_GAP_SHARE, LEAD_MAX_S))
+
+
+## How far ahead (s) the lead runs [param age] s after the last target: on with it up to [param cap],
+## then back down to nothing over as long again. Static and pure.
+static func lead_time(age: float, cap: float) -> float:
+	if age <= cap:
+		return maxf(age, 0.0)
+	return maxf(2.0 * cap - age, 0.0)
 
 ## Apply the latest target immediately (no smoothing). Use when smoothing would hurt — e.g. the
 ## object the local player is actively controlling (a driver wants responsiveness, not lag).
@@ -58,3 +103,5 @@ func snap_to(node: Node3D) -> void:
 ## local frame (and thus the local target) changed.
 func snap_next() -> void:
 	_has = false
+	_target_us = -1  # the next target is in another frame: no speed from this one to it
+	_vel = Vector3.ZERO

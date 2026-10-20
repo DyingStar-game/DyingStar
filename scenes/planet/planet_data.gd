@@ -3971,8 +3971,9 @@ func chunk_cache_ineligible(nside: int, ipix: int) -> bool:
 		return true
 	# A networked POI zone (a village) is not baked data either: it arrives at run time, so a chunk
 	# its crack exclusion reaches is never served from, nor written to, the planet-wide cache.
-	if not _crack_pois_dynamic.is_empty() and not crack_pois_near(HEALPix.pix2vec_nest(nside, ipix),
-			HEALPix.pixel_side_length(nside, radius), _crack_pois_dynamic).is_empty():
+	var villages: Array = _crack_set.networked()
+	if not villages.is_empty() and not crack_pois_near(HEALPix.pix2vec_nest(nside, ipix),
+			HEALPix.pixel_side_length(nside, radius), villages).is_empty():
 		return true
 	return _pads != null and not _pads.is_empty() and not _pads.gather(nside, ipix).is_empty()
 
@@ -4817,16 +4818,9 @@ func cracks_apply_at(dir: Vector3) -> bool:
 	return cracks_apply_to_zone(first_zone_at(dir))
 
 
-## The POI spheres the crack network keeps whole, planet-local:
-## [{dir: Vector3, radius: float}] — the baked ones and the networked ones,
-## published together (see [method set_crack_exclusions]).
-var _crack_pois: Array = []
-## The baked half: the POIs of the planet's <planet>_poi.json. In the chunk
-## cache key and the bridge bake key ([method crack_exclusion_fingerprint]).
-var _crack_pois_static: Array = []
-## The networked half: the POI villages, arriving at run time. In no key — a
-## chunk one reaches stays out of the disk cache (chunk_cache_ineligible).
-var _crack_pois_dynamic: Array = []
+## The POI spheres the crack network keeps whole: the baked ones and the
+## networked ones, published together, safe to read from a worker (CrackPoiSet).
+var _crack_set := CrackPoiSet.new()
 
 
 ## Give the crack network the BAKED POIs to keep whole (the planet's
@@ -4834,34 +4828,26 @@ var _crack_pois_dynamic: Array = []
 ## the first chunk task and before the bridge spans (which walk the chasms).
 ## [param pois]: [{dir: Vector3 (planet-local unit), radius: float (m)}].
 func set_crack_exclusions(pois: Array) -> void:
-	_crack_pois_static = _clean_crack_pois(pois)
-	_crack_pois = _crack_pois_static + _crack_pois_dynamic
+	_crack_set.set_baked(pois)
 
 
 ## Give the crack network the NETWORKED POIs (the POI villages) — MAIN THREAD,
-## whenever they change. They arrive while chunks are being built, so the list
-## is published in one assignment: a worker holds either the old or the new.
-## The chunks a change reaches are rebuilt by PlanetTerrain (set_poi_zone).
+## whenever they change, while chunks are being built: a worker holds either the
+## old list or the new. The chunks a change reaches are rebuilt by PlanetTerrain
+## (set_poi_zone).
 func set_dynamic_crack_exclusions(pois: Array) -> void:
-	_crack_pois_dynamic = _clean_crack_pois(pois)
-	_crack_pois = _crack_pois_static + _crack_pois_dynamic
+	_crack_set.set_networked(pois)
 
 
-static func _clean_crack_pois(pois: Array) -> Array:
-	var out: Array = []
-	for p in pois:
-		var d: Vector3 = (p as Dictionary).get("dir", Vector3.ZERO)
-		var r := float((p as Dictionary).get("radius", 0.0))
-		if d.length_squared() < 0.5 or r <= 0.0:
-			continue
-		out.append({"dir": d.normalized(), "radius": r})
-	return out
+## Every POI sphere, from any thread (never edited after publication).
+func crack_pois() -> Array:
+	return _crack_set.all()
 
 
 ## The exclusions a chunk around [param center_dir] can meet: those whose
 ## sphere plus the margin reaches within [param reach_m] of its centre. The
 ## per-vertex test then loops over a handful instead of the planet's list.
-func crack_pois_near(center_dir: Vector3, reach_m: float, pois: Array = _crack_pois) -> Array:
+func crack_pois_near(center_dir: Vector3, reach_m: float, pois: Array = crack_pois()) -> Array:
 	if pois.is_empty():
 		return []
 	var out: Array = []
@@ -4877,7 +4863,7 @@ func crack_pois_near(center_dir: Vector3, reach_m: float, pois: Array = _crack_p
 ## [param pois] defaults to the planet's list; a chunk passes its
 ## [method crack_pois_near] subset. Pure — the mesh, the collision, the
 ## server's surface catch and the bridges multiply the same carve by it.
-func crack_clearance(dir: Vector3, pois: Array = _crack_pois) -> float:
+func crack_clearance(dir: Vector3, pois: Array = crack_pois()) -> float:
 	var w := 1.0
 	for p in pois:
 		var d_m: float = (dir - (p["dir"] as Vector3)).length() * radius
@@ -4894,7 +4880,7 @@ func crack_clearance(dir: Vector3, pois: Array = _crack_pois) -> float:
 ## a massif is not cut by the plateau's canyons, the network fades out over
 ## its feather). [param pois] / [param frame] as in the two halves; the four
 ## carve paths and the normal probes all multiply the same carve by it.
-func crack_factor(dir: Vector3, pois: Array = _crack_pois, frame: TileFrame = null) -> float:
+func crack_factor(dir: Vector3, pois: Array = crack_pois(), frame: TileFrame = null) -> float:
 	var w := crack_clearance(dir, pois)
 	if w <= 0.0 or _has_mountains != 1:
 		return w
@@ -4910,12 +4896,13 @@ func crack_noise() -> CrackNoise:
 
 
 ## Re-keys the chunk cache: the BAKED exclusions are baked geometry (the
-## networked ones are in no key, see [member _crack_pois_dynamic]).
+## networked ones are in no key, see chunk_cache_ineligible).
 func crack_exclusion_fingerprint() -> String:
-	if _crack_pois_static.is_empty():
+	var baked: Array = _crack_set.baked()
+	if baked.is_empty():
 		return ""
 	var parts := PackedStringArray()
-	for p in _crack_pois_static:
+	for p in baked:
 		var d: Vector3 = p["dir"]
 		parts.append("%.5f,%.5f,%.5f,%.0f" % [d.x, d.y, d.z, float(p["radius"])])
 	return ("%s|%.0f" % [",".join(parts), crack_poi_margin_m]).sha1_text().substr(0, 10)

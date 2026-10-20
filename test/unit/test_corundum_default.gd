@@ -121,7 +121,7 @@ func test_poi_spheres_keep_the_ground_whole_with_a_ramp_outside() -> void:
 	var c := RoadBridge.lonlat_to_dir(50.0, 10.0)
 	_pd.crack_poi_margin_m = 300.0
 	_pd.set_crack_exclusions([{"dir": c, "radius": 1000.0}, {"dir": Vector3.ZERO, "radius": 5.0}])
-	assert_eq(_pd._crack_pois.size(), 1, "a null direction is dropped")
+	assert_eq(_pd.crack_pois().size(), 1, "a null direction is dropped")
 	assert_eq(_pd.crack_clearance(c), 0.0, "the centre")
 	var mpd := _pd.radius * PI / 180.0
 	var at := func(off_m: float) -> Vector3:

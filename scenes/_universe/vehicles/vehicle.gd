@@ -87,16 +87,14 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## are built for ~0.7 g at full load. The tyres' grip still caps it (wheel_friction_slip_default, under
 ## the body's own gravity): ask more than they hold and the wheels lock and slide.
 @export_range(0.5, 15.0, 0.1) var brake_deceleration: float = 7.0
-## Engine braking + rolling resistance: brake force applied per wheel when coasting (no throttle,
-## no brake). VehicleWheel3D models neither, so without this the truck rolls forever on the flat.
+## Engine braking: brake force applied per wheel when coasting (no throttle, no brake). The tyres'
+## rolling resistance and the air are real forces now (VehicleResistance); this is the motor alone.
 ## Keep it well below the brakes (_full_brake) — it should bleed speed off gently, not stop the truck dead.
 @export var engine_brake: float = 6.0
-## Throttle released: share of the speed lost per second on top of engine_brake (1/s; 0.1 = 10 %/s, a
-## drag that grows with speed). It stands in for Godot's global linear damping, switched off on the
-## vehicle (linear_damp_mode = Replace, linear_damp = 0) because that damping also held the truck back
-## with the pedal down: it capped top speed at force / (0.1 x mass), so the top speed followed the
-## number of engines instead of the drive model. 0 = only engine_brake slows a coasting vehicle.
-@export_range(0.0, 1.0, 0.01) var coast_drag: float = 0.1
+## Throttle released: share of the speed lost per second on top of engine_brake (1/s; 0.1 = 10 %/s).
+## It stood in for a drag the game did not model; the air and the tyres now hold the vehicle back at
+## every throttle (VehicleResistance), so it is 0 -- kept for a vehicle that wants more engine braking.
+@export_range(0.0, 1.0, 0.01) var coast_drag: float = 0.0
 ## Parking brake hold (m/s per second): how hard the engaged hand brake damps motion ABOVE the
 ## release speed — a real collision impulse exceeds this so a hit truck still gets pushed (it
 ## just re-settles). Kept dynamic, never frozen.
@@ -169,9 +167,8 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ##
 ## The design sheet is an EQUILIBRIUM model: it predicts the speed a vehicle settles at, not a
 ## torque curve. Used as a curve it has no constant-power region at all, so the force would fall
-## from 100%% to 0 in 0.1 km/h — a wall, not a taper. The game models no aerodynamic drag, so that
-## wall is the ONLY thing holding the speed down, and pointing downhill at full throttle there is
-## nothing left to limit it. A short band gives the truck somewhere to run out of breath.
+## from 100%% to 0 in 0.1 km/h — a wall, not a taper. The band is the motor reaching its top revs;
+## the air (VehicleResistance) usually settles the speed just before it, the motors still pushing.
 @export_range(0.0, 30.0, 0.5) var speed_taper_kmh: float = 10.0
 ## Air density (kg/m3) used when the planet's atmosphere cannot say (a profile imported before it
 ## carried its pressure, or no planet): Tarsis 3's 1.26 at its reference sphere. air_density_now()
@@ -204,9 +201,17 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## The steering wheel's OWN local axis it spins about (its disc/column axis). Intrinsic to the mesh,
 ## so it's tilt-independent: try a cardinal axis (0,0,1)/(0,1,0)/(1,0,0) — one matches the disc.
 @export var steering_wheel_axis: Vector3 = Vector3(0.0, 0.0, 1.0)
+## Where the driver's hands hold the rim, in degrees either side of its top: 60 = "ten to two", 90 =
+## "quarter to three", on the sides. The rim itself (radius, plane) is measured on the wheel mesh (see
+## _make_steering_grips).
+@export_range(0.0, 90.0, 1.0) var steering_grip_angle_deg: float = 85.0
+## How far (degrees) the hands turn WITH the wheel before they slide on the rim: past it a driver
+## shuffles the rim through their hands rather than crossing their arms. On a wheel the hands hold, the
+## wheel itself turns no further at full lock (visual_steering_ratio caps steering_wheel_ratio).
+@export_range(0.0, 180.0, 1.0) var steering_grip_follow_deg: float = 90.0
 
 @export_group("Speed limiter")
-## One step of the limiter selector (Alt + wheel), in km/h.
+## One step of the limiter / cruise selector (the wheel), in km/h.
 @export var limiter_step_kmh: int = 5
 ## Highest limit the pilot can select, in km/h.
 @export var limiter_max_kmh: int = 130
@@ -394,8 +399,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 @export var max_payload: float = 1300.0
 ## Above max_payload x this factor the vehicle is immobilized (won't move) — GDD. 1.2 = 20%.
 @export var overload_immobilize: float = 1.2
-## Size of the cargo bay box. Any massive body that comes to rest inside is absorbed into
-## the truck (its mass is added once). Defaults roughly match the bed; tune to taste.
+## Size of the cargo bay box -- ONLY for a vehicle whose model has no bed collision (a blockout): a
+## real model's bed is read off its own col_bed* pieces (see _bay_box). Any massive body that comes to
+## rest inside is absorbed into the truck (its mass is added once).
 @export var cargo_bay_size: Vector3 = Vector3(2.0, 1.5, 3.1):
 	set(v):
 		cargo_bay_size = v
@@ -405,11 +411,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 	set(v):
 		cargo_bay_offset = v
 		_rebuild_deferred()
-## Designer-placed box (a CollisionShape3D with a BoxShape3D) marking WHERE a dropped item is allowed
-## to load/stick. Drop a crate inside it (from in the bed or reaching over) and it loads. Leave unset
-## to fall back to the cargo_bay box. Its physics collision is turned off at runtime — it is only a
-## zone marker. (The truck wires its "CargoLoadingZone" node here.)
-@export var cargo_loading_zone: CollisionShape3D
+## How far above the top of the side boards (m) a load still counts as in the bed: a crate stacked
+## proud of them, or put down reaching over from outside.
+@export_range(0.0, 2.0, 0.05) var bed_headroom_m: float = 0.4
 ## A body is locked into the bed once it slows below this speed (m/s).
 @export var cargo_settle_speed: float = 0.6
 ## Tilt (degrees from upright) past which the bed unlocks and spills its load — a rollover drops
@@ -610,17 +614,55 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## It must LOOP cleanly: unlike the manoeuvre scuffs it runs for as long as the drive lasts, so a seam
 ## comes back every few seconds and is unmistakable.
 @export var sfx_wheel_roll: AudioStream
-## Loudness in decibels once the roll is at full level (0 = the sample's own level, negative = quieter).
-## Its falloff, distance and attenuation are the Tyre scrub ones.
+## Loudness in decibels at the top speed (sfx_wheel_roll_top_kmh); slower, it is quieter (see
+## sfx_wheel_roll_db_per_doubling). Its falloff, distance and attenuation are the Tyre scrub ones.
 @export_range(-40.0, 12.0, 0.5) var sfx_wheel_roll_db: float = -6.0
-## Speed (km/h) at which the rolling noise reaches FULL volume. It is a ramp, not a switch: the sound
-## rises with the speed from standstill to here, then holds. Tyres do not start making noise at some
-## particular speed, they get louder as they turn faster, and a loop appearing at full level would be
-## heard as a sound effect being triggered rather than as a vehicle picking up.
+## Speed (km/h) by which the rolling noise has faded in from standstill. A ramp, not a switch: a loop
+## appearing at once would be heard as a sound effect being triggered rather than as a vehicle picking
+## up. From this speed on the noise follows the speed (VehicleTyreSound).
 @export_range(1.0, 120.0, 1.0) var sfx_wheel_roll_kmh: float = 20.0
+## Speed (km/h) of the loudest and highest rolling noise; it holds past it.
+@export_range(5.0, 200.0, 1.0) var sfx_wheel_roll_top_kmh: float = 80.0
+## Decibels the rolling noise loses each time the speed is halved below the top speed. Real tyres lose
+## about 10; a game wants less, or a slow drive is silent.
+@export_range(0.0, 12.0, 0.5) var sfx_wheel_roll_db_per_doubling: float = 4.0
+## Playback speed of the rolling noise at sfx_wheel_roll_kmh (1 = as recorded, below 1 = lower).
+@export_range(0.5, 2.0, 0.01) var sfx_wheel_roll_low_pitch: float = 0.85
+## Playback speed of the rolling noise at the top speed: the tread strikes the ground faster.
+@export_range(0.5, 2.0, 0.01) var sfx_wheel_roll_high_pitch: float = 1.15
 ## Longest the level may take (s) to cross its whole range. A speed limiter on the ramp, not a fade:
 ## it only bites when the speed jumps rather than climbs -- a vehicle spawning mid-drive, or landing.
 @export_range(0.0, 2.0, 0.01) var sfx_wheel_roll_attack_secs: float = 0.25
+@export_subgroup("Suspension shocks")
+## The suspension answering a knock: a bump, a pothole, a landing. Played at the wheel's suspension
+## mount, as a reaction to how fast the wheel was driven up towards the body (VehicleSuspensionShocks).
+## List the samples from the SOFTEST to the HARDEST: a light knock plays one from the start of the
+## list, a hard one from its end (one of the three nearest, never the same twice in a row).
+@export var sfx_suspension_shocks: Array[AudioStream] = []
+## Loudness in decibels of the lightest knock that is heard at all.
+@export_range(-40.0, 12.0, 0.5) var sfx_suspension_soft_db: float = 0.0
+## Loudness in decibels of a full-strength knock (see suspension_shock_full_speed).
+@export_range(-40.0, 12.0, 0.5) var sfx_suspension_hard_db: float = 8.0
+## Playback speed of the lightest knock (1 = as recorded, above 1 = higher and shorter).
+@export_range(0.5, 2.0, 0.01) var sfx_suspension_soft_pitch: float = 1.1
+## Playback speed of a full-strength knock: below 1, lower and longer -- a heavy hit.
+@export_range(0.5, 2.0, 0.01) var sfx_suspension_hard_pitch: float = 0.9
+## Random spread of the playback speed (share, 0.04 = +/-4 %), so two equal knocks never sound alike.
+@export_range(0.0, 0.3, 0.01) var sfx_suspension_pitch_jitter: float = 0.04
+## Reference distance (m) at which the sound has its nominal volume; past it, it starts fading.
+@export_range(0.5, 200.0, 0.5) var sfx_suspension_falloff: float = 5.0
+## Distance (m) past which this sound is no longer audible at all (hard cut-off).
+@export_range(1.0, 500.0, 1.0) var sfx_suspension_distance: float = 40.0
+## How the sound fades with distance.
+@export var sfx_suspension_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.REALISTIC
+## Speed (m/s) at which a wheel must be pushed up towards the body for its suspension to be heard.
+## Below it the suspension is just following the ground. Measured by the game server, on its physics.
+@export_range(0.05, 10.0, 0.05) var suspension_shock_min_speed: float = 0.8
+## Compression speed (m/s) of a full-strength knock: loudest, lowest, hardest sample.
+@export_range(0.1, 20.0, 0.1) var suspension_shock_full_speed: float = 3.0
+## Shortest time (s) between two knocks of the same wheel: on a washboard track the suspension works
+## all the time, and a sound per ripple would be a rattle.
+@export_range(0.0, 2.0, 0.01) var suspension_shock_cooldown_secs: float = 0.25
 
 @export_group("Ground dust")
 ## How much dust each kind of ground gives up under the tyres (see SurfaceDust). Null = no dust.
@@ -664,6 +706,7 @@ var _scrub_slow_player: AudioStreamPlayer3D = null   # manoeuvre scuff (sample s
 var _scrub_slow_level: float = 0.0                   # its envelope, 0 = silent, 1 = full
 var _roll_player: AudioStreamPlayer3D = null         # rolling noise (constant loop) while driving
 var _roll_level: float = 0.0
+var _tyre_ground: float = 1.0  # 0..1: how much of the tyre noise the ground contact still allows
 var _scrub_family: StringName = &""
 var _scrub_family_age: float = 999.0
 var _dust: VehicleDust = null  # client: the tyres' dust, built on first use (see VehicleDust)
@@ -701,6 +744,7 @@ var _locked_cargo: Dictionary = {}  # RigidBody3D cargo -> its mass (kg), summed
 var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL transform in the bed
 var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
 var _cargo_area: Area3D = null
+var _bed_box: AABB = AABB()  # the model's bed pieces, vehicle frame (empty = none: see _bay_box)
 var _bay_scan_tick: int = 0  # throttles _scan_bay_for_settled_cargo (see BAY_SCAN_FRAMES)
 var _cargo_debug: bool = false  # Settings > General: draw a green envelope on really-locked cargo
 var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off by default)
@@ -738,6 +782,11 @@ var _net_speed: float = 0.0  # client: real speed (km/h) replicated from the ser
 ## server sent it at all — a Horizon that does not relay "wheel_kmh" yet leaves the gauge on _net_speed.
 var _net_wheel_kmh: float = 0.0
 var _net_wheel_seen: bool = false
+## Whether a driven wheel touches the ground: the server's _driven_wheels_grounded, replicated
+## ("grounded"), because a replica has no physics and the client no terrain collision to find out. The
+## tyres' dust follows it (VehicleDust): off a cliff they rose a trail all the way down (2026-10-16).
+## True until told otherwise -- a Horizon that does not relay it yet keeps the dust as it was.
+var wheels_grounded: bool = true
 var _net_cargo_mass: float = 0.0  # client: real cargo load (kg) replicated from the server
 ## The real "up" for this vehicle: opposite the gravity acting on it (radial on a planet, world-up on
 ## the bench). Read from state.total_gravity in _integrate_forces; the rollover check + reset_upright
@@ -785,6 +834,43 @@ var limiter: VehicleSpeedLimiter:
 			_limiter.taper_kmh = limiter_taper_kmh
 		return _limiter
 var _limiter: VehicleSpeedLimiter = null
+## The pilot's cruise control (Ctrl+T, the wheel), exclusive with the limiter: same steps and range.
+var cruise: VehicleCruiseControl:
+	get:
+		if _cruise == null:
+			_cruise = VehicleCruiseControl.new()
+			_cruise.step_kmh = limiter_step_kmh
+			_cruise.max_kmh = limiter_max_kmh
+			_cruise.min_kmh = mini(limiter_step_kmh, limiter_max_kmh)
+		return _cruise
+var _cruise: VehicleCruiseControl = null
+var _air_density_tick: int = -1  # air_density_now: the tick it was last read, and what it read
+var _air_density_seen: float = 0.0
+## What the cab's switchable screen shows (camera, chart, off): the same for everyone aboard.
+var screen_mode: VehicleScreenMode:
+	get:
+		if _screen_mode == null:
+			_screen_mode = VehicleScreenMode.new()
+		return _screen_mode
+var _screen_mode: VehicleScreenMode = null
+## The chart's view on that screen, shared by everyone aboard (whoever handles it drives it).
+var chart_view: VehicleChartView:
+	get:
+		if _chart_view == null:
+			_chart_view = VehicleChartView.new()
+		return _chart_view
+var _chart_view: VehicleChartView = null
+## The knocks the suspensions take: detected by the server, heard by the clients (VehicleNetPart).
+var shocks: VehicleSuspensionShocks:
+	get:
+		if _shocks == null:
+			_shocks = VehicleSuspensionShocks.new()
+			_shocks.min_speed = suspension_shock_min_speed
+			_shocks.full_speed = suspension_shock_full_speed
+			_shocks.cooldown_s = suspension_shock_cooldown_secs
+		return _shocks
+var _shocks: VehicleSuspensionShocks = null
+var _shock_last_sample: int = -1  # client: index of the last knock sample played, never twice in a row
 ## The batteries fitted and what the motors draw on them (VehicleEnergy): one at a time, in bay order.
 ## A property like bays, for the same reason.
 var energy: VehicleEnergy:
@@ -798,6 +884,11 @@ var _real_wheel_meshes: Array[Node3D] = []  # GLB wheel meshes reparented under 
 var _real_wheel_rest: Dictionary = {}       # mesh -> [parent, local transform], to restore before rebuild
 var _steering_wheel: Node3D = null          # GLB "steering_wheel" mesh that turns with the steer angle
 var _steering_wheel_rest: Basis = Basis.IDENTITY  # its closed/centered orientation
+## The two points the driver's hands hold (CharacterAnimator -> HandsOnWheel): siblings of the wheel mesh,
+## moved with it in _update_steering_wheel. Empty when the model has no wheel mesh to measure.
+var _steering_grips: Array[Node3D] = []
+var _steering_grip_points: Array[Vector3] = []  # the same two points, in the wheel mesh's own frame
+var _steering_hub: Node3D = null  # the rim's centre, on the spin axis (how the hands face the rim)
 var _anim: AnimationPlayer = null           # the GLB's AnimationPlayer (door open/close clips)
 var _engine_on: bool = false                # engine running (server state; mirrored on each replica)
 ## Client: false until _ready is done. Replicated state that lands BEFORE that is the spawn snapshot
@@ -863,7 +954,6 @@ func _ready() -> void:
 	_door_state = _own_doors(_door_state)  # every door in the state from the start, shut
 	_server_live = GameOrchestrator.is_server()
 	add_to_group("vehicle")  # so a pilot can find and enter us
-	_setup_loading_zone()  # designer "can load here" box: turn off its physics, keep it as a marker
 	if not OS.has_feature("dedicated_server"):
 		_cargo_debug = SettingsManager.debug.is_on(&"cargo_debug")  # dev aid: green envelope on locked cargo
 		SettingsManager.debug.watch(&"cargo_debug", _on_cargo_debug_changed)
@@ -930,6 +1020,7 @@ func _rebuild() -> void:
 			remove_child(child)
 			child.free()
 	_wheels.clear()
+	_bed_box = AABB()  # read again off the model's col_bed* pieces (_build_model_collision)
 	_cargo_area = null
 	_cab_cam = null
 	_nav_footprint_valid = false  # the collision shapes are about to be regenerated
@@ -1022,6 +1113,7 @@ func _build_model_collision() -> bool:
 	if root == null:
 		return false
 	var found := false
+	var bed_points := PackedVector3Array()  # the bed pieces' corners, in the vehicle's frame
 	for n in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi.mesh == null or not _strip_lod(mi.name).begins_with("col_"):
@@ -1033,6 +1125,10 @@ func _build_model_collision() -> bool:
 		add_child(col)
 		mi.visible = false  # collision-only mesh: never rendered (hidden in the editor AND in game)
 		found = true
+		if _strip_lod(mi.name).begins_with("col_bed") and col.shape is ConvexPolygonShape3D:
+			for point in (col.shape as ConvexPolygonShape3D).points:
+				bed_points.append(col.transform * point)
+	_bed_box = points_box(bed_points)
 	return found
 
 func _add_collision_box(box_size: Vector3, pos: Vector3) -> void:
@@ -1059,11 +1155,12 @@ func _build_cargo_area() -> void:
 	area.collision_mask = 0
 	area.monitoring = false
 	area.monitorable = true
+	var bay: AABB = _bay_box()
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = cargo_bay_size
+	box.size = bay.size
 	col.shape = box
-	col.position = cargo_bay_offset
+	col.position = bay.get_center()
 	area.add_child(col)
 	add_child(area)
 	_cargo_area = area
@@ -1071,9 +1168,9 @@ func _build_cargo_area() -> void:
 		var ghost := MeshInstance3D.new()
 		ghost.set_meta(GENERATED, true)
 		var ghost_mesh := BoxMesh.new()
-		ghost_mesh.size = cargo_bay_size
+		ghost_mesh.size = bay.size
 		ghost.mesh = ghost_mesh
-		ghost.position = cargo_bay_offset
+		ghost.position = bay.get_center()
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = Color(0.2, 0.8, 1.0, 0.12)
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -1163,14 +1260,11 @@ func _scan_bay_for_settled_cargo() -> void:
 	q.collide_with_bodies = true
 	q.collide_with_areas = false
 	q.collision_mask = 1 << (Globals.LAYER_PROP - 1)  # props only (crates/rocks live on LAYER_PROP)
-	if cargo_loading_zone != null and cargo_loading_zone.shape is BoxShape3D:
-		q.shape = cargo_loading_zone.shape
-		q.transform = cargo_loading_zone.global_transform
-	else:
-		var box := BoxShape3D.new()
-		box.size = cargo_bay_size
-		q.shape = box
-		q.transform = global_transform.translated_local(cargo_bay_offset)
+	var bay: AABB = _bay_box()
+	var box := BoxShape3D.new()
+	box.size = bay.size
+	q.shape = box
+	q.transform = global_transform.translated_local(bay.get_center())
 	for hit in space.intersect_shape(q, 16):
 		var body = hit.get("collider")
 		if not (body is RigidBody3D) or _locked_cargo.has(body):
@@ -1186,26 +1280,36 @@ func _scan_bay_for_settled_cargo() -> void:
 		if rb.linear_velocity.length() <= cargo_settle_speed:
 			lock_dropped_cargo(rb)  # settled inside the bay → weigh it in
 
-## Resolve the designer loading zone (explicit @export, else a child named "CargoLoadingZone") and
-## turn OFF its physics collision: a CollisionShape3D under this VehicleBody3D would otherwise be a
-## real (huge) collider. We only read its box to test where loading is allowed.
-func _setup_loading_zone() -> void:
-	if cargo_loading_zone == null:
-		cargo_loading_zone = get_node_or_null("CargoLoadingZone") as CollisionShape3D
-	if cargo_loading_zone != null:
-		cargo_loading_zone.disabled = true
-
-## True when a world point is inside the loading zone (where a dropped item is allowed to stick).
-## Uses the designer's CargoLoadingZone box if set, else falls back to the cargo_bay box (blockout).
+## True when a world point is inside the bed (where a dropped item is allowed to stick): the same box
+## the settled loads and the walkers are counted in (_bay_box). The point is where the carry placement
+## ray put the item, so loading is decided by where you aim -- the way a part finds its hatch.
 func is_point_in_loading_zone(world_point: Vector3) -> bool:
-	if cargo_loading_zone != null and cargo_loading_zone.shape is BoxShape3D:
-		var local := cargo_loading_zone.global_transform.affine_inverse() * world_point
-		var half: Vector3 = (cargo_loading_zone.shape as BoxShape3D).size * 0.5
-		return absf(local.x) <= half.x and absf(local.y) <= half.y and absf(local.z) <= half.z
-	var bay := to_local(world_point) - cargo_bay_offset
-	return absf(bay.x) <= cargo_bay_size.x * 0.5 \
-		and absf(bay.y) <= cargo_bay_size.y * 0.5 \
-		and absf(bay.z) <= cargo_bay_size.z * 0.5
+	return _bay_box().has_point(to_local(world_point))
+
+
+## The bed, in the vehicle's frame: the box around the model's own bed collision (col_bed, col_bed_left,
+## col_bed_rear...), raised by bed_headroom_m above the side boards. One truth, the model, instead of
+## boxes placed and kept in step by hand; a model without bed pieces (a blockout) uses cargo_bay_size /
+## cargo_bay_offset.
+func _bay_box() -> AABB:
+	return bay_box(_bed_box, bed_headroom_m, cargo_bay_size, cargo_bay_offset)
+
+
+## See _bay_box. Static and pure: tested without a vehicle.
+static func bay_box(bed: AABB, headroom: float, fallback_size: Vector3, fallback_centre: Vector3) -> AABB:
+	if bed.has_volume():
+		return AABB(bed.position, bed.size + Vector3(0.0, maxf(headroom, 0.0), 0.0))
+	return AABB(fallback_centre - fallback_size * 0.5, fallback_size)
+
+
+## The box around [param points] (an empty AABB for none). Static and pure.
+static func points_box(points: PackedVector3Array) -> AABB:
+	if points.is_empty():
+		return AABB()
+	var box := AABB(points[0], Vector3.ZERO)
+	for point in points:
+		box = box.expand(point)
+	return box
 
 ## A player walked into the bed on foot: count them in the load (and let them ride). Seated players
 ## are handled by _occupant_mass, so they are skipped in get_bed_mass — no double-count.
@@ -1551,6 +1655,7 @@ func _make_wheel(wheel_name: String, pos: Vector3, is_front: bool, with_csg_tire
 	wheel.name = wheel_name
 	wheel.set_meta(GENERATED, true)
 	wheel.position = pos
+	wheel.set_meta(WHEEL_MOUNT_META, wheel.transform)  # restored at every tree entry (_enter_tree)
 	wheel.use_as_steering = is_front
 	var traction := true
 	match drive_mode:
@@ -1763,13 +1868,48 @@ func _wheel_visual(wheel: VehicleWheel3D) -> Node3D:
 ## changing, the change test above stops sending it, and a yard full of parked trucks costs nothing.
 func _sample_suspension() -> Array:
 	var heights: Array = []
+	for h in _wheel_heights():
+		heights.append(roundi(h * 100.0))
+	return heights
+
+
+## SERVER: each wheel mesh's height in the vehicle's own frame (m), unrounded: what the suspension
+## shocks are measured on (a centimetre a tick is 0.6 m/s, too coarse for a speed).
+func _wheel_heights() -> PackedFloat32Array:
+	var heights := PackedFloat32Array()
 	for wheel in _wheels:
 		var visual: Node3D = _wheel_visual(wheel)
-		if visual == null:
-			heights.append(0)
-			continue
-		heights.append(roundi(to_local(visual.global_position).y * 100.0))
+		heights.append(to_local(visual.global_position).y if visual != null else 0.0)
 	return heights
+
+
+## SERVER: look for this tick's suspension knocks (VehicleSuspensionShocks); they replicate with the
+## state. A vehicle off the network (dropped straight into a scene) simulates itself: it plays them.
+func _track_suspension_shocks(delta: float) -> void:
+	for shot: Vector2i in shocks.track(_wheel_heights(), delta):
+		if OS.is_debug_build():
+			print("[Vehicle shock] %s %s: %.2f m/s -> %d %%" % [name, _wheels[shot.x].name,
+					shocks.fired_speed(shot.x), shot.y])
+		if not _is_networked():
+			_play_suspension_shock(shot.x, float(shot.y) / 100.0)
+
+
+## CLIENT: one suspension knock of [param strength] (0..1), heard where the suspension is: at the top
+## mount of wheel [param wheel_index] -- the wheel node itself, which a replica never moves. Harder =
+## louder, lower and a heavier sample.
+func _play_suspension_shock(wheel_index: int, strength: float) -> void:
+	if _sfx_muted() or sfx_suspension_shocks.is_empty() or wheel_index < 0 or wheel_index >= _wheels.size():
+		return
+	var index: int = VehicleSuspensionShocks.pick_sample(strength, sfx_suspension_shocks.size(),
+			_shock_last_sample, randf())
+	_shock_last_sample = index
+	var pitch: float = lerpf(sfx_suspension_soft_pitch, sfx_suspension_hard_pitch, strength) \
+			* (1.0 + randf_range(-sfx_suspension_pitch_jitter, sfx_suspension_pitch_jitter))
+	# Hosted by the vehicle, not the wheel: a wheel's first Node3D child is taken for its visual
+	# (_wheel_visual), and a sound player there would be spun and dropped in its place.
+	Sfx3D.play_pitched(self, sfx_suspension_shocks[index],
+			lerpf(sfx_suspension_soft_db, sfx_suspension_hard_db, strength), sfx_suspension_falloff,
+			sfx_suspension_distance, sfx_suspension_attenuation, pitch, _wheels[wheel_index].position)
 
 
 ## CLIENT: where to place wheel [param index]'s mesh, as a local height under its wheel node.
@@ -1798,7 +1938,93 @@ func _discover_steering_wheel() -> void:
 			# Spin the visual mesh: a child mesh if "steering" is a VehicleWheel3D wrapper, else itself.
 			_steering_wheel = _first_mesh_child(n) if (n is VehicleWheel3D) else (n as Node3D)
 			_steering_wheel_rest = _steering_wheel.transform.basis
+			_make_steering_grips()
 			return
+
+
+## The two points a driver's hands hold the wheel at, for whoever drives (CharacterAnimator). Either order:
+## each hand takes the one on its own side.
+func steering_grips() -> Array[Node3D]:
+	return _steering_grips
+
+
+## The rim's centre, on the wheel's spin axis (null without grips): the hands turn their palms to it.
+func steering_hub() -> Node3D:
+	return _steering_hub
+
+
+## Build the two grips on the wheel's rim, measured on its mesh: the outermost ring of vertices around
+## the spin axis gives the rim's radius and its plane; "up" is the vehicle's up laid in that plane, and
+## the grips sit steering_grip_angle_deg either side of it. Client only: nothing on the server holds them.
+func _make_steering_grips() -> void:
+	if OS.has_feature("dedicated_server") or Engine.is_editor_hint() or not (_steering_wheel is MeshInstance3D):
+		return
+	var mesh: Mesh = (_steering_wheel as MeshInstance3D).mesh
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	var vertices: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var up_in_wheel: Vector3 = (LocalFrame.of(_steering_wheel.get_parent(), self).basis * _steering_wheel_rest) \
+			.inverse() * Vector3.UP
+	_steering_grip_points = steering_grip_points(vertices, steering_wheel_axis.normalized(), up_in_wheel,
+			deg_to_rad(steering_grip_angle_deg))
+	if _steering_grip_points.is_empty():
+		return
+	for i in _steering_grip_points.size():
+		var grip := Node3D.new()
+		grip.name = "SteeringGrip%d" % i
+		_steering_wheel.get_parent().add_child(grip)
+		_steering_grips.append(grip)
+	_steering_hub = Node3D.new()
+	_steering_hub.name = "SteeringHub"
+	_steering_wheel.get_parent().add_child(_steering_hub)
+	_place_steering_grips(0.0)
+
+
+## The two grip points of a wheel mesh, in its own frame, from its [param vertices]: on the rim (the ring
+## of vertices furthest from [param axis]), [param angle] either side of [param up] laid in the rim's
+## plane. Empty for a mesh with no rim to measure. Pure, for the tests.
+static func steering_grip_points(vertices: PackedVector3Array, axis: Vector3, up: Vector3,
+		angle: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var top: Vector3 = up - axis * up.dot(axis)
+	if vertices.is_empty() or top.length() < 1e-6:
+		return out
+	top = top.normalized()
+	var reach := 0.0
+	for p in vertices:
+		reach = maxf(reach, (p - axis * p.dot(axis)).length())
+	var radius := 0.0
+	var height := 0.0
+	var count := 0
+	for p in vertices:
+		var r: float = (p - axis * p.dot(axis)).length()
+		if r >= reach * 0.85:  # the rim: its tube, inside and out
+			radius += r
+			height += p.dot(axis)
+			count += 1
+	radius /= count
+	height /= count
+	var side: Vector3 = axis.cross(top).normalized()
+	for s: float in [-1.0, 1.0]:
+		out.append(axis * height + (top * cos(angle) + side * sin(angle) * s) * radius)
+	return out
+
+
+## Move the grips with the wheel turned by [param spin] (radians about its axis), the hands following it
+## only up to steering_grip_follow_deg: past it the rim slides through them.
+func _place_steering_grips(spin: float) -> void:
+	if _steering_grips.is_empty():
+		return
+	var limit: float = deg_to_rad(steering_grip_follow_deg)
+	var hands := Transform3D(_steering_wheel_rest * Basis(steering_wheel_axis.normalized(), clampf(spin, -limit, limit)),
+			_steering_wheel.transform.origin)
+	for i in _steering_grips.size():
+		_steering_grips[i].position = hands * _steering_grip_points[i]
+	# On the spin axis, level with the rim: the turn does not move it.
+	var axis: Vector3 = steering_wheel_axis.normalized()
+	_steering_hub.position = hands * (axis * _steering_grip_points[0].dot(axis))
+
+
 
 ## Turn the steering wheel mesh to match the steer angle (cosmetic). No-op if there is none.
 ## Rotates in the wheel's OWN LOCAL frame (post-multiply), so the axis is intrinsic to the mesh (its
@@ -1808,8 +2034,22 @@ func _update_steering_wheel(angle: float) -> void:
 	if _steering_wheel == null:
 		return
 	var t := _steering_wheel.transform
-	t.basis = _steering_wheel_rest * Basis(steering_wheel_axis.normalized(), -angle * steering_wheel_ratio)
+	var ratio: float = visual_steering_ratio(steering_wheel_ratio, max_steer_deg, steering_grip_follow_deg,
+			not _steering_grips.is_empty())
+	t.basis = _steering_wheel_rest * Basis(steering_wheel_axis.normalized(), -angle * ratio)
 	_steering_wheel.transform = t
+	_place_steering_grips(-angle * ratio)
+
+
+## How far the steering wheel turns per radian of front-wheel steer, on screen: [param ratio], capped,
+## on a wheel the hands hold, so that full lock ([param max_steer_deg]) turns it no further than the
+## hands follow ([param hands_follow_deg]). Past that the rim spun on under still hands (playtest
+## 2026-10-16). Cosmetic only: the road wheels steer as before. Pure, for the tests.
+static func visual_steering_ratio(ratio: float, max_steer_deg: float, hands_follow_deg: float,
+		held: bool) -> float:
+	if not held or max_steer_deg <= 0.0:
+		return ratio
+	return minf(ratio, hands_follow_deg / max_steer_deg)
 
 ## The GLB's AnimationPlayer (door open/close clips), or null (then doors use the code tween).
 func _find_anim_player() -> AnimationPlayer:
@@ -1902,13 +2142,30 @@ func door_leaf(handle: VehicleDoorHandle) -> Vector2:
 
 ## The air's density (kg/m3) where the vehicle is: its planet's atmosphere at its altitude, else the
 ## air_density export.
+## Read once per physics tick: the drag and the drive model both ask for it every tick.
 func air_density_now() -> float:
+	var tick: int = Engine.get_physics_frames()
+	if tick == _air_density_tick:
+		return _air_density_seen
+	_air_density_tick = tick
+	_air_density_seen = air_density
 	var planet := Planet.of(self)
 	if planet != null and planet.planet_data != null and planet.planet_data.atmosphere_profile != null:
 		var rho : float = planet.planet_data.atmosphere_profile.air_density(planet.elevation_of(global_position))
 		if rho > 0.0:
-			return rho
-	return air_density
+			_air_density_seen = rho
+	return _air_density_seen
+
+
+## The cab's screens have power: the engine runs and the battery holds. ONE rule for the screens that
+## show it (RearCamera) and for the server that refuses to switch a dark one.
+func screens_powered() -> bool:
+	return is_engine_on() and energy.has_energy()
+
+
+## The signed speed along the vehicle's heading (km/h; negative backing up), where the physics runs.
+func forward_speed_kmh() -> float:
+	return _forward_speed_kmh()
 
 
 ## The doors of this vehicle: the door_ids of its VehicleDoorHandle nodes (seats and bays name these
@@ -2330,6 +2587,7 @@ func _physics_process_impl(delta: float) -> void:
 			return
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
 		_apply_adopted_velocity()
+		_track_suspension_shocks(delta)  # before the parked early-return: a knock wakes nothing up
 		# Parked (asleep, no pilot) <-> moving edge for the NPC navmesh. Detected HERE, on the actual
 		# `sleeping` state, rather than where the settle block below sets it: Jolt also sleeps a body
 		# on its own and wakes it on any collision, and neither passes through that block.
@@ -2389,6 +2647,7 @@ func _physics_process_impl(delta: float) -> void:
 		return
 	# Standalone (a vehicle dropped straight into a scene, with no uuid): it still holds its load
 	# and rights itself, but nobody can take the wheel — driving is the server's, through a seat.
+	_track_suspension_shocks(delta)
 	_apply_surface_grip()
 	_check_rollover_unlock()
 	_pin_locked_cargo()
@@ -2554,7 +2813,13 @@ func _update_tyre_audio(delta: float) -> void:
 	# The scuff still stands down once the roll is at full level: past that speed a manoeuvre scuff is
 	# not what the tyres are doing any more.
 	var turning: bool = rate >= sfx_wheel_scrub_min_rate
-	var want_slow: bool = turning and roll_target < 1.0 and sfx_wheel_scrub != null
+	# Off the ground the tyres touch nothing: no scuff at all, and the roll fades out like their dust
+	# (VehicleDust.ground_share) -- after a big bump it kept rubbing all the way through the air
+	# (2026-10-16). Back on the ground it is whole again at once: the landing.
+	var grounded: bool = wheels_grounded if _is_networked() else _driven_wheels_grounded()
+	_tyre_ground = VehicleDust.ground_share(_tyre_ground, grounded, delta)
+	var want_slow: bool = turning and grounded and roll_target < 1.0 and sfx_wheel_scrub != null
+	roll_target *= _tyre_ground
 	# Started only from silence: a turn held for seconds keeps the sound it began with. That IS the
 	# no-overlap rule -- and it is also when a fresh sample is drawn, the only moment variation is heard
 	# as variation rather than as a stutter.
@@ -2566,8 +2831,15 @@ func _update_tyre_audio(delta: float) -> void:
 	# over from scuff to roll as a crossfade instead of a cut.
 	_scrub_slow_level = _drive_tyre_loop(_scrub_slow_player, _scrub_slow_level, 1.0 if want_slow else 0.0,
 			0.0, sfx_wheel_scrub_fade_secs, sfx_wheel_scrub_db, delta)
+	# The roll's level follows the speed, and so does its pitch: the faster the tyres turn, the louder
+	# and higher (VehicleTyreSound). Under the configured sfx_wheel_roll_db, which is the top and the cap.
+	var roll_db: float = sfx_wheel_roll_db + VehicleTyreSound.roll_db(speed_kmh, sfx_wheel_roll_kmh,
+			sfx_wheel_roll_top_kmh, sfx_wheel_roll_db_per_doubling)
 	_roll_level = _drive_tyre_loop(_roll_player, _roll_level, roll_target,
-			sfx_wheel_roll_attack_secs, sfx_wheel_scrub_fade_secs, sfx_wheel_roll_db, delta)
+			sfx_wheel_roll_attack_secs, sfx_wheel_scrub_fade_secs, roll_db, delta)
+	if _roll_level > 0.0:
+		_roll_player.pitch_scale = VehicleTyreSound.roll_pitch(speed_kmh, sfx_wheel_roll_kmh,
+				sfx_wheel_roll_top_kmh, sfx_wheel_roll_low_pitch, sfx_wheel_roll_high_pitch)
 
 
 ## Move one held loop toward `target` (0 = silent, 1 = full), no faster than `attack` going up or
@@ -2590,6 +2862,10 @@ func _drive_tyre_loop(player: AudioStreamPlayer3D, level: float, target: float,
 			player.stop()
 		return 0.0
 	player.volume_db = db + linear_to_db(next_level)
+	# The cap follows the level (see Sfx3D.configure). Left at the top level it was set to, the distance
+	# gain lifted the driver -- a metre from the source, well inside the falloff -- straight onto it: in
+	# the cab the roll sounded at full from walking pace, its speed curve and its fades flattened away.
+	player.max_db = player.volume_db
 	return next_level
 
 
@@ -2670,7 +2946,7 @@ func _replicate_transform() -> void:
 	var my_pos: Vector3 = snapped(position, Vector3(0.005, 0.005, 0.005))
 	var my_rot: Vector3 = snapped(rotation, Vector3(0.005, 0.005, 0.005))
 	var my_parent_id: String = _net_parent_id()
-	odometer.track(position, my_parent_id)
+	odometer.track(position, my_parent_id, _driven_wheels_grounded())  # a fall is not a drive
 	if _full_resend_in > 0.0:
 		_full_resend_in -= get_physics_process_delta_time()
 		if _full_resend_in <= 0.0:
@@ -2710,6 +2986,7 @@ func full_state() -> Dictionary:
 		"pilot_uuid": _pilot_uuid_now(),
 		"speed": snappedf(linear_velocity.length() * 3.6, 0.1),
 		"wheel_kmh": snappedf(get_wheel_kmh(), 0.1),
+		"grounded": _driven_wheels_grounded(),
 		"power": snappedf(_power_share, POWER_STEP),
 		"cargo_mass": snappedf(get_cargo_mass(), 0.1),
 		"handbrake": _handbrake,
@@ -2741,7 +3018,7 @@ func _forget_sent() -> void:
 ## The state that replicates as parts of its own (VehicleNetPart): written by _replicate_transform,
 ## read back by client_channel_data_update and server_adopt_state.
 func _net_parts() -> Array[VehicleNetPart]:
-	return [odometer, limiter]
+	return [odometer, limiter, cruise, shocks, screen_mode, chart_view]
 
 ## CLIENT: mirror the replicated bay table onto our own bays, so the HUD and the rev counter tell
 ## the truth about a truck someone else has been working on.
@@ -2849,8 +3126,28 @@ func _seat_occupancy_now() -> Dictionary:
 		occ[VehicleNetKey.of(seat)] = seat.occupant_uuid
 	return occ
 
+## A wheel's mount as built (_make_wheel). See [method _restore_wheel_mounts].
+const WHEEL_MOUNT_META := &"wheel_mount"
+
+
 func _enter_tree() -> void:
 	server_reparenting = false
+	_restore_wheel_mounts()
+
+
+## Put every wheel back on its mount before the wheels enter the tree with us.
+##
+## A VehicleWheel3D reads its suspension mount AND the direction of its ray from its own transform
+## when it enters the tree — and VehicleBody3D rewrites that transform every physics step with the
+## hanging, steered, SPINNING wheel. Any reparent (onto a vehicle lift's platform, the teleporter)
+## therefore re-mounted each wheel where its hub hung, its ray along whatever way the wheel had
+## rolled: sideways, up into the engine bay. No ray met the ground, the truck sat on its chassis with
+## the engine roaring — stuck and looking broken (2026-10-15). The parent's ENTER_TREE runs before its
+## children's, so the wheels read their mount again.
+func _restore_wheel_mounts() -> void:
+	for wheel in _wheels:
+		if is_instance_valid(wheel) and wheel.has_meta(WHEEL_MOUNT_META):
+			wheel.transform = wheel.get_meta(WHEEL_MOUNT_META)
 
 
 ## Server: a truck leaving the tree stops blocking NPCs where it stood — whether it is gone or only
@@ -2956,6 +3253,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# still arrives here — it runs before the uuid is set, so _is_networked() is still false.
 	for part in _net_parts():
 		part.read(data)
+	for shot: Vector2i in shocks.take_heard():
+		_play_suspension_shock(shot.x, float(shot.y) / 100.0)
 	if data.has("position"):
 		var pos := Vector3(data["position"]["x"], data["position"]["y"], data["position"]["z"])
 		var rot := rotation
@@ -2971,6 +3270,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("wheel_kmh"):
 		_net_wheel_kmh = float(data["wheel_kmh"])
 		_net_wheel_seen = true
+	if data.has("grounded"):
+		wheels_grounded = bool(data["grounded"])
 	if data.has("power"):
 		_net_power = float(data["power"])
 	if data.has("cargo_mass"):
@@ -3112,6 +3413,7 @@ func server_exit(player: Node) -> void:
 		_net_steer = 0.0
 		_net_brake = false
 		_throttle = 0.0
+		cruise.cancel()  # nobody at the wheel: no speed held
 		engine_force = 0.0
 		set_horn(false)  # a driver bailing out mid-honk must not leave the horn stuck on
 		# NOTE: the hand brake stays engaged on exit (real parking brake) — _hold_handbrake keeps
@@ -3155,6 +3457,7 @@ func server_release_seat(player: Node) -> void:
 		_net_steer = 0.0
 		_net_brake = false
 		_throttle = 0.0
+		cruise.cancel()  # nobody at the wheel: no speed held
 		engine_force = 0.0
 		set_horn(false)
 	print("🚚 Vehicle %s: seat released (player handed over)" % uuid)
@@ -3215,6 +3518,7 @@ func _exit_position_for_seat(seat: Node) -> Vector3:
 func server_adopt_state(data: Dictionary) -> void:
 	for part in _net_parts():
 		part.read(data)
+	shocks.take_heard()  # the sender's past knocks: its clients heard them, the server has no audio
 	if data.has("engine"):
 		set_engine(bool(data["engine"]))
 	if data.has("headlights"):
@@ -3325,6 +3629,12 @@ func _apply_drive(delta: float) -> void:
 	# forward does nothing — not even releasing the hand brake, which stays on until the engine runs.
 	if not _engine_on:
 		throttle_in = 0.0
+	# The cruise control holds the speed with the pedal released (VehicleCruiseControl). Before the hand
+	# brake's release below: its throttle must never let a hand brake off, so a hand brake, like the
+	# brake and a dead engine, switches it off.
+	if braking or _handbrake or not _engine_on:
+		cruise.cancel()
+	throttle_in = cruise.drive_throttle(throttle_in, _forward_speed_kmh())
 	# Hand brake holds the vehicle until the pilot presses the throttle again.
 	if _handbrake and absf(throttle_in) > 0.05:
 		set_handbrake(false)  # goes through the setter, so the release is heard too
@@ -3354,8 +3664,8 @@ func _apply_drive(delta: float) -> void:
 	# gentle caster drift back while rolling), inside a lock that shrinks with speed.
 	_sync_steering()
 	steering = _steering_model.step(steering, turn, forward_kmh, delta)
-	# Coasting (no throttle, no brake): apply engine braking + rolling resistance so the truck bleeds
-	# speed instead of rolling forever — VehicleWheel3D models neither on its own. Running over the
+	# Coasting (no throttle, no brake): apply engine braking (the tyres and the air hold the truck back
+	# on their own, VehicleResistance). Running over the
 	# speed limiter counts as a closed throttle, exactly like lifting the foot.
 	var throttle_closed: bool = absf(throttle_in) < 0.05 or limiter.overspeed(_throttle, forward_kmh)
 	var coasting: bool = throttle_closed and not braking and service <= 0.0
@@ -3420,6 +3730,12 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if g.length_squared() > 0.001:
 		_gravity_up = -g.normalized()
 		gravity_magnitude = g.length()  # the REAL local g: climbing is harder on a heavy world, for free
+	# The air and the tyres hold the vehicle back (VehicleResistance), where the physics runs: the game
+	# server, or a vehicle off the network simulating itself.
+	if (not _is_networked() or _server_live) and state.linear_velocity.length_squared() > 1e-6:
+		state.apply_central_force(VehicleResistance.force(state.linear_velocity, air_density_now(),
+				drag_coefficient, frontal_area_m2, mass, gravity_magnitude, rolling_coefficient * rolling_factor,
+				_driven_wheels_grounded()))
 	if not _handbrake:
 		return
 	var up: Vector3 = global_transform.basis.y
@@ -3690,13 +4006,16 @@ func _sync_powertrain() -> void:
 	# identical rigs, four driven wheels against two, accelerated 6.995 against 3.673 m/s2, a ratio
 	# of 1.904. So the sheet's TOTAL pull is divided here.
 	#
-	# Rolling resistance comes off here too. Godot models none while accelerating (engine_brake
-	# only applies when coasting), and the sheet defines acc_max as (F_av - F_roll)/m — taking it
-	# off at the source is what makes the two agree.
-	var top_kmh: float = spec.v_max_ms(mass) * 3.6
+	# The motors' full pull: the rolling resistance is a real force now (VehicleResistance, with the
+	# air), so it is no longer taken off here in advance -- it acted only on a pushing motor that way,
+	# and the batteries paid nothing for it.
+	# The motor's own top speed, not the air's: drag is a real force now (VehicleResistance), and a taper
+	# ending at the speed the air allows counted the air twice -- an air-limited truck settled km/h under
+	# its sheet. Where the air holds it back first, that force alone stops it, below this.
+	var top_kmh: float = spec.v_max_motor_ms() * 3.6
 	var electric: bool = engine.propulsion == VehicleEngineSpec.Propulsion.ELECTRIC
 	_powertrain.type = VehiclePowertrain.Type.ELECTRIC if electric else VehiclePowertrain.Type.THERMAL
-	_powertrain.engine_power = spec.net_force_n(mass) / float(_driven_wheel_count())
+	_powertrain.engine_power = spec.tractive_force_n() / float(_driven_wheel_count())
 	_powertrain.max_speed_kmh = top_kmh
 	_powertrain.base_speed_kmh = maxf(0.0, top_kmh - speed_taper_kmh)
 	_powertrain.reverse_max_kmh = top_kmh * reverse_max_ratio
@@ -3757,7 +4076,11 @@ func _rolling_wheel_kmh() -> float:
 		if wheel.use_as_traction:
 			rpms.append(wheel.get_rpm())
 			radii.append(wheel.wheel_radius)
-	return wheel_kmh_of(rpms, radii)
+	# Godot's wheels turn positive rolling toward the body's +Z, and our vehicles drive toward -Z
+	# (_forward_speed_kmh): negated, forward is positive and reverse negative, as get_wheel_kmh says.
+	# Every reading took its absolute value until the reversing camera read the sign, and showed the
+	# feed driving forwards (playtest 2026-10-19).
+	return -wheel_kmh_of(rpms, radii)
 
 
 ## The road speed (km/h) of wheels turning at [param rpms] (rev/min) with [param radii] (m), averaged:

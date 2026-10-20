@@ -413,12 +413,13 @@ func _build_nav_bar() -> Control:
 	ServiceStyle.font_of(version, 12)
 	brand.add_child(version)
 	bar.add_child(brand)
-	bar.add_child(_brand_logo())
+	bar.add_child(brand_logo())
 	return bar
 
 
-## The ARES wordmark, cropped to the mark inside the decal texture and shown white.
-func _brand_logo() -> Control:
+## The ARES wordmark, cropped to the mark inside the decal texture and shown white. Static: the wrist
+## DataPad's own screen wears the same mark (WristDatapadModel).
+static func brand_logo() -> Control:
 	var atlas := AtlasTexture.new()
 	atlas.atlas = ARES_LOGO
 	atlas.region = ARES_LOGO_REGION
@@ -455,8 +456,13 @@ func _start_clock() -> void:
 func _tick_clock() -> void:
 	if _clock == null:
 		return
+	_clock.text = clock_text()
+
+
+## The time the tablet shows, "HH:MM" on the system clock. Shared with the wrist DataPad's screen.
+static func clock_text() -> String:
 	var now := Time.get_time_dict_from_system()
-	_clock.text = "%02d:%02d" % [int(now["hour"]), int(now["minute"])]
+	return "%02d:%02d" % [int(now["hour"]), int(now["minute"])]
 
 
 ## The tablet is built in code, so unlike a scene it does not re-translate itself on a locale change

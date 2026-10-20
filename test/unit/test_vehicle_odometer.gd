@@ -28,6 +28,16 @@ func test_a_teleport_is_not_driving() -> void:
 	assert_almost_eq(_o.km(), 0.01, 1e-9, "counting resumes from the new place")
 
 
+func test_a_fall_is_not_driving() -> void:
+	_o.track(Vector3.ZERO, "planet")
+	_o.track(Vector3(10, 0, 0), "planet")  # driving to the edge: 10 m
+	for i in range(1, 31):  # off the cliff, wheels in the air: 30 ticks of falling
+		_o.track(Vector3(10, -i * 5.0, 0), "planet", false)
+	assert_almost_eq(_o.km(), 0.01, 1e-9, "the 150 m fall adds nothing")
+	_o.track(Vector3(20, -150, 0), "planet")  # landed, rolling again
+	assert_almost_eq(_o.km(), 0.02, 1e-9, "counting resumes from where it landed")
+
+
 func test_a_new_parent_is_a_new_frame() -> void:
 	_o.track(Vector3.ZERO, "planet_a")
 	_o.track(Vector3(20, 0, 0), "planet_b")

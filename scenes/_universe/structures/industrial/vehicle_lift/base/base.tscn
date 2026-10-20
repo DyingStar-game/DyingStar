@@ -13,7 +13,7 @@
 [ext_resource type="ArrayMesh" uid="uid://dhovktwtxcwvh" path="res://assets/_universe/structures/industrial/vehicle_lift/base/base_clamping_chuk_lod1.mesh" id="10_07sbw"]
 [ext_resource type="Shape3D" uid="uid://b2p3fa1wby2la" path="res://assets/_universe/structures/industrial/vehicle_lift/base/base_p01p03_collider.shape" id="11_ijcob"]
 [ext_resource type="Script" uid="uid://q5rm52iyeiak" path="res://scenes/common/ambient_loop_3d.gd" id="20_hum"]
-[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-winch-loop.ogg" id="21_winch"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/winch.tres" id="snd_winch"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_fti8b"]
 resource_local_to_scene = true
@@ -111,8 +111,5 @@ shape = SubResource("CylinderShape3D_fti8b")
 
 [node name="WinchHum" type="Node3D" parent="Animated Axis" unique_id=1873301457]
 script = ExtResource("20_hum")
-stream = ExtResource("21_winch")
-volume_db = 0.0
-falloff = 8.0
-distance = 90.0
+sound = ExtResource("snd_winch")
 autoplay = false

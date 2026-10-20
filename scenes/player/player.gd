@@ -79,8 +79,10 @@ var stand_body_height: float = 1.8
 @export var carry_speed_factor: float = 0.5
 ## How fast (m/s²) the horizontal velocity is steered toward the target speed, so the body ramps up
 ## and coasts to a stop instead of snapping. Applied ON THE FLOOR only — the GDD gives the jump no air
-## control, so an airborne body keeps the velocity it took off with.
-@export var acceleration: float = 10.0
+## control, so an airborne body keeps the velocity it took off with. 30 = a sprint reached or stopped
+## in 0.17 s: at 10 the body took half a second, and the round trip came on top of it (playtest
+## 2026-10-19, "the character is heavy").
+@export var acceleration: float = 30.0
 
 @export_subgroup("Vault / climb")
 ## Vault / climb: pressing JUMP while walking forward into a low obstacle or a ledge climbs ONTO it
@@ -262,6 +264,39 @@ var stand_body_height: float = 1.8
 ## How the 2 m climb sound fades with distance (see Sfx3D.Attenuation).
 @export var sfx_climb_2m_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
+@export_subgroup("EVA thrusters")
+## Looped while the player's EVA thrusters fire (Player.thrusting), faded in and out (EvaThrusterSound).
+@export var sfx_eva_thrust: AudioStream
+## Loudness (dB) of the EVA thrusters at their Falloff distance.
+@export_range(-40.0, 12.0, 0.5) var sfx_eva_thrust_db: float = -19.0
+## Reference distance (m) of the EVA thrusters: past it the sound starts really fading.
+@export_range(0.5, 200.0, 0.5) var sfx_eva_thrust_falloff: float = 3.0
+## Hard cut-off (m) of the EVA thrusters: further away they are not played at all.
+@export_range(1.0, 500.0, 1.0) var sfx_eva_thrust_distance: float = 25.0
+## How the EVA thrusters fade with distance (see Sfx3D.Attenuation).
+@export var sfx_eva_thrust_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
+@export_subgroup("Clothes rustle")
+## Short takes, one picked at random (never the same twice running), as the body starts a quick action:
+## taking a crate or a tool, opening a door or a hatch.
+@export var sfx_clothes_short: Array[AudioStream] = []
+## Long takes, the same way, for a whole-body move: getting into or out of a seat, crouching, lying down,
+## standing back up.
+@export var sfx_clothes_long: Array[AudioStream] = []
+## Pitch spread (±) of the clothes rustle: the same take never sounds quite the same twice.
+@export_range(0.0, 0.5, 0.01) var sfx_clothes_pitch_jitter: float = 0.06
+## Loudness (dB) of a SHORT rustle at its Falloff distance. Higher than the long ones: it plays with the
+## sound of what is taken (a crate, a door), which covered it entirely at -18 dB (playtest 2026-10-16).
+@export_range(-40.0, 12.0, 0.5) var sfx_clothes_short_db: float = -10.0
+## Loudness (dB) of a LONG rustle (a whole-body move) at its Falloff distance.
+@export_range(-40.0, 12.0, 0.5) var sfx_clothes_long_db: float = -18.0
+## Reference distance (m) of the clothes rustle: past it the sound starts really fading.
+@export_range(0.5, 200.0, 0.5) var sfx_clothes_falloff: float = 2.0
+## Hard cut-off (m) of the clothes rustle: further away it is not played at all.
+@export_range(1.0, 500.0, 1.0) var sfx_clothes_distance: float = 8.0
+## How the clothes rustle fades with distance (see Sfx3D.Attenuation).
+@export var sfx_clothes_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
+
 @export_group("Ground dust")
 ## How much dust each kind of ground gives up under the feet (see SurfaceDust): a puff per step, a
 ## bigger one on landing. Null = no dust.
@@ -304,6 +339,10 @@ var stance: int = 0
 ## takes no steps. The server is the only one that knows: a client neither tracks another avatar's
 ## gravity areas nor is ever told about god_mode.
 var floating: bool = false
+## Replicated STATE, owned by the server: true while the weightless body's thrusters fire (a move key, the
+## vertical axis, the brake while there is motion left to cancel). Every client hears it on every avatar
+## (EvaThrusterSound); the owner also predicts it from its own keys, so the hiss starts with the press.
+var thrusting: bool = false
 ## Shared belt attachment point (a BoneAttachment3D on the puppet's hip bone, created by CharacterAnimator):
 ## any tool holsters onto it with its own offset, so a stowed tool follows the animated body. Null on the
 ## dedicated server (no puppet).
@@ -312,6 +351,13 @@ var belt_mount: Node3D = null
 ## CharacterAnimator, with the bone's rest rotation cancelled so a child faces the way the body faces).
 ## The torch rides it, so the beam follows the animated head. Null on the dedicated server (no puppet).
 var head_mount: Node3D = null
+## The DataPad worn on the left forearm (a node on the puppet's forearm bone, created by CharacterAnimator,
+## +Y out of the arm's outer side). The wrist device's model hangs there. Null on the dedicated server.
+var wrist_mount: Node3D = null
+## Replicated STATE: the wrist is raised before the eyes, reading the DataPad. The owner sets it as it
+## starts the gesture (WristDatapad) and tells the server, which replicates it ("datapad") so every
+## avatar raises the same arm -- a late joiner included, which an event would miss.
+var datapad_raised: bool = false
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
@@ -350,7 +396,8 @@ static func of(node: Node) -> Player:
 	return walk as Player
 var input_from_server: Dictionary = {
 	"input_direction": Vector2.ZERO,
-	"rotation": Vector3.ZERO
+	"rotation": Vector3.ZERO,
+	"frame": null,  # uuid of the frame `rotation` is local to on the owner's client ("" = world)
 }
 var new_input_from_server: bool = false
 ## SERVER: the number of the last move packet applied (MoveOrder): an older one arriving late is dropped.
@@ -414,6 +461,8 @@ var _last_head_yaw_sent: float = INF
 # gravity at all: see PlayerServer._server_update_frame.
 var _no_gravity_time: float = 0.0
 var _interp := NetInterpolator.new()  # smooths a REMOTE player's replicated movement
+## The owner's on-foot stutter probe (client.ini debug_move_probe=true, MovementProbe); null when off.
+var move_probe: MovementProbe = null
 # Owner-local prediction of "am I carrying?", to stow/unstow the perforator immediately
 # (the server broadcasts the stow to OTHER players; the owner doesn't echo to itself).
 var _owner_carrying: bool = false
@@ -466,7 +515,8 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 @onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
 @onready var puppet: Node3D = $Puppet
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
-@onready var interact_label: Label = $UserInterface/HUD/InteractLabel
+## null on the dedicated server, which frees the whole UserInterface (see _drop_server_ui).
+@onready var interact_label: Label = get_node_or_null(^"UserInterface/HUD/InteractLabel")
 @onready var camera_pivot: Node3D = $CameraPivot
 ## The camera pivot's RESTING offset from the body, captured once from the scene.
 ##
@@ -510,7 +560,8 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 ## differs, it defaults to no change at all, and the driver's tuning stays the single reference.
 @export var passenger_eye_offset: float = 0.0
 
-@onready var direct_chat: DirectChat = $UserInterface/DirectChat
+## null on the dedicated server, which frees the whole UserInterface (see _drop_server_ui).
+@onready var direct_chat: DirectChat = get_node_or_null(^"UserInterface/DirectChat")
 
 @onready var box4m: PackedScene = preload("res://scenes/_universe/props/containers/box_4m.tscn")
 @onready var box50m: PackedScene = preload("res://scenes/_universe/props/containers/box_50cm.tscn")
@@ -521,6 +572,9 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 ## base of the skull, so the lamp has to come forward (-Z) and up to clear the face instead of shining
 ## from inside it. Tune live in the Inspector.
 @export var torch_head_offset: Vector3 = Vector3(0, 0.08, -0.2)
+## How long (s) the left wrist takes to come up before the eyes to read the DataPad (F3), and to go back
+## down. The view then closes in on its screen (WristDatapad) before the full tablet shows.
+@export_range(0.1, 1.5, 0.05) var datapad_raise_time: float = 0.4
 
 # Mining gameplay (perforator equip, aim, perforation) is encapsulated in the
 # MiningTool component (scene child). Networking stays here (see _ready wiring).
@@ -570,8 +624,20 @@ func _enter_tree() -> void:
 			NetworkOrchestrator.set_player_global_position.connect(_set_player_global_position)
 	else:
 		# server side
-		$UserInterface.visible = false
+		_drop_server_ui()
 		$CameraPivot.visible = false
+
+## The dedicated server never draws a screen, yet every player and NPC it creates is a full player.tscn,
+## UserInterface included (HUD, chat, pause menu: 49 of the scene's 88 nodes). Hidden, that subtree
+## still entered the tree and ran its _ready: 26 of the 27 ms the server spent adding a player
+## (test/perf/server_ingest_bench, 2026-10-16), paid by every arrival and every hand-over. Freed here,
+## before it enters; on a later reparent there is nothing left to drop.
+func _drop_server_ui() -> void:
+	var ui: Node = get_node_or_null(^"UserInterface")
+	if ui == null:
+		return
+	remove_child(ui)
+	ui.free()
 
 func _ready() -> void:
 	prints("Player", name, "spawned at", spawn_position, "on server" if GameOrchestrator.is_server() else "on client")
@@ -590,7 +656,9 @@ func _ready() -> void:
 	# relay its replicated-state requests to the server + its aim signal to the UI.
 	mining_tool.setup(camera_pivot, camera)
 	mining_tool.sync_requested.connect(client_send_action_to_server)
-	mining_tool.aiming_changed.connect($UserInterface.set_aiming)
+	var ui: Node = get_node_or_null(^"UserInterface")
+	if ui != null:
+		mining_tool.aiming_changed.connect(ui.set_aiming)
 
 	# Strategy: pick this player's behaviour ONCE — authority on the dedicated server, presentation
 	# (owner + remote) on a client. The role is a child node driving this body; each role's setup()
@@ -653,6 +721,8 @@ func set_seated(seated: bool) -> void:
 ## no saccades.
 func net_set_local_target(local_pos: Vector3) -> void:
 	_interp.set_position_target(self, local_pos)
+	if move_probe != null and not is_instance_valid(_seat_node):
+		move_probe.on_target(local_pos, Time.get_ticks_usec())
 
 
 func net_set_target(local_pos: Vector3, local_rot: Vector3) -> void:
@@ -666,6 +736,8 @@ func net_set_target(local_pos: Vector3, local_rot: Vector3) -> void:
 ## Re-snap the interpolation after a reparent (the local frame changed).
 func net_reset_interp() -> void:
 	_interp.snap_next()
+	if move_probe != null:
+		move_probe.on_snap(Time.get_ticks_usec(), str(get_parent().name) if get_parent() != null else "")
 
 func _ride_seat(seat: Node3D) -> void:
 	var eye: Transform3D = seat.sit_transform()
@@ -796,6 +868,25 @@ func npc_goal_keep_world(new_parent: Node) -> void:
 	if old_parent is Node3D and new_parent is Node3D:
 		var goal_world: Vector3 = (old_parent as Node3D).global_transform * npc_go_to_position
 		npc_go_to_position = (new_parent as Node3D).global_transform.affine_inverse() * goal_world
+
+## The speed (m/s) the gait asks for: sprint or the wheel-chosen walk speed, capped by the stance,
+## slowed while aiming or carrying, nothing while perforating. ONE rule for the server, which moves
+## the body by it, and for the owner, whose animation and footsteps follow it from the keys.
+func gait_speed(sprint_held: bool, walk_target: float, stance_now: int, carrying: bool) -> float:
+	var speed: float = sprint_speed if sprint_held else walk_target
+	if stance_now == 1:  # crouched: capped to crouch_speed (no sprint)
+		speed = minf(speed, crouch_speed)
+	elif stance_now == 2:  # prone: even slower
+		speed = minf(speed, prone_speed)
+	if mining_tool != null:
+		if mining_tool.is_aiming:
+			speed *= mining_tool.aim_speed_factor  # slowed down in aim mode
+		if mining_tool.is_perforating:
+			speed = 0.0  # frozen during perforation
+	if carrying:
+		speed *= carry_speed_factor  # carrying an ore slows you down (issue #124)
+	return speed
+
 
 ## The ONE way a server-authoritative move leaves this body. Position and rotation are sampled LOCAL
 ## to whatever node we are a child of at this instant; the frame that goes on the wire is derived

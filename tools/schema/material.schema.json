@@ -43,6 +43,13 @@
       "minItems": 2,
       "maxItems": 2
     },
+    "albedo_color": {
+      "description": "Base colour, sRGB [r, g, b] from 0 to 1. Tints the albedo map when there is one; stands for it on a plain-coloured surface, which then needs no albedo map.",
+      "type": "array",
+      "items": { "type": "number", "minimum": 0, "maximum": 1 },
+      "minItems": 3,
+      "maxItems": 3
+    },
     "license": {
       "type": "string",
       "enum": ["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0", "AGPL-3.0"]
@@ -70,7 +77,7 @@
       "description": "Map name to file name, relative to the material folder (hosted) or to the extracted archive (external).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["albedo", "normal"],
+      "required": ["normal"],
       "properties": {
         "albedo": { "$ref": "#/$defs/fileName" },
         "normal": { "$ref": "#/$defs/fileName" },
@@ -82,7 +89,7 @@
         "emissive": { "$ref": "#/$defs/fileName" },
         "opacity": { "$ref": "#/$defs/fileName" }
       },
-      "$comment": "orm and ao/roughness/metallic are mutually exclusive. Expressing that here with not/required is possible but yields unreadable errors, so validate.py checks it explicitly."
+      "$comment": "A base colour is required: maps.albedo, albedo_color, or both (validate.py). orm and ao/roughness/metallic are mutually exclusive. Expressing that here with not/required is possible but yields unreadable errors, so validate.py checks it explicitly."
     }
   },
   "$defs": {

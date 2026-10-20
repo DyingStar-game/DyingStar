@@ -753,6 +753,9 @@ func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> 
 			},
 			"uuid": player_entity.client_uuid,
 			"seq": MoveOrder.number(Time.get_unix_time_from_system(), _move_counter),
+			# The frame "rot" is local to (our parent's uuid, "" = world). The server moves us into a new
+			# frame a round trip before we hear of it, and must not read this rotation in that one.
+			"frame": PropSpawn.parent_frame_uuid(player_entity),
 		},
 	})
 	_move_counter += 1

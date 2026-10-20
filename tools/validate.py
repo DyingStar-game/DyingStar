@@ -157,6 +157,20 @@ def _check_map_consistency(manifest: dict) -> list[Issue]:
     ]
 
 
+def _check_base_color(manifest: dict) -> list[Issue]:
+    """A base colour comes from the albedo map, from albedo_color, or both: never from nothing."""
+    if "albedo" in manifest.get("maps", {}) or "albedo_color" in manifest:
+        return []
+    return [
+        Issue(
+            "error",
+            "base_color_missing",
+            "maps.albedo or albedo_color: a material needs one of them "
+            "(a plain-coloured surface is albedo_color alone).",
+        )
+    ]
+
+
 def _check_tags(manifest: dict, known_tags: set[str]) -> list[Issue]:
     unknown = [tag for tag in manifest.get("tags", []) if tag not in known_tags]
     if not unknown:
@@ -212,6 +226,7 @@ def validate_material(
 
     issues = _check_schema(manifest, validator)
     issues.extend(_check_map_consistency(manifest))
+    issues.extend(_check_base_color(manifest))
     issues.extend(_check_tags(manifest, known_tags))
     issues.extend(_check_family_segment(manifest, families))
     issues.extend(_check_folder_layout(folder, manifest))

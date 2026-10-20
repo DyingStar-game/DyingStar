@@ -5,8 +5,8 @@
 [ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="3_hqfv2"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/decals/ares_misc_decal_material.tres" id="4_6ad14"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
-[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
-[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
+[ext_resource type="Resource" path="res://scenes/common/metal_box_landing.tres" id="sfx_landing"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/props/metal-box-pick-up.mp3" id="sfx_pick"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_urcx6"]
 size = Vector3(0.3953384826854745, 0.4112716205195284, 0.4039184679659229)

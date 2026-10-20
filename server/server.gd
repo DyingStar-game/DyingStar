@@ -12,6 +12,8 @@ const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
 ## Seeds mining zones under players as they walk the planet. Server-owned: it publishes zones
 ## through NetworkOrchestrator.spawn_prop_authoritative and arms/disarms their detection.
 var _mining_planner := MiningZonePlanner.new()
+## Stops stepping the physics space of every planet with nothing in it that can move (see the class).
+var planet_spaces := PlanetSpaceGate.new()
 ## Max number of [Pin] log entries before suppressing further output.
 const PIN_DEBUG_MAX: int = 200
 
@@ -217,6 +219,7 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	set_process(false)
+	planet_spaces.bind(get_tree())
 	# props_list itself lives for the server's lifetime; only its per-type sub-dictionaries are
 	# created lazily, which is why the planner re-reads it through .get() instead of caching one.
 	_mining_planner.bind_props_list(props_list)
@@ -249,6 +252,7 @@ func _physics_process(_delta: float) -> void:
 		# wall clock — with no assumption about how many substeps a frame ran.
 		_perf_gap_usec += _t0 - _perf_prev_exit_usec
 	_perf_tick(_delta)
+	planet_spaces.tick()
 	_tps_ticks += 1
 	_horizon_update_counter += 1
 	if _horizon_update_counter >= 2:
@@ -470,7 +474,7 @@ func _perf_tick(delta: float) -> void:
 	var _nav: Dictionary = NpcNavCache.perf_snapshot(true)
 	print(("[Perf] %s up=%.0fs win=%.1fs tps=%.0f/%d fps=%.0f"
 			+ "  phys=%.1fms proc=%.1fms  active3d=%d pairs=%d islands=%d | props awake=%d unfrozen=%d total=%d"
-			+ " | chunks res=%d (on %d/%d planets) loading=%d queued=%d"
+			+ " | chunks res=%d (on %d/%d planets) loading=%d queued=%d | planet spaces awake=%d/%d"
 			+ " | players=%d npcs=%d navmaps=%d | nav boxes=%d q=%d inflight=%d parses=%d(%.0fms) bakes=%d(%.0fms) obst=%d"
 			+ " | pending upd props=%d players=%d") % [
 		Time.get_time_string_from_system(),
@@ -485,6 +489,7 @@ func _perf_tick(delta: float) -> void:
 		Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT),
 		awake, unfrozen, total,
 		chunks, planets_with_chunks, props_list["planets"].size(), loading, queued,
+		planet_spaces.active_count(), planet_spaces.world_count(),
 		players_list.size(), npcs, NavigationServer3D.get_maps().size(),
 		_nav["boxes"], _nav["queued"], _nav["inflight"],
 		_nav["parses"], float(_nav["parse_usec"]) / 1000.0, _nav["bakes"], float(_nav["bake_usec"]) / 1000.0,
@@ -1453,6 +1458,8 @@ func player_move(message: Dictionary):
 		player.input_from_server.rotation = Vector3(
 			float(message["data"]["rot"]["x"]), float(message["data"]["rot"]["y"]), float(message["data"]["rot"]["z"])
 		)
+		# The frame that rotation is local to; null from a client that does not say (taken as ours).
+		player.input_from_server.frame = message["data"].get("frame")
 		player.new_input_from_server = true
 	else:
 		print("Player move not found: " + str(message["player_id"]))
@@ -1892,6 +1899,7 @@ func create_planet(event: Dictionary) -> void:
 	planet_world.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	universe_scene.add_child(planet_world)
 	planet_world.add_child(spawnable_planet_instance)
+	planet_spaces.register(planet_world, str(planet_data["name"]))
 	props_list_last_movement[planet_uuid] = Vector3.ZERO
 	props_list_last_rotation[planet_uuid] = Vector3.ZERO
 	props_list["planets"][planet_uuid] = spawnable_planet_instance

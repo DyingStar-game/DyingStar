@@ -93,8 +93,10 @@ var _speed: Label
 var _odometer: Label
 var _lights: TextureRect
 var _handbrake: TextureRect
-var _limiter: TextureRect
+var _limiter: TextureRect  # the speed cell: the limiter's icon, or the cruise control's while it holds
 var _limiter_cap: Label
+var _limiter_icon: Texture2D = null
+var _cruise_icon: Texture2D = null
 var _load: TextureRect
 var _load_text: Label
 var _doors: TextureRect
@@ -140,15 +142,24 @@ func _process(delta: float) -> void:
 		return
 	modulate = Color(1, 1, 1, 1)
 	_set_state("live")
+	# The digits read the WHEELS' speed, as a real speedometer does (and as the rev counter already
+	# does): the body's speed counted a fall off a cliff as driving, and climbed at ~35 km/h a second
+	# all the way down (playtest 2026-10-16). In the air the free wheels spin down, so do the digits.
+	# Everything else stays on the BODY's speed: the wind on an open door, the limiter (which acts on
+	# it) and the handbrake warning are about how fast the truck moves, not how fast its wheels spin.
+	_speed.text = "%.0f" % absf(_vehicle.get_wheel_kmh())
 	var speed: float = _vehicle.get_display_speed_kmh()
-	_speed.text = "%.0f" % absf(speed)
 	_odometer.text = "%s km" % _km_text(_vehicle.odometer.km())
 	_lights.modulate = light_colour(_vehicle.is_headlights_on())
 	_handbrake.modulate = handbrake_colour(_vehicle.is_handbraked(), speed, Time.get_ticks_msec() * 0.001)
+	# One cell for the two speed systems, which are never on together: the cruise control's icon and set
+	# speed while it holds the truck, the limiter's otherwise (on or off: its limit is always shown).
 	var limiter: VehicleSpeedLimiter = _vehicle.limiter
-	_limiter.modulate = limiter_colour(limiter.enabled, limiter.is_over(speed))
-	_limiter_cap.text = "%d" % limiter.cap_kmh
-	_limiter_cap.modulate = _limiter.modulate if limiter.enabled else OFF_COLOR
+	var cruise: VehicleCruiseControl = _vehicle.cruise
+	_limiter.texture = _cruise_icon if cruise.enabled else _limiter_icon
+	_limiter.modulate = speed_colour(limiter.enabled, limiter.is_over(speed), cruise.enabled)
+	_limiter_cap.text = "%d" % (cruise.set_kmh if cruise.enabled else limiter.cap_kmh)
+	_limiter_cap.modulate = _limiter.modulate if limiter.enabled or cruise.enabled else OFF_COLOR
 	_load.modulate = load_colour(_vehicle.is_overloaded())
 	_load_text.text = "%.0f / %.0f kg" % [_vehicle.get_cargo_mass(), _vehicle.max_payload]
 	_load_text.modulate = _load.modulate
@@ -157,7 +168,7 @@ func _process(delta: float) -> void:
 		_beep()
 	_doors.modulate = door_colour(doors.x > 0.0, speed, doors.y, _door_alarm.lit())
 	_drive.text = _vehicle.get_drive_mode_name()
-	_power.value = _vehicle.get_power_share() * 100.0
+	_show_power(_vehicle.get_power_share())
 	_rpm.text = tr("%%HUD_RPM") % _vehicle.get_engine_rpm()
 	_show_batteries(_vehicle.energy.levels())
 	_show_bays(_vehicle.bays.all())
@@ -174,7 +185,7 @@ func _preview() -> void:
 	_odometer.text = "1 234.5 km"
 	_drive.text = "4x4"
 	_rpm.text = "2400 rpm"
-	_power.value = 60.0
+	_show_power(0.6)
 	_limiter_cap.text = "60"
 	_load_text.text = "800 / 4000 kg"
 	_lights.modulate = GREEN
@@ -192,6 +203,23 @@ static func baseline_lift(font: Font, big: int, small: int) -> int:
 	if font == null:
 		return 0
 	return maxi(roundi(font.get_descent(big) - font.get_descent(small)), 0)
+
+
+## The motor's power bar: how much of its force the drive asks for ([param share], 0..1), and the colour
+## that says how hard -- green cruising, amber half way, red at full force. It used to stay green
+## whatever the motor gave (2026-10-16).
+func _show_power(share: float) -> void:
+	_power.value = clampf(share, 0.0, 1.0) * 100.0
+	(_power.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = power_colour(share)
+
+
+## The power bar's colour for a [param share] (0..1) of the motor's force: a gradient from GREEN through
+## AMBER (half) to RED (full).
+static func power_colour(share: float) -> Color:
+	var s: float = clampf(share, 0.0, 1.0)
+	if s < 0.5:
+		return GREEN.lerp(AMBER, s * 2.0)
+	return AMBER.lerp(RED, (s - 0.5) * 2.0)
 
 
 ## The headlights' light: green on, faint off.
@@ -218,6 +246,10 @@ static func limiter_colour(enabled: bool, over_limit: bool) -> Color:
 	if over_limit:
 		return RED
 	return AMBER if enabled else OFF_COLOR
+
+## The speed cell's light: green while the cruise control holds the speed, else the limiter's.
+static func speed_colour(limiter_on: bool, over_limit: bool, cruise_on: bool) -> Color:
+	return GREEN if cruise_on else limiter_colour(limiter_on, over_limit)
 
 
 ## The doors' light: faint with every door shut, orange with one open, red once the speed
@@ -336,6 +368,8 @@ func _status() -> Control:
 	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
 	bottom.add_theme_constant_override("separation", 40)
 	_limiter = _icon("limiter", ICON_PX)
+	_limiter_icon = _limiter.texture
+	_cruise_icon = load(ICON_DIR + "cruise.png")
 	_limiter_cap = _label("", SMALL_FONT, AMBER)
 	bottom.add_child(_side_cell(_limiter, _limiter_cap))
 	_load = _icon("load", ICON_PX)

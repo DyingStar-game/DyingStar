@@ -31,6 +31,7 @@ const SECTIONS : Array = [
 		{"label": "%%ACT_VEHICLE_LIGHTS", "actions": [&"vehicle_lights"]},
 		{"label": "%%ACT_VEHICLE_HORN", "actions": [&"vehicle_horn"]},
 		{"label": "%%ACT_VEHICLE_SPEED_LIMITER", "actions": [&"vehicle_speed_limiter"]},
+		{"label": "%%ACT_VEHICLE_CRUISE_CONTROL", "actions": [&"vehicle_cruise_control"]},
 		{"label": "%%HELP_LIMITER_SET", "actions": [&"vehicle_limiter_up", &"vehicle_limiter_down"]},
 		{"label": "%%ACT_EXIT", "actions": [&"exit"]},
 	]],

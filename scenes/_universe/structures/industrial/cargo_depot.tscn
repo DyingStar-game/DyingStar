@@ -16,11 +16,13 @@
 [ext_resource type="Shape3D" uid="uid://7gu1abixw0uu" path="res://scenes/_universe/structures/industrial/stairs_collider_shape.tres" id="17_2hcbk"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="18_bfkre"]
 [ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="light_group_script"]
+[ext_resource type="Texture2D" uid="uid://cfjs8fjv2jck4" path="res://assets/textures/map_markers/depot.png" id="mm_icon"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Script" uid="uid://c4t1duu3n71vw" path="res://scenes/_universe/structures/industrial/cargo_depot.gd" id="script_cargo"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="terrain_pad_1"]
-[ext_resource type="PackedScene" path="res://scenes/_universe/structures/dispenser/tool_dispenser.tscn" id="tool_dispenser"]
+[ext_resource type="PackedScene" uid="uid://i2esxxslgnhb" path="res://scenes/_universe/structures/dispenser/tool_dispenser.tscn" id="tool_dispenser"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gm21b"]
 size = Vector3(11.762, 1.5, 2.889)
@@ -513,6 +515,7 @@ shape = ExtResource("17_2hcbk")
 transform = Transform3D(-1, 0, -1.2246064e-16, 0, 1, 0, 1.2246064e-16, 0, -1, 0, 5.88810804893721, 9.900351574904471)
 script = ExtResource("18_bfkre")
 text_key = "%%SIGN_CARGO_DEPOT"
+color = Color(1, 0.4, 0, 1)
 letter_height = 0.8300000000000001
 depth = 0.2
 light_range = 5.5
@@ -528,6 +531,14 @@ transform = Transform3D(6.123032e-17, 0, -1, 0, 1, 0, 1, 0, 6.123032e-17, 5.1871
 
 [node name="ToolDispenser2" parent="." unique_id=391775918 instance=ExtResource("tool_dispenser")]
 transform = Transform3D(6.123032e-17, 0, -1, 0, 1, 0, 1, 0, 6.123032e-17, 5.187191463527862, 0, 2.078585778608816)
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=575266575]
+script = ExtResource("mm_script")
+label = "%%MAP_MARKER_CARGO_DEPOT"
+icon = ExtResource("mm_icon")
+importance = 1
+max_view_m = 5000.0
+colour = Color(1, 0.4, 0, 1)
 
 [connection signal="body_entered" from="reception_area" to="." method="_on_reception_area_body_entered"]
 [connection signal="body_exited" from="reception_area" to="." method="_on_reception_area_body_exited"]

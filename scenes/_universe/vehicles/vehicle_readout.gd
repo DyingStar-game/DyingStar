@@ -157,8 +157,8 @@ func _model_line(total_mass: float) -> String:
 
 ## What the truck ACTUALLY does. "implied" is the force the measured peak acceleration accounts
 ## for (a x m): compare it against engine_power x driven wheels to settle how Godot spreads
-## engine_force. Godot models no rolling or aerodynamic drag while accelerating, so mass alone
-## converts the two.
+## engine_force. The peak comes at the launch, where the air and the tyres (VehicleResistance) hold
+## back almost nothing, so mass alone converts the two.
 func _measured_line(total_mass: float) -> String:
 	var implied: float = _acc_peak * total_mass
 	var sprint := "—"

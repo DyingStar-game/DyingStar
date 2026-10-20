@@ -13,6 +13,7 @@ const SWITCHES : Dictionary = {
 	"VehicleHud": &"vehicle_hud",
 	"MovementDebug": &"movement_debug",
 	"SafetyNetDebug": &"safety_net_debug",
+	"NotificationDebug": &"notification_debug",
 }
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer
