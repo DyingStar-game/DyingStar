@@ -24,6 +24,7 @@ _MIX_LEGACY = "ShaderNodeMixRGB"
 _IMAGE = "ShaderNodeTexImage"
 _MAPPING = "ShaderNodeMapping"
 _PRINCIPLED = "ShaderNodeBsdfPrincipled"
+_MATH = "ShaderNodeMath"
 
 # Channel each role occupies in a packed ORM map, per the manifest schema.
 # Occlusion sits in red, but it reaches the Principled through the base colour
@@ -45,6 +46,12 @@ class ExtractionResult:
     physical_size_m: tuple[float, float] = (1.0, 1.0)
     # sRGB base colour of a Base Color left unlinked (a plain-coloured surface), else None
     albedo_color: tuple[float, float, float] | None = None
+    # Whether the Principled Alpha is fed by an image (the albedo's own alpha or
+    # an opacity map), and the mode and threshold the wiring suggests: a Greater
+    # Than node is a scissor at its second value, a direct link a blend.
+    alpha_linked: bool = False
+    alpha_mode: str | None = None
+    alpha_threshold: float | None = None
     warnings: list[str] = field(default_factory=list)
 
     def is_usable(self) -> bool:
@@ -235,6 +242,43 @@ def _extract_simple(
         result.images[map_name] = node.image
 
 
+def _extract_alpha(principled: bpy.types.Node, result: ExtractionResult) -> None:
+    """The image behind the Alpha input, and whether it is cut at a threshold.
+
+    Read after the base colour: an Alpha wired from the albedo image itself is
+    already in the published albedo, so only another image is an opacity map
+    (which the export packs into the albedo's alpha).
+    """
+    socket = principled.inputs.get("Alpha")
+    node = _linked_node(socket) if socket is not None else None
+    if node is None:
+        return
+
+    threshold = None
+    if node.bl_idname == _MATH:
+        if node.operation != "GREATER_THAN" or node.inputs[1].is_linked:
+            result.warnings.append(
+                "Alpha goes through a Math node that is not 'Greater Than' a fixed "
+                "threshold, which the library cannot carry"
+            )
+            return
+        threshold = round(float(node.inputs[1].default_value), 4)
+        node = _linked_node(node.inputs[0])
+        if node is None:
+            return
+
+    if node.bl_idname != _IMAGE:
+        result.warnings.append(f"Alpha goes through an unsupported node ({node.bl_idname})")
+        return
+
+    result.alpha_linked = True
+    result.alpha_mode = "SCISSOR" if threshold is not None else "BLEND"
+    result.alpha_threshold = threshold
+    # == rather than "is": bpy may hand out two wrappers of one datablock.
+    if node.image is not None and node.image != result.images.get("albedo"):
+        result.images["opacity"] = node.image
+
+
 def _collapse_packed_orm(principled: bpy.types.Node, result: ExtractionResult) -> None:
     """Record a packed ORM as one map instead of three.
 
@@ -309,7 +353,7 @@ def extract(material: bpy.types.Material) -> ExtractionResult:
 
     if "Emission Color" in principled.inputs:
         _extract_simple(principled, "Emission Color", "emissive", result)
-    _extract_simple(principled, "Alpha", "opacity", result)
+    _extract_alpha(principled, result)
 
     _extract_physical_size(material, result)
 

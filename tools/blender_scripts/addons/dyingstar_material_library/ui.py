@@ -202,6 +202,15 @@ class DYINGSTAR_PT_material_maps(_MaterialSubPanel, bpy.types.Panel):
         row.prop(metadata, "physical_size_x")
         row.prop(metadata, "physical_size_y")
 
+        # Only where transparency is in play: an opaque material has nothing to set.
+        if result.alpha_linked or metadata.alpha_mode != "NONE":
+            box = layout.box()
+            box.label(text="Transparency")
+            row = box.row(align=True)
+            row.prop(metadata, "alpha_mode")
+            if metadata.alpha_mode == "SCISSOR":
+                row.prop(metadata, "alpha_threshold")
+
         self._draw_detected(layout, result, metadata)
 
     @staticmethod

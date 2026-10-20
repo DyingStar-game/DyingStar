@@ -171,6 +171,39 @@ def _check_base_color(manifest: dict) -> list[Issue]:
     ]
 
 
+def _check_alpha(manifest: dict) -> list[Issue]:
+    """Transparency travels in the albedo map's alpha, never in a map of its own.
+
+    Godot's StandardMaterial3D has no opacity slot: it reads transparency from
+    the albedo's alpha only. The Dying Star add-on therefore packs the opacity
+    into that alpha at export, and alpha says how to read it. A standalone
+    opacity map is skipped by the Godot generator, so the surface would come
+    out opaque there while it is cut out in Blender.
+    """
+    maps = manifest.get("maps", {})
+    issues: list[Issue] = []
+    if "alpha" in manifest and "albedo" not in maps:
+        issues.append(
+            Issue(
+                "error",
+                "alpha_needs_albedo",
+                "alpha: transparency is read from the albedo map's alpha channel, "
+                "and maps.albedo is missing.",
+            )
+        )
+    if "opacity" in maps:
+        issues.append(
+            Issue(
+                "warning" if "albedo" in maps else "error",
+                "opacity_not_packed",
+                "maps.opacity: Godot ignores a standalone opacity map. Re-export with the "
+                "Dying Star add-on: the opacity is packed into the albedo's alpha (maps.albedo "
+                "in RGBA, plus an alpha block).",
+            )
+        )
+    return issues
+
+
 def _check_tags(manifest: dict, known_tags: set[str]) -> list[Issue]:
     unknown = [tag for tag in manifest.get("tags", []) if tag not in known_tags]
     if not unknown:
@@ -227,6 +260,7 @@ def validate_material(
     issues = _check_schema(manifest, validator)
     issues.extend(_check_map_consistency(manifest))
     issues.extend(_check_base_color(manifest))
+    issues.extend(_check_alpha(manifest))
     issues.extend(_check_tags(manifest, known_tags))
     issues.extend(_check_family_segment(manifest, families))
     issues.extend(_check_folder_layout(folder, manifest))

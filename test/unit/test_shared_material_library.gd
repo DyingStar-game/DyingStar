@@ -94,3 +94,48 @@ func test_albedo_color_is_the_base_colour() -> void:
 	builder._apply_albedo_color(white, {"albedo_color": [1, 2]}, "mat_test", report)
 	assert_eq(white.albedo_color, Color.WHITE, "malformed: left white")
 	assert_eq(report.warnings.size(), 1, "and said so")
+
+
+## "alpha" cuts the surface by the albedo map's own alpha (where the Blender add-on packs the opacity):
+## scissor at its threshold, or blended. A decal sheet otherwise renders as a solid square.
+func test_alpha_cuts_the_surface_by_the_albedo_alpha() -> void:
+	var builder := SharedMaterialBuilder.new()
+	var report := SharedMaterialBuilder.Report.new()
+	var albedo := {"albedo": "tex_x_albedo.png"}
+	var cut := StandardMaterial3D.new()
+	builder._apply_alpha(cut, {"maps": albedo, "alpha": {"mode": "scissor", "threshold": 0.325}}, "mat_test", report)
+	assert_eq(cut.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR)
+	assert_almost_eq(cut.alpha_scissor_threshold, 0.325, 0.0001)
+	var halved := StandardMaterial3D.new()
+	builder._apply_alpha(halved, {"maps": albedo, "alpha": {"mode": "scissor"}}, "mat_test", report)
+	assert_almost_eq(halved.alpha_scissor_threshold, 0.5, 0.0001, "no threshold: 0.5")
+	var faded := StandardMaterial3D.new()
+	builder._apply_alpha(faded, {"maps": albedo, "alpha": {"mode": "blend"}}, "mat_test", report)
+	assert_eq(faded.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA)
+	var opaque := StandardMaterial3D.new()
+	builder._apply_alpha(opaque, {"maps": albedo}, "mat_test", report)
+	assert_eq(opaque.transparency, BaseMaterial3D.TRANSPARENCY_DISABLED, "no alpha block: opaque")
+	assert_eq(report.warnings, PackedStringArray())
+
+
+func test_alpha_without_an_albedo_map_or_a_known_mode_is_left_opaque() -> void:
+	var builder := SharedMaterialBuilder.new()
+	var report := SharedMaterialBuilder.Report.new()
+	var plain := StandardMaterial3D.new()
+	builder._apply_alpha(plain, {"maps": {}, "alpha": {"mode": "scissor"}}, "mat_test", report)
+	assert_eq(plain.transparency, BaseMaterial3D.TRANSPARENCY_DISABLED, "no albedo: no alpha to read")
+	var unknown := StandardMaterial3D.new()
+	builder._apply_alpha(unknown, {"maps": {"albedo": "tex_x_albedo.png"}, "alpha": {"mode": "fade"}}, "mat_test", report)
+	assert_eq(unknown.transparency, BaseMaterial3D.TRANSPARENCY_DISABLED)
+	assert_eq(report.warnings.size(), 2, "both said so")
+
+
+## A manifest still listing a standalone opacity map predates the packing: skipped, with the fix named.
+func test_a_standalone_opacity_map_asks_for_a_re_export() -> void:
+	var builder := SharedMaterialBuilder.new()
+	var report := SharedMaterialBuilder.Report.new()
+	var material := StandardMaterial3D.new()
+	builder._assign_map(material, "opacity", ImageTexture.new(), "mat_test", report)
+	assert_null(material.albedo_texture, "nothing assigned")
+	assert_eq(report.warnings.size(), 1)
+	assert_string_contains(report.warnings[0], "Re-export")
