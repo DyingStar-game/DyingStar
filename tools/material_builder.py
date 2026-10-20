@@ -266,23 +266,49 @@ def _connect_emission(
     principled.inputs["Emission Strength"].default_value = 1.0
 
 
-def _connect_opacity(
+def _connect_alpha(
     material: bpy.types.Material,
     node_tree: bpy.types.NodeTree,
     principled: bpy.types.Node,
     texture_nodes: dict[str, bpy.types.Node],
+    alpha: dict | None,
 ) -> None:
+    """Drive the Principled Alpha the way Godot reads the manifest's alpha block.
+
+    The transparency is the albedo map's own alpha, where the add-on packs the
+    opacity at export. A manifest that still lists a standalone opacity map
+    predates that packing: its map is wired as before, so it keeps its look here.
+
+    scissor goes through a Greater Than node at the threshold, a hard edge like
+    Godot's alpha scissor, and map_extractor reads that node back as a scissor.
+    """
     opacity = texture_nodes.get("opacity")
-    if opacity is None:
+    albedo = texture_nodes.get("albedo")
+    if opacity is not None:
+        source = opacity.outputs["Color"]
+    elif alpha is not None and albedo is not None:
+        source = albedo.outputs["Alpha"]
+    else:
         return
 
-    node_tree.links.new(opacity.outputs["Color"], principled.inputs["Alpha"])
+    # An opacity map without an alpha block keeps the blended look it always had.
+    mode = (alpha or {}).get("mode", "blend")
+    if mode == "scissor":
+        cut = node_tree.nodes.new("ShaderNodeMath")
+        cut.operation = "GREATER_THAN"
+        cut.label = "Alpha scissor"
+        cut.location = (-COLUMN_WIDTH, -len(texture_nodes) * ROW_HEIGHT)
+        cut.inputs[1].default_value = float(alpha.get("threshold", 0.5))
+        node_tree.links.new(source, cut.inputs[0])
+        source = cut.outputs["Value"]
+    node_tree.links.new(source, principled.inputs["Alpha"])
 
-    # The blend mode property moved in Blender 4.2 (EEVEE Next). Guard both.
+    # The render method moved in Blender 4.2 (EEVEE Next). Guard both. Dithered
+    # renders the already hard-edged scissor alpha as a clean cut, as Clip did.
     if hasattr(material, "surface_render_method"):
-        material.surface_render_method = "BLENDED"
+        material.surface_render_method = "DITHERED" if mode == "scissor" else "BLENDED"
     elif hasattr(material, "blend_method"):
-        material.blend_method = "BLEND"
+        material.blend_method = "CLIP" if mode == "scissor" else "BLEND"
 
 
 # --- Entry point -------------------------------------------------------------
@@ -330,6 +356,6 @@ def build_material(manifest: dict, folder: Path) -> bpy.types.Material:
     _connect_scalar_inputs(node_tree, principled, scalar_sources)
     _connect_surface_normal(node_tree, principled, texture_nodes)
     _connect_emission(node_tree, principled, texture_nodes)
-    _connect_opacity(material, node_tree, principled, texture_nodes)
+    _connect_alpha(material, node_tree, principled, texture_nodes, manifest.get("alpha"))
 
     return material

@@ -97,6 +97,10 @@ class DYINGSTAR_OT_detect_maps(bpy.types.Operator):
         metadata = material.dyingstar
         metadata.physical_size_x = result.physical_size_m[0]
         metadata.physical_size_y = result.physical_size_m[1]
+        if result.alpha_mode is not None:
+            metadata.alpha_mode = result.alpha_mode
+        if result.alpha_threshold is not None:
+            metadata.alpha_threshold = result.alpha_threshold
 
         self.report({"INFO"}, f"Found: {', '.join(sorted(result.images))}")
         return {"FINISHED"}
@@ -141,6 +145,12 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
         ):
             return {"CANCELLED"}
 
+        alpha, alpha_warning = exporter.alpha_block(
+            metadata.alpha_mode, metadata.alpha_threshold, result.alpha_linked
+        )
+        if alpha_warning:
+            self.report({"WARNING"}, alpha_warning)
+
         try:
             written = exporter.export(
                 material_name=material.name,
@@ -156,6 +166,7 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
                     "author": metadata.author,
                     "notes": metadata.notes,
                     "albedo_color": result.albedo_color,
+                    "alpha": alpha,
                 },
             )
         except exporter.ExportError as error:
@@ -321,6 +332,12 @@ class DYINGSTAR_OT_load_from_library(bpy.types.Operator):
         size = manifest.get("physical_size_m", [1.0, 1.0])
         metadata.physical_size_x = size[0]
         metadata.physical_size_y = size[1]
+
+        alpha = manifest.get("alpha") or {}
+        alpha_mode = str(alpha.get("mode", "none")).upper()
+        if alpha_mode in {item[0] for item in properties.ALPHA_MODE_ITEMS}:
+            metadata.alpha_mode = alpha_mode
+        metadata.alpha_threshold = float(alpha.get("threshold", 0.5))
 
         metadata.tags.clear()
         for tag in manifest.get("tags", []):
