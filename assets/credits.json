@@ -761,6 +761,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "container_standard_1220x260x260_a_rework.glb",
+			"path": "res://assets/_universe/props/containers/container_standard_1220x260x260_a_rework.glb",
+			"author": "",
+			"source": "Unknown",
+			"id": "",
+			"url": "",
+			"license": "unknown"
+		},
+		{
 			"asset": "conteneur.blend",
 			"path": "res://assets_blender/_universe/structures/buildings/conteneur.blend",
 			"author": "BenLatouro",
