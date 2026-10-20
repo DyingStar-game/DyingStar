@@ -33,6 +33,12 @@ def _apply_manifest(metadata, manifest: dict) -> None:
     metadata.physical_size_x = size[0]
     metadata.physical_size_y = size[1]
 
+    alpha = manifest.get("alpha") or {}
+    alpha_mode = str(alpha.get("mode", "none")).upper()
+    if alpha_mode in {item[0] for item in properties.ALPHA_MODE_ITEMS}:
+        metadata.alpha_mode = alpha_mode
+    metadata.alpha_threshold = float(alpha.get("threshold", 0.5))
+
     metadata.tags.clear()
     for tag in manifest.get("tags", []):
         metadata.tags.add().name = tag

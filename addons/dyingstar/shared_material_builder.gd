@@ -37,6 +37,15 @@ const ROUGHNESS_MODE_DISABLED := 1
 const ROUGHNESS_MODE_RED := 2
 const ROUGHNESS_MODE_GREEN := 3
 
+## The manifest's "alpha" modes and the transparency each gives: scissor cuts the surface at a threshold
+## (a hard edge, opaque pipeline, no sorting), blend fades it (a soft edge, sorted, costlier).
+const ALPHA_TRANSPARENCY := {
+	"scissor": BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR,
+	"blend": BaseMaterial3D.TRANSPARENCY_ALPHA,
+}
+## The scissor threshold of an "alpha" block that gives none.
+const DEFAULT_ALPHA_THRESHOLD := 0.5
+
 
 ## Outcome of a build pass, so the run reports without parsing logs.
 class Report extends RefCounted:
@@ -146,6 +155,7 @@ func _build_material(folder_name: String, report: Report, write: bool) -> void:
 	_apply_tiling(material, manifest, material_id, report)
 	_apply_maps(material, folder_path, manifest, material_id, report)
 	_apply_albedo_color(material, manifest, material_id, report)
+	_apply_alpha(material, manifest, material_id, report)
 
 	var output_path := Resolver.resource_path(material_id)
 	if _matches_saved(material, output_path):
@@ -218,6 +228,35 @@ func _apply_albedo_color(
 		report.warnings.append("%s: albedo_color must be [r, g, b] from 0 to 1, left white." % material_id)
 		return
 	material.albedo_color = Color(float(colour[0]), float(colour[1]), float(colour[2]))
+
+
+## "alpha" says how the albedo map's own alpha cuts the surface: {"mode": "scissor" | "blend",
+## "threshold": 0..1}. The Dying Star Blender add-on packs a separate opacity map into that alpha at
+## export (StandardMaterial3D reads transparency from the albedo only), so a decal sheet keeps its
+## transparent parts without a second texture -- nor a hand edit of the generated resource.
+func _apply_alpha(
+	material: StandardMaterial3D, manifest: Dictionary, material_id: String, report: Report
+) -> void:
+	var alpha: Variant = manifest.get("alpha")
+	if alpha == null:
+		return
+	if not (alpha is Dictionary) or not ALPHA_TRANSPARENCY.has((alpha as Dictionary).get("mode")):
+		report.warnings.append(
+			"%s: alpha.mode must be \"scissor\" or \"blend\", left opaque." % material_id
+		)
+		return
+	if not (manifest.get("maps", {}) as Dictionary).has("albedo"):
+		report.warnings.append(
+			"%s: alpha reads the albedo map's alpha and there is no albedo map, left opaque."
+			% material_id
+		)
+		return
+	var mode := str(alpha["mode"])
+	material.transparency = ALPHA_TRANSPARENCY[mode]
+	if mode == "scissor":
+		material.alpha_scissor_threshold = float(
+			(alpha as Dictionary).get("threshold", DEFAULT_ALPHA_THRESHOLD)
+		)
 
 
 # --- Import settings ----------------------------------------------------------
@@ -377,10 +416,14 @@ func _assign_map(
 			_assign_packed_orm(material, texture)
 		"opacity":
 			# StandardMaterial3D has no opacity slot: transparency is read from
-			# the alpha channel of the albedo map. Supporting a separate opacity
-			# file would mean merging it into the albedo at export time.
+			# the alpha channel of the albedo map, which is where the Blender
+			# add-on's export packs the opacity.
 			report.warnings.append(
-				"%s: a standalone opacity map is not supported, it is skipped." % material_id
+				(
+					"%s: a standalone opacity map is skipped. Re-export with the Dying Star"
+					+ " add-on: the opacity is packed into the albedo's alpha."
+				)
+				% material_id
 			)
 		_:
 			report.warnings.append("%s: unknown map '%s', it is skipped." % [material_id, map_name])

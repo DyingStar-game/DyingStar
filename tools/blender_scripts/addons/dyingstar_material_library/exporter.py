@@ -19,7 +19,7 @@ from pathlib import Path
 
 import bpy
 
-from . import preferences
+from . import alpha_packer, preferences
 
 MANIFEST_NAME = "material.json"
 MATERIAL_PREFIX = "mat_"
@@ -170,6 +170,8 @@ def _build_manifest(
     }
     if metadata.get("albedo_color") is not None:
         manifest["albedo_color"] = list(metadata["albedo_color"])
+    if metadata.get("alpha") is not None:
+        manifest["alpha"] = dict(metadata["alpha"])
     manifest["license"] = metadata["license"]
     manifest["author"] = metadata["author"]
     manifest["ai_generated"] = False
@@ -186,6 +188,47 @@ def _build_manifest(
     return manifest
 
 
+def alpha_block(mode: str, threshold: float, has_alpha: bool) -> tuple[dict | None, str]:
+    """The manifest's alpha block for the panel's mode, and a warning when one was assumed.
+
+    An alpha the material is wired with but no mode chosen would publish an
+    opaque material that is cut out in Blender: scissor at 0.5 is assumed
+    instead, the cheapest mode and the right one for most decals, and said so.
+    """
+    if mode == "SCISSOR":
+        return {"mode": "scissor", "threshold": round(float(threshold), 4)}, ""
+    if mode == "BLEND":
+        return {"mode": "blend"}, ""
+    if has_alpha:
+        return (
+            {"mode": "scissor", "threshold": 0.5},
+            "No alpha mode set: scissor at 0.5 assumed (Maps > Transparency)",
+        )
+    return None, ""
+
+
+def _pack_opacity(
+    images: dict[str, bpy.types.Image], descriptor: str
+) -> tuple[dict[str, bpy.types.Image], bpy.types.Image | None]:
+    """Fold a separate opacity map into the albedo's alpha, as Godot reads it.
+
+    Returns the maps to publish (an albedo, no opacity) and the packed image,
+    which the caller removes once written. Without an opacity map, the maps are
+    returned as they are.
+    """
+    if images.get("opacity") is None:
+        return images, None
+    try:
+        packed = alpha_packer.pack(
+            images.get("albedo"), images["opacity"], f"{TEXTURE_PREFIX}{descriptor}_albedo"
+        )
+    except alpha_packer.PackError as error:
+        raise ExportError(str(error)) from error
+    published = {role: image for role, image in images.items() if role != "opacity"}
+    published["albedo"] = packed
+    return published, packed
+
+
 def export(
     material_name: str,
     images: dict[str, bpy.types.Image],
@@ -199,7 +242,8 @@ def export(
             the glTF and what Godot matches against, so it — not the display
             name — determines the library id.
         images: map role -> image datablock, as produced by map_extractor.
-        metadata: display_name, tags, physical_size_m, license, author, notes.
+        metadata: display_name, tags, physical_size_m, license, author, notes,
+            albedo_color and alpha (None when absent).
         materials_dir: injectable target, defaults to the project layout.
 
     Returns:
@@ -214,6 +258,8 @@ def export(
         raise ExportError(
             "A library material needs a base colour (an albedo map or a plain colour) and a normal map"
         )
+    if metadata.get("alpha") is not None and "albedo" not in images and "opacity" not in images:
+        raise ExportError("Transparency needs an albedo map with alpha or an opacity map")
 
     target_root = materials_dir or preferences.materials_dir()
     if target_root is None:
@@ -235,15 +281,26 @@ def export(
     map_files: dict[str, str] = {}
     published: list[str] = []
     already_in_place: list[str] = []
-    for role, image in images.items():
-        if image is None:
-            continue
-        file_name = f"{TEXTURE_PREFIX}{descriptor}_{role}.png"
-        if _copy_image(image, folder / file_name):
-            published.append(role)
-        else:
-            already_in_place.append(role)
-        map_files[role] = file_name
+    images, packed = _pack_opacity(images, descriptor)
+    try:
+        for role, image in images.items():
+            if image is None:
+                continue
+            file_name = f"{TEXTURE_PREFIX}{descriptor}_{role}.png"
+            if image is packed:
+                try:
+                    alpha_packer.save(packed, folder / file_name)
+                except alpha_packer.PackError as error:
+                    raise ExportError(str(error)) from error
+                published.append(role)
+            elif _copy_image(image, folder / file_name):
+                published.append(role)
+            else:
+                already_in_place.append(role)
+            map_files[role] = file_name
+    finally:
+        if packed is not None:
+            bpy.data.images.remove(packed)
 
     after = _digest_maps(folder, map_files)
     version = _next_version(previous, before, after)

@@ -50,6 +50,21 @@
       "minItems": 3,
       "maxItems": 3
     },
+    "alpha": {
+      "description": "Transparency read from the albedo map's alpha channel, where the Dying Star Blender add-on packs the opacity at export. scissor cuts the surface where alpha falls below threshold (a hard edge, no sorting: decals, grilles); blend fades it (a soft edge, sorted, costlier).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["scissor", "blend"] },
+        "threshold": {
+          "description": "scissor only: the alpha under which the surface is cut. Defaults to 0.5.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
     "license": {
       "type": "string",
       "enum": ["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0", "AGPL-3.0"]
@@ -89,7 +104,7 @@
         "emissive": { "$ref": "#/$defs/fileName" },
         "opacity": { "$ref": "#/$defs/fileName" }
       },
-      "$comment": "A base colour is required: maps.albedo, albedo_color, or both (validate.py). orm and ao/roughness/metallic are mutually exclusive. Expressing that here with not/required is possible but yields unreadable errors, so validate.py checks it explicitly."
+      "$comment": "A base colour is required: maps.albedo, albedo_color, or both (validate.py). alpha needs maps.albedo; opacity is only read by Blender, the add-on packs it into the albedo's alpha (validate.py). orm and ao/roughness/metallic are mutually exclusive. Expressing that here with not/required is possible but yields unreadable errors, so validate.py checks it explicitly."
     }
   },
   "$defs": {

@@ -20,6 +20,14 @@ LICENSE_ITEMS = (
     ("CC-BY-SA-4.0", "CC-BY-SA-4.0", "Attribution, share alike"),
 )
 
+# The manifest's alpha modes, plus NONE for an opaque material. The ids are the
+# manifest's values upper-cased (scissor -> SCISSOR).
+ALPHA_MODE_ITEMS = (
+    ("NONE", "None", "Opaque: no alpha block in the manifest"),
+    ("SCISSOR", "Scissor", "Cut where the alpha falls below the threshold: hard edge, cheap (decals, grilles)"),
+    ("BLEND", "Blend", "Fade by the alpha: soft edge, sorted, costlier (glass, smoke)"),
+)
+
 
 class DYINGSTAR_MaterialTag(bpy.types.PropertyGroup):
     """One tag entry. A collection is the only way to store a list in Blender."""
@@ -71,6 +79,23 @@ class DYINGSTAR_MaterialMetadata(bpy.types.PropertyGroup):
         default=1.0,
         min=0.001,
         soft_max=20.0,
+    )
+
+    # Pre-filled from the Alpha input by Detect Maps (a Greater Than node is a
+    # scissor and its second value the threshold), but the artist decides: the
+    # node tree does not always say whether an edge should be hard or soft.
+    alpha_mode: bpy.props.EnumProperty(
+        name="Alpha",
+        description="How Godot reads the transparency packed into the albedo's alpha",
+        items=ALPHA_MODE_ITEMS,
+        default="NONE",
+    )
+    alpha_threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description="Scissor only: the alpha under which the surface is cut",
+        default=0.5,
+        min=0.0,
+        max=1.0,
     )
 
     # Set once the handler has pre-filled this material, so the artist's own
