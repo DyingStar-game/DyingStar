@@ -1,3 +1,4 @@
+class_name SpawnBuilding
 extends NetStaticBody  # the uuid facade (see NetStaticBody)
 
 ## Networked spawn building. Networking (uuid, replication, reparent, delete) lives in the PropSync
@@ -10,18 +11,22 @@ extends NetStaticBody  # the uuid facade (see NetStaticBody)
 @export var cols: int = 1
 ## Number of storeys (from 1).
 @export var floors: int = 1
-## Apartment depth along X (m). Negative = rows extend towards -X; the second row sits at twice this offset.
-@export var x_spacing: float = -5.16
-## Distance (m) between two neighbouring apartments of a row, along Z.
-@export var z_spacing: float = 3.16
-## Height (m) of one storey: the distance between two floors.
-@export var y_spacing: float = 3.25
-## Player spawn in apartment 0-0-0, local to the building: Horizon offsets it for each slot.
-@export var spawn_point: Vector3 = Vector3(-1.934, 0.071, 1.471)
+## Apartment depth along X (m): a habitat container's length. Negative = rows extend towards -X; the
+## second row sits at twice this offset.
+@export var x_spacing: float = -6.1
+## Distance (m) between two neighbouring apartments of a row, along Z: a container's width.
+@export var z_spacing: float = 2.6
+## Height (m) of one storey: the distance between two floors, a container's height.
+@export var y_spacing: float = 2.6
+## Player spawn in apartment 0-0-0, local to the building: Horizon offsets it for each slot. At the
+## middle of the container, the free floor between the bed and the wardrobe: Horizon mirrors it in the
+## other slots, and the middle is its own mirror.
+@export var spawn_point: Vector3 = Vector3(-3.05, 0.15, 1.3)
 ## uuid of the poi_village this building belongs to ("" = none): Horizon fills villages by it.
 @export var poi_uuid: String = ""
 
-## Occupied apartments, as {floor, row, col, player_uuid, player_name}: each gets a "HOME <name>" plate.
+## Occupied apartments, as {floor, row, col, player_uuid, player_name}: each shows its occupant's name
+## on its door plate.
 ## Replicated from the server; the default is a test entry.
 @export var apartments = [
 	{
@@ -40,6 +45,10 @@ var _apartments_created: bool = false
 
 ## Margin of the levelled footprint past the walls, as in the box drawn in the scene.
 const PAD_MARGIN_M := 0.5
+## Width (m) of the text on an apartment's door plate (the plate is 24 cm wide).
+const PLATE_WIDTH_M := 0.22
+## The plate text's largest pixel size (m per font pixel): a short name is not blown up past it.
+const PLATE_PIXEL_SIZE := 0.0006
 
 
 ## The TerrainPad footprint of a building of [param data]'s rows / cols / spacings, local to the
@@ -47,8 +56,8 @@ const PAD_MARGIN_M := 0.5
 ## pad of a building that has no node yet (server.gd _stream_register_pads) with the same numbers.
 ## Apartments run from x = 0 towards −x (one or two rows) and from z = 0 towards +z (cols).
 static func terrain_pad_box(data: Dictionary) -> Dictionary:
-	var w: float = float(data.get("rows", 1)) * absf(float(data.get("x_spacing", -5.16)))
-	var l: float = float(data.get("cols", 1)) * absf(float(data.get("z_spacing", 3.16)))
+	var w: float = float(data.get("rows", 1)) * absf(float(data.get("x_spacing", -6.1)))
+	var l: float = float(data.get("cols", 1)) * absf(float(data.get("z_spacing", 2.6)))
 	return {
 		"size": Vector3(w + 2.0 * PAD_MARGIN_M, 0.2, l + 2.0 * PAD_MARGIN_M),
 		"local": Transform3D(Basis.IDENTITY, Vector3(-0.5 * w, 0.0, 0.5 * l)),
@@ -113,30 +122,52 @@ func _create_apartments():
 	)
 
 
-func _fill_pseudo_plate() -> void:
+## The name of the apartment slot [param apt] ({floor, row, col}): "<row>-<col>-<floor>", as the
+## copies of 0-0-0 are named.
+static func slot_name(apt: Dictionary) -> String:
+	return str(int(apt["row"]), "-", int(apt["col"]), "-", int(apt["floor"]))
+
+
+## The pixel size that fits a text [param text_px] font pixels wide into [param width_m], never past
+## [param max_pixel_size]: a long name shrinks to fit the plate, a short one keeps the normal size.
+static func plate_pixel_size(text_px: float, width_m: float, max_pixel_size: float) -> float:
+	if text_px <= 0.0:
+		return max_pixel_size
+	return minf(max_pixel_size, width_m / text_px)
+
+
+## The apartment (a copy of 0-0-0) [param node] stands in, or null when it is in none.
+func apartment_of(node: Node) -> Node:
+	var rooms: Node = get_node_or_null("MultiMeshInstance3D")
+	while node != null and node.get_parent() != rooms:
+		node = node.get_parent()
+	return node
+
+
+## The player_uuid of whoever lives in [param apartment], "" when it is free.
+func occupant_of(apartment: Node) -> String:
+	if apartment == null:
+		return ""
 	for apt in apartments:
-		var node_name := str(int(apt["row"]), "-", int(apt["col"]), "-", int(apt["floor"]))
-		var node_apart := $MultiMeshInstance3D.get_node_or_null(node_name)
-		if node_apart == null:
+		if slot_name(apt) == str(apartment.name):
+			return str(apt.get("player_uuid", ""))
+	return ""
+
+
+## Write each occupant's name on their door plate, and clear the plates of the free apartments.
+func _label_plates() -> void:
+	var names := {}
+	for apt in apartments:
+		names[slot_name(apt)] = str(apt.get("player_name", ""))
+	for apartment in $MultiMeshInstance3D.get_children():
+		var plate := apartment.find_child("PlateLabel", true, false) as Label3D
+		if plate == null:
 			continue
+		plate.text = names.get(str(apartment.name), "")
+		var text_px: float = plate.font.get_string_size(plate.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+				plate.font_size).x if plate.font != null else 0.0
+		plate.pixel_size = plate_pixel_size(text_px, PLATE_WIDTH_M, PLATE_PIXEL_SIZE)
 
-		var label3d := node_apart.get_node_or_null("Label3D") as Label3D
-		if label3d == null:
-			label3d = Label3D.new()
-			label3d.name = "Label3D"
-			label3d.position = Vector3(0.02, 1.22, 2.42)
-			label3d.rotation_degrees = Vector3(0.0, 90.0, 0.0)
-			label3d.pixel_size = 0.003
-			label3d.font = load("res://ui/Poppins-BoldItalic.ttf")
-			label3d.font_size = 12
-			label3d.outline_size = 8
-			label3d.modulate = Color(0.85, 1.0, 0.85, 1.0)
-			label3d.outline_modulate = Color(0.0, 0.8, 0.05, 0.75)
-			label3d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			label3d.double_sided = true
-			node_apart.add_child(label3d)
-
-		label3d.text = "HOME\n%s" % apt["player_name"]
 
 ## PropSync applies the replicated transform, then calls this with the full payload so the building can
 ## apply its own (non-transform) fields. Replaces the old client_channel_data_update override.
@@ -177,4 +208,4 @@ func apply_prop_data(data: Dictionary) -> void:
 		apartments = data["apartments"]
 		_create_apartments()
 		if not GameOrchestrator.is_server():
-			_fill_pseudo_plate()
+			_label_plates()

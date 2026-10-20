@@ -1,0 +1,100 @@
+[gd_scene format=3 uid="uid://dpmnrscsn5b2b"]
+
+[ext_resource type="PackedScene" uid="uid://co31e5d5ccbep" path="res://assets/_universe/structures/buildings/habitat_container.glb" id="1_glb"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="Texture2D" uid="uid://cd8f3gvov6o61" path="res://assets/textures/map_markers/habitat.png" id="mm_icon"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="4_photocell"]
+[ext_resource type="FontFile" uid="uid://blgbhgyrk7yfo" path="res://ui/Poppins-BoldItalic.ttf" id="5_font"]
+[ext_resource type="PackedScene" uid="uid://0o84g0nqo8b" path="res://scenes/_universe/props/furniture/chamber/bed.tscn" id="6_bed"]
+[ext_resource type="PackedScene" uid="uid://br8l8bw1vtycw" path="res://scenes/_universe/props/furniture/chamber/table_bed.tscn" id="7_table"]
+[ext_resource type="PackedScene" uid="uid://duc5yf7ynq725" path="res://scenes/_universe/props/furniture/chamber/wardrobe.tscn" id="8_wardrobe"]
+
+[sub_resource type="BoxShape3D" id="Box_floor"]
+size = Vector3(6.1, 0.12, 2.6)
+
+[sub_resource type="BoxShape3D" id="Box_roof"]
+size = Vector3(6.1, 0.12, 2.6)
+
+[sub_resource type="BoxShape3D" id="Box_side"]
+size = Vector3(6.1, 2.6, 0.06)
+
+[sub_resource type="BoxShape3D" id="Box_back"]
+size = Vector3(0.06, 2.6, 2.6)
+
+[sub_resource type="BoxShape3D" id="Box_door"]
+size = Vector3(0.1, 2.36, 1.275)
+
+[node name="ContainerApartment" type="StaticBody3D"]
+collision_mask = 0
+
+[node name="habitat_container" parent="." instance=ExtResource("1_glb")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -3.05, 1.3, 1.3)
+
+[node name="DoorBody" type="StaticBody3D" parent="habitat_container/frame/left_door"]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/left_door/DoorBody"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, 0.6375)
+shape = SubResource("Box_door")
+
+[node name="DoorBody" type="StaticBody3D" parent="habitat_container/frame/right_door"]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/right_door/DoorBody"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, -0.6375)
+shape = SubResource("Box_door")
+
+[node name="PlateLabel" type="Label3D" parent="habitat_container/frame/ID"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -0.004, 0, 0)
+pixel_size = 0.0006
+double_sided = false
+modulate = Color(0.85, 1, 0.85, 1)
+outline_modulate = Color(0, 0.8, 0.05, 0.75)
+font = ExtResource("5_font")
+font_size = 48
+outline_size = 8
+
+[node name="Floor" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 0.06, 1.3)
+shape = SubResource("Box_floor")
+
+[node name="Roof" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 2.54, 1.3)
+shape = SubResource("Box_roof")
+
+[node name="SideWall" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 1.3, 0.03)
+shape = SubResource("Box_side")
+
+[node name="SideWall2" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 1.3, 2.57)
+shape = SubResource("Box_side")
+
+[node name="BackWall" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.07, 1.3, 1.3)
+shape = SubResource("Box_back")
+
+[node name="ceiling" type="SpotLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -3.05, 2.45, 1.3)
+shadow_enabled = true
+spot_range = 4.0
+spot_angle = 70.0
+
+[node name="Photocell" type="Node3D" parent="ceiling"]
+script = ExtResource("4_photocell")
+
+[node name="Bed" parent="." instance=ExtResource("6_bed")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -4.47, 0.12, 0.58)
+
+[node name="TableBed" parent="." instance=ExtResource("7_table")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -5.76, 0.168, 1.3)
+
+[node name="Wardrobe" parent="." instance=ExtResource("8_wardrobe")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -4.6, 0.12, 2.23)
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("mm_script")
+label = "%%MAP_MARKER_HOUSING"
+importance = 2
+max_view_m = 1500.0
+icon = ExtResource("mm_icon")

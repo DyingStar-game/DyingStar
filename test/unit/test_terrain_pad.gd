@@ -395,10 +395,10 @@ func test_spawn_building_pad_fits_its_rows_and_cols() -> void:
 	var script: Script = load("res://scenes/_universe/structures/buildings/spawn_building.gd")
 	# Called through Script.call, as server.gd states the pad of a sleeping building.
 	var box: Dictionary = script.call("terrain_pad_box", {"rows": 2.0, "cols": 6.0})
-	assert_almost_eq((box["size"] as Vector3).x, 2.0 * 5.16 + 1.0, 1e-9)
-	assert_almost_eq((box["size"] as Vector3).z, 6.0 * 3.16 + 1.0, 1e-9)
-	assert_almost_eq((box["local"] as Transform3D).origin.x, -5.16, 1e-9)
-	assert_almost_eq((box["local"] as Transform3D).origin.z, 9.48, 1e-9)
+	assert_almost_eq((box["size"] as Vector3).x, 2.0 * 6.1 + 1.0, 1e-9)
+	assert_almost_eq((box["size"] as Vector3).z, 6.0 * 2.6 + 1.0, 1e-9)
+	assert_almost_eq((box["local"] as Transform3D).origin.x, -6.1, 1e-9)
+	assert_almost_eq((box["local"] as Transform3D).origin.z, 7.8, 1e-9)
 
 
 func test_the_footprint_survives_the_marker_being_freed() -> void:

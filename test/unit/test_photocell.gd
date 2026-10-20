@@ -18,7 +18,7 @@ const WIRED := {
 	"res://scenes/_universe/structures/industrial/garage.tscn": ["NeonSign", "Lights"],
 	"res://scenes/_universe/structures/industrial/cargo_depot.tscn": ["NeonSign", "Lights"],
 	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn": ["NeonSign"],
-	"res://scenes/_universe/structures/buildings/spawn_building.tscn": ["MultiMeshInstance3D/0-0-0/ceiling"],
+	"res://scenes/_universe/structures/buildings/container_apartment.tscn": ["ceiling"],
 }
 
 
