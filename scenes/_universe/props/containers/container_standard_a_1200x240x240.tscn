@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://dbgj4o4hffedt"]
 
 [ext_resource type="Script" uid="uid://ju6172ea8onc" path="res://scenes/_universe/props/containers/generic_storagebox.gd" id="1_eljka"]
-[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="4_cbir0"]
+[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_yellow.tres" id="4_cbir0"]
 [ext_resource type="PackedScene" uid="uid://bk68xyhicvhwh" path="res://assets/_universe/props/containers/container_standard_1220x260x260_a_rework.glb" id="5_pbj6n"]
 [ext_resource type="Texture2D" uid="uid://dch5uq2s5ejv6" path="res://assets/textures/decals/ares_logo/ares_logo_decal_crop.png" id="ares_logo"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
