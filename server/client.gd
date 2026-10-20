@@ -399,6 +399,14 @@ func _process(_delta: float) -> void:
 							# this build, not from the start (a single planet can outlast the timeout).
 							if my_player_spawn_due_since >= 0 and not my_player_created:
 								my_player_spawn_due_since = Time.get_ticks_msec()
+						"queued":
+							# Horizon holds our spawn: the server owning our apartment takes no new
+							# player for now (split under way, too slow, full), or the village habs are
+							# not there yet. Sent every 10 s while we wait, each one a fresh
+							# SPAWN_TIMEOUT_MS: waiting in the queue is not a lost spawn.
+							if my_player_spawn_due_since >= 0 and not my_player_created:
+								my_player_spawn_due_since = Time.get_ticks_msec()
+							LoadingSplash.say(get_tree(), tr("%%HUD_QUEUED") % int(event.get("position", 0)))
 						"gorc_zone_exit":
 							# When an object exit from my zone (GorcPlayer, planet, miningrock...)
 							delete_object(event)
