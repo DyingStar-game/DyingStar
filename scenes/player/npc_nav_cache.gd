@@ -112,7 +112,10 @@ const OBSTACLE_REACH: float = 10.0
 # ── Tunables: defaults here, overridden by `[npc]` in server.ini (same file and `srvini=` override as
 # PropNet / NetworkOrchestrator.load_server_config). Read once at class load, before any autoload. ──
 ## Age (s) past which a box is re-baked the next time an NPC asks for it. Lazy: an idle box never bakes.
-static var box_ttl_s: float = 120.0
+## Only a safety net: a world change re-bakes its boxes through invalidate_around (vehicles, terrain,
+## stuck NPCs). At 120 s, ~100 tiles in use re-baked 0.8 times a second an unchanged world, kept ~12
+## bakes queued for ever and slowed every server holding a village (preprod 2026-10-20).
+static var box_ttl_s: float = 600.0
 ## Age (s) past which a box's collected source geometry is re-collected before a re-bake.
 static var parse_ttl_s: float = 30.0
 ## Concurrent bakes (worker tasks) across all caches. They share the worker pool with terrain chunks.
@@ -121,6 +124,12 @@ static var max_bakes_in_flight: int = 2
 static var box_evict_s: float = 600.0
 ## "query" = physics query + worker extraction (default); "tree" = engine parse_source_geometry_data.
 static var parse_mode: String = "query"
+## Time (ms) the NPCs of this server may spend in path queries (map_get_path) in one physics tick, all
+## caches together; past it an NPC keeps its route and asks again on its next tick (take_path_query).
+## The first query of a tick always runs. In time, not in queries: one costs 0.6 ms on a small map
+## and 1-4 ms on a block map of a dense village, where 80 NPCs repathing together held a server at
+## 30 tps (preprod 2026-10-20).
+static var path_query_budget_ms: float = 4.0
 
 static func _static_init() -> void:
 	var ini: String = "server.ini"
@@ -134,6 +143,7 @@ static func _static_init() -> void:
 	parse_ttl_s = _ini_float(cfg, "nav_parse_ttl", parse_ttl_s)
 	max_bakes_in_flight = maxi(1, int(_ini_float(cfg, "nav_max_bakes", float(max_bakes_in_flight))))
 	box_evict_s = _ini_float(cfg, "nav_box_evict", box_evict_s)
+	path_query_budget_ms = maxf(0.0, _ini_float(cfg, "nav_path_budget_ms", path_query_budget_ms))
 	var mode: Variant = cfg.get_value("npc", "nav_parse_mode", parse_mode)
 	if mode is String and String(mode).strip_edges().to_lower() in ["query", "tree"]:
 		parse_mode = String(mode).strip_edges().to_lower()
@@ -152,6 +162,11 @@ static var prof_parses: int = 0       # source-geometry collections started
 static var prof_parse_usec: int = 0   # MAIN-THREAD time spent collecting (query or tree parse)
 static var prof_bakes: int = 0        # bakes landed
 static var prof_bake_usec: int = 0    # wall time from job start (collection) to the mesh being published
+static var prof_path_deferred: int = 0  # path queries pushed to the next tick by the per-tick budget
+
+## Physics frame of the path-query budget below, and the query time already spent in it (usec).
+static var _path_query_frame: int = -1
+static var _path_query_usec: int = 0
 
 ## Physics frame of the last main-thread geometry collection ANY cache ran: one per frame server-wide,
 ## so several boxes falling due together never stack their collections into one spike.
@@ -191,6 +206,10 @@ class NavBox extends RefCounted:
 	## Needs a re-bake (world changed / TTL); parse_dirty additionally forces a fresh collection.
 	var dirty: bool = false
 	var parse_dirty: bool = false
+	## The bake running / just landed follows a change of the world (invalidate_around) on a tile already
+	## published: a route through it may be blocked now. False for a TTL refresh of an unchanged world
+	## and for a first bake (the map only grew). Set when the job starts, read by box_baked listeners.
+	var world_changed: bool = false
 	var baked_at: float = -INF
 	var bake_started_at: float = -INF
 	## Earliest time a queued re-bake may start (REBAKE_MIN_INTERVAL_S after the last one).
@@ -342,14 +361,35 @@ static func perf_snapshot(reset: bool) -> Dictionary:
 		"boxes": boxes, "queued": queued, "inflight": inflight,
 		"parses": prof_parses, "parse_usec": prof_parse_usec,
 		"bakes": prof_bakes, "bake_usec": prof_bake_usec,
-		"obstacles": _obstacles.size(),
+		"obstacles": _obstacles.size(), "path_deferred": prof_path_deferred,
 	}
 	if reset:
+		prof_path_deferred = 0
 		prof_parses = 0
 		prof_parse_usec = 0
 		prof_bakes = 0
 		prof_bake_usec = 0
 	return snap
+
+
+## May a path query run now? False once this physics tick spent path_query_budget_ms (server-wide):
+## the caller keeps what it has and asks again on its next tick. Report the cost with
+## spent_path_query().
+static func take_path_query() -> bool:
+	var frame: int = Engine.get_physics_frames()
+	if frame != _path_query_frame:
+		_path_query_frame = frame
+		_path_query_usec = 0
+	if _path_query_usec > 0 and _path_query_usec >= int(path_query_budget_ms * 1000.0):
+		prof_path_deferred += 1
+		return false
+	return true
+
+
+## Charge `usec` of path query to this physics tick's budget (see take_path_query).
+static func spent_path_query(usec: int) -> void:
+	if Engine.get_physics_frames() == _path_query_frame:
+		_path_query_usec += maxi(usec, 1)
 
 
 # ── Public API ──────────────────────────────────────────────────────────────────────────────────────
@@ -553,6 +593,7 @@ func _pump() -> void:
 			break  # one main-thread collection per physics frame, server-wide; retry next tick
 		_queue.remove_at(i)
 		box.queued = false
+		box.world_changed = box.published and box.parse_dirty
 		box.dirty = false
 		box.bake_started_at = now
 		_in_flight += 1
