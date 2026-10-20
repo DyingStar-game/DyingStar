@@ -8,12 +8,17 @@
     0.05000000074505806,
     0.05000000074505806
   ],
+  "albedo_color": [
+    0.6966,
+    0.6966,
+    0.6966
+  ],
   "license": "CC0-1.0",
   "author": "irong",
   "ai_generated": false,
   "delivery": {
     "type": "hosted",
-    "version": 3
+    "version": 4
   },
   "maps": {
     "albedo": "tex_fabric_alu_mesh_albedo.png",

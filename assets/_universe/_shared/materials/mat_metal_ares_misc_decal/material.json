@@ -2,29 +2,33 @@
   "id": "mat_metal_ares_misc_decal",
   "display_name": "Ares Misc Decals",
   "tags": [
-	"trim",
-	"decal",
+    "trim",
+    "decal",
     "metal"
   ],
   "physical_size_m": [
-	1.0,
-	1.0
+    1.0,
+    1.0
   ],
   "albedo_color": [
-	0.692,
-	0.692,
-	0.692
+    0.692,
+    0.692,
+    0.692
   ],
+  "alpha": {
+    "mode": "scissor",
+    "threshold": 0.092
+  },
   "license": "AGPL-3.0",
   "author": "irong",
   "ai_generated": false,
   "delivery": {
-	"type": "hosted",
-	"version": 6
+    "type": "hosted",
+    "version": 7
   },
   "maps": {
-	"normal": "tex_metal_ares_misc_decal_normal.png",
-	"roughness": "tex_metal_ares_misc_decal_roughness.png",
-	"opacity": "tex_metal_ares_misc_decal_opacity.png"
+    "albedo": "tex_metal_ares_misc_decal_albedo.png",
+    "normal": "tex_metal_ares_misc_decal_normal.png",
+    "roughness": "tex_metal_ares_misc_decal_roughness.png"
   }
 }

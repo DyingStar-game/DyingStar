@@ -6,8 +6,9 @@
 
 [resource]
 resource_name = "mat_fabric_alu_mesh"
-albedo_color = Color(0.6966146, 0.6966146, 0.6966146, 1)
+albedo_color = Color(0.6966, 0.6966, 0.6966, 1)
 albedo_texture = ExtResource("1_x6ngt")
 roughness_texture = ExtResource("3_6iyrd")
 normal_enabled = true
 normal_texture = ExtResource("3")
+uv1_scale = Vector3(19.99999970197678, 19.99999970197678, 1)

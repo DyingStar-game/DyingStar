@@ -1,6 +1,6 @@
 [gd_resource type="StandardMaterial3D" format=3 uid="uid://bw8b8btsdg2al"]
 
-[ext_resource type="Texture2D" uid="uid://cj4xhcn5wjfox" path="res://assets/_universe/_shared/materials/mat_metal_icons_decal/tex_metal_icons_decal_opacity.png" id="1_tdg6q"]
+[ext_resource type="Texture2D" uid="uid://du6bbi2udyugp" path="res://assets/_universe/_shared/materials/mat_metal_icons_decal/tex_metal_icons_decal_albedo.png" id="1_tdg6q"]
 [ext_resource type="Texture2D" uid="uid://bkkysgik346pf" path="res://assets/_universe/_shared/materials/mat_metal_icons_decal/tex_metal_icons_decal_normal.png" id="1_xviso"]
 [ext_resource type="Texture2D" uid="uid://dmuua1jk8twvh" path="res://assets/_universe/_shared/materials/mat_metal_icons_decal/tex_metal_icons_decal_roughness.png" id="2_tdg6q"]
 
@@ -9,6 +9,7 @@ resource_name = "mat_metal_icons_decal"
 transparency = 2
 alpha_scissor_threshold = 0.325
 alpha_antialiasing_mode = 0
+albedo_color = Color(0.5037, 0.5037, 0.5037, 1)
 albedo_texture = ExtResource("1_tdg6q")
 roughness_texture = ExtResource("2_tdg6q")
 normal_enabled = true

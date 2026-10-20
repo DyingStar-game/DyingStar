@@ -14,16 +14,20 @@
     0.5037,
     0.5037
   ],
+  "alpha": {
+    "mode": "scissor",
+    "threshold": 0.325
+  },
   "license": "AGPL-3.0",
   "author": "irong",
   "ai_generated": false,
   "delivery": {
     "type": "hosted",
-    "version": 1
+    "version": 2
   },
   "maps": {
+    "albedo": "tex_metal_icons_decal_albedo.png",
     "normal": "tex_metal_icons_decal_normal.png",
-    "roughness": "tex_metal_icons_decal_roughness.png",
-    "opacity": "tex_metal_icons_decal_opacity.png"
+    "roughness": "tex_metal_icons_decal_roughness.png"
   }
 }
