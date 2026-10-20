@@ -8,6 +8,12 @@ uniform float paint_metallic: hint_range(0.0, 1.0, 0.01) = 1.0;
 uniform vec3 metal_color: source_color = vec3(0.7);
 uniform float metal_roughness: hint_range(0.0, 1.0, 0.01) = 0.2;
 
+uniform sampler2D metal_orm_texture: hint_default_white;
+
+instance uniform bool emission_on = false;
+uniform vec4 emission_color: source_color;
+uniform float emission_strength = 1.0;
+
 uniform sampler2D scratch_texture: hint_default_black;
 uniform float scratch_amount: hint_range(0.0, 2.0, 0.01) = 0.2;
 
@@ -32,10 +38,24 @@ void vertex() {
 }
 
 void fragment() {
+	float scratchness = COLOR.r;
+	float dirt = COLOR.g;
+	float layer = COLOR.b;
+	float light = COLOR.a;
+	float light_1 = smoothstep(0.1, 0.2, light);
+	
+	vec3 metal_orm = triplanar_texture(metal_orm_texture, uv1_power_normal, uv1_triplanar_pos).rgb;
+	
 	float scratch_value = triplanar_texture(scratch_texture, uv1_power_normal, uv1_triplanar_pos).r;
 
-	float metal_blend = COLOR.r + scratch_value * scratch_amount;
-	ALBEDO = mix(paint_color.rgb, metal_color, metal_blend);
+	float metal_blend = scratchness + scratch_value * scratch_amount;
+	vec3 paint_blend = mix(paint_color.rgb, metal_color, metal_blend);
+	
+	ALBEDO = mix(paint_blend, emission_color.rgb * 0.3, light_1);
 	METALLIC = mix(paint_metallic, 1.0, metal_blend);
-	ROUGHNESS = mix(paint_roughness, metal_roughness, metal_blend);
+	ROUGHNESS = mix(paint_roughness, metal_roughness * metal_orm.g, metal_blend);
+	
+	if (emission_on) {
+		EMISSION = light_1 * emission_color.rgb * emission_strength;
+	}
 }

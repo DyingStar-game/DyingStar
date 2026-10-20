@@ -4,11 +4,22 @@
 [ext_resource type="Material" uid="uid://t823t2dw4owg" path="res://scenes/planet/planet_grey.material" id="2_m4ygx"]
 [ext_resource type="PackedScene" uid="uid://qdb6kfktqpiu" path="res://scenes/_universe/props/containers/pallet_liquid_120x80x100.tscn" id="4_1uj1c"]
 [ext_resource type="Script" uid="uid://ddospp5lqpyox" path="res://levels/devmode/SimpleBoxTest/area_3d.gd" id="4_jq82d"]
+[ext_resource type="PackedScene" uid="uid://dcinktod8m0x2" path="res://scenes/_universe/props/containers/hauling_box.tscn" id="4_p0xcn"]
 [ext_resource type="PackedScene" uid="uid://cc8s2k0q8cxf" path="res://scenes/_universe/props/containers/pallet_crate_120x80x100.tscn" id="5_w0ufy"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn" id="6_bdj2j"]
 [ext_resource type="PackedScene" uid="uid://d37hc6ybk8fsj" path="res://scenes/_universe/props/containers/box_50cm.tscn" id="7_w0ufy"]
 [ext_resource type="PackedScene" uid="uid://dtijoobxv67w2" path="res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn" id="8_bdj2j"]
-
+[ext_resource type="PackedScene" uid="uid://0o84g0nqo8b" path="res://scenes/_universe/props/furniture/chamber/bed.tscn" id="10_fsvra"]
+[ext_resource type="PackedScene" uid="uid://br8l8bw1vtycw" path="res://scenes/_universe/props/furniture/chamber/table_bed.tscn" id="11_erwq5"]
+[ext_resource type="PackedScene" uid="uid://duc5yf7ynq725" path="res://scenes/_universe/props/furniture/chamber/wardrobe.tscn" id="12_djdhs"]
+[ext_resource type="PackedScene" uid="uid://cvov1kmmfnwql" path="res://scenes/_universe/props/food/food_biscuit.tscn" id="12_qwkha"]
+[ext_resource type="PackedScene" uid="uid://4oc8xbhlgsvy" path="res://scenes/_universe/props/food/food_nutrigris.tscn" id="13_p0xcn"]
+[ext_resource type="PackedScene" uid="uid://d2s14o4v7mrcl" path="res://scenes/_universe/props/containers/crate_container.tscn" id="15_qwkha"]
+[ext_resource type="PackedScene" uid="uid://gg8w4vg0go8g" path="res://scenes/_universe/props/furniture/hygene/shower_cabin.tscn" id="17_typbc"]
+[ext_resource type="PackedScene" uid="uid://dlvo567apcx4g" path="res://scenes/_universe/props/furniture/hygene/restroom_cabin.tscn" id="18_6lu6x"]
+[ext_resource type="PackedScene" uid="uid://cdw47e4be0uko" path="res://scenes/_universe/props/furniture/hygene/bathroom_sink.tscn" id="19_slh8q"]
+[ext_resource type="PackedScene" uid="uid://bvdqhi3prphfw" path="res://scenes/_universe/props/furniture/hygene/mirror.tscn" id="20_8ev6q"]
+[ext_resource type="PackedScene" uid="uid://c21kv16wh1y4q" path="res://scenes/_universe/characters/humanoids/human_puppet.tscn" id="21_8ev6q"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_xqwsu"]
@@ -27,6 +38,11 @@ sky_material = SubResource("ProceduralSkyMaterial_xqwsu")
 background_mode = 2
 sky = SubResource("Sky_0uuu0")
 ambient_light_source = 3
+tonemap_mode = 3
+tonemap_agx_white = 16.5
+tonemap_agx_contrast = 1.38
+glow_enabled = true
+glow_intensity = 0.5
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_m4ygx"]
 size = Vector3(100, 50, 100)
@@ -34,10 +50,9 @@ size = Vector3(100, 50, 100)
 [node name="SimpleBoxTest" type="Node3D" unique_id=54903359]
 script = ExtResource("1_m4ygx")
 
-[node name="PropSync" type="Node" parent="."]
+[node name="PropSync" type="Node" parent="." unique_id=1028718652]
 script = ExtResource("propsync_ds")
 type_name = "city"
-enable_carry = false
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1592737462]
 mesh = SubResource("PlaneMesh_xqwsu")
@@ -47,10 +62,15 @@ surface_material_override/0 = ExtResource("2_m4ygx")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="MeshInstance3D/StaticBody3D" unique_id=608377004]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+visible = false
 shape = SubResource("BoxShape3D_1k8n2")
+
+[node name="HaulingBox" parent="MeshInstance3D" unique_id=2012639776 instance=ExtResource("4_p0xcn")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.5042982, 0.28568697, 0)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=2003784867]
 transform = Transform3D(1, 0, 0, 0, 0.258819, 0.965926, 0, -0.965926, 0.258819, 0, 20, 0)
+shadow_enabled = true
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=670560332]
 environment = SubResource("Environment_le64j")
@@ -66,16 +86,74 @@ script = ExtResource("4_jq82d")
 shape = SubResource("BoxShape3D_m4ygx")
 
 [node name="PalletLiquid120x80x100" parent="." unique_id=1168125104 instance=ExtResource("4_1uj1c")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.703731769385667, 9.147364821160409e-08, -2.5019927579967858)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.7037315, 9.147365e-08, -2.5019927)
+script = null
 
 [node name="PalletCrate120x80x100" parent="." unique_id=834719290 instance=ExtResource("5_w0ufy")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2302968384118245, 9.147364821160409e-08, -2.49872982105125)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2302969, 9.147365e-08, -2.4987297)
+script = null
 
 [node name="ContainerLiquid1200x240x240" parent="." unique_id=732764926 instance=ExtResource("6_bdj2j")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.620415631549978, -1.628210419690913e-07, -5.098595560688037)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.6204157, -1.6282104e-07, -5.0985956)
+script = null
 
 [node name="box_50cm6" parent="." unique_id=1842183148 instance=ExtResource("7_w0ufy")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.735164876670789, 0.2534957252035914, -2.7383454924542456)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.7351646, 0.25349572, -2.7383454)
 
 [node name="RockMining01" parent="." unique_id=525353877 instance=ExtResource("8_bdj2j")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.266701659982466, 0.01942073979202507, -2.469626312868717)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.266702, 0.01942074, -2.4696264)
+script = null
+
+[node name="Bed" parent="." unique_id=931220610 instance=ExtResource("10_fsvra")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.004125, 0, -4.471634)
+
+[node name="TableBed" parent="." unique_id=308906781 instance=ExtResource("11_erwq5")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.925608, 0.046729386, -5.0341315)
+
+[node name="AresBiscuit" parent="TableBed" unique_id=1586142922 instance=ExtResource("12_qwkha")]
+transform = Transform3D(1.131334e-08, 0.25881904, -0.9659258, 1, -4.371139e-08, 0, -4.222196e-08, -0.9659258, -0.25881904, 0.024994016, 0.4655348, 0.03793192)
+
+[node name="AresBiscuit2" parent="TableBed" unique_id=1489609006 instance=ExtResource("12_qwkha")]
+transform = Transform3D(-1.5971722e-08, -0.36539036, -0.93085456, 1, -4.371139e-08, 0, -4.0688942e-08, -0.93085456, 0.36539036, 0.024994016, 0.4847085, 0.03793192)
+
+[node name="AresNutrigris" parent="TableBed" unique_id=659628100 instance=ExtResource("13_p0xcn")]
+transform = Transform3D(-0.2906339, 0, 0.9568343, 0, 1, 0, -0.9568343, 0, -0.2906339, -0.115404844, 0.4655348, 0.03793192)
+
+[node name="Bed2" parent="." unique_id=774358215 instance=ExtResource("10_fsvra")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.561634, 0, -4.471634)
+
+[node name="TableBed2" parent="." unique_id=776398287 instance=ExtResource("11_erwq5")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.483117, 0.046729386, -5.0341315)
+
+[node name="Bed3" parent="." unique_id=625487624 instance=ExtResource("10_fsvra")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18.387812, 0, -4.471634)
+
+[node name="TableBed3" parent="." unique_id=1166101718 instance=ExtResource("11_erwq5")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.309296, 0.046729386, -5.0341315)
+
+[node name="Wardrobe" parent="." unique_id=1426806689 instance=ExtResource("12_djdhs")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.790543, 0, -5.0495276)
+
+[node name="CrateContainer" parent="." unique_id=923994791 instance=ExtResource("15_qwkha")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.135973, 0, -2.0359066)
+
+[node name="RestroomCabin" parent="." unique_id=1412977775 instance=ExtResource("18_6lu6x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.0656443, 0, -4.1390066)
+
+[node name="ShowerCabin" parent="." unique_id=2112858650 instance=ExtResource("17_typbc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.069624, 0, -4.1390066)
+
+[node name="BathroomSink" parent="." unique_id=548032774 instance=ExtResource("19_slh8q")]
+transform = Transform3D(1.3113416e-07, 0, 1, 0, 1, 0, -1, 0, 1.3113416e-07, 9.923633, 0, -0.16502869)
+
+[node name="Mirror" parent="BathroomSink" unique_id=429523463 instance=ExtResource("20_8ev6q")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0024983883, 1.6557426, -0.43927193)
+
+[node name="ReflectionProbe" type="ReflectionProbe" parent="." unique_id=665745358]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.609621, 0.92082405, -0.7275748)
+blend_distance = 0.16
+size = Vector3(15.388184, 20, 10.025543)
+box_projection = true
+
+[node name="human_puppet" parent="." unique_id=1701771454 instance=ExtResource("21_8ev6q")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 10.503088, 0, -0.13157058)

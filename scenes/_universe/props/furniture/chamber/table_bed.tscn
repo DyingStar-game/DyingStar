@@ -1,0 +1,39 @@
+[gd_scene format=3 uid="uid://br8l8bw1vtycw"]
+
+[ext_resource type="Script" uid="uid://c1dv6rpo1e6os" path="res://scenes/globals/net_static_body.gd" id="1_tx6w4"]
+[ext_resource type="PackedScene" uid="uid://bdi56gltsys6n" path="res://assets/_universe/props/furniture/chamber/table_bed.glb" id="2_lhmp7"]
+[ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_wb7vr"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="4_fq1pg"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0s4u6"]
+size = Vector3(0.5213623, 0.49682617, 0.52246094)
+
+[node name="TableBed" type="StaticBody3D" unique_id=308906781]
+script = ExtResource("1_tx6w4")
+metadata/_custom_type_script = "uid://c1dv6rpo1e6os"
+
+[node name="table_bed" parent="." unique_id=1541190517 instance=ExtResource("2_lhmp7")]
+
+[node name="bed_table_core" parent="table_bed" index="0" unique_id=1566592110]
+surface_material_override/0 = ExtResource("3_wb7vr")
+
+[node name="bed_table_drawer" parent="table_bed" index="1" unique_id=773172183]
+surface_material_override/0 = ExtResource("3_wb7vr")
+
+[node name="bed_table_drawer_decal" parent="table_bed/bed_table_drawer" index="0" unique_id=1705193338]
+surface_material_override/0 = ExtResource("4_fq1pg")
+
+[node name="bed_table_lamp" parent="table_bed" index="2" unique_id=253303579]
+instance_shader_parameters/emission_on = false
+surface_material_override/0 = ExtResource("3_wb7vr")
+
+[node name="bed_table_decal" parent="table_bed" index="3" unique_id=1914513709]
+visibility_range_end = 8.0
+surface_material_override/0 = ExtResource("4_fq1pg")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1227301267]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0025024414, 0.19812012, 0)
+visible = false
+shape = SubResource("BoxShape3D_0s4u6")
+
+[editable path="table_bed"]

@@ -2,15 +2,14 @@
 
 [ext_resource type="PackedScene" uid="uid://tk27ud5kcl38" path="res://assets/_universe/props/containers/crate_container.glb" id="1_i7idy"]
 [ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/_universe/props/containers/crate_container.gd" id="1_ync2l"]
-[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/painted_metal/paint_yellow_material.tres" id="2_pe8a8"]
-[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/decals/ares_misc_decal_material.tres" id="3_i7idy"]
-
+[ext_resource type="Material" uid="uid://dnbpt5f5pj0im" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_yellow.tres" id="2_pe8a8"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="3_i7idy"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
-[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
-[ext_resource type="Resource" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
+[ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="sfx_landing"]
+[ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_t7ntl"]
-size = Vector3(0.8018728106103481, 0.9531683567988694, 1.1382587054849864)
+size = Vector3(0.8018728, 0.95316833, 1.1382587)
 
 [node name="CrateContainer" type="RigidBody3D" unique_id=923994791]
 collision_layer = 8
@@ -22,27 +21,27 @@ sfx_landing = ExtResource("sfx_landing")
 
 [node name="crate_container" parent="." unique_id=1626612544 instance=ExtResource("1_i7idy")]
 
-[node name="PropSync" type="Node" parent="."]
+[node name="box_container" parent="crate_container" index="0" unique_id=1824082986]
+surface_material_override/0 = ExtResource("2_pe8a8")
+
+[node name="box_container_decals" parent="crate_container" index="1" unique_id=171284486]
+surface_material_override/0 = ExtResource("3_i7idy")
+
+[node name="PropSync" type="Node" parent="." unique_id=845130856]
 script = ExtResource("propsync_1")
 type_name = "crate_container"
 
-[node name="box_container" parent="crate_container" index="0" unique_id=110172060]
-surface_material_override/0 = ExtResource("2_pe8a8")
-
-[node name="box_container_decals" parent="crate_container" index="1" unique_id=1092799742]
-surface_material_override/0 = ExtResource("3_i7idy")
-
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=273505527]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012953255609746, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012952, 0)
 visible = false
 shape = SubResource("BoxShape3D_t7ntl")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=965548746]
-monitoring = false
 collision_layer = 32
+monitoring = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=483378707]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012953255609746, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47012952, 0)
 shape = SubResource("BoxShape3D_t7ntl")
 
 [editable path="crate_container"]

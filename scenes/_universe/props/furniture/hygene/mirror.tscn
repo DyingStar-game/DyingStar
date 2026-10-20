@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://bvdqhi3prphfw"]
+
+[ext_resource type="Script" uid="uid://c1dv6rpo1e6os" path="res://scenes/globals/net_static_body.gd" id="1_e4eb7"]
+[ext_resource type="PackedScene" uid="uid://4yk7vlsja1d4" path="res://assets/_universe/props/furniture/hygene/mirror.glb" id="2_ft418"]
+[ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_pk4ln"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="4_sfen6"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ulufk"]
+metallic = 1.0
+roughness = 0.0
+
+[node name="Mirror" type="StaticBody3D" unique_id=429523463]
+script = ExtResource("1_e4eb7")
+metadata/_custom_type_script = "uid://c1dv6rpo1e6os"
+
+[node name="mirror2" parent="." unique_id=793814034 instance=ExtResource("2_ft418")]
+
+[node name="mirror_frame" parent="mirror2" index="0" unique_id=846619429]
+instance_shader_parameters/emission_on = true
+surface_material_override/0 = ExtResource("3_pk4ln")
+
+[node name="mirror" parent="mirror2" index="1" unique_id=1422469402]
+surface_material_override/0 = SubResource("StandardMaterial3D_ulufk")
+
+[node name="mirror_decals" parent="mirror2" index="2" unique_id=343816076]
+surface_material_override/0 = ExtResource("4_sfen6")
+
+[editable path="mirror2"]

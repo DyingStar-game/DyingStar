@@ -1,0 +1,33 @@
+{
+  "id": "mat_metal_icons_decal",
+  "display_name": "Metal Icon Decals",
+  "tags": [
+    "metal",
+    "decal"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "albedo_color": [
+    0.5037,
+    0.5037,
+    0.5037
+  ],
+  "alpha": {
+    "mode": "scissor",
+    "threshold": 0.325
+  },
+  "license": "AGPL-3.0",
+  "author": "irong",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 2
+  },
+  "maps": {
+    "albedo": "tex_metal_icons_decal_albedo.png",
+    "normal": "tex_metal_icons_decal_normal.png",
+    "roughness": "tex_metal_icons_decal_roughness.png"
+  }
+}

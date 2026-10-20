@@ -1,0 +1,28 @@
+{
+  "id": "mat_fabric_alu_mesh",
+  "display_name": "fabric aluminum mesh",
+  "tags": [
+    "fabric"
+  ],
+  "physical_size_m": [
+    0.05000000074505806,
+    0.05000000074505806
+  ],
+  "albedo_color": [
+    0.6966,
+    0.6966,
+    0.6966
+  ],
+  "license": "CC0-1.0",
+  "author": "irong",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 4
+  },
+  "maps": {
+    "albedo": "tex_fabric_alu_mesh_albedo.png",
+    "normal": "tex_fabric_alu_mesh_normal.png",
+    "roughness": "tex_fabric_alu_mesh_roughness.png"
+  }
+}

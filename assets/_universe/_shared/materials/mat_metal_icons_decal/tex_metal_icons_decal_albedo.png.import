@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bkdgy355wbt83"
-path="res://.godot/imported/hazard_stripes.jpg-e63748a7da91ed69e6824673b28b9ff1.ctex"
+uid="uid://du6bbi2udyugp"
+path="res://.godot/imported/tex_metal_icons_decal_albedo.png-78fd50e9e3065a3725295342a3671c8b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/_universe/_shared/materials/decals/floor/hazard_stripes.jpg"
-dest_files=["res://.godot/imported/hazard_stripes.jpg-e63748a7da91ed69e6824673b28b9ff1.ctex"]
+source_file="res://assets/_universe/_shared/materials/mat_metal_icons_decal/tex_metal_icons_decal_albedo.png"
+dest_files=["res://.godot/imported/tex_metal_icons_decal_albedo.png-78fd50e9e3065a3725295342a3671c8b.ctex"]
 
 [params]
 
@@ -25,7 +25,7 @@ compress/normal_map=0
 compress/channel_pack=0
 mipmaps/generate=false
 mipmaps/limit=-1
-roughness/mode=0
+roughness/mode=1
 roughness/src_normal=""
 process/channel_remap/red=0
 process/channel_remap/green=1
