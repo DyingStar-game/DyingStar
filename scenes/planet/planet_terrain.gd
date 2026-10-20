@@ -5352,3 +5352,4 @@ func _editor_flight_place(planet: Planet, cam: Vector3, radius: float) -> void:
 func _editor_camera_world() -> Vector3:
 	var local := _get_editor_camera_local()
 	return Vector3.INF if local == Vector3.INF else global_position + local
+
