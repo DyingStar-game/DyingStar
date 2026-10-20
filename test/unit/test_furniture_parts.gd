@@ -4,6 +4,7 @@ extends GutTest
 ## only they use its furniture or put a load down in it.
 
 const BUILDING := "res://scenes/_universe/structures/buildings/spawn_building.tscn"
+const BED := "res://scenes/_universe/props/furniture/chamber/bed.tscn"
 
 
 func test_a_door_turns_about_its_hinge() -> void:
@@ -93,6 +94,24 @@ func test_the_building_shows_its_state() -> void:
 	var lamps: Array = rooms.find_children("Lamp", "Area3D", true, false)
 	assert_eq(lamps.size(), 2, "a lamp in every apartment")
 	_forgive_floor_material()
+
+
+func test_a_body_lies_along_the_bed_looking_up() -> void:
+	var bed := (load(BED) as PackedScene).instantiate() as Node3D
+	add_child_autofree(bed)
+	var spot := bed.get_node("BedSpot") as BedSpot
+	var eye: Transform3D = spot.sit_transform()
+	assert_almost_eq(-eye.basis.z, Vector3.UP, Vector3.ONE * 1e-6, "the eyes look at the ceiling")
+	assert_almost_eq(eye.basis.y, Vector3.FORWARD, Vector3.ONE * 1e-6, "the head on the pillow side (-z)")
+	# Player._ride_seat puts the body origin (its feet) seat_body_drop below the eyes, in their frame.
+	var drop: Vector3 = (load("res://scenes/player/player.gd") as GDScript).get_property_default_value(
+			"seat_body_drop")
+	var feet: Vector3 = eye.origin - eye.basis * drop
+	assert_between(feet.z, 0.5, 1.0, "the feet at the foot of the bed")
+	assert_between(feet.y, 0.47, 0.75, "the back on the mattress (0.47 m), not in it")
+	var stand: Transform3D = spot.stand_point.global_transform
+	assert_almost_eq(stand.basis.y, Vector3.UP, Vector3.ONE * 1e-6, "up again, upright")
+	assert_almost_eq(stand.origin.y, 0.0, 1e-6, "on the floor")
 
 
 ## The spawn building's pad pulls in concrete_floor_001.tres, whose triplanar + height mapping raises an

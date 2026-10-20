@@ -7,11 +7,15 @@
 [ext_resource type="Material" uid="uid://2wdc033an07q" path="res://assets/_universe/_shared/materials/mat_fabric_alu_mesh/mat_fabric_alu_mesh.tres" id="5_eyd72"]
 
 [ext_resource type="Script" uid="uid://c1q53e1a4jpjv" path="res://scenes/_universe/props/furniture/parts/moving_part.gd" id="part_moving"]
+[ext_resource type="Script" uid="uid://n3h4p501nys3" path="res://scenes/_universe/props/furniture/parts/bed_spot.gd" id="part_bed"]
 [sub_resource type="BoxShape3D" id="BoxShape3D_0s4u6"]
 size = Vector3(0.98535156, 0.5135498, 2.0212402)
 
 [sub_resource type="BoxShape3D" id="Box_drawer_aim"]
 size = Vector3(0.1, 0.185, 0.51)
+
+[sub_resource type="BoxShape3D" id="Box_mattress_aim"]
+size = Vector3(0.9, 0.15, 1.9)
 
 [node name="Bed" type="StaticBody3D" unique_id=931220610]
 script = ExtResource("1_me15w")
@@ -134,5 +138,20 @@ duration_s = 0.4
 [node name="CollisionShape3D" type="CollisionShape3D" parent="bed/bed_under_storage_6/Drawer6"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.13, 0.016, 0.025)
 shape = SubResource("Box_drawer_aim")
+
+[node name="BedSpot" type="Area3D" parent="." node_paths=PackedStringArray("lie_point", "stand_point")]
+script = ExtResource("part_bed")
+lie_point = NodePath("LiePoint")
+stand_point = NodePath("StandPoint")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="BedSpot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.48, 0)
+shape = SubResource("Box_mattress_aim")
+
+[node name="LiePoint" type="Marker3D" parent="BedSpot"]
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0.78, -0.72)
+
+[node name="StandPoint" type="Marker3D" parent="BedSpot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.85, 0, 0)
 
 [editable path="bed"]

@@ -475,6 +475,15 @@ func _process(_delta: float) -> void:
 		_point_screen(seated_focus)
 		return
 	_update_cab_screen(null)  # on foot: no cab screen, the chart goes home
+	# Lying on a bed: ride it like a seat (free look from the pillow); the action key gets up.
+	if is_instance_valid(player.lying_on):
+		if not _ui_focus():
+			player.mouse_motion += _stick_look(_delta)
+		player._ride_seat(player.lying_on)
+		_replicate_look()
+		player.interact_label.text = _prompt(&"action", tr("%%HUD_BED_GET_UP"))
+		player.interact_label.show()
+		return
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
 	# the mouse look stays immediate.
 	player._interp.update_position(player, _delta, player.input_direction != Vector2.ZERO)
@@ -662,6 +671,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if !player.active: return
 
+	if is_instance_valid(player.lying_on):
+		return  # lying on a bed: the server rides the body, nothing to walk
 	# Pause menu or a radial wheel is open: the owner is not in direct control -> don't move or act.
 	# We still fall through so input_direction becomes ZERO and a single "stop" is emitted to the server.
 	var input_locked: bool = _input_locked()
@@ -1160,6 +1171,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				player.admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
 			player.mining_tool.toggle_equip()
 
+	if InputCombo.pressed(event, "action") and is_instance_valid(player.lying_on):
+		player.lying_on.interact(player)  # the server gets us up from the bed we lie on
+		return
 	if InputCombo.pressed(event, "action"):
 		player.interact_ray.force_raycast_update()
 		# A console under the crosshair takes the press, and ONLY it. It used to answer a separate `interact`
@@ -1980,12 +1994,18 @@ func client_channel_data_update(data: Dictionary) -> void:
 				_play_clothes_sfx(true)  # sitting down
 			if player.remote_player:
 				player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
+			elif action.split(":")[1] == "bed":
+				player.lying_on = player.bed_asked  # the bed we asked to lie on (BedSpot.interact)
+				player.seated_role = "bed"
 		elif action.begins_with("unseat") and action != _last_seat_action:
 			_last_seat_action = action
 			if _sfx_live:
 				_play_clothes_sfx(true)  # getting up
 			if player.remote_player:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
+			elif is_instance_valid(player.lying_on):
+				player.lying_on = null  # up from the bed
+				player.seated_role = ""
 			elif player._seat_vehicle_uuid != "":
 				# We are out: either the seat we optimistically took was refused (occupied/blocked), or
 				# the exit we asked for was granted. Both land here, and both mean the same thing.
@@ -2130,7 +2150,7 @@ func _sample_locomotion(delta: float) -> void:
 		"forward": shown.y,
 		"right": shown.x,
 		"airborne": _airborne,
-		"seated": player.seated_role != "",  # replicated seat state (see Player.seated_role)
+		"seated": player.seated_role not in ["", "bed"],  # replicated seat state (see Player.seated_role)
 		"driver": player.seated_role == "driver",
 		"carrying": _remote_carrying if player.remote_player else player._owner_carrying,
 		"stance": player.stance,  # 0 standing / 1 crouched / 2 prone (server-owned, drives crouch/crawl anim)

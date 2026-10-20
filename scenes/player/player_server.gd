@@ -327,6 +327,8 @@ func spawn_state() -> Dictionary:
 	var seat: Node = player._seat_node
 	var role: String = "" if not is_instance_valid(seat) \
 			else ("driver" if seat.is_driver_seat() else "passenger")
+	if is_instance_valid(player.lying_on):
+		role = "bed"
 	return {"stance": _stance, "floating": player.floating, "thrusting": player.thrusting, "seat": role}
 
 ## Physics step: apply a pending stance change now that the space state is valid. Standing up to a taller
@@ -492,7 +494,8 @@ func server_action_received(data: Dictionary) -> void:
 			var home: Node = _find_deletable_prop(str(data.get("target_uuid", "")))
 			var part: Node = home.get_node_or_null(NodePath(str(data.get("part", "")))) \
 					if home != null else null
-			if part is FurnitureTarget and _may_use_furniture(part as FurnitureTarget):
+			if part is FurnitureTarget \
+					and (part == player.lying_on or _may_use_furniture(part as FurnitureTarget)):
 				(part as FurnitureTarget).server_use(player)
 			else:
 				print("🛏️ Furniture use refused for %s: not their home, out of reach or out of sight (%s)"
@@ -1100,6 +1103,12 @@ func _physics_process_impl(delta: float) -> void:
 	# Before the seat / NPC early-returns below: an NPC returns out of this function, and an NPC is
 	# precisely who does the talking.
 	_server_update_dialog(delta)
+	if is_instance_valid(player.lying_on):
+		# Lying on a bed: ride it like a seat, the body laid along it (BedSpot).
+		player._ride_seat(player.lying_on)
+		player.new_input_from_server = false
+		player.emit_move()
+		return
 	if player.piloting and is_instance_valid(player._seat_node):
 		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
 		# the player follows the vehicle (camera rides too).
@@ -2788,6 +2797,25 @@ func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
 		if hit_dist > box_dist + 2.0:
 			return false
 	return true
+
+## A bed was used (BedSpot.server_use): lie on it with empty hands when nobody does, or get up from it
+## when lying there -- standing at its stand point, solid again. Replicated as the seat state ("bed"),
+## so the others' avatars and a later arrival see the body lying.
+func server_toggle_lying(bed: BedSpot) -> void:
+	_seat_count += 1
+	if player.lying_on == bed:
+		player.lying_on = null
+		bed.occupant = null
+		player.global_transform = bed.stand_point.global_transform.orthonormalized()
+		player.set_seated(false)
+		player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
+	elif not is_instance_valid(player.lying_on) and not is_instance_valid(bed.occupant) \
+			and player.hands_item == null and not is_instance_valid(player._seat_node):
+		player.lying_on = bed
+		bed.occupant = player
+		player.set_seated(true)
+		player.server_stow_tools()
+		player.server_send_properties_to_client({"action": "seat:bed:%d" % _seat_count, "seat": "bed"})
 
 ## May this player use [param target] now: it is in their own home, within its reach of the eye, and
 ## in sight.

@@ -494,6 +494,11 @@ var _seat_vehicle_node: Node3D = null
 var _seat_node: Node3D = null
 # True when our seat is the driver seat (drive input + HUD + R). Passenger = just rides.
 var _seat_is_driver: bool = false
+## The BedSpot this body lies on, ridden each frame like a seat; null when not lying. The server's word:
+## set there on the use, and on the owner when the server answers "seat:bed".
+var lying_on: Node3D = null
+## Owner: the bed we last asked to lie on (BedSpot.interact), taken as lying_on once the server agrees.
+var bed_asked: Node3D = null
 # The Vehicle whose cargo bay we are standing in on foot (our AreaDetector reports it). Used both
 # for the bed-walker weight (server) and to load a crate we drop while standing in it.
 var _in_vehicle_bed: Node = null
@@ -1045,6 +1050,11 @@ func _aimed_carriable() -> Node:
 func server_adopt_carried(item: Node) -> void:
 	if _role != null and _role.has_method("server_adopt_carried"):
 		_role.server_adopt_carried(item)
+
+## Server: a validated use of [param bed] (BedSpot.server_use): lie on it, or get up from it.
+func server_toggle_lying(bed: Node3D) -> void:
+	if _role != null and _role.has_method("server_toggle_lying"):
+		_role.server_toggle_lying(bed)
 
 ## Server: tell Horizon and every client the posture this server holds for the body (see
 ## PlayerServer.spawn_state). Called once the player is registered and its updates are wired.
