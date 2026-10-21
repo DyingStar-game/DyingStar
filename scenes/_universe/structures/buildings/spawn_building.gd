@@ -24,6 +24,9 @@ extends NetStaticBody  # the uuid facade (see NetStaticBody)
 @export var spawn_point: Vector3 = Vector3(-3.05, 0.15, 1.3)
 ## uuid of the poi_village this building belongs to ("" = none): Horizon fills villages by it.
 @export var poi_uuid: String = ""
+## Build its apartments at once, every one free, instead of waiting for the server's state
+## (apply_prop_data): a building set on the menu stage, which no server ever sends anything to.
+@export var build_on_ready: bool = false
 
 ## Occupied apartments, as {floor, row, col, player_uuid, player_name}: each shows its occupant's name
 ## on its door plate.
@@ -57,11 +60,23 @@ const PAD_MARGIN_M := 0.5
 ## pad of a building that has no node yet (server.gd _stream_register_pads) with the same numbers.
 ## Apartments run from x = 0 towards −x (one or two rows) and from z = 0 towards +z (cols).
 static func terrain_pad_box(data: Dictionary) -> Dictionary:
-	var w: float = float(data.get("rows", 1)) * absf(float(data.get("x_spacing", -6.1)))
+	var rows: int = int(data.get("rows", 1))
+	var w: float = rows * absf(float(data.get("x_spacing", -6.1)))
 	var l: float = float(data.get("cols", 1)) * absf(float(data.get("z_spacing", 2.6)))
+	# x from the back row's doors (-w) to the first row's (0), z along the row; past a storey, each
+	# façade's walkway and stairs stand out of it and run past its end (BuildingWalkways).
+	var lo := Vector3(-w, 0.0, 0.0)
+	var hi := Vector3(0.0, 0.0, l)
+	if int(data.get("floors", 1)) > 1:
+		hi.x += BuildingWalkways.STAIR_OUT
+		hi.z += BuildingWalkways.STAIR_ZONE
+		if rows == 2:
+			lo.x -= BuildingWalkways.STAIR_OUT
+			lo.z -= BuildingWalkways.STAIR_ZONE
+	var size: Vector3 = hi - lo
 	return {
-		"size": Vector3(w + 2.0 * PAD_MARGIN_M, 0.2, l + 2.0 * PAD_MARGIN_M),
-		"local": Transform3D(Basis.IDENTITY, Vector3(-0.5 * w, 0.0, 0.5 * l)),
+		"size": Vector3(size.x + 2.0 * PAD_MARGIN_M, 0.2, size.z + 2.0 * PAD_MARGIN_M),
+		"local": Transform3D(Basis.IDENTITY, Vector3((lo.x + hi.x) * 0.5, 0.0, (lo.z + hi.z) * 0.5)),
 	}
 
 
@@ -72,9 +87,17 @@ func _fit_terrain_pad() -> void:
 	var pad := get_node_or_null("TerrainPad") as TerrainPad
 	if pad == null:
 		return
-	var box := terrain_pad_box({"rows": rows, "cols": cols, "x_spacing": x_spacing,
+	var box := terrain_pad_box({"rows": rows, "cols": cols, "floors": floors, "x_spacing": x_spacing,
 			"z_spacing": z_spacing})
 	pad.set_footprint(box["size"], box["local"])
+
+
+func _ready() -> void:
+	if build_on_ready:
+		apartments = []
+		_create_apartments()
+		ApartmentPlates.show($MultiMeshInstance3D, apartments, uuid, "")
+		_furniture.show_once(_rooms())
 
 
 func _enter_tree() -> void:
@@ -106,6 +129,8 @@ func _create_apartments():
 				node_apart.position.z = ((i + 1) * z_spacing)
 				node_apart.position.y = f * y_spacing
 				$MultiMeshInstance3D.add_child(node_apart)
+
+	BuildingWalkways.build(self, rows, cols, floors, x_spacing, z_spacing, y_spacing)
 
 	# update Area3D for reparent the player
 	var shape_area = %CollisionShape3D as CollisionShape3D

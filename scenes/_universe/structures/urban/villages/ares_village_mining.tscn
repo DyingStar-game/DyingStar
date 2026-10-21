@@ -20,7 +20,8 @@
 [node name="tarsis_4-1001" parent="." unique_id=1280922415 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(0.9999999999999996, 0, 0, 0, 0.9999999999999998, 0, 0, 0, 1, -6.959769766416777e-05, 5.6486314375638295e-05, 4.433376252814227e-05)
 rows = 2
-cols = 6
+cols = 3
+floors = 2
 
 [node name="tarsis_4-1002" parent="." unique_id=1541481568 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(0.9999999999999996, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0, 0)
@@ -43,17 +44,20 @@ cols = 6
 [node name="tarsis_4-1008" parent="." unique_id=177915003 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736765e-17, 0, 1, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, 36, 0, -18)
 rows = 2
-cols = 8
+cols = 4
+floors = 2
 
 [node name="tarsis_4-1009" parent="." unique_id=1524736258 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736765e-17, 0, 1, 0, 0.9999999999999994, 0, -0.9999999999999998, 0, 6.123233995736765e-17, 9, 0, -18)
 rows = 2
-cols = 6
+cols = 3
+floors = 2
 
 [node name="tarsis_4-1010" parent="." unique_id=1437436497 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736765e-17, 0, 1, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, -27, 0, -18)
 rows = 2
-cols = 9
+cols = 3
+floors = 3
 
 [node name="tarsis_4-1011" parent="." unique_id=140903360 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736764e-17, 0, 1, 0, 1, 0, -0.9999999999999996, 0, 6.123233995736766e-17, -43, 0, -18)
@@ -62,7 +66,8 @@ cols = 2
 
 [node name="tarsis_4-1006" parent="." unique_id=1679624872 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736765e-17, 0, 1, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, -10, 0, 48)
-cols = 18
+cols = 6
+floors = 3
 
 [node name="tarsis_4-1007" parent="." unique_id=873673048 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736764e-17, 0, 1, 0, 1, 0, -0.9999999999999996, 0, 6.123233995736766e-17, -44, 0, 48)

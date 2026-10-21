@@ -80,11 +80,16 @@ func test_the_buildings_of_a_village_never_overlap() -> void:
 	for child in village.get_children():
 		if child is SpawnBuilding:
 			var box: Dictionary = SpawnBuilding.terrain_pad_box({"rows": child.rows, "cols": child.cols,
-					"x_spacing": child.x_spacing, "z_spacing": child.z_spacing})
+					"floors": child.floors, "x_spacing": child.x_spacing, "z_spacing": child.z_spacing})
 			var size: Vector3 = box["size"] - Vector3.ONE * 2.0 * SpawnBuilding.PAD_MARGIN_M
 			rects.append({"name": child.name, "xf": child.transform * (box["local"] as Transform3D),
 					"half": Vector2(size.x, size.z) * 0.5})
 	assert_eq(rects.size(), 11, "the mining village's homes")
+	var homes: int = 0
+	for child in village.get_children():
+		if child is SpawnBuilding:
+			homes += child.rows * child.cols * child.floors
+	assert_eq(homes, 124, "as many apartments as before the storeys")
 	for i in rects.size():
 		for j in range(i + 1, rects.size()):
 			assert_false(_overlap(rects[i], rects[j]), "%s overlaps %s" % [rects[i].name, rects[j].name])
