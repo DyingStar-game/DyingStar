@@ -788,6 +788,37 @@ static func _poi_name_of(poi_id: String) -> String:
 	return ""
 
 
+## A word you can click, inside a sentence that is otherwise not clickable. Flat, so it takes no room
+## beside the objective — a boxed button per clause would outweigh the clause it points at — and
+## lit on hover, which is the one thing on screen that says "this word goes somewhere". That is the
+## rest of the terminal's own answer to the same question (ServiceStyle.apply_button), so the link
+## reads as part of the same screen rather than as a borrowed control.
+##
+## The point it names is not always one the player can read: a contract taken from someone else
+## carries a place of theirs, and the service decides who may see it. The chart fetches the point on
+## the click, and says so plainly when it cannot be shown.
+func _poi_link(text: String, poi_id: String) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.add_theme_stylebox_override("normal", ServiceStyle.flat(Color.TRANSPARENT,
+			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
+	button.add_theme_stylebox_override("hover", ServiceStyle.flat(ServiceStyle.ACCENT_SOFT,
+			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
+	button.add_theme_stylebox_override("pressed", ServiceStyle.flat(ServiceStyle.ACCENT_SOFT,
+			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
+	button.add_theme_stylebox_override("focus", ServiceStyle.flat(Color.TRANSPARENT,
+			ServiceStyle.RADIUS_SMALL, ServiceStyle.ACCENT, 1, 6.0, 4.0))
+	button.add_theme_color_override("font_color", ServiceStyle.ACCENT)
+	button.add_theme_color_override("font_hover_color", ServiceStyle.ACCENT_HOVER)
+	button.add_theme_color_override("font_pressed_color", ServiceStyle.ACCENT_PRESSED)
+	button.add_theme_color_override("font_focus_color", ServiceStyle.ACCENT_HOVER)
+	# The sentence's own size, so the word does not grow when it becomes a control.
+	ServiceStyle.font_of(button, 15)
+	button.tooltip_text = tr("%%SVC_TIP_SHOW_POI_ON_CHART")
+	button.pressed.connect(func() -> void: focus_poi_requested.emit(poi_id))
+	return button
+
+
 ## One numbered objective clause: the sentence, where it happens, its progress, the evaluation badge,
 ## and — on my own contracts — the issuer confirmation button.
 func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dictionary,
@@ -812,9 +843,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 	line.add_child(sentence)
 	box.add_child(line)
 
-	# Where this clause happens. A clause you cannot locate is a sentence about somewhere you have
-	# never seen, which is the difference between a contract you can take and one you can only hope
-	# about. The name alone now: showing it on the chart went with the chart's own points of interest.
+	# Where this clause happens, as a word that takes you there. A clause you cannot locate is a
+	# sentence about somewhere you have never seen, which is the difference between a contract you
+	# can take and one you can only hope about.
 	var poi := _objective_poi(objective)
 	if not poi.is_empty():
 		var where := _row(4)
@@ -823,8 +854,8 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 		where.add_child(indent)
 		where.add_child(_label(tr("%%SVC_LBL_AT"), DIM))
 		var poi_name := str(poi["name"])
-		where.add_child(_label(
-				poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), ServiceStyle.TEXT))
+		where.add_child(_poi_link(
+				poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), str(poi["id"])))
 		box.add_child(where)
 
 	var footer := _row(10)

@@ -1766,7 +1766,15 @@ func _show_poi(poi_id: String) -> void:
 	if _star_map == null or _services == null or poi_id == "":
 		return
 	_services.open_navigation()
-	await _star_map.focus_service_poi(poi_id)
+	# Nothing armed, nothing to end: this is a request to look, not to pick. The chart fetches the
+	# point itself if the session's list does not hold it, so a point belonging to someone else's
+	# mission can still be shown as long as the player can READ it.
+	if await _star_map.focus_service_poi(poi_id):
+		return
+	# It could not be shown — outside this player's reach, or on a body the chart has no data for.
+	# An open chart that happens to show nothing is not an answer to a click that asked for a point.
+	if _notifications != null:
+		_notifications.push(tr("%%SVC_MSG_POI_NOT_SHOWN"))
 
 
 ## The marker was laid on the chart with no form waiting for it: the player marked a place for
