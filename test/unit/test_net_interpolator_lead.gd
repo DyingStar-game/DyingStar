@@ -74,3 +74,21 @@ func test_another_servers_clock_gives_no_speed() -> void:
 	interp.set_position_target(node, Vector3(0.25, 0, 0), 66_000, 1000.0)  # hand-over: clock went back
 	assert_eq(interp.lead_target(true, 100_000), Vector3(0.25, 0, 0))
 	node.free()
+
+
+## A glide is over once the node is on its target: settle puts it there exactly and says so, so its
+## owner (PropSync) can stop calling update.
+func test_a_glide_settles_on_its_target() -> void:
+	var node := Node3D.new()
+	autofree(node)
+	var interp := NetInterpolator.new()
+	interp.set_target(node, Vector3.ZERO, Basis.IDENTITY)
+	interp.set_target(node, Vector3(1, 0, 0), Basis.IDENTITY)
+	assert_false(interp.settle(node), "a metre away")
+	var frames := 0
+	while not interp.settle(node) and frames < 200:
+		interp.update(node, 1.0 / 60.0)
+		frames += 1
+	assert_lt(frames, 200, "it gets there")
+	assert_eq(node.position, Vector3(1, 0, 0), "exactly on it")
+	assert_true(NetInterpolator.new().settle(node), "no target: nothing to glide to")

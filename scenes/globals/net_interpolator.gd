@@ -24,6 +24,10 @@ const LEAD_GAP_SHARE: float = 1.5
 ## it (or going back) the clock is another one -- a zone hand-over to another server -- and gives no speed.
 const SERVER_GAP_MAX_S: float = 1.0
 
+## How close to its target a glide is over (settle): under the 5 mm the wire snaps positions to.
+const SETTLED_M: float = 0.0005
+const SETTLED_RAD: float = 0.0005
+
 var _pos: Vector3 = Vector3.ZERO
 var _basis: Basis = Basis.IDENTITY
 var _has: bool = false
@@ -51,6 +55,19 @@ func update(node: Node3D, delta: float) -> void:
 	var f: float = clampf(speed * delta, 0.0, 1.0)
 	node.position = node.position.lerp(_pos, f)
 	node.transform.basis = node.transform.basis.slerp(_basis, f)
+
+## True once [param node] is on its target (within SETTLED_M and SETTLED_RAD), where it is put exactly:
+## the glide is over until the next set_target, and its owner may stop calling update(). True without
+## a target.
+func settle(node: Node3D) -> bool:
+	if not _has:
+		return true
+	if node.position.distance_to(_pos) > SETTLED_M \
+			or node.transform.basis.get_rotation_quaternion().angle_to(_basis.get_rotation_quaternion()) > SETTLED_RAD:
+		return false
+	snap_to(node)
+	return true
+
 
 ## Position-only variant: smooth the position toward the target but leave rotation untouched —
 ## for a locally-controlled entity whose look must stay immediate (the local player on foot:
