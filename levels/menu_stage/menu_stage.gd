@@ -47,6 +47,7 @@ var _ground : DrawnGround = null
 func _ready() -> void:
 	add_to_group(GROUP)
 	_menu.screen_changed.connect(go_to)
+	Warmup.start(get_tree())  # what the game needs first, loaded while the menu shows (stage on or off)
 	if not SettingsManager.render.is_menu_stage_enabled():
 		print("[MenuStage] switched off in Settings > General: the menu keeps its still image.")
 		return

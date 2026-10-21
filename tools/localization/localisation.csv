@@ -15,6 +15,7 @@ keys,en,fr,es
 %%MENU_LANGUAGE_AUTO,Automatic,Automatique,
 %%MENU_ON,On,Activé,
 %%MENU_OFF,Off,Désactivé,
+%%MENU_WARMUP,Getting the game ready… %d%%,Préparation du jeu… %d %%,
 %%MENU_SETTINGS,Settings,Paramètres,
 %%MENU_QUIT,Quit,Quitter,
 %%MENU_CAT_GENERAL,General,Général,
