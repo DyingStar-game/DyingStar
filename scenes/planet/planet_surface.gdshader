@@ -136,6 +136,8 @@ const float WRAP = 8192.0;
 const float TWO_SQRT3 = 3.46410162;          // 2√3
 const float GRID_X = 3.5 / TWO_SQRT3;        // 1.01036297
 const float SNAP = 4096.0;
+// A hex tile weighing less than this in a fragment's blend is not read (hex_plane).
+const float SKIP_W = 0.004;
 
 varying vec3 world_normal;
 // The same normal in the MODEL frame — the frame tri_pos is in. The triplanar weights, the planes'
@@ -393,35 +395,69 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	// gradients (as long as the longest), which the anisotropic sampler serves with ONE trilinear probe.
 	// 1.6 ms of GPU over the village from the air (RTX 3090, 1080p: 12.1 -> 10.4 ms); the blend between
 	// tiles is a little softer, 0.3 / 255 on average.
-	vec4 c1 = w.x >= w.y && w.x >= w.z ? textureGrad(albedo_texture, st1, g1x, g1y)
-			: textureGrad(albedo_texture, st1, iso_grad(g1x, g1y), iso_grad(g1y, g1x).yx);
-	vec4 c2 = w.y > w.x && w.y >= w.z ? textureGrad(albedo_texture, st2, g2x, g2y)
-			: textureGrad(albedo_texture, st2, iso_grad(g2x, g2y), iso_grad(g2y, g2x).yx);
-	vec4 c3 = w.z > w.x && w.z > w.y ? textureGrad(albedo_texture, st3, g3x, g3y)
-			: textureGrad(albedo_texture, st3, iso_grad(g3x, g3y), iso_grad(g3y, g3x).yx);
+	// Blended on the height alone (height_blend 1, the default), the weights are known before any other
+	// tap: a tile that weighs under SKIP_W here is not read at all (its albedo, normal and roughness),
+	// and the others share its weight. Inside a hex one tile weighs nearly everything: up to six taps
+	// fewer a plane.
+	bool by_height = planet_hex_quality >= 2 && height_blend >= 1.0;
+	vec3 W = by_height ? hex_weights(H, w, r) : vec3(1.0);
+	bvec3 read = greaterThan(W, vec3(SKIP_W));
+	if (by_height) {
+		W *= vec3(read);
+		W /= (W.x + W.y + W.z);
+	}
+	vec4 c1 = vec4(0.0);
+	vec4 c2 = vec4(0.0);
+	vec4 c3 = vec4(0.0);
+	if (read.x) {
+		c1 = w.x >= w.y && w.x >= w.z ? textureGrad(albedo_texture, st1, g1x, g1y)
+				: textureGrad(albedo_texture, st1, iso_grad(g1x, g1y), iso_grad(g1y, g1x).yx);
+	}
+	if (read.y) {
+		c2 = w.y > w.x && w.y >= w.z ? textureGrad(albedo_texture, st2, g2x, g2y)
+				: textureGrad(albedo_texture, st2, iso_grad(g2x, g2y), iso_grad(g2y, g2x).yx);
+	}
+	if (read.z) {
+		c3 = w.z > w.x && w.z > w.y ? textureGrad(albedo_texture, st3, g3x, g3y)
+				: textureGrad(albedo_texture, st3, iso_grad(g3x, g3y), iso_grad(g3y, g3x).yx);
+	}
 
-	// Blend bias: luminance (Mikkelsen) or real height, per height_blend.
-	vec3 Lw = vec3(0.299, 0.587, 0.114);
-	vec3 D = vec3(dot(c1.rgb, Lw), dot(c2.rgb, Lw), dot(c3.rgb, Lw));
-	D = mix(D, H, height_blend);
-	vec3 W = hex_weights(D, w, r);
+	if (!by_height) {
+		// Blend bias: luminance (Mikkelsen) or real height, per height_blend.
+		vec3 Lw = vec3(0.299, 0.587, 0.114);
+		vec3 D = vec3(dot(c1.rgb, Lw), dot(c2.rgb, Lw), dot(c3.rgb, Lw));
+		D = mix(D, H, height_blend);
+		W = hex_weights(D, w, r);
+	}
 
 	// Normal map: same samples, same weights, at every hex quality — the relief (cracks, bumps) is
 	// what gives the repetition away first when it is left untiled.  Godot normal maps are OpenGL
 	// (+Y = image top) while the plane's v axis runs down the image, so y is flipped; then the tile
 	// was rotated by rot in UV space, so its gradient rotates back by rotᵀ.
 	const vec2 FLIP_V = vec2(1.0, -1.0);
-	vec2 n1 = transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V);
-	vec2 n2 = transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V);
-	vec2 n3 = transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V);
-	nxy = W.x * n1 + W.y * n2 + W.z * n3;
+	nxy = vec2(0.0);
+	if (read.x) {
+		nxy += W.x * (transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V));
+	}
+	if (read.y) {
+		nxy += W.y * (transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V));
+	}
+	if (read.z) {
+		nxy += W.z * (transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V));
+	}
 
 	if (planet_hex_quality >= 2) {
 		// Roughness: same samples, same weights, one channel.
-		vec4 r1 = textureGrad(roughness_texture, st1, g1x, g1y);
-		vec4 r2 = textureGrad(roughness_texture, st2, g2x, g2y);
-		vec4 r3 = textureGrad(roughness_texture, st3, g3x, g3y);
-		rough = W.x * r1[roughness_channel] + W.y * r2[roughness_channel] + W.z * r3[roughness_channel];
+		rough = 0.0;
+		if (read.x) {
+			rough += W.x * textureGrad(roughness_texture, st1, g1x, g1y)[roughness_channel];
+		}
+		if (read.y) {
+			rough += W.y * textureGrad(roughness_texture, st2, g2x, g2y)[roughness_channel];
+		}
+		if (read.z) {
+			rough += W.z * textureGrad(roughness_texture, st3, g3x, g3y)[roughness_channel];
+		}
 	} else {
 		// Quality 1: roughness from one untiled tap — its repetition does not show.
 		rough = textureGrad(roughness_texture, p * s, dSTdx, dSTdy)[roughness_channel];
