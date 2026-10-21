@@ -1716,16 +1716,16 @@ func _close_navigation() -> void:
 
 
 ## A section asked for a place: show the chart in placement mode. The tablet opens its NAVIGATION
-## tab, which is where the chart lives, and arms it so the next right click names a mission marker
-## rather than selecting whatever it lands on.
+## tab, which is where the chart lives, and arms it so the right click's menu lays a mission marker
+## instead of the click selecting whatever it lands on.
 ##
-## `_radius_m` is the radius the asker's form says (0 = a point): the marker's starting width on
-## the map, handed to the chart once the marker itself can carry one.
-func _begin_placement(_radius_m: float) -> void:
+## [param radius_m] is the radius the asker's form says (0 = a point): the marker's starting width,
+## and the wheel what moves it from there — the width comes back on the place itself.
+func _begin_placement(radius_m: float) -> void:
 	if _star_map == null or _services == null:
 		return
 	_wrist.open_with(_services.open_navigation)  # already up: the tablet asked, from the wrist
-	_star_map.begin_poi_place()
+	_star_map.begin_poi_place(radius_m)
 	_services.open_navigation()
 
 
