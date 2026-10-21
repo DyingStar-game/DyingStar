@@ -27,16 +27,10 @@ extends VBoxContainer
 
 ## The builder asked the chart for a point. The host answers with [method accept_place].
 ##
-## [param radius_m] is what the radius field says about to be created, so the chart can draw the disc
-## a click would make rather than a dot it would not. It is a reading, not a setting: the chart never
-## changes it.
-##
-## [param pick_existing] says whether pointing at a POI that already exists is an ANSWER. It is here:
-## this widget's list is exactly the player's own POIs, so the chart showing them and this one listing
-## them is one question seen twice, and a click on one of them is choosing it. The points of interest
-## form asks for the opposite — it is CREATING a POI, and pointing at an existing one there is not an
-## answer but an obstacle, so the chart keeps placing for it.
-signal placement_requested(radius_m: float, pick_existing: bool)
+## [param radius_m] is what the radius field says about to be created, so the chart can show how
+## wide the marker will be from the first moment. It is a reading, not a setting: the chart never
+## changes it — the wheel on the map does, and the radius comes back on the place itself.
+signal placement_requested(radius_m: float)
 
 ## A POI was chosen or created. [param poi_id] is the service's id for it.
 signal picked(poi_id: String)
@@ -115,8 +109,7 @@ func setup(name_template: String = "%%SVC_POI_MISSION_DEFAULT", width: float = 2
 	var chart := Button.new()
 	chart.text = "%%SVC_ACT_ON_CHART"
 	ServiceStyle.apply_button(chart)
-	chart.pressed.connect(
-			func() -> void: placement_requested.emit(radius_for_chart(_radius.text), true))
+	chart.pressed.connect(func() -> void: placement_requested.emit(radius_for_chart(_radius.text)))
 	_row.add_child(chart)
 
 	refresh_list()

@@ -69,18 +69,6 @@ const CLUSTER_TINT: Color = Color(0.82, 0.86, 0.92, 1.0)
 ## Records currently drawn, in the order the picker and the search index use.
 var entries: Array[Dictionary] = []
 
-## The points of interest of the SERVICE, as the service sent them (`{id, name, scene, x, y, z,
-## radiusM, ownerType, ...}`), in whatever order they came. Owned by [StarMap], which fetches them
-## and pushes them here — this layer draws, it does not go looking for its own material.
-##
-## Raw rather than converted, because the same record can belong to different bodies as the player
-## travels, and the conversion needs the body to draw for. See [StarMapPoi.service_entry].
-var _service: Array = []
-## Set by [method set_service_pois] so the next [method refresh] rebuilds its entries without
-## requiring the player to have left the body first — a POI placed from this very chart has to appear
-## on it at once, and the reload used to be keyed on the body alone.
-var _service_dirty: bool = true
-
 var _icons: Array[Sprite3D] = []
 var _labels: Array[Label3D] = []
 ## Cache key, so turning a planet does not re-read the file every frame.
@@ -97,18 +85,9 @@ var _cluster_counts: Array[Label3D] = []
 var _grouped_before: Dictionary = {}
 
 
-## Hand the layer the points of interest of the SERVICE, as [method PlayerServices.poi_list] returns
-## them. Any list replaces the previous one — an empty list is "this player owns none", not "keep
-## what you had" — and the redraw happens on the next [method refresh], never mid-frame.
-func set_service_pois(records: Array) -> void:
-	_service = records.duplicate()
-	_service_dirty = true
-
-
-## The list this body draws: [StarMapPoi.merged_for], which the search index reads too. See there for
-## why the two have to be the same list.
-func _merged_for(body_key: String) -> Array[Dictionary]:
-	return StarMapPoi.merged_for(body_key, _service)
+## Is [param radius] big enough on screen, at [param view] units away, to be worth marking up?
+static func worth_showing(radius: float, view: float) -> bool:
+	return view > 0.0 and radius / view >= VISIBLE_RATIO
 
 
 ## Draw the points of [param body_key] on a sphere of [param radius] centred at [param centre] and
@@ -118,10 +97,9 @@ func _merged_for(body_key: String) -> Array[Dictionary]:
 ## [param hovered_cluster] is the group under the cursor, by its first member, or -1.
 func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 		camera: Camera3D, selected: int, hovered: int, hovered_cluster: int = -1) -> void:
-	if body_key != _loaded_key or _service_dirty:
+	if body_key != _loaded_key:
 		_loaded_key = body_key
-		_service_dirty = false
-		entries = _merged_for(body_key)
+		entries = StarMapPoi.load_for(body_key)
 		# How high the ground stands under each town. Computed ONCE, here: a town does not move, so its
 		# own elevation is a constant, and asking for it every frame would be twenty-seven height
 		# lookups a frame for an answer that never changes.
@@ -129,12 +107,7 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 			poi["surface"] = StarMapRelief.surface_factor(body_key, poi["dir"])
 			poi["altitude_m"] = StarMapRelief.ground_altitude_m(body_key, poi["dir"])
 		_grouped_before = {}
-		# Only a CHANGE OF BODY may throw the nodes away: they are a pool, and rebuilding a pool on
-		# every new POI would free and reallocate badges each time one was placed. What the pool
-		# DOES need is the tail hidden, since a list that shrinks leaves badges drawn — see
-		# [method _hide_tail].
-		if entries.is_empty():
-			_release_pool()
+		_release_pool()
 	if entries.is_empty():
 		# The pick index has to go with them. Left behind, it still answers with the PREVIOUS body's
 		# towns: clicking empty sky near a bare moon would select a village on the planet you just left.
@@ -183,21 +156,6 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 		clusters.append({"members": members, "world": middle / float(members.size())})
 	_place_labels(drawn, camera, selected, hovered)
 	_place_clusters(clusters, camera, hovered_cluster)
-	# The badges left over from a LONGER list stay up otherwise: nothing above this loop has a reason
-	# to touch a pool node past entries.size(), so a service refresh that dropped a POI would keep its
-	# badge on the planet forever. Cheapest correct fix, and only ever walks what is actually spare.
-	_hide_tail(entries.size())
-
-
-## Hide the spare badges and labels of the pool — the ones standing past [param from].
-##
-## The pool only grows ([method _grow_pool]) and is thrown away only when the body changes
-## ([member clear]), so a list that SHRINKS on the same body is the one case nothing cleaned up:
-## the service's POI list has no order or size a planet's towns can predict.
-func _hide_tail(from: int) -> void:
-	for index: int in range(from, _icons.size()):
-		_icons[index].hide()
-		_labels[index].hide()
 
 
 ## Put everything away — the body is no longer close enough, or nothing is selected at all.

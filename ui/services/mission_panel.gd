@@ -788,33 +788,6 @@ static func _poi_name_of(poi_id: String) -> String:
 	return ""
 
 
-## A word you can click, inside a sentence that is otherwise not clickable. Flat, so it takes no room
-## beside the objective — a boxed button per clause would outweigh the clause it points at — and
-## lit on hover, which is the one thing on screen that says "this word goes somewhere". That is the
-## rest of the terminal's own answer to the same question (ServiceStyle.apply_button), so the link
-## reads as part of the same screen rather than as a borrowed control.
-func _poi_link(text: String, poi_id: String) -> Button:
-	var button := Button.new()
-	button.text = text
-	button.add_theme_stylebox_override("normal", ServiceStyle.flat(Color.TRANSPARENT,
-			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
-	button.add_theme_stylebox_override("hover", ServiceStyle.flat(ServiceStyle.ACCENT_SOFT,
-			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
-	button.add_theme_stylebox_override("pressed", ServiceStyle.flat(ServiceStyle.ACCENT_SOFT,
-			ServiceStyle.RADIUS_SMALL, Color.TRANSPARENT, 0, 6.0, 4.0))
-	button.add_theme_stylebox_override("focus", ServiceStyle.flat(Color.TRANSPARENT,
-			ServiceStyle.RADIUS_SMALL, ServiceStyle.ACCENT, 1, 6.0, 4.0))
-	button.add_theme_color_override("font_color", ServiceStyle.ACCENT)
-	button.add_theme_color_override("font_hover_color", ServiceStyle.ACCENT_HOVER)
-	button.add_theme_color_override("font_pressed_color", ServiceStyle.ACCENT_PRESSED)
-	button.add_theme_color_override("font_focus_color", ServiceStyle.ACCENT_HOVER)
-	# The sentence's own size, so the word does not grow when it becomes a control.
-	ServiceStyle.font_of(button, 15)
-	button.tooltip_text = tr("%%SVC_TIP_SHOW_POI_ON_CHART")
-	button.pressed.connect(func() -> void: focus_poi_requested.emit(poi_id))
-	return button
-
-
 ## One numbered objective clause: the sentence, where it happens, its progress, the evaluation badge,
 ## and — on my own contracts — the issuer confirmation button.
 func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dictionary,
@@ -839,9 +812,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 	line.add_child(sentence)
 	box.add_child(line)
 
-	# Where this clause happens, as a word that takes you there. A clause you cannot locate is a
-	# sentence about somewhere you have never seen, which is the difference between a contract you
-	# can take and one you can only hope about.
+	# Where this clause happens. A clause you cannot locate is a sentence about somewhere you have
+	# never seen, which is the difference between a contract you can take and one you can only hope
+	# about. The name alone now: showing it on the chart went with the chart's own points of interest.
 	var poi := _objective_poi(objective)
 	if not poi.is_empty():
 		var where := _row(4)
@@ -850,8 +823,8 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 		where.add_child(indent)
 		where.add_child(_label(tr("%%SVC_LBL_AT"), DIM))
 		var poi_name := str(poi["name"])
-		where.add_child(_poi_link(
-				poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), str(poi["id"])))
+		where.add_child(_label(
+				poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), ServiceStyle.TEXT))
 		box.add_child(where)
 
 	var footer := _row(10)
@@ -1245,7 +1218,7 @@ func _zone_poi_picker(row: Dictionary, flow: FlowContainer) -> void:
 	var picker := MissionPlacePicker.new()
 	picker.setup("%%SVC_POI_MISSION_ZONE", 220.0)
 	picker.placement_requested.connect(
-			func(radius: float, pick: bool) -> void: placement_requested.emit(radius, pick))
+			func(radius: float) -> void: placement_requested.emit(radius))
 	row["poi"] = picker
 	flow.add_child(picker)
 	# The zone row's own teardown only walks LineEdits; this one is not one, so it is queued for the
@@ -1528,7 +1501,7 @@ func _var_control(var_name: String, entry: Dictionary, objective: bool) -> Array
 			_feed_goods(widget)
 		if widget.has_signal("placement_requested"):
 			widget.connect("placement_requested",
-				func(radius: float, pick: bool) -> void: placement_requested.emit(radius, pick))
+				func(radius: float) -> void: placement_requested.emit(radius))
 		return [widget, {"name": var_name, "target": "param_object"}]
 	if properties.has(var_name):
 		var property: Dictionary = properties[var_name] if properties[var_name] is Dictionary else {}
@@ -1605,7 +1578,7 @@ func _rebuild_params(row: Dictionary, entry: Dictionary) -> void:
 				_feed_goods(widget)
 			if widget.has_signal("placement_requested"):
 				widget.connect("placement_requested",
-					func(radius: float, pick: bool) -> void: placement_requested.emit(radius, pick))
+					func(radius: float) -> void: placement_requested.emit(radius))
 			rendered = true
 			continue
 		var ptype: String = str((property as Dictionary).get("type", "string"))
@@ -2101,30 +2074,7 @@ func set_placed(place: Dictionary) -> bool:
 	return taken
 
 
-## The chart named a point of interest that ALREADY exists — one of the player's own. Same rule as
-## a place: a picker with a choice already made is left alone.
-func set_picked_poi(poi_id: String) -> bool:
-	if poi_id == "":
-		return false
-	var taken := false
-	for row: Dictionary in _objective_rows:
-		for entry: Dictionary in row.get("params_widgets", []):
-			taken = _pick_for(entry.get("control"), poi_id) or taken
-	for row: Dictionary in _zone_rows:
-		taken = _pick_for(row.get("poi"), poi_id) or taken
-	return taken
-
-
-func _pick_for(control: Variant, poi_id: String) -> bool:
-	if not (control is MissionPlacePicker):
-		return false
-	var picker := control as MissionPlacePicker
-	if picker.picked_id() != "":
-		return false
-	return picker.select_poi(poi_id)
-
-
-## Answers whether the picker took the place, for the same reason [method set_picked_poi] does.
+## Answers whether the picker took the place, for the same reason [method set_placed] does.
 func _deliver_place(control: Variant, place: Dictionary) -> bool:
 	if not (control is MissionPlacePicker):
 		return false

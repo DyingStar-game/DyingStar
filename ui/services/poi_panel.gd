@@ -362,14 +362,12 @@ func _take_here() -> void:
 
 
 ## Ask the chart for a place: the console owns the chart, so all this does is ask — it opens on the
-## NAVIGATION tab in placement mode, the player picks a point, and it comes back through
-## [method set_placed]. Nothing here ever reaches for [StarMap].
+## NAVIGATION tab in placement mode, the player drops the mission marker there, and it comes back
+## through [method set_placed]. Nothing here ever reaches for [StarMap].
 func _take_on_chart() -> void:
 	if _placed == null or (_placed as Dictionary).is_empty():
 		_take_here()
-	# No pick-existing here: this form is CREATING a point of interest, so pointing at one that
-	# already exists is not an answer but something to build on top of. The chart keeps placing.
-	placement_requested.emit(maxf(_coordinate_of(_form_radius.text), 0.0), false)
+	placement_requested.emit(maxf(_coordinate_of(_form_radius.text), 0.0))
 	_say(tr("%%SVC_MSG_PICK_ON_CHART"), DIM)
 
 
