@@ -147,3 +147,20 @@ func test_a_point_the_chart_has_no_record_of_is_not_an_entry() -> void:
 	var chart := _chart()
 	assert_true(chart._service_poi_entry("not-in-this-session").is_empty())
 	assert_true(chart._service_poi_entry("").is_empty())
+
+
+func test_a_mission_point_is_drawn_by_the_contract_that_names_it() -> void:
+	# A delivery point of a mission the player raised and one of a contract they took on are not the
+	# same thing: the chart tints them apart, and the icon table reads the kind.
+	MissionPoiCache.set_mission_roles(["mine"], ["theirs"], [])
+	var mine := StarMapPoi.service_entry(_poi({"id": "mine"}), "tarsis_3")
+	assert_eq(mine["kind"], "mission", "a point of a mission the player raised")
+	var theirs := StarMapPoi.service_entry(_poi({"id": "theirs"}), "tarsis_3")
+	assert_eq(theirs["kind"], "contract", "a point of a contract the player took on")
+	# A point the client knows nothing about is drawn as a mission's, the older of the readings.
+	var unknown := StarMapPoi.service_entry(_poi({"id": "unknown"}), "tarsis_3")
+	assert_eq(unknown["kind"], "mission")
+	# And a point that is nobody's mission keeps its owner's kind.
+	var own := StarMapPoi.service_entry(_poi({"id": "own", "ownerType": "player"}), "tarsis_3")
+	assert_eq(own["kind"], "player")
+	MissionPoiCache.set_mission_roles([], [], [])

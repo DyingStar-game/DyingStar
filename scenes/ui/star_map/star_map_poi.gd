@@ -122,7 +122,8 @@ static func merged_for(body_key: String, records: Array) -> Array[Dictionary]:
 ##
 ## The kind is the owner, not the kind of place: the service records who a POI belongs to and what it
 ## is FOR is exactly what its name says. Feeding `ownerType` to the icon table is what lets a mission
-## point be tinted apart from a town without the rule engine growing a second axis.
+## point be tinted apart from a town without the rule engine growing a second axis. A mission's own
+## point is drawn by WHICH contract names it (see [method _kind_of]).
 static func service_entry(poi: Dictionary, body_key: String) -> Dictionary:
 	if str_of(poi.get("scene")) != body_key:
 		return {}
@@ -141,7 +142,7 @@ static func service_entry(poi: Dictionary, body_key: String) -> Dictionary:
 	return {
 		"name": raw_name,
 		"label": label_of(raw_name),
-		"kind": str_of(poi.get("ownerType")),
+		"kind": _kind_of(poi),
 		"population": 0,
 		"radius_m": ServiceTypes.float_of(poi.get("radiusM")),
 		"description": str_of(poi.get("description")),
@@ -152,6 +153,24 @@ static func service_entry(poi: Dictionary, body_key: String) -> Dictionary:
 		"service_id": str_of(poi.get("id")),
 		"owner_type": str_of(poi.get("ownerType")),
 	}
+
+
+## The kind a point is drawn as: who owns it, and — for a MISSION's own point — which kind of
+## contract names it.
+##
+## A delivery point of a mission the player raised and one of a contract they took on are not the
+## same thing, and the chart says so: the icon table tints by kind, so the two are told apart at a
+## glance. A point of a mission whose contract is not known to this client yet is drawn as a
+## mission's — the older of the two readings, and the one that is right when the client does not
+## know.
+static func _kind_of(poi: Dictionary) -> String:
+	var owner := str_of(poi.get("ownerType"))
+	if owner != "mission":
+		return owner
+	match MissionPoiCache.role_of(str_of(poi.get("id"))):
+		"accepted":
+			return "contract"
+	return "mission"
 
 
 ## The chart's label for a name a player wrote: the name itself, or the language's word for "this one

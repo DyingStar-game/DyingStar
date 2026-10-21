@@ -12,14 +12,63 @@ extends RefCounted
 ## session, whatever [method add] created. Mission-owned POIs are invisible to that endpoint unless
 ## the caller created them, so the ones made here are also kept locally rather than trusted to come
 ## back: a builder must never lose the POI it just placed because a list did not refresh.
+##
+## It also knows what the missions that name those points are: the ones the player CREATED, the ones
+## they HOLD, and the contracts that are over. A contract's place dies with the contract — a point
+## of a mission that is finished is a point nobody should be sent to — and the two kinds of live
+## contract are told apart on the chart, so a delivery point of your own making and one you took on
+## are not the same colour.
 
 static var _shared: Array = []
 static var _loaded: bool = false
+## Point id -> "created" or "accepted": which kind of live contract names it.
+static var _roles: Dictionary = {}
+## The points of contracts that are over. They are kept, but not offered.
+static var _closed: Dictionary = {}
 
 
 ## Every POI this session can offer, the fetched ones first. Empty until [method ensure_loaded].
+##
+## The points of CLOSED contracts are not among them: a contract's place dies with the contract, and
+## offering a place that no longer exists is how a builder ends up naming somewhere that is gone.
 static func entries() -> Array:
-	return _shared
+	if _closed.is_empty():
+		return _shared
+	var live: Array = []
+	for poi: Dictionary in _shared:
+		if not _closed.has(str(poi.get("id", ""))):
+			live.append(poi)
+	return live
+
+
+## What the client knows about the missions naming the points in the list: the ones the player
+## created, the ones they hold, and the contracts that are over.
+##
+## The three lists are point ids. A point named by a contract the player created is "created"; one
+## named by a contract they hold is "accepted"; one named by a contract that is over is closed, and
+## stops being offered. A point named by both is the player's own making, and says so.
+static func set_mission_roles(created: Array, accepted: Array, closed: Array) -> void:
+	_roles.clear()
+	_closed.clear()
+	for id: Variant in created:
+		_roles[str(id)] = "created"
+	for id: Variant in accepted:
+		var key := str(id)
+		if not _roles.has(key):
+			_roles[key] = "accepted"
+	for id: Variant in closed:
+		_closed[str(id)] = true
+
+
+## What kind of contract names [param poi_id]: "created", "accepted", or "" when the point is not a
+## mission's at all. The chart tints the two kinds apart.
+static func role_of(poi_id: String) -> String:
+	return str(_roles.get(poi_id, ""))
+
+
+## Is [param poi_id] the point of a contract that is over?
+static func is_closed(poi_id: String) -> bool:
+	return _closed.has(poi_id)
 
 
 ## Fetch the caller's POIs if this session has not already. Returns whether the fetch worked, so a
@@ -112,8 +161,11 @@ static func label_of(poi: Dictionary) -> String:
 	return text if text != "" else ServiceTypes.text("%%SVC_POI_UNNAMED")
 
 
-## Forget everything. Called when a builder is reset, so a POI from an abandoned mission does not
+## Forget the points. Called when a builder is reset, so a POI from an abandoned mission does not
 ## linger in a session that has moved on.
+##
+## What the MISSIONS are is not forgotten: the roles and the closed contracts describe the
+## contracts, not the points, and the next classification says them again anyway.
 static func clear() -> void:
 	_shared = []
 	_loaded = false

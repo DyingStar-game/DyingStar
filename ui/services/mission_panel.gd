@@ -569,6 +569,10 @@ func _fill_missions_list(page: ServicePage, list: ItemList, result: Dictionary,
 	_fill_list(list, lines, metadata)
 	_mark_mine(list)
 	_say(tr("%%SVC_FMT_MISSION_COUNT") % page.total, DIM)
+	if own:
+		# The contracts the player raised name their own places: the chart tells them apart from
+		# the ones the player took on.
+		_classify_mission_pois()
 
 
 ## Colour the rows whose contract this player raised, so one line says "yours" without opening it.
@@ -609,6 +613,7 @@ func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 	if lines.is_empty():
 		lines.append(tr("%%SVC_MSG_NO_ASSIGNMENTS"))
 	_fill_list(_mine, lines, metadata)
+	_classify_mission_pois()
 
 
 # ---------------------------------------------------------------------------------------------
@@ -649,7 +654,105 @@ func _open_contract(box: VBoxContainer, mission_id: String) -> void:
 		return
 	var data: Dictionary = result.get("data")
 	var mission: Dictionary = data.get("mission", {}) if data.get("mission") is Dictionary else {}
+	# The contract names its places, and the client has to remember them: a list of contracts does
+	# not carry their objectives, so this is the only place the whole of one is ever read.
+	_remember_contract_pois(mission_id, mission)
 	box.add_child(_contract_document(mission_id, mission, data, box))
+
+
+## The points a contract names, remembered by contract id.
+##
+## A contract's place dies with the contract, and the client is the one that has to forget it: the
+## service sweeps the point, and the cache must stop offering it. The objectives are read when the
+## contract is opened — a list of contracts carries its zones, not its clauses.
+var _contract_pois: Dictionary = {}
+
+
+func _remember_contract_pois(mission_id: String, mission: Dictionary) -> void:
+	var ids: Array = []
+	for objective: Dictionary in mission.get("objectives", []):
+		var params: Variant = objective.get("params")
+		if not (params is Dictionary):
+			continue
+		for field: String in ["zone", "source"]:
+			var place: Variant = (params as Dictionary).get(field)
+			if not (place is Dictionary):
+				continue
+			var poi_id := str((place as Dictionary).get("poiId", ""))
+			if poi_id != "" and not ids.has(poi_id):
+				ids.append(poi_id)
+	if ids.is_empty():
+		return
+	_contract_pois[mission_id] = ids
+
+
+## The points a mission names, as far as the client can see them: the availability zones' and the
+## objectives' targets, plus whatever a contract the player opened has told us.
+static func _poi_ids_of(mission: Dictionary) -> Array:
+	var ids: Array = []
+	for zone: Variant in mission.get("zones", []):
+		if not (zone is Dictionary):
+			continue
+		var poi_id := str((zone as Dictionary).get("poiId", ""))
+		if poi_id != "" and not ids.has(poi_id):
+			ids.append(poi_id)
+	for objective: Dictionary in mission.get("objectives", []):
+		var params: Variant = objective.get("params")
+		if not (params is Dictionary):
+			continue
+		for field: String in ["zone", "source"]:
+			var place: Variant = (params as Dictionary).get(field)
+			if not (place is Dictionary):
+				continue
+			var poi_id := str((place as Dictionary).get("poiId", ""))
+			if poi_id != "" and not ids.has(poi_id):
+				ids.append(poi_id)
+	return ids
+
+
+## Is this contract over? A contract that is completed, cancelled or expired has said everything it
+## had to say, and the place it named is gone with it.
+static func _is_closed_status(status: String) -> bool:
+	return status in ["completed", "cancelled", "expired"]
+
+
+## Tell the cache what the missions naming its points are: the ones the player created, the ones
+## they hold, and the contracts that are over.
+##
+## Run whenever the contracts are loaded: a contract's place dies with the contract, and the chart
+## tells the two kinds of live contract apart — a delivery point of your own making and one you took
+## on are not the same thing.
+func _classify_mission_pois() -> void:
+	var created: Array = []
+	var accepted: Array = []
+	var closed: Array = []
+	for i: int in range(_mine.item_count):
+		var entry: Variant = _mine.get_item_metadata(i)
+		if not (entry is Dictionary):
+			continue
+		var mission: Variant = (entry as Dictionary).get("mission")
+		if not (mission is Dictionary):
+			continue
+		var assignment: Variant = (entry as Dictionary).get("assignment")
+		var status := str((assignment as Dictionary).get("status", "")) \
+				if assignment is Dictionary else ""
+		var ids: Array = _poi_ids_of(mission as Dictionary)
+		ids.append_array(_contract_pois.get(str((mission as Dictionary).get("id", "")), []))
+		if _is_closed_status(status):
+			closed.append_array(ids)
+		else:
+			accepted.append_array(ids)
+	for i: int in range(_created.item_count):
+		var mission: Variant = _created.get_item_metadata(i)
+		if not (mission is Dictionary):
+			continue
+		var ids: Array = _poi_ids_of(mission as Dictionary)
+		ids.append_array(_contract_pois.get(str((mission as Dictionary).get("id", "")), []))
+		if _is_closed_status(str((mission as Dictionary).get("status", ""))):
+			closed.append_array(ids)
+		else:
+			created.append_array(ids)
+	MissionPoiCache.set_mission_roles(created, accepted, closed)
 
 
 ## The read-only contract: header + stamp, meta block, description, prerequisites, numbered
@@ -846,6 +949,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 	# Where this clause happens, as a word that takes you there. A clause you cannot locate is a
 	# sentence about somewhere you have never seen, which is the difference between a contract you
 	# can take and one you can only hope about.
+	#
+	# A point of a contract that is OVER is a point that is gone: the service sweeps it with the
+	# contract, so the name is all that is left, and it is not a link to anywhere.
 	var poi := _objective_poi(objective)
 	if not poi.is_empty():
 		var where := _row(4)
@@ -854,8 +960,13 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 		where.add_child(indent)
 		where.add_child(_label(tr("%%SVC_LBL_AT"), DIM))
 		var poi_name := str(poi["name"])
-		where.add_child(_poi_link(
-				poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), str(poi["id"])))
+		var poi_id := str(poi["id"])
+		if MissionPoiCache.is_closed(poi_id):
+			where.add_child(_label(
+					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), ServiceStyle.TEXT))
+		else:
+			where.add_child(_poi_link(
+					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), poi_id))
 		box.add_child(where)
 
 	var footer := _row(10)

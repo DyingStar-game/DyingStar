@@ -345,6 +345,32 @@ func test_a_point_the_service_brought_back_is_not_kept_twice() -> void:
 	assert_false(MissionPoiCache._holds([], ""), "an id nobody has is nobody's")
 
 
+func test_the_point_of_a_closed_contract_is_not_offered() -> void:
+	# A contract's place dies with the contract: the service sweeps the point, and offering one that
+	# no longer exists is how a builder ends up naming somewhere that is gone.
+	MissionPoiCache.clear()
+	MissionPoiCache.add({"id": "closed-poi", "name": "Point d'un contrat clos"})
+	MissionPoiCache.add({"id": "live-poi", "name": "Point d'un contrat vivant"})
+	MissionPoiCache.set_mission_roles([], [], ["closed-poi"])
+	assert_true(MissionPoiCache.is_closed("closed-poi"))
+	assert_false(MissionPoiCache.is_closed("live-poi"))
+	var offered: Array = []
+	for poi: Dictionary in MissionPoiCache.entries():
+		offered.append(str(poi.get("id", "")))
+	assert_eq(offered, ["live-poi"], "the point of a closed contract is not offered")
+	MissionPoiCache.clear()
+
+
+func test_the_two_kinds_of_contract_are_told_apart() -> void:
+	# A point of a mission the player raised and a point of a contract they took on are not the same
+	# thing, and the chart says so by tinting them apart.
+	MissionPoiCache.set_mission_roles(["mine"], ["theirs"], [])
+	assert_eq(MissionPoiCache.role_of("mine"), "created")
+	assert_eq(MissionPoiCache.role_of("theirs"), "accepted")
+	assert_eq(MissionPoiCache.role_of("unknown"), "", "a point of no contract is no contract's")
+	MissionPoiCache.set_mission_roles([], [], [])
+
+
 func test_a_json_null_width_reads_as_a_point() -> void:
 	# Dictionary's default only applies to an ABSENT key: a nullable column arrives as an explicit
 	# null, and float(null) has no constructor at all (the same bug radius_label_of documents).
