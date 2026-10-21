@@ -62,6 +62,9 @@ var my_player_uuid: String = ""
 ## True once create_player() actually built our own body. Distinguishes "not spawned YET" (the server
 ## is still streaming the world to us) from "was there and is gone" — only the second one is fatal.
 var my_player_created: bool = false
+## What Horizon sent, handled in arrival order a time budget a frame (NetBacklog): a zone entry no
+## longer freezes the game while it creates hundreds of objects.
+var _backlog := NetBacklog.new()
 ## True once the disappearance of my own body has been reported (see _watch_own_player_alive).
 var _own_player_lost: bool = false
 ## Where my own body last was while it was in the tree: where it is put back if something pulls it out
@@ -181,6 +184,16 @@ var _net_verbose: bool = false
 ## For the same reason it is a SEPARATE ini key: only ask a player for this one when the payloads
 ## themselves are the question, and expect their framerate to drop while it is on.
 var _net_echo: bool = false
+
+
+## The time a frame may spend on received events (µs): wide while the loading splash hides the world
+## (the sooner it is built, the sooner we play), a few milliseconds once our player is in it.
+const BACKLOG_BUDGET_LOADING_US := 100000
+const BACKLOG_BUDGET_PLAYING_US := 5000
+## The backlog's own events: an object (or a player) that was waiting for its parent, which has come —
+## built next, as an event of its own, not inside the parent's.
+const PENDING_OBJECT := "_pending_object"
+const PENDING_PLAYER := "_pending_player"
 
 
 ## Open a sub-scope of the inbound drain, or nothing when --net-verbose is off.
@@ -330,7 +343,7 @@ func _process(_delta: float) -> void:
 						pending_player_data["parent_id"]
 					]
 				)
-				create_player(pending_message)
+				_backlog.push_next({"type": PENDING_PLAYER, "event": pending_message})
 				pending_messages_player_parenting.erase(pending_message)
 		for pending_message in pending_messages_generic_objects_parenting.duplicate():
 			var pending_object_data = {}
@@ -345,7 +358,7 @@ func _process(_delta: float) -> void:
 						pending_object_data["parent_id"]
 					]
 				)
-				create_generic_object(pending_message)
+				_backlog.push_next({"type": PENDING_OBJECT, "event": pending_message})
 				pending_messages_generic_objects_parenting.erase(pending_message)
 		_resolve_my_pending_frame()
 		check_pending_objects_timer = 0
@@ -381,90 +394,18 @@ func _process(_delta: float) -> void:
 				network_events_received += 1
 				var event = JSON.parse_string(packet_text)
 				_net_t_end("net:parse", _parse_tok)
-
-				# `net:route` — everything the packet then triggers: creation, deletion, movement,
-				# property updates. prop:spawn nests inside it.
-				var _route_tok: int = _net_t()
-
-				if event.has("type"):
-					match event["type"]:
-						"init_ack":
-							# returned by Horizon server when connection established and player authenticated
-							# store my player uuid
-							my_player_uuid = event["player_id"]
-							my_player_spawn_due_since = Time.get_ticks_msec()
-						"gorc_zone_enter":
-							# When an object enter in my zone (GorcPlayer, planet, miningrock...)
-							create_object(event)
-							# The zone is still streaming in, so our parent may simply be further down
-							# the queue: give the watchdog a fresh SPAWN_TIMEOUT_MS from the end of
-							# this build, not from the start (a single planet can outlast the timeout).
-							if my_player_spawn_due_since >= 0 and not my_player_created:
-								my_player_spawn_due_since = Time.get_ticks_msec()
-						"queued":
-							# Horizon holds our spawn: the server owning our apartment takes no new
-							# player for now (split under way, too slow, full), or the village habs are
-							# not there yet. Sent every 10 s while we wait, each one a fresh
-							# SPAWN_TIMEOUT_MS: waiting in the queue is not a lost spawn.
-							if my_player_spawn_due_since >= 0 and not my_player_created:
-								my_player_spawn_due_since = Time.get_ticks_msec()
-							LoadingSplash.say(get_tree(), tr("%%HUD_QUEUED") % int(event.get("position", 0)))
-						"gorc_zone_exit":
-							# When an object exit from my zone (GorcPlayer, planet, miningrock...)
-							delete_object(event)
-						"error":
-							# when have error in server side
-							push_error(event["message"])
-							# close the connection
-							socket.close(1000, event["message"])
-							GameOrchestrator.connexion_error_message = event["message"]
-							GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
-							_net_t_end("net:route", _route_tok)
-							ClientPerf.scope_end("net:poll", _net_tok)
-							return
-						_:
-							print("< Client - ERROR - Unknown event type: %s" % event["type"])
-
-				elif event.has("object_type"):
-					if event["object_type"] == "player":
-						# Players replicate through the same generic paths as props:
-						# movement via "move", gameplay properties via "update_property".
-						var player_event_type = event.get("event_type", "")
-						if player_event_type == "gorc_zone_enter":
-							create_object(event)
-						elif player_event_type == "gorc_zone_exit":
-							delete_player(event)
-						elif player_event_type == "move":
-							player_update(event)
-						elif player_event_type == "update_property":
-							update_generic_object(_standardize_object(event))
-					elif event["event_type"] == "update_property":
-						# print("< Client - Update generic object: %s" % event)
-						var new_event = _standardize_object(event)
-						update_generic_object(new_event)
-					elif event["event_type"] == "gorc_zone_enter":
-						create_object(event)
-					elif event["event_type"] == "gorc_zone_exit":
-						delete_object(event)
-					else:
-						print("< Client - ERROR - Unknown object_type event: %s" % event["object_type"])
-				elif event.has("event_type"):
-					if event["event_type"]== 'livekit_token':
-						vocal_manage(event)
-					elif event["event_type"] == "livekit_subscribe":
-						vocal_subscribe_manage(event)
-						print("TODO")
-					elif event["event_type"] == "livekit_unsubscribe":
-						vocal_unsubscribe_manage(event)
-						print("TODO")
-					else:
-						print("< Client - ERROR - Unknown event_type: %s" % event["event_type"])
+				if event is Dictionary:
+					_backlog.push(event)
 				else:
 					print("< Client - ERROR - Unknown event format: %s" % packet_text)
-				_net_t_end("net:route", _route_tok)
 
 			else:
 				print("< Client - Got binary data from server: %d bytes" % packet.size())
+		# Handled in arrival order within the frame's budget; the rest waits for the next frame.
+		if not _backlog.drain(_route, BACKLOG_BUDGET_PLAYING_US if my_player_created
+				else BACKLOG_BUDGET_LOADING_US):
+			ClientPerf.scope_end("net:poll", _net_tok)
+			return
 
 	# `WebSocketPeer.STATE_CLOSING` means the socket is closing.
 	# It is important to keep polling for a clean close.
@@ -479,6 +420,94 @@ func _process(_delta: float) -> void:
 		print("< Client - WebSocket closed with code: %d. Clean: %s" % [code, code != -1])
 		set_process(false) # Stop processing.
 	ClientPerf.scope_end("net:poll", _net_tok)
+
+
+## One event from Horizon, as it was received: creation, deletion, movement, property updates. False
+## when it was an error that closed the connection (nothing after it is handled).
+func _route(event: Dictionary) -> bool:
+	# `net:route` — everything the event triggers: creation, deletion, movement, property updates.
+	# prop:spawn nests inside it.
+	var _route_tok: int = _net_t()
+	if event.has("type"):
+		match event["type"]:
+			PENDING_OBJECT:
+				create_generic_object(event["event"])
+			PENDING_PLAYER:
+				create_player(event["event"])
+			"init_ack":
+				# returned by Horizon server when connection established and player authenticated
+				# store my player uuid
+				my_player_uuid = event["player_id"]
+				my_player_spawn_due_since = Time.get_ticks_msec()
+			"gorc_zone_enter":
+				# When an object enter in my zone (GorcPlayer, planet, miningrock...)
+				create_object(event)
+				# The zone is still streaming in, so our parent may simply be further down
+				# the queue: give the watchdog a fresh SPAWN_TIMEOUT_MS from the end of
+				# this build, not from the start (a single planet can outlast the timeout).
+				if my_player_spawn_due_since >= 0 and not my_player_created:
+					my_player_spawn_due_since = Time.get_ticks_msec()
+			"queued":
+				# Horizon holds our spawn: the server owning our apartment takes no new
+				# player for now (split under way, too slow, full), or the village habs are
+				# not there yet. Sent every 10 s while we wait, each one a fresh
+				# SPAWN_TIMEOUT_MS: waiting in the queue is not a lost spawn.
+				if my_player_spawn_due_since >= 0 and not my_player_created:
+					my_player_spawn_due_since = Time.get_ticks_msec()
+				LoadingSplash.say(get_tree(), tr("%%HUD_QUEUED") % int(event.get("position", 0)))
+			"gorc_zone_exit":
+				# When an object exit from my zone (GorcPlayer, planet, miningrock...)
+				delete_object(event)
+			"error":
+				# when have error in server side
+				push_error(event["message"])
+				# close the connection
+				socket.close(1000, event["message"])
+				GameOrchestrator.connexion_error_message = event["message"]
+				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+				_net_t_end("net:route", _route_tok)
+				return false
+			_:
+				print("< Client - ERROR - Unknown event type: %s" % event["type"])
+
+	elif event.has("object_type"):
+		if event["object_type"] == "player":
+			# Players replicate through the same generic paths as props:
+			# movement via "move", gameplay properties via "update_property".
+			var player_event_type = event.get("event_type", "")
+			if player_event_type == "gorc_zone_enter":
+				create_object(event)
+			elif player_event_type == "gorc_zone_exit":
+				delete_player(event)
+			elif player_event_type == "move":
+				player_update(event)
+			elif player_event_type == "update_property":
+				update_generic_object(_standardize_object(event))
+		elif event["event_type"] == "update_property":
+			# print("< Client - Update generic object: %s" % event)
+			var new_event = _standardize_object(event)
+			update_generic_object(new_event)
+		elif event["event_type"] == "gorc_zone_enter":
+			create_object(event)
+		elif event["event_type"] == "gorc_zone_exit":
+			delete_object(event)
+		else:
+			print("< Client - ERROR - Unknown object_type event: %s" % event["object_type"])
+	elif event.has("event_type"):
+		if event["event_type"]== 'livekit_token':
+			vocal_manage(event)
+		elif event["event_type"] == "livekit_subscribe":
+			vocal_subscribe_manage(event)
+			print("TODO")
+		elif event["event_type"] == "livekit_unsubscribe":
+			vocal_unsubscribe_manage(event)
+			print("TODO")
+		else:
+			print("< Client - ERROR - Unknown event_type: %s" % event["event_type"])
+	else:
+		print("< Client - ERROR - Unknown event format: %s" % event)
+	_net_t_end("net:route", _route_tok)
+	return true
 
 
 ## Network heartbeat, deliberately on the PHYSICS loop.
@@ -1317,7 +1346,7 @@ func create_generic_object(event: Dictionary) -> void:
 							pending_player_data["parent_id"]
 						]
 					)
-					create_player(pending_message)
+					_backlog.push_next({"type": PENDING_PLAYER, "event": pending_message})
 					pending_messages_player_parenting.erase(pending_message)
 
 			# generic object created, now process pending messages for generic objects waiting for this generic object as parent
@@ -1332,7 +1361,7 @@ func create_generic_object(event: Dictionary) -> void:
 						]
 					)
 					pending_messages_generic_objects_parenting.erase(pending_message)
-					create_generic_object(pending_message)
+					_backlog.push_next({"type": PENDING_OBJECT, "event": pending_message})
 		else:
 			# Missing scenename or parent_id: buffer THIS channel's data and wait for the
 			# other channel (the merge above will then have everything to instantiate).
