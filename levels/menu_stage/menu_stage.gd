@@ -26,6 +26,9 @@ const READY_TIMEOUT_S : float = 10.0
 const RESNAP_FOR_S : float = 60.0
 ## The stage joins this group, so Settings > Graphics can find it for its hour slider.
 const GROUP : StringName = &"menu_stage"
+## Development: enter the universe as soon as the stage is up, as a click on "Enter" would (a measured
+## game start, the same every run). Command line only, after `--`.
+const AUTO_ENTER_ARG : String = "--auto-enter"
 
 var _session := StageSession.new()
 var _probe : TileServiceProbe = null
@@ -156,6 +159,10 @@ func _build() -> void:
 	_splash(false)
 	print("[MenuStage] live on %s after %.1f s (ground %s)" % [PLANET_NAME, waited,
 		"ready" if ground_ready[0] else "late"])
+	if AUTO_ENTER_ARG in OS.get_cmdline_user_args():
+		print("[MenuStage] %s: entering the universe" % AUTO_ENTER_ARG)
+		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
+		return
 	if VillageBench.wanted():
 		_menu.hide()  # the bench measures the scene, not the menu over it
 		for layer: Node in _menu.find_children("*", "CanvasLayer", true, false):
