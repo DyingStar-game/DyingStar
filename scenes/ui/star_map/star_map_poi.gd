@@ -1,17 +1,23 @@
 class_name StarMapPoi
 extends RefCounted
 
-## The points of interest of one celestial body, read from the level design's own export.
+## The points of interest of one celestial body, from two sources: the level design's own export, and
+## the points of interest of the SERVICE the player owns.
 ##
 ## Source is [code]assets/qgis/export/<body>_poi.json[/code], written by the QGIS pipeline alongside the
 ## terrain. Reading it directly is what keeps the chart honest: the towns it marks are the towns the
 ## world actually has, at the coordinates the world actually placed them, with no second list to drift.
 ##
+## The service's ones ([method service_entry]) come in the same shape through the same door, so the
+## chart draws a town and a mission's delivery point the same way and one list cannot show what the
+## other hides. They are merged by [method merged_for], which owns the list a body is drawn from.
+##
 ## Free of nodes on purpose, like [StarMapCamera] — parsing and placing are pure functions of the file,
 ## so they can be tested without a viewport or a planet.
 ##
-## ⚠️ Only tarsis_3 carries any today (27); the other eighteen files are empty shells. Nothing here is
-## specific to it, so the rest of the system lights up on its own the day level design fills them in.
+## ⚠️ Only tarsis_3 carries any level-design POI today (27); the other eighteen files are empty shells.
+## Nothing here is specific to it, so the rest of the system lights up on its own the day level design
+## fills them in. The service's POIs are not tied to a body at all: they show up wherever they belong.
 
 ## Where the QGIS pipeline writes them. The [code].json[/code] extension matters: an exported build
 ## remaps scenes to [code].tscn.remap[/code] but leaves json alone, so this path is the same in the
@@ -72,6 +78,92 @@ static func _entry_from(src: Dictionary) -> Dictionary:
 		"lon": float(src["lon"]),
 		"lat": float(src["lat"]),
 	}
+
+
+## The level design's POIs of [param body_key] plus every one of [param records] that belongs to it,
+## in that order.
+##
+## Both sources in ONE list, in one function, because the chart reads it twice and the two reads have
+## to agree: the layer draws by this order, and the search index stores indices into it
+## ([code]_poi_focus[/code] and a result of the typeahead are both positions in this array). If the
+## export were read alone by the search and the merge done only by the layer, a result would name a
+## town the drawn list had pushed further down, and the camera would frame the wrong marker.
+static func merged_for(body_key: String, records: Array) -> Array[Dictionary]:
+	var out: Array[Dictionary] = load_for(body_key)
+	for record: Variant in records:
+		if not (record is Dictionary):
+			continue
+		# The body is the gate, not a second opinion here: it is the frame rule, and it belongs in the
+		# one place that knows what a body key means (service_entry below).
+		var entry: Dictionary = service_entry(record as Dictionary, body_key)
+		if not entry.is_empty():
+			out.append(entry)
+	return out
+
+
+## What a point of interest of the SERVICE becomes on the chart for [param body_key], or {} when it
+## cannot be one.
+##
+## A service POI is not the level design's. It is stored as an offset from the body's OWN CENTRE in
+## metres (`system`, `scene`, `x`, `y`, `z`, `radiusM` — see [method PlayerServices.poi_list]), where
+## the export stores lon/lat on a unit sphere. The direction is that offset normalised, and lon/lat
+## follow from it, because the chart's info card and its search index read those two keys directly
+## and would crash on a record without them.
+##
+## The body check is HERE rather than in the caller, because a place means nothing without the frame
+## it was measured in: `scene: tarsis_1` and `scene: tarsis_10` are two planets, not two spellings of
+## one, and reading them as the same is the bug service-inventory reports as POI_SCENE_SYSTEM_MISMATCH.
+## An empty `scene` is off-world — no body to stand on, and this layer draws on bodies only.
+##
+## The name is taken AS WRITTEN: it is a player's sentence ("Livraison Alpha — tarsis_3"), not a
+## pipeline identifier, so it goes through neither [method pretty_name] (which would lowercase every
+## word after the first) nor [code]tr[/code] (which would look for a translation key that is not one).
+## An unnamed POI says so in the player's language rather than showing a uuid, which reads as a bug.
+##
+## The kind is the owner, not the kind of place: the service records who a POI belongs to and what it
+## is FOR is exactly what its name says. Feeding `ownerType` to the icon table is what lets a mission
+## point be tinted apart from a town without the rule engine growing a second axis.
+static func service_entry(poi: Dictionary, body_key: String) -> Dictionary:
+	if str_of(poi.get("scene")) != body_key:
+		return {}
+	# float_of, not num: the offset is in metres and its direction is all that is kept, so the last
+	# metre of it is worth keeping too — and a point a few metres off the centre would be truncated
+	# to nothing, which is a place the chart then refuses to draw.
+	var dir := Vector3(ServiceTypes.float_of(poi.get("x")), ServiceTypes.float_of(poi.get("y")),
+			ServiceTypes.float_of(poi.get("z")))
+	if dir.length_squared() <= 0.0:
+		# A zero offset has no direction to pin to, and the origin is a spot the star occupies:
+		# there is nothing to draw and nowhere to draw it.
+		return {}
+	var raw_name := str_of(poi.get("name"))
+	dir = dir.normalized()
+	var lonlat := HEALPix.vec2lonlat(dir)
+	return {
+		"name": raw_name,
+		"label": label_of(raw_name),
+		"kind": str_of(poi.get("ownerType")),
+		"population": 0,
+		"radius_m": ServiceTypes.float_of(poi.get("radiusM")),
+		"description": str_of(poi.get("description")),
+		"dir": dir,
+		"lon": lonlat.x,
+		"lat": lonlat.y,
+		# Carried through so a click on the chart can name the POI back to the service.
+		"service_id": str_of(poi.get("id")),
+		"owner_type": str_of(poi.get("ownerType")),
+	}
+
+
+## The chart's label for a name a player wrote: the name itself, or the language's word for "this one
+## has none" when there is not one. An uuid is never the answer — see [method service_entry].
+static func label_of(raw_name: String) -> String:
+	return raw_name if raw_name != "" else ServiceTypes.text("%%SVC_POI_UNNAMED")
+
+
+## A service field that can be JSON null read as a string. [code]Dictionary.get[/code]'s default only
+## applies to an ABSENT key, and a nullable column arrives as an explicit null.
+static func str_of(value: Variant) -> String:
+	return "" if value == null else str(value).strip_edges()
 
 
 ## [code]mining_village_02[/code] → [code]Mining village 02[/code].

@@ -344,6 +344,10 @@ var _info_text: RichTextLabel = null
 ## The towns of whichever body is close enough to read. One layer, reused: only ever one body is being
 ## looked at, and loading nineteen sets of markers to draw one of them would be waste.
 var _poi_layer: StarMapPoiLayer = null
+## The points of interest of the SERVICE, as the cache holds them. Pushed to the layer, which draws
+## them, and read by the search index, which names them — the two must see the same list, so the
+## chart owns it rather than each asking the service on its own.
+var _service_pois: Array = []
 ## Index into _poi_layer.entries of the selected point of interest, or -1. Independent of the body
 ## focus: selecting a town does NOT move the camera, it only changes what the info panel describes.
 var _poi_focus: int = -1
@@ -601,6 +605,45 @@ func host_in(slot: Control) -> void:
 	slot.add_child(_surface)
 	_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hosted = true
+	# The service's POIs belong to the player, so they arrive AFTER the chart is built: on open, and
+	# again whenever a POI is created, edited or deleted. Answering `changed` rather than polling is
+	# the same contract the services terminal keeps.
+	open_changed.connect(_on_open_changed)
+	PlayerServices.changed.connect(_on_services_changed)
+
+
+## Something the player owns changed in a service. Only the points of interest concern the chart.
+func _on_services_changed(area: String) -> void:
+	if area != "pois":
+		return
+	# A mutation happened, so the cache is REBUILT rather than re-read: ensure_loaded answers
+	# "already loaded" and would keep the list the mutation just made wrong. It is refreshed even
+	# while the chart is closed, or the next opening would show what the player used to own.
+	await MissionPoiCache.refresh()
+	if is_instance_valid(self) and is_open():
+		_push_service_pois()
+
+
+## The chart is up: it now needs the player's points of interest, which is an await. The layer marks
+## itself dirty from the answer, so the list is drawn on the next frame and nothing about the open
+## waits on a round trip.
+func _on_open_changed(open: bool) -> void:
+	if open:
+		var ok: bool = await MissionPoiCache.ensure_loaded()
+		if ok and is_instance_valid(self):
+			_push_service_pois()
+
+
+## Hand the cache's list to the layer, which draws it, and to the search index, which names it.
+##
+## The cache is the picker's own list, so the chart shows exactly what the mission builder can point
+## at — that is the point of the merge. An unanswered fetch leaves whatever the chart already had:
+## "the service is down" must not empty a chart that was already showing the player's POIs.
+func _push_service_pois() -> void:
+	_service_pois = MissionPoiCache.entries().duplicate()
+	if _poi_layer != null:
+		_poi_layer.set_service_pois(_service_pois)
+	_build_search_index()
 
 
 ## The view as data, for another viewer to see the same (the cab screen shared by everyone aboard,
@@ -1221,7 +1264,11 @@ func _build_search_index() -> void:
 		var key: String = str(_bodies[i]["key"])
 		if not _has_towns(_bodies[i]):
 			continue
-		var pois: Array[Dictionary] = StarMapPoi.load_for(key)
+		# The SAME list the layer draws, not the export on its own: the index stores positions in the
+		# layer's entries (a search result is read back with _poi_focus, an index into that array),
+		# so counting only the export's towns would send the camera to whichever service POI had
+		# taken that slot. See [method StarMapPoi.merged_for].
+		var pois: Array[Dictionary] = StarMapPoi.merged_for(key, _service_pois)
 		for p: int in range(pois.size()):
 			_search_index.append({
 				"label": str(pois[p]["label"]), "alt": str(pois[p]["name"]),
@@ -3190,6 +3237,113 @@ func _frame_poi(poi_index: int) -> void:
 	if poi_index < 0 or poi_index >= _poi_layer.entries.size():
 		return
 	_frame_on_surface(_blocker, _poi_layer.entries[poi_index]["dir"])
+
+
+## Show one of the player's own points of interest on the chart: go to the body it stands on, wait
+## for the chart to have got there, then turn the body until the point faces you.
+##
+## A coroutine, and the wait is the whole of the difficulty. The camera TRAVELS (StarMapCamera
+## animates the move), and the layer only reloads a body's points once that body is the one looms
+## largest on screen ([method _poi_body]) — so asking for the marker one frame after framing answers
+## with whatever the chart was looking at before. Hence the poll: it ends the moment the index shows
+## up, and gives up rather than hanging on a view that never came.
+##
+## Answers whether the point could be shown. A false means either the point is not in the scope this
+## player can read, or its body is not in the chart at all — both of which the caller should say out
+## loud rather than opening an empty view.
+func focus_service_poi(poi_id: String) -> bool:
+	if poi_id == "" or not is_instance_valid(_camera):
+		return false
+	# The list is fetched when the chart opens, and that fetch is an await: asking a moment after the
+	# chart came up would otherwise find it empty and fall through to a fetch of its own for a point
+	# the list already holds.
+	if _service_pois.is_empty():
+		if await MissionPoiCache.ensure_loaded():
+			_push_service_pois()
+	# Looked up, and fetched when this session has no record of it: a point belonging to someone
+	# else's contract is not in the player's own list, yet the player can still read it and should
+	# still be shown it. This is the one await of the lookup.
+	var entry: Dictionary = await _adopt_service_poi(poi_id)
+	if entry.is_empty():
+		return false
+	var key := str(entry.get("scene", ""))
+	var body := _index_of_key(key)
+	if body < 0:
+		return false
+	_cam.select(body, key)
+	# Framed FROM the point, not merely at the body: the same call a double click on a town makes, so
+	# a point asked for from a list lands on the chart exactly where a click on its badge would.
+	_frame_on_surface(body, entry["dir"] as Vector3)
+	for step: int in range(FOCUS_WAIT_FRAMES):
+		if not is_open():
+			return false
+		var found := _poi_index_of(poi_id)
+		if found >= 0:
+			_poi_focus = found
+			_frame_poi(found)
+			return true
+		await get_tree().process_frame
+	return false
+
+
+## How many frames [method focus_service_poi] waits for the camera's travel to bring its body big
+## enough for the layer to draw its points. A second at 60 fps: the travels here are short and the
+## body is large on screen by the end of them, so the wait ends long before it would matter.
+const FOCUS_WAIT_FRAMES: int = 60
+
+
+## The chart's own entry for [param poi_id], or {} when this session holds no record of it.
+##
+## Pure by design: it only reads what the chart already has, so it cannot be a coroutine and cannot
+## need an [code]await[/code] at the call site. Fetching is [method _adopt_service_poi]'s job — an
+## await has no business hiding inside a lookup, where a caller reasonably types the call without one
+## and Godot only says so at compile time.
+func _service_poi_entry(poi_id: String) -> Dictionary:
+	var record := _service_poi_record(poi_id)
+	if record.is_empty():
+		return {}
+	return StarMapPoi.service_entry(record, str(record.get("scene", "")))
+
+
+## Look [param poi_id] up and, when this session has no record of it, fetch it from the service.
+##
+## A point can be readable — public, or one a mission grants — without being in the caller's own
+## list, and answering "you have no such point" because it was not in a list nobody asked for would
+## be a lie. The record joins the chart's own list rather than [MissionPoiCache]: the mission builder
+## offers only the player's own points, and adopting someone else's there would put it in a list
+## meant for choosing.
+func _adopt_service_poi(poi_id: String) -> Dictionary:
+	var entry := _service_poi_entry(poi_id)
+	if not entry.is_empty():
+		return entry
+	var fetched: Dictionary = await PlayerServices.poi_get(poi_id)
+	if not bool(fetched.get("ok", false)):
+		return {}
+	var data: Variant = fetched.get("data")
+	if not (data is Dictionary):
+		return {}
+	var record := data as Dictionary
+	_service_pois.append(record)
+	if _poi_layer != null:
+		_poi_layer.set_service_pois(_service_pois)
+	return StarMapPoi.service_entry(record, str(record.get("scene", "")))
+
+
+## The service's own record of [param poi_id], or {} when this session holds none.
+func _service_poi_record(poi_id: String) -> Dictionary:
+	for record: Variant in _service_pois:
+		if record is Dictionary and str((record as Dictionary).get("id", "")) == poi_id:
+			return record as Dictionary
+	return {}
+
+
+## Index of the layer's entry carrying [param poi_id], or -1 when the body being drawn has not
+## loaded it (or is not its body).
+func _poi_index_of(poi_id: String) -> int:
+	for i: int in range(_poi_layer.entries.size()):
+		if str(_poi_layer.entries[i].get("service_id", "")) == poi_id:
+			return i
+	return -1
 
 
 ## Go down onto a group of towns until it comes apart — the click on a marker carrying a number.
