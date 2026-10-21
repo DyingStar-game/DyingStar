@@ -25,19 +25,22 @@ func test_the_copies_tile_the_grid_back_to_back() -> void:
 
 
 func test_the_spawn_point_stays_in_each_slot() -> void:
-	# Horizon (new_player.rs slot_position) mirrors the point in the slots other than col 0.
+	# Horizon (new_player.rs slot_offset) mirrors the point in the second row, whose containers are
+	# turned half round: it must land at the same spot of each container -- the spot beside the bed.
 	var building: SpawnBuilding = _building(2, 4)
+	building._create_apartments()
 	var p: Vector3 = building.spawn_point
+	var rooms: Node = building.get_node("MultiMeshInstance3D")
 	for row in 2:
 		for col in 4:
-			var x: float = p.x if col == 0 else building.x_spacing - p.x
-			var z: float = p.z if col == 0 else building.z_spacing - p.z
+			var x: float = building.x_spacing - p.x if row != 0 else p.x
+			var z: float = building.z_spacing - p.z if row != 0 else p.z
 			var at := Vector3(x + row * building.x_spacing, p.y, z + col * building.z_spacing)
-			assert_between(at.x, (row + 1) * building.x_spacing, row * building.x_spacing,
-					"slot %d-%d along x" % [row, col])
-			assert_between(at.z, col * building.z_spacing, (col + 1) * building.z_spacing,
-					"slot %d-%d along z" % [row, col])
+			var room := rooms.get_node(SpawnBuilding.slot_name({"row": row, "col": col, "floor": 0})) as Node3D
+			assert_almost_eq(room.transform.affine_inverse() * at, p, Vector3.ONE * 1e-4,
+					"slot %d-%d: the same spot of its container" % [row, col])
 	building.free()
+	KnownEngineErrors.forgive_floor_material(self)
 
 
 func test_the_container_fits_the_cell() -> void:

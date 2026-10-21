@@ -18,10 +18,10 @@ extends NetStaticBody  # the uuid facade (see NetStaticBody)
 @export var z_spacing: float = 2.6
 ## Height (m) of one storey: the distance between two floors, a container's height.
 @export var y_spacing: float = 2.6
-## Player spawn in apartment 0-0-0, local to the building: Horizon offsets it for each slot. At the
-## middle of the container, the free floor between the bed and the wardrobe: Horizon mirrors it in the
-## other slots, and the middle is its own mirror.
-@export var spawn_point: Vector3 = Vector3(-3.05, 0.15, 1.3)
+## Player spawn in apartment 0-0-0, local to the building: Horizon offsets it for each slot (and
+## mirrors it in the second row, whose containers are turned). On the free floor beside the bed and the
+## bedside table, clear of the shower, the toilet and the wardrobe.
+@export var spawn_point: Vector3 = Vector3(-4.75, 0.15, 0.85)
 ## uuid of the poi_village this building belongs to ("" = none): Horizon fills villages by it.
 @export var poi_uuid: String = ""
 ## Build its apartments at once, every one free, instead of waiting for the server's state
