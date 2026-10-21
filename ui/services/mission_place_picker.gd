@@ -61,6 +61,13 @@ var _picker: OptionButton
 var _radius: LineEdit
 var _row: HBoxContainer
 var _chosen_id: String = ""
+## Set while this picker has asked the chart for a place and the answer has not come back yet.
+##
+## It is what says "this form is the one waiting": a picker that has a row selected is NOT waiting
+## (the list selects its first row by itself, so a chosen id is no proof of a decision), and a place
+## that arrives for a picker that is not waiting is a stray answer that must not overwrite what the
+## player already picked. The flag is the whole difference between the two.
+var _awaiting_chart: bool = false
 
 
 func _init() -> void:
@@ -111,7 +118,7 @@ func setup(name_template: String = "%%SVC_POI_MISSION_DEFAULT", width: float = 2
 	var chart := Button.new()
 	chart.text = "%%SVC_ACT_ON_CHART"
 	ServiceStyle.apply_button(chart)
-	chart.pressed.connect(func() -> void: placement_requested.emit(radius_for_chart(_radius.text)))
+	chart.pressed.connect(_ask_chart)
 	_row.add_child(chart)
 
 	refresh_list()
@@ -222,12 +229,40 @@ func place_here() -> void:
 	if player == null:
 		_say("%%SVC_MSG_NO_PLAYER", ServiceStyle.WARN)
 		return
+	_awaiting_chart = false
 	await _place_at(PlayerLocation.presence_of(player))
 
 
-## Place a POI where the chart's mission marker was laid. [param place] is what
-## [PlayerLocation.presence_of] and the star map produce: `system`, `scene`, `position` — and, from
-## the map, `radiusM`, the width the wheel gave the marker.
+## Ask the chart for a place: the chart opens in placement mode, the player drops the marker and
+## confirms it, and the place comes back to this picker through [method accept_place].
+##
+## The picker says it is WAITING before it asks, not after the answer: the answer travels through
+## the console and comes back to whichever form asked, and this flag is how the console and the
+## host panel tell that apart from a place nobody asked for.
+func _ask_chart() -> void:
+	_awaiting_chart = true
+	placement_requested.emit(radius_for_chart(_radius.text))
+
+
+## True while this picker has asked the chart for a place and the answer has not come back.
+##
+## A host that hands a place over asks this first: a picker that is waiting takes the answer even
+## though the list had selected a row for it (that row was never a decision — the list picks its
+## first row by itself), and a picker that is not waiting leaves its own choice alone.
+func is_awaiting_chart() -> bool:
+	return _awaiting_chart
+
+
+## Stop waiting: the answer came from somewhere else (another picker asked, the chart was left
+## without a marker), so this one must not take a place that was never meant for it.
+func cancel_awaiting() -> void:
+	_awaiting_chart = false
+
+
+## The place the chart's mission marker was laid is THIS picker's: it is the one that asked for it.
+##
+## [param place] is what [PlayerLocation.presence_of] and the star map produce: `system`, `scene`,
+## `position` — and, from the map, `radiusM`, the width the wheel gave the marker.
 ##
 ## No [code]await[/code] on [method _place_at], which is a coroutine, and that is on purpose rather
 ## than an oversight: the creation is a round trip, and the caller here is the panel that answers
@@ -237,6 +272,7 @@ func place_here() -> void:
 func accept_place(place: Dictionary) -> void:
 	if place.is_empty():
 		return
+	_awaiting_chart = false
 	_place_at(place)
 
 

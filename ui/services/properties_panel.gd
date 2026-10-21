@@ -45,3 +45,9 @@ func set_placed(place: Dictionary) -> bool:
 		if section != null and section.set_placed(place):
 			taken = true
 	return taken
+
+
+## The segment holding the form that asks the chart for a place: the points of interest's, which is
+## the second section — the inventory's is the first, and the player is never sent there by mistake.
+func placement_segment() -> int:
+	return 1

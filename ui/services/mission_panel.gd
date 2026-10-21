@@ -1217,8 +1217,7 @@ func mission_name_for_poi() -> String:
 func _zone_poi_picker(row: Dictionary, flow: FlowContainer) -> void:
 	var picker := MissionPlacePicker.new()
 	picker.setup("%%SVC_POI_MISSION_ZONE", 220.0)
-	picker.placement_requested.connect(
-			func(radius: float) -> void: placement_requested.emit(radius))
+	_relay_placement_from(picker)
 	row["poi"] = picker
 	flow.add_child(picker)
 	# The zone row's own teardown only walks LineEdits; this one is not one, so it is queued for the
@@ -1500,8 +1499,7 @@ func _var_control(var_name: String, entry: Dictionary, objective: bool) -> Array
 		if widget is GoodTypePicker:
 			_feed_goods(widget)
 		if widget.has_signal("placement_requested"):
-			widget.connect("placement_requested",
-				func(radius: float) -> void: placement_requested.emit(radius))
+			_relay_placement_from(widget)
 		return [widget, {"name": var_name, "target": "param_object"}]
 	if properties.has(var_name):
 		var property: Dictionary = properties[var_name] if properties[var_name] is Dictionary else {}
@@ -1577,8 +1575,7 @@ func _rebuild_params(row: Dictionary, entry: Dictionary) -> void:
 			if widget is GoodTypePicker:
 				_feed_goods(widget)
 			if widget.has_signal("placement_requested"):
-				widget.connect("placement_requested",
-					func(radius: float) -> void: placement_requested.emit(radius))
+				_relay_placement_from(widget)
 			rendered = true
 			continue
 		var ptype: String = str((property as Dictionary).get("type", "string"))
@@ -2057,21 +2054,99 @@ func _reset_create() -> void:
 
 
 ## The chart named a place for one of this panel's place pickers. It cannot tell which asked, so
-## every one gets it and each decides whether it is waiting: a picker with a place already chosen is
-## left alone, so a stray click never overwrites a decision already taken.
+## every one gets it and each decides whether it is waiting: a picker that asked for a place on the
+## chart takes the answer, whatever the list had selected for it (the list selects its first row by
+## itself, so a chosen id is no proof of a decision), and a picker that never asked is left alone,
+## so a stray answer never overwrites a decision already taken.
 ##
 ## Answers whether one of them took it, so the console can hand the chart back to the app that asked
 ## rather than to whichever was built first.
 func set_placed(place: Dictionary) -> bool:
 	if place.is_empty():
 		return false
+	var pickers: Array = _place_pickers()
+	# A picker that asked for the place is the ONLY one that takes it: the others would create a
+	# POI each from the same marker, and the mission would point at several places at once.
+	var waiting := false
+	for picker: MissionPlacePicker in pickers:
+		if picker.is_awaiting_chart():
+			waiting = true
+			break
 	var taken := false
-	for row: Dictionary in _objective_rows:
-		for entry: Dictionary in row.get("params_widgets", []):
-			taken = _deliver_place(entry.get("control"), place) or taken
-	for row: Dictionary in _zone_rows:
-		taken = _deliver_place(row.get("poi"), place) or taken
+	for picker: MissionPlacePicker in pickers:
+		if waiting and not picker.is_awaiting_chart():
+			continue
+		taken = _deliver_place(picker, place) or taken
 	return taken
+
+
+## Relay a picker's request for the chart, and make sure only ONE picker of this panel is waiting
+## for the answer.
+##
+## The purge is not tidiness: a player who asks for a place, leaves the chart without a marker and
+## asks again from another clause would otherwise have TWO pickers waiting, and the answer would
+## land in both — two places created from one marker.
+func _relay_placement(radius_m: float, source: MissionPlacePicker) -> void:
+	for picker: MissionPlacePicker in _place_pickers():
+		if picker != source:
+			picker.cancel_awaiting()
+	placement_requested.emit(radius_m)
+
+
+## Wire a widget's request for the chart to this panel's own signal. A place picker is wired with
+## itself, so the panel can tell the other pickers that they are no longer the one waiting.
+func _relay_placement_from(widget: Control) -> void:
+	if widget is MissionPlacePicker:
+		(widget as MissionPlacePicker).placement_requested.connect(
+				_relay_placement.bind(widget as MissionPlacePicker))
+		return
+	widget.connect("placement_requested",
+			func(radius: float) -> void: placement_requested.emit(radius))
+
+
+## Every place picker this panel holds: the ones in the clauses' sentences (an objective's `zone`
+## and `source`, inline in the sentence), the ones in their stacked forms, and the availability
+## zones' own picker.
+##
+## Both containers matter: a clause is either a sentence with its control inline, or a stacked form
+## with the same control below it — which of the two a clause gets depends on its kind's summary,
+## not on anything the player does. A picker the player pressed « Carte » on is therefore in one of
+## the two, and the one that answers must be the one that asked.
+func _place_pickers() -> Array:
+	var pickers: Array = []
+	for rows: Array in [_objective_rows, _prereq_rows]:
+		for row: Dictionary in rows:
+			for entry: Dictionary in row.get("vars", []):
+				var inline: Variant = entry.get("control")
+				if inline is MissionPlacePicker:
+					pickers.append(inline)
+			for entry: Dictionary in row.get("params_widgets", []):
+				var control: Variant = entry.get("control")
+				if control is MissionPlacePicker:
+					pickers.append(control)
+	for row: Dictionary in _zone_rows:
+		var zone: Variant = row.get("poi")
+		if zone is MissionPlacePicker:
+			pickers.append(zone)
+	return pickers
+
+
+## The segment holding the form that asks the chart for a place: the builder's, which is the
+## fourth one (browse, my missions, my creations, create). The player is taken back to the form they
+## were filling in, not to the list of missions that opens the app.
+func placement_segment() -> int:
+	return 3
+
+
+## Answers whether the picker takes the place, for the same reason [method set_placed] does.
+##
+## The rule is static and pure so a test can pin it without a picker that would create a POI: a
+## picker that is WAITING takes the place, and one that is not takes it only while it holds no
+## choice of its own.
+static func _picker_wants_place(picker: MissionPlacePicker) -> bool:
+	if picker.is_awaiting_chart():
+		return true
+	return picker.picked_id() == ""
 
 
 ## Answers whether the picker took the place, for the same reason [method set_placed] does.
@@ -2079,7 +2154,7 @@ func _deliver_place(control: Variant, place: Dictionary) -> bool:
 	if not (control is MissionPlacePicker):
 		return false
 	var picker := control as MissionPlacePicker
-	if picker.picked_id() != "":
+	if not _picker_wants_place(picker):
 		return false
 	picker.accept_place(place)
 	return true

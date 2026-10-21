@@ -45,6 +45,12 @@ var _edit_id: String = ""
 ## The place the form will send: system, scene and position (see [PlayerLocation]). Null until a
 ## place has been taken — a form that is never placed has nothing to say about where it is.
 var _placed: Dictionary = {}
+## Set while this form has asked the chart for a place and the answer has not come back yet.
+##
+## It is what says "this form is the one waiting": the console hands a place to the app that asked
+## for it, and a form that never asked must not take one — the mission builder's marker used to
+## land here, and the player was sent to the inventory instead of back to their mission.
+var _awaiting_place: bool = false
 ## The corporation tab.
 var _corp_picker: ServiceTargetPicker
 var _corp_pois: ItemList
@@ -301,6 +307,7 @@ func _build_form(side: VBoxContainer) -> void:
 ## they choose to.
 func _fill_form(poi: Dictionary) -> void:
 	_edit_id = str(poi.get("id", ""))
+	_awaiting_place = false
 	_form_mode.text = "%s : %s" % [tr("%%SVC_TAB_EDIT"), ServiceTypes.dash(poi.get("name"))]
 	_form_name.text = _text(poi.get("name"))
 	_form_description.text = _text(poi.get("description"))
@@ -323,6 +330,7 @@ func _fill_form(poi: Dictionary) -> void:
 ## player stands — the common case — and they move it only if they mean to.
 func _blank_form() -> void:
 	_edit_id = ""
+	_awaiting_place = false
 	_form_mode.text = tr("%%SVC_TAB_CREATE")
 	_form_name.text = ""
 	_form_description.text = ""
@@ -364,9 +372,13 @@ func _take_here() -> void:
 ## Ask the chart for a place: the console owns the chart, so all this does is ask — it opens on the
 ## NAVIGATION tab in placement mode, the player drops the mission marker there, and it comes back
 ## through [method set_placed]. Nothing here ever reaches for [StarMap].
+##
+## The form says it is WAITING before it asks: the place that comes back is handed to the app that
+## asked for it, and this form takes it only because it did.
 func _take_on_chart() -> void:
 	if _placed == null or (_placed as Dictionary).is_empty():
 		_take_here()
+	_awaiting_place = true
 	placement_requested.emit(maxf(_coordinate_of(_form_radius.text), 0.0))
 	_say(tr("%%SVC_MSG_PICK_ON_CHART"), DIM)
 
@@ -461,11 +473,15 @@ func _form_body() -> Dictionary:
 ## The chart handed a place over: what the player picked is now where the form says it is.
 ## Called by PlayerClient, which owns the chart (this file never reaches for [StarMap]).
 ##
-## Answers true whenever the form is the one that can hold a place, which it always is: the chart
-## can only have been armed by this form asking for one.
+## Answers true only for a place THIS form asked for: several forms can have the chart open, and a
+## mission builder's marker is not this form's place to take — taking it anyway is what used to send
+## the player to the inventory instead of back to their mission.
 func set_placed(place: Dictionary) -> bool:
 	if place.is_empty() or not place.has("position"):
 		return false
+	if not _awaiting_place:
+		return false
+	_awaiting_place = false
 	_placed = place.duplicate()
 	_render_where()
 	# What the map sized the marker at is what the form now says. The field is the radius this POI is

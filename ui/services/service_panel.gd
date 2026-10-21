@@ -118,6 +118,13 @@ func set_placed(_place: Dictionary) -> bool:
 	return false
 
 
+## The segment to come back to when a place was placed for this app: the one that holds the form
+## that asked for it. The chart hands the place back and the player is taken straight to the form
+## they were filling in, which is not always the segment the app opens on.
+func placement_segment() -> int:
+	return 0
+
+
 # ---------------------------------------------------------------------------------------------
 # Screen contract
 # ---------------------------------------------------------------------------------------------

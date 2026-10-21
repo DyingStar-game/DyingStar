@@ -1730,18 +1730,18 @@ func _begin_placement(radius_m: float) -> void:
 
 
 ## The chart named the place: hand it back to the form that asked (through the tablet), leave the
-## placement mode, and take the player to where they can act on it — the creating segment, with the
+## placement mode, and take the player to where they can act on it — the creating form, with the
 ## place now shown and the name still theirs to give.
 func _on_poi_placed(place: Dictionary) -> void:
 	if _star_map != null:
 		_star_map.end_poi_place()
 	if _services == null or place.is_empty():
 		return
-	# The chart knows which app took it, and goes back to THAT one: several forms can be asking at
-	# once, and opening the properties tab when it was the mission builder that asked is how the
-	# player loses the thread of what they were doing.
-	var app: String = _services.set_placed(place)
-	_services.open_app(app if app != "" else "properties", 1)
+	# The console knows which app asked for the place and hands it to that one: several forms can
+	# be open, and opening the properties tab when it was the mission builder that asked is how the
+	# player loses the thread of what they were doing — they land in the inventory, looking at a POI
+	# form that never asked for anything.
+	_services.take_placed(place)
 
 
 ## The mouse/camera is taken over: a menu, a wheel, the chat, the chart or the tablet is up, OR AltGr
