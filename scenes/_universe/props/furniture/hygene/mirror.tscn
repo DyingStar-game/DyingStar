@@ -5,24 +5,51 @@
 [ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_pk4ln"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="4_sfen6"]
 
+[ext_resource type="Script" uid="uid://y8tgm8nkwg13" path="res://scenes/_universe/props/furniture/hygene/planar_mirror.gd" id="planar_mirror"]
+[ext_resource type="Script" uid="uid://8q12wied4qom" path="res://scenes/_universe/props/furniture/parts/light_switch.gd" id="part_light"]
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ulufk"]
 metallic = 1.0
 roughness = 0.0
 
-[node name="Mirror" type="StaticBody3D" unique_id=429523463]
+[sub_resource type="BoxShape3D" id="Box_frame_aim"]
+size = Vector3(1.19, 0.09, 0.79)
+
+[node name="Mirror" type="StaticBody3D" unique_id=429523463 groups=["no_ground_fringe"]]
 script = ExtResource("1_e4eb7")
 metadata/_custom_type_script = "uid://c1dv6rpo1e6os"
 
 [node name="mirror2" parent="." unique_id=793814034 instance=ExtResource("2_ft418")]
 
 [node name="mirror_frame" parent="mirror2" index="0" unique_id=846619429]
-instance_shader_parameters/emission_on = true
 surface_material_override/0 = ExtResource("3_pk4ln")
+
+[node name="Light" type="Area3D" parent="mirror2/mirror_frame" index="0"]
+script = ExtResource("part_light")
+neon = true
+monitoring = false
+label_off = "%%HUD_LAMP_ON"
+label_on = "%%HUD_LAMP_OFF"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="mirror2/mirror_frame/Light"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.045, -0.0075)
+shape = SubResource("Box_frame_aim")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="mirror2/mirror_frame/Light"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, -0.0075)
+visible = false
+light_color = Color(0.92, 0.96, 1, 1)
+light_energy = 0.6
+omni_range = 1.8
 
 [node name="mirror" parent="mirror2" index="1" unique_id=1422469402]
 surface_material_override/0 = SubResource("StandardMaterial3D_ulufk")
 
 [node name="mirror_decals" parent="mirror2" index="2" unique_id=343816076]
 surface_material_override/0 = ExtResource("4_sfen6")
+
+[node name="PlanarMirror" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0075, 0.067)
+script = ExtResource("planar_mirror")
 
 [editable path="mirror2"]
