@@ -119,10 +119,10 @@ size = Vector2(26.538231, 12.734028)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.239116, 0, 1.514697)
 
 [node name="CentralYard_1_2" parent="Storage_CentralYard" instance=ExtResource("B1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.239116, 2.5, 1.514697)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.239116, 2.6, 1.514697)
 
 [node name="CentralYard_1_3" parent="Storage_CentralYard" instance=ExtResource("A1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.239116, 5, 1.514697)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.239116, 5.1, 1.514697)
 
 [node name="CentralYard_2_1" parent="Storage_CentralYard" instance=ExtResource("B1")]
 transform = Transform3D(0.999962, 0, 0.008727, 0, 1, 0, -0.008727, 0, 0.999962, 6.239116, 0, 4.114697)
@@ -143,10 +143,10 @@ transform = Transform3D(-0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, -0.999986
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6.256878, 0, -4.167014)
 
 [node name="CentralYard_5_2" parent="Storage_CentralYard" instance=ExtResource("B1")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6.256878, 2.5, -4.167014)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6.256878, 2.6, -4.167014)
 
 [node name="CentralYard_5_3" parent="Storage_CentralYard" instance=ExtResource("A1")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6.256878, 5, -4.167014)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6.256878, 5.1, -4.167014)
 
 [node name="CentralYard_6" parent="Storage_CentralYard" instance=ExtResource("B1")]
 transform = Transform3D(-0.999945, 0, 0.010472, 0, 1, 0, -0.010472, 0, -0.999945, 6.256878, 0, -1.567014)
@@ -169,7 +169,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
 
 [node name="GarageEastStore_1_3" parent="Storage_GarageEastStore" instance=ExtResource("B1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.1, 0)
 
 [node name="Storage_GarageWestStore" parent="." instance=ExtResource("storage_area")]
 transform = Transform3D(0.999962, 0, 0.008727, 0, 1, 0, -0.008727, 0, 0.999962, -64.631453, 0, 30.930092)
@@ -179,7 +179,7 @@ size = Vector2(14.081232, 8.196689)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.040616, 0, 1.898344)
 
 [node name="GarageWestStore_1_2" parent="Storage_GarageWestStore" instance=ExtResource("B1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.040616, 2.5, 1.898344)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.040616, 2.6, 1.898344)
 
 [node name="GarageWestStore_2" parent="Storage_GarageWestStore" instance=ExtResource("S1")]
 transform = Transform3D(0.99956, 0, -0.029666, 0, 1, 0, 0.029666, 0, 0.99956, 0.007657, 0, -1.720875)
@@ -241,7 +241,7 @@ size = Vector2(26.510168, 4.504632)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.255084, 0, -0.043637)
 
 [node name="SouthBlock_1_2" parent="Storage_SouthBlock" instance=ExtResource("B1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.255084, 2.5, -0.043637)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.255084, 2.6, -0.043637)
 
 [node name="SouthBlock_2_1" parent="Storage_SouthBlock" instance=ExtResource("B1")]
 transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 6.24484, 0, 0)
@@ -250,7 +250,7 @@ transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 
 transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 6.24484, 2.5, 0)
 
 [node name="SouthBlock_2_3" parent="Storage_SouthBlock" instance=ExtResource("B1")]
-transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 6.24484, 5, 0)
+transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 6.24484, 5.1, 0)
 
 [node name="Storage_SouthBlock_2" parent="." instance=ExtResource("storage_area")]
 transform = Transform3D(0.810204, 0, 0.586148, 0, 1, 0, -0.586148, 0, 0.810204, 29.338027, 0, 54.547264)
@@ -287,10 +287,10 @@ size = Vector2(89.471438, 10.534206)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.731566, 0, -0.446164)
 
 [node name="WestYard_1_2" parent="Storage_WestYard" instance=ExtResource("B1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.731566, 2.5, -0.446164)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.731566, 2.6, -0.446164)
 
 [node name="WestYard_1_3" parent="Storage_WestYard" instance=ExtResource("A1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.731566, 5, -0.446164)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.731566, 5.1, -0.446164)
 
 [node name="WestYard_2_1" parent="Storage_WestYard" instance=ExtResource("B1")]
 transform = Transform3D(0.999976, 0, 0.006981, 0, 1, 0, -0.006981, 0, 0.999976, -25.231566, 0, -0.446164)
@@ -311,10 +311,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.231566, 2.5, -0.446164)
 transform = Transform3D(0.999962, 0, 0.008727, 0, 1, 0, -0.008727, 0, 0.999962, 12.268434, 0, -0.446164)
 
 [node name="WestYard_5_2" parent="Storage_WestYard" instance=ExtResource("B1")]
-transform = Transform3D(0.999962, 0, 0.008727, 0, 1, 0, -0.008727, 0, 0.999962, 12.268434, 2.5, -0.446164)
+transform = Transform3D(0.999962, 0, 0.008727, 0, 1, 0, -0.008727, 0, 0.999962, 12.268434, 2.6, -0.446164)
 
 [node name="WestYard_5_3" parent="Storage_WestYard" instance=ExtResource("A1")]
-transform = Transform3D(0.999962, 0, 0.008727, 0, 1, 0, -0.008727, 0, 0.999962, 12.268434, 5, -0.446164)
+transform = Transform3D(0.999962, 0, 0.008727, 0, 1, 0, -0.008727, 0, 0.999962, 12.268434, 5.1, -0.446164)
 
 [node name="WestYard_6" parent="Storage_WestYard" instance=ExtResource("B1")]
 transform = Transform3D(0.999994, 0, -0.003491, 0, 1, 0, 0.003491, 0, 0.999994, 24.768434, 0, -0.446164)
@@ -341,13 +341,13 @@ transform = Transform3D(0.999976, 0, -0.006981, 0, 1, 0, 0.006981, 0, 0.999976, 
 transform = Transform3D(0.999976, 0, -0.006981, 0, 1, 0, 0.006981, 0, 0.999976, -12.270482, 2.5, 3.014787)
 
 [node name="EastYard_3_3" parent="Storage_WestYard" instance=ExtResource("B1")]
-transform = Transform3D(0.999976, 0, -0.006981, 0, 1, 0, 0.006981, 0, 0.999976, -12.270482, 5, 3.014787)
+transform = Transform3D(0.999976, 0, -0.006981, 0, 1, 0, 0.006981, 0, 0.999976, -12.270482, 5.1, 3.014787)
 
 [node name="EastYard_4_1" parent="Storage_WestYard" instance=ExtResource("A1")]
 transform = Transform3D(0.999994, 0, 0.003491, 0, 1, 0, -0.003491, 0, 0.999994, 0.229518, 0, 3.014787)
 
 [node name="EastYard_4_2" parent="Storage_WestYard" instance=ExtResource("B1")]
-transform = Transform3D(0.999994, 0, 0.003491, 0, 1, 0, -0.003491, 0, 0.999994, 0.229518, 2.5, 3.014787)
+transform = Transform3D(0.999994, 0, 0.003491, 0, 1, 0, -0.003491, 0, 0.999994, 0.229518, 2.6, 3.014787)
 
 [node name="EastYard_5" parent="Storage_WestYard" instance=ExtResource("B1")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.729518, 0, 3.014787)
@@ -356,13 +356,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.729518, 0, 3.014787)
 transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 25.229518, 0, 3.014787)
 
 [node name="EastYard_6_2" parent="Storage_WestYard" instance=ExtResource("B1")]
-transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 25.229518, 2.5, 3.014787)
+transform = Transform3D(0.999962, 0, -0.008727, 0, 1, 0, 0.008727, 0, 0.999962, 25.229518, 2.6, 3.014787)
 
 [node name="EastYard_7_1" parent="Storage_WestYard" instance=ExtResource("A1")]
 transform = Transform3D(0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, 0.999986, 37.729518, 0, 0.414787)
 
 [node name="EastYard_7_2" parent="Storage_WestYard" instance=ExtResource("B1")]
-transform = Transform3D(0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, 0.999986, 37.729518, 2.5, 0.414787)
+transform = Transform3D(0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, 0.999986, 37.729518, 2.6, 0.414787)
 
 [node name="EastYard_7_3" parent="Storage_WestYard" instance=ExtResource("A1")]
-transform = Transform3D(0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, 0.999986, 37.729518, 5, 0.414787)
+transform = Transform3D(0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, 0.999986, 37.729518, 5.1, 0.414787)
