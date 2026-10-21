@@ -77,6 +77,7 @@ shape = SubResource("BoxShape3D_0s4u6")
 
 [node name="Drawer1" type="Area3D" parent="bed/bed_under_storage_1"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_drawer_open")
 sfx_close = ExtResource("sfx_drawer_close")
 label_off = "%%HUD_DRAWER_OPEN"
@@ -90,6 +91,7 @@ shape = SubResource("Box_drawer_aim")
 
 [node name="Drawer2" type="Area3D" parent="bed/bed_under_storage_2"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_drawer_open")
 sfx_close = ExtResource("sfx_drawer_close")
 label_off = "%%HUD_DRAWER_OPEN"
@@ -103,6 +105,7 @@ shape = SubResource("Box_drawer_aim")
 
 [node name="Drawer3" type="Area3D" parent="bed/bed_under_storage_3"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_drawer_open")
 sfx_close = ExtResource("sfx_drawer_close")
 label_off = "%%HUD_DRAWER_OPEN"
@@ -116,6 +119,7 @@ shape = SubResource("Box_drawer_aim")
 
 [node name="Drawer4" type="Area3D" parent="bed/bed_under_storage_4"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_drawer_open")
 sfx_close = ExtResource("sfx_drawer_close")
 label_off = "%%HUD_DRAWER_OPEN"
@@ -129,6 +133,7 @@ shape = SubResource("Box_drawer_aim")
 
 [node name="Drawer5" type="Area3D" parent="bed/bed_under_storage_5"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_drawer_open")
 sfx_close = ExtResource("sfx_drawer_close")
 label_off = "%%HUD_DRAWER_OPEN"
@@ -142,6 +147,7 @@ shape = SubResource("Box_drawer_aim")
 
 [node name="Drawer6" type="Area3D" parent="bed/bed_under_storage_6"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_drawer_open")
 sfx_close = ExtResource("sfx_drawer_close")
 label_off = "%%HUD_DRAWER_OPEN"
@@ -155,6 +161,7 @@ shape = SubResource("Box_drawer_aim")
 
 [node name="BedSpot" type="Area3D" parent="." node_paths=PackedStringArray("lie_point", "stand_point")]
 script = ExtResource("part_bed")
+monitoring = false
 lie_point = NodePath("LiePoint")
 stand_point = NodePath("StandPoint")
 

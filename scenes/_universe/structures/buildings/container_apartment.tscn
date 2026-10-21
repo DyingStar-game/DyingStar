@@ -52,6 +52,7 @@ shape = SubResource("Box_door")
 
 [node name="DoorL" type="Area3D" parent="habitat_container/frame/left_door" parent_id_path=PackedInt32Array(2142450369, 1686320244) index="2" unique_id=1020434824]
 script = ExtResource("part_moving")
+monitoring = false
 open_angle_deg = -90.0
 duration_s = 1.6
 label_off = "%%HUD_DOOR_OPEN"
@@ -85,6 +86,7 @@ shape = SubResource("Box_door")
 
 [node name="DoorR" type="Area3D" parent="habitat_container/frame/right_door" parent_id_path=PackedInt32Array(2142450369, 1901400007) index="5" unique_id=2132407683]
 script = ExtResource("part_moving")
+monitoring = false
 open_angle_deg = 90.0
 duration_s = 1.6
 label_off = "%%HUD_DOOR_OPEN"

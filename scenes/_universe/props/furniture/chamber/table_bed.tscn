@@ -36,6 +36,7 @@ surface_material_override/0 = ExtResource("4_fq1pg")
 
 [node name="Drawer" type="Area3D" parent="table_bed/bed_table_drawer" index="1" unique_id=445504983]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_drawer_open")
 sfx_close = ExtResource("sfx_drawer_close")
 open_slide = Vector3(0, 0, 0.2)
@@ -53,6 +54,7 @@ surface_material_override/0 = ExtResource("3_wb7vr")
 
 [node name="Lamp" type="Area3D" parent="table_bed/bed_table_lamp" index="0" unique_id=1994012961]
 script = ExtResource("part_light")
+monitoring = false
 label_off = "%%HUD_LAMP_ON"
 label_on = "%%HUD_LAMP_OFF"
 

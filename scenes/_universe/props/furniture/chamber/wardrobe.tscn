@@ -89,6 +89,7 @@ shape = SubResource("Box_leaf")
 
 [node name="DoorL" type="Area3D" parent="wardrobe2/wardrobe_decal_door_l"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_door_open")
 sfx_close = ExtResource("sfx_door_close")
 label_off = "%%HUD_DOOR_OPEN"
@@ -108,6 +109,7 @@ shape = SubResource("Box_leaf")
 
 [node name="DoorR" type="Area3D" parent="wardrobe2/wardrobe_door_door_r"]
 script = ExtResource("part_moving")
+monitoring = false
 sfx_open = ExtResource("sfx_door_open")
 sfx_close = ExtResource("sfx_door_close")
 label_off = "%%HUD_DOOR_OPEN"
