@@ -271,6 +271,8 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 			"event": "init",
 			"data": {
 				"token": token,
+				# client.ini debug_move_clocks: the clocks of our own moves (MovementProbe), for us only.
+				"move_clocks": ClientConfig.get_bool("debug_move_clocks", false),
 			}
 		}))
 		network_events_sent += 1
@@ -1550,6 +1552,16 @@ func delete_player(event: Dictionary) -> void:
 	else:
 		print("Player to delete %s not found." % event)
 
+## The clocks a move came with, unix ms (-1 when absent): the game server's simulation time, then
+## Horizon's on receiving it and on sending it to us.
+static func _move_clocks(data: Dictionary) -> PackedFloat64Array:
+	var clocks := PackedFloat64Array()
+	for key: String in ["servergodot_ms", "horizon_received_ms", "horizon_sent_ms"]:
+		var value = data.get(key)
+		clocks.append(float(value) if value is float or value is int else -1.0)
+	return clocks
+
+
 func player_update(message: Dictionary) -> void:
 	# Player movement only (position/rotation/parenting). Gameplay properties are
 	# replicated through the unified update_generic_object() path, like any prop.
@@ -1584,7 +1596,7 @@ func player_update(message: Dictionary) -> void:
 					elif not my_pending_frame.is_empty():
 						my_pending_frame["position"] = ppos  # still measured in the frame we are waiting for
 					if my_pending_frame.is_empty():
-						player.net_set_local_target(ppos)
+						player.net_set_local_target(ppos, _move_clocks(message["data"]))
 				else:
 					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.
 					var prot := Vector3(

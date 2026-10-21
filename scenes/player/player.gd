@@ -424,6 +424,9 @@ var client_last_global_rotation = Vector3.ZERO
 # NPC (server-authoritative). Set on spawn by server.gd; PlayerServer reads these to drive movement.
 ## True when this Player is a server-controlled NPC instead of a networked client.
 var is_npc: bool = false
+## Server: this player asked for the clocks of its moves (client.ini debug_move_clocks, through Horizon's
+## spawn of it): its positions carry servergodot_ms.
+var move_clocks: bool = false
 ## Destination the NPC walks toward, or null when it has no goal. Set by external AI / spawn logic
 ## (consume-only here: PlayerServer only reads it). A Vector3 in the NPC PARENT's frame — the same frame
 ## as `position` — NOT world space: read it through PlayerServer._npc_target_global(), because the
@@ -763,10 +766,13 @@ func set_seated(seated: bool) -> void:
 ## Owner on foot: feed our server-driven position so it is smoothed (position only — the
 ## mouse look stays immediate). No client prediction yet, so this trades a touch of lag for
 ## no saccades.
-func net_set_local_target(local_pos: Vector3) -> void:
-	_interp.set_position_target(self, local_pos)
+## [param clocks]: the trip's clocks this position came with (servergodot_ms, horizon_received_ms,
+## horizon_sent_ms, unix ms), any of them -1 when not sent; empty when unknown.
+func net_set_local_target(local_pos: Vector3, clocks: PackedFloat64Array = PackedFloat64Array()) -> void:
+	var usec: int = Time.get_ticks_usec()
+	_interp.set_position_target(self, local_pos, usec, clocks[0] if clocks.size() > 0 else -1.0)
 	if move_probe != null and not is_instance_valid(_seat_node):
-		move_probe.on_target(local_pos, Time.get_ticks_usec())
+		move_probe.on_target(local_pos, usec, Engine.get_process_frames(), clocks)
 
 
 func net_set_target(local_pos: Vector3, local_rot: Vector3) -> void:

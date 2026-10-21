@@ -150,6 +150,9 @@ var props_scene: Dictionary = {
 }
 
 var debug_message_number: int = 0
+## Unix ms at physics frame 0, so that _sim_ms() reads the wall clock at start and then the simulation's own
+## time: under load, the steps a frame catches up on are 16.7 ms apart in it, not ~0 as on the wall clock.
+var _sim_epoch_ms: float = 0.0
 
 var serverinfo_uuid: String = ""
 var serverinfo_name: String = ""
@@ -1386,6 +1389,7 @@ func _debug_closest_planets(pos: Vector3, n: int) -> String:
 func start_server(receveid_universe_scene: Node) -> void:
 	Engine.physics_ticks_per_second = 60
 	Engine.max_fps = 60
+	_sim_epoch_ms = Time.get_unix_time_from_system() * 1000.0 - _physics_frames_ms()
 
 	universe_scene = receveid_universe_scene
 	# entities_spawn_node = receveid_player_spawn_node
@@ -1651,6 +1655,11 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 			"z": rotation[2]
 		}
 	}
+	# The simulation time of this pose, in whole ms, for a player who asked for it (move_clocks): Horizon
+	# forwards it to the client, which measures the body's speed against it rather than against when the
+	# packets happened to arrive (MovementProbe). Per player, so the clocks cost the traffic of those only.
+	if player.move_clocks:
+		prep["servergodot_ms"] = roundi(_sim_ms())
 
 	# players_newposition is one entry per player per flush, so a later move in the same window
 	# overwrites this one. Carry a frame change already queued onto the newer pose instead of losing
@@ -1671,6 +1680,15 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 		_unseat_for_transfer(player)
 		player.queue_free()
 	players_newposition[client_uuid] = prep
+
+## The simulation's time (unix ms at start, then 1/60 s per physics step), see _sim_epoch_ms.
+func _sim_ms() -> float:
+	return _sim_epoch_ms + _physics_frames_ms()
+
+
+func _physics_frames_ms() -> float:
+	return Engine.get_physics_frames() * 1000.0 / Engine.physics_ticks_per_second
+
 
 func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
@@ -2061,6 +2079,7 @@ func create_player(event: Dictionary) -> void:
 
 	if player_data.has("is_npc") and player_data["is_npc"] == true:
 		spawned_entity_instance.is_npc = true
+	spawned_entity_instance.move_clocks = player_data.get("move_clocks", false) == true
 
 	var parented = false
 	if player_data["parent_id"] != "":
