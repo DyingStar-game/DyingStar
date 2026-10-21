@@ -4,6 +4,10 @@ extends ToggledPart
 ## A door or a drawer: open, its leaf (a mesh of the model, the parent by default) turns about its own
 ## origin -- the hinge -- and/or slides in its own frame. The same motion runs on the server and the
 ## clients: what the leaf carries (a door's body) blocks the way where the door stands.
+##
+## It opens as far as it is set to, or less: the leaf's bodies are swept along the opening and it stops
+## short of the first wall or piece of furniture they would cut into (free_reach). The same scene gives
+## the same answer on the server and every client; players and loose props never stop it.
 
 ## Opened by the server for an NPC living in its home (SpawnBuilding.server_open_for_npc): the door it
 ## goes out by -- an NPC never opens one itself.
@@ -37,6 +41,13 @@ extends ToggledPart
 ## Loudness (dB) of those sounds at 2 m.
 @export_range(-40.0, 12.0, 0.5) var sfx_db: float = -6.0
 
+## Degrees between two poses tried while sweeping a door's opening.
+const SWEEP_STEP_DEG := 3.0
+## Metres between two poses tried while sweeping a drawer's.
+const SWEEP_STEP_M := 0.02
+## What stops a leaf: the world's solids (walls, furniture), never a player or a loose prop.
+const SWEEP_MASK := 1 << (Globals.LAYER_WORLD - 1)
+
 var _leaf: Node3D
 var _rest: Transform3D
 var _latch: Node3D
@@ -57,7 +68,7 @@ func _ready() -> void:
 	# The building's state can be shown before the part is in the tree (the state arrives before the
 	# building is placed): the leaf was not known then, so it takes that state now.
 	if _leaf != null and is_on:
-		_set_open(1.0)
+		_set_open(_open_target())
 
 
 func _play(stream: AudioStream) -> void:
@@ -75,7 +86,7 @@ static func pose(rest: Transform3D, axis: Vector3, angle_deg: float, slide: Vect
 func _show(on: bool, animate: bool) -> void:
 	if _leaf == null:
 		return
-	var target: float = 1.0 if on else 0.0
+	var target: float = _open_target() if on else 0.0
 	if _tween != null:
 		_tween.kill()
 	if not animate or not is_inside_tree():
@@ -98,6 +109,98 @@ static func phases(t: float, share: float) -> Vector2:
 	if share <= 0.0:
 		return Vector2(t, t)
 	return Vector2(clampf(t / share, 0.0, 1.0), clampf((t - share) / (1.0 - share), 0.0, 1.0))
+
+
+## How far the motion goes when open (0..1): all the way unless something stands in the leaf's way.
+## With a latch, the latch still turns all the way first.
+func _open_target() -> float:
+	var share: float = latch_share if _latch != null else 0.0
+	return share + (1.0 - share) * free_reach()
+
+
+## How far (0..1) the leaf may open before one of its bodies would cut into a solid of the world: the
+## pose before the first one that does. Neither the piece of furniture it belongs to counts (_own_solids:
+## the wardrobe and its other door, the container and its other leaf) nor what touches it shut.
+func free_reach() -> float:
+	var shapes: Array[CollisionShape3D] = _leaf_shapes()
+	if shapes.is_empty() or not is_inside_tree():
+		return 1.0
+	var steps: int = maxi(1, ceili(maxf(absf(open_angle_deg) / SWEEP_STEP_DEG, open_slide.length() / SWEEP_STEP_M)))
+	var cast := ShapeCast3D.new()
+	cast.enabled = false
+	cast.top_level = true
+	cast.target_position = Vector3.ZERO  # no motion: what the shape overlaps where it stands
+	cast.collision_mask = SWEEP_MASK
+	cast.max_results = 8
+	add_child(cast)
+	for body in _own_solids():
+		cast.add_exception(body)
+	var parent := _leaf.get_parent_node_3d()
+	var frame: Transform3D = parent.global_transform if parent != null else Transform3D.IDENTITY
+	var on_leaf: Array[Transform3D] = []
+	for shape in shapes:
+		on_leaf.append(_leaf.global_transform.affine_inverse() * shape.global_transform)
+	for i in shapes.size():  # touching it shut: where it hangs, not in its way
+		_overlaps(cast, shapes[i], frame * _rest * on_leaf[i], true)
+	var reach: float = 1.0
+	for step in range(1, steps + 1):
+		var leaf_at: Transform3D = frame * pose(_rest, hinge_axis, open_angle_deg, open_slide, float(step) / steps)
+		var blocked: bool = false
+		for i in shapes.size():
+			blocked = blocked or _overlaps(cast, shapes[i], leaf_at * on_leaf[i], false)
+		if blocked:
+			reach = float(step - 1) / steps
+			break
+	remove_child(cast)
+	cast.free()
+	return reach
+
+
+## The solids of the piece of furniture the part belongs to -- the first one above it and everything in
+## it: a double door's leaves meet edge to edge, a container's doors swing out of its own frame.
+func _own_solids() -> Array[CollisionObject3D]:
+	var out: Array[CollisionObject3D] = []
+	var node: Node = get_parent()
+	while node != null and not (node is CollisionObject3D and not (node is Area3D)):
+		node = node.get_parent()
+	if node == null:
+		node = get_parent()  # loose (a test): its leaf's own bodies
+	else:
+		out.append(node as CollisionObject3D)
+	for body in node.find_children("*", "CollisionObject3D", true, false):
+		if not (body is Area3D):
+			out.append(body as CollisionObject3D)
+	return out
+
+
+## The shapes of the leaf's own bodies (a door's DoorBody), which the sweep moves.
+func _leaf_shapes() -> Array[CollisionShape3D]:
+	var out: Array[CollisionShape3D] = []
+	if _leaf == null:
+		return out
+	for body in _leaf.get_children():
+		if body is CollisionObject3D and not (body is Area3D):
+			for child in body.get_children():
+				if child is CollisionShape3D and (child as CollisionShape3D).shape != null \
+						and not (child as CollisionShape3D).disabled:
+					out.append(child)
+	return out
+
+
+## True when [param shape] at [param at] overlaps a solid [param cast] does not ignore; with
+## [param ignore_them], those solids are ignored from now on.
+static func _overlaps(cast: ShapeCast3D, shape: CollisionShape3D, at: Transform3D, ignore_them: bool) -> bool:
+	cast.shape = shape.shape
+	cast.global_transform = at
+	cast.force_shapecast_update()
+	if not cast.is_colliding():
+		return false
+	if ignore_them:
+		for i in cast.get_collision_count():
+			var hit := cast.get_collider(i) as CollisionObject3D
+			if hit != null:
+				cast.add_exception(hit)
+	return true
 
 
 func _set_open(t: float) -> void:

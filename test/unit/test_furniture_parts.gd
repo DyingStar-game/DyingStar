@@ -113,7 +113,7 @@ func test_the_building_shows_its_state() -> void:
 	assert_eq(there.state_key(), key)
 	assert_true(there.is_on, "listed: open")
 	assert_false(here.is_on, "not listed: shut")
-	assert_almost_eq((there.get_parent() as Node3D).rotation.y, deg_to_rad(-90.0), 1e-4, "open at once on arrival")
+	assert_almost_eq((there.get_parent() as Node3D).rotation.y, deg_to_rad(there.open_angle_deg), 1e-4, "open at once on arrival")
 	building.apply_prop_data({"furniture": {key: false}})
 	assert_false(there.is_on, "closed by a later change")
 	var lamps: Array = rooms.find_children("Lamp", "Area3D", true, false)
@@ -142,7 +142,7 @@ func test_a_state_that_arrives_before_the_building_is_placed_still_shows() -> vo
 	add_child_autofree(building)
 	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
 	assert_true(right.is_on)
-	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(90.0), 1e-4, "shown open once placed")
+	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(right.open_angle_deg), 1e-4, "shown open once placed")
 	KnownEngineErrors.forgive_floor_material(self)
 
 
@@ -164,3 +164,51 @@ func test_only_an_npc_s_door_is_opened() -> void:
 	assert_eq(FurnitureState.npc_doors(rooms.get_node("0-0-0")).size(), 1, "one door opens for an NPC")
 	KnownEngineErrors.forgive_floor_material(self)
 
+
+
+## A 1 m door hanging at the origin, its leaf's body a board along +X; [param open_deg] about up.
+func _door(open_deg: float) -> MovingPart:
+	var leaf := Node3D.new()
+	add_child_autofree(leaf)
+	var body := StaticBody3D.new()
+	var board := CollisionShape3D.new()
+	board.shape = BoxShape3D.new()
+	(board.shape as BoxShape3D).size = Vector3(1.0, 2.0, 0.05)
+	board.position = Vector3(0.5, 0.0, 0.0)
+	body.add_child(board)
+	leaf.add_child(body)
+	var part := MovingPart.new()
+	part.open_angle_deg = open_deg
+	leaf.add_child(part)
+	return part
+
+
+## A solid box of the world, [param size] at [param at].
+func _wall(at: Vector3, size: Vector3) -> void:
+	var wall := StaticBody3D.new()
+	var box := CollisionShape3D.new()
+	box.shape = BoxShape3D.new()
+	(box.shape as BoxShape3D).size = size
+	wall.add_child(box)
+	wall.position = at
+	add_child_autofree(wall)
+
+
+func test_a_door_opens_all_the_way_when_nothing_is_in_its_way() -> void:
+	assert_eq(_door(165.0).free_reach(), 1.0)
+
+
+func test_a_door_stops_short_of_the_wall_it_would_cut_into() -> void:
+	# A wall 15 cm behind the hinge: the board reaches it a little past 90 degrees.
+	_wall(Vector3(-0.2, 0.0, -0.6), Vector3(0.1, 2.0, 1.0))
+	var door := _door(165.0)
+	var reached: float = door.free_reach() * 165.0
+	assert_between(reached, 85.0, 99.0, "stops at the wall, not through it")
+	door.show_state(true, false)
+	assert_almost_eq(door.get_parent_node_3d().rotation_degrees.y, reached, 0.01, "and the leaf is shown there")
+
+
+func test_what_touches_the_door_shut_does_not_stop_it() -> void:
+	# The frame it hangs in: overlapping the shut board along its edge.
+	_wall(Vector3(0.5, 0.0, 0.03), Vector3(1.2, 2.2, 0.02))
+	assert_eq(_door(-90.0).free_reach(), 1.0, "swinging away from its frame: all the way")
