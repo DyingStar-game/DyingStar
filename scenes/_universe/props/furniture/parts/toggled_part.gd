@@ -11,6 +11,10 @@ extends FurnitureTarget
 ## Prompt while on (a translation key): "Close door".
 @export var label_on: String = ""
 
+## Shown on or off -- [param animate] true for a live change, false for the state found on arrival.
+## What follows a part listens to it (a cabin's light follows its door: CabinLight).
+signal state_shown(on: bool, animate: bool)
+
 ## True while on (open, lit), as last shown.
 var is_on: bool = false
 
@@ -32,6 +36,7 @@ func state_key() -> String:
 func show_state(on: bool, animate: bool) -> void:
 	_display(on)
 	_show(on, animate)
+	state_shown.emit(on, animate)
 
 
 ## Shown [param on] or off: the state the prompt answers to ("[E] Close door" while open).
