@@ -165,8 +165,10 @@ func _show_progress() -> void:
 		_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 		_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_label.visible = get_tree().get_first_node_in_group(MenuStage.GROUP) != null
-	_label.text = tr("%%MENU_WARMUP") % roundi(100.0 * progress(_wanted, _loading.size(), _meshes_done,
-			_to_draw.size()))
+	var line: String = tr("%%MENU_WARMUP")
+	if "%d" in line:  # a translation not imported yet comes back as its key, with nothing to fill
+		line = line % roundi(100.0 * progress(_wanted, _loading.size(), _meshes_done, _to_draw.size()))
+	_label.text = line
 
 
 ## Draw [param entry]'s mesh once, with each of its materials in turn on its first surface.
