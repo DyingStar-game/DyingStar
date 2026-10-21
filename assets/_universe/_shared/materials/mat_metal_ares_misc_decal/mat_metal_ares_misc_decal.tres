@@ -7,10 +7,12 @@
 [resource]
 resource_name = "mat_metal_ares_misc_decal"
 transparency = 2
-alpha_scissor_threshold = 0.092
+alpha_scissor_threshold = 0.19
 alpha_antialiasing_mode = 0
-albedo_color = Color(0.692, 0.692, 0.692, 1)
+albedo_color = Color(0.5716146, 0.5716146, 0.5716146, 1)
 albedo_texture = ExtResource("1_i1x7c")
+metallic = 1.0
+roughness = 0.6
 roughness_texture = ExtResource("3_5uvpr")
 normal_enabled = true
 normal_texture = ExtResource("2_n3ieg")

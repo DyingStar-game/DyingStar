@@ -1,10 +1,12 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://bpaxcxcxa7tah"]
 
-[ext_resource type="Script" path="res://scenes/_universe/props/tools/tool_prop.gd" id="1_tool"]
-[ext_resource type="PackedScene" path="res://assets/_universe/props/tools/tools/mining/hammerdrill.glb" id="2_drill"]
+[ext_resource type="Script" uid="uid://cgcsstx5wc1a5" path="res://scenes/_universe/props/tools/tool_prop.gd" id="1_tool"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="3_propsync"]
+[ext_resource type="PackedScene" uid="uid://c2x18acm3qed1" path="res://assets/_universe/props/tools/tools/mining/hammerdrill-v2.glb" id="4_8qgdj"]
 [ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="4_landing"]
+[ext_resource type="Material" uid="uid://cj4djxpjv43oc" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_orange.tres" id="5_gr1en"]
 [ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="5_pick"]
+[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="7_gr1en"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_drill"]
 size = Vector3(0.76, 0.35, 0.1)
@@ -12,7 +14,7 @@ size = Vector3(0.76, 0.35, 0.1)
 [sub_resource type="SphereShape3D" id="SphereShape3D_drill_aim"]
 radius = 0.4
 
-[node name="MiningToolProp" type="RigidBody3D"]
+[node name="MiningToolProp" type="RigidBody3D" unique_id=914767993]
 collision_layer = 8
 collision_mask = 15
 mass = 4.0
@@ -22,20 +24,31 @@ id_short_display = true
 sfx_pick_up = ExtResource("5_pick")
 sfx_landing = ExtResource("4_landing")
 
-[node name="Drill" parent="." instance=ExtResource("2_drill")]
+[node name="Drill" parent="." unique_id=917642604 instance=ExtResource("4_8qgdj")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.186, -0.174, 0)
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="hammerdrill" parent="Drill" index="0" unique_id=2062438001]
+surface_material_override/0 = ExtResource("5_gr1en")
+
+[node name="hammerdrill_chiselflat" parent="Drill" index="1" unique_id=1050240140]
+surface_material_override/0 = ExtResource("5_gr1en")
+
+[node name="hammerdrill_decals" parent="Drill" index="2" unique_id=218008599]
+surface_material_override/0 = ExtResource("7_gr1en")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2000376425]
 shape = SubResource("BoxShape3D_drill")
 
-[node name="PropSync" type="Node" parent="."]
+[node name="PropSync" type="Node" parent="." unique_id=1903556408]
 script = ExtResource("3_propsync")
 type_name = "tool"
 enable_carry = true
 
-[node name="Area3D" type="Area3D" parent="."]
+[node name="Area3D" type="Area3D" parent="." unique_id=869879464]
 collision_layer = 32
 monitoring = false
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=643580965]
 shape = SubResource("SphereShape3D_drill_aim")
+
+[editable path="Drill"]
