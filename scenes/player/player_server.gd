@@ -2833,6 +2833,11 @@ func server_toggle_lying(bed: BedSpot) -> void:
 		bed.occupant = null
 		player.global_transform = bed.stand_point.global_transform.orthonormalized()
 		player.set_seated(false)
+		# Standing still: the keys held as we lay down are not the keys held now. Lying, every move the
+		# client sent was dropped -- the last kept walked the body off the bed (playtest 2026-10-21); the
+		# client says what it holds once it stands (PlayerClient, leaving the bed).
+		player.input_direction = Vector2.ZERO
+		player.input_from_server["input_direction"] = Vector2.ZERO
 		player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
 	elif not is_instance_valid(player.lying_on) and not is_instance_valid(bed.occupant) \
 			and player.hands_item == null and not is_instance_valid(player._seat_node):

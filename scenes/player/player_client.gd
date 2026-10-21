@@ -2010,6 +2010,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 			player.lying_on = player.bed_asked  # the bed we asked to lie on (BedSpot.interact)
 			player.camera_pivot.rotation = Vector3(deg_to_rad(70.0), 0.0, 0.0)  # lying down: eyes to the ceiling
 		elif not lying:
+			if is_instance_valid(player.lying_on):
+				# Up from the bed: the server stood us still; tell it what we hold now, even unchanged.
+				player.client_last_input_direction = Vector2.INF
 			player.lying_on = null
 		if is_instance_valid(player.lying_on):
 			player.seated_role = "bed"
