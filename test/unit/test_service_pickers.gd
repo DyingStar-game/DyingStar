@@ -305,6 +305,46 @@ func test_a_poi_form_takes_a_place_only_when_it_asked_for_one() -> void:
 	assert_false(panel.set_placed(place), "and the answer is spent, not repeatable")
 
 
+func test_the_chosen_place_can_be_looked_at_on_the_chart() -> void:
+	# The third way of reading a place: look at it. A point the builder names is a place the player
+	# has never seen, and the button is worth pressing only when there is one to look at.
+	var picker = PLACE_PICKER.new()
+	add_child_autofree(picker)
+	picker.setup()
+	assert_true(picker._see.disabled, "there is nothing to look at before a place is chosen")
+	var seen: Array = []
+	picker.show_on_chart_requested.connect(func(poi_id: String) -> void: seen.append(poi_id))
+	picker._chosen_id = "poi-uuid"
+	picker._sync_see()
+	assert_false(picker._see.disabled, "a place is chosen, so it can be looked at")
+	picker._see.pressed.emit()
+	assert_eq(seen, ["poi-uuid"], "the chart is asked for the place that is chosen")
+
+
+func test_a_refetch_keeps_the_points_this_session_created() -> void:
+	# A point that belongs to a mission is not expected to come back from the list of the caller's
+	# own points, so the cache keeps the ones it created: a builder that dropped the place it just
+	# laid would send a mission naming nothing. They used to survive only by luck of timing.
+	MissionPoiCache.clear()
+	MissionPoiCache.add({"id": "poi-uuid", "name": "Repère — tarsis_3"})
+	await MissionPoiCache.refresh()
+	var kept := false
+	for poi: Dictionary in MissionPoiCache.entries():
+		if str(poi.get("id", "")) == "poi-uuid":
+			kept = true
+	assert_true(kept, "the point this session created survived the refetch")
+	MissionPoiCache.clear()
+
+
+func test_a_point_the_service_brought_back_is_not_kept_twice() -> void:
+	# A point of the PLAYER's own — one laid on the chart with no mission behind it — is listed by
+	# the service, and the session's copy of it would show the same place twice in every list, and
+	# draw it twice on the chart.
+	assert_true(MissionPoiCache._holds([{"id": "a"}], "a"))
+	assert_false(MissionPoiCache._holds([{"id": "a"}], "b"))
+	assert_false(MissionPoiCache._holds([], ""), "an id nobody has is nobody's")
+
+
 func test_a_json_null_width_reads_as_a_point() -> void:
 	# Dictionary's default only applies to an ABSENT key: a nullable column arrives as an explicit
 	# null, and float(null) has no constructor at all (the same bug radius_label_of documents).
