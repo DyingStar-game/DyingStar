@@ -59,17 +59,19 @@ group_uniforms surface;
 // The seamless texture.  Organic patterns (sand, dirt, gravel, regolith) hide the
 // hex blend best.  Anisotropic: the ground is mostly seen at grazing angles.
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
-// Matching tangent-space normal map (OpenGL +Y).  Unset = flat.
-uniform sampler2D normal_texture : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+// Matching tangent-space normal map (OpenGL +Y).  Unset = flat.  Trilinear, not anisotropic: its three
+// textureGrad taps a plane cost 2.2 ms of GPU over the village from the air (RTX 3090, 1080p: 15.2 ->
+// 13.0 ms) for a relief that a grazing view shows a little softer, where the albedo keeps its sharpness.
+uniform sampler2D normal_texture : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform float normal_strength : hint_range(0.0, 4.0, 0.05) = 1.0;
 // Roughness map, hex-tiled with the same samples.  Unset = white (1.0), so
 // `roughness` alone drives the result.  Read from `roughness_channel`: R for
 // a plain *_rough map, G for an ORM (occlusion / roughness / metallic) map.
-// filter_linear_mipmap, NOT anisotropic, here and on height_texture: every tap in
+// filter_linear_mipmap, NOT anisotropic, here, on height_texture and normal_texture: every tap in
 // this shader is a textureGrad, and textureGrad + anisotropic is the slow path
 // of AMD samplers (a RX 5700 XT spent 30 ms of GPU per frame on this shader
-// where a RTX 3080 spent 3).  Albedo and normal keep it — they are what is seen
-// at grazing angles — the two scalar maps do not need it.
+// where a RTX 3080 spent 3).  The albedo keeps it — it is what is seen at grazing
+// angles — the other maps do not need it.
 uniform sampler2D roughness_texture : hint_roughness_r, filter_linear_mipmap, repeat_enable;
 uniform int roughness_channel : hint_enum("R", "G", "B", "A") = 0;
 // Multiplies the roughness map (1.0 = map as is).
