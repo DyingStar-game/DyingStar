@@ -103,6 +103,16 @@ var _dust_lights: DustLights = null
 var _sky_material: ShaderMaterial = null
 var _aerial_material: ShaderMaterial = null
 var _aerial_quad: MeshInstance3D = null
+## The aerial pass's table (aerial_perspective_lut.gdshader): the march of the air done once per cell of a
+## grid on the camera, AERIAL_LUT_TILES across the screen by AERIAL_LUT_SLICES distances out to
+## AERIAL_LUT_DISTANCE_M, instead of once per pixel of ground. The pass cost 1.1 ms of GPU at 1080p for
+## its march alone (RTX 3090, 32 samples), 2.4 times that at 3440x1440. Filled every frame: the camera
+## turns. Off with client.ini `debug_no_aerial_lut` (every pixel marches, the reference).
+const AERIAL_LUT_TILES := Vector2i(32, 18)
+const AERIAL_LUT_SLICES := 32
+const AERIAL_LUT_DISTANCE_M := 50000.0
+var _aerial_lut_viewport: SubViewport = null
+var _aerial_lut_material: ShaderMaterial = null
 ## The transmittance table (see atmosphere_common.gdshaderinc): a small half-float render target,
 ## filled once per atmosphere, read by both shaders. Off with client.ini `debug_atmo_no_lut`.
 var _lut_viewport: SubViewport = null
@@ -152,6 +162,10 @@ func _ready() -> void:
 		print("[Atmosphere] !! debug_no_aerial=true — sky dome kept, aerial perspective pass removed.")
 		return
 	_build_aerial_quad()
+	if ClientConfig.get_bool("debug_no_aerial_lut", false):
+		print("[Atmosphere] !! debug_no_aerial_lut=true — the aerial pass marches every pixel, no table.")
+	else:
+		_build_aerial_lut()
 
 
 ## debug_no_atmosphere: a stock ProceduralSkyMaterial in place of both shaders, so the frame keeps a
@@ -394,6 +408,54 @@ func _show_star_mesh(shown: bool) -> void:
 ## mesh hidden for whatever comes next.
 func _exit_tree() -> void:
 	_show_star_mesh(true)
+	if RenderingServer.frame_pre_draw.is_connected(_aim_aerial_lut):
+		RenderingServer.frame_pre_draw.disconnect(_aim_aerial_lut)
+
+
+## The aerial pass's table (see AERIAL_LUT_TILES), filled every frame just before it is drawn.
+func _build_aerial_lut() -> void:
+	if _aerial_material == null:
+		return
+	var size := Vector2i(AERIAL_LUT_TILES.x * AERIAL_LUT_SLICES, AERIAL_LUT_TILES.y * 2)
+	_aerial_lut_viewport = SubViewport.new()
+	_aerial_lut_viewport.name = "AerialLut"
+	_aerial_lut_viewport.size = size
+	_aerial_lut_viewport.use_hdr_2d = true
+	_aerial_lut_viewport.disable_3d = true
+	_aerial_lut_viewport.transparent_bg = false
+	# Every frame: the grid is the camera's, and the camera turns. 36 864 marches, a few hundredths of the
+	# two million the pass made per pixel.
+	_aerial_lut_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_aerial_lut_material = ShaderMaterial.new()
+	_aerial_lut_material.shader = load("res://scenes/_universe/environment/aerial_perspective_lut.gdshader")
+	var fill := ColorRect.new()
+	fill.size = size
+	fill.material = _aerial_lut_material
+	_aerial_lut_viewport.add_child(fill)
+	add_child(_aerial_lut_viewport)
+	for material: ShaderMaterial in [_aerial_lut_material, _aerial_material]:
+		material.set_shader_parameter("lut_tiles", AERIAL_LUT_TILES)
+		material.set_shader_parameter("lut_slices", AERIAL_LUT_SLICES)
+		material.set_shader_parameter("aerial_lut_distance", AERIAL_LUT_DISTANCE_M)
+	if _lut_viewport != null:
+		_aerial_lut_material.set_shader_parameter("transmittance_lut", _lut_viewport.get_texture())
+	_aerial_material.set_shader_parameter("aerial_lut", _aerial_lut_viewport.get_texture())
+	RenderingServer.frame_pre_draw.connect(_aim_aerial_lut)
+
+
+## The table on the camera as it is drawn this frame: after everything that moved it.
+func _aim_aerial_lut() -> void:
+	if _aerial_lut_material == null or not is_instance_valid(player) or player.camera == null:
+		return
+	var projection: Projection = player.camera.get_camera_projection()
+	_aerial_lut_material.set_shader_parameter("lut_tan", Vector2(1.0 / projection.x.x, 1.0 / projection.y.y))
+	_aerial_lut_material.set_shader_parameter("lut_view_basis", player.camera.global_basis)
+
+
+## The aerial pass reads its table (true), or marches every pixel (false: the reference, the bench's A/B).
+func set_aerial_lut_enabled(on: bool) -> void:
+	if _aerial_material != null and _aerial_lut_material != null:
+		_aerial_material.set_shader_parameter("aerial_lut_distance", AERIAL_LUT_DISTANCE_M if on else 0.0)
 
 
 ## The body whose sky the player sees, or null in open space: the body they BELONG to (Planet.of),
@@ -585,6 +647,8 @@ func _apply(values: Dictionary) -> void:
 		_sky_material.set_shader_parameter(key, values[key])
 		if _aerial_material != null:
 			_aerial_material.set_shader_parameter(key, values[key])
+		if _aerial_lut_material != null:
+			_aerial_lut_material.set_shader_parameter(key, values[key])
 
 
 ## Bridge between physical radiance (W/m2/sr) and the engine's arbitrary light units.

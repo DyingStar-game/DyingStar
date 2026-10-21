@@ -21,10 +21,12 @@ const SET_ARG := "--bench-set="
 const QUICK_ARG := "--bench-quick"
 ## A screenshot of each window's first pose, beside the report (to compare what a change shows).
 const SHOTS_ARG := "--bench-shots"
+## The sun's height (degrees) for the day windows instead of LIGHTS' (a dawn: --bench-sun=5).
+const SUN_ARG := "--bench-sun="
 ## The families --bench-hide can take out.
 const HIDE := ["shell", "interiors", "walkways", "lights", "shadows", "casters", "fringe", "labels", "props",
 		"village", "outpost", "terrain", "aerial", "skyrefl", "sunshadow", "ssao", "ssil", "ssr", "glow",
-		"hexq0", "hexq1", "terraincast"]
+		"hexq0", "hexq1", "terraincast", "aeriallut"]
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
 ## Where the village stands from the stage's anchor (m, degrees from north): clear of the outpost.
 const DISTANCE_M := 350.0
@@ -134,8 +136,10 @@ func _run() -> void:
 	_frame_at(STREET_EYE, STREET_EYE + Vector3.LEFT)
 	await _wait(SETTLE_S)
 	var quick: bool = not _arg_list(QUICK_ARG).is_empty() or QUICK_ARG in OS.get_cmdline_user_args()
+	var sun: PackedStringArray = _arg_list(SUN_ARG)
 	for light: Array in (LIGHTS.slice(0, 1) if quick else LIGHTS):
-		StageClock.set_sun_elevation(_planet, _village.position, float(light[1]))
+		var elevation: float = float(sun[0]) if not sun.is_empty() and light[0] == "day" else float(light[1])
+		StageClock.set_sun_elevation(_planet, _village.position, elevation)
 		await _shot("%s street" % light[0], _street)
 		await _shot("%s flyover" % light[0], _flyover)
 		if not quick:
@@ -252,6 +256,8 @@ func _hide_world() -> void:
 		atmosphere.set_aerial_enabled(false)
 	if "skyrefl" in _hidden and atmosphere != null:
 		atmosphere.set_sky_reflection_enabled(false)
+	if "aeriallut" in _hidden and atmosphere != null:
+		atmosphere.set_aerial_lut_enabled(false)
 	if "sunshadow" in _hidden and _rig.has_node("PlayerSunLight"):
 		(_rig.get_node("PlayerSunLight") as Light3D).shadow_enabled = false
 	var env: Environment = get_viewport().world_3d.environment if get_viewport().world_3d != null else null
