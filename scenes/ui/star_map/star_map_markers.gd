@@ -31,6 +31,10 @@ const GROUP_OVERLAP: float = 0.8
 const RECT_PRIORITY: int = -30
 const ICON_PRIORITY: int = -2
 const ON_TOP_PRIORITY: int = 1
+## How long (ms) the place of something that does not move (a StaticBody3D: a building, a home) is
+## kept before it is walked up the tree again: a village of 252 homes walked every frame held the chart,
+## F2 or a cab's screen, at 20 fps (playtest 2026-10-21).
+const STILL_PLACE_MS: int = 2000
 ## The count of a group, in pixels on screen.
 const COUNT_FONT_SIZE: int = 44
 const COUNT_PIXEL_SIZE: float = 0.0009
@@ -46,6 +50,8 @@ var _shown: Dictionary = {}
 var _groups: Array[Dictionary] = []
 var _group_count: int = 0
 var _materials: Dictionary = {}
+## marker instance id -> {"planet", "place" (null: not on it), "at"}: the places kept (STILL_PLACE_MS).
+var _places: Dictionary = {}
 
 
 ## Place the markers of [param planet] (null: none) seen from [param camera], [param gap_m] metres above
@@ -53,33 +59,57 @@ var _materials: Dictionary = {}
 func refresh(planet: Planet, camera: Camera3D, gap_m: float) -> void:
 	var seen: Dictionary = {}
 	HomeLocation.ensure(planet, Player.own_horizon_id())  # the home, even far from it
+	var tok: int = ClientPerf.scope_begin()  # map:markers, map:group on the [CPerf+] heartbeat
 	if planet != null and camera != null and is_inside_tree():
 		var metres_per_unit: float = 1.0 / maxf(global_basis.get_scale().x, 1.0e-30)
 		for node: Node in get_tree().get_nodes_in_group(MapMarker.GROUP):
 			var marker := node as MapMarker
 			if marker == null or not marker.is_inside_tree() or marker.subject() == null:
 				continue
-			if Planet.of(marker.subject()) != planet:
-				continue
+			var shown: bool = gap_m <= marker.max_view_m
+			# Hidden by the height (max_view_m): no frame walked, nothing projected -- from orbit all are.
+			var place: Variant = _place_of(marker, planet) if shown else Transform3D()
+			if place == null:
+				continue  # on another body
 			var size: AABB = marker.footprint()
 			if size.size.x <= 0.0 or size.size.z <= 0.0:
 				continue  # nothing drawn yet: measured again next time
 			var id: int = marker.get_instance_id()
 			seen[id] = true
 			var entry: Dictionary = _drawn_for(id, marker)
-			entry["shown"] = gap_m <= marker.max_view_m
-			# Hidden by the height (max_view_m): no frame walked, nothing projected -- from orbit all are.
-			var place: Transform3D = LocalFrame.of(marker.subject(), planet) if entry["shown"] else Transform3D()
+			entry["shown"] = shown
 			_place(id, marker, size, place, camera, metres_per_unit)
+	for id: int in _places.keys():
+		if not is_instance_id_valid(id):
+			_places.erase(id)
 	for id: int in _shown.keys():
 		if not seen.has(id):
 			for part: String in ["rect", "icon"]:
 				if _shown[id][part] != null:
 					(_shown[id][part] as Node).queue_free()
 			_shown.erase(id)
+	ClientPerf.scope_end("map:markers", tok)
+	tok = ClientPerf.scope_begin()
 	_group(camera)
+	ClientPerf.scope_end("map:group", tok)
 	if hovered >= 0 and not _shown.has(hovered):
 		hovered = -1
+
+
+## Where [param marker]'s object stands in [param planet]'s frame, or null when it is not on that body:
+## walked up the tree each time for what moves, kept STILL_PLACE_MS for what does not.
+func _place_of(marker: MapMarker, planet: Planet) -> Variant:
+	var id: int = marker.get_instance_id()
+	var now: int = Time.get_ticks_msec()
+	var kept: Dictionary = _places.get(id, {})
+	if not kept.is_empty() and kept["planet"] == planet and now - int(kept["at"]) < STILL_PLACE_MS:
+		return kept["place"]
+	var subject: Node3D = marker.subject()
+	var place: Variant = LocalFrame.of(subject, planet) if Planet.of(subject) == planet else null
+	if subject is StaticBody3D:
+		# Kept from a random moment of the span: the homes of a village are not all walked on one frame.
+		_places[id] = {"planet": planet, "place": place, "at": now - randi_range(0, STILL_PLACE_MS / 2)}
+	return place
 
 
 ## The id [param index]-th group answers to (hovered, name_of): below -1, never a marker's.
@@ -158,6 +188,16 @@ static func fit_square(width: float, height: float) -> Vector2:
 static func overlapping_groups(items: Array) -> Array:
 	var order: Array = items.duplicate()
 	order.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["importance"]) < int(b["importance"]))
+	# On a grid of cells as wide as the widest reach: two pictograms that overlap are in the same cell or
+	# next ones, so each is only held against its neighbours -- every one against every other was 60 000
+	# tests a frame for a village of homes.
+	var cell: float = 1.0
+	for item: Dictionary in order:
+		cell = maxf(cell, 2.0 * float(item["radius_px"]) * GROUP_OVERLAP)
+	var grid: Dictionary = {}
+	for item: Dictionary in order:
+		var px: Vector2 = item["px"]
+		(grid.get_or_add(Vector2i(floori(px.x / cell), floori(px.y / cell)), []) as Array).append(item)
 	var taken: Dictionary = {}
 	var out: Array = []
 	for a: Dictionary in order:
@@ -165,13 +205,17 @@ static func overlapping_groups(items: Array) -> Array:
 			continue
 		var members: Array = [a["id"]]
 		taken[a["id"]] = true
-		for b: Dictionary in order:
-			if taken.has(b["id"]) or b["key"] != a["key"]:
-				continue
-			var reach: float = (float(a["radius_px"]) + float(b["radius_px"])) * GROUP_OVERLAP
-			if (a["px"] as Vector2).distance_to(b["px"]) < reach:
-				members.append(b["id"])
-				taken[b["id"]] = true
+		var at: Vector2 = a["px"]
+		var home := Vector2i(floori(at.x / cell), floori(at.y / cell))
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				for b: Dictionary in grid.get(home + Vector2i(dx, dy), []):
+					if taken.has(b["id"]) or b["key"] != a["key"]:
+						continue
+					var reach: float = (float(a["radius_px"]) + float(b["radius_px"])) * GROUP_OVERLAP
+					if at.distance_to(b["px"]) < reach:
+						members.append(b["id"])
+						taken[b["id"]] = true
 		if members.size() > 1:
 			out.append(members)
 	return out

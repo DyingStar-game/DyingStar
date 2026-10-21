@@ -179,6 +179,14 @@ var _daylight_memo: Dictionary = {}
 
 @onready var planet_terrain: PlanetTerrain = $PlanetTerrain if has_node("PlanetTerrain") else null
 
+## Every Planet in the tree is in it: PlanetRegistry.live_planets reads it instead of walking the tree.
+const GROUP := &"planet"
+
+
+func _enter_tree() -> void:
+	add_to_group(GROUP)
+
+
 func _ready() -> void:
 	if not Engine.is_editor_hint():
 		print("[Planet] _ready: name=%s  spawn_position=%s  position=%s"
