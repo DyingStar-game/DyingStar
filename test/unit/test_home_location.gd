@@ -73,3 +73,20 @@ func test_a_home_seen_before_it_is_placed_waits_for_its_place() -> void:
 	planet.add_child(apartment)
 	assert_true(planet.has_node(NodePath(HomeLocation.ANCHOR_NAME)), "marked as it enters")
 	planet.free()
+
+
+## Under other storeys, a home was covered by their grey rectangles (all drawn at one priority, by
+## distance) and its pictogram merged into the homes' "x12" (playtest 2026-10-21): it is drawn over all
+## of them, on its own.
+func test_my_home_is_drawn_over_the_other_homes() -> void:
+	var home := MapMarker.new()
+	home.importance = 1
+	home.on_top = true
+	home.groupable = false
+	var other := MapMarker.new()
+	other.importance = 2  # a container_apartment's own marker
+	assert_gt(StarMapMarkers.rect_priority(home), StarMapMarkers.rect_priority(other), "its rectangle over theirs")
+	assert_lt(StarMapMarkers.rect_priority(home), StarMapMarkers.icon_priority(other), "still under the pictograms")
+	assert_gt(StarMapMarkers.icon_priority(home), 0, "its pictogram over the points of interest too")
+	home.free()
+	other.free()

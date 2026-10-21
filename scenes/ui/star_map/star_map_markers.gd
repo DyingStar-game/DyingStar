@@ -25,9 +25,12 @@ const HOVER_LIGHTEN: float = 0.35
 ## Two alike pictograms closer on screen than this share of their size are drawn as one.
 const GROUP_OVERLAP: float = 0.8
 ## Under the points of interest, which are drawn at the default priority: the rectangles lowest, then the
-## pictograms, the most important (importance 1) over the others.
-const RECT_PRIORITY: int = -20
+## pictograms, the most important (importance 1) over the others -- for the rectangles too: drawn by
+## distance alone, the storeys over a home (nearer the camera) covered it. A marker on_top is drawn over
+## the rest of its kind, its pictogram over the points of interest.
+const RECT_PRIORITY: int = -30
 const ICON_PRIORITY: int = -2
+const ON_TOP_PRIORITY: int = 1
 ## The count of a group, in pixels on screen.
 const COUNT_FONT_SIZE: int = 44
 const COUNT_PIXEL_SIZE: float = 0.0009
@@ -197,7 +200,8 @@ func _place(id: int, marker: MapMarker, size: AABB, place: Transform3D, camera: 
 	var rect: MeshInstance3D = entry["rect"]
 	rect.visible = shown and marker.show_footprint
 	rect.transform = rect_xf
-	rect.material_override = _flat(marker.colour.lerp(Color.WHITE, HOVER_LIGHTEN) if lit else marker.colour)
+	rect.material_override = _flat(marker.colour.lerp(Color.WHITE, HOVER_LIGHTEN) if lit else marker.colour,
+			rect_priority(marker))
 	var polygon := PackedVector2Array()
 	for c: Vector2 in [Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(0.5, 0.5), Vector2(-0.5, 0.5)]:
 		var world: Vector3 = to_global(rect_xf * Vector3(c.x, 0.0, c.y))
@@ -206,7 +210,7 @@ func _place(id: int, marker: MapMarker, size: AABB, place: Transform3D, camera: 
 			break
 		polygon.append(camera.unproject_position(world))
 	entry["polygon"] = polygon
-	var icon_m: float = away_m * ICON_SHARE
+	var icon_m: float = away_m * ICON_SHARE * marker.icon_scale
 	entry["centre"] = base + place.basis.y.normalized() * (LIFT_M * 2.0)
 	entry["icon_m"] = icon_m
 	var centre_world: Vector3 = to_global(entry["centre"])
@@ -218,7 +222,18 @@ func _place(id: int, marker: MapMarker, size: AABB, place: Transform3D, camera: 
 		icon.visible = shown
 		icon.transform = Transform3D(Basis().scaled(Vector3.ONE * icon_m * (HOVER_SCALE if lit else 1.0)),
 				entry["centre"])
-		icon.material_override = _picture(marker.icon, lit, marker.importance)
+		icon.material_override = _picture(marker.icon, lit, icon_priority(marker), marker.icon_tint)
+
+
+## The rectangle's draw priority: by importance, over every other one when on_top; always under the
+## pictograms.
+static func rect_priority(marker: MapMarker) -> int:
+	return RECT_PRIORITY + (10 if marker.on_top else 9 - clampi(marker.importance, 1, 9))
+
+
+## The pictogram's draw priority: by importance, over the points of interest when on_top.
+static func icon_priority(marker: MapMarker) -> int:
+	return ON_TOP_PRIORITY if marker.on_top else ICON_PRIORITY - clampi(marker.importance, 1, 9)
 
 
 ## Draw the alike pictograms that overlap as one each, with their number; the others as they are.
@@ -226,8 +241,8 @@ func _group(camera: Camera3D) -> void:
 	var items: Array = []
 	for id: int in _shown:
 		var entry: Dictionary = _shown[id]
-		if entry["icon"] != null and bool(entry["shown"]):
-			var marker: MapMarker = entry["marker"]
+		var marker: MapMarker = entry["marker"]
+		if entry["icon"] != null and bool(entry["shown"]) and marker.groupable:
 			items.append({"id": id, "key": marker.icon, "px": entry["px"], "radius_px": entry["radius_px"],
 					"importance": marker.importance})
 	var groups: Array = overlapping_groups(items)
@@ -247,8 +262,9 @@ func _group(camera: Camera3D) -> void:
 			centre += entry["centre"]
 			icon_m += float(entry["icon_m"])
 			if lit:  # its rectangle lights up with the group
+				var member: MapMarker = entry["marker"]
 				(entry["rect"] as MeshInstance3D).material_override = \
-						_flat((entry["marker"] as MapMarker).colour.lerp(Color.WHITE, HOVER_LIGHTEN))
+						_flat(member.colour.lerp(Color.WHITE, HOVER_LIGHTEN), rect_priority(member))
 		centre /= float(members.size())
 		icon_m /= float(members.size())
 		var first: MapMarker = _shown[int(members[0])]["marker"]
@@ -257,7 +273,7 @@ func _group(camera: Camera3D) -> void:
 		group["centre"] = centre
 		var icon: MeshInstance3D = group["icon"]
 		(icon.mesh as QuadMesh).size = fit_square(first.icon.get_width(), first.icon.get_height())
-		icon.material_override = _picture(first.icon, lit, first.importance)
+		icon.material_override = _picture(first.icon, lit, icon_priority(first), first.icon_tint)
 		icon.transform = Transform3D(Basis().scaled(Vector3.ONE * icon_m * (HOVER_SCALE if lit else 1.0)), centre)
 		icon.visible = true
 		var count: Label3D = group["count"]
@@ -334,34 +350,35 @@ func _camera_axis(camera: Camera3D, axis: int) -> Vector3:
 	return (global_basis.inverse() * camera.global_basis[axis]).normalized()
 
 
-func _flat(colour: Color) -> StandardMaterial3D:
-	if _materials.has(colour):
-		return _materials[colour]
+func _flat(colour: Color, priority: int) -> StandardMaterial3D:
+	var key: Array = [colour, priority]
+	if _materials.has(key):
+		return _materials[key]
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = colour
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.no_depth_test = true
-	mat.render_priority = RECT_PRIORITY
-	_materials[colour] = mat
+	mat.render_priority = priority
+	_materials[key] = mat
 	return mat
 
 
-## The pictogram, facing the camera, over the ground but under the points of interest, the more
-## [param importance] (1 = most) the higher; lighter when lit.
-func _picture(texture: Texture2D, lit: bool, importance: int) -> StandardMaterial3D:
-	var key: Array = [texture, lit, importance]
+## The pictogram, facing the camera, drawn at [param priority] (icon_priority), in [param tint];
+## lighter when lit.
+func _picture(texture: Texture2D, lit: bool, priority: int, tint: Color) -> StandardMaterial3D:
+	var key: Array = [texture, lit, priority, tint]
 	if _materials.has(key):
 		return _materials[key]
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = texture
-	mat.albedo_color = Color.WHITE.lerp(Color(1.0, 0.95, 0.7), HOVER_LIGHTEN) if lit else Color.WHITE
+	mat.albedo_color = tint.lerp(Color(1.0, 0.95, 0.7), HOVER_LIGHTEN) if lit else tint
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	mat.billboard_keep_scale = true  # the size it is given: a share of its depth
 	mat.no_depth_test = true
-	mat.render_priority = ICON_PRIORITY - clampi(importance, 1, 9)
+	mat.render_priority = priority
 	_materials[key] = mat
 	return mat

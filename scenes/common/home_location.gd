@@ -19,8 +19,10 @@ const ANCHOR_NAME := &"HomeAnchor"
 const APARTMENT_MIDDLE := Vector3(-3.05, 0.0, 1.3)
 ## A container's footprint (m): x across, z along, y its height.
 const FOOTPRINT := Vector3(6.1, 2.6, 2.6)
-## The home's colour on the chart: the green of its door plate.
-const COLOUR := Color(0.25, 0.85, 0.35, 0.95)
+## The home's colour on the chart: the green of its door plate, opaque -- nothing shows through it.
+const COLOUR := Color(0.25, 0.85, 0.35, 1.0)
+## Its pictogram, bigger than the other homes'.
+const ICON_SCALE := 1.5
 const ICON := preload("res://assets/textures/map_markers/habitat.png")
 
 
@@ -90,6 +92,12 @@ static func _anchor(planet: Planet, place: Transform3D) -> Node3D:
 		marker.max_view_m = 100000.0
 		marker.colour = COLOUR
 		marker.footprint_size = FOOTPRINT
+		# Seen whatever stands over it -- the storeys above a lower home covered it (playtest 2026-10-21) --
+		# never merged into a "x12" of homes, green and bigger.
+		marker.on_top = true
+		marker.groupable = false
+		marker.icon_tint = COLOUR
+		marker.icon_scale = ICON_SCALE
 		anchor.add_child(marker)
 		planet.add_child(anchor)
 	anchor.transform = place
