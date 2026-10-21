@@ -35,13 +35,17 @@ var version: String = ""
 ## save_mesh), or checked once against the live surface (PlanetTerrain._cached_geom_valid). That check
 ## reads the chunk's elevation tile cold on the main thread, 0.1-0.7 ms a chunk: 3 ms of every frame
 ## while the ground streams in, every session, for files that were good the time before. Kept in
-## trusted.txt beside them, cleared with them when the version changes. File name -> true.
+## trusted.txt beside them, cleared with them when the version changes. ONE list a planet folder, shared
+## by every cache open on it: the menu stage's planet and the game's are two terrains of the same planet,
+## and each writing its own list erased what the other had added.
 const TRUSTED_FILE := "trusted.txt"
 ## Least time between two writes of trusted.txt (ms): a wave of loads trusts dozens of files a frame.
 const TRUSTED_SAVE_MS := 10000
-var _trusted: Dictionary = {}
-var _trusted_changed: bool = false
-var _trusted_saved_at: int = 0
+## Planet folder -> {names: {file name: true}, changed: bool, saved_at: msec}.
+static var _trusted_lists: Dictionary = {}
+var _trusted: Dictionary = {"names": {}, "changed": false, "saved_at": 0}
+## True when this cache found its folder at another version and cleared it.
+var _cleared: bool = false
 
 
 ## [param base_dir] selects the root folder.
@@ -96,6 +100,7 @@ func _validate_version(version_hash: String) -> void:
 		print("[ChunkDiskCache] Version mismatch — clearing cache for '%s'" % _planet_dir)
 	else:
 		print("[ChunkDiskCache] No existing cache — creating '%s'" % _planet_dir)
+	_cleared = true
 
 	_clear_dir(_planet_dir)
 	DirAccess.make_dir_recursive_absolute(_planet_dir)
@@ -224,40 +229,45 @@ func save_mesh(chunk_key: String, lod: int, mesh: ArrayMesh, stitch: int = 0) ->
 
 # ── Trusted files ─────────────────────────────────────────────────
 
-## True when the cache file at [param path] is known good (see [member _trusted]).
+## True when the cache file at [param path] is known good (see [constant TRUSTED_FILE]).
 func is_trusted(path: String) -> bool:
-	return _trusted.has(path.get_file())
+	return _trusted.names.has(path.get_file())
 
 
 func trust(path: String) -> void:
-	if not _trusted.has(path.get_file()):
-		_trusted[path.get_file()] = true
-		_trusted_changed = true
+	if not _trusted.names.has(path.get_file()):
+		_trusted.names[path.get_file()] = true
+		_trusted.changed = true
 
 
 ## The file at [param path] failed its check: it is rebuilt, and trusted again once published.
 func distrust(path: String) -> void:
-	if _trusted.erase(path.get_file()):
-		_trusted_changed = true
+	if _trusted.names.erase(path.get_file()):
+		_trusted.changed = true
 
 
 ## Write trusted.txt if it changed, at most every TRUSTED_SAVE_MS unless [param now].
 func save_trusted(now: bool = false) -> void:
-	if not _enabled or not _trusted_changed:
+	if not _enabled or not _trusted.changed:
 		return
-	if not now and Time.get_ticks_msec() - _trusted_saved_at < TRUSTED_SAVE_MS:
+	if not now and Time.get_ticks_msec() - int(_trusted.saved_at) < TRUSTED_SAVE_MS:
 		return
-	AtomicFile.write_string(_planet_dir + TRUSTED_FILE, "\n".join(PackedStringArray(_trusted.keys())))
-	_trusted_changed = false
-	_trusted_saved_at = Time.get_ticks_msec()
+	AtomicFile.write_string(_planet_dir + TRUSTED_FILE, "\n".join(PackedStringArray(_trusted.names.keys())))
+	_trusted.changed = false
+	_trusted.saved_at = Time.get_ticks_msec()
 
 
+## The folder's list: the one already open on it, read from trusted.txt otherwise — empty when this cache
+## has just cleared the folder.
 func _load_trusted() -> void:
-	_trusted = {}
-	var text := FileAccess.get_file_as_string(_planet_dir + TRUSTED_FILE)
-	for name: String in text.split("\n", false):
-		_trusted[name] = true
-	_trusted_saved_at = Time.get_ticks_msec()
+	if _trusted_lists.has(_planet_dir) and not _cleared:
+		_trusted = _trusted_lists[_planet_dir]
+		return
+	var names: Dictionary = {}
+	for name: String in FileAccess.get_file_as_string(_planet_dir + TRUSTED_FILE).split("\n", false):
+		names[name] = true
+	_trusted = {"names": names, "changed": false, "saved_at": Time.get_ticks_msec()}
+	_trusted_lists[_planet_dir] = _trusted
 
 
 ## Metadata a cached mesh carries: its first vertex, which the load-time check
