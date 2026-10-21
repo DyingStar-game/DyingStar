@@ -865,8 +865,11 @@ func _update_god_mode_label() -> void:
 	if _god_mode_label == null:
 		return
 	var flying := _in_god_mode()
-	if player.puppet.visible == flying:
-		player.puppet.visible = not flying
+	# The body is hidden in flight, not while its wrist is up: the DataPad is worn on it, and F2/F3 zoomed
+	# in on a screen that was not drawn (playtest 2026-10-21).
+	var hidden: bool = flying and not (_wrist != null and _wrist.is_up())
+	if player.puppet.visible == hidden:
+		player.puppet.visible = not hidden
 	_god_mode_label.visible = flying
 	if _god_mode_label.visible:
 		_god_mode_label.text = (tr("%%HUD_GOD_MODE_SPEED") % GOD_MODE.speed_text(_god_mode_speed)

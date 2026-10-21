@@ -458,6 +458,12 @@ func _process(delta: float) -> void:
 		var look_q: Quaternion = Quaternion(head_look_yaw_axis.normalized(), yaw) \
 				* Quaternion(head_look_axis.normalized(), pitch)
 		_skeleton.set_bone_pose_rotation(_head_bone, animated * look_q)
+	if _puppet != null and _player.floating and _player.datapad_raised and _float_tilt != 0.0:
+		# The wrist comes up: straight at once, before the arm takes its pose before the eye. Eased, the
+		# screen swung round the camera that was already turning to it, and the view flipped.
+		_float_tilt = 0.0
+		_puppet.basis = _puppet_base_basis
+		_puppet.position = _puppet_base_position
 	_drive_wrist(delta)
 	_drive_poke(delta)
 	# Seated: drop the whole puppet so the sit pose sits IN the seat (the body origin rides at standing
@@ -472,7 +478,10 @@ func _process(delta: float) -> void:
 			offset = seated_puppet_offset
 		# Weightless: tip the puppet about the hips so the head leads (see float_pitch_deg), blended in
 		# and out. Rotated in the BODY's frame (left of the base basis), around a pivot at hip height.
-		var tilt_target: float = deg_to_rad(float_pitch_deg) if _player.floating else 0.0
+		# Reading the wrist, the body straightens: tipped, it stood between the eye and the DataPad (god
+		# mode, playtest 2026-10-21).
+		var tilt_target: float = deg_to_rad(float_pitch_deg) if _player.floating and not _player.datapad_raised \
+				else 0.0
 		_float_tilt = lerp_angle(_float_tilt, tilt_target, 1.0 - exp(-float_blend * delta))
 		var tip := Basis(Vector3.RIGHT, _float_tilt)
 		var pivot := Vector3(0.0, float_pivot_height, 0.0)
