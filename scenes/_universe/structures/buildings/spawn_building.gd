@@ -48,11 +48,18 @@ var furniture: Dictionary:
 	get:
 		return _furniture.state
 
+## Instance the apartments' interiors only near the camera (InteriorStreamer): where something is
+## drawn. Set before the apartments are made; a test sets it to try the streaming headless.
+var stream_interiors: bool = InteriorStreamer.wanted()
+
 var _apartments_created: bool = false
 var _furniture := FurnitureState.new()
 
 ## Margin of the levelled footprint past the walls, as in the box drawn in the scene.
 const PAD_MARGIN_M := 0.5
+## How the apartments are copied from 0-0-0: as the template stands, not instanced again from its scene
+## (DUPLICATE_USE_INSTANTIATION would bring back the interior a streamed template gave up).
+const COPY_AS_IS := Node.DUPLICATE_SIGNALS | Node.DUPLICATE_GROUPS | Node.DUPLICATE_SCRIPTS
 
 
 ## The TerrainPad footprint of a building of [param data]'s rows / cols / spacings, local to the
@@ -110,19 +117,26 @@ func _create_apartments():
 	if _apartments_created:
 		return
 	_apartments_created = true
+	if stream_interiors:
+		# Copy shells, not furnished rooms: the interiors come back near the camera.
+		var streamer := InteriorStreamer.take_from(%"0-0-0", $MultiMeshInstance3D,
+				Vector3(x_spacing, y_spacing, z_spacing) * 0.5)
+		if streamer != null:
+			streamer.loaded.connect(func(room: Node) -> void: _furniture.show_room(room))
+			add_child(streamer)
 	for f in range(floors):
 		for i in range(cols):
 			# Don't duplicate on itself the apartment 001
 			if f == 0 and i == 0:
 				continue
-			var node_apart = %"0-0-0".duplicate()
+			var node_apart = %"0-0-0".duplicate(COPY_AS_IS)
 			node_apart.name = slot_name({"row": 0, "col": i, "floor": f})
 			node_apart.position.z = i * z_spacing
 			node_apart.position.y = f * y_spacing
 			$MultiMeshInstance3D.add_child(node_apart)
 		if rows == 2:
 			for i in range(cols):
-				var node_apart = %"0-0-0".duplicate()
+				var node_apart = %"0-0-0".duplicate(COPY_AS_IS)
 				node_apart.name = slot_name({"row": 1, "col": i, "floor": f})
 				node_apart.rotation.y = 3.14159
 				node_apart.position.x = (x_spacing * 2.0)

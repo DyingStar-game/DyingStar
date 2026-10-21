@@ -12,8 +12,10 @@ var state: Dictionary = {}
 
 ## The parts have been shown once: from then on a change moves (a door swings), before it is set.
 var _shown: bool = false
-## Every ToggledPart of the apartments, gathered once they exist.
+## Every ToggledPart of the apartments, gathered once they exist; an interior instanced later adds its
+## own (show_room), one freed leaves its parts freed, dropped at the next showing.
 var _parts: Array[ToggledPart] = []
+var _gathered: bool = false
 
 
 ## [param state] with the part [param key] set [param on]: a new dictionary, the old one untouched (it
@@ -39,6 +41,28 @@ func show_once(rooms: Node) -> void:
 		_show(rooms, state)
 
 
+## Show the state at once on the parts of [param room]'s interior, just instanced near the camera
+## (InteriorStreamer): as found, no motion. Before the first showing there is nothing to do -- it will
+## gather them with the rest.
+func show_room(room: Node) -> void:
+	if not _gathered:
+		return
+	var inside: Node = room.get_node_or_null(NodePath(InteriorStreamer.INTERIOR))
+	if inside == null:
+		return
+	var fresh: Array[ToggledPart] = []
+	_gather(inside, fresh)
+	_parts.append_array(fresh)
+	if not _shown:
+		return
+	for part in fresh:
+		var key := part.state_key()
+		if state.has(key):
+			part.show_state(bool(state[key]), false)
+		else:
+			part.show_unset()
+
+
 ## Set [param part] [param on] and show it. Returns the new state, to replicate.
 func set_part(part: ToggledPart, on: bool, rooms: Node) -> Dictionary:
 	receive(with_part(state, part.state_key(), on), rooms)
@@ -50,8 +74,15 @@ func set_part(part: ToggledPart, on: bool, rooms: Node) -> Dictionary:
 func _show(rooms: Node, before: Dictionary) -> void:
 	if rooms == null:
 		return
-	if _parts.is_empty():
-		_gather(rooms)
+	if not _gathered:
+		_gathered = true
+		_gather(rooms, _parts)
+	else:
+		var alive: Array[ToggledPart] = []
+		for part in _parts:
+			if is_instance_valid(part):
+				alive.append(part)
+		_parts = alive
 	for part in _parts:
 		var key := part.state_key()
 		if not state.has(key):
@@ -68,8 +99,8 @@ static func npc_doors(room: Node) -> Array:
 			func(n: Node) -> bool: return n is MovingPart and (n as MovingPart).opens_for_npc)
 
 
-func _gather(node: Node) -> void:
+func _gather(node: Node, into: Array[ToggledPart]) -> void:
 	for child in node.get_children():
 		if child is ToggledPart:
-			_parts.append(child)
-		_gather(child)
+			into.append(child)
+		_gather(child, into)
