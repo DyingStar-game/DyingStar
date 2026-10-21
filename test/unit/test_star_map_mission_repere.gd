@@ -111,6 +111,47 @@ func test_every_step_leaves_a_point_or_a_legal_width() -> void:
 
 
 # ---------------------------------------------------------------------------
+# The frame: the place a marker makes is the BODY's own
+# ---------------------------------------------------------------------------
+
+## The place a marker lays down is compared with a player's presence, and every place in the game
+## is the body's own: the client's [method PlayerLocation.presence_of] and the server's
+## [method GameServer.mission_place_of] both answer `planet.to_local(...)`.
+##
+## The chart DRAWS a body turned on its axis and tipped over, so the offset it measures is in the
+## universe. Handing that over as it stands compares two frames that differ by the body's own
+## rotation — up to the whole radius, thousands of kilometres — and the mission's point was that
+## far from the player who laid it. No radius ever matched it.
+func test_a_marker_lands_in_the_body_frame_and_not_in_the_universe_one() -> void:
+	var spin := Basis(Vector3.UP, PI * 0.5)  # a quarter turn: the worst kind of day for a place
+	var drawn := spin * Vector3.RIGHT * 1000.0
+	var place: Vector3 = STAR_MAP.body_local_offset(spin, drawn)
+	assert_almost_eq(place.length(), 1000.0, 0.001, "the distance to the centre is the same either way")
+	assert_almost_eq(place.dot(Vector3.RIGHT), 1000.0, 0.001,
+			"the place is the body's own direction, not the universe's")
+	assert_almost_eq(place.dot(spin * Vector3.RIGHT), 0.0, 0.001,
+			"and not the universe's either")
+
+
+## A body that never turns and is never tipped has an identity basis: the two frames are the same,
+## and nothing is turned. A plain subtraction stays the answer.
+func test_a_body_that_never_turns_keeps_its_own_frame() -> void:
+	var offset := Vector3(120.0, 6000000.0, -35.0)
+	assert_eq(STAR_MAP.body_local_offset(Basis.IDENTITY, offset), offset)
+
+
+## And the turn is the other way round too: a place in the body's frame, drawn back into the
+## universe, is where the chart drew it. That is the round trip the chart's own POI layer does.
+func test_a_place_in_the_body_frame_draws_back_where_the_chart_drew_it() -> void:
+	var spin := Basis(Vector3.BACK, deg_to_rad(23.0)) * Basis(Vector3.UP, PI * 0.75)
+	var drawn := spin * Vector3(0.3, 0.9, -0.2).normalized() * 4500.0
+	var place: Vector3 = STAR_MAP.body_local_offset(spin, drawn)
+	var back: Vector3 = spin * place
+	assert_almost_eq(back.dot(drawn), drawn.length(), 0.001,
+			"the same spot, seen from the same side")
+
+
+# ---------------------------------------------------------------------------
 # The menu: what it may offer, and never twice under the same name
 # ---------------------------------------------------------------------------
 

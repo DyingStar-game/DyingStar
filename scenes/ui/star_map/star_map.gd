@@ -809,7 +809,8 @@ func _mission_place() -> Dictionary:
 		return {}  # the body it stood on is gone: no index survives a rebuild (close clears first)
 	var entry: Dictionary = _bodies[body]
 	var sphere: MeshInstance3D = entry["sphere"]
-	var up: Vector3 = sphere.basis.orthonormalized() * (_mission_repere["local"] as Vector3)
+	var basis := sphere.basis.orthonormalized()
+	var up: Vector3 = basis * (_mission_repere["local"] as Vector3)
 	var centre: Vector3 = entry["true_pos"]
 	# On the GROUND, not on the reference sphere: the relief is exaggerated, and a marker pinned to the
 	# mean sphere would stand where the mountains are a hundred km below it.
@@ -817,9 +818,27 @@ func _mission_place() -> Dictionary:
 	return {
 		"system": SystemScenes.system_of(str(entry["key"])),
 		"scene": str(entry["key"]),
-		"position": (surface - centre) / UNITS_PER_METRE,
+		"position": body_local_offset(basis, surface - centre) / UNITS_PER_METRE,
 		"radiusM": roundi(_mission_radius_m),
 	}
+
+
+## The offset from a body's centre, in the BODY's own frame.
+##
+## The chart draws a body turned on its axis and tipped over (see [method _spin_basis]), so the
+## direction it draws is the body's own direction turned into the universe. Every place in the game,
+## on the other hand, is the body's own: the client's [method PlayerLocation.presence_of] and the
+## server's [method GameServer.mission_place_of] both answer `planet.to_local(...)`, and the service
+## compares a POI with a player state in that frame.
+##
+## So the offset has to be turned back before it is handed over. Without it, the two frames differ by
+## the body's own rotation — up to the whole radius, thousands of kilometres — and a POI laid on the
+## chart was that far from the player who laid it: no radius ever matched it, and every mission
+## pointed at a place nobody could stand on.
+##
+## Pure and static so the rule can be pinned without a chart, a planet or a viewport.
+static func body_local_offset(basis: Basis, offset: Vector3) -> Vector3:
+	return basis.orthonormalized().inverse() * offset
 
 
 ## The marker on the ground: the cross standing on it (the chart's own pin, borrowed while the marker
