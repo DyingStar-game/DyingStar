@@ -775,8 +775,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		else:
 			# Client-only suffix, for what only the visual meshes carry: "_far50km" = the far tiers
 			# cut into quads of 50 km at most (PlanetData.get_resolution_for_lod) — no server
-			# collision to re-bake.
-			_cache_version += "_far50km"
+			# collision to re-bake; "_rail1" = the rail modules built with the mesh and saved on it
+			# (RailwayTrack.RAILS_META).
+			_cache_version += "_far50km_rail1"
 		# An exported build starts from an empty cache: a change no field above captures (a road
 		# re-export, a forgotten vNN bump) cannot reach players through a mesh baked by the build
 		# before. Not in relief_signature: the persisted pad altitudes survive a deploy. Empty in
@@ -787,6 +788,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 
 	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
 	planet_data.remote_source = RemoteTileSource.for_planet(planet_data.planet_name)
+	# The rail modules, loaded here on the main thread: the mesh tasks lay them (RailwayTrack.stamp_rails).
+	if not server_mode and planet_data.has_railways():
+		RailwayTrack.module_meshes()
 
 	# The geometry version is what a client and a server must SHARE for their
 	# terrains to agree (the sampler, the carve, the stitch are all in it):
@@ -3785,6 +3789,9 @@ func _queue_mesh_task(info: Dictionary) -> void:
 		func():
 			var mesh: ArrayMesh = PlanetChunk.generate_mesh_healpix(
 				pd, nside, ipix, res, chunk_center, prof, stitch)
+			# Its rail modules too, here rather than in the assembly (RailwayTrack.RAILS_META).
+			if lod <= RailwaySettings.RAIL_MAX_LOD and pd.has_railways():
+				RailwayTrack.stamp_rails(mesh, pd, nside, ipix, chunk_center, lod)
 			# The cache write here, while the mesh is still this thread's
 			# alone: once assembled, _split_road_surfaces edits it.
 			if cache != null and _persistable(mesh):
@@ -4245,9 +4252,9 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# box colliders in their own body. The transforms are computed once and
 	# shared by both.
 	if lod <= RailwaySettings.RAIL_MAX_LOD and planet_data.has_railways():
-		var rail_xforms := RailwayTrack.module_transforms(
-			planet_data, info.nside, info.ipix, chunk_center)
-		if not rail_xforms.is_empty():
+		var rail_groups: Array = RailwayTrack.rail_groups(mesh, planet_data, info.nside, info.ipix,
+				chunk_center, lod)
+		if not rail_groups.is_empty():
 			var rails := Node3D.new()
 			rails.name = key + "_rails"
 			rails.position = chunk_center
@@ -4256,7 +4263,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				corners_rail[2] * planet_data.radius)
 			var rail_far: float = minf(rail_diag * RailwaySettings.RAIL_VISIBILITY_DIAG,
 					RailwaySettings.RAIL_FAR_VISIBILITY_M)
-			for grp in RailwayTrack.build_multimeshes(rail_xforms, lod):
+			for grp in rail_groups:
 				var rail_mmi := MultiMeshInstance3D.new()
 				rail_mmi.multimesh = grp["mm"]
 				rail_mmi.position = grp["center"]

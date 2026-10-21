@@ -266,3 +266,18 @@ func test_modules_meet_whatever_the_along_metric() -> void:
 		covered += (b["size"] as Vector3).z
 	assert_almost_eq(covered, 100.0 * (RADIUS + 100.0) / RADIUS, 1e-3,
 			"the boxes cover the run's TRUE length")
+
+
+## The rail groups a mesh task built and kept on the chunk mesh are the ones the assembly lays, as they
+## are: the main thread no longer lays the modules of a chunk built with them.
+func test_the_rail_groups_kept_on_the_mesh_are_used() -> void:
+	var road := _road(200.0, 1)
+	var prof := GradeProfile.compute(road, _flat)
+	var groups := RailwayTrack.build_multimeshes(
+			RailwayTrack.piece_module_transforms(road, prof, RADIUS, Vector3.ZERO), 0)
+	var mesh := ArrayMesh.new()
+	mesh.set_meta(RailwayTrack.RAILS_META, groups)
+	assert_same(RailwayTrack.rail_groups(mesh, null, 8, 0, Vector3.ZERO, 0), groups)
+	var empty := ArrayMesh.new()
+	empty.set_meta(RailwayTrack.RAILS_META, [])
+	assert_eq(RailwayTrack.rail_groups(empty, null, 8, 0, Vector3.ZERO, 0), [], "no track: nothing laid")
