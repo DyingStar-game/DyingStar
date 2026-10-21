@@ -1656,6 +1656,8 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 func _exit_tree() -> void:
 	_join_lod_task()
 	_join_worker_tasks()
+	if _chunk_cache != null:
+		_chunk_cache.save_trusted(true)
 	if _atmosphere_lod != null:
 		_atmosphere_lod.release()
 		_atmosphere_lod = null
@@ -3704,14 +3706,18 @@ func _poll_cache_loads() -> void:
 		var mesh: ArrayMesh = null
 		if ResourceLoader.load_threaded_get_status(entry.path) == ResourceLoader.THREAD_LOAD_LOADED:
 			mesh = ResourceLoader.load_threaded_get(entry.path) as ArrayMesh
-		if mesh != null and _cached_mesh_valid(mesh, info):
+		# A file found good once, or published from a good tile, is not checked again (ChunkDiskCache.trust).
+		if mesh != null and (_chunk_cache.is_trusted(entry.path) or _cached_mesh_valid(mesh, info)):
+			_chunk_cache.trust(entry.path)
 			_chunk_cache.cache_hits += 1
 			info["_from_disk_cache"] = true
 			_queue_insert(_assemble_queue, {"info": info, "mesh": mesh}, info.center)
 		else:
+			_chunk_cache.distrust(entry.path)
 			_stat_cache_rejected += 1
 			info["_skip_disk_cache"] = true
 			_try_create_or_defer(info)
+	_chunk_cache.save_trusted()
 
 
 ## Submit a mesh generation task to WorkerThreadPool for [param info].
