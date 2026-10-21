@@ -16,6 +16,7 @@ const GOOD_PICKER := preload("res://ui/services/good_type_picker.gd")
 const INSTANCE_PICKER := preload("res://ui/services/instance_picker.gd")
 const POI_CACHE := preload("res://ui/services/mission_poi_cache.gd")
 const MISSION_PANEL := preload("res://ui/services/mission_panel.gd")
+const POI_PANEL := preload("res://ui/services/poi_panel.gd")
 
 
 # ── The place picker: the value a mission's params expect ──────────────────────────────────────
@@ -245,6 +246,63 @@ func test_a_width_the_service_would_refuse_is_refused_here() -> void:
 	# message that names the radius, not a 400 from the service.
 	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": 1000001}, "50"), -1)
 	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": -3}, "50"), -1)
+
+
+# ── Who is waiting for the chart ─────────────────────────────────────────────────────────────────
+
+func test_a_picker_waits_for_the_chart_only_once_it_has_asked() -> void:
+	# The wait is what says "this form is the one the place is for". It is set BEFORE the request
+	# goes out — the answer comes back through the console, and by then the flag has to be there.
+	var picker = PLACE_PICKER.new()
+	add_child_autofree(picker)
+	picker.setup()
+	assert_false(picker.is_awaiting_chart(), "a picker nobody asked takes no place")
+	picker._ask_chart()
+	assert_true(picker.is_awaiting_chart(), "asking the chart is what starts the wait")
+	picker.cancel_awaiting()
+	assert_false(picker.is_awaiting_chart(), "and another picker's request ends it")
+
+
+func test_the_answer_ends_the_wait() -> void:
+	# The place that comes back is spent: the picker is no longer waiting, so the next place that
+	# reaches it is a stray answer and is left alone. _busy keeps _place_at from calling the
+	# service — this is about the flag, not about the creation.
+	var picker = PLACE_PICKER.new()
+	add_child_autofree(picker)
+	picker.setup()
+	picker._ask_chart()
+	picker._busy = true
+	picker.accept_place({"position": Vector3.ONE})
+	assert_false(picker.is_awaiting_chart(), "the answer is spent, the wait is over")
+
+
+func test_a_picker_that_asked_takes_the_place_even_with_a_row_selected() -> void:
+	# The list selects its first row by itself, so a chosen id is NO proof of a decision: the picker
+	# that asked for a place on the chart must take the answer, or the marker the player just laid
+	# would go nowhere while the form kept the row it never picked.
+	var picker = PLACE_PICKER.new()
+	add_child_autofree(picker)
+	picker.setup()
+	picker._chosen_id = "poi-uuid"
+	assert_false(MISSION_PANEL._picker_wants_place(picker),
+			"a picker that did not ask leaves its own choice alone")
+	picker._ask_chart()
+	assert_true(MISSION_PANEL._picker_wants_place(picker),
+			"the one that asked takes the answer, row or not")
+
+
+func test_a_poi_form_takes_a_place_only_when_it_asked_for_one() -> void:
+	# Several forms can have the chart open, and a mission builder's marker is not this form's
+	# place to take: taking it anyway is what sent the player to the inventory instead of back to
+	# their mission. The form is built nowhere here (it is not in the tree), which is enough — the
+	# gate is the flag, not the widgets.
+	var panel = POI_PANEL.new()
+	autofree(panel)
+	var place := {"position": Vector3.ONE}
+	assert_false(panel.set_placed(place), "a form that never asked takes no place")
+	panel._awaiting_place = true
+	assert_true(panel.set_placed(place), "the form that asked takes the place")
+	assert_false(panel.set_placed(place), "and the answer is spent, not repeatable")
 
 
 func test_a_json_null_width_reads_as_a_point() -> void:
