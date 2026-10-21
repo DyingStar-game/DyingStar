@@ -2802,7 +2802,8 @@ func server_toggle_lying(bed: BedSpot) -> void:
 	if player.lying_on == bed:
 		player.lying_on = null
 		bed.occupant = null
-		player.global_transform = bed.stand_point.global_transform.orthonormalized()
+		player.global_transform = bed.free_stand_transform(_collider.shape, _collider.transform, [player]) \
+				if _collider != null else bed.stand_point.global_transform.orthonormalized()
 		player.set_seated(false)
 		# Standing still: the keys held as we lay down are not the keys held now. Lying, every move the
 		# client sent was dropped -- the last kept walked the body off the bed (playtest 2026-10-21); the

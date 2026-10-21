@@ -2025,6 +2025,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 			if is_instance_valid(player.lying_on):
 				# Up from the bed: the server stood us still; tell it what we hold now, even unchanged.
 				player.client_last_input_direction = Vector2.INF
+				# And look ahead again, as out of a seat: the free look from the pillow (up at the ceiling,
+				# turned aside) stayed on the view, and we walked one way looking another (playtest 2026-10-21).
+				player.camera_pivot.rotation = Vector3.ZERO
 			player.lying_on = null
 		if is_instance_valid(player.lying_on):
 			player.seated_role = "bed"
