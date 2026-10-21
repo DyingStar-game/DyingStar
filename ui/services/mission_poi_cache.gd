@@ -38,11 +38,27 @@ static func ensure_loaded() -> bool:
 	var fetched: Array = ServicePage.items_of(result)
 	# Keep whatever this session created: the endpoint is not expected to list them, and a builder
 	# that drops a POI it just placed would send a mission naming nothing.
+	#
+	# Only the ones the endpoint did NOT bring back: a point of the PLAYER's own — one laid on the
+	# chart without a mission behind it — is listed by the service, and appending the session's copy
+	# of it would show the same place twice in every list, and draw it twice on the chart.
 	for known: Dictionary in _shared:
-		if str(known.get("origin", "")) == ORIGIN_SESSION:
+		if str(known.get("origin", "")) != ORIGIN_SESSION:
+			continue
+		if not _holds(fetched, str(known.get("id", ""))):
 			fetched.append(known)
 	_shared = fetched
 	return true
+
+
+## Does [param records] already hold the point whose id is [param poi_id]?
+static func _holds(records: Array, poi_id: String) -> bool:
+	if poi_id == "":
+		return false
+	for record: Variant in records:
+		if record is Dictionary and str((record as Dictionary).get("id", "")) == poi_id:
+			return true
+	return false
 
 
 ## The caller's own POIs in one request. The API's own maximum, so the picker needs no page of its own.
@@ -51,11 +67,21 @@ const PICK_LIMIT: int = 100
 ## Marks a POI this session created rather than fetched, so [method ensure_loaded] does not lose it.
 const ORIGIN_SESSION: String = "session"
 
-## Refetch from the service, dropping the session-only entries. For a builder that was left open a
+## Refetch from the service, keeping the session's own points. For a builder that was left open a
 ## long time and wants the truth rather than what it remembers.
+##
+## The session's points are kept DELIBERATELY: the endpoint is not expected to list a POI that
+## belongs to a mission rather than to a player, so a refetch would lose the place the builder just
+## laid — and a mission that names nothing is a mission that cannot be taken. They used to survive
+## only by luck of timing (the list was emptied before the fetch and refilled after the creation),
+## which is not a promise anyone can keep.
 static func refresh() -> bool:
 	_loaded = false
-	_shared = []
+	var kept: Array = []
+	for known: Dictionary in _shared:
+		if str(known.get("origin", "")) == ORIGIN_SESSION:
+			kept.append(known)
+	_shared = kept
 	return await ensure_loaded()
 
 
