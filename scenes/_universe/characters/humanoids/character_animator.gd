@@ -74,6 +74,9 @@ const DATAPAD_REACH_M: float = 0.45
 @export var belt_bone: StringName = &"Hips"
 
 @export_group("Seated pose")
+## Where the eye sits off the head bone of a body lying on its back (body frame: up from the face, back
+## towards the top of the skull): the bone's origin is the base of the skull, inside the collar.
+const LYING_EYE := Vector3(0.0, 0.12, 0.08)
 ## Body-frame shift of the whole puppet while seated, so the sit/drive pose lines up with the seat's
 ## SitPoint: the body origin rides the seat at STANDING height, so without this the seated mesh floats.
 ## Tune live in the Inspector. Applied to the puppet only — the owner's camera is a sibling, so its
@@ -212,6 +215,10 @@ var _dormant: bool = false  # frozen off-screen / hidden (see set_dormant)
 var _hands: HandsOnWheel = null  # a driver's hands on the steering wheel (IK), null on a rig without arms
 var _hands_weight: float = 0.0  # 0 = the Driving clip alone, 1 = hands on the grips
 var _wrist_raise = null  # WristRaise: the raised-wrist rig (IK + forearm twist), see _create_mounts
+var _poke: ScreenPoke = null  # the right index tapping a screen, null on a rig without a right arm
+var _poke_serial: int = 0  # the Player.tap_serial last played
+var _poke_t: float = INF  # seconds since that tap began (INF: none playing)
+var _lying_shown: bool = false  # the lay clips are playing for a bed (not the emote wheel)
 var _wrist_mount_xf: Transform3D = Transform3D.IDENTITY  # where the DataPad hangs on the forearm bone
 var _wrist_weight: float = 0.0  # 0 = arm down (animation alone) .. 1 = wrist up before the eyes
 var _wrist_shoulder: int = -1  # the left upper arm: its joint is where the raised wrist is placed from
@@ -275,6 +282,7 @@ func setup(player_body, is_local: bool) -> void:
 		# rises, blended by its own weight; the right hand keeps driving.
 		_hands = HandsOnWheel.attach(_skeleton)
 		_create_mounts()  # shared attachment points props hang from (they follow the animated body)
+		_poke = ScreenPoke.attach(_skeleton)  # after the wrist raise: the right arm, over the clip
 		if _is_local:
 			add_head_shadow(_skeleton, _head_bone, _neck_bone)
 	if _anim != null:
@@ -451,6 +459,7 @@ func _process(delta: float) -> void:
 				* Quaternion(head_look_axis.normalized(), pitch)
 		_skeleton.set_bone_pose_rotation(_head_bone, animated * look_q)
 	_drive_wrist(delta)
+	_drive_poke(delta)
 	# Seated: drop the whole puppet so the sit pose sits IN the seat (the body origin rides at standing
 	# height). Owner camera is a sibling of the puppet, so its first-person view is unaffected.
 	if _puppet != null:
@@ -478,7 +487,15 @@ func _process(delta: float) -> void:
 		# pitch the view with it. Restore the base there, like the seat does.
 		var seated_cam: bool = _player.floating or (not _player.locomotion_sample.is_empty()
 				and bool(_player.locomotion_sample.get("seated", false)))
-		if not seated_cam:
+		var lying_cam: bool = bool(_player.locomotion_sample.get("lying", false))
+		if lying_cam:
+			# On a bed the lay clip takes the head a metre and more from where it stands: the eye goes
+			# with it, all the way (the head cam only follows the small moves of a body on its feet).
+			var head_lying: Vector3 = _player.to_local(_skeleton.to_global(
+					_skeleton.get_bone_global_pose(_head_bone).origin)) + LYING_EYE
+			_player.camera_pivot.position = _player.camera_pivot.position.lerp(head_lying,
+					1.0 - exp(-head_cam_smooth * delta))
+		elif not seated_cam:
 			var head_now: Vector3 = _player.to_local(_skeleton.to_global(_skeleton.get_bone_global_pose(_head_bone).origin))
 			_head_cam.capture_rest(head_now, _player.camera_pivot.position)  # first frame: the neutral reference
 			var moving: bool = float(_player.locomotion_sample.get("planar_speed", 0.0)) >= MOVE_EPSILON
@@ -550,6 +567,26 @@ func _wheel_in_skeleton() -> Array:
 			to_skeleton * LocalFrame.of(hub, vehicle).origin]
 
 ## Raise or lower the wrist towards Player.datapad_raised, in Player.datapad_raise_time, every avatar alike.
+## A new Player.tap_serial starts the tap's envelope (ScreenPoke.envelope); its point and the elbow's
+## pole go to the rig in the SKELETON's space, through local transforms only (see _hold_wrist_pose).
+func _drive_poke(delta: float) -> void:
+	if _poke == null or _puppet == null:
+		return
+	if _player.tap_serial != _poke_serial:
+		_poke_serial = _player.tap_serial
+		_poke_t = 0.0
+	else:
+		_poke_t += delta
+	var weight: float = ScreenPoke.envelope(_poke_t)
+	if weight <= 0.0:
+		_poke.drive(0.0, Vector3.ZERO, Vector3.ZERO)
+		return
+	var skeleton_in_puppet: Transform3D = WRIST_RAISE.local_to(_skeleton, _puppet)
+	var body_in_puppet := Transform3D(_puppet_base_basis, _puppet_base_position).affine_inverse()
+	var axes: Basis = (skeleton_in_puppet.affine_inverse() * body_in_puppet).basis  # body metres -> skeleton
+	var point: Vector3 = (_puppet.transform * skeleton_in_puppet).affine_inverse() * _player.tap_point
+	_poke.drive(weight, point, _poke.shoulder() + axes * ScreenPoke.POLE_OFFSET)
+
 ## The pose is taken ONCE, as the arm starts up, then held in the SKELETON's space (it rides the puppet,
 ## so a seat, a vehicle, a weightless tip) until the arm is down again: the wrist stays put while the
 ## eyes move over its screen and the idle breathes -- a screen that swam under the crosshair could not be
@@ -647,6 +684,20 @@ func _select_clip(delta: float) -> StringName:
 		if bool(s.get("driver", false)):
 			return _clip_or(anim_set.sit_driving, _clip_or(anim_set.sit_idle, _idle))
 		return _clip_or(anim_set.sit_passenger, _clip_or(anim_set.sit_idle, _idle))
+	# On a bed: the lay emote's clips -- lie down, held -- and its exit to get up again (BedSpot).
+	if bool(s.get("lying", false)):
+		_reset_idle()
+		if not _lying_shown:
+			_lying_shown = true
+			_start_emote("lay")
+		var lay: StringName = _emote_clip(0.0)
+		if lay != &"":
+			return lay
+	elif _lying_shown:
+		_lying_shown = false
+		var up: StringName = _emote_clip(MOVE_EPSILON)  # its exit clip: standing up
+		if up != &"":
+			return up
 	# Weightless: one floating loop, above walking and jumping — there is no ground to walk or jump from.
 	# Replicated server state (Player.floating), so every avatar floats the same way for every viewer.
 	if _player.floating:

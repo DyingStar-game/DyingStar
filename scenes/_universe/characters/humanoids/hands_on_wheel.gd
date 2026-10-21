@@ -45,11 +45,8 @@ const ARM_FOLLOW := 0.85
 const FIT_ROUNDS := 3
 ## How far (degrees) each finger joint closes round the rim, from the knuckle out, counted from the
 ## fingers held STRAIGHT (the rig's rest): added to the clip's own curl, they closed through the palm.
+## The thumb is left as the clip has it, along the rim (HumanoidHand.FINGERS).
 const CURL_DEG: Array[float] = [45.0, 55.0, 30.0]
-## The four fingers' chains in the humanoid profile (each Proximal, Intermediate, Distal). The thumb is
-## left as the clip has it, along the rim.
-const FINGERS: Array[String] = ["Index", "Middle", "Ring", "Little"]
-const JOINTS: Array[String] = ["Proximal", "Intermediate", "Distal"]
 
 var _ik: TwoBoneIK3D = null
 ## How far (0..1) the LEFT hand has been taken off the wheel -- the wrist raised to read the DataPad. Past
@@ -152,11 +149,7 @@ static func attach(skeleton: Skeleton3D) -> HandsOnWheel:
 		arm.hand = skeleton.find_bone(side + "Hand")
 		if arm.upper == -1 or arm.lower == -1 or arm.hand == -1:
 			return null
-		for finger: String in FINGERS:
-			var chain: Array[int] = []
-			for joint: String in JOINTS:
-				chain.append(skeleton.find_bone(side + finger + joint))
-			arm.fingers.append(chain)
+		arm.fingers = HumanoidHand.finger_chains(skeleton, side)
 		_measure_hand(skeleton, arm, side == "Left")
 		arm.upper_length = skeleton.get_bone_global_rest(arm.upper).origin.distance_to(
 				skeleton.get_bone_global_rest(arm.lower).origin)
@@ -185,8 +178,8 @@ static func attach(skeleton: Skeleton3D) -> HandsOnWheel:
 		ik.set_root_bone(i, arm.upper)
 		ik.set_middle_bone(i, arm.lower)
 		ik.set_end_bone(i, arm.hand)
-		arm.target = _marker(skeleton, "WheelWrist%d" % i)
-		arm.pole = _marker(skeleton, "WheelElbow%d" % i)
+		arm.target = HumanoidHand.marker(skeleton, "WheelWrist%d" % i)
+		arm.pole = HumanoidHand.marker(skeleton, "WheelElbow%d" % i)
 		ik.set_target_node(i, ik.get_path_to(arm.target))
 		ik.set_pole_node(i, ik.get_path_to(arm.pole))
 	rig.drive(0.0, [], Vector3.ZERO)
@@ -355,16 +348,7 @@ func _process_modification_with_delta(_delta: float) -> void:
 		skeleton.set_bone_pose_rotation(arm.lower, (upper.inverse() * forearm.basis).get_rotation_quaternion())
 		skeleton.set_bone_pose_rotation(arm.hand, (forearm.basis.inverse() * hand.basis).get_rotation_quaternion())
 		var curl_axis: Vector3 = reach.cross(palm).normalized()  # turning the reach to the palm closes the hand
-		for chain: Array in arm.fingers:
-			var parent: Transform3D = hand
-			for j in chain.size():
-				var bone: int = chain[j]
-				if bone == -1:
-					break
-				var joint: Transform3D = parent * skeleton.get_bone_rest(bone)  # from straight, not the clip
-				joint.basis = Basis(curl_axis, deg_to_rad(CURL_DEG[j])) * joint.basis
-				skeleton.set_bone_pose_rotation(bone, (parent.basis.inverse() * joint.basis).get_rotation_quaternion())
-				parent = joint
+		HumanoidHand.curl(skeleton, hand, arm.fingers, [CURL_DEG, CURL_DEG, CURL_DEG, CURL_DEG], curl_axis)
 
 
 ## The part of [param turn] that spins about [param axis] (unit): the "twist" of a swing-twist split.
@@ -374,9 +358,3 @@ static func twist_about(turn: Quaternion, axis: Vector3) -> Quaternion:
 	var twist := Quaternion(along.x, along.y, along.z, turn.w)
 	return twist.normalized() if twist.length_squared() > 1e-12 else Quaternion.IDENTITY
 
-
-static func _marker(skeleton: Skeleton3D, marker_name: String) -> Node3D:
-	var marker := Node3D.new()
-	marker.name = marker_name
-	skeleton.add_child(marker)
-	return marker

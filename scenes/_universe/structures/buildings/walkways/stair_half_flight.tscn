@@ -1,0 +1,74 @@
+[gd_scene format=3 uid="uid://bnhmrie6polbh"]
+
+[ext_resource type="Material" uid="uid://byddg1qsk2jsy" path="res://assets/_universe/_shared/materials/mat_metal_diamondplate2k/mat_metal_diamondplate2k.tres" id="1_plate"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_rail"]
+albedo_color = Color(0.82, 0.83, 0.85, 1)
+metallic = 0.6
+roughness = 0.4
+
+[sub_resource type="BoxMesh" id="Mesh_tread"]
+size = Vector3(1.2, 0.04, 0.2429)
+material = ExtResource("1_plate")
+
+[sub_resource type="BoxMesh" id="Mesh_stringer"]
+size = Vector3(0.04, 0.25, 2.1401)
+material = SubResource("Mat_rail")
+
+[sub_resource type="BoxMesh" id="Mesh_rail"]
+size = Vector3(0.04, 0.04, 2.1401)
+material = SubResource("Mat_rail")
+
+[sub_resource type="BoxShape3D" id="Shape_ramp"]
+size = Vector3(1.2, 0.05, 2.1401)
+
+[node name="StairHalfFlight" type="StaticBody3D"]
+collision_mask = 0
+
+[node name="Tread1" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.1657, 0.1214)
+mesh = SubResource("Mesh_tread")
+
+[node name="Tread2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.3514, 0.3643)
+mesh = SubResource("Mesh_tread")
+
+[node name="Tread3" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.5371, 0.6071)
+mesh = SubResource("Mesh_tread")
+
+[node name="Tread4" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.7229, 0.8500)
+mesh = SubResource("Mesh_tread")
+
+[node name="Tread5" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 0.9086, 1.0929)
+mesh = SubResource("Mesh_tread")
+
+[node name="Tread6" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 1.0943, 1.3357)
+mesh = SubResource("Mesh_tread")
+
+[node name="Tread7" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 1.2800, 1.5786)
+mesh = SubResource("Mesh_tread")
+
+[node name="StringerL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.02, 0.6000, 0.85)
+mesh = SubResource("Mesh_stringer")
+
+[node name="StringerR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 1.18, 0.6000, 0.85)
+mesh = SubResource("Mesh_stringer")
+
+[node name="RailL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.02, 1.5500, 0.85)
+mesh = SubResource("Mesh_rail")
+
+[node name="RailR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 1.18, 1.5500, 0.85)
+mesh = SubResource("Mesh_rail")
+
+[node name="Ramp" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.6, 0.6301, 0.8652)
+shape = SubResource("Shape_ramp")

@@ -35,7 +35,7 @@ const REMOTE_SHADOW_DISTANCE: float = 40.0
 ## How long (s) a refusal stays where the prompts are (_flash_prompt).
 const FLASH_PROMPT_S: float = 3.0
 ## Farthest (m) the crosshair reaches a 3D screen from the eye (_point_screen).
-const SCREEN_REACH_M: float = 4.0
+const SCREEN_REACH_M: float = 1.5
 ## How fast the right stick turns the view, pushed all the way (rad/s). A rate in
 ## radians converted to a mouse delta only when applied, so camera_sensitivity does not change it.
 const STICK_LOOK_RATE: float = 2.4
@@ -140,6 +140,8 @@ var _surface_age: float = 0.0              # seconds since that sample
 var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast state is not re-played
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
+var _last_tap_action: String = ""  # last "tap:<n>:x:y:z" seen (ScreenPoke.tap_action)
+var _last_tap_sound: AudioStream = null  # never the same tap sound twice running
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _thruster: EvaThrusterSound = null  # the EVA hiss of this avatar, built on first use
@@ -475,6 +477,15 @@ func _process(_delta: float) -> void:
 		_point_screen(seated_focus)
 		return
 	_update_cab_screen(null)  # on foot: no cab screen, the chart goes home
+	# Lying on a bed: ride it like a seat (free look from the pillow); the action key gets up.
+	if is_instance_valid(player.lying_on):
+		if not _ui_focus():
+			player.mouse_motion += _stick_look(_delta)
+		player._ride_bed(player.lying_on)
+		_replicate_look()
+		player.interact_label.text = _prompt(&"action", tr("%%HUD_BED_GET_UP"))
+		player.interact_label.show()
+		return
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
 	# the mouse look stays immediate.
 	player._interp.update_position(player, _delta, player.input_direction != Vector2.ZERO)
@@ -527,6 +538,14 @@ func _process(_delta: float) -> void:
 		player.interact_label.text = _prompt(&"action", tr(console.label))
 		player.interact_label.show()
 		player.can_interact = true
+	else:
+		# One that is not ours (a neighbour's door): still shown, in red, saying so.
+		var refused: Interactable = player.interact_ray.get_collider() as Interactable \
+				if player.interact_ray.is_colliding() else null
+		if refused != null and refused.refusal(player) != "":
+			player.interact_label.text = tr(refused.refusal(player))
+			player.interact_label.modulate = Color(1.0, 0.35, 0.3)
+			player.interact_label.show()
 
 	# Looking at a door handle, FROM the boarding zone (on foot) or while seated: `action` opens/closes it.
 	# Priority over the seat prompt, so aiming at the handle in the zone shows the door action.
@@ -662,6 +681,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if !player.active: return
 
+	if is_instance_valid(player.lying_on):
+		return  # lying on a bed: the server rides the body, nothing to walk
 	# Pause menu or a radial wheel is open: the owner is not in direct control -> don't move or act.
 	# We still fall through so input_direction becomes ZERO and a single "stop" is emitted to the server.
 	var input_locked: bool = _input_locked()
@@ -989,8 +1010,32 @@ func _input(event: InputEvent) -> void:
 			used.release_keyboard()
 	if is_instance_valid(_pointed_gui):
 		_pointed_gui.click_at(_pointed_at, event.is_pressed())
+		if event.is_pressed():
+			_screen_tap(_pointed_at)
 	if typing or is_instance_valid(_pointed_gui):
 		get_viewport().set_input_as_handled()
+
+
+## The arm taps the screen clicked at [param at] (world): the gesture plays here at once and the server
+## tells the others. Past the arm's length the hand reaches out towards it, as far as it goes.
+func _screen_tap(at: Vector3) -> void:
+	var p: Vector3 = player.to_local(at)
+	show_screen_tap(p)
+	player.client_send_action_to_server({"action": "screen_tap", "p": {"x": p.x, "y": p.y, "z": p.z}})
+
+
+## Play a tap at [param p] (this body's frame): the arm (CharacterAnimator reads tap_serial), and the
+## finger's sound where it touches, as it touches.
+func show_screen_tap(p: Vector3) -> void:
+	player.tap_point = p
+	player.tap_serial += 1
+	var take: AudioStream = SurfaceSounds.pick_from(player.sfx_screen_tap, _last_tap_sound)
+	if take == null:
+		return
+	_last_tap_sound = take
+	get_tree().create_timer(ScreenPoke.REACH_S).timeout.connect(func() -> void:
+		Sfx3D.play_pitched(player, take, player.sfx_screen_tap_db, player.sfx_screen_tap_falloff,
+				player.sfx_screen_tap_distance, Sfx3D.Attenuation.VERY_SHORT, randf_range(0.95, 1.05), p))
 
 
 ## The mouse turns the view, unless a panel has the pointer (_ui_focus).
@@ -1160,6 +1205,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				player.admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
 			player.mining_tool.toggle_equip()
 
+	if InputCombo.pressed(event, "action") and is_instance_valid(player.lying_on):
+		player.lying_on.interact(player)  # the server gets us up from the bed we lie on
+		return
 	if InputCombo.pressed(event, "action"):
 		player.interact_ray.force_raycast_update()
 		# A console under the crosshair takes the press, and ONLY it. It used to answer a separate `interact`
@@ -1196,6 +1244,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if seat != null and not player._owner_carrying:
 			if _seat_door_open(seat):
 				_enter_seat(seat)
+			return
+		# Not into someone else's home (the server refuses it too): say so, keep the load.
+		if player._owner_carrying and _placement_marker != null and SpawnBuilding.is_foreign_home(
+				_placement_marker.place.get("collider") as Node, player.horizon_id()):
+			_flash_prompt(tr("%%HUD_NOT_YOURS"))
 			return
 		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
 		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
@@ -1334,7 +1387,8 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 func _aimed_interactable() -> Interactable:
 	if not player.interact_ray.is_colliding():
 		return null
-	return player.interact_ray.get_collider() as Interactable
+	var aimed := player.interact_ray.get_collider() as Interactable
+	return aimed if aimed != null and aimed.usable_by(player) else null
 
 
 ## The cab screen under the crosshair, from the seat in [param vehicle] (null on foot: none, and the
@@ -1947,6 +2001,23 @@ func client_channel_data_update(data: Dictionary) -> void:
 		# What a 3D screen near this player is doing (ScreenTarget.announce), whoever used it: every
 		# client around shows it. Stamped, so a re-broadcast of an old one is ignored.
 		ScreenTarget.receive(get_tree(), data["screen_event"])
+	if not player.remote_player and data.has("seat"):
+		# Our own bed, from the seat STATE: the "seat:bed" EVENT shares the `action` field with the
+		# tools' stow sent with it, and Horizon keeps the last of the two -- read from the event, we
+		# lay on the server and stood here, locked (playtest 2026-10-21).
+		var lying: bool = str(data["seat"]) == "bed"
+		if lying and not is_instance_valid(player.lying_on):
+			player.lying_on = player.bed_asked  # the bed we asked to lie on (BedSpot.interact)
+			player.camera_pivot.rotation = Vector3(deg_to_rad(70.0), 0.0, 0.0)  # lying down: eyes to the ceiling
+		elif not lying:
+			if is_instance_valid(player.lying_on):
+				# Up from the bed: the server stood us still; tell it what we hold now, even unchanged.
+				player.client_last_input_direction = Vector2.INF
+			player.lying_on = null
+		if is_instance_valid(player.lying_on):
+			player.seated_role = "bed"
+		elif player.seated_role == "bed":
+			player.seated_role = ""
 	if data.has("action"):
 		# The server tags each jump "jump:<n>". "action" is a replicated STATE (Horizon merges it into
 		# the player object and may re-broadcast it: new subscriber, zone re-entry…), so the same value
@@ -1965,6 +2036,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 			if _airborne and _sfx_live:
 				_kick_dust(1.0, LAND_DUST_GRAINS)  # the landing raises more than a step
 			_airborne = false  # crisp: the server just touched ground -> end the jump loop now
+		elif action.begins_with("tap:") and action != _last_tap_action:
+			_last_tap_action = action
+			# Another body tapping a screen. Ours already played on the click; an arrival sees none (old).
+			var tapped: Variant = ScreenPoke.parse_tap(action)
+			if player.remote_player and _sfx_live and tapped != null:
+				show_screen_tap(tapped)
 		elif action.begins_with("emote:") and action != _last_emote_action:
 			_last_emote_action = action
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key
@@ -2124,7 +2201,8 @@ func _sample_locomotion(delta: float) -> void:
 		"forward": shown.y,
 		"right": shown.x,
 		"airborne": _airborne,
-		"seated": player.seated_role != "",  # replicated seat state (see Player.seated_role)
+		"seated": player.seated_role not in ["", "bed"],  # replicated seat state (see Player.seated_role)
+		"lying": player.seated_role == "bed",  # on a bed: the lay clip (CharacterAnimator)
 		"driver": player.seated_role == "driver",
 		"carrying": _remote_carrying if player.remote_player else player._owner_carrying,
 		"stance": player.stance,  # 0 standing / 1 crouched / 2 prone (server-owned, drives crouch/crawl anim)

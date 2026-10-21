@@ -613,6 +613,7 @@ textures/default_filters/anisotropic_filtering_level=4
 viewport/hdr_2d=true
 environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
 occlusion_culling/use_occlusion_culling=true
+limits/global_shader_variables/buffer_size=262144
 
 [shader_globals]
 

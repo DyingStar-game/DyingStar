@@ -15,6 +15,8 @@ const ALLOWED : Dictionary = {
 	"res://scenes/_universe/vehicles/rear_camera.gd": "gated by distance, power and refresh rate",
 	# Live only while the tablet is up and read (set_live); resting, it draws when the clock turns.
 	"res://scenes/_universe/props/datapad/wrist_datapad.gd": "live only while the tablet is open on it",
+	# One mirror at a time: the nearest on screen within reach; its viewport exists only while it reflects.
+	"res://scenes/_universe/props/furniture/hygene/planar_mirror.gd": "made only while it reflects, one at a time",
 	# Does not ask for it: names the mode of each SubViewport in the benchmark report.
 	"res://scenes/benchmark/benchmark_facts.gd": "names the mode in the report, never sets it",
 }

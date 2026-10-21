@@ -1,11 +1,9 @@
 [gd_scene format=3 uid="uid://d14u2bcesufk6"]
 
 [ext_resource type="Script" uid="uid://2gv1i0qcoba4" path="res://scenes/_universe/structures/buildings/spawn_building.gd" id="1_5damd"]
-[ext_resource type="PackedScene" uid="uid://b60v5ypynfjeh" path="res://scenes/_universe/structures/buildings/apartment_ares_worker_001.tscn" id="2_w6uy3"]
+[ext_resource type="PackedScene" uid="uid://dpmnrscsn5b2b" path="res://scenes/_universe/structures/buildings/container_apartment.tscn" id="2_w6uy3"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="5_qyjbv"]
-[ext_resource type="PackedScene" uid="uid://oa3cs3ba6on3" path="res://assets/_universe/props/furniture/iron_plate_0.5x0.3.glb" id="7_66b33"]
 [ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
-[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_ds"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_htkwp"]
@@ -22,18 +20,6 @@ type_name = "spawnbuilding"
 
 [node name="0-0-0" parent="MultiMeshInstance3D" unique_id=2031023889 instance=ExtResource("2_w6uy3")]
 unique_name_in_owner = true
-
-[node name="iron_plate_0_5x0_3" parent="MultiMeshInstance3D/0-0-0" unique_id=1931332049 instance=ExtResource("7_66b33")]
-transform = Transform3D(6.123233995736766e-17, 1, 6.123233995736766e-17, 0, 6.123233995736766e-17, -1, -1, 6.123233995736766e-17, 3.749399456654644e-33, 0.004867135508547, 1.1817375361780502, 2.421792375879169)
-
-[node name="ceiling" type="SpotLight3D" parent="MultiMeshInstance3D/0-0-0" unique_id=1763860675]
-transform = Transform3D(1, 0, 0, 0, 6.123233995736766e-17, 1, 0, -1, 6.123233995736766e-17, -1.805467945181484, 3.0755722813521924, 1.315837463380246)
-shadow_enabled = true
-spot_range = 4.011
-spot_angle = 70.03
-
-[node name="Photocell" type="Node3D" parent="MultiMeshInstance3D/0-0-0/ceiling" unique_id=1958401094]
-script = ExtResource("pc_photocell")
 
 [node name="Area3D" type="Area3D" parent="." unique_id=1669198076 groups=["spawn"]]
 collision_layer = 16

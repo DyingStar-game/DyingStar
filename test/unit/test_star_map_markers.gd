@@ -11,6 +11,7 @@ const SCENES: Array[String] = [
 	"res://scenes/_universe/structures/dispenser/tool_dispenser.tscn",
 	"res://scenes/_universe/structures/dispenser/component_dispenser.tscn",
 	"res://scenes/_universe/structures/buildings/apartment_ares_worker_001.tscn",
+	"res://scenes/_universe/structures/buildings/container_apartment.tscn",
 	"res://scenes/_universe/structures/industrial/garage.tscn",
 	"res://scenes/_universe/structures/industrial/cargo_depot.tscn",
 ]

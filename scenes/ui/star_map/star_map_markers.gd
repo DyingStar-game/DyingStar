@@ -49,6 +49,7 @@ var _materials: Dictionary = {}
 ## the ground under it.
 func refresh(planet: Planet, camera: Camera3D, gap_m: float) -> void:
 	var seen: Dictionary = {}
+	HomeLocation.ensure(planet, Player.own_horizon_id())  # the home, even far from it
 	if planet != null and camera != null and is_inside_tree():
 		var metres_per_unit: float = 1.0 / maxf(global_basis.get_scale().x, 1.0e-30)
 		for node: Node in get_tree().get_nodes_in_group(MapMarker.GROUP):

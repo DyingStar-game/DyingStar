@@ -2068,6 +2068,8 @@ func create_player(event: Dictionary) -> void:
 		if parent != null:
 			parented = true
 			parent.add_child(spawned_entity_instance)
+			if spawned_entity_instance.is_npc and parent is SpawnBuilding:
+				parent.server_open_for_npc(player_uuid)  # an NPC never opens its own door
 
 	var adopted_planet: Planet = null
 	if not parented:

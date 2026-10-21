@@ -395,10 +395,10 @@ func test_spawn_building_pad_fits_its_rows_and_cols() -> void:
 	var script: Script = load("res://scenes/_universe/structures/buildings/spawn_building.gd")
 	# Called through Script.call, as server.gd states the pad of a sleeping building.
 	var box: Dictionary = script.call("terrain_pad_box", {"rows": 2.0, "cols": 6.0})
-	assert_almost_eq((box["size"] as Vector3).x, 2.0 * 5.16 + 1.0, 1e-9)
-	assert_almost_eq((box["size"] as Vector3).z, 6.0 * 3.16 + 1.0, 1e-9)
-	assert_almost_eq((box["local"] as Transform3D).origin.x, -5.16, 1e-9)
-	assert_almost_eq((box["local"] as Transform3D).origin.z, 9.48, 1e-9)
+	assert_almost_eq((box["size"] as Vector3).x, 2.0 * 6.1 + 1.0, 1e-9)
+	assert_almost_eq((box["size"] as Vector3).z, 6.0 * 2.6 + 1.0, 1e-9)
+	assert_almost_eq((box["local"] as Transform3D).origin.x, -6.1, 1e-9)
+	assert_almost_eq((box["local"] as Transform3D).origin.z, 7.8, 1e-9)
 
 
 func test_the_footprint_survives_the_marker_being_freed() -> void:
@@ -771,15 +771,8 @@ func test_a_machine_inside_a_building_leaves_the_ground_to_the_building() -> voi
 	assert_eq(own.size(), 1, "the depot's own pad levels the ground")
 	assert_gt(nested.size(), 0, "its machines' pads stand down")
 	depot.free()
-	_forgive_floor_material()
+	KnownEngineErrors.forgive_floor_material(self)
 
-
-## The cargo depot pulls in concrete_floor_001.tres, whose triplanar + height mapping raises an engine
-## error the first time it loads (see test_neon_sign): that one, and only that one, is not this test's.
-func _forgive_floor_material() -> void:
-	for e in get_errors():
-		if (str(e.code) + str(e.rationale)).contains("Height mapping"):
-			e.handled = true
 
 
 func test_a_machine_on_its_own_and_a_grouped_building_keep_their_pad() -> void:
