@@ -318,6 +318,24 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "container-door-close.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/container-door-close.ogg",
+			"author": "xdrav",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/112843/",
+			"license": "CC0"
+		},
+		{
+			"asset": "container-door-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/container-door-open.ogg",
+			"author": "xdrav",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/112843/",
+			"license": "CC0"
+		},
+		{
 			"asset": "crate-pick-up.mp3",
 			"path": "res://assets/_universe/audio/sfx/props/crate-pick-up.mp3",
 			"author": "WarpZone",
@@ -369,6 +387,24 @@
 			"source": "Freesound",
 			"id": "",
 			"url": "https://freesound.org/s/861546/",
+			"license": "CC0"
+		},
+		{
+			"asset": "drawer-close.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/drawer-close.ogg",
+			"author": "zazz.sound.design",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/353622/",
+			"license": "CC0"
+		},
+		{
+			"asset": "drawer-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/drawer-open.ogg",
+			"author": "zazz.sound.design",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/353622/",
 			"license": "CC0"
 		},
 		{
@@ -802,6 +838,24 @@
 			"id": "",
 			"url": "https://pixabay.com/sound-effects/wave-cape-cloth-in-wind-350430/",
 			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "wardrobe-door-close.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/wardrobe-door-close.ogg",
+			"author": "pagancow",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/15419/",
+			"license": "CC0"
+		},
+		{
+			"asset": "wardrobe-door-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/wardrobe-door-open.ogg",
+			"author": "pagancow",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/15419/",
+			"license": "CC0"
 		},
 		{
 			"asset": "wheel_struck_constant.mp3",
