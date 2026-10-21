@@ -9,8 +9,22 @@ extends Node
 ## Launched with `--village-bench` (after `--` on the command line, or anywhere): the stage builds as
 ## usual, then hands over to this instead of the menu. The same path, the same window and the same
 ## settings every run: two runs differ by the change between them, not by where the camera looked.
+##
+## `--bench-hide=shell,lights,...` takes a family out of the village before each window (HIDE), so a run
+## with it against one without says what that family costs. `--bench-set=wind_dust:0,ssil:0` turns
+## graphics options for the run only (RenderSettings.set_transient: nothing is saved).
 
 const ARG := "--village-bench"
+const HIDE_ARG := "--bench-hide="
+const SET_ARG := "--bench-set="
+## A quick A/B: the day only, the street and the flyover.
+const QUICK_ARG := "--bench-quick"
+## A screenshot of each window's first pose, beside the report (to compare what a change shows).
+const SHOTS_ARG := "--bench-shots"
+## The families --bench-hide can take out.
+const HIDE := ["shell", "interiors", "walkways", "lights", "shadows", "casters", "fringe", "labels", "props",
+		"village", "outpost", "terrain", "aerial", "skyrefl", "sunshadow", "ssao", "ssil", "ssr", "glow",
+		"hexq0", "hexq1", "terraincast"]
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
 ## Where the village stands from the stage's anchor (m, degrees from north): clear of the outpost.
 const DISTANCE_M := 350.0
@@ -48,11 +62,39 @@ var _village: Node3D
 var _results: Array = []
 var _stats: BenchmarkStats
 var _last_usec: int = 0
+var _hidden: PackedStringArray = []
+var _set: Dictionary = {}
 
 
 ## True when this run is a bench.
 static func wanted() -> bool:
 	return ARG in OS.get_cmdline_user_args() or ARG in OS.get_cmdline_args()
+
+
+## The families asked off on the command line.
+static func hidden_families() -> PackedStringArray:
+	var out: PackedStringArray = []
+	for family: String in _arg_list(HIDE_ARG):
+		assert(family in HIDE, "unknown family %s" % family)
+		out.append(family)
+	return out
+
+
+## The graphics options asked for on the command line: {key: value}.
+static func set_options() -> Dictionary:
+	var out: Dictionary = {}
+	for pair: String in _arg_list(SET_ARG):
+		var kv: PackedStringArray = pair.split(":")
+		out[kv[0]] = str_to_var(kv[1]) if kv.size() > 1 else true
+	return out
+
+
+static func _arg_list(prefix: String) -> PackedStringArray:
+	var out: PackedStringArray = []
+	for arg: String in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		if arg.begins_with(prefix):
+			out.append_array(arg.trim_prefix(prefix).split(",", false))
+	return out
 
 
 ## Set up by the stage once it is live: its planet, its camera rig, where its clock is read and the
@@ -81,17 +123,23 @@ func _ready() -> void:
 	DisplayServer.window_set_size(WINDOW_SIZE)
 	DisplayServer.window_set_position(Vector2i.ZERO)
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+	_hidden = hidden_families()
+	_set = set_options()
+	if not _set.is_empty():
+		SettingsManager.render.set_transient(_set)
 	_run.call_deferred()
 
 
 func _run() -> void:
 	_frame_at(STREET_EYE, STREET_EYE + Vector3.LEFT)
 	await _wait(SETTLE_S)
-	for light: Array in LIGHTS:
+	var quick: bool = not _arg_list(QUICK_ARG).is_empty() or QUICK_ARG in OS.get_cmdline_user_args()
+	for light: Array in (LIGHTS.slice(0, 1) if quick else LIGHTS):
 		StageClock.set_sun_elevation(_planet, _village.position, float(light[1]))
 		await _shot("%s street" % light[0], _street)
 		await _shot("%s flyover" % light[0], _flyover)
-		await _shot("%s home" % light[0], _home)
+		if not quick:
+			await _shot("%s home" % light[0], _home)
 	_write_report()
 	get_tree().quit()
 
@@ -120,6 +168,11 @@ func _shot(label: String, path: Callable) -> void:
 	var pose: Array = path.call(0.0)
 	_frame_at(pose[0], pose[1])
 	await _wait(SHOT_SETTLE_S)
+	_hide_families()
+	if SHOTS_ARG in OS.get_cmdline_user_args():
+		await RenderingServer.frame_post_draw
+		DirAccess.make_dir_recursive_absolute("user://benchmarks/shots")
+		get_viewport().get_texture().get_image().save_png("user://benchmarks/shots/%s.png" % label.replace(" ", "_"))
 	_stats = BenchmarkStats.new()
 	var pipe_at: int = PerfMath.pipeline_total()
 	var elapsed: float = 0.0
@@ -180,6 +233,71 @@ func _frame_at(eye: Vector3, look: Vector3) -> void:
 	_rig.frame(_village.transform * eye, _village.transform * look)
 
 
+## The world around the village: the whole village, the stage's outpost, the terrain, the sky's passes,
+## the sun's shadow, the screen effects of the Environment.
+func _hide_world() -> void:
+	_village.visible = not "village" in _hidden
+	if "outpost" in _hidden:
+		(_planet.get_node("Outpost") as Node3D).visible = false
+	if "terrain" in _hidden and _planet.planet_terrain != null:
+		_planet.planet_terrain.visible = false
+	if "terraincast" in _hidden and _planet.planet_terrain != null:
+		for chunk: Node in _planet.planet_terrain.find_children("*", "GeometryInstance3D", true, false):
+			(chunk as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for quality: int in 2:
+		if "hexq%d" % quality in _hidden:
+			RenderingServer.global_shader_parameter_set("planet_hex_quality", quality)
+	var atmosphere := _rig.get_node_or_null("AtmosphereRenderer") as AtmosphereRenderer
+	if "aerial" in _hidden and atmosphere != null:
+		atmosphere.set_aerial_enabled(false)
+	if "skyrefl" in _hidden and atmosphere != null:
+		atmosphere.set_sky_reflection_enabled(false)
+	if "sunshadow" in _hidden and _rig.has_node("PlayerSunLight"):
+		(_rig.get_node("PlayerSunLight") as Light3D).shadow_enabled = false
+	var env: Environment = get_viewport().world_3d.environment if get_viewport().world_3d != null else null
+	if env != null:
+		env.ssao_enabled = env.ssao_enabled and not "ssao" in _hidden
+		env.ssil_enabled = env.ssil_enabled and not "ssil" in _hidden
+		env.ssr_enabled = env.ssr_enabled and not "ssr" in _hidden
+		env.glow_enabled = env.glow_enabled and not "glow" in _hidden
+
+
+## Take the families asked off out of the village (again each window: the homes near the camera
+## furnish as it moves).
+func _hide_families() -> void:
+	if _hidden.is_empty():
+		return
+	_hide_world()
+	for piece: Node in _village.get_children():
+		var building := piece as SpawnBuilding
+		if building == null:
+			if "props" in _hidden and piece is Node3D:
+				(piece as Node3D).visible = false
+			continue
+		for apartment: Node in building.get_node("MultiMeshInstance3D").get_children():
+			if "shell" in _hidden and apartment.has_node("habitat_container"):
+				(apartment.get_node("habitat_container") as Node3D).visible = false
+			if "interiors" in _hidden and apartment.has_node("Interior"):
+				apartment.get_node("Interior").free()
+		if "interiors" in _hidden and building.has_node("InteriorStreamer"):
+			building.get_node("InteriorStreamer").set_process(false)
+		if "walkways" in _hidden and building.has_node("Walkways"):
+			(building.get_node("Walkways") as Node3D).visible = false
+	for node: Node in _village.find_children("*", "Light3D", true, false):
+		if "lights" in _hidden:
+			(node as Light3D).visible = false
+		if "shadows" in _hidden:
+			(node as Light3D).shadow_enabled = false
+	for node: Node in _village.find_children("*", "GeometryInstance3D", true, false):
+		var geometry := node as GeometryInstance3D
+		if "casters" in _hidden:
+			geometry.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if "fringe" in _hidden and GroundLook.is_ours(geometry.material_overlay):
+			geometry.material_overlay = null
+		if "labels" in _hidden and geometry is Label3D:
+			geometry.visible = false
+
+
 func _wait(seconds: float) -> void:
 	await get_tree().create_timer(seconds).timeout
 
@@ -192,6 +310,7 @@ func _write_report() -> void:
 	lines.append("adapter: %s (%s) | window %s | %s" % [RenderingServer.get_video_adapter_name(),
 			RenderingServer.get_video_adapter_vendor(), str(DisplayServer.window_get_size()),
 			ProjectSettings.get_setting("rendering/renderer/rendering_method")])
+	lines.append("hidden: %s | set: %s" % [",".join(_hidden) if not _hidden.is_empty() else "none", str(_set)])
 	lines.append(ROW_HEAD % ["window", "fps", "mean", "p50", "p95", "p99", "low1", "max", "hit", "gpu",
 			"gpu95", "cpu", "setup", "draws", "objects", "prims", "vram", "nodes", "pipe"])
 	for entry: Array in _results:

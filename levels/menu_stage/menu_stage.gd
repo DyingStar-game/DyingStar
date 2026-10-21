@@ -158,6 +158,8 @@ func _build() -> void:
 		"ready" if ground_ready[0] else "late"])
 	if VillageBench.wanted():
 		_menu.hide()  # the bench measures the scene, not the menu over it
+		for layer: Node in _menu.find_children("*", "CanvasLayer", true, false):
+			(layer as CanvasLayer).visible = false
 		var bench := VillageBench.new()
 		bench.setup(self, _planet, _rig, _anchor, _drawn_ground)
 		add_child(bench)
