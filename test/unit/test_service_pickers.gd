@@ -216,6 +216,43 @@ func test_a_radius_outside_the_service_bounds_is_refused_here() -> void:
 	assert_eq(PLACE_PICKER.parse_radius("1000000"), 1000000, "the upper bound is exact")
 
 
+func test_a_width_from_the_map_wins_over_the_field() -> void:
+	# The field was the marker's STARTING width; every notch after it happened on the chart with the
+	# circle drawn. The place is what the player actually sized, so the place is what is created —
+	# and the field is brought back from it afterwards, never the other way round.
+	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": 250}, "50"), 250)
+	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": 1}, "50"), 1)
+
+
+func test_a_marker_wheeled_down_to_none_creates_a_point_despite_the_field() -> void:
+	# 0 is the map's answer, not an absence of one: the player had a width and took it away. It still
+	# must beat the field — and it reads as the point (0), which the caller turns into an ABSENT key.
+	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": 0}, "50"), 0)
+
+
+func test_a_place_without_a_width_still_reads_the_field() -> void:
+	# « Ici » comes straight from PlayerLocation and carries no radiusM at all: the field is the only
+	# width there is to take.
+	assert_eq(PLACE_PICKER.radius_from_place({}, "50"), 50)
+	assert_eq(PLACE_PICKER.radius_from_place({}, ""), 0)
+	assert_eq(PLACE_PICKER.radius_from_place({}, "gold"), -1,
+			"an unparseable field is refused whether or not the place had an opinion")
+
+
+func test_a_width_the_service_would_refuse_is_refused_here() -> void:
+	# The chart clamps to the same bounds (StarMap.MISSION_RADIUS_MAX_M), so this is a promise kept
+	# rather than a limit reached — and if a producer ever breaks the promise, the answer is the
+	# message that names the radius, not a 400 from the service.
+	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": 1000001}, "50"), -1)
+	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": -3}, "50"), -1)
+
+
+func test_a_json_null_width_reads_as_a_point() -> void:
+	# Dictionary's default only applies to an ABSENT key: a nullable column arrives as an explicit
+	# null, and float(null) has no constructor at all (the same bug radius_label_of documents).
+	assert_eq(PLACE_PICKER.radius_from_place({"radiusM": null}, "50"), 0)
+
+
 func test_a_list_row_shows_its_radius_rather_than_offering_to_edit_it() -> void:
 	# An existing POI's geometry is immutable (POI_GEOMETRY_READONLY), so its radius can only be
 	# READ — and it must be read where it is chosen: the zone's match width depends on it.
