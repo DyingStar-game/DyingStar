@@ -35,7 +35,7 @@ const REMOTE_SHADOW_DISTANCE: float = 40.0
 ## How long (s) a refusal stays where the prompts are (_flash_prompt).
 const FLASH_PROMPT_S: float = 3.0
 ## Farthest (m) the crosshair reaches a 3D screen from the eye (_point_screen).
-const SCREEN_REACH_M: float = 4.0
+const SCREEN_REACH_M: float = 1.5
 ## How fast the right stick turns the view, pushed all the way (rad/s). A rate in
 ## radians converted to a mouse delta only when applied, so camera_sensitivity does not change it.
 const STICK_LOOK_RATE: float = 2.4
@@ -481,7 +481,7 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(player.lying_on):
 		if not _ui_focus():
 			player.mouse_motion += _stick_look(_delta)
-		player._ride_seat(player.lying_on)
+		player._ride_bed(player.lying_on)
 		_replicate_look()
 		player.interact_label.text = _prompt(&"action", tr("%%HUD_BED_GET_UP"))
 		player.interact_label.show()
@@ -538,6 +538,14 @@ func _process(_delta: float) -> void:
 		player.interact_label.text = _prompt(&"action", tr(console.label))
 		player.interact_label.show()
 		player.can_interact = true
+	else:
+		# One that is not ours (a neighbour's door): still shown, in red, saying so.
+		var refused: Interactable = player.interact_ray.get_collider() as Interactable \
+				if player.interact_ray.is_colliding() else null
+		if refused != null and refused.refusal(player) != "":
+			player.interact_label.text = tr(refused.refusal(player))
+			player.interact_label.modulate = Color(1.0, 0.35, 0.3)
+			player.interact_label.show()
 
 	# Looking at a door handle, FROM the boarding zone (on foot) or while seated: `action` opens/closes it.
 	# Priority over the seat prompt, so aiming at the handle in the zone shows the door action.
@@ -1008,12 +1016,9 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## The arm taps the screen clicked at [param at] (world): within an arm's reach of the eye
-## (ScreenPoke.REACH_M) the gesture plays here at once and the server tells the others; further, the
-## click alone.
+## The arm taps the screen clicked at [param at] (world): the gesture plays here at once and the server
+## tells the others. Past the arm's length the hand reaches out towards it, as far as it goes.
 func _screen_tap(at: Vector3) -> void:
-	if player.camera == null or player.camera.global_position.distance_to(at) > ScreenPoke.REACH_M:
-		return
 	var p: Vector3 = player.to_local(at)
 	show_screen_tap(p)
 	player.client_send_action_to_server({"action": "screen_tap", "p": {"x": p.x, "y": p.y, "z": p.z}})
@@ -1242,8 +1247,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		# Not into someone else's home (the server refuses it too): say so, keep the load.
 		if player._owner_carrying and _placement_marker != null and SpawnBuilding.is_foreign_home(
-				_placement_marker.place.get("collider") as Node, player.client_uuid):
-			_flash_prompt(tr("%%HUD_NOT_YOUR_HOME"))
+				_placement_marker.place.get("collider") as Node, player.horizon_id()):
+			_flash_prompt(tr("%%HUD_NOT_YOURS"))
 			return
 		# Otherwise pick up / drop. Send the uuid of the carriable under OUR crosshair so the
 		# server grabs exactly that one (its own ray can be slightly off and grab a neighbour).
@@ -1996,6 +2001,20 @@ func client_channel_data_update(data: Dictionary) -> void:
 		# What a 3D screen near this player is doing (ScreenTarget.announce), whoever used it: every
 		# client around shows it. Stamped, so a re-broadcast of an old one is ignored.
 		ScreenTarget.receive(get_tree(), data["screen_event"])
+	if not player.remote_player and data.has("seat"):
+		# Our own bed, from the seat STATE: the "seat:bed" EVENT shares the `action` field with the
+		# tools' stow sent with it, and Horizon keeps the last of the two -- read from the event, we
+		# lay on the server and stood here, locked (playtest 2026-10-21).
+		var lying: bool = str(data["seat"]) == "bed"
+		if lying and not is_instance_valid(player.lying_on):
+			player.lying_on = player.bed_asked  # the bed we asked to lie on (BedSpot.interact)
+			player.camera_pivot.rotation = Vector3(deg_to_rad(70.0), 0.0, 0.0)  # lying down: eyes to the ceiling
+		elif not lying:
+			player.lying_on = null
+		if is_instance_valid(player.lying_on):
+			player.seated_role = "bed"
+		elif player.seated_role == "bed":
+			player.seated_role = ""
 	if data.has("action"):
 		# The server tags each jump "jump:<n>". "action" is a replicated STATE (Horizon merges it into
 		# the player object and may re-broadcast it: new subscriber, zone re-entry…), so the same value
@@ -2029,18 +2048,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 				_play_clothes_sfx(true)  # sitting down
 			if player.remote_player:
 				player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
-			elif action.split(":")[1] == "bed":
-				player.lying_on = player.bed_asked  # the bed we asked to lie on (BedSpot.interact)
-				player.seated_role = "bed"
 		elif action.begins_with("unseat") and action != _last_seat_action:
 			_last_seat_action = action
 			if _sfx_live:
 				_play_clothes_sfx(true)  # getting up
 			if player.remote_player:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
-			elif is_instance_valid(player.lying_on):
-				player.lying_on = null  # up from the bed
-				player.seated_role = ""
 			elif player._seat_vehicle_uuid != "":
 				# We are out: either the seat we optimistically took was refused (occupied/blocked), or
 				# the exit we asked for was granted. Both land here, and both mean the same thing.
@@ -2186,6 +2199,7 @@ func _sample_locomotion(delta: float) -> void:
 		"right": shown.x,
 		"airborne": _airborne,
 		"seated": player.seated_role not in ["", "bed"],  # replicated seat state (see Player.seated_role)
+		"lying": player.seated_role == "bed",  # on a bed: the lay clip (CharacterAnimator)
 		"driver": player.seated_role == "driver",
 		"carrying": _remote_carrying if player.remote_player else player._owner_carrying,
 		"stance": player.stance,  # 0 standing / 1 crouched / 2 prone (server-owned, drives crouch/crawl anim)

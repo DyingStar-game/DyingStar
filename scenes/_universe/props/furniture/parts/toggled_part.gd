@@ -3,7 +3,8 @@ extends FurnitureTarget
 
 ## A furniture part with two states, off (shut, unlit) and on (open, lit). Its building keeps the state
 ## (SpawnBuilding.furniture, under state_key()): replicated to everyone near and kept across restarts.
-## A use flips it on the server; every client, and the server, then shows it with show_state.
+## A use asks for the other state than the one shown -- what its prompt says -- the server sets it, and
+## every client, and the server, then show it with show_state.
 
 ## Prompt while off, as "[E] <label_off>" (a translation key): what the key will do, "Open door".
 @export var label_off: String = ""
@@ -29,9 +30,19 @@ func state_key() -> String:
 ## Show the part [param on] or off, moving there over time when [param animate] (a live change), at
 ## once otherwise (arriving in the zone, a restart: the state as it is).
 func show_state(on: bool, animate: bool) -> void:
+	_display(on)
+	_show(on, animate)
+
+
+## Shown [param on] or off: the state the prompt answers to ("[E] Close door" while open).
+func _display(on: bool) -> void:
 	is_on = on
 	label = label_on if on else label_off
-	_show(on, animate)
+
+
+## Nobody set it yet: shut, unlit. A part with a mind of its own (a lamp lit by the night) says so.
+func show_unset() -> void:
+	show_state(false, false)
 
 
 ## What on and off look like: overridden by each kind of part.
@@ -39,8 +50,12 @@ func _show(_on: bool, _animate: bool) -> void:
 	pass
 
 
-## SERVER: flip it, through the building that keeps the state.
-func server_use(_player: Node) -> void:
+func _use_data() -> Dictionary:
+	return {"on": not is_on}
+
+
+## SERVER: set it as asked, through the building that keeps the state.
+func server_use(_player: Node, data: Dictionary) -> void:
 	var home := building() as SpawnBuilding
 	if home != null:
-		home.server_toggle_part(self)
+		home.server_set_part(self, bool(data.get("on", not is_on)))

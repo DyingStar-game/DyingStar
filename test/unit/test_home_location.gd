@@ -56,9 +56,20 @@ func test_a_next_session_finds_it_again() -> void:
 	elsewhere.free()
 
 
-## A planet called [param key], not in the tree.
+## A planet called [param key], in the tree (a home is marked once it stands in it).
 func _planet(key: String) -> Planet:
 	var planet := Planet.new()
 	planet.planet_data = PlanetData.new()
 	planet.planet_data.planet_name = key
+	add_child(planet)
 	return planet
+
+
+func test_a_home_seen_before_it_is_placed_waits_for_its_place() -> void:
+	var planet := _planet("Sandbox")
+	var apartment := Node3D.new()
+	HomeLocation.remember(apartment, PLAYER)
+	assert_false(planet.has_node(NodePath(HomeLocation.ANCHOR_NAME)), "not in the tree yet: nothing marked")
+	planet.add_child(apartment)
+	assert_true(planet.has_node(NodePath(HomeLocation.ANCHOR_NAME)), "marked as it enters")
+	planet.free()

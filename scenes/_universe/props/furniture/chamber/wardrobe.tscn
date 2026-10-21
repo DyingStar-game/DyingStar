@@ -6,6 +6,8 @@
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="4_4ao7e"]
 [ext_resource type="Script" uid="uid://c1q53e1a4jpjv" path="res://scenes/_universe/props/furniture/parts/moving_part.gd" id="part_moving"]
 
+[ext_resource type="AudioStream" uid="uid://x3k5und4bo2b" path="res://assets/_universe/audio/sfx/props/wardrobe-door-open.ogg" id="sfx_door_open"]
+[ext_resource type="AudioStream" uid="uid://qd54ef3pnmp3" path="res://assets/_universe/audio/sfx/props/wardrobe-door-close.ogg" id="sfx_door_close"]
 [sub_resource type="BoxShape3D" id="Box_side"]
 size = Vector3(0.152, 2.0, 0.6)
 
@@ -27,7 +29,7 @@ size = Vector3(0.389, 1.778, 0.04)
 [sub_resource type="BoxShape3D" id="Box_leaf_aim"]
 size = Vector3(0.389, 1.778, 0.12)
 
-[node name="Wardrobe" type="StaticBody3D" unique_id=1426806689]
+[node name="Wardrobe" type="StaticBody3D" unique_id=1426806689 groups=["no_ground_fringe"]]
 script = ExtResource("1_egrjo")
 metadata/_custom_type_script = "uid://c1dv6rpo1e6os"
 
@@ -87,9 +89,11 @@ shape = SubResource("Box_leaf")
 
 [node name="DoorL" type="Area3D" parent="wardrobe2/wardrobe_decal_door_l"]
 script = ExtResource("part_moving")
+sfx_open = ExtResource("sfx_door_open")
+sfx_close = ExtResource("sfx_door_close")
 label_off = "%%HUD_DOOR_OPEN"
 label_on = "%%HUD_DOOR_CLOSE"
-open_angle_deg = -90.0
+open_angle_deg = -165.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="wardrobe2/wardrobe_decal_door_l/DoorL"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1945, 0, -0.02)
@@ -104,9 +108,11 @@ shape = SubResource("Box_leaf")
 
 [node name="DoorR" type="Area3D" parent="wardrobe2/wardrobe_door_door_r"]
 script = ExtResource("part_moving")
+sfx_open = ExtResource("sfx_door_open")
+sfx_close = ExtResource("sfx_door_close")
 label_off = "%%HUD_DOOR_OPEN"
 label_on = "%%HUD_DOOR_CLOSE"
-open_angle_deg = 90.0
+open_angle_deg = 165.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="wardrobe2/wardrobe_door_door_r/DoorR"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1945, 0, -0.02)

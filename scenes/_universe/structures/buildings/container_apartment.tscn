@@ -1,15 +1,22 @@
 [gd_scene format=3 uid="uid://dpmnrscsn5b2b"]
 
 [ext_resource type="PackedScene" uid="uid://co31e5d5ccbep" path="res://assets/_universe/structures/buildings/habitat_container.glb" id="1_glb"]
-[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
-[ext_resource type="Texture2D" uid="uid://cd8f3gvov6o61" path="res://assets/textures/map_markers/habitat.png" id="mm_icon"]
-[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="4_photocell"]
 [ext_resource type="FontFile" uid="uid://blgbhgyrk7yfo" path="res://ui/Poppins-BoldItalic.ttf" id="5_font"]
 [ext_resource type="PackedScene" uid="uid://0o84g0nqo8b" path="res://scenes/_universe/props/furniture/chamber/bed.tscn" id="6_bed"]
 [ext_resource type="PackedScene" uid="uid://br8l8bw1vtycw" path="res://scenes/_universe/props/furniture/chamber/table_bed.tscn" id="7_table"]
 [ext_resource type="PackedScene" uid="uid://duc5yf7ynq725" path="res://scenes/_universe/props/furniture/chamber/wardrobe.tscn" id="8_wardrobe"]
-
+[ext_resource type="Texture2D" uid="uid://cd8f3gvov6o61" path="res://assets/textures/map_markers/habitat.png" id="mm_icon"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
 [ext_resource type="Script" uid="uid://c1q53e1a4jpjv" path="res://scenes/_universe/props/furniture/parts/moving_part.gd" id="part_moving"]
+[ext_resource type="AudioStream" uid="uid://uh404870afcs" path="res://assets/_universe/audio/sfx/props/container-door-open.ogg" id="sfx_container_open"]
+[ext_resource type="AudioStream" uid="uid://dv7mo7owba2ms" path="res://assets/_universe/audio/sfx/props/container-door-close.ogg" id="sfx_container_close"]
+
+[sub_resource type="BoxShape3D" id="Box_door"]
+size = Vector3(0.1, 2.36, 1.275)
+
+[sub_resource type="BoxShape3D" id="Box_door_aim"]
+size = Vector3(0.3, 2.36, 1.275)
+
 [sub_resource type="BoxShape3D" id="Box_floor"]
 size = Vector3(6.1, 0.12, 2.6)
 
@@ -22,105 +29,112 @@ size = Vector3(6.1, 2.6, 0.06)
 [sub_resource type="BoxShape3D" id="Box_back"]
 size = Vector3(0.06, 2.6, 2.6)
 
-[sub_resource type="BoxShape3D" id="Box_door"]
-size = Vector3(0.1, 2.36, 1.275)
-
-[sub_resource type="BoxShape3D" id="Box_door_aim"]
-size = Vector3(0.3, 2.36, 1.275)
-
-[node name="ContainerApartment" type="StaticBody3D"]
+[node name="ContainerApartment" type="StaticBody3D" unique_id=995721029]
 collision_mask = 0
 
-[node name="habitat_container" parent="." instance=ExtResource("1_glb")]
+[node name="habitat_container" parent="." unique_id=2142450369 instance=ExtResource("1_glb")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -3.05, 1.3, 1.3)
 
-[node name="DoorBody" type="StaticBody3D" parent="habitat_container/frame/left_door"]
-collision_mask = 0
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/left_door/DoorBody"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, 0.6375)
-shape = SubResource("Box_door")
-
-[node name="DoorBody" type="StaticBody3D" parent="habitat_container/frame/right_door"]
-collision_mask = 0
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/right_door/DoorBody"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, -0.6375)
-shape = SubResource("Box_door")
-
-[node name="DoorL" type="Area3D" parent="habitat_container/frame/left_door"]
-script = ExtResource("part_moving")
-label_off = "%%HUD_DOOR_OPEN"
-label_on = "%%HUD_DOOR_CLOSE"
-open_angle_deg = -90.0
-duration_s = 1.2
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/left_door/DoorL"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, 0.6375)
-shape = SubResource("Box_door_aim")
-
-[node name="DoorR" type="Area3D" parent="habitat_container/frame/right_door"]
-script = ExtResource("part_moving")
-label_off = "%%HUD_DOOR_OPEN"
-label_on = "%%HUD_DOOR_CLOSE"
-open_angle_deg = 90.0
-duration_s = 1.2
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/right_door/DoorR"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, -0.6375)
-shape = SubResource("Box_door_aim")
-
-[node name="PlateLabel" type="Label3D" parent="habitat_container/frame/ID"]
+[node name="PlateSerial" type="Label3D" parent="habitat_container/frame/ID" parent_id_path=PackedInt32Array(2142450369, 185177092) index="0" unique_id=1047872297]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -0.004, 0, 0)
-pixel_size = 0.0006
-double_sided = false
+pixel_size = 0.0004
+modulate = Color(0.05, 0.05, 0.05, 1)
+font = ExtResource("5_font")
+font_size = 48
+outline_size = 0
+
+[node name="DoorBody" type="StaticBody3D" parent="habitat_container/frame/left_door" parent_id_path=PackedInt32Array(2142450369, 1686320244) index="1" unique_id=1613411847]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/left_door/DoorBody" unique_id=203503731]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, 0.6375)
+shape = SubResource("Box_door")
+
+[node name="DoorL" type="Area3D" parent="habitat_container/frame/left_door" parent_id_path=PackedInt32Array(2142450369, 1686320244) index="2" unique_id=1020434824]
+script = ExtResource("part_moving")
+open_angle_deg = -90.0
+duration_s = 1.6
+label_off = "%%HUD_DOOR_OPEN"
+label_on = "%%HUD_DOOR_CLOSE"
+latch_path = NodePath("../handle")
+latch_axis = Vector3(0, 0, 1)
+latch_angle_deg = -90.0
+sfx_open = ExtResource("sfx_container_open")
+sfx_close = ExtResource("sfx_container_close")
+sfx_close_delay_s = 1.1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/left_door/DoorL" unique_id=1764274768]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, 0.6375)
+shape = SubResource("Box_door_aim")
+
+[node name="PlateLabel" type="Label3D" parent="habitat_container/frame/right_door/Id_001" parent_id_path=PackedInt32Array(2142450369, 1897265433) index="0" unique_id=2115102246]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0.11507989743293183, -0.06000000000000005, 0.07600000000000001)
+pixel_size = 0.0015
 modulate = Color(0.85, 1, 0.85, 1)
 outline_modulate = Color(0, 0.8, 0.05, 0.75)
 font = ExtResource("5_font")
 font_size = 48
 outline_size = 8
 
-[node name="Floor" type="CollisionShape3D" parent="."]
+[node name="DoorBody" type="StaticBody3D" parent="habitat_container/frame/right_door" parent_id_path=PackedInt32Array(2142450369, 1901400007) index="4" unique_id=425020530]
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/right_door/DoorBody" unique_id=621828489]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, -0.6375)
+shape = SubResource("Box_door")
+
+[node name="DoorR" type="Area3D" parent="habitat_container/frame/right_door" parent_id_path=PackedInt32Array(2142450369, 1901400007) index="5" unique_id=2132407683]
+script = ExtResource("part_moving")
+open_angle_deg = 90.0
+duration_s = 1.6
+label_off = "%%HUD_DOOR_OPEN"
+label_on = "%%HUD_DOOR_CLOSE"
+latch_path = NodePath("../handle_001")
+opens_for_npc = true
+latch_axis = Vector3(0, 0, 1)
+latch_angle_deg = -90.0
+sfx_open = ExtResource("sfx_container_open")
+sfx_close = ExtResource("sfx_container_close")
+sfx_close_delay_s = 1.1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="habitat_container/frame/right_door/DoorR" unique_id=885858237]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.036, -0.894, -0.6375)
+shape = SubResource("Box_door_aim")
+
+[node name="Floor" type="CollisionShape3D" parent="." unique_id=859309840]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 0.06, 1.3)
 shape = SubResource("Box_floor")
 
-[node name="Roof" type="CollisionShape3D" parent="."]
+[node name="Roof" type="CollisionShape3D" parent="." unique_id=561444223]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 2.54, 1.3)
 shape = SubResource("Box_roof")
 
-[node name="SideWall" type="CollisionShape3D" parent="."]
+[node name="SideWall" type="CollisionShape3D" parent="." unique_id=1828940229]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 1.3, 0.03)
 shape = SubResource("Box_side")
 
-[node name="SideWall2" type="CollisionShape3D" parent="."]
+[node name="SideWall2" type="CollisionShape3D" parent="." unique_id=2053254575]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 1.3, 2.57)
 shape = SubResource("Box_side")
 
-[node name="BackWall" type="CollisionShape3D" parent="."]
+[node name="BackWall" type="CollisionShape3D" parent="." unique_id=1829881270]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.07, 1.3, 1.3)
 shape = SubResource("Box_back")
 
-[node name="ceiling" type="SpotLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, -3.05, 2.45, 1.3)
-shadow_enabled = true
-spot_range = 4.0
-spot_angle = 70.0
+[node name="Bed" parent="." unique_id=1676722965 instance=ExtResource("6_bed")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -5.040794596187546, 0.12, 0.60908831636599)
 
-[node name="Photocell" type="Node3D" parent="ceiling"]
-script = ExtResource("4_photocell")
+[node name="TableBed" parent="." unique_id=1411020871 instance=ExtResource("7_table")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -5.786306545588707, 0.168, 1.4513542549372211)
 
-[node name="Bed" parent="." instance=ExtResource("6_bed")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -4.47, 0.12, 0.58)
+[node name="Wardrobe" parent="." unique_id=728537135 instance=ExtResource("8_wardrobe")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -2.9074174206325423, 0.12, 2.23)
 
-[node name="TableBed" parent="." instance=ExtResource("7_table")]
-transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -5.76, 0.168, 1.3)
-
-[node name="Wardrobe" parent="." instance=ExtResource("8_wardrobe")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -4.6, 0.12, 2.23)
-
-[node name="MapMarker" type="Node3D" parent="."]
+[node name="MapMarker" type="Node3D" parent="." unique_id=1782450334]
 script = ExtResource("mm_script")
+icon = ExtResource("mm_icon")
 label = "%%MAP_MARKER_HOUSING"
 importance = 2
 max_view_m = 1500.0
-icon = ExtResource("mm_icon")
+
+[editable path="habitat_container"]

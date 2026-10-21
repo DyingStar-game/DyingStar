@@ -508,12 +508,13 @@ func server_action_received(data: Dictionary) -> void:
 			var home: Node = _find_deletable_prop(str(data.get("target_uuid", "")))
 			var part: Node = home.get_node_or_null(NodePath(str(data.get("part", "")))) \
 					if home != null else null
-			if part is FurnitureTarget \
-					and (part == player.lying_on or _may_use_furniture(part as FurnitureTarget)):
-				(part as FurnitureTarget).server_use(player)
+			var refused: String = "unknown part" if not (part is FurnitureTarget) \
+					else ("" if part == player.lying_on else _furniture_refusal(part as FurnitureTarget))
+			if refused == "":
+				(part as FurnitureTarget).server_use(player, data)
 			else:
-				print("🛏️ Furniture use refused for %s: not their home, out of reach or out of sight (%s)"
-						% [player.client_uuid, str(data.get("part", ""))])
+				print("🛏️ Furniture use refused for %s: %s (%s)" % [player.client_uuid, refused,
+						str(data.get("part", ""))])
 		"enter_vehicle":
 			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
@@ -1118,8 +1119,8 @@ func _physics_process_impl(delta: float) -> void:
 	# precisely who does the talking.
 	_server_update_dialog(delta)
 	if is_instance_valid(player.lying_on):
-		# Lying on a bed: ride it like a seat, the body laid along it (BedSpot).
-		player._ride_seat(player.lying_on)
+		# Lying on a bed: the body on its lie point, the lay clip lays it down (BedSpot).
+		player._ride_bed(player.lying_on)
 		player.new_input_from_server = false
 		player.emit_move()
 		return
@@ -1744,8 +1745,9 @@ func _replicate_floating(now: bool) -> void:
 const DOOR_REACH_S := 0.35
 ## Shortest time (ms) between two relayed screen taps.
 const TAP_MIN_MS := 150
-## Farthest a tapped point may be from the body's origin (m): its eye's height and an arm's reach.
-const TAP_BODY_REACH_M := 2.6
+## Farthest a tapped point may be from the body's origin (m): its eye's height and a screen's reach
+## (PlayerClient.SCREEN_REACH_M), with a margin.
+const TAP_BODY_REACH_M := 3.5
 
 ## Below this speed (m/s) the EVA brake has nothing left to cancel: held at rest, it fires nothing.
 const STABILIZED_SPEED := 0.05
@@ -2840,12 +2842,18 @@ func server_toggle_lying(bed: BedSpot) -> void:
 		player.server_stow_tools()
 		player.server_send_properties_to_client({"action": "seat:bed:%d" % _seat_count, "seat": "bed"})
 
-## May this player use [param target] now: it is in their own home, within its reach of the eye, and
-## in sight.
-func _may_use_furniture(target: FurnitureTarget) -> bool:
-	return target.is_home_of(player.client_uuid) \
-			and player.interact_ray.global_position.distance_to(target.aim_point()) <= target.use_range \
-			and _can_see(target)
+## Why this player may not use [param target] now, or "" when they may: it must be in their own home,
+## within its reach of the eye, and in sight.
+func _furniture_refusal(target: FurnitureTarget) -> String:
+	if target.refusal(player) != "":
+		var home := target.building() as SpawnBuilding
+		return "not their home (lives there: '%s')" % (home.occupant_of(target.apartment()) if home != null else "?")
+	var reach: float = player.interact_ray.global_position.distance_to(target.aim_point())
+	if reach > target.use_range:
+		return "out of reach (%.2f m > %.2f m)" % [reach, target.use_range]
+	if not _can_see(target):
+		return "out of sight (%s)" % _los_ray.get_collider()
+	return ""
 
 ## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
 ## door handles): nothing solid may stand in front of the target. MUST run on the server — the client

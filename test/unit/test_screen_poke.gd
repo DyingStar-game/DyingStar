@@ -32,7 +32,7 @@ func test_the_event_carries_its_point() -> void:
 
 func test_the_server_relays_only_a_reachable_tap_at_a_finger_s_pace() -> void:
 	assert_true(PlayerServer.may_relay_tap(Vector3(0.2, 1.6, -0.5), 1000))
-	assert_false(PlayerServer.may_relay_tap(Vector3(0.0, 1.6, -3.0), 1000), "a screen across the room")
+	assert_false(PlayerServer.may_relay_tap(Vector3(0.0, 1.6, -5.0), 1000), "a screen across the room")
 	assert_false(PlayerServer.may_relay_tap(Vector3(0.2, 1.6, -0.5), PlayerServer.TAP_MIN_MS - 1), "too fast")
 
 

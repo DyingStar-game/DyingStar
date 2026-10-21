@@ -1,7 +1,8 @@
 class_name HomeLocation
 extends RefCounted
 
-## Where the player lives, for the star chart (F2): "My home", seen from anywhere on its planet.
+## Where the player lives, for the star chart (F2): "My home", seen from anywhere on its planet. Told
+## by the buildings (ApartmentPlates), read by the chart (StarMapMarkers): it belongs to neither.
 ##
 ## The chart only draws what this client knows of, the objects replicated near the player -- a home
 ## out of reach would vanish. So the client remembers its apartment the moment it sees it
@@ -25,12 +26,24 @@ const ICON := preload("res://assets/textures/map_markers/habitat.png")
 
 ## CLIENT: [param apartment] is the player's home: remember it (and save it) and mark it on its planet.
 static func remember(apartment: Node3D, player_uuid: String) -> void:
+	if not apartment.is_inside_tree():
+		# The building's state arrives before it is added to the tree: its planet is not above it yet.
+		if not apartment.tree_entered.is_connected(remember):
+			apartment.tree_entered.connect(remember.bind(apartment, player_uuid), CONNECT_ONE_SHOT)
+		return
 	var planet: Planet = Planet.of(apartment)
 	if planet == null or planet.planet_data == null:
+		print("[Home] %s: no planet above it, not marked on the chart" % apartment.get_path())
 		return
 	var place: Transform3D = LocalFrame.of(apartment, planet) * Transform3D(Basis.IDENTITY, APARTMENT_MIDDLE)
-	_save(player_uuid, str(planet.planet_data.planet_name), place)
+	var planet_name := str(planet.planet_data.planet_name)
+	var saved: Dictionary = load_home(player_uuid)
+	var known: bool = saved.get("planet", "") == planet_name and (saved["place"] as Transform3D).is_equal_approx(place)
+	if known and planet.has_node(NodePath(ANCHOR_NAME)):
+		return  # the same home seen again (each change of the building's occupants shows it)
+	_save(player_uuid, planet_name, place)
 	_anchor(planet, place)
+	print("[Home] %s marked on %s at %s" % [apartment.name, planet_name, place.origin])
 
 
 ## CLIENT: hang the remembered home of [param player_uuid] on [param planet] if it is there and not

@@ -11,9 +11,6 @@ extends SkeletonModifier3D
 ## avatar: the tap is an EVENT, replicated as "tap:<n>:x:y:z" on the `action` field. Points are in the
 ## SKELETON's space, never worked out from world positions (see WristRaise.drive).
 
-## Farthest a tapped point may be from the eye (m) for the hand to reach it: past it the click works
-## all the same, with no gesture -- an arm does not stretch to a screen four metres away.
-const REACH_M := 0.75
 ## Seconds the hand takes to reach the screen: the tap's sound plays then, on the contact.
 const REACH_S := 0.16
 ## Seconds the finger rests on the screen.
@@ -106,7 +103,7 @@ static func wrist_for(shoulder: Vector3, point: Vector3, finger: float) -> Vecto
 	var along: Vector3 = point - shoulder
 	if along.length() <= finger:
 		return shoulder
-	return point - along.normalized() * finger
+	return point - along.normalized() * finger  # out of reach: the IK holds the arm straight towards it
 
 
 ## Once a frame, before the skeleton is posed: blend in by [param weight] (0..1, eased here), the index

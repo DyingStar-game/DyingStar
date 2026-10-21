@@ -689,6 +689,30 @@ func _ready() -> void:
 	add_child(_role)
 	_role.setup()
 
+## True while this body carries a load: the server's word on the server, the owner's own (predicted,
+## see PlayerClient._predict_carry_stow) on its client.
+func is_carrying() -> bool:
+	return hands_item != null if GameOrchestrator.is_server() else _owner_carrying
+
+
+## The id Horizon knows this body by: what it writes as the occupant of a home
+## (SpawnBuilding.apartments). On the server it is client_uuid; the owner's client_uuid is the local
+## Globals.player_uuid, another id, so the owner answers with Horizon's (own_horizon_id).
+func horizon_id() -> String:
+	if not remote_player and not GameOrchestrator.is_server():
+		var own: String = own_horizon_id()
+		if own != "":
+			return own
+	return client_uuid
+
+
+## CLIENT: the id Horizon gave this client's player when it connected (client.gd my_player_uuid), ""
+## before that.
+static func own_horizon_id() -> String:
+	var agent: Node = NetworkOrchestrator.network_agent
+	return str(agent.my_player_uuid) if agent != null and "my_player_uuid" in agent else ""
+
+
 func set_uuid(uuid: String) -> void:
 	client_uuid = uuid
 	self.set_meta("client_uuid", uuid)
@@ -759,6 +783,15 @@ func net_reset_interp() -> void:
 	if move_probe != null:
 		move_probe.on_snap(Time.get_ticks_usec(), str(get_parent().name) if get_parent() != null else "")
 
+## Lying on [param bed] (a BedSpot): the body stands on its lie point, upright, and the lay clip lays it
+## down along the bed (CharacterAnimator) -- the first-person view goes down with the head. The look is
+## free as from a seat.
+func _ride_bed(bed: Node3D) -> void:
+	global_transform = bed.lie_transform()
+	_seat_free_look()
+	velocity = Vector3.ZERO
+
+
 func _ride_seat(seat: Node3D) -> void:
 	var eye: Transform3D = seat.sit_transform()
 	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
@@ -771,9 +804,14 @@ func _ride_seat(seat: Node3D) -> void:
 	else:
 		global_transform.basis = eye.basis
 		global_position = eye.origin - eye.basis * seat_body_drop
-	# Free look from the seat: the mouse turns the camera pivot (yaw + pitch) relative to the vehicle
-	# forward, so the view is no longer locked straight ahead. BOTH are clamped: a seated body can't spin
-	# its view around forever (unbounded yaw also flipped the replicated head to the wrong side past 180°).
+	_seat_free_look()
+	velocity = Vector3.ZERO
+
+
+## Free look from a seat or a bed: the mouse turns the camera pivot (yaw + pitch) relative to the body,
+## so the view is not locked straight ahead. BOTH are clamped: a seated body can't spin its view around
+## forever (unbounded yaw also flipped the replicated head to the wrong side past 180°).
+func _seat_free_look() -> void:
 	camera_pivot.rotation.y = clampf(
 		camera_pivot.rotation.y + mouse_motion.x * camera_sensitivity,
 		deg_to_rad(-120.0), deg_to_rad(120.0))
@@ -781,7 +819,6 @@ func _ride_seat(seat: Node3D) -> void:
 		camera_pivot.rotation.x + mouse_motion.y * camera_sensitivity,
 		deg_to_rad(-80.0), deg_to_rad(80.0))
 	mouse_motion = Vector2.ZERO
-	velocity = Vector3.ZERO
 
 ## How tall this body is right now (m), or in a given stance. THE answer to that question, for both
 ## roles: the SERVER sizes the physics capsule from it, the CLIENT hangs the name tag above it.

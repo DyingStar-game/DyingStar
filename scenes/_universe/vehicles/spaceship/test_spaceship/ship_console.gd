@@ -22,3 +22,8 @@ func interact(interactor: Node = null):
 ## target that says no lets the key do what it would do elsewhere (put a load down).
 func usable_by(_player: Node) -> bool:
 	return true
+
+## Why [param _player] may not use it, shown in red in place of its prompt (a translation key), or ""
+## when nothing forbids it.
+func refusal(_player: Node) -> String:
+	return ""

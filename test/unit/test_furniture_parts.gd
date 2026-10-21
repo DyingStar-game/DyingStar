@@ -51,12 +51,37 @@ func test_a_lamp_lights_its_lights() -> void:
 	assert_false(light.visible)
 
 
-func test_the_state_lists_the_parts_on() -> void:
+func test_the_state_keeps_what_was_set() -> void:
 	var state := {"0-0-0/DoorL": true}
-	var opened: Dictionary = SpawnBuilding.furniture_toggled(state, "0-1-0/Lamp")
-	assert_eq(opened, {"0-0-0/DoorL": true, "0-1-0/Lamp": true})
-	assert_eq(SpawnBuilding.furniture_toggled(opened, "0-0-0/DoorL"), {"0-1-0/Lamp": true}, "off: dropped")
+	var lit: Dictionary = FurnitureState.with_part(state, "0-1-0/Lamp", true)
+	assert_eq(lit, {"0-0-0/DoorL": true, "0-1-0/Lamp": true})
+	assert_eq(FurnitureState.with_part(lit, "0-0-0/DoorL", false), {"0-0-0/DoorL": false, "0-1-0/Lamp": true},
+			"shut is kept too: a lamp switched off at night stays off")
 	assert_eq(state, {"0-0-0/DoorL": true}, "a new state, the old one untouched (it is compared)")
+
+
+func test_the_latch_turns_before_the_leaf() -> void:
+	assert_eq(MovingPart.phases(0.15, 0.3), Vector2(0.5, 0.0), "the handle half up, the door still shut")
+	assert_eq(MovingPart.phases(0.3, 0.3), Vector2(1.0, 0.0))
+	assert_almost_eq(MovingPart.phases(0.65, 0.3), Vector2(1.0, 0.5), Vector2.ONE * 1e-6, "then the door")
+	assert_eq(MovingPart.phases(0.4, 0.0), Vector2(0.4, 0.4), "no latch: the leaf alone")
+
+
+func test_the_night_lights_a_lamp_nobody_switched() -> void:
+	var lamp := LightSwitch.new()
+	var light := OmniLight3D.new()
+	lamp.add_child(light)
+	add_child_autofree(lamp)
+	lamp.show_unset()
+	lamp.set_lit(true, false)
+	assert_true(light.visible, "the photocell's first reading, at night: lit")
+	lamp.show_state(false, false)
+	assert_false(light.visible, "switched off")
+	lamp.set_lit(true, false)
+	assert_false(light.visible, "a first reading does not undo the switch")
+	lamp.set_lit(true, true)
+	assert_true(light.visible, "the next dusk does")
+	assert_true(lamp.is_on, "and the prompt follows: E puts it out")
 
 
 func test_a_home_is_its_occupant_s() -> void:
@@ -89,34 +114,53 @@ func test_the_building_shows_its_state() -> void:
 	assert_true(there.is_on, "listed: open")
 	assert_false(here.is_on, "not listed: shut")
 	assert_almost_eq((there.get_parent() as Node3D).rotation.y, deg_to_rad(-90.0), 1e-4, "open at once on arrival")
-	building.apply_prop_data({"furniture": {}})
+	building.apply_prop_data({"furniture": {key: false}})
 	assert_false(there.is_on, "closed by a later change")
 	var lamps: Array = rooms.find_children("Lamp", "Area3D", true, false)
 	assert_eq(lamps.size(), 2, "a lamp in every apartment")
-	_forgive_floor_material()
+	KnownEngineErrors.forgive_floor_material(self)
 
 
-func test_a_body_lies_along_the_bed_looking_up() -> void:
+func test_a_body_lies_down_on_the_mattress() -> void:
 	var bed := (load(BED) as PackedScene).instantiate() as Node3D
 	add_child_autofree(bed)
 	var spot := bed.get_node("BedSpot") as BedSpot
-	var eye: Transform3D = spot.sit_transform()
-	assert_almost_eq(-eye.basis.z, Vector3.UP, Vector3.ONE * 1e-6, "the eyes look at the ceiling")
-	assert_almost_eq(eye.basis.y, Vector3.FORWARD, Vector3.ONE * 1e-6, "the head on the pillow side (-z)")
-	# Player._ride_seat puts the body origin (its feet) seat_body_drop below the eyes, in their frame.
-	var drop: Vector3 = (load("res://scenes/player/player.gd") as GDScript).get_property_default_value(
-			"seat_body_drop")
-	var feet: Vector3 = eye.origin - eye.basis * drop
-	assert_between(feet.z, 0.5, 1.0, "the feet at the foot of the bed")
-	assert_between(feet.y, 0.47, 0.75, "the back on the mattress (0.47 m), not in it")
+	var body: Transform3D = spot.lie_transform()
+	assert_almost_eq(body.basis.y, Vector3.UP, Vector3.ONE * 1e-6, "upright: the lay clip lays it down")
+	assert_almost_eq(body.origin.y, 0.47, 0.01, "on the mattress (0.47 m)")
+	assert_almost_eq(-body.basis.z, Vector3.BACK, Vector3.ONE * 1e-6, "facing the foot of the bed")
 	var stand: Transform3D = spot.stand_point.global_transform
 	assert_almost_eq(stand.basis.y, Vector3.UP, Vector3.ONE * 1e-6, "up again, upright")
 	assert_almost_eq(stand.origin.y, 0.0, 1e-6, "on the floor")
 
 
-## The spawn building's pad pulls in concrete_floor_001.tres, whose triplanar + height mapping raises an
-## engine error the first time it loads (see test_terrain_pad): not this test's.
-func _forgive_floor_material() -> void:
-	for e in get_errors():
-		if (str(e.code) + str(e.rationale)).contains("Height mapping"):
-			e.handled = true
+func test_a_state_that_arrives_before_the_building_is_placed_still_shows() -> void:
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	PropSync.of(building).uuid = "home-uuid"
+	var key := "0-0-0/habitat_container/frame/right_door/DoorR"
+	building.apply_prop_data({"apartments": [], "furniture": {key: true}})  # not in the tree yet, as on arrival
+	add_child_autofree(building)
+	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
+	assert_true(right.is_on)
+	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(90.0), 1e-4, "shown open once placed")
+	KnownEngineErrors.forgive_floor_material(self)
+
+
+func test_only_an_npc_s_door_is_opened() -> void:
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	building.cols = 2
+	PropSync.of(building).uuid = "home-uuid"
+	add_child_autofree(building)
+	building.apply_prop_data({"apartments": [
+		{"floor": 0, "row": 0, "col": 0, "player_uuid": "npc-1", "player_name": "Bob"},
+		{"floor": 0, "row": 0, "col": 1, "player_uuid": "player-1", "player_name": "Ann"},
+	]})
+	building.server_open_for_npc("npc-1")
+	var rooms: Node = building.get_node("MultiMeshInstance3D")
+	var door := "habitat_container/frame/right_door/DoorR"
+	assert_true((rooms.get_node("0-0-0/" + door) as MovingPart).is_on, "the NPC's home")
+	assert_false((rooms.get_node("0-1-0/" + door) as MovingPart).is_on, "a player's: shut")
+	assert_eq(building.furniture, {"0-0-0/" + door: true}, "kept, like any use")
+	assert_eq(FurnitureState.npc_doors(rooms.get_node("0-0-0")).size(), 1, "one door opens for an NPC")
+	KnownEngineErrors.forgive_floor_material(self)
+

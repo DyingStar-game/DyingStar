@@ -21,18 +21,31 @@ func interact(interactor: Node = null):
 	var home: Node = building()
 	if home == null:
 		return
-	interactor.client_send_action_to_server({
+	var message := {
 		"action": "furniture_use",
 		"target_uuid": str(PropSync.of(home).uuid),
 		"part": str(home.get_path_to(self)),
-	})
+	}
+	message.merge(_use_data())
+	interactor.client_send_action_to_server(message)
+
+
+## What the client asks for with the use, besides naming the target: nothing by default.
+func _use_data() -> Dictionary:
+	return {}
 
 
 ## Offered to the occupant of its apartment, hands empty.
 func usable_by(player: Node) -> bool:
-	if player == null or ("_owner_carrying" in player and player._owner_carrying):
+	if not (player is Player) or (player as Player).is_carrying():
 		return false
-	return "client_uuid" in player and is_home_of(str(player.client_uuid))
+	return refusal(player) == ""
+
+
+## Anyone else is told it is not theirs.
+func refusal(player: Node) -> String:
+	var mine: bool = player is Player and is_home_of((player as Player).horizon_id())
+	return "" if mine else "%%HUD_NOT_YOURS"
 
 
 ## The networked building this target is in (a SpawnBuilding), or null.
@@ -74,6 +87,7 @@ func los_exceptions() -> Array:
 	return out
 
 
-## SERVER: a validated use by [param _player] (PlayerServer checked home, reach and sight).
-func server_use(_player: Node) -> void:
+## SERVER: a validated use by [param _player] (PlayerServer checked home, reach and sight), with what
+## the client asked for in [param _data] (_use_data).
+func server_use(_player: Node, _data: Dictionary) -> void:
 	pass

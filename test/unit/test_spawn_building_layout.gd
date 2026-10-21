@@ -56,9 +56,9 @@ func test_the_container_fits_the_cell() -> void:
 
 
 func test_a_long_name_shrinks_to_fit_the_plate() -> void:
-	assert_eq(SpawnBuilding.plate_pixel_size(100.0, 0.22, 0.0006), 0.0006, "a short name keeps its size")
-	assert_almost_eq(SpawnBuilding.plate_pixel_size(1000.0, 0.22, 0.0006) * 1000.0, 0.22, 1e-9)
-	assert_eq(SpawnBuilding.plate_pixel_size(0.0, 0.22, 0.0006), 0.0006, "no text")
+	assert_eq(ApartmentPlates.name_pixel_size(100.0, 0.22, 0.0006), 0.0006, "a short name keeps its size")
+	assert_almost_eq(ApartmentPlates.name_pixel_size(1000.0, 0.22, 0.0006) * 1000.0, 0.22, 1e-9)
+	assert_eq(ApartmentPlates.name_pixel_size(0.0, 0.22, 0.0006), 0.0006, "no text")
 
 
 func test_the_occupant_is_found_by_slot() -> void:
@@ -89,11 +89,7 @@ func test_the_buildings_of_a_village_never_overlap() -> void:
 		for j in range(i + 1, rects.size()):
 			assert_false(_overlap(rects[i], rects[j]), "%s overlaps %s" % [rects[i].name, rects[j].name])
 	village.free()
-	# The village's cargo depot pulls in concrete_floor_001.tres, whose triplanar + height mapping
-	# raises an engine error the first time it loads (see test_terrain_pad): not this test's.
-	for e in get_errors():
-		if (str(e.code) + str(e.rationale)).contains("Height mapping"):
-			e.handled = true
+	KnownEngineErrors.forgive_floor_material(self)
 
 
 ## A building of [param rows] x [param cols], one floor, not in the tree.

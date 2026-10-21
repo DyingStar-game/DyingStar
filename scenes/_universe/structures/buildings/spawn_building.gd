@@ -40,23 +40,16 @@ extends NetStaticBody  # the uuid facade (see NetStaticBody)
 
 var total: int = 1
 var available: int = 0
-## The furniture parts switched on in its apartments -- doors and drawers open, lamps lit -- as
-## {"<apartment>/<part>": true} (ToggledPart.state_key): replicated, kept across restarts. Off when
-## not listed, so the state of a building nobody touched is empty.
-var furniture: Dictionary = {}
+## The furniture of its apartments someone set (FurnitureState): replicated as `furniture`.
+var furniture: Dictionary:
+	get:
+		return _furniture.state
 
 var _apartments_created: bool = false
-## The furniture has been shown once: from then on a change moves (a door swings), before it is set.
-var _furniture_shown: bool = false
-## Every ToggledPart of the apartments, gathered once they exist.
-var _parts: Array[ToggledPart] = []
+var _furniture := FurnitureState.new()
 
 ## Margin of the levelled footprint past the walls, as in the box drawn in the scene.
 const PAD_MARGIN_M := 0.5
-## Width (m) of the text on an apartment's door plate (the plate is 24 cm wide).
-const PLATE_WIDTH_M := 0.22
-## The plate text's largest pixel size (m per font pixel): a short name is not blown up past it.
-const PLATE_PIXEL_SIZE := 0.0006
 
 
 ## The TerrainPad footprint of a building of [param data]'s rows / cols / spacings, local to the
@@ -100,14 +93,14 @@ func _create_apartments():
 			if f == 0 and i == 0:
 				continue
 			var node_apart = %"0-0-0".duplicate()
-			node_apart.name = str("0-", i, "-", f)
+			node_apart.name = slot_name({"row": 0, "col": i, "floor": f})
 			node_apart.position.z = i * z_spacing
 			node_apart.position.y = f * y_spacing
 			$MultiMeshInstance3D.add_child(node_apart)
 		if rows == 2:
 			for i in range(cols):
 				var node_apart = %"0-0-0".duplicate()
-				node_apart.name = str("1-", i, "-", f)
+				node_apart.name = slot_name({"row": 1, "col": i, "floor": f})
 				node_apart.rotation.y = 3.14159
 				node_apart.position.x = (x_spacing * 2.0)
 				node_apart.position.z = ((i + 1) * z_spacing)
@@ -134,14 +127,6 @@ func _create_apartments():
 ## copies of 0-0-0 are named.
 static func slot_name(apt: Dictionary) -> String:
 	return str(int(apt["row"]), "-", int(apt["col"]), "-", int(apt["floor"]))
-
-
-## The pixel size that fits a text [param text_px] font pixels wide into [param width_m], never past
-## [param max_pixel_size]: a long name shrinks to fit the plate, a short one keeps the normal size.
-static func plate_pixel_size(text_px: float, width_m: float, max_pixel_size: float) -> float:
-	if text_px <= 0.0:
-		return max_pixel_size
-	return minf(max_pixel_size, width_m / text_px)
 
 
 ## The apartment (a copy of 0-0-0) [param node] stands in, or null when it is in none.
@@ -172,71 +157,30 @@ func occupant_of(apartment: Node) -> String:
 	return ""
 
 
-## [param state] with the part [param key] flipped: listed (on) when it was not, dropped when it was.
-static func furniture_toggled(state: Dictionary, key: String) -> Dictionary:
-	var out: Dictionary = state.duplicate()
-	if out.has(key):
-		out.erase(key)
-	else:
-		out[key] = true
-	return out
+## SERVER: a validated use of [param part] (PlayerServer "furniture_use"): set it [param on], show it
+## here (a door's body moves with it) and replicate the new state.
+func server_set_part(part: ToggledPart, on: bool) -> void:
+	PropSync.of(self).server_prop_update({"furniture": _furniture.set_part(part, on, _rooms())})
 
 
-## SERVER: a validated use of [param part] (PlayerServer "furniture_use"): flip it, show it here (a
-## door's body moves with it) and replicate the new state.
-func server_toggle_part(part: ToggledPart) -> void:
-	var before: Dictionary = furniture
-	furniture = furniture_toggled(furniture, part.state_key())
-	_apply_furniture(before)
-	PropSync.of(self).server_prop_update({"furniture": furniture})
-
-
-## Show the parts as [member furniture] says: all of them at once the first time (arriving in the
-## zone, a restart), then only those that changed since [param before], moving.
-func _apply_furniture(before: Dictionary) -> void:
-	if not _apartments_created:
-		return  # shown once the apartments exist (the state can arrive first)
-	if _parts.is_empty():
-		_gather_parts(self)
-	for part in _parts:
-		var key := part.state_key()
-		var on := furniture.has(key)
-		if not _furniture_shown or on != before.has(key):
-			part.show_state(on, _furniture_shown)
-	_furniture_shown = true
-
-
-func _gather_parts(node: Node) -> void:
-	for child in node.get_children():
-		if child is ToggledPart:
-			_parts.append(child)
-		_gather_parts(child)
-
-
-## Write each occupant's name on their door plate, and clear the plates of the free apartments. Our
-## own apartment is our home on the chart (HomeLocation): its own marker steps aside for that one.
-func _label_plates() -> void:
-	var names := {}
-	var occupants := {}
+## SERVER: an NPC living in one of the apartments was placed in the building: open its home's doors that
+## open for an NPC (MovingPart.opens_for_npc), so it is not shut in -- an NPC never opens one. Kept like
+## any use: replicated, and the door stays open across restarts.
+func server_open_for_npc(npc_uuid: String) -> void:
 	for apt in apartments:
-		names[slot_name(apt)] = str(apt.get("player_name", ""))
-		occupants[slot_name(apt)] = str(apt.get("player_uuid", ""))
-	for apartment in $MultiMeshInstance3D.get_children():
-		var mine: bool = Globals.player_uuid != "" and occupants.get(str(apartment.name), "") == Globals.player_uuid
-		var marker := apartment.get_node_or_null("MapMarker") as MapMarker
-		if marker != null and mine:
-			marker.remove_from_group(MapMarker.GROUP)
-		elif marker != null:
-			marker.add_to_group(MapMarker.GROUP)
-		if mine:
-			HomeLocation.remember(apartment, Globals.player_uuid)
-		var plate := apartment.find_child("PlateLabel", true, false) as Label3D
-		if plate == null:
+		if str(apt.get("player_uuid", "")) != npc_uuid:
 			continue
-		plate.text = names.get(str(apartment.name), "")
-		var text_px: float = plate.font.get_string_size(plate.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
-				plate.font_size).x if plate.font != null else 0.0
-		plate.pixel_size = plate_pixel_size(text_px, PLATE_WIDTH_M, PLATE_PIXEL_SIZE)
+		var room: Node = get_node_or_null("MultiMeshInstance3D/" + slot_name(apt))
+		if room == null:
+			continue
+		for door: MovingPart in FurnitureState.npc_doors(room):
+			if not bool(furniture.get(door.state_key(), false)):
+				server_set_part(door, true)
+
+
+## The apartments' parent, once they exist (null before: the furniture's state waits for them).
+func _rooms() -> Node:
+	return get_node_or_null("MultiMeshInstance3D") if _apartments_created else null
 
 
 ## PropSync applies the replicated transform, then calls this with the full payload so the building can
@@ -274,15 +218,13 @@ func apply_prop_data(data: Dictionary) -> void:
 
 	_fit_terrain_pad()
 
-	var furniture_before: Dictionary = furniture
-	if data.get("furniture") is Dictionary:
-		furniture = data["furniture"]
-
 	if data.has("apartments"):
 		apartments = data["apartments"]
 		_create_apartments()
 		if not GameOrchestrator.is_server():
-			_label_plates()
+			ApartmentPlates.show($MultiMeshInstance3D, apartments, uuid, Player.own_horizon_id())
 
-	if data.has("furniture") or data.has("apartments"):
-		_apply_furniture(furniture_before)
+	if data.get("furniture") is Dictionary:
+		_furniture.receive(data["furniture"], _rooms())
+	elif data.has("apartments"):
+		_furniture.show_once(_rooms())
