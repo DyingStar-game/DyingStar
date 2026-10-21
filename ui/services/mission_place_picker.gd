@@ -7,7 +7,9 @@ extends VBoxContainer
 ## Three ways in, because a builder needs all three:
 ##   • a POI that already exists (the list — the caller's own, [MissionPoiCache]);
 ##   • « Ici », which places one where the builder is standing right now;
-##   • « Carte », which hands over to the star map and places one where the click lands.
+##   • « Carte », which hands over to the star map: the right click lays a mission marker on the
+##     ground, the wheel gives it its width, and the click that confirms it comes back through
+##     [method accept_place] carrying that width (`radiusM`) — the map had the last word on it.
 ##
 ## The point of the two buttons is that until now a mission could only NAME a place that already
 ## existed, so delivering something meant creating a POI in another tab first. Placing here is the
@@ -223,8 +225,9 @@ func place_here() -> void:
 	await _place_at(PlayerLocation.presence_of(player))
 
 
-## Place a POI where the chart click landed. [param place] is what [PlayerLocation.presence_of] and
-## the star map produce: `system`, `scene`, `position`.
+## Place a POI where the chart's mission marker was laid. [param place] is what
+## [PlayerLocation.presence_of] and the star map produce: `system`, `scene`, `position` — and, from
+## the map, `radiusM`, the width the wheel gave the marker.
 ##
 ## No [code]await[/code] on [method _place_at], which is a coroutine, and that is on purpose rather
 ## than an oversight: the creation is a round trip, and the caller here is the panel that answers
@@ -242,7 +245,11 @@ func _place_at(place: Dictionary) -> void:
 		return
 	_busy = true
 	await MissionPoiCache.ensure_loaded()
-	var radius := parse_radius(_radius.text)
+	# The map's own answer wins when the place carries one: the field was the marker's STARTING
+	# width, and every notch the player took after that happened on the chart, where the zone was
+	# drawn. A place without a width ("Here") is what the field is for.
+	var from_map: bool = place.has("radiusM")
+	var radius := radius_from_place(place, _radius.text)
 	if radius < 0:
 		# Refused here rather than forwarded: service-inventory answers POI_RADIUS_INVALID for a
 		# number out of bounds, and a message that does not name the field is not an answer.
@@ -251,6 +258,12 @@ func _place_at(place: Dictionary) -> void:
 		return
 	if radius > 0:
 		place["radiusM"] = radius
+	else:
+		place.erase("radiusM")  # a point is carried by ABSENCE, the map's word as much as the field's
+	if from_map:
+		# The field is the width of the NEXT marker too: what the wheel said is what the form now
+		# says, so the two never disagree about the place that was just made.
+		_radius.text = "" if radius <= 0 else str(radius)
 	var owner_id: String = UUID_UTIL.v4()
 	var result: Dictionary = await PlayerServices.mission_poi_create(owner_id, place, _poi_name(place))
 	_busy = false
@@ -282,6 +295,23 @@ func _place_at(place: Dictionary) -> void:
 ## refused, with a message that names the field.
 static func radius_for_chart(raw: String) -> float:
 	return float(maxi(parse_radius(raw), 0))
+
+
+## The radius this creation carries: the MAP's own answer when the place comes from the chart (the
+## wheel sized the zone there, and it had the last word), else what the field says for a place taken
+## without one — « Ici » never comes with a width. 0 means a point, and a point is sent as ABSENCE
+## (see [method PlayerServices.mission_poi_create]), which is why the caller erases rather than
+## writes it.
+##
+## Static and pure so the precedence is pinned without a picker.
+static func radius_from_place(place: Dictionary, field: String) -> int:
+	if place.has("radiusM"):
+		var value := int(ServiceTypes.num(place.get("radiusM")))
+		# Same bounds as the field's: the map clamps to them too (StarMap.MISSION_RADIUS_MAX_M), so
+		# this is a promise kept rather than a limit reached — and -1 still lands on the message that
+		# names the radius.
+		return value if value >= 0 and value <= MAX_RADIUS_M else -1
+	return parse_radius(field)
 
 
 ## What the radius field says, turned into what the service takes: 0 for no radius (a POI point, whose

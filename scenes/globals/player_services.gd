@@ -766,9 +766,13 @@ func mission_poi_create(owner_id: String, place: Dictionary, name: String) -> Di
 		body["scene"] = scene
 	if system != "":
 		body["system"] = system
-	var radius: Variant = place.get("radiusM")
-	if radius is float or radius is int:
-		body["radiusM"] = float(radius)
+	# Only when the place carries a WIDTH: a point is expressed by absence — the field's own rule
+	# (MissionPlacePicker), and the chart's marker sends its radiusM as 0 when it was sized to none.
+	# A zero forwarded here would be a number out of the service's bounds (POI_RADIUS_INVALID) where
+	# the honest answer is "no radius at all".
+	var radius: float = ServiceTypes.num(place.get("radiusM"))
+	if radius > 0.0:
+		body["radiusM"] = radius
 	return await poi_create(body)
 
 ## One POI with its shares (owned, granted or public).

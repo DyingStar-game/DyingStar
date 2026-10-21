@@ -468,6 +468,12 @@ func set_placed(place: Dictionary) -> bool:
 		return false
 	_placed = place.duplicate()
 	_render_where()
+	# What the map sized the marker at is what the form now says. The field is the radius this POI is
+	# about to be created with, and the wheel on the chart is where it was last true; an empty field
+	# is a point, which is what a marker wheeled down to none means.
+	if place.has("radiusM"):
+		var radius: int = int(ServiceTypes.num(place.get("radiusM")))
+		_form_radius.text = "" if radius <= 0 else str(radius)
 	_say(tr("%%SVC_MSG_PLACE_CHART"), GOOD)
 	return true
 
