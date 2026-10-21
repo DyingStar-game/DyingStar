@@ -36,8 +36,11 @@ func _ready() -> void:
 		return
 	otel_manager = load("res://tools/observability/OpenTelemetryManager.cs").new()
 	otel_manager._ready()
-	_logger = CustomLogger.new()
-	OS.add_logger(_logger)
+	# The logger hands every printed line to the bridge: 0.16 ms a line instead of 0.004, for nothing while
+	# the export is off (no [observability] enabled=true in client.ini: every player).
+	if otel_manager.GDS_IsEnabled():
+		_logger = CustomLogger.new()
+		OS.add_logger(_logger)
 	Obs.logs_info("engine","Ready for obs")
 
 
@@ -67,6 +70,15 @@ func print_colored(level: String, section: String, message: String) -> void:
 		"][/b][/color] [color="+level_color+"]"+\
 		level+"[/color] [color="+owner_color+"] "+message+" [/color]"
 	)
+
+## A line the engine printed, to the bridge only: printed once already, it is not echoed.
+func forward(message: String, error: bool) -> void:
+	if otel_manager == null:
+		return
+	if error:
+		otel_manager.GDS_LogError("", message, {})
+	else:
+		otel_manager.GDS_LogInformation("", message, {})
 
 func logs_trace(section: String, message: String, tags: Dictionary = {}) -> void:
 	if otel_manager == null:

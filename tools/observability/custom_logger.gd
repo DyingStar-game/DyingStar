@@ -27,8 +27,5 @@ func _log_message(message: String, error: bool) -> void:
 	if message.contains("OBS"):
 		return
 	_in_log = true
-	if error:
-		Obs.logs_error("",message);
-	else :
-		Obs.logs_info("", message)
+	Obs.forward(message, error)
 	_in_log = false
