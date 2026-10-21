@@ -2825,18 +2825,17 @@ func active_chunk_count() -> int:
 ## surface: a height query (carved, crack-aware, plus the biome relief) is what the chunk was built
 ## from, not what it shows — the outpost's plateau is drawn 20 cm above its relief query (2026-10-09),
 ## and the figures sank by that much.
+## One key lookup a level, finest first: a walk of every active chunk cost one HEALPix lookup each
+## (1 500 of them), 60 ms a second while the menu stage put its 40 props back on the ground.
 func drawn_mesh_at(dir: Vector3) -> MeshInstance3D:
-	var best: Dictionary = {}
-	for rec: Dictionary in _active_chunks.values():
+	var nside: int = 1 << planet_data.max_quadtree_depth
+	while nside >= 1:
+		var rec: Dictionary = _active_chunks.get(_chunk_key_hp(nside, HEALPix.vec2pix_nest(nside, dir)), {})
 		var mi: MeshInstance3D = rec.get("mesh_instance")
-		if mi == null or mi.mesh == null:
-			continue
-		var nside: int = int(rec.get("nside", 0))
-		if nside <= 0 or (not best.is_empty() and nside <= int(best["nside"])):
-			continue
-		if HEALPix.vec2pix_nest(nside, dir) == int(rec.get("ipix", -1)):
-			best = rec
-	return best.get("mesh_instance") if not best.is_empty() else null
+		if mi != null and mi.mesh != null:
+			return mi
+		nside >>= 1
+	return null
 
 
 ## How many chunks the last LOD update asked for (the menu's loading bar: active / desired).
