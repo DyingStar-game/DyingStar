@@ -71,6 +71,13 @@ signal navigation_closed
 ## from whichever app asked; PlayerClient opens the chart in placement mode and answers through
 ## [method set_placed]. The tablet never reaches for the chart itself.
 signal placement_requested(radius_m: float)
+## A section wants the chart to SHOW a place of the player's. Relayed from whichever app asked;
+## PlayerClient opens the chart there and frames the point. The tablet never reaches for the chart
+## itself.
+##
+## The app that asked is remembered, so the player comes back to the form they were filling in when
+## they leave the chart's tab.
+signal focus_poi_requested(poi_id: String)
 
 var _overview: ServiceOverviewScreen = null
 ## id -> ServicePanel, and id -> the `area` its mutations announce on.
@@ -99,6 +106,12 @@ var _active_id: String = ""
 ## was offered, and it is built before the mission builder's, so without this the builder's marker
 ## landed in the inventory instead of in the mission being written.
 var _placement_asker: String = ""
+## The app that asked the chart to show one of its points, and the segment to come back to.
+##
+## It is the same courtesy the place gets: a player who leaves the chart to look at a point was
+## halfway through a form, and the tablet's home is not where they were.
+var _focus_asker: String = ""
+var _focus_segment: int = 0
 var _built: bool = false
 var _close_armed: bool = false
 ## The tablet was opened straight on NAVIGATION (F2, the chart's key): Escape then closes it, back to the
@@ -322,6 +335,7 @@ func _build() -> void:
 		panel.visible = false
 		panel.home_requested.connect(_go_home)
 		panel.placement_requested.connect(_relay_placement.bind(id))
+		panel.focus_poi_requested.connect(_relay_focus_poi.bind(id))
 		_content.add_child(panel)
 		_panels[id] = panel
 		_areas[id] = str(app["area"])
@@ -569,6 +583,10 @@ func _leave_navigation() -> void:
 func _open_app(id: String) -> void:
 	if not _panels.has(id):
 		return
+	if id != _focus_asker:
+		# The player chose an app of their own: whatever the chart was asked for is over, and the
+		# tablet will not take them back to it later.
+		_focus_asker = ""
 	_show_nothing()
 	_active_id = id
 	(_panels[id] as ServicePanel).visible = true
@@ -603,6 +621,15 @@ func _relay_placement(radius_m: float, app_id: String) -> void:
 	placement_requested.emit(radius_m)
 
 
+## An app asked the chart to show one of its points: remember which one — so the player comes back
+## to the form they were filling in — and pass the request on.
+func _relay_focus_poi(poi_id: String, app_id: String) -> void:
+	_focus_asker = app_id
+	_focus_segment = (_panels[app_id] as ServicePanel).placement_segment() \
+			if _panels.has(app_id) else 0
+	focus_poi_requested.emit(poi_id)
+
+
 ## The chart named a place: hand it to the app that asked for one, and say which.
 ##
 ## The app that asked is the ONLY one that gets it. Which one asked is not a detail: the forms are
@@ -610,8 +637,10 @@ func _relay_placement(radius_m: float, app_id: String) -> void:
 ## wants it — the points of interest's form takes every place it is offered, and it is built before
 ## the mission builder's.
 ##
-## When no app is known to have asked (the console was rebuilt under the chart), every form gets a
-## chance, as before.
+## When NO app asked — the player used the chart on its own, laying a marker for themselves — no
+## form gets it either: the place is theirs, and the caller turns it into a point of interest of
+## their own. Offering it around instead used to lose it, or to hand it to a builder that had not
+## asked for anything.
 ##
 ## Returns the id of the app that took the place, or "" when none did.
 func set_placed(place: Dictionary) -> String:
@@ -622,25 +651,16 @@ func set_placed(place: Dictionary) -> String:
 	if asker != "" and _panels.has(asker):
 		if (_panels[asker] as ServicePanel).set_placed(place):
 			return asker
-		return ""
-	for id: Variant in _panels:
-		if (_panels[id] as ServicePanel).set_placed(place):
-			return str(id)
 	return ""
 
 
-## The chart named a place: give it to the form that asked, and take the player back to it.
+## Open the app that took a place, on the segment that holds the form that asked for it.
 ##
-## The app is opened on the segment that holds the form — the mission builder's create form, the
-## points of interest's own — because the app's default segment is a list, and a player sent to a
-## list has lost the thread of what they were doing.
-##
-## When no form takes the place (the one that asked was closed in between), the player goes back to
-## the tablet's home: not to the inventory, which is where the old fallback dropped them.
-func take_placed(place: Dictionary) -> void:
-	var app: String = set_placed(place)
-	if app == "":
-		_go_home()
+## The segment is the app's own answer (see [method ServicePanel.placement_segment]): the mission
+## builder's create form, the points of interest's own. The app's default segment is a list, and a
+## player sent to a list has lost the thread of what they were doing.
+func open_placed_app(app: String) -> void:
+	if app == "" or not _panels.has(app):
 		return
 	open_app(app, (_panels[app] as ServicePanel).placement_segment())
 
@@ -664,6 +684,23 @@ func _go_home() -> void:
 	_apply_pane_layout(true, false)
 	if PlayerServices.is_available():
 		_overview.refresh()
+	# The app that sent the player to the chart is where they go back to: they left a form halfway
+	# through to look at a place, and the overview is not that form. An app the player picked
+	# themselves wins over this — but then this is not called, they chose their own way out.
+	_return_from_chart()
+
+
+## Open the app that sent the player to the chart, on the segment it was left on.
+##
+## Does nothing when no app asked for the chart, or when the one that did has gone.
+func _return_from_chart() -> void:
+	if _focus_asker == "" or not _panels.has(_focus_asker):
+		_focus_asker = ""
+		return
+	var app: String = _focus_asker
+	var segment: int = _focus_segment
+	_focus_asker = ""
+	open_app(app, segment)
 
 
 ## A mutation landed somewhere: refresh the visible app, or the overview, as fits.

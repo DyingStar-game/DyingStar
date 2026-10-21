@@ -20,6 +20,13 @@ signal home_requested
 ## [param radius_m] is what the asker's radius field says (0 = a point): the marker's starting width.
 signal placement_requested(radius_m: float)
 
+## A section wants the chart to SHOW a place of the player's (the mission builder naming the point
+## its clause points at). Relayed up through the shells that host it (see [method mount_segment]) so
+## the console — which owns the chart — can open it there; this file never reaches for [StarMap].
+##
+## Nothing is armed and nothing comes back: this is a request to look, not a question to answer.
+signal focus_poi_requested(poi_id: String)
+
 ## How the tablet should split the screen for the segment now on show: data on the left, this
 ## segment's actions in the right-hand column. Emitted when a segment is switched to, and once more
 ## after [method _build] has filled both halves.
@@ -625,6 +632,8 @@ func mount_segment(index: int, script_path: String) -> ServicePanel:
 	panel.pane_layout.connect(_relay_pane.bind(panel))
 	# A section may ask the chart for a place; the shell carries it up, never to the chart itself.
 	panel.placement_requested.connect(placement_requested.emit)
+	# And a section may ask the chart to show one; same way round.
+	panel.focus_poi_requested.connect(focus_poi_requested.emit)
 	return panel
 
 

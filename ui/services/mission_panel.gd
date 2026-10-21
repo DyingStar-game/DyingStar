@@ -1217,7 +1217,7 @@ func mission_name_for_poi() -> String:
 func _zone_poi_picker(row: Dictionary, flow: FlowContainer) -> void:
 	var picker := MissionPlacePicker.new()
 	picker.setup("%%SVC_POI_MISSION_ZONE", 220.0)
-	_relay_placement_from(picker)
+	_wire_place_widget(picker)
 	row["poi"] = picker
 	flow.add_child(picker)
 	# The zone row's own teardown only walks LineEdits; this one is not one, so it is queued for the
@@ -1499,7 +1499,7 @@ func _var_control(var_name: String, entry: Dictionary, objective: bool) -> Array
 		if widget is GoodTypePicker:
 			_feed_goods(widget)
 		if widget.has_signal("placement_requested"):
-			_relay_placement_from(widget)
+			_wire_place_widget(widget)
 		return [widget, {"name": var_name, "target": "param_object"}]
 	if properties.has(var_name):
 		var property: Dictionary = properties[var_name] if properties[var_name] is Dictionary else {}
@@ -1575,7 +1575,7 @@ func _rebuild_params(row: Dictionary, entry: Dictionary) -> void:
 			if widget is GoodTypePicker:
 				_feed_goods(widget)
 			if widget.has_signal("placement_requested"):
-				_relay_placement_from(widget)
+				_wire_place_widget(widget)
 			rendered = true
 			continue
 		var ptype: String = str((property as Dictionary).get("type", "string"))
@@ -2093,12 +2093,17 @@ func _relay_placement(radius_m: float, source: MissionPlacePicker) -> void:
 	placement_requested.emit(radius_m)
 
 
-## Wire a widget's request for the chart to this panel's own signal. A place picker is wired with
-## itself, so the panel can tell the other pickers that they are no longer the one waiting.
-func _relay_placement_from(widget: Control) -> void:
+## Wire a place widget to this panel's own signals: its request for the chart, and its request to
+## look at a point on it.
+##
+## A place picker is wired with itself, so the panel can tell the other pickers that they are no
+## longer the one waiting.
+func _wire_place_widget(widget: Control) -> void:
 	if widget is MissionPlacePicker:
-		(widget as MissionPlacePicker).placement_requested.connect(
-				_relay_placement.bind(widget as MissionPlacePicker))
+		var picker := widget as MissionPlacePicker
+		picker.placement_requested.connect(_relay_placement.bind(picker))
+		picker.show_on_chart_requested.connect(
+				func(poi_id: String) -> void: focus_poi_requested.emit(poi_id))
 		return
 	widget.connect("placement_requested",
 			func(radius: float) -> void: placement_requested.emit(radius))

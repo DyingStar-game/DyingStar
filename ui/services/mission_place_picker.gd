@@ -37,6 +37,13 @@ signal placement_requested(radius_m: float)
 ## A POI was chosen or created. [param poi_id] is the service's id for it.
 signal picked(poi_id: String)
 
+## The chosen place should be shown on the chart. [param poi_id] is the one to look at.
+##
+## Nothing is armed and nothing comes back: this is a request to LOOK, which is a different question
+## from the one « Carte » asks (where is a new place?). The host carries it up to the console, which
+## owns the chart.
+signal show_on_chart_requested(poi_id: String)
+
 ## The id a created POI is filed under. Arbitrary on purpose: the objective params that will name it
 ## are immutable once the mission exists, so this cannot be the mission's own id — see
 ## [method PlayerServices.mission_poi_create].
@@ -60,6 +67,7 @@ var _busy: bool = false
 var _picker: OptionButton
 var _radius: LineEdit
 var _row: HBoxContainer
+var _see: Button = null
 var _chosen_id: String = ""
 ## Set while this picker has asked the chart for a place and the answer has not come back yet.
 ##
@@ -120,6 +128,16 @@ func setup(name_template: String = "%%SVC_POI_MISSION_DEFAULT", width: float = 2
 	ServiceStyle.apply_button(chart)
 	chart.pressed.connect(_ask_chart)
 	_row.add_child(chart)
+	# The third way of reading a place: look at it. A point the builder names is a place the player
+	# has never seen — the chart is where places are seen, and a delivery point that cannot be looked
+	# at is a word in a sentence.
+	_see = Button.new()
+	_see.text = "%%SVC_ACT_SEE_ON_CHART"
+	_see.tooltip_text = tr("%%SVC_TIP_SHOW_POI_ON_CHART")
+	ServiceStyle.apply_button(_see)
+	_see.pressed.connect(_show_on_chart)
+	_see.disabled = true
+	_row.add_child(_see)
 
 	refresh_list()
 	# The list may still be in flight — the panel builds its clauses before the fetch lands, so a
@@ -160,6 +178,7 @@ func refresh_list() -> void:
 	# the list is now showing — not to a silent "no destination".
 	if _picker.item_count > 0:
 		_chosen_id = str(_picker.get_item_metadata(_picker.selected))
+	_sync_see()
 
 
 ## The chosen POI's id, or "" when the builder has not chosen or placed one.
@@ -211,12 +230,14 @@ func _select_id(poi_id: String) -> bool:
 		if str(_picker.get_item_metadata(i)) == poi_id:
 			_picker.select(i)
 			_chosen_id = poi_id
+			_sync_see()
 			return true
 	return false
 
 
 func _on_selected() -> void:
 	_chosen_id = str(_picker.get_item_metadata(_picker.selected)) if _picker.selected >= 0 else ""
+	_sync_see()
 	if _chosen_id != "":
 		picked.emit(_chosen_id)
 
@@ -231,6 +252,22 @@ func place_here() -> void:
 		return
 	_awaiting_chart = false
 	await _place_at(PlayerLocation.presence_of(player))
+
+
+## Ask the chart to show the chosen place: the console opens the chart and frames it.
+##
+## Nothing is armed and nothing comes back — this is a request to look, not to pick.
+func _show_on_chart() -> void:
+	if _chosen_id == "":
+		return
+	show_on_chart_requested.emit(_chosen_id)
+
+
+## The button that looks at the chosen place is worth pressing only when there is one: a point that
+## is not chosen cannot be looked at.
+func _sync_see() -> void:
+	if _see != null:
+		_see.disabled = _chosen_id == ""
 
 
 ## Ask the chart for a place: the chart opens in placement mode, the player drops the marker and
@@ -394,7 +431,9 @@ static func radius_label_of(poi: Dictionary) -> String:
 ## because the title is free text being typed while the picker sits open.
 func _poi_name(place: Dictionary) -> String:
 	var scene := str(place.get("scene", "")).strip_edges()
-	var label := scene if scene != "" and scene != "space" else "%%SVC_POI_OFFWORLD"
+	# tr() and not the key: a name that reads "Emplacement de mission — %%SVC_POI_OFFWORLD" shows the
+	# player the inside of the game, which reads as a bug however true it is.
+	var label := scene if scene != "" and scene != "space" else tr("%%SVC_POI_OFFWORLD")
 	var named := tr(_name_template) % label
 	var prefix := _mission_title()
 	return named if prefix == "" else "%s — %s" % [prefix, named]

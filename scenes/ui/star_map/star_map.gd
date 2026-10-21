@@ -371,6 +371,8 @@ var _mission_ring: MeshInstance3D = null
 ## The marker's own line over the bottom of the chart: its width, and what the wheel and the click
 ## do about it. Visible exactly while a marker stands.
 var _mission_notice: Label = null
+## When a message with a deadline stops being true, in ticks. Zero when the chart has nothing to say.
+var _notice_until_ms: int = 0
 ## The relief of the body being looked at — its tiles, their levels, their life cycle. ONE object,
 ## where there were seventeen fields and ten functions here.
 ##
@@ -711,6 +713,9 @@ const MISSION_RING_TINT: Color = Color(1.0, 0.85, 0.45, 0.6)
 const MISSION_NOTICE_OFFSET_Y: float = 96.0
 const MISSION_NOTICE_FONT: int = 17
 const MISSION_NOTICE_TINT: Color = Color(1.0, 0.87, 0.6, 1.0)
+## How long a message the chart says of its own accord stays on the line. Long enough to be read at
+## a glance, short enough that the chart is quiet again before the player looks away.
+const NOTICE_SECONDS: float = 3.2
 
 
 ## The chart now answers "where" with a MISSION MARKER the player lays on the ground: the right
@@ -884,12 +889,31 @@ func _set_mission_ring_shown(shown: bool) -> void:
 ## The marker's own line: what its width is, and what the wheel and the click do about it. Built the
 ## first time there is something to say, hidden the moment there is not — a sentence that never goes
 ## away stops being an answer and becomes furniture.
+##
+## A message with a DEADLINE (see [method notice]) speaks first and is not interrupted: the marker
+## is gone by the time the news of its creation arrives, and the news is the more useful of the two.
 func _mission_notice_refresh() -> void:
+	if _notice_until_ms > Time.get_ticks_msec():
+		return
 	var wanted: bool = not _mission_repere.is_empty() and _placing_poi
 	if not wanted:
 		if _mission_notice != null:
 			_mission_notice.visible = false
 		return
+	_mission_notice_show(_mission_notice_text())
+
+
+## Say [param text] at the bottom of the chart, for [param seconds].
+##
+## The chart's way of answering something that happened away from it: a point created, a service that
+## said no. It has a deadline, because a chart that keeps talking is a chart that never answers.
+func notice(text: String, seconds: float = NOTICE_SECONDS) -> void:
+	_notice_until_ms = Time.get_ticks_msec() + int(seconds * 1000.0)
+	_mission_notice_show(text)
+
+
+## Put [param text] on the chart's line, making the label the first time it is needed.
+func _mission_notice_show(text: String) -> void:
 	if _mission_notice == null:
 		_mission_notice = Label.new()
 		_mission_notice.anchor_left = 0.5
@@ -907,7 +931,7 @@ func _mission_notice_refresh() -> void:
 		_mission_notice.add_theme_constant_override("outline_size", 8)
 		_mission_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_surface.add_child(_mission_notice)
-	_mission_notice.text = _mission_notice_text()
+	_mission_notice.text = text
 	_mission_notice.visible = true
 
 
@@ -1553,6 +1577,11 @@ func _flat_material(colour: Color) -> StandardMaterial3D:
 func _process(delta: float) -> void:
 	if not is_open():
 		return
+	# A message with a deadline ends on its own, and the line goes back to whatever the chart has to
+	# say — the marker's own words, if it still stands.
+	if _notice_until_ms > 0 and Time.get_ticks_msec() >= _notice_until_ms:
+		_notice_until_ms = 0
+		_mission_notice_refresh()
 	_live_cache.clear()
 	# Held rather than tapped: zooming across four orders of magnitude one notch at a time is tedious.
 	# POLLED, not consumed — and that is why the search box has to be asked first. A LineEdit eats the
