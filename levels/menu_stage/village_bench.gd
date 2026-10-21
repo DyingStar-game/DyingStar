@@ -1,0 +1,213 @@
+class_name VillageBench
+extends Node
+## A repeatable measure of the client where the game is heaviest: the mining village (252 homes, its
+## depots, garage, lamps) set on the menu stage's Tarsis 3, offline, and the camera on a fixed path --
+## a turn in a street, a flyover, a turn inside a home -- by day, then by night. Each window is boiled
+## down by BenchmarkStats (mean, percentiles, slowest 1 %, worst frame, GPU and render CPU, draws);
+## the report lands in user://benchmarks/village_bench_<stamp>.txt and the game quits.
+##
+## Launched with `--village-bench` (after `--` on the command line, or anywhere): the stage builds as
+## usual, then hands over to this instead of the menu. The same path, the same window and the same
+## settings every run: two runs differ by the change between them, not by where the camera looked.
+
+const ARG := "--village-bench"
+const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
+## Where the village stands from the stage's anchor (m, degrees from north): clear of the outpost.
+const DISTANCE_M := 350.0
+const BEARING_DEG := 90.0
+## The window every run is measured in: borderless, this size, no vsync, no frame cap.
+const WINDOW_SIZE := Vector2i(1920, 1080)
+## Seconds after placing the village before anything is measured: the pads level the ground, the
+## tiles under them arrive, the homes near the camera furnish.
+const SETTLE_S := 10.0
+## Each window: seconds to settle at its first pose, then seconds measured along its path.
+const SHOT_SETTLE_S := 2.0
+const SHOT_S := 8.0
+## The sun's height (degrees) for each light.
+const LIGHTS := [["day", 35.0], ["night", -25.0]]
+## A frame longer than this (ms) is listed with what came with it.
+const SPIKE_MS := 40.0
+
+## The shots, in the village's frame (its origin is building tarsis_4-1001's corner): where the eye is
+## and what it looks at, as a function of t in 0..1 along the shot.
+const STREET_EYE := Vector3(-4.0, 1.7, -3.0)
+const FLY_CENTRE := Vector3(5.0, 0.0, 12.0)
+const FLY_RADIUS_M := 90.0
+const FLY_HEIGHT_M := 60.0
+## Inside apartment 0-0-0 of tarsis_4-1001 (x -6.1..0, z 0..2.6), at eye height over its floor.
+const HOME_EYE := Vector3(-3.0, 1.6, 1.3)
+
+## The report's columns: one window a line.
+const ROW_HEAD := "%-14s %7s %7s %7s %7s %7s %7s %7s %5s %7s %7s %7s %7s %6s %7s %9s %6s %6s %5s"
+const ROW := "%-14s %7.1f %7.2f %7.2f %7.2f %7.2f %7.1f %7.1f %5d %7.2f %7.2f %7.2f %7.2f %6d %7d %9d %6d %6d %5d"
+
+var _stage: MenuStage
+var _planet: Planet
+var _rig: StageRig
+var _village: Node3D
+var _results: Array = []
+var _stats: BenchmarkStats
+var _last_usec: int = 0
+
+
+## True when this run is a bench.
+static func wanted() -> bool:
+	return ARG in OS.get_cmdline_user_args() or ARG in OS.get_cmdline_args()
+
+
+## Set up by the stage once it is live: its planet, its camera rig, where its clock is read and the
+## ground as the chunks draw it.
+func setup(stage: MenuStage, planet: Planet, rig: StageRig, anchor_local: Vector3, ground: Callable) -> void:
+	_stage = stage
+	_planet = planet
+	_rig = rig
+	var frame := SurfaceFrame.new(anchor_local, planet.planet_data.radius, ground)
+	var dir: Vector3 = frame.dir_at(DISTANCE_M, BEARING_DEG)
+	_village = (load(VILLAGE) as PackedScene).instantiate() as Node3D
+	_village.transform = Transform3D(frame.basis_at(dir, 0.0), frame.point(DISTANCE_M, BEARING_DEG))
+	for piece: Node in _village.get_children():
+		if piece is SpawnBuilding:
+			(piece as SpawnBuilding).build_on_ready = true  # no server here to send its apartments
+		ReplicaDress.prepare(piece, true)
+	planet.add_child(_village)
+
+
+func _ready() -> void:
+	ClientPerf.set_process(false)  # its census would land in the windows
+	Engine.max_fps = 0
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+	DisplayServer.window_set_size(WINDOW_SIZE)
+	DisplayServer.window_set_position(Vector2i.ZERO)
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+	_run.call_deferred()
+
+
+func _run() -> void:
+	_frame_at(STREET_EYE, STREET_EYE + Vector3.LEFT)
+	await _wait(SETTLE_S)
+	for light: Array in LIGHTS:
+		StageClock.set_sun_elevation(_planet, _village.position, float(light[1]))
+		await _shot("%s street" % light[0], _street)
+		await _shot("%s flyover" % light[0], _flyover)
+		await _shot("%s home" % light[0], _home)
+	_write_report()
+	get_tree().quit()
+
+
+## A turn on the spot in the street between the rows.
+func _street(t: float) -> Array:
+	var a: float = TAU * t
+	return [STREET_EYE, STREET_EYE + Vector3(cos(a), -0.05, sin(a))]
+
+
+## A circle over the village, looking at its middle.
+func _flyover(t: float) -> Array:
+	var a: float = TAU * t
+	var eye: Vector3 = FLY_CENTRE + Vector3(cos(a) * FLY_RADIUS_M, FLY_HEIGHT_M, sin(a) * FLY_RADIUS_M)
+	return [eye, FLY_CENTRE]
+
+
+## A turn inside a home.
+func _home(t: float) -> Array:
+	var a: float = TAU * t
+	return [HOME_EYE, HOME_EYE + Vector3(cos(a), -0.1, sin(a))]
+
+
+## One window: settle at the shot's first pose, then measure every frame along it.
+func _shot(label: String, path: Callable) -> void:
+	var pose: Array = path.call(0.0)
+	_frame_at(pose[0], pose[1])
+	await _wait(SHOT_SETTLE_S)
+	_stats = BenchmarkStats.new()
+	var pipe_at: int = PerfMath.pipeline_total()
+	var elapsed: float = 0.0
+	var spikes: PackedStringArray = []
+	var pipe_before: int = pipe_at
+	var nodes_before: int = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
+	_last_usec = Time.get_ticks_usec()
+	while elapsed < SHOT_S:
+		await get_tree().process_frame
+		var now: int = Time.get_ticks_usec()
+		var frame_ms: float = float(now - _last_usec) / 1000.0
+		_last_usec = now
+		elapsed += frame_ms / 1000.0
+		# A slow frame, with what came with it: shaders compiled, nodes added or freed, where the time went.
+		var pipe_now: int = PerfMath.pipeline_total()
+		var nodes_now: int = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
+		if frame_ms > SPIKE_MS:
+			spikes.append("%.2fs %.0fms pipe+%d nodes%+d gpu %.1f proc %.1f phys %.1f setup %.1f" % [elapsed,
+					frame_ms, pipe_now - pipe_before, nodes_now - nodes_before,
+					RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid()),
+					Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+					Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+					RenderingServer.get_frame_setup_time_cpu()])
+		pipe_before = pipe_now
+		nodes_before = nodes_now
+		pose = path.call(clampf(elapsed / SHOT_S, 0.0, 1.0))
+		_frame_at(pose[0], pose[1])
+		_sample(frame_ms)
+	var window: Dictionary = _stats.summary()
+	window.merge({
+		"draws": RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+		"objects": RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
+		"primitives": RenderingServer.get_rendering_info(
+				RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME),
+		"vram_mib": BenchmarkFacts.vram_mib(),
+		"nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
+		"pipe": PerfMath.pipeline_total() - pipe_at,
+	}, true)
+	window["spikes"] = spikes
+	_results.append([label, window])
+	print("[VillageBench] %s: %.1f fps, p99 %.1f ms, worst %.1f ms, gpu %.2f ms" % [label, window["fps"],
+			window["p99"], window["max"], window["gpu"]])
+
+
+func _sample(frame_ms: float) -> void:
+	var root: RID = get_viewport().get_viewport_rid()
+	_stats.add_frame(frame_ms, {
+		"gpu": RenderingServer.viewport_get_measured_render_time_gpu(root),
+		"cpu": RenderingServer.viewport_get_measured_render_time_cpu(root),
+		"setup": RenderingServer.get_frame_setup_time_cpu(),
+		"proc": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		"phys": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+	})
+
+
+## The rig at [param eye] looking at [param look], both in the village's frame.
+func _frame_at(eye: Vector3, look: Vector3) -> void:
+	_rig.frame(_village.transform * eye, _village.transform * look)
+
+
+func _wait(seconds: float) -> void:
+	await get_tree().create_timer(seconds).timeout
+
+
+func _write_report() -> void:
+	var lines: PackedStringArray = []
+	var version: Dictionary = BenchmarkFacts.game_version()
+	lines.append("VillageBench %s" % Time.get_datetime_string_from_system())
+	lines.append("version: %s" % str(version))
+	lines.append("adapter: %s (%s) | window %s | %s" % [RenderingServer.get_video_adapter_name(),
+			RenderingServer.get_video_adapter_vendor(), str(DisplayServer.window_get_size()),
+			ProjectSettings.get_setting("rendering/renderer/rendering_method")])
+	lines.append(ROW_HEAD % ["window", "fps", "mean", "p50", "p95", "p99", "low1", "max", "hit", "gpu",
+			"gpu95", "cpu", "setup", "draws", "objects", "prims", "vram", "nodes", "pipe"])
+	for entry: Array in _results:
+		var w: Dictionary = entry[1]
+		lines.append(ROW % [entry[0], w["fps"], w["mean"], w["p50"], w["p95"], w["p99"], w["low1"], w["max"],
+				w["hitches"], w["gpu"], w["gpu_p95"], w["cpu"], w["setup"], w["draws"], w["objects"],
+				w["primitives"], w["vram_mib"], w["nodes"], w["pipe"]])
+	for entry: Array in _results:
+		for spike: String in entry[1]["spikes"]:
+			lines.append("  spike %-14s %s" % [entry[0], spike])
+	var text: String = "\n".join(lines)
+	print(text)
+	DirAccess.make_dir_recursive_absolute("user://benchmarks")
+	var stamp: String = Time.get_datetime_string_from_system().replace(":", "-")
+	var path: String = "user://benchmarks/village_bench_%s.txt" % stamp
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file != null:
+		file.store_string(text + "\n")
+	print("[VillageBench] report: %s" % ProjectSettings.globalize_path(path))

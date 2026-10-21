@@ -156,6 +156,11 @@ func _build() -> void:
 	_splash(false)
 	print("[MenuStage] live on %s after %.1f s (ground %s)" % [PLANET_NAME, waited,
 		"ready" if ground_ready[0] else "late"])
+	if VillageBench.wanted():
+		_menu.hide()  # the bench measures the scene, not the menu over it
+		var bench := VillageBench.new()
+		bench.setup(self, _planet, _rig, _anchor, _drawn_ground)
+		add_child(bench)
 
 
 ## The ground as the chunks DRAW it, distance from the centre along `dir`: measured on the chunk's
