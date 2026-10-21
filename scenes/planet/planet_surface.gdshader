@@ -383,8 +383,14 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	// shift is metres on the plane, i.e. view_t * s in tile UV, rotated into
 	// each tile's frame.  1/(V.N) is dropped on purpose (no swimming at grazing
 	// angles).
+	// Blended on the height alone (height_blend 1, the default), the weights are known before any other
+	// tap: the parallax below uses them, and a tile that weighs under SKIP_W here is not read at all (its
+	// albedo, normal and roughness), the others sharing its weight. Inside a hex one tile weighs nearly
+	// everything: up to six taps fewer a plane.
+	bool by_height = planet_hex_quality >= 2 && height_blend >= 1.0;
+	vec3 W = by_height ? hex_weights(H, w, r) : vec3(1.0);
 	if (planet_hex_quality >= 2 && height_scale > 0.0) {
-		vec3 W0 = hex_weights(mix(vec3(1.0), H, height_blend), w, r);
+		vec3 W0 = by_height ? W : hex_weights(mix(vec3(1.0), H, height_blend), w, r);
 		vec2 shift = view_t * ((dot(W0, H) - 0.5) * height_scale * s);
 		st1 += rot1 * shift;
 		st2 += rot2 * shift;
@@ -395,12 +401,6 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	// gradients (as long as the longest), which the anisotropic sampler serves with ONE trilinear probe.
 	// 1.6 ms of GPU over the village from the air (RTX 3090, 1080p: 12.1 -> 10.4 ms); the blend between
 	// tiles is a little softer, 0.3 / 255 on average.
-	// Blended on the height alone (height_blend 1, the default), the weights are known before any other
-	// tap: a tile that weighs under SKIP_W here is not read at all (its albedo, normal and roughness),
-	// and the others share its weight. Inside a hex one tile weighs nearly everything: up to six taps
-	// fewer a plane.
-	bool by_height = planet_hex_quality >= 2 && height_blend >= 1.0;
-	vec3 W = by_height ? hex_weights(H, w, r) : vec3(1.0);
 	bvec3 read = greaterThan(W, vec3(SKIP_W));
 	if (by_height) {
 		W *= vec3(read);
