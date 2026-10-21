@@ -215,3 +215,16 @@ func test_every_lamp_reads_the_shared_tuning_in_lux() -> void:
 	assert_almost_eq(cell.on_below_light, 0.05, 1e-9, "a lamp given its own tuning follows it")
 	assert_eq(cell.max_delay_s, 10.0)
 	cell.free()
+
+
+## One photocell ticks them all (the first in the tree); when it goes, another takes over.
+func test_one_photocell_ticks_them_all() -> void:
+	var first := Photocell.new()
+	var second := Photocell.new()
+	add_child_autofree(first)
+	add_child_autofree(second)
+	assert_true(first.is_processing(), "the first drives")
+	assert_false(second.is_processing(), "the others are driven")
+	remove_child(first)
+	assert_true(second.is_processing(), "the driver gone, another takes over")
+	first.free()

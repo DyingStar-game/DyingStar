@@ -56,6 +56,11 @@ const MAX_ALTITUDE_M := 50000.0
 ## readings come every CHECK_PERIOD_S while the clock runs.
 const JUMP_S := 30.0
 
+## Every photocell of this client, ticked together by ONE of them (the first, _driver): 79 lamps in the
+## village ran a _process each, every frame, to find nearly always that nothing was due.
+static var _cells: Array[Photocell] = []
+static var _driver: Photocell = null
+
 var _planet: Planet = null
 var _lit: bool = true
 var _known: bool = false
@@ -66,19 +71,44 @@ var _last_read_s: float = NAN
 
 
 func _ready() -> void:
-	set_process(not Engine.is_editor_hint() and not OS.has_feature("dedicated_server"))
+	set_process(self == _driver)
 
 
 func _enter_tree() -> void:
 	_planet = null  # reparented under another frame: find the body again
+	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
+		return
+	_cells.append(self)
+	if not is_instance_valid(_driver):
+		_driver = self
+		set_process(true)
 
 
+func _exit_tree() -> void:
+	_cells.erase(self)
+	if _driver == self:
+		set_process(false)
+		_driver = null
+		for cell: Photocell in _cells:
+			if cell.is_inside_tree():
+				_driver = cell
+				cell.set_process(true)
+				break
+
+
+## The driver's: every photocell's wait, then its reading on each new tick of the shared clock (a lamp
+## just arrived reads at once: its tick is none yet).
 func _process(delta: float) -> void:
-	advance(delta)
 	var now: float = Globals.sim_time()
 	var tick: int = floori(now / CHECK_PERIOD_S)
-	if tick == _tick:
-		return
+	for cell: Photocell in _cells:
+		cell.advance(delta)
+		if cell._tick != tick:
+			cell._read(now, tick)
+
+
+## One reading of the light where this lamp stands, on [param tick] of the shared clock.
+func _read(now: float, tick: int) -> void:
 	_tick = tick
 	var planet := _body()
 	if planet == null or _altitude(planet) > MAX_ALTITUDE_M:
