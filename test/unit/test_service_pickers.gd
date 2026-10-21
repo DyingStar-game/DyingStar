@@ -371,6 +371,20 @@ func test_the_two_kinds_of_contract_are_told_apart() -> void:
 	MissionPoiCache.set_mission_roles([], [], [])
 
 
+func test_a_point_a_contract_names_is_kept_across_a_refetch() -> void:
+	# The service does not list a point that belongs to a mission, so the one the client fetched for
+	# a contract is kept the way a point the player laid is: a refetch must not empty the map of the
+	# places the missions point at.
+	MissionPoiCache.clear()
+	MissionPoiCache.add({"id": "contract-poi", "name": "Livraison Alpha"},
+			MissionPoiCache.ORIGIN_CONTRACT)
+	assert_true(MissionPoiCache.has("contract-poi"))
+	await MissionPoiCache.refresh()
+	assert_true(MissionPoiCache.has("contract-poi"),
+			"the point a contract names survived the refetch")
+	MissionPoiCache.clear()
+
+
 func test_a_json_null_width_reads_as_a_point() -> void:
 	# Dictionary's default only applies to an ABSENT key: a nullable column arrives as an explicit
 	# null, and float(null) has no constructor at all (the same bug radius_label_of documents).

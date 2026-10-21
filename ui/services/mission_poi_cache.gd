@@ -47,16 +47,23 @@ static func entries() -> Array:
 ## The three lists are point ids. A point named by a contract the player created is "created"; one
 ## named by a contract they hold is "accepted"; one named by a contract that is over is closed, and
 ## stops being offered. A point named by both is the player's own making, and says so.
+##
+## The closed ones ACCUMULATE: the service sweeps a point with its contract, so a closed contract's
+## point is gone for good and nothing has to un-close it.
 static func set_mission_roles(created: Array, accepted: Array, closed: Array) -> void:
 	_roles.clear()
-	_closed.clear()
 	for id: Variant in created:
 		_roles[str(id)] = "created"
 	for id: Variant in accepted:
 		var key := str(id)
 		if not _roles.has(key):
 			_roles[key] = "accepted"
-	for id: Variant in closed:
+	close_pois(closed)
+
+
+## The points of a contract that is over: they stop being offered, and stop being drawn.
+static func close_pois(poi_ids: Array) -> void:
+	for id: Variant in poi_ids:
 		_closed[str(id)] = true
 
 
@@ -69,6 +76,14 @@ static func role_of(poi_id: String) -> String:
 ## Is [param poi_id] the point of a contract that is over?
 static func is_closed(poi_id: String) -> bool:
 	return _closed.has(poi_id)
+
+
+## Does this cache already hold the point [param poi_id]?
+static func has(poi_id: String) -> bool:
+	for poi: Dictionary in _shared:
+		if str(poi.get("id", "")) == poi_id:
+			return true
+	return false
 
 
 ## Fetch the caller's POIs if this session has not already. Returns whether the fetch worked, so a
@@ -92,7 +107,8 @@ static func ensure_loaded() -> bool:
 	# chart without a mission behind it — is listed by the service, and appending the session's copy
 	# of it would show the same place twice in every list, and draw it twice on the chart.
 	for known: Dictionary in _shared:
-		if str(known.get("origin", "")) != ORIGIN_SESSION:
+		var origin := str(known.get("origin", ""))
+		if origin != ORIGIN_SESSION and origin != ORIGIN_CONTRACT:
 			continue
 		if not _holds(fetched, str(known.get("id", ""))):
 			fetched.append(known)
@@ -116,19 +132,20 @@ const PICK_LIMIT: int = 100
 ## Marks a POI this session created rather than fetched, so [method ensure_loaded] does not lose it.
 const ORIGIN_SESSION: String = "session"
 
-## Refetch from the service, keeping the session's own points. For a builder that was left open a
-## long time and wants the truth rather than what it remembers.
+## Refetch from the service, keeping the points this session knows about. For a builder that was
+## left open a long time and wants the truth rather than what it remembers.
 ##
-## The session's points are kept DELIBERATELY: the endpoint is not expected to list a POI that
-## belongs to a mission rather than to a player, so a refetch would lose the place the builder just
-## laid — and a mission that names nothing is a mission that cannot be taken. They used to survive
-## only by luck of timing (the list was emptied before the fetch and refilled after the creation),
-## which is not a promise anyone can keep.
+## Those points are kept DELIBERATELY: the endpoint is not expected to list a point that belongs to
+## a mission rather than to a player, so a refetch would lose the place the builder just laid — and
+## a mission that names nothing is a mission that cannot be taken. They used to survive only by luck
+## of timing (the list was emptied before the fetch and refilled after the creation), which is not
+## a promise anyone can keep.
 static func refresh() -> bool:
 	_loaded = false
 	var kept: Array = []
 	for known: Dictionary in _shared:
-		if str(known.get("origin", "")) == ORIGIN_SESSION:
+		var origin := str(known.get("origin", ""))
+		if origin == ORIGIN_SESSION or origin == ORIGIN_CONTRACT:
 			kept.append(known)
 	_shared = kept
 	return await ensure_loaded()
@@ -136,15 +153,26 @@ static func refresh() -> bool:
 
 ## Remember a POI that was just created here, and answer its id. Returns what [method entries] holds
 ## for it, so a caller can select it without a second round trip.
-static func add(poi: Dictionary) -> Dictionary:
+##
+## [param origin] says where the point came from: one this session CREATED (a point the player laid
+## on the chart) or one a CONTRACT names (fetched from the service, and not expected to be listed
+## by it). Both are kept across a refetch, for the same reason: a mission's point is invisible to
+## the list of the caller's own points, and a builder that lost the place it had just laid would
+## send a mission naming nothing.
+static func add(poi: Dictionary, origin: String = ORIGIN_SESSION) -> Dictionary:
 	var known := poi.duplicate()
-	known["origin"] = ORIGIN_SESSION
+	known["origin"] = origin
 	for i: int in range(_shared.size()):
 		if str((_shared[i] as Dictionary).get("id", "")) == str(known.get("id", "")):
 			_shared[i] = known
 			return known
 	_shared.append(known)
 	return known
+
+
+## The origin of a point this cache is holding: "session" for one the player laid, "contract" for
+## one a contract names.
+const ORIGIN_CONTRACT: String = "contract"
 
 
 ## The display label for a POI row: its name, or the language's word for "this one has none".

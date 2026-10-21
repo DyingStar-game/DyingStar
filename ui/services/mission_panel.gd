@@ -365,6 +365,9 @@ func _build_created_page(page: VBoxContainer) -> void:
 	var side := _side_page(2)
 	var filters := _row()
 	_created_status = _option_enum(STATUS_ENTRIES, 140.0)
+	# The contracts that are still running, and not the ones that are over: a list of what has been
+	# done is a list of what is not to do. The dropdown still has the rest.
+	_select_enum_value(_created_status, "active")
 	filters.add_child(_label(tr("%%SVC_LBL_STATUS"), DIM))
 	filters.add_child(_created_status)
 	_action_button(filters, tr("%%SVC_ACT_BROWSE"), func() -> void: _created_missions())
@@ -543,7 +546,10 @@ func _load_created() -> void:
 
 func _load_mine() -> void:
 	var at: int = _page_mine.offset
-	var result: Dictionary = await PlayerServices.my_missions("", _page_mine.limit, at)
+	# The contracts that are still running. The ones that are over are not in the list: a list of
+	# what has been done is a list of what is not to do, and the service counts what it sends, so
+	# the count under the list is the count of what is left.
+	var result: Dictionary = await PlayerServices.my_missions("active", _page_mine.limit, at)
 	if _land(_page_mine, at, result):
 		_apply_mine(_page_mine, result)
 
@@ -753,6 +759,26 @@ func _classify_mission_pois() -> void:
 		else:
 			created.append_array(ids)
 	MissionPoiCache.set_mission_roles(created, accepted, closed)
+	# The places the live contracts point at, fetched when the client does not have them: the chart
+	# is asked to show where the missions point, and a place nobody can name is a place nobody finds.
+	await _fetch_contract_pois(created + accepted)
+
+
+## The points the contracts name, fetched when this session does not hold them.
+##
+## A mission's point is invisible to the list of the caller's own points — the service does not
+## list it — so the only way to have it on the chart is to go and get it. A point the player cannot
+## read is simply not fetched: the service says so, and the contract's clause says it too.
+func _fetch_contract_pois(ids: Array) -> void:
+	for poi_id: String in ids:
+		if poi_id == "" or MissionPoiCache.has(poi_id):
+			continue
+		var result: Dictionary = await PlayerServices.poi_get(poi_id)
+		if not bool(result.get("ok", false)):
+			continue
+		var data: Variant = result.get("data")
+		if data is Dictionary:
+			MissionPoiCache.add(data as Dictionary, MissionPoiCache.ORIGIN_CONTRACT)
 
 
 ## The read-only contract: header + stamp, meta block, description, prerequisites, numbered
@@ -1142,6 +1168,7 @@ func _accept(mission_id: String, contract: VBoxContainer) -> void:
 
 func _abandon(mission_id: String, contract: VBoxContainer) -> void:
 	if _report(await PlayerServices.mission_abandon(mission_id), tr("%%SVC_MSG_MISSION_ABANDONED")):
+		_close_contract_pois(mission_id)
 		await _open_contract(contract, mission_id)
 
 
@@ -1151,8 +1178,20 @@ func _complete(mission_id: String, contract: VBoxContainer) -> void:
 		if result.get("data") is Dictionary and (result.get("data") as Dictionary).get("settlement") != null:
 			_say(tr("%%SVC_MSG_MISSION_COMPLETED") + " " + ServiceTypes.settlement_text(
 					(result.get("data") as Dictionary).get("settlement")), GOOD)
+		_close_contract_pois(mission_id)
 		await _open_contract(contract, mission_id)
 		refresh()
+
+
+## The contract is over: the place it named is gone with it. The service sweeps the point, and the
+## client has to stop offering it and stop drawing it — a point of a contract that no longer runs
+## is a place nobody should be sent to.
+func _close_contract_pois(mission_id: String) -> void:
+	var ids: Array = _contract_pois.get(mission_id, [])
+	_contract_pois.erase(mission_id)
+	if ids.is_empty():
+		return
+	MissionPoiCache.close_pois(ids)
 
 
 func _progress(mission_id: String, contract: VBoxContainer, objective_pick: OptionButton,

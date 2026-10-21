@@ -449,6 +449,16 @@ static func _enum_value(option: OptionButton) -> String:
 	return str(option.get_item_metadata(option.selected))
 
 
+## Select the row whose raw value is [param value], if the list has one. A filter that opens on
+## "everything" shows the player a wall of what is over; a filter that opens on what is live is the
+## list they came for.
+func _select_enum_value(option: OptionButton, value: String) -> void:
+	for i: int in range(option.item_count):
+		if str(option.get_item_metadata(i)) == value:
+			option.select(i)
+			return
+
+
 func _row(separation: int = 10) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", separation)
