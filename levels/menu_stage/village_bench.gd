@@ -27,7 +27,7 @@ const SUN_ARG := "--bench-sun="
 const HIDE := ["shell", "interiors", "walkways", "lights", "shadows", "casters", "fringe", "labels", "props",
 		"village", "outpost", "terrain", "aerial", "skyrefl", "sunshadow", "ssao", "ssil", "ssr", "glow",
 		"hexq0", "hexq1", "terraincast", "aeriallut",
-		"interiorlights", "arealights", "spotlights", "omnilights"]
+		"interiorlights", "arealights", "spotlights", "omnilights", "shelllod"]
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
 ## Where the village stands from the stage's anchor (m, degrees from north): clear of the outpost.
 const DISTANCE_M := 350.0
@@ -303,6 +303,13 @@ func _hide_families() -> void:
 			building.get_node("InteriorStreamer").set_process(false)
 		if "walkways" in _hidden and building.has_node("Walkways"):
 			(building.get_node("Walkways") as Node3D).visible = false
+	if "shelllod" in _hidden:
+		for lod: Node in _village.find_children("ShellLod", "", true, false):
+			for path: String in ShellLod.DETAILED:
+				var part := lod.get_parent().get_node_or_null(path) as GeometryInstance3D
+				if part != null:
+					part.visibility_range_end = 0.0
+			lod.queue_free()
 	for node: Node in _village.find_children("*", "Light3D", true, false):
 		if "lights" in _hidden:
 			(node as Light3D).visible = false

@@ -8,6 +8,8 @@
 [ext_resource type="Script" uid="uid://c1q53e1a4jpjv" path="res://scenes/_universe/props/furniture/parts/moving_part.gd" id="part_moving"]
 [ext_resource type="AudioStream" uid="uid://dv7mo7owba2ms" path="res://assets/_universe/audio/sfx/props/container-door-close.ogg" id="sfx_container_close"]
 [ext_resource type="AudioStream" uid="uid://uh404870afcs" path="res://assets/_universe/audio/sfx/props/container-door-open.ogg" id="sfx_container_open"]
+[ext_resource type="PackedScene" path="res://assets/_universe/structures/buildings/habitat_container_lod1.glb" id="shell_lod_glb"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/buildings/shell_lod.gd" id="shell_lod"]
 
 [sub_resource type="BoxShape3D" id="Box_door"]
 size = Vector3(0.1, 2.36, 1.275)
@@ -32,6 +34,11 @@ collision_mask = 0
 
 [node name="habitat_container" parent="." unique_id=2142450369 instance=ExtResource("1_glb")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -3.05, 1.3, 1.3)
+
+[node name="ShellLod" type="Node3D" parent="habitat_container"]
+script = ExtResource("shell_lod")
+
+[node name="habitat_container_lod1" parent="habitat_container/ShellLod" instance=ExtResource("shell_lod_glb")]
 
 [node name="bottom_wall" parent="habitat_container/frame" parent_id_path=PackedInt32Array(2142450369, 1751490987) index="0" unique_id=1794527095]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.01438333006469, 0.00150555859620071, -0.00221031949336514)
