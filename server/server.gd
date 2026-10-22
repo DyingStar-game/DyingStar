@@ -232,6 +232,8 @@ func _ready() -> void:
 	# nothing to report, and that ambiguity is what a low-TPS log must never contain.
 	if _perf_report:
 		print("[Perf] rig ARMED by %s — report every 2 s" % PropNet.prof_source)
+		print("[Perf] node census %s" % ("ON — a full tree walk every 10 s, the main loop frozen meanwhile"
+				if _census_on or _bands_on else "off — arm it with [debug] perf_census=true or DS_PERF_CENSUS=1"))
 		# A server started from the editor keeps a WINDOW and renders the whole system; preprod runs
 		# headless and does not. That difference lands entirely in `fps` and not at all in `tps`, so
 		# the log has to say which of the two it is or the numbers below cannot be compared.
@@ -321,6 +323,11 @@ var _perf_e_usec: int = 0
 const _BAND_BASE: int = 100000
 const _BAND_STEP: int = 1000
 var _bands_on: bool = SettingsManager._server_ini_flag("debug", "perf_bands")
+## The [Perf/nodes] census, on top of the [Perf] rig: `[debug] perf_census=true` or DS_PERF_CENSUS=1. A full
+## walk of the tree on the main thread, every 10 s: ~150 ms for 47 000 nodes, a freeze every player felt
+## as a step every 10 s on preprod (2026-10-22), so never part of `perf`. perf_bands needs it too: the
+## census is what moves the nodes into their bands.
+var _census_on: bool = SettingsManager._server_ini_flag("debug", "perf_census")
 var _band_scripts: Array = []
 var _band_probes: Array = []
 var _band_usec: Array = []
@@ -584,9 +591,9 @@ func _perf_tick(delta: float) -> void:
 			_perf_probe_phys_last = _perf_make_probe(1000000, _perf_phys_last_tick, true)
 		# Who is running per frame. proc= (TIME_PROCESS) rose ~0.7 ms per NPC with nothing of ours
 		# instrumented to show for it: the answer is in which nodes process, by script and class.
-		# A full tree walk, so only every 5th report (10 s).
+		# A full tree walk, so only every 5th report (10 s), and only when asked for (_census_on).
 		_perf_census_counter += 1
-		if _perf_census_counter >= 5:
+		if _perf_census_counter >= 5 and (_census_on or _bands_on):
 			_perf_census_counter = 0
 			_perf_node_census()
 		# The _process side of the main loop (TIME_PROCESS): what the Horizon socket cost, by message
@@ -766,6 +773,7 @@ func _process_impl() -> void:
 ## plus the internal-processing ones (engine nodes such as AnimationPlayer, NavigationAgent3D,
 ## AudioStreamPlayer3D whose per-frame work never shows in any script counter).
 func _perf_node_census() -> void:
+	var t0: int = Time.get_ticks_usec()
 	_perf_census = {"nodes": 0, "proc": {}, "phys": {}, "internal": {}, "areas": {}}
 	_perf_walk(get_tree().root)
 	var parts: Array = []
@@ -782,7 +790,9 @@ func _perf_node_census() -> void:
 		for i in mini(8, rows.size()):
 			txt += " %s=%d" % [rows[i][0], rows[i][1]]
 		parts.append("%s=%d:%s" % [key, total, txt if txt != "" else " none"])
-	print("[Perf/nodes] total=%d | %s" % [_perf_census["nodes"], " | ".join(parts)])
+	# Its own cost, walk and line together: the freeze it puts on the main loop, every 10 s.
+	print("[Perf/nodes] total=%d in %.1f ms | %s" % [_perf_census["nodes"], (Time.get_ticks_usec() - t0) / 1000.0,
+			" | ".join(parts)])
 
 func _perf_walk(node: Node) -> void:
 	_perf_census["nodes"] += 1

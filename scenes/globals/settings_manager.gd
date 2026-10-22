@@ -318,7 +318,15 @@ static func _server_ini_number(section: String, key: String, default: float) -> 
 
 ## A boolean key of the server's ini, accepting the bare `true` / `1` / `yes`
 ## a hand-edited file carries (ConfigFile hands those back as String).
+##
+## A `[debug]` key is overridden by the environment variable `DS_` + its name in capitals
+## (perf_census -> DS_PERF_CENSUS) whenever that variable is set, to true as to false: a pod is
+## switched by editing its env, without a new image. The godotserver chart declares every one of them.
 static func _server_ini_flag(section: String, key: String) -> bool:
+	if section == "debug":
+		var env: int = env_flag(OS.get_environment("DS_" + key.to_upper()))
+		if env >= 0:
+			return env == 1
 	var ini := "server.ini"
 	for a: String in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if a.contains("srvini="):
@@ -329,6 +337,16 @@ static func _server_ini_flag(section: String, key: String) -> bool:
 	var v: Variant = cfg.get_value(section, key, false)
 	return (v is bool and bool(v)) or (v is int and int(v) != 0) \
 			or (v is String and String(v).strip_edges().to_lower() in ["true", "1", "yes"])
+
+## An environment switch: 1 for true / 1 / yes / on, 0 for false / 0 / no / off, -1 when unset or
+## unreadable (the ini decides then).
+static func env_flag(value: String) -> int:
+	var v: String = value.strip_edges().to_lower()
+	if v in ["true", "1", "yes", "on"]:
+		return 1
+	if v in ["false", "0", "no", "off"]:
+		return 0
+	return -1
 
 func set_monitor(index: int) -> void:
 	DisplayServer.window_set_current_screen(index)

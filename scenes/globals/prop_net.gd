@@ -27,7 +27,8 @@ extends RefCounted
 # reading /proc instead of by reading the rig that already existed. Three ways in, first match wins,
 # because no single one reaches every way this server is started:
 #   1. `--perf` on the command line          — a launcher script, or the editor's Main Run Args.
-#   2. `DS_PERF=1` in the environment        — a container, where there is no command line to edit.
+#   2. `DS_PERF=1` in the environment        — a container, where there is no command line to edit
+#                                              (`DS_PERF=0` keeps it off whatever server.ini says).
 #   3. `[debug] perf=true` in server.ini     — a run from the Godot editor, where the other two mean
 #                                              changing project settings just to take a measurement.
 # server.gd prints WHICH one spoke at boot, so a log never leaves it ambiguous.
@@ -41,9 +42,14 @@ static func _static_init() -> void:
 		prof_on = true
 		prof_source = "--perf"
 		return
-	if OS.get_environment("DS_PERF") == "1":
+	# Set, the variable decides either way: the godotserver chart declares DS_PERF on every pod, "0" to
+	# keep it off whatever the image's server.ini says.
+	var env: String = OS.get_environment("DS_PERF").strip_edges().to_lower()
+	if env in ["1", "true", "yes", "on"]:
 		prof_on = true
-		prof_source = "DS_PERF=1"
+		prof_source = "DS_PERF=%s" % env
+		return
+	if env in ["0", "false", "no", "off"]:
 		return
 	# Same file and same `srvini=` override as NetworkOrchestrator.load_server_config(), read directly
 	# here because the counters must be armed before any autoload has had a chance to run.
