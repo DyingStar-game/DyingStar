@@ -17,6 +17,10 @@ const MARGIN_M := 2.0
 ## The fixed parts of the model it stands in for, from the glb's root.
 const DETAILED := ["frame", "frame/roof", "frame/left_wall", "frame/right_wall", "frame/bottom_wall", "frame/ID"]
 
+## The base name of the ID plate's own material, in the model and in this stand-in alike: the plate
+## ApartmentPlates lights red or green (paint_plate).
+const PLATE_MATERIAL := "noir"
+
 ## Material base name -> the model's material, shared by every container (one glb, one set).
 static var _materials: Dictionary = {}
 
@@ -54,6 +58,20 @@ static func _material(model: Node, name: String) -> Material:
 				if own != null and material != null and not _materials.has(base_name(own.resource_name)):
 					_materials[base_name(own.resource_name)] = material
 	return _materials.get(key)
+
+
+## The stand-in's ID plate in [room] painted with [param material], as ApartmentPlates paints the
+## detailed one: past DETAIL_END_M only the stand-in's is drawn, and in the model's plain black the
+## plate lost its colour there (playtest 2026-10-22).
+static func paint_plate(room: Node, material: Material) -> void:
+	var lod := room.find_child("ShellLod", true, false)
+	if lod == null:
+		return
+	for mesh: MeshInstance3D in lod.find_children("*", "MeshInstance3D", true, false):
+		for i in mesh.mesh.get_surface_count():
+			var own := mesh.mesh.surface_get_material(i)
+			if own != null and base_name(own.resource_name) == PLATE_MATERIAL:
+				mesh.set_surface_override_material(i, material)
 
 
 ## [param name] without a Blender ".NNN" suffix: "Material.001" -> "Material".

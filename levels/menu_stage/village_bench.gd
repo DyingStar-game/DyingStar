@@ -25,11 +25,16 @@ const SHOTS_ARG := "--bench-shots"
 const SUN_ARG := "--bench-sun="
 ## Pictures only, from fixed poses (VIEWS), then quit: to show what a model change looks like up close.
 const VIEWS_ARG := "--bench-views"
-## Name -> [eye, look], in the village's frame: over the roofs of tarsis_4-1001, and its home 0-0-0's ceiling.
+## Name -> [eye, look], in the village's frame: over the roofs of tarsis_4-1001, its home 0-0-0's ceiling,
+## and its doors' ID plates from afar.
 const VIEWS := {
 	"roofs": [Vector3(-1.0, 12.0, -3.0), Vector3(-3.5, 7.0, 6.0)],
 	"roof_close": [Vector3(-0.5, 9.2, 0.5), Vector3(-3.5, 7.6, 3.5)],
 	"ceiling": [Vector3(-3.0, 1.4, 1.3), Vector3(-4.2, 2.6, 1.0)],
+	# The ID plates over tarsis_4-1001's doors from 30, 60 and 120 m (the far ones over the next building).
+	"plates_30": [Vector3(30.0, 1.7, 4.0), Vector3(0.0, 4.0, 4.0)],
+	"plates_60": [Vector3(60.0, 12.0, 4.0), Vector3(0.0, 4.0, 4.0)],
+	"plates_120": [Vector3(120.0, 20.0, 4.0), Vector3(0.0, 4.0, 4.0)],
 }
 ## The model's own roof, for --bench-hide=oldroof (the lighter one is the scene's override).
 const ORIGINAL_MODEL := "res://assets/_universe/structures/buildings/habitat_container.glb"
