@@ -409,9 +409,13 @@ func setup() -> void:
 
 	# Hold the splash a short minimum (so the world DRAWS behind it — there is no client terrain-ready
 	# signal) AND until the sun's day/night + the body orientation have settled (gravity resolved, up
-	# steady). Capped by a timeout so a stuck spawn never hangs.
+	# steady) AND until the zone entry is built (the objects still waiting, a building a frame, would
+	# stutter in front of the player). Capped by a timeout so a stuck spawn never hangs.
+	var net: Node = NetworkOrchestrator.network_agent
 	var waited: float = 0.0
-	while (waited < 2.5 or player.get_current_gravity_parent() == null or not sun.settled) and waited < 10.0:
+	while (waited < 2.5 or player.get_current_gravity_parent() == null or not sun.settled
+			or (is_instance_valid(net) and net.has_method("backlog_size") and net.backlog_size() > 0)) \
+			and waited < 10.0:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
 		# The ground under us: chunks built out of those asked for, or the time left, whichever is further.
@@ -423,6 +427,8 @@ func setup() -> void:
 
 	if loading != null:
 		loading.queue_free()
+	print("[PlayerClient] spawn splash lifted after %.1f s (%d zone events still to build)" % [waited,
+			net.backlog_size() if is_instance_valid(net) and net.has_method("backlog_size") else -1])
 
 	# The world is on screen: from here the music follows where this player is.
 	MusicDirector.follow(player)

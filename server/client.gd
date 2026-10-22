@@ -187,7 +187,7 @@ var _net_echo: bool = false
 
 
 ## The time a frame may spend on received events (µs): wide while the loading splash hides the world
-## (the sooner it is built, the sooner we play), a few milliseconds once our player is in it.
+## (the sooner it is built, the sooner we play), a few milliseconds once the world is on screen.
 const BACKLOG_BUDGET_LOADING_US := 100000
 const BACKLOG_BUDGET_PLAYING_US := 5000
 ## The backlog's own events: an object (or a player) that was waiting for its parent, which has come —
@@ -402,8 +402,8 @@ func _process(_delta: float) -> void:
 			else:
 				print("< Client - Got binary data from server: %d bytes" % packet.size())
 		# Handled in arrival order within the frame's budget; the rest waits for the next frame.
-		if not _backlog.drain(_route, BACKLOG_BUDGET_PLAYING_US if my_player_created
-				else BACKLOG_BUDGET_LOADING_US):
+		if not _backlog.drain(_route, BACKLOG_BUDGET_LOADING_US if LoadingSplash.is_up(get_tree())
+				else BACKLOG_BUDGET_PLAYING_US):
 			ClientPerf.scope_end("net:poll", _net_tok)
 			return
 
@@ -420,6 +420,11 @@ func _process(_delta: float) -> void:
 		print("< Client - WebSocket closed with code: %d. Clean: %s" % [code, code != -1])
 		set_process(false) # Stop processing.
 	ClientPerf.scope_end("net:poll", _net_tok)
+
+
+## Events received and not handled yet: the zone still being built (the spawn splash waits for it).
+func backlog_size() -> int:
+	return _backlog.size()
 
 
 ## One event from Horizon, as it was received: creation, deletion, movement, property updates. False
