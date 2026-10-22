@@ -69,6 +69,7 @@ shape = SubResource("Box_door")
 [node name="DoorL" type="Area3D" parent="habitat_container/frame/left_door" index="2" unique_id=1020434824]
 monitoring = false
 script = ExtResource("part_moving")
+anyone_may_shut = true
 open_angle_deg = -70.0
 duration_s = 1.6
 latch_path = NodePath("../handle")
@@ -104,6 +105,7 @@ shape = SubResource("Box_door")
 monitoring = false
 script = ExtResource("part_moving")
 opens_for_npc = true
+anyone_may_shut = true
 open_angle_deg = 70.0
 duration_s = 1.6
 latch_path = NodePath("../handle_001")

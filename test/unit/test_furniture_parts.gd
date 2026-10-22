@@ -161,6 +161,33 @@ func test_a_state_that_arrives_before_the_building_has_its_uuid_still_shows() ->
 	KnownEngineErrors.forgive_floor_material(self)
 
 
+func test_anyone_may_shut_a_home_s_front_door_but_only_its_occupant_opens_it() -> void:
+	# A door left open on a walkway barred the way to everyone else (playtest 2026-10-22).
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	PropSync.of(building).uuid = "home-uuid"
+	add_child_autofree(building)
+	building.apply_prop_data({"apartments": [{"floor": 0, "row": 0, "col": 0, "player_uuid": "owner-1",
+			"player_name": "Ann"}]})
+	var room: Node = building.get_node("MultiMeshInstance3D/0-0-0")
+	var door := room.get_node("habitat_container/frame/right_door/DoorR") as MovingPart
+	var stranger := Player.new()
+	stranger.client_uuid = "stranger-1"
+	assert_ne(door.refusal(stranger), "", "shut: not theirs to open")
+	building.server_set_part(door, true)
+	assert_eq(door.refusal(stranger), "", "open: anyone may shut it")
+	door.server_use(stranger, {"on": true})
+	assert_false(door.is_on, "a stranger only ever shuts it, whatever they ask")
+	var wardrobe: MovingPart = null
+	for part in room.find_children("*", "Area3D", true, false):
+		if part is MovingPart and not (part as MovingPart).anyone_may_shut:
+			wardrobe = part
+	if wardrobe != null:
+		building.server_set_part(wardrobe, true)
+		assert_ne(wardrobe.refusal(stranger), "", "inside the home: still the occupant's alone")
+	stranger.free()
+	KnownEngineErrors.forgive_floor_material(self)
+
+
 func test_only_an_npc_s_door_is_opened() -> void:
 	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
 	building.cols = 2

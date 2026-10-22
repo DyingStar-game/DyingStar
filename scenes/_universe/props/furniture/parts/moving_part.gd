@@ -15,6 +15,10 @@ extends ToggledPart
 ## Opened by the server for an NPC living in its home (SpawnBuilding.server_open_for_npc): the door it
 ## goes out by -- an NPC never opens one itself.
 @export var opens_for_npc: bool = false
+## Anyone may shut it while it stands open, not only who lives there (opening stays theirs): a home's
+## door left open on a walkway barred the way to everyone else (playtest 2026-10-22). The container's
+## front doors.
+@export var anyone_may_shut: bool = false
 ## The node that moves: the door leaf or the drawer.
 @export var leaf_path: NodePath = ^".."
 ## Hinge axis, in the leaf's own frame (a door: up).
@@ -72,6 +76,20 @@ func _ready() -> void:
 	# building is placed): the leaf was not known then, so it takes that state now.
 	if _leaf != null and is_on:
 		_set_open(_open_target())
+
+
+## Who may use it: its occupant, and anyone at all to shut it while it is open (anyone_may_shut).
+func refusal(player: Node) -> String:
+	if anyone_may_shut and is_on:
+		return ""
+	return super(player)
+
+
+## SERVER: as asked for its occupant; anyone else may only shut it (anyone_may_shut), whatever they ask.
+func server_use(player: Node, data: Dictionary) -> void:
+	if anyone_may_shut and super.refusal(player) != "":
+		data = {"on": false}
+	super(player, data)
 
 
 func _play(stream: AudioStream) -> void:
