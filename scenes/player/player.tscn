@@ -11,7 +11,6 @@
 [ext_resource type="PackedScene" uid="uid://c21kv16wh1y4q" path="res://scenes/_universe/characters/humanoids/human_puppet.tscn" id="9_genst"]
 [ext_resource type="AudioStream" uid="uid://lrx3p8pxesgu" path="res://assets/_universe/audio/sfx/characters/vault-high.ogg" id="10_1u1sw"]
 [ext_resource type="PackedScene" uid="uid://kyr57ffqvlgr" path="res://ui/pause_menu/pause_menu.tscn" id="11_edphc"]
-[ext_resource type="PackedScene" uid="uid://c80p4xxhvqgb1" path="res://assets/_universe/props/tools/tools/mining/hammerdrill.glb" id="14_fuv0x"]
 [ext_resource type="Texture2D" uid="uid://ndwy7fky4xxu" path="res://ui/player_interface/volume-high-solid-full.svg" id="27_akued"]
 [ext_resource type="Texture2D" uid="uid://crlbs5i36jfp" path="res://ui/player_interface/microphone-solid-full.svg" id="28_2sxo3"]
 [ext_resource type="Script" uid="uid://d2lihgny3jxwd" path="res://scenes/mining/mining_tool.gd" id="33_2sxo3"]
@@ -192,10 +191,6 @@ mouse_filter = 1
 
 [node name="PauseMenu" parent="UserInterface" unique_id=1074791477 instance=ExtResource("11_edphc")]
 layout_mode = 1
-
-[node name="hammerdrill" parent="." unique_id=352818182 instance=ExtResource("14_fuv0x")]
-transform = Transform3D(5.406316161536077e-17, -2.874589293632614e-17, -1, 0.4694715627858908, 0.882947592858927, 8.354401634806166e-33, 0.882947592858927, -0.4694715627858908, 6.123032e-17, 0.35599999999976717, 1.1830000000045402, -0.27999999999883585)
-visible = false
 
 [node name="MiningTool" type="Node3D" parent="." unique_id=709506111]
 script = ExtResource("33_2sxo3")

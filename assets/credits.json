@@ -1283,15 +1283,6 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
-			"asset": "hammerdrill.glb",
-			"path": "res://assets/_universe/props/tools/tools/mining/hammerdrill.glb",
-			"author": "Sir de XanTiuM",
-			"source": "Discord",
-			"id": "518522475613650960",
-			"url": "",
-			"license": "CC BY-NC-SA 4.0"
-		},
-		{
 			"asset": "handbrake.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/handbrake.png",
 			"author": "WarpZone",
