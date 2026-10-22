@@ -6,7 +6,7 @@
 [ext_resource type="Resource" uid="uid://bbd8gcogr6hfd" path="res://scenes/common/prop_landing.tres" id="4_landing"]
 [ext_resource type="Material" uid="uid://cj4djxpjv43oc" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_orange.tres" id="5_gr1en"]
 [ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="5_pick"]
-[ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="7_gr1en"]
+[ext_resource type="Material" uid="uid://4r3k3u3bxfd4" path="res://assets/_universe/props/tools/tools/mining/mat_hammerdrill_decal.tres" id="7_gr1en"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_drill"]
 size = Vector3(0.76, 0.35, 0.1)

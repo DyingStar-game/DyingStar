@@ -1,0 +1,18 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://4r3k3u3bxfd4"]
+
+[ext_resource type="Texture2D" uid="uid://ctqdudc86a6k4" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/tex_metal_ares_misc_decal_albedo.png" id="1_i1x7c"]
+[ext_resource type="Texture2D" uid="uid://t8xb82i7wb54" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/tex_metal_ares_misc_decal_normal.png" id="2_n3ieg"]
+[ext_resource type="Texture2D" uid="uid://x6amawusark2" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/tex_metal_ares_misc_decal_roughness.png" id="3_5uvpr"]
+
+[resource]
+resource_name = "mat_hammerdrill_decal"
+transparency = 2
+alpha_scissor_threshold = 0.19
+alpha_antialiasing_mode = 0
+albedo_color = Color(0.5716146, 0.5716146, 0.5716146, 1)
+albedo_texture = ExtResource("1_i1x7c")
+metallic = 1.0
+roughness = 0.6
+roughness_texture = ExtResource("3_5uvpr")
+normal_enabled = true
+normal_texture = ExtResource("2_n3ieg")
