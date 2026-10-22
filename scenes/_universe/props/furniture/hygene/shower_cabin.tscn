@@ -22,6 +22,9 @@ size = Vector3(1.711, 0.046, 1.5)
 [sub_resource type="BoxShape3D" id="Box_shell_ceiling"]
 size = Vector3(1.711, 0.373, 1.5)
 
+[sub_resource type="BoxShape3D" id="Box_shower_head"]
+size = Vector3(0.26, 0.43, 0.31)
+
 [sub_resource type="BoxShape3D" id="Box_cabin_door"]
 size = Vector3(1, 2.2, 0.05)
 
@@ -56,6 +59,11 @@ shape = SubResource("Box_shell_floor")
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 2.3135, 0.0015)
 visible = false
 shape = SubResource("Box_shell_ceiling")
+
+[node name="ShowerHead" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.725, -0.621)
+visible = false
+shape = SubResource("Box_shower_head")
 
 [node name="shower_cabin" parent="." unique_id=1432174497 instance=ExtResource("2_fl88a")]
 

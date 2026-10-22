@@ -1,7 +1,8 @@
 extends GutTest
-## The shower and restroom cabins collide as five boxes (back, two sides, floor, ceiling; the door has its
-## own), not as a triangle mesh: a ConcavePolygonShape3D of ~640 triangles in each of the 252 homes' cabins
-## was dear to the servers' physics. The boxes hold the old shell's bounds, and a player fits inside.
+## The shower and restroom cabins collide as boxes (back, two sides, floor, ceiling, and what stands inside:
+## the toilet, the shower head; the door has its own), not as a triangle mesh: a ConcavePolygonShape3D of
+## ~640 triangles in each of the 252 homes' cabins was dear to the servers' physics. The boxes hold the old
+## shell's bounds, and a player fits inside.
 
 const CABINS := [
 	"res://scenes/_universe/props/furniture/hygene/shower_cabin.tscn",
@@ -9,8 +10,11 @@ const CABINS := [
 ]
 ## The old shell's bounds in the cabin's space (m): what the boxes must still close.
 const SHELL := AABB(Vector3(-0.75, 0.0, -0.854), Vector3(1.5, 2.5, 1.711))
-## A standing player in the middle of the cabin: 0.6 m wide, 1.8 m tall, on its floor.
-const PLAYER := AABB(Vector3(-0.3, 0.05, -0.3), Vector3(0.6, 1.8, 0.6))
+## A standing player (Player's capsule: 0.265 m of radius, 1.8 m tall) on the cabin's floor, in front of
+## the toilet / under the shower head.
+const PLAYER := AABB(Vector3(-0.27, 0.05, -0.2), Vector3(0.54, 1.8, 0.54))
+## Each cabin's boxes: the shell's five and the one around what stands inside.
+const BOXES := 6
 
 
 func test_a_cabin_collides_as_boxes() -> void:
@@ -22,7 +26,7 @@ func test_a_cabin_collides_as_boxes() -> void:
 				assert_false((child as CollisionShape3D).shape is ConcavePolygonShape3D, "%s: %s" % [path, child.name])
 				if (child as CollisionShape3D).shape is BoxShape3D:
 					boxes += 1
-		assert_eq(boxes, 5, path)
+		assert_eq(boxes, BOXES, path)
 		cabin.free()
 
 
