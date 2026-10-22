@@ -212,3 +212,35 @@ func test_what_touches_the_door_shut_does_not_stop_it() -> void:
 	# The frame it hangs in: overlapping the shut board along its edge.
 	_wall(Vector3(0.5, 0.0, 0.03), Vector3(1.2, 2.2, 0.02))
 	assert_eq(_door(-90.0).free_reach(), 1.0, "swinging away from its frame: all the way")
+
+
+## The apartment's bed stands against a wall: its stand point is on that side. Getting up puts the body
+## on the free side, in the room -- not through the wall into the next home (playtest 2026-10-21).
+func test_getting_up_stays_in_the_room() -> void:
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	PropSync.of(building).uuid = "home-uuid"  # its furniture finds its building, and its walls, by it
+	building.stream_interiors = false
+	add_child_autofree(building)
+	building.apply_prop_data({"apartments": []})
+	await wait_physics_frames(2)
+	var room: Node3D = building.get_node("MultiMeshInstance3D/0-0-0")
+	var spot := room.find_children("*", "BedSpot", true, false)[0] as BedSpot
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.265
+	capsule.height = 1.8
+	var at: Vector3 = room.global_transform.affine_inverse() * spot.free_stand_transform(
+			capsule, Transform3D(Basis.IDENTITY, Vector3(0.0, 0.9, 0.0)), []).origin
+	assert_between(at.x, -6.04, -0.03, "between the back wall and the doors")
+	assert_between(at.z, 0.06 + capsule.radius, 2.54 - capsule.radius, "between the two side walls")
+	assert_almost_eq(at.y, spot.stand_point.global_position.y - room.global_position.y, 0.01, "on the floor")
+	KnownEngineErrors.forgive_floor_material(self)
+
+
+func test_the_other_side_mirrors_the_stand_point() -> void:
+	var stand := Transform3D(Basis.IDENTITY, Vector3(-0.85, 0.0, 0.0))
+	var spots: Array[Transform3D] = BedSpot.spots_around(Transform3D.IDENTITY, stand, 1.5)
+	assert_eq(spots[0], stand)
+	assert_almost_eq(spots[1].origin, Vector3(0.85, 0.0, 0.0), Vector3.ONE * 1e-6, "the other side")
+	assert_almost_eq(spots[1].basis.y, Vector3.UP, Vector3.ONE * 1e-6, "upright")
+	assert_almost_eq(spots[2].origin, Vector3(0.0, 0.0, 1.5), Vector3.ONE * 1e-6, "past the foot")
+	assert_almost_eq(-spots[2].basis.z, Vector3.BACK, Vector3.ONE * 1e-6, "facing away from the bed")

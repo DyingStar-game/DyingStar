@@ -129,6 +129,8 @@ var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from playe
 var _god_mode: bool = false
 var _god_mode_speed: float = 0.0  # the speed the wheel chose; seeded from player.god_mode_speed in setup()
 var _god_mode_label: Label = null  # top of the HUD while in god mode: its speed
+## The ray of our own sight check (SightLine, the server's): no prompt for what stands behind a wall.
+var _sight_ray: RayCast3D = null
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
@@ -545,7 +547,7 @@ func _process(_delta: float) -> void:
 		# One that is not ours (a neighbour's door): still shown, in red, saying so.
 		var refused: Interactable = player.interact_ray.get_collider() as Interactable \
 				if player.interact_ray.is_colliding() else null
-		if refused != null and refused.refusal(player) != "":
+		if refused != null and refused.refusal(player) != "" and _seen(refused):
 			player.interact_label.text = tr(refused.refusal(player))
 			player.interact_label.modulate = Color(1.0, 0.35, 0.3)
 			player.interact_label.show()
@@ -866,8 +868,11 @@ func _update_god_mode_label() -> void:
 	if _god_mode_label == null:
 		return
 	var flying := _in_god_mode()
-	if player.puppet.visible == flying:
-		player.puppet.visible = not flying
+	# The body is hidden in flight, not while its wrist is up: the DataPad is worn on it, and F2/F3 zoomed
+	# in on a screen that was not drawn (playtest 2026-10-21).
+	var hidden: bool = flying and not (_wrist != null and _wrist.is_up())
+	if player.puppet.visible == hidden:
+		player.puppet.visible = not hidden
 	_god_mode_label.visible = flying
 	if _god_mode_label.visible:
 		_god_mode_label.text = (tr("%%HUD_GOD_MODE_SPEED") % GOD_MODE.speed_text(_god_mode_speed)
@@ -1332,7 +1337,8 @@ func _leave_vehicle() -> void:
 func _aimed_seat() -> VehicleSeat:
 	if player._seat_vehicle_uuid != "" or not player.interact_ray.is_colliding():
 		return null
-	return player.interact_ray.get_collider() as VehicleSeat
+	var seat := player.interact_ray.get_collider() as VehicleSeat
+	return seat if seat != null and _seen(seat) else null
 
 
 ## Seated in [param veh], the InteractRay passes through its seats ([param past]), or stops at them
@@ -1361,7 +1367,7 @@ func _aimed_door_handle() -> VehicleDoorHandle:
 	# Aiming at the far-side box (the one you can't reach from where you are) is ignored.
 	if not _door_side_matches(handle):
 		return null
-	return handle
+	return handle if _seen(handle) else null
 
 ## True when the handle box under the crosshair is on the player's side (outdoor on foot, indoor when
 ## seated in that vehicle). "" side (no boxes assigned) always matches, so an un-configured handle works.
@@ -1391,7 +1397,16 @@ func _aimed_interactable() -> Interactable:
 	if not player.interact_ray.is_colliding():
 		return null
 	var aimed := player.interact_ray.get_collider() as Interactable
-	return aimed if aimed != null and aimed.usable_by(player) else null
+	return aimed if aimed != null and aimed.usable_by(player) and _seen(aimed) else null
+
+
+## Whether we see [param target] from our eye, nothing solid in between: the same check as the
+## server's (SightLine), which still decides. The interaction ray only meets look-at targets, walls
+## let it through: without this, a neighbour's furniture and a truck's parts were offered through them.
+func _seen(target: Node) -> bool:
+	if _sight_ray == null:
+		_sight_ray = SightLine.make_ray(self)
+	return SightLine.can_see(_sight_ray, player.interact_ray.global_position, target, player)
 
 
 ## The cab screen under the crosshair, from the seat in [param vehicle] (null on foot: none, and the
@@ -2100,6 +2115,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 			if is_instance_valid(player.lying_on):
 				# Up from the bed: the server stood us still; tell it what we hold now, even unchanged.
 				player.client_last_input_direction = Vector2.INF
+				# And look ahead again, as out of a seat: the free look from the pillow (up at the ceiling,
+				# turned aside) stayed on the view, and we walked one way looking another (playtest 2026-10-21).
+				player.camera_pivot.rotation = Vector3.ZERO
 			player.lying_on = null
 		if is_instance_valid(player.lying_on):
 			player.seated_role = "bed"

@@ -1806,7 +1806,7 @@ func _npc_trim() -> void:
 		if n != null:
 			n.process_mode = Node.PROCESS_MODE_DISABLED
 	for ray in player.find_children("*", "RayCast3D", true, false):
-		(ray as RayCast3D).enabled = false  # _line_of_sight_blocked uses force_raycast_update: unaffected
+		(ray as RayCast3D).enabled = false  # SightLine uses force_raycast_update: unaffected
 
 ## move_and_slide integrates `velocity` over the ENGINE physics step (1/60 s), not over the delta we
 ## were handed: an NPC ticking every _NPC_TICK_DIVIDER steps would cover 1/N of its speed. Scale the
@@ -2796,35 +2796,6 @@ func _npc_nav_world_root() -> Node3D:
 	# want, but correct — better than silently baking one room.
 	return get_tree().get_current_scene() as Node3D
 
-## Primitive: true if a MASK_OBSTACLE ray from the eye to `target` (a world point) is cut by a solid
-## before reaching it. `exceptions` are solids to ignore besides ourselves. Used for look-at boxes that
-## sit in open air (door handles): the box on the near side is clear, the one behind the body is not.
-func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
-	_ensure_los_ray()
-	# top_level → target_position is a world-space delta (no parent transform to fight).
-	_los_ray.global_position = player.interact_ray.global_position
-	_los_ray.target_position = target - _los_ray.global_position
-	_los_ray.clear_exceptions()
-	_los_ray.add_exception(player)
-	for node in exceptions:
-		if node is CollisionObject3D:
-			_los_ray.add_exception(node)
-	_los_ray.force_raycast_update()
-	if not _los_ray.is_colliding():
-		return false
-	# Float32 precision at astronomic world coordinates (the same limit behind the Jolt "dancing" bug)
-	# makes the PHYSICS raycast origin imprecise by tens of metres this far out, so it can report a body
-	# well off the true eye->box segment as a hit and lock a door that is actually clear. Validate in
-	# DOUBLE precision: a real obstruction sits BETWEEN the eye and the door box, so ignore any collider
-	# whose accurate position is farther from the eye than the box itself (+ a small size margin).
-	var c: Object = _los_ray.get_collider()
-	if c is Node3D:
-		var box_dist: float = _los_ray.global_position.distance_to(target)
-		var hit_dist: float = _los_ray.global_position.distance_to(_los_hit_world_pos(c))
-		if hit_dist > box_dist + 2.0:
-			return false
-	return true
-
 ## True when a screen tap at [param p] (the body's frame, from its feet) [param since_ms] after the last
 ## one may be relayed: within the eye's height plus an arm's reach, not faster than TAP_MIN_MS. Pure.
 static func may_relay_tap(p: Vector3, since_ms: int) -> bool:
@@ -2838,7 +2809,8 @@ func server_toggle_lying(bed: BedSpot) -> void:
 	if player.lying_on == bed:
 		player.lying_on = null
 		bed.occupant = null
-		player.global_transform = bed.stand_point.global_transform.orthonormalized()
+		player.global_transform = bed.free_stand_transform(_collider.shape, _collider.transform, [player]) \
+				if _collider != null else bed.stand_point.global_transform.orthonormalized()
 		player.set_seated(false)
 		# Standing still: the keys held as we lay down are not the keys held now. Lying, every move the
 		# client sent was dropped -- the last kept walked the body off the bed (playtest 2026-10-21); the
@@ -2867,107 +2839,34 @@ func _furniture_refusal(target: FurnitureTarget) -> String:
 		return "out of sight (%s)" % _los_ray.get_collider()
 	return ""
 
-## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
-## door handles): nothing solid may stand in front of the target. MUST run on the server — the client
-## has no collisions, so its answer would always be "clear" and be trivially cheatable.
 ## May this player sit in [param seat] now: within the seat's reach of the eye, and in sight of it.
 func _can_board(seat: VehicleSeat) -> bool:
 	return seat.within_reach(player.interact_ray.global_position) and _can_see(seat)
 
 
+## Server-authoritative "can I actually SEE it?" gate, shared by every look-at interaction (carry, door
+## handles, seats, furniture): nothing solid may stand between the eye and the target (SightLine). The
+## client runs the same check for its prompts; this one decides.
 func _can_see(target: Node) -> bool:
-	if not (target is Node3D):
-		return false
-	# Door handle: pick the box for the side the player is on — seated in this vehicle → indoor box,
-	# on foot → outdoor box — then require a clear sightline to it. The vehicle's own collision is a
-	# coarse CONVEX hull that encloses the boxes, so we exclude it (it can't self-block); FOREIGN walls
-	# still block. Choosing the box by seated-state is what stops opening a door you can't see.
-	if target.has_method("side_shape"):
-		var veh: Node = target.vehicle() if target.has_method("vehicle") else null
-		var inside: bool = veh != null and veh.has_method("is_occupied_by") and veh.is_occupied_by(player)
-		var box: Node3D = target.side_shape(inside)
-		if box == null:
-			return true  # handle without assigned boxes: don't lock the door
-		# Exclude the vehicle's coarse convex self-hull (it encloses the boxes, can't self-block); FOREIGN
-		# walls still block.
-		return not _line_of_sight_blocked(box.global_position, [veh])
-	# A seat sits inside the vehicle's coarse convex hull, which would always hide it: excluded, as for a
-	# handle. FOREIGN walls still block; the shut door is the door_id rule's (Vehicle._seat_door_blocked).
-	if target is VehicleSeat:
-		var seat_veh: Node = (target as VehicleSeat).vehicle()
-		return not _line_of_sight_blocked((target as VehicleSeat).aim_point(), [seat_veh])
-	# A furniture part: the piece of furniture itself (the wardrobe around its door, the door's own
-	# leaf) never hides it; the walls of the home do.
-	if target is FurnitureTarget:
-		var part := target as FurnitureTarget
-		return not _line_of_sight_blocked(part.aim_point(), part.los_exceptions())
-	# Otherwise the target IS the solid we look at (a carriable): a solids ray must reach IT first — a
-	# wall, a bed side or the bodywork in front is hit instead, so the target is not visible.
-	return _first_solid_hit_is(target)
-
-## True if a MASK_OBSTACLE ray from the eye toward `target` hits `target` ITSELF first (nothing solid
-## in front of it). We only ignore ourselves; whatever the target rests in/on is NOT excluded, so you
-## can't grab an object through the side of the bed it sits in — you must actually see it.
-func _first_solid_hit_is(target: Node3D) -> bool:
-	_ensure_los_ray()
-	_los_ray.global_position = player.interact_ray.global_position
-	var to_target: Vector3 = target.global_position - _los_ray.global_position
-	# Aim a touch past the centre so a thin/small target is still crossed by the ray.
-	_los_ray.target_position = to_target * 1.05
-	_los_ray.clear_exceptions()
-	_los_ray.add_exception(player)
-	_los_ray.force_raycast_update()
-	# Float32 precision at astronomic world coordinates makes this physics ray imprecise (same limit as
-	# the door LOS / Jolt "dancing" bug): far from the origin it can miss the target or catch a body well
-	# off the eye->target segment, so a grab is refused until you are almost inside the prop. The client
-	# already aimed at it; validate in DOUBLE precision. A miss, or a hit BEYOND the target, counts as
-	# visible; only a solid genuinely CLOSER than the target (a wall / bed side in front) blocks the grab.
-	if not _los_ray.is_colliding():
-		return true
-	var c: Object = _los_ray.get_collider()
-	if c == target or (c is Node and (target.is_ancestor_of(c) or (c as Node).is_ancestor_of(target))):
-		return true
-	if c is Node3D:
-		var target_dist: float = _los_ray.global_position.distance_to(target.global_position)
-		var hit_dist: float = _los_ray.global_position.distance_to(_los_hit_world_pos(c))
-		return hit_dist > target_dist
-	return false
+	if _los_ray == null:
+		_los_ray = SightLine.make_ray(self)
+	return SightLine.can_see(_los_ray, player.interact_ray.global_position, target, player)
 
 ## True if a solid wall stands between the eye and the carriable `prop`. Thin wrapper over `_can_see`
 ## for the carry call sites; tiny ore pieces detect unreliably, so we don't gate them on sight.
 func _is_blocked_by_geometry(prop: Node) -> bool:
 	if prop is Node3D and "type_name" in prop and prop.type_name == "miningrock":
 		return false
-	return not _can_see(prop)
+	return _behind_shut_hatch(prop) or not _can_see(prop)
 
-## World position of the SPECIFIC collision shape the LOS ray hit — NOT the whole CollisionObject's
-## origin. A building is a multi-cell StaticBody: get_collider() returns that body, whose origin sits at
-## one corner, far from the wall you actually hit. Comparing THAT distance to the target wrongly reads
-## the wall as "beyond" the target and lets you grab/open through it. The hit SHAPE's own transform is
-## right at the wall. Node transforms are double precision here; get_collision_point() is not (Jolt
-## float32 → km-off at astronomic coords). Falls back to the collider origin if the shape can't resolve.
-func _los_hit_world_pos(c: Object) -> Vector3:
-	if c is CollisionObject3D:
-		var obj := c as CollisionObject3D
-		var owner_id: int = obj.shape_find_owner(_los_ray.get_collider_shape())
-		if owner_id != -1:
-			return (obj.global_transform * obj.shape_owner_get_transform(owner_id)).origin
-	if c is Node3D:
-		return (c as Node3D).global_position
-	return Vector3.ZERO
-
-## Lazily create the body-only line-of-sight ray (a node, so force_raycast_update works in
-## _process / input / server alike — direct_space_state is only valid during physics).
-func _ensure_los_ray() -> void:
-	if _los_ray != null:
-		return
-	_los_ray = RayCast3D.new()
-	_los_ray.enabled = false
-	_los_ray.top_level = true  # ignore the player's transform → target_position is a world delta
-	_los_ray.collide_with_areas = false
-	_los_ray.collide_with_bodies = true
-	_los_ray.collision_mask = Globals.MASK_OBSTACLE  # solids only (world|vehicle|prop); player excluded via exceptions
-	add_child(_los_ray)
+## A part bolted in a bay is behind that bay's hatch: shut, nobody sees it. The hatch is a mesh that
+## swings, not a solid, and the hull it closes counts as the part's own body (SightLine.first_hit_is):
+## no ray can tell -- its prompts showed through the shut hatch (playtest 2026-10-21).
+func _behind_shut_hatch(prop: Node) -> bool:
+	if not prop.has_meta("component_slot_ref"):
+		return false
+	var slot = prop.get_meta("component_slot_ref")
+	return is_instance_valid(slot) and slot.vehicle() != null and not slot.vehicle().bays.hatch_open(slot)
 
 ## Put the carried prop DOWN on the placement disc the player is aiming at (see CarryPlacement): into
 ## a truck bed / a shelf slot when the disc landed on one, else resting on the aimed surface — or, if

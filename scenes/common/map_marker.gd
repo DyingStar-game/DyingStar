@@ -32,6 +32,16 @@ const GROUP := &"map_marker"
 ## The footprint (m, the parent's frame: x across, z along; y its height). Zero: measured from the
 ## parent's visible meshes.
 @export var footprint_size: Vector3 = Vector3.ZERO
+## Merged with the alike pictograms it overlaps on the chart into one, with their count. Off: always
+## drawn on its own -- the player's home must not hide in a "x12" of homes.
+@export var groupable: bool = true
+## The pictogram's colour (white: as drawn).
+@export var icon_tint: Color = Color.WHITE
+## The pictogram's size against the others' (1: the same).
+@export_range(0.5, 3.0, 0.1) var icon_scale: float = 1.0
+## Drawn over everything on the chart, the points of interest too, its rectangle over every other one:
+## the player's home, seen whatever storeys stand over it.
+@export var on_top: bool = false
 
 var _box := AABB()
 var _measured := false

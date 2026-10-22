@@ -17,6 +17,8 @@ const ALLOWED : Dictionary = {
 	"res://scenes/_universe/props/datapad/wrist_datapad.gd": "live only while the tablet is open on it",
 	# One mirror at a time: the nearest on screen within reach; its viewport exists only while it reflects.
 	"res://scenes/_universe/props/furniture/hygene/planar_mirror.gd": "made only while it reflects, one at a time",
+	# Out of sight in a world of its own, for the few seconds the shaders compile at the menu, then freed.
+	"res://scenes/globals/warmup.gd": "drawn only while warming up, a few seconds at the menu",
 	# Does not ask for it: names the mode of each SubViewport in the benchmark report.
 	"res://scenes/benchmark/benchmark_facts.gd": "names the mode in the report, never sets it",
 }

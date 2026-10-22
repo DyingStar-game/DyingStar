@@ -670,6 +670,19 @@ func _search_parent_node(parent_id: String) -> Node:
 ## and synchronous — NetworkOrchestrator.release_network_agent() calls it right before freeing us,
 ## because queue_free() alone would let this node (and its LiveKitAudio child) keep processing until
 ## the end of the frame, still publishing the mic and still receiving voice.
+## Quitting the game leaves the tree without shutdown(): the monitors go here too. Left registered, their
+## lambdas outlived the scripting -- the engine's Performance frees them last, through a lock already
+## destroyed, and the game crashed on quit (ntdll c0000005, Performance's destructor; playtest 2026-10-21).
+func _exit_tree() -> void:
+	_drop_monitors()
+
+
+func _drop_monitors() -> void:
+	for monitor: StringName in [&"network/events_received", &"network/events_sent"]:
+		if Performance.has_custom_monitor(monitor):
+			Performance.remove_custom_monitor(monitor)
+
+
 func shutdown() -> void:
 	set_process(false)
 	# Drop the clock calibration with the session: the estimate only ever climbs (see
@@ -681,10 +694,7 @@ func shutdown() -> void:
 	var lk: Node = get_node_or_null("LiveKitAudio")
 	if lk != null and lk.has_method("shutdown"):
 		lk.shutdown()
-	if Performance.has_custom_monitor("network/events_received"):
-		Performance.remove_custom_monitor("network/events_received")
-	if Performance.has_custom_monitor("network/events_sent"):
-		Performance.remove_custom_monitor("network/events_sent")
+	_drop_monitors()
 	if socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		socket.close(1000, "client disconnected")
 

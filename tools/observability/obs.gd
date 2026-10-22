@@ -26,6 +26,8 @@ var levels :Dictionary= {
 ## server image: for eight months it was excluded from the Docker context and
 ## every server boot printed "Failed to instantiate an autoload ... obs.gd".
 var otel_manager = null
+## The engine logger that hands every printed line to the bridge, while it is plugged in.
+var _logger: CustomLogger = null
 
 
 func _ready() -> void:
@@ -34,8 +36,22 @@ func _ready() -> void:
 		return
 	otel_manager = load("res://tools/observability/OpenTelemetryManager.cs").new()
 	otel_manager._ready()
-	OS.add_logger(CustomLogger.new())
+	_logger = CustomLogger.new()
+	OS.add_logger(_logger)
 	Obs.logs_info("engine","Ready for obs")
+
+
+## Quitting: unplug the logger while the scripts still run. Left in, the engine kept a script object
+## until after the scripting was gone -- the same trap as the network monitors that crashed the game on
+## quit (Client._exit_tree) -- and it was still handed what the engine printed as it tore down. The bridge
+## goes with it (never in the tree, it was leaked at exit).
+func _exit_tree() -> void:
+	if _logger != null:
+		OS.remove_logger(_logger)
+		_logger = null
+	if otel_manager != null:
+		otel_manager.free()
+		otel_manager = null
 # LOG
 
 func print_colored(level: String, section: String, message: String) -> void:

@@ -61,8 +61,9 @@ func all() -> Array:
 
 
 ## Can a part be put into this bay right now — is the hatch that guards it open? Asked both when
-## a drop point is resolved and when the fit itself is attempted, and the two must agree.
-func _hatch_open(slot: Node) -> bool:
+## a drop point is resolved and when the fit itself is attempted, and the two must agree; and for the
+## part in it, which nobody sees behind a shut hatch (PlayerServer._is_blocked_by_geometry).
+func hatch_open(slot: Node) -> bool:
 	return slot.door_id == "" or vehicle.is_door_open(slot.door_id)
 
 
@@ -162,7 +163,7 @@ func install(slot: Node, part: Node) -> String:
 		return "Nothing to fit"
 	if not slot.is_free():
 		return "That bay is taken"
-	if not _hatch_open(slot):
+	if not hatch_open(slot):
 		return "Open the hatch first"
 	var spec = part.spec if "spec" in part else null
 	var refused: String = refuse_reason(spec)
@@ -220,7 +221,7 @@ func slot_for_point(world_point: Vector3, spec: VehicleComponentSpec) -> Node:
 	var best: Node = null
 	var best_d: float = INF
 	for s in all():
-		if not s.is_free() or not _hatch_open(s):
+		if not s.is_free() or not hatch_open(s):
 			continue
 		var d: float = world_point.distance_to(s.global_position)
 		if d <= s.snap_range and d < best_d:
