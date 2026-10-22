@@ -18,7 +18,7 @@ extends GutTest
 const SOCIAL_HEARTBEAT := preload("res://server/social_heartbeat.gd")
 
 
-func test_location_on_a_planet_carries_system_scene_and_true_position() -> void:
+func test_location_on_a_planet_carries_system_scene_and_the_body_local_position() -> void:
 	var location: Dictionary = SOCIAL_HEARTBEAT.build_location(
 			"tarsis", "tarsis_3", Vector3(1.5, -2.0, 3.25))
 	assert_eq(location["system"], "tarsis")

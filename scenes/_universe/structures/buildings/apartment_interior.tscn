@@ -1,0 +1,28 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" uid="uid://0o84g0nqo8b" path="res://scenes/_universe/props/furniture/chamber/bed.tscn" id="6_bed"]
+[ext_resource type="PackedScene" uid="uid://br8l8bw1vtycw" path="res://scenes/_universe/props/furniture/chamber/table_bed.tscn" id="7_table"]
+[ext_resource type="PackedScene" uid="uid://duc5yf7ynq725" path="res://scenes/_universe/props/furniture/chamber/wardrobe.tscn" id="8_wardrobe"]
+[ext_resource type="PackedScene" uid="uid://gg8w4vg0go8g" path="res://scenes/_universe/props/furniture/hygene/shower_cabin.tscn" id="11_gijho"]
+[ext_resource type="PackedScene" uid="uid://bvdqhi3prphfw" path="res://scenes/_universe/props/furniture/hygene/mirror.tscn" id="12_fki73"]
+[ext_resource type="PackedScene" uid="uid://dlvo567apcx4g" path="res://scenes/_universe/props/furniture/hygene/restroom_cabin.tscn" id="13_jfqwv"]
+
+[node name="Interior" type="Node3D"]
+
+[node name="Bed" parent="." unique_id=1676722965 instance=ExtResource("6_bed")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -5.03238512360734, 0.12, 1.9789243598241204)
+
+[node name="TableBed" parent="." unique_id=1411020871 instance=ExtResource("7_table")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -5.789377454169034, 0.168, 1.270101988545552)
+
+[node name="Wardrobe" parent="." unique_id=728537135 instance=ExtResource("8_wardrobe")]
+transform = Transform3D(-6.123032e-17, 0, 1, 0, 1, 0, -1, 0, -6.123032e-17, -5.739986482686291, 0.12, 0.5541706782665722)
+
+[node name="ShowerCabin" parent="." unique_id=2112858650 instance=ExtResource("11_gijho")]
+transform = Transform3D(-1, 0, -1.2246064e-16, 0, 1, 0, 1.2246064e-16, 0, -1, -3.246246375836115, 0.07607786471478573, 1.6816709220981094)
+
+[node name="Mirror" parent="." unique_id=429523463 instance=ExtResource("12_fki73")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.6961260486772245, 1.5256338054981102, 0.0576796328889706)
+
+[node name="RestroomCabin" parent="." unique_id=1412977775 instance=ExtResource("13_jfqwv")]
+transform = Transform3D(-1, 0, 1.2246064e-16, 0, 1, 0, -1.2246064e-16, 0, -1, -1.718214668108934, 0.07633707724170558, 1.6779902107475229)

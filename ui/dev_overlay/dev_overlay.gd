@@ -7,7 +7,7 @@ extends RefCounted
 ##   alert        red, pinned — the dev clock is shifted (shown even with the debug panels off)
 ##   Universe     servers, players, local time, altitude / position / moving frame   (show debug)
 ##   Server       TPS, players, objects, scenes of the Godot server                   (show debug)
-##   Server box   its name and zones, as a table that scrolls on its own              (show debug)
+##   Server box   its name, its border ahead of the camera, its zones (scrolling)     (show debug)
 ##   Client       FPS, objects, scenes, x/y/z, VRAM, events/s, chunks on screen       (show debug)
 ##   Ground       what we stand on and how it was decided                  (Settings: Surface debug)
 ##   Music        the track, its playlist, the rule that chose it         (Settings: Music debug)
@@ -45,7 +45,7 @@ static func create(body: Node3D, animator: Node, surface_info: Callable, driven_
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_SERVER",
 		func() -> PackedStringArray: return DevReadouts.server_lines(cache), 0.5, shown))
 	var box := ReadoutSection.new("%%HUD_DEV_SERVER_BOX",
-		func() -> PackedStringArray: return DevReadouts.box_lines(cache), 1.0, shown)
+		func() -> PackedStringArray: return DevReadouts.box_lines(cache, body), 0.25, shown)
 	box.max_height_px = SERVER_BOX_MAX_HEIGHT_PX
 	panel.add_section(box)
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_CLIENT",

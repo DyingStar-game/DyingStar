@@ -47,8 +47,8 @@ static func attach(skeleton: Skeleton3D, upper_arm: int, lower_arm: int, hand: i
 	raise._ik = ik
 	raise._lower_arm = lower_arm
 	raise._hand = hand
-	raise._target = raise._marker(skeleton, "WristTarget")
-	raise._pole = raise._marker(skeleton, "WristPole")
+	raise._target = HumanoidHand.marker(skeleton, "WristTarget")
+	raise._pole = HumanoidHand.marker(skeleton, "WristPole")
 	ik.set_target_node(0, ik.get_path_to(raise._target))
 	ik.set_pole_node(0, ik.get_path_to(raise._pole))
 	raise.drive(0.0, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO)  # starts down, both modifiers off
@@ -128,9 +128,3 @@ static func local_to(node: Node3D, ancestor: Node) -> Transform3D:
 		n = n.get_parent()
 	return xf
 
-
-func _marker(skeleton: Skeleton3D, marker_name: String) -> Node3D:
-	var marker := Node3D.new()
-	marker.name = marker_name
-	skeleton.add_child(marker)
-	return marker

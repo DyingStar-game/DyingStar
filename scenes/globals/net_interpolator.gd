@@ -20,6 +20,9 @@ const LEAD_MAX_S: float = 0.15
 ## lead comes back as fast as it went: the server sends nothing for a body that stopped (a wall, a
 ## step), and a lead held there kept the view half a metre inside the wall for as long as the key was.
 const LEAD_GAP_SHARE: float = 1.5
+## Longest step (s) of the server's clock still read as the time between two positions of one stream; past
+## it (or going back) the clock is another one -- a zone hand-over to another server -- and gives no speed.
+const SERVER_GAP_MAX_S: float = 1.0
 
 var _pos: Vector3 = Vector3.ZERO
 var _basis: Basis = Basis.IDENTITY
@@ -29,6 +32,7 @@ var _has: bool = false
 var _vel: Vector3 = Vector3.ZERO
 var _target_us: int = -1
 var _gap_s: float = 0.0
+var _server_ms: float = -1.0  # the server's simulation time of the last target, -1 when it sent none
 
 ## Feed the latest target as a LOCAL transform (position relative to the parent + local basis).
 ## Snaps the node to it on the first call so it never interpolates from the world origin.
@@ -53,14 +57,26 @@ func update(node: Node3D, delta: float) -> void:
 ## smooth the server-driven position while mouse-look stays responsive).
 ##
 ## [param usec] is when it came (Time.get_ticks_usec, the default): with the one before, it gives the
-## speed update_position leads by.
-func set_position_target(node: Node3D, local_pos: Vector3, usec: int = -1) -> void:
+## speed update_position leads by. [param server_ms] is the server's simulation time of that position
+## (servergodot_ms, -1 when it sent none): when the last two have it, the speed is measured against it
+## instead -- positions that waited in the socket come in the same frame, and their arrival times made
+## up speeds four times the real one (MovementProbe same_frame, playtest 2026-10-22).
+func set_position_target(node: Node3D, local_pos: Vector3, usec: int = -1, server_ms: float = -1.0) -> void:
 	var now: int = Time.get_ticks_usec() if usec < 0 else usec
-	if _has and _target_us >= 0 and now - _target_us > 5000:
-		_gap_s = float(now - _target_us) / 1e6
-		_vel = (local_pos - _pos) / _gap_s
+	if _has and _target_us >= 0:
+		if server_ms >= 0.0 and _server_ms >= 0.0:
+			var server_gap_s: float = (server_ms - _server_ms) / 1000.0
+			if server_gap_s > 0.0 and server_gap_s <= SERVER_GAP_MAX_S:
+				_gap_s = server_gap_s
+				_vel = (local_pos - _pos) / _gap_s
+			elif server_gap_s != 0.0:
+				_vel = Vector3.ZERO  # another server's clock: no speed across it
+		elif now - _target_us > 5000:
+			_gap_s = float(now - _target_us) / 1e6
+			_vel = (local_pos - _pos) / _gap_s
 	_pos = local_pos
 	_target_us = now
+	_server_ms = server_ms
 	if not _has:
 		node.position = local_pos
 		_has = true
@@ -104,4 +120,5 @@ func snap_to(node: Node3D) -> void:
 func snap_next() -> void:
 	_has = false
 	_target_us = -1  # the next target is in another frame: no speed from this one to it
+	_server_ms = -1.0
 	_vel = Vector3.ZERO

@@ -12,6 +12,10 @@ extends RefCounted
 const DRAG_PX: float = 4.0
 ## Zoom per pixel of a right-button drag, down = closer (as Google Maps' own).
 const ZOOM_DRAG_RATE: float = 0.01
+## The ids of the two lines the mission marker adds to the context menu (see [method open_context]).
+## Out of the vanilla three's way (0..2), and fixed because they are the ids the handler answers by.
+const MISSION_SET: int = 3
+const MISSION_CLEAR: int = 4
 
 var _map: StarMap = null
 ## {"action", "button", "at", "travel", "moved"} while a button is down, {} otherwise.
@@ -58,7 +62,13 @@ func input(event: InputEvent) -> bool:
 			_map._pins.clear_pin()
 		match StringName(_press["action"]):
 			&"star_map_menu":
-				_map._zoom_by(exp(motion.relative.y * ZOOM_DRAG_RATE))
+				var factor: float = exp(motion.relative.y * ZOOM_DRAG_RATE)
+				# Mirrors the wheel (see StarMap._mission_radius_step): the drag that would move the
+				# view closer widens the zone instead, so every zoom gesture means the same thing
+				# while a marker stands — and the zone keeps the same feel under the hand as the view.
+				var wide: bool = factor < 1.0
+				if not _map._mission_radius_step(wide, maxf(factor, 1.0 / factor)):
+					_map._zoom_by(factor)
 			_:
 				_map._turn_view(motion.relative)  # the map moves with the mouse; Ctrl: over a station, round it
 		return true
@@ -80,7 +90,8 @@ func input(event: InputEvent) -> bool:
 
 
 ## The context menu (right click), at [param at]: copy the coordinates of the ground there, set the
-## marker there, or take the marker away.
+## marker there, or take the marker away — and, while the chart is answering a form's "where", lay the
+## mission marker (the only thing that CAN answer: see StarMap.begin_poi_place) or take it back.
 func open_context(at: Vector2) -> void:
 	_map._pins.clear_pin()
 	_context_point = _map._point_under(at)
@@ -91,6 +102,14 @@ func open_context(at: Vector2) -> void:
 	_context.set_item_disabled(_context.get_item_index(1), _context_point.is_empty())
 	if not _map._pins.marker.is_empty():
 		_context.add_item("%%HUD_MAP_MARKER_CLEAR", 2)
+	# Armed, and only then: over empty space the line is there but dead, the same way "Put a marker
+	# here" is — a place needs a body to stand on, and the menu says so by graying rather than by
+	# vanishing (the player asked a question by right-clicking; silence would read as no answer).
+	if _map.is_placing_poi():
+		_context.add_item("%%HUD_MAP_MISSION_SET", MISSION_SET)
+		_context.set_item_disabled(_context.get_item_index(MISSION_SET), _context_point.is_empty())
+		if _map._has_mission_repere():
+			_context.add_item("%%HUD_MAP_MISSION_CLEAR", MISSION_CLEAR)
 	_context.reset_size()
 	var host: Control = _context.get_parent()
 	_context.popup(Rect2i(Vector2i(host.get_global_rect().position + at), Vector2i.ZERO))
@@ -106,6 +125,16 @@ func _on_context_chosen(id: int) -> void:
 			_map._pins.marker = _context_point
 		2:
 			_map._pins.marker = {}
+		MISSION_SET:
+			# From the point the menu OPENED on, not on whatever is under the cursor now: the two
+			# can differ by the whole screen if the view turned while the menu was up.
+			if not _context_point.is_empty():
+				_map._set_mission_repere(_context_point)
+		MISSION_CLEAR:
+			_map._clear_mission_repere()
+			# The cross the marker borrowed goes with it. The pin was already cleared when the menu
+			# opened, but the marker's own refresh re-asserts it every frame — until this moment.
+			_map._pins.clear_pin()
 
 
 ## The coordinates of [param local] (a body's unit direction) as they are copied: "latitude, longitude"

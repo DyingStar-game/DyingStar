@@ -297,6 +297,16 @@ var stand_body_height: float = 1.8
 ## How the clothes rustle fades with distance (see Sfx3D.Attenuation).
 @export var sfx_clothes_attenuation: Sfx3D.Attenuation = Sfx3D.Attenuation.VERY_SHORT
 
+@export_subgroup("Screen tap")
+## The finger on a screen, one picked at random each tap, heard where it touches.
+@export var sfx_screen_tap: Array[AudioStream] = []
+## Loudness (dB) of a screen tap at its Falloff distance.
+@export_range(-40.0, 12.0, 0.5) var sfx_screen_tap_db: float = -12.0
+## Reference distance (m) of a screen tap: past it the sound starts really fading.
+@export_range(0.5, 50.0, 0.5) var sfx_screen_tap_falloff: float = 1.5
+## Hard cut-off (m) of a screen tap: further away it is not played at all.
+@export_range(1.0, 100.0, 1.0) var sfx_screen_tap_distance: float = 6.0
+
 @export_group("Ground dust")
 ## How much dust each kind of ground gives up under the feet (see SurfaceDust): a puff per step, a
 ## bigger one on landing. Null = no dust.
@@ -358,6 +368,11 @@ var wrist_mount: Node3D = null
 ## starts the gesture (WristDatapad) and tells the server, which replicates it ("datapad") so every
 ## avatar raises the same arm -- a late joiner included, which an event would miss.
 var datapad_raised: bool = false
+## The last screen tap (ScreenPoke): its point in this body's frame, and a counter that changes with
+## each one -- an EVENT, which CharacterAnimator plays once. Set on the owner as it clicks, on the others
+## by the server's "tap:" event.
+var tap_point: Vector3 = Vector3.ZERO
+var tap_serial: int = 0
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP
@@ -409,6 +424,9 @@ var client_last_global_rotation = Vector3.ZERO
 # NPC (server-authoritative). Set on spawn by server.gd; PlayerServer reads these to drive movement.
 ## True when this Player is a server-controlled NPC instead of a networked client.
 var is_npc: bool = false
+## Server: this player asked for the clocks of its moves (client.ini debug_move_clocks, through Horizon's
+## spawn of it): its positions carry servergodot_ms.
+var move_clocks: bool = false
 ## Destination the NPC walks toward, or null when it has no goal. Set by external AI / spawn logic
 ## (consume-only here: PlayerServer only reads it). A Vector3 in the NPC PARENT's frame — the same frame
 ## as `position` — NOT world space: read it through PlayerServer._npc_target_global(), because the
@@ -494,6 +512,11 @@ var _seat_vehicle_node: Node3D = null
 var _seat_node: Node3D = null
 # True when our seat is the driver seat (drive input + HUD + R). Passenger = just rides.
 var _seat_is_driver: bool = false
+## The BedSpot this body lies on, ridden each frame like a seat; null when not lying. The server's word:
+## set there on the use, and on the owner when the server answers "seat:bed".
+var lying_on: Node3D = null
+## Owner: the bed we last asked to lie on (BedSpot.interact), taken as lying_on once the server agrees.
+var bed_asked: Node3D = null
 # The Vehicle whose cargo bay we are standing in on foot (our AreaDetector reports it). Used both
 # for the bed-walker weight (server) and to load a crate we drop while standing in it.
 var _in_vehicle_bed: Node = null
@@ -669,6 +692,30 @@ func _ready() -> void:
 	add_child(_role)
 	_role.setup()
 
+## True while this body carries a load: the server's word on the server, the owner's own (predicted,
+## see PlayerClient._predict_carry_stow) on its client.
+func is_carrying() -> bool:
+	return hands_item != null if GameOrchestrator.is_server() else _owner_carrying
+
+
+## The id Horizon knows this body by: what it writes as the occupant of a home
+## (SpawnBuilding.apartments). On the server it is client_uuid; the owner's client_uuid is the local
+## Globals.player_uuid, another id, so the owner answers with Horizon's (own_horizon_id).
+func horizon_id() -> String:
+	if not remote_player and not GameOrchestrator.is_server():
+		var own: String = own_horizon_id()
+		if own != "":
+			return own
+	return client_uuid
+
+
+## CLIENT: the id Horizon gave this client's player when it connected (client.gd my_player_uuid), ""
+## before that.
+static func own_horizon_id() -> String:
+	var agent: Node = NetworkOrchestrator.network_agent
+	return str(agent.my_player_uuid) if agent != null and "my_player_uuid" in agent else ""
+
+
 func set_uuid(uuid: String) -> void:
 	client_uuid = uuid
 	self.set_meta("client_uuid", uuid)
@@ -719,10 +766,13 @@ func set_seated(seated: bool) -> void:
 ## Owner on foot: feed our server-driven position so it is smoothed (position only — the
 ## mouse look stays immediate). No client prediction yet, so this trades a touch of lag for
 ## no saccades.
-func net_set_local_target(local_pos: Vector3) -> void:
-	_interp.set_position_target(self, local_pos)
+## [param clocks]: the trip's clocks this position came with (servergodot_ms, horizon_received_ms,
+## horizon_sent_ms, unix ms), any of them -1 when not sent; empty when unknown.
+func net_set_local_target(local_pos: Vector3, clocks: PackedFloat64Array = PackedFloat64Array()) -> void:
+	var usec: int = Time.get_ticks_usec()
+	_interp.set_position_target(self, local_pos, usec, clocks[0] if clocks.size() > 0 else -1.0)
 	if move_probe != null and not is_instance_valid(_seat_node):
-		move_probe.on_target(local_pos, Time.get_ticks_usec())
+		move_probe.on_target(local_pos, usec, Engine.get_process_frames(), clocks)
 
 
 func net_set_target(local_pos: Vector3, local_rot: Vector3) -> void:
@@ -739,6 +789,15 @@ func net_reset_interp() -> void:
 	if move_probe != null:
 		move_probe.on_snap(Time.get_ticks_usec(), str(get_parent().name) if get_parent() != null else "")
 
+## Lying on [param bed] (a BedSpot): the body stands on its lie point, upright, and the lay clip lays it
+## down along the bed (CharacterAnimator) -- the first-person view goes down with the head. The look is
+## free as from a seat.
+func _ride_bed(bed: Node3D) -> void:
+	global_transform = bed.lie_transform()
+	_seat_free_look()
+	velocity = Vector3.ZERO
+
+
 func _ride_seat(seat: Node3D) -> void:
 	var eye: Transform3D = seat.sit_transform()
 	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
@@ -751,9 +810,14 @@ func _ride_seat(seat: Node3D) -> void:
 	else:
 		global_transform.basis = eye.basis
 		global_position = eye.origin - eye.basis * seat_body_drop
-	# Free look from the seat: the mouse turns the camera pivot (yaw + pitch) relative to the vehicle
-	# forward, so the view is no longer locked straight ahead. BOTH are clamped: a seated body can't spin
-	# its view around forever (unbounded yaw also flipped the replicated head to the wrong side past 180°).
+	_seat_free_look()
+	velocity = Vector3.ZERO
+
+
+## Free look from a seat or a bed: the mouse turns the camera pivot (yaw + pitch) relative to the body,
+## so the view is not locked straight ahead. BOTH are clamped: a seated body can't spin its view around
+## forever (unbounded yaw also flipped the replicated head to the wrong side past 180°).
+func _seat_free_look() -> void:
 	camera_pivot.rotation.y = clampf(
 		camera_pivot.rotation.y + mouse_motion.x * camera_sensitivity,
 		deg_to_rad(-120.0), deg_to_rad(120.0))
@@ -761,7 +825,6 @@ func _ride_seat(seat: Node3D) -> void:
 		camera_pivot.rotation.x + mouse_motion.y * camera_sensitivity,
 		deg_to_rad(-80.0), deg_to_rad(80.0))
 	mouse_motion = Vector2.ZERO
-	velocity = Vector3.ZERO
 
 ## How tall this body is right now (m), or in a given stance. THE answer to that question, for both
 ## roles: the SERVER sizes the physics capsule from it, the CLIENT hangs the name tag above it.
@@ -1045,6 +1108,11 @@ func _aimed_carriable() -> Node:
 func server_adopt_carried(item: Node) -> void:
 	if _role != null and _role.has_method("server_adopt_carried"):
 		_role.server_adopt_carried(item)
+
+## Server: a validated use of [param bed] (BedSpot.server_use): lie on it, or get up from it.
+func server_toggle_lying(bed: Node3D) -> void:
+	if _role != null and _role.has_method("server_toggle_lying"):
+		_role.server_toggle_lying(bed)
 
 ## Server: tell Horizon and every client the posture this server holds for the body (see
 ## PlayerServer.spawn_state). Called once the player is registered and its updates are wired.

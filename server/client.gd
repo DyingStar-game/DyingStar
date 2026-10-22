@@ -271,6 +271,8 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 			"event": "init",
 			"data": {
 				"token": token,
+				# client.ini debug_move_clocks: the clocks of our own moves (MovementProbe), for us only.
+				"move_clocks": ClientConfig.get_bool("debug_move_clocks", false),
 			}
 		}))
 		network_events_sent += 1
@@ -670,6 +672,19 @@ func _search_parent_node(parent_id: String) -> Node:
 ## and synchronous — NetworkOrchestrator.release_network_agent() calls it right before freeing us,
 ## because queue_free() alone would let this node (and its LiveKitAudio child) keep processing until
 ## the end of the frame, still publishing the mic and still receiving voice.
+## Quitting the game leaves the tree without shutdown(): the monitors go here too. Left registered, their
+## lambdas outlived the scripting -- the engine's Performance frees them last, through a lock already
+## destroyed, and the game crashed on quit (ntdll c0000005, Performance's destructor; playtest 2026-10-21).
+func _exit_tree() -> void:
+	_drop_monitors()
+
+
+func _drop_monitors() -> void:
+	for monitor: StringName in [&"network/events_received", &"network/events_sent"]:
+		if Performance.has_custom_monitor(monitor):
+			Performance.remove_custom_monitor(monitor)
+
+
 func shutdown() -> void:
 	set_process(false)
 	# Drop the clock calibration with the session: the estimate only ever climbs (see
@@ -681,10 +696,7 @@ func shutdown() -> void:
 	var lk: Node = get_node_or_null("LiveKitAudio")
 	if lk != null and lk.has_method("shutdown"):
 		lk.shutdown()
-	if Performance.has_custom_monitor("network/events_received"):
-		Performance.remove_custom_monitor("network/events_received")
-	if Performance.has_custom_monitor("network/events_sent"):
-		Performance.remove_custom_monitor("network/events_sent")
+	_drop_monitors()
 	if socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		socket.close(1000, "client disconnected")
 
@@ -1550,6 +1562,16 @@ func delete_player(event: Dictionary) -> void:
 	else:
 		print("Player to delete %s not found." % event)
 
+## The clocks a move came with, unix ms (-1 when absent): the game server's simulation time, then
+## Horizon's on receiving it and on sending it to us.
+static func _move_clocks(data: Dictionary) -> PackedFloat64Array:
+	var clocks := PackedFloat64Array()
+	for key: String in ["servergodot_ms", "horizon_received_ms", "horizon_sent_ms"]:
+		var value = data.get(key)
+		clocks.append(float(value) if value is float or value is int else -1.0)
+	return clocks
+
+
 func player_update(message: Dictionary) -> void:
 	# Player movement only (position/rotation/parenting). Gameplay properties are
 	# replicated through the unified update_generic_object() path, like any prop.
@@ -1584,7 +1606,7 @@ func player_update(message: Dictionary) -> void:
 					elif not my_pending_frame.is_empty():
 						my_pending_frame["position"] = ppos  # still measured in the frame we are waiting for
 					if my_pending_frame.is_empty():
-						player.net_set_local_target(ppos)
+						player.net_set_local_target(ppos, _move_clocks(message["data"]))
 				else:
 					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.
 					var prot := Vector3(

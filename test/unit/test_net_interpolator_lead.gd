@@ -54,3 +54,23 @@ func test_a_reset_forgets_the_speed() -> void:
 	interp.set_position_target(node, Vector3(100, 0, 0), GAP_US * 2)  # another frame
 	assert_eq(interp.lead_target(true, GAP_US * 3), Vector3(100, 0, 0), "no speed across a reparent")
 	node.free()
+
+
+## Positions that waited in the socket come in the same frame: the speed is the server clock's.
+func test_the_speed_is_measured_against_the_server_clock() -> void:
+	var interp := NetInterpolator.new()
+	var node := Node3D.new()
+	interp.set_position_target(node, Vector3.ZERO, 0, 1000.0)
+	interp.set_position_target(node, Vector3(0.25, 0, 0), 16_000, 1066.0)  # 66 ms apart, came 16 ms apart
+	var on: Vector3 = interp.lead_target(true, 16_000 + 33_000)
+	assert_almost_eq(on.x, 0.25 + 0.25 / 0.066 * 0.033, 1e-4, "about 3.8 m/s, not 15")
+	node.free()
+
+
+func test_another_servers_clock_gives_no_speed() -> void:
+	var interp := NetInterpolator.new()
+	var node := Node3D.new()
+	interp.set_position_target(node, Vector3.ZERO, 0, 5000.0)
+	interp.set_position_target(node, Vector3(0.25, 0, 0), 66_000, 1000.0)  # hand-over: clock went back
+	assert_eq(interp.lead_target(true, 100_000), Vector3(0.25, 0, 0))
+	node.free()

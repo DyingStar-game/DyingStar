@@ -1,0 +1,199 @@
+class_name MissionPoiCache
+extends RefCounted
+
+## The POIs a mission builder can point a zone at, fetched once and kept for the session.
+##
+## It exists because two different widgets need the same list — the mission's AVAILABILITY zones
+## (`mission.zones[]`) and an objective's TARGET (`params.zone` / `params.source`) — and because a
+## POI the builder just created has to appear in the other widget immediately, without either of
+## them re-fetching. Both read it; only [method add] and [method refresh] write.
+##
+## The list is the caller's own POIs (`GET /api/me/pois`): owned, granted, public — plus, in this
+## session, whatever [method add] created. Mission-owned POIs are invisible to that endpoint unless
+## the caller created them, so the ones made here are also kept locally rather than trusted to come
+## back: a builder must never lose the POI it just placed because a list did not refresh.
+##
+## It also knows what the missions that name those points are: the ones the player CREATED, the ones
+## they HOLD, and the contracts that are over. A contract's place dies with the contract — a point
+## of a mission that is finished is a point nobody should be sent to — and the two kinds of live
+## contract are told apart on the chart, so a delivery point of your own making and one you took on
+## are not the same colour.
+
+static var _shared: Array = []
+static var _loaded: bool = false
+## Point id -> "created" or "accepted": which kind of live contract names it.
+static var _roles: Dictionary = {}
+## The points of contracts that are over. They are kept, but not offered.
+static var _closed: Dictionary = {}
+
+
+## Every POI this session can offer, the fetched ones first. Empty until [method ensure_loaded].
+##
+## The points of CLOSED contracts are not among them: a contract's place dies with the contract, and
+## offering a place that no longer exists is how a builder ends up naming somewhere that is gone.
+static func entries() -> Array:
+	if _closed.is_empty():
+		return _shared
+	var live: Array = []
+	for poi: Dictionary in _shared:
+		if not _closed.has(str(poi.get("id", ""))):
+			live.append(poi)
+	return live
+
+
+## What the client knows about the missions naming the points in the list: the ones the player
+## created, the ones they hold, and the contracts that are over.
+##
+## The three lists are point ids. A point named by a contract the player created is "created"; one
+## named by a contract they hold is "accepted"; one named by a contract that is over is closed, and
+## stops being offered. A point named by both is the player's own making, and says so.
+##
+## The closed ones ACCUMULATE: the service sweeps a point with its contract, so a closed contract's
+## point is gone for good and nothing has to un-close it.
+static func set_mission_roles(created: Array, accepted: Array, closed: Array) -> void:
+	_roles.clear()
+	for id: Variant in created:
+		_roles[str(id)] = "created"
+	for id: Variant in accepted:
+		var key := str(id)
+		if not _roles.has(key):
+			_roles[key] = "accepted"
+	close_pois(closed)
+
+
+## The points of a contract that is over: they stop being offered, and stop being drawn.
+static func close_pois(poi_ids: Array) -> void:
+	for id: Variant in poi_ids:
+		_closed[str(id)] = true
+
+
+## What kind of contract names [param poi_id]: "created", "accepted", or "" when the point is not a
+## mission's at all. The chart tints the two kinds apart.
+static func role_of(poi_id: String) -> String:
+	return str(_roles.get(poi_id, ""))
+
+
+## Is [param poi_id] the point of a contract that is over?
+static func is_closed(poi_id: String) -> bool:
+	return _closed.has(poi_id)
+
+
+## Does this cache already hold the point [param poi_id]?
+static func has(poi_id: String) -> bool:
+	for poi: Dictionary in _shared:
+		if str(poi.get("id", "")) == poi_id:
+			return true
+	return false
+
+
+## Fetch the caller's POIs if this session has not already. Returns whether the fetch worked, so a
+## caller can tell "no POI yet" from "the service is down" — they read very differently in the UI.
+##
+## A caller that arrives while the fetch is still in flight is answered against the list as it
+## stands, which may not have the fetch in it yet. That costs a caller nothing in practice: a picker
+## reads [method entries] again after it places a POI, and placing is what needs the full list.
+static func ensure_loaded() -> bool:
+	if _loaded:
+		return true
+	_loaded = true
+	var result: Dictionary = await PlayerServices.poi_list(PICK_LIMIT, 0)
+	if not bool(result.get("ok", false)):
+		return false
+	var fetched: Array = ServicePage.items_of(result)
+	# Keep whatever this session created: the endpoint is not expected to list them, and a builder
+	# that drops a POI it just placed would send a mission naming nothing.
+	#
+	# Only the ones the endpoint did NOT bring back: a point of the PLAYER's own — one laid on the
+	# chart without a mission behind it — is listed by the service, and appending the session's copy
+	# of it would show the same place twice in every list, and draw it twice on the chart.
+	for known: Dictionary in _shared:
+		var origin := str(known.get("origin", ""))
+		if origin != ORIGIN_SESSION and origin != ORIGIN_CONTRACT:
+			continue
+		if not _holds(fetched, str(known.get("id", ""))):
+			fetched.append(known)
+	_shared = fetched
+	return true
+
+
+## Does [param records] already hold the point whose id is [param poi_id]?
+static func _holds(records: Array, poi_id: String) -> bool:
+	if poi_id == "":
+		return false
+	for record: Variant in records:
+		if record is Dictionary and str((record as Dictionary).get("id", "")) == poi_id:
+			return true
+	return false
+
+
+## The caller's own POIs in one request. The API's own maximum, so the picker needs no page of its own.
+const PICK_LIMIT: int = 100
+
+## Marks a POI this session created rather than fetched, so [method ensure_loaded] does not lose it.
+const ORIGIN_SESSION: String = "session"
+
+## Refetch from the service, keeping the points this session knows about. For a builder that was
+## left open a long time and wants the truth rather than what it remembers.
+##
+## Those points are kept DELIBERATELY: the endpoint is not expected to list a point that belongs to
+## a mission rather than to a player, so a refetch would lose the place the builder just laid — and
+## a mission that names nothing is a mission that cannot be taken. They used to survive only by luck
+## of timing (the list was emptied before the fetch and refilled after the creation), which is not
+## a promise anyone can keep.
+static func refresh() -> bool:
+	_loaded = false
+	var kept: Array = []
+	for known: Dictionary in _shared:
+		var origin := str(known.get("origin", ""))
+		if origin == ORIGIN_SESSION or origin == ORIGIN_CONTRACT:
+			kept.append(known)
+	_shared = kept
+	return await ensure_loaded()
+
+
+## Remember a POI that was just created here, and answer its id. Returns what [method entries] holds
+## for it, so a caller can select it without a second round trip.
+##
+## [param origin] says where the point came from: one this session CREATED (a point the player laid
+## on the chart) or one a CONTRACT names (fetched from the service, and not expected to be listed
+## by it). Both are kept across a refetch, for the same reason: a mission's point is invisible to
+## the list of the caller's own points, and a builder that lost the place it had just laid would
+## send a mission naming nothing.
+static func add(poi: Dictionary, origin: String = ORIGIN_SESSION) -> Dictionary:
+	var known := poi.duplicate()
+	known["origin"] = origin
+	for i: int in range(_shared.size()):
+		if str((_shared[i] as Dictionary).get("id", "")) == str(known.get("id", "")):
+			_shared[i] = known
+			return known
+	_shared.append(known)
+	return known
+
+
+## The origin of a point this cache is holding: "session" for one the player laid, "contract" for
+## one a contract names.
+const ORIGIN_CONTRACT: String = "contract"
+
+
+## The display label for a POI row: its name, or the language's word for "this one has none".
+##
+## An id is never the answer, here or on the chart — the same rule as [StarMapPoi.label_of], which
+## this mirrors on purpose rather than calling: a label belongs to whatever is showing it, and a
+## cache is not a chart.
+static func label_of(poi: Dictionary) -> String:
+	# Not `name`: Node owns one, and shadowing it makes every warning in this file harder to read.
+	# Not str() either: a nullable column arrives as an explicit null, which is not the same as an
+	# absent key, and Dictionary's default only covers the absent kind.
+	var value: Variant = poi.get("name")
+	var text := "" if value == null else str(value).strip_edges()
+	return text if text != "" else ServiceTypes.text("%%SVC_POI_UNNAMED")
+
+
+## Forget the points. Called when a builder is reset, so a POI from an abandoned mission does not
+## linger in a session that has moved on.
+##
+## What the MISSIONS are is not forgotten: the roles and the closed contracts describe the
+## contracts, not the points, and the next classification says them again anyway.
+static func clear() -> void:
+	_shared = []
+	_loaded = false

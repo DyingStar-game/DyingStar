@@ -35,6 +35,7 @@ ChatNetwork="*res://scenes/globals/chat_network.gd"
 PlayerServices="*res://scenes/globals/player_services.gd"
 ServiceAuth="*res://scenes/globals/service_auth.gd"
 SocialHeartbeat="*res://server/social_heartbeat.gd"
+MissionHeartbeat="*res://server/mission_heartbeat.gd"
 uuid="*res://addons/uuid/uuid.gd"
 Endtoend="*res://scenes/globals/endtoend.gd"
 ServerNetwork="*res://server/server_network.gd"
@@ -613,6 +614,7 @@ textures/default_filters/anisotropic_filtering_level=4
 viewport/hdr_2d=true
 environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
 occlusion_culling/use_occlusion_culling=true
+limits/global_shader_variables/buffer_size=262144
 
 [shader_globals]
 

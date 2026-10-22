@@ -344,6 +344,10 @@ var _info_text: RichTextLabel = null
 ## The towns of whichever body is close enough to read. One layer, reused: only ever one body is being
 ## looked at, and loading nineteen sets of markers to draw one of them would be waste.
 var _poi_layer: StarMapPoiLayer = null
+## The points of interest of the SERVICE, as the cache holds them. Pushed to the layer, which draws
+## them, and read by the search index, which names them — the two must see the same list, so the
+## chart owns it rather than each asking the service on its own.
+var _service_pois: Array = []
 ## Index into _poi_layer.entries of the selected point of interest, or -1. Independent of the body
 ## focus: selecting a town does NOT move the camera, it only changes what the info panel describes.
 var _poi_focus: int = -1
@@ -353,6 +357,22 @@ var _poi_key: String = ""
 ## Placement mode for a point of interest: the next click names a place instead of selecting
 ## whatever it lands on. Stays on until [method end_poi_place], so a missed click is just a click.
 var _placing_poi: bool = false
+## The MISSION MARKER the player lays on the ground: {"body", "local"}, the shape a pin takes
+## (StarMapPins), empty until the right click's menu has laid one. It is the only thing that answers
+## the placement — the click does not, it only confirms what stands.
+var _mission_repere: Dictionary = {}
+## Its width in metres, 0 = a point. Starts at what the asking form said ([method begin_poi_place])
+## and the wheel is what moves it after that; it survives re-laying the marker, since the width is
+## about the place being made, not about one spot of it.
+var _mission_radius_m: float = 0.0
+## The circle drawn under the marker when it has a width. Built lazily, freed with the world on a
+## rebuild ([method _rebuild]) and built again with the next marker.
+var _mission_ring: MeshInstance3D = null
+## The marker's own line over the bottom of the chart: its width, and what the wheel and the click
+## do about it. Visible exactly while a marker stands.
+var _mission_notice: Label = null
+## When a message with a deadline stops being true, in ticks. Zero when the chart has nothing to say.
+var _notice_until_ms: int = 0
 ## The relief of the body being looked at — its tiles, their levels, their life cycle. ONE object,
 ## where there were seventeen fields and ten functions here.
 ##
@@ -540,6 +560,10 @@ func close() -> void:
 	_marker_hover = -1
 	if _pins != null:
 		_pins.clear_pin()
+	# The marker goes with the chart, like the pin it borrows: its index into _bodies means nothing
+	# after the rebuild the next open() runs. The mode stays armed — the form is still waiting — and
+	# the marker is laid again if the player means to.
+	_clear_mission_repere()
 	_close_armed = false  # closed by F2 with B half down: the next opening must not close on its release
 	_clear_search()
 	if is_instance_valid(_player):
@@ -583,6 +607,45 @@ func host_in(slot: Control) -> void:
 	slot.add_child(_surface)
 	_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hosted = true
+	# The service's POIs belong to the player, so they arrive AFTER the chart is built: on open, and
+	# again whenever a POI is created, edited or deleted. Answering `changed` rather than polling is
+	# the same contract the services terminal keeps.
+	open_changed.connect(_on_open_changed)
+	PlayerServices.changed.connect(_on_services_changed)
+
+
+## Something the player owns changed in a service. Only the points of interest concern the chart.
+func _on_services_changed(area: String) -> void:
+	if area != "pois":
+		return
+	# A mutation happened, so the cache is REBUILT rather than re-read: ensure_loaded answers
+	# "already loaded" and would keep the list the mutation just made wrong. It is refreshed even
+	# while the chart is closed, or the next opening would show what the player used to own.
+	await MissionPoiCache.refresh()
+	if is_instance_valid(self) and is_open():
+		_push_service_pois()
+
+
+## The chart is up: it now needs the player's points of interest, which is an await. The layer marks
+## itself dirty from the answer, so the list is drawn on the next frame and nothing about the open
+## waits on a round trip.
+func _on_open_changed(open: bool) -> void:
+	if open:
+		var ok: bool = await MissionPoiCache.ensure_loaded()
+		if ok and is_instance_valid(self):
+			_push_service_pois()
+
+
+## Hand the cache's list to the layer, which draws it, and to the search index, which names it.
+##
+## The cache is the picker's own list, so the chart shows exactly what the mission builder can point
+## at — that is the point of the merge. An unanswered fetch leaves whatever the chart already had:
+## "the service is down" must not empty a chart that was already showing the player's POIs.
+func _push_service_pois() -> void:
+	_service_pois = MissionPoiCache.entries().duplicate()
+	if _poi_layer != null:
+		_poi_layer.set_service_pois(_service_pois)
+	_build_search_index()
 
 
 ## The view as data, for another viewer to see the same (the cab screen shared by everyone aboard,
@@ -631,49 +694,270 @@ func is_typing() -> bool:
 	return is_instance_valid(_search) and _search.has_focus()
 
 
-## The next clicks name places rather than select what they land on: each one emits
-## [signal poi_placed] with the point under the cursor, and the mode stays on until
+## The mission marker's wheel: how much wider or narrower one notch makes it, the zoom's own ratio so
+## the wheel feels like the wheel it is.
+const MISSION_RADIUS_STEP: float = 1.15
+## What the first notch asks for when the marker is still a point — a metre is a dot on a planet, ten
+## is the doorstep you can see. Also the held keys' first notch, for the same reason.
+const MISSION_RADIUS_START_M: float = 10.0
+## What the service accepts either side of a zone (see MissionPlacePicker): a radius out of these
+## bounds is refused on arrival, so it is refused on the map too, where refusing is cheaper.
+const MISSION_RADIUS_MIN_M: float = 1.0
+const MISSION_RADIUS_MAX_M: float = 1000000.0
+## The circle's segments, and its colour: a LINE, so it says how wide without painting the ground it
+## is measuring. Half-see-through on purpose — it marks a width, not a wall.
+const MISSION_RING_SEGMENTS: int = 96
+const MISSION_RING_TINT: Color = Color(1.0, 0.85, 0.45, 0.6)
+## The marker's line: clear of the bottom edge (the scale lives bottom left, this is centred), and
+## big enough to read without looking for it.
+const MISSION_NOTICE_OFFSET_Y: float = 96.0
+const MISSION_NOTICE_FONT: int = 17
+const MISSION_NOTICE_TINT: Color = Color(1.0, 0.87, 0.6, 1.0)
+## How long a message the chart says of its own accord stays on the line. Long enough to be read at
+## a glance, short enough that the chart is quiet again before the player looks away.
+const NOTICE_SECONDS: float = 3.2
+
+
+## The chart now answers "where" with a MISSION MARKER the player lays on the ground: the right
+## click's menu offers it, the wheel gives it its width ([param radius_m] metres, 0 = a point), and
+## [signal poi_placed] fires on the click that confirms it. The mode stays on until
 ## [method end_poi_place]. A player placing a point of interest misses the first time; making them
 ## re-arm for every attempt would be the interface asking them to be perfect.
-func begin_poi_place() -> void:
+func begin_poi_place(radius_m: float = 0.0) -> void:
 	_placing_poi = true
+	_mission_radius_m = clampf(radius_m, 0.0, MISSION_RADIUS_MAX_M)
+	_clear_mission_repere()
 
 
 func end_poi_place() -> void:
 	_placing_poi = false
+	_clear_mission_repere()
 
 
 func is_placing_poi() -> bool:
 	return _placing_poi
 
 
-## The place under [param screen_pos], or an empty dictionary when the cursor is over nothing a
-## point could stand on. The position is the point on the body's own sphere the ray meets, expressed
-## the way the services store a place (see [PlayerLocation]): the body's true position plus the
-## offset that reaches the surface, in game units.
-func _place_at(screen_pos: Vector2) -> Dictionary:
-	var origin: Vector3 = _camera.project_ray_origin(screen_pos)
-	var dir: Vector3 = _camera.project_ray_normal(screen_pos)
-	var index: int = _pick_pass(origin, dir, true)
-	if index < 0:
-		return {}  # empty space: a point of interest needs a body to belong to
-	var entry: Dictionary = _bodies[index]
-	var centre: Vector3 = entry["true_pos"]
-	var radius: float = float(entry["radius_m"]) * UNITS_PER_METRE
-	var to_centre: Vector3 = centre - origin
-	var along: float = to_centre.dot(dir)
-	if along <= 0.0:
+## Lay the mission marker at [param point] ({"body", "local"}, the shape _point_under answers with).
+## Asked by the context menu only: a marker means nothing unless the chart is armed for a place, and
+## laying one twice simply moves it — the wheel's width stays, since it belongs to the place being
+## made rather than to the first spot pointed at.
+func _set_mission_repere(point: Dictionary) -> void:
+	if not _placing_poi or point.is_empty():
+		return
+	_mission_repere = point.duplicate()
+	_mission_notice_refresh()
+
+
+## The marker is gone: no marker, no circle, no line about it. What it does NOT do is take back the
+## chart's cross — the marker borrowed the pin's cross while it stood (_refresh_mission_repere), and a
+## confirmed marker leaves the cross behind on the very spot the answer names.
+func _clear_mission_repere() -> void:
+	_mission_repere = {}
+	_set_mission_ring_shown(false)
+	_mission_notice_refresh()
+
+
+func _has_mission_repere() -> bool:
+	return not _mission_repere.is_empty()
+
+
+## One moment of the wheel, or one frame of a held key, towards a wider zone: [param up] says which
+## way, [param factor] how far (>1; the shrink passes its inverse). Answers whether the gesture was
+## taken by the MARKER — while a marker stands the wheel has one answer, and it is its width; while
+## it does not, the wheel keeps the answer it always had (the view).
+func _mission_radius_step(up: bool, factor: float) -> bool:
+	if _mission_repere.is_empty():
+		return false
+	_mission_radius_m = mission_radius_after(_mission_radius_m, up, factor)
+	_mission_notice_refresh()
+	return true
+
+
+## The radius one step leaves behind. Static and pure: the marker's size rule is exercised without a
+## chart, a viewport or a planet (test_star_map_mission_repere).
+##
+## A point (0) GROWS to [constant MISSION_RADIUS_START_M] rather than to a metre — the first notch
+## must land on something the eye can see — and shrinks back to a point rather than to a fraction of
+## one. Everywhere in between, one ratio at every size: the wheel means the same thing over a doorstep
+## and over a province, which is the same reasoning as the camera's own zoom.
+static func mission_radius_after(radius_m: float, up: bool, factor: float) -> float:
+	if radius_m <= 0.0:
+		return MISSION_RADIUS_START_M if up else 0.0
+	var next: float = radius_m * (factor if up else 1.0 / factor)
+	if next < MISSION_RADIUS_MIN_M:
+		return 0.0  # under a metre reads as the point it came from
+	return minf(next, MISSION_RADIUS_MAX_M)
+
+
+## The mission marker, as the services store a place (see [PlayerLocation]): the body it stands on,
+## and the offset that reaches its surface, in game units, measured FROM THAT BODY.
+##
+## From the marker, not from a ray: the ray's answer was taken when the menu opened, and the chart's
+## own positions are rewritten from the Kepler elements every tick — an absolute triple would record
+## a point the body has already left. Every POI in the game answers in this frame (the form's « Here »,
+## the server's own place), so one rule covers them all.
+##
+## `radiusM` rides along: the width the wheel gave the marker, rounded to the metre the service
+## counts in. 0 is a point, and it is sent as 0 — the marker was made with a width, and saying so is
+## the honest answer even when the width is none.
+func _mission_place() -> Dictionary:
+	if _mission_repere.is_empty():
 		return {}
-	# Where the ray meets the sphere: the foot of the perpendicular, pulled back to the surface.
-	var closest: Vector3 = origin + dir * along
-	var away: Vector3 = closest - centre
-	var distance: float = maxf(away.length(), radius)
-	var surface: Vector3 = centre + away.normalized() * distance
+	var body := int(_mission_repere["body"])
+	if body < 0 or body >= _bodies.size() or not is_instance_valid(_bodies[body]["sphere"]):
+		return {}  # the body it stood on is gone: no index survives a rebuild (close clears first)
+	var entry: Dictionary = _bodies[body]
+	var sphere: MeshInstance3D = entry["sphere"]
+	var basis := sphere.basis.orthonormalized()
+	var up: Vector3 = basis * (_mission_repere["local"] as Vector3)
+	var centre: Vector3 = entry["true_pos"]
+	# On the GROUND, not on the reference sphere: the relief is exaggerated, and a marker pinned to the
+	# mean sphere would stand where the mountains are a hundred km below it.
+	var surface: Vector3 = centre + up * (sphere.scale.x * MESH_RADIUS * _surface_at(body, up))
 	return {
 		"system": SystemScenes.system_of(str(entry["key"])),
 		"scene": str(entry["key"]),
-		"position": surface / UNITS_PER_METRE,
+		"position": body_local_offset(basis, surface - centre) / UNITS_PER_METRE,
+		"radiusM": roundi(_mission_radius_m),
 	}
+
+
+## The offset from a body's centre, in the BODY's own frame.
+##
+## The chart draws a body turned on its axis and tipped over (see [method _spin_basis]), so the
+## direction it draws is the body's own direction turned into the universe. Every place in the game,
+## on the other hand, is the body's own: the client's [method PlayerLocation.presence_of] and the
+## server's [method GameServer.mission_place_of] both answer `planet.to_local(...)`, and the service
+## compares a POI with a player state in that frame.
+##
+## So the offset has to be turned back before it is handed over. Without it, the two frames differ by
+## the body's own rotation — up to the whole radius, thousands of kilometres — and a POI laid on the
+## chart was that far from the player who laid it: no radius ever matched it, and every mission
+## pointed at a place nobody could stand on.
+##
+## Pure and static so the rule can be pinned without a chart, a planet or a viewport.
+static func body_local_offset(basis: Basis, offset: Vector3) -> Vector3:
+	return basis.orthonormalized().inverse() * offset
+
+
+## The marker on the ground: the cross standing on it (the chart's own pin, borrowed while the marker
+## is the question) and the circle that says how wide it is. Runs once a frame, after the bodies are
+## dressed — their bases are final only then — and before the pins are drawn, which is what it hands
+## the point to.
+func _refresh_mission_repere() -> void:
+	if _mission_repere.is_empty():
+		_set_mission_ring_shown(false)
+		return
+	var body := int(_mission_repere["body"])
+	if body < 0 or body >= _bodies.size() or not is_instance_valid(_bodies[body]["sphere"]):
+		_clear_mission_repere()  # a rebuild took the body from under it: an index is not a place
+		return
+	_pins.pin = _mission_repere  # a drag clears the pin; the marker is what the chart is asking about
+	var units: float = _mission_radius_m * UNITS_PER_METRE
+	if units <= 0.0:
+		_set_mission_ring_shown(false)  # a point is the cross the pin already draws
+		return
+	_ensure_mission_ring()
+	var sphere: MeshInstance3D = _bodies[body]["sphere"]
+	var up: Vector3 = sphere.basis.orthonormalized() * (_mission_repere["local"] as Vector3)
+	var ground: Vector3 = sphere.position + up * (sphere.scale.x * MESH_RADIUS * _surface_at(body, up))
+	# Laid on the tangent plane at the spot, scaled to metres: the circle of ground the zone covers,
+	# drawn where the marker is rather than where the body's centre is — they part company by the
+	# whole radius the moment the marker leaves the equator of the drawn sphere.
+	_mission_ring.transform = Transform3D(
+			Basis(Quaternion(Vector3.UP, up)).scaled(Vector3.ONE * units), ground)
+	_mission_ring.visible = true
+
+
+## The circle, built the first time the marker has a width and kept until the world is rebuilt. A
+## LINE, not a disc: the circle answers "how wide", and a filled disc would paint over the ground it
+## is measuring.
+func _ensure_mission_ring() -> void:
+	if _mission_ring != null and is_instance_valid(_mission_ring):
+		return
+	_mission_ring = MeshInstance3D.new()
+	var circle := PackedVector3Array()
+	for i: int in range(MISSION_RING_SEGMENTS + 1):
+		var angle: float = TAU * float(i) / float(MISSION_RING_SEGMENTS)
+		circle.append(Vector3(cos(angle), 0.0, sin(angle)))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = circle
+	var ring := ArrayMesh.new()
+	ring.add_surface_from_arrays(Mesh.PRIMITIVE_LINE_STRIP, arrays)
+	_mission_ring.mesh = ring
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = MISSION_RING_TINT
+	# No depth test, as every badge on this chart: the chart has no depth buffer worth the name at
+	# these distances (near and far sit seven orders of magnitude apart), and a circle lying on a
+	# sphere would z-fight with it at every zoom.
+	material.no_depth_test = true
+	_mission_ring.material_override = material
+	_mission_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_world_root.add_child(_mission_ring)
+
+
+func _set_mission_ring_shown(shown: bool) -> void:
+	if _mission_ring != null and is_instance_valid(_mission_ring):
+		_mission_ring.visible = shown
+
+
+## The marker's own line: what its width is, and what the wheel and the click do about it. Built the
+## first time there is something to say, hidden the moment there is not — a sentence that never goes
+## away stops being an answer and becomes furniture.
+##
+## A message with a DEADLINE (see [method notice]) speaks first and is not interrupted: the marker
+## is gone by the time the news of its creation arrives, and the news is the more useful of the two.
+func _mission_notice_refresh() -> void:
+	if _notice_until_ms > Time.get_ticks_msec():
+		return
+	var wanted: bool = not _mission_repere.is_empty() and _placing_poi
+	if not wanted:
+		if _mission_notice != null:
+			_mission_notice.visible = false
+		return
+	_mission_notice_show(_mission_notice_text())
+
+
+## Say [param text] at the bottom of the chart, for [param seconds].
+##
+## The chart's way of answering something that happened away from it: a point created, a service that
+## said no. It has a deadline, because a chart that keeps talking is a chart that never answers.
+func notice(text: String, seconds: float = NOTICE_SECONDS) -> void:
+	_notice_until_ms = Time.get_ticks_msec() + int(seconds * 1000.0)
+	_mission_notice_show(text)
+
+
+## Put [param text] on the chart's line, making the label the first time it is needed.
+func _mission_notice_show(text: String) -> void:
+	if _mission_notice == null:
+		_mission_notice = Label.new()
+		_mission_notice.anchor_left = 0.5
+		_mission_notice.anchor_right = 0.5
+		_mission_notice.anchor_top = 1.0
+		_mission_notice.anchor_bottom = 1.0
+		_mission_notice.offset_left = -420.0
+		_mission_notice.offset_right = 420.0
+		_mission_notice.offset_top = -MISSION_NOTICE_OFFSET_Y
+		_mission_notice.offset_bottom = -MISSION_NOTICE_OFFSET_Y + MISSION_NOTICE_FONT * 2.0
+		_mission_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_mission_notice.add_theme_font_size_override("font_size", MISSION_NOTICE_FONT)
+		_mission_notice.add_theme_color_override("font_color", MISSION_NOTICE_TINT)
+		_mission_notice.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
+		_mission_notice.add_theme_constant_override("outline_size", 8)
+		_mission_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_surface.add_child(_mission_notice)
+	_mission_notice.text = text
+	_mission_notice.visible = true
+
+
+func _mission_notice_text() -> String:
+	var width: String = tr("%%HUD_MAP_MISSION_POINT") if _mission_radius_m <= 0.0 \
+			else tr("%%HUD_MAP_MISSION_RADIUS") % Globals.format_thousands(_mission_radius_m)
+	return tr("%%HUD_MAP_MISSION_HINT") % width
 
 
 func _build_ui() -> void:
@@ -869,6 +1153,9 @@ func _rebuild() -> void:
 		if child != _camera and child != _sunlight and child != _poi_layer and child != _halo \
 				and child != _grid and child != _stalks:
 			child.queue_free()
+	# With them, the marker's circle — freed with the world it was drawn in, and built again with the
+	# next marker (_ensure_mission_ring). The reference must not outlive the node.
+	_mission_ring = null
 	_bodies.clear()
 	_cam.focus = -1  # re-resolved from the key at the end, once the bodies exist again
 	# Hover is not re-resolved: it points into the list being thrown away, and would enlarge whatever now
@@ -1020,7 +1307,11 @@ func _build_search_index() -> void:
 		var key: String = str(_bodies[i]["key"])
 		if not _has_towns(_bodies[i]):
 			continue
-		var pois: Array[Dictionary] = StarMapPoi.load_for(key)
+		# The SAME list the layer draws, not the export on its own: the index stores positions in the
+		# layer's entries (a search result is read back with _poi_focus, an index into that array),
+		# so counting only the export's towns would send the camera to whichever service POI had
+		# taken that slot. See [method StarMapPoi.merged_for].
+		var pois: Array[Dictionary] = StarMapPoi.merged_for(key, _service_pois)
 		for p: int in range(pois.size()):
 			_search_index.append({
 				"label": str(pois[p]["label"]), "alt": str(pois[p]["name"]),
@@ -1305,6 +1596,11 @@ func _flat_material(colour: Color) -> StandardMaterial3D:
 func _process(delta: float) -> void:
 	if not is_open():
 		return
+	# A message with a deadline ends on its own, and the line goes back to whatever the chart has to
+	# say — the marker's own words, if it still stands.
+	if _notice_until_ms > 0 and Time.get_ticks_msec() >= _notice_until_ms:
+		_notice_until_ms = 0
+		_mission_notice_refresh()
 	_live_cache.clear()
 	# Held rather than tapped: zooming across four orders of magnitude one notch at a time is tedious.
 	# POLLED, not consumed — and that is why the search box has to be asked first. A LineEdit eats the
@@ -1312,10 +1608,16 @@ func _process(delta: float) -> void:
 	# out under the cursor while the character appeared in the field. Same defect, same remedy, as the
 	# in-world screens.
 	if keys_live and not is_typing():
+		# The zoom keys have ONE answer while a mission marker stands: its width. Sizing the zone
+		# and moving the view with the same gesture would be two answers to one question.
 		if Input.is_action_pressed("star_map_zoom_in"):
-			_zoom_by(pow(StarMapCamera.KEY_ZOOM_RATE, -delta))
+			var grow: float = pow(StarMapCamera.KEY_ZOOM_RATE, delta)
+			if not _mission_radius_step(true, grow):
+				_zoom_by(1.0 / grow)
 		if Input.is_action_pressed("star_map_zoom_out"):
-			_zoom_by(pow(StarMapCamera.KEY_ZOOM_RATE, delta))
+			var shrink: float = pow(StarMapCamera.KEY_ZOOM_RATE, delta)
+			if not _mission_radius_step(false, shrink):
+				_zoom_by(shrink)
 		# The right stick turns the view as a drag does, the triggers zoom (the zoom actions).
 		var stick: Vector2 = InputDevice.pad_vector(&"star_map_orbit_left", &"star_map_orbit_right",
 				&"star_map_orbit_up", &"star_map_orbit_down")
@@ -1357,6 +1659,7 @@ func _process(delta: float) -> void:
 	if keys_live and _pad_points() and not is_typing():
 		_hover_at(_pointer())
 	_refresh_cursor_readout()
+	_refresh_mission_repere()  # before the pins: it hands them the marker's cross
 	if _pins != null:
 		_pins.refresh(_point_on_screen, _point_text)
 
@@ -2984,6 +3287,113 @@ func _frame_poi(poi_index: int) -> void:
 	_frame_on_surface(_blocker, _poi_layer.entries[poi_index]["dir"])
 
 
+## Show one of the player's own points of interest on the chart: go to the body it stands on, wait
+## for the chart to have got there, then turn the body until the point faces you.
+##
+## A coroutine, and the wait is the whole of the difficulty. The camera TRAVELS (StarMapCamera
+## animates the move), and the layer only reloads a body's points once that body is the one looms
+## largest on screen ([method _poi_body]) — so asking for the marker one frame after framing answers
+## with whatever the chart was looking at before. Hence the poll: it ends the moment the index shows
+## up, and gives up rather than hanging on a view that never came.
+##
+## Answers whether the point could be shown. A false means either the point is not in the scope this
+## player can read, or its body is not in the chart at all — both of which the caller should say out
+## loud rather than opening an empty view.
+func focus_service_poi(poi_id: String) -> bool:
+	if poi_id == "" or not is_instance_valid(_camera):
+		return false
+	# The list is fetched when the chart opens, and that fetch is an await: asking a moment after the
+	# chart came up would otherwise find it empty and fall through to a fetch of its own for a point
+	# the list already holds.
+	if _service_pois.is_empty():
+		if await MissionPoiCache.ensure_loaded():
+			_push_service_pois()
+	# Looked up, and fetched when this session has no record of it: a point belonging to someone
+	# else's contract is not in the player's own list, yet the player can still read it and should
+	# still be shown it. This is the one await of the lookup.
+	var entry: Dictionary = await _adopt_service_poi(poi_id)
+	if entry.is_empty():
+		return false
+	var key := str(entry.get("scene", ""))
+	var body := _index_of_key(key)
+	if body < 0:
+		return false
+	_cam.select(body, key)
+	# Framed FROM the point, not merely at the body: the same call a double click on a town makes, so
+	# a point asked for from a list lands on the chart exactly where a click on its badge would.
+	_frame_on_surface(body, entry["dir"] as Vector3)
+	for step: int in range(FOCUS_WAIT_FRAMES):
+		if not is_open():
+			return false
+		var found := _poi_index_of(poi_id)
+		if found >= 0:
+			_poi_focus = found
+			_frame_poi(found)
+			return true
+		await get_tree().process_frame
+	return false
+
+
+## How many frames [method focus_service_poi] waits for the camera's travel to bring its body big
+## enough for the layer to draw its points. A second at 60 fps: the travels here are short and the
+## body is large on screen by the end of them, so the wait ends long before it would matter.
+const FOCUS_WAIT_FRAMES: int = 60
+
+
+## The chart's own entry for [param poi_id], or {} when this session holds no record of it.
+##
+## Pure by design: it only reads what the chart already has, so it cannot be a coroutine and cannot
+## need an [code]await[/code] at the call site. Fetching is [method _adopt_service_poi]'s job — an
+## await has no business hiding inside a lookup, where a caller reasonably types the call without one
+## and Godot only says so at compile time.
+func _service_poi_entry(poi_id: String) -> Dictionary:
+	var record := _service_poi_record(poi_id)
+	if record.is_empty():
+		return {}
+	return StarMapPoi.service_entry(record, str(record.get("scene", "")))
+
+
+## Look [param poi_id] up and, when this session has no record of it, fetch it from the service.
+##
+## A point can be readable — public, or one a mission grants — without being in the caller's own
+## list, and answering "you have no such point" because it was not in a list nobody asked for would
+## be a lie. The record joins the chart's own list rather than [MissionPoiCache]: the mission builder
+## offers only the player's own points, and adopting someone else's there would put it in a list
+## meant for choosing.
+func _adopt_service_poi(poi_id: String) -> Dictionary:
+	var entry := _service_poi_entry(poi_id)
+	if not entry.is_empty():
+		return entry
+	var fetched: Dictionary = await PlayerServices.poi_get(poi_id)
+	if not bool(fetched.get("ok", false)):
+		return {}
+	var data: Variant = fetched.get("data")
+	if not (data is Dictionary):
+		return {}
+	var record := data as Dictionary
+	_service_pois.append(record)
+	if _poi_layer != null:
+		_poi_layer.set_service_pois(_service_pois)
+	return StarMapPoi.service_entry(record, str(record.get("scene", "")))
+
+
+## The service's own record of [param poi_id], or {} when this session holds none.
+func _service_poi_record(poi_id: String) -> Dictionary:
+	for record: Variant in _service_pois:
+		if record is Dictionary and str((record as Dictionary).get("id", "")) == poi_id:
+			return record as Dictionary
+	return {}
+
+
+## Index of the layer's entry carrying [param poi_id], or -1 when the body being drawn has not
+## loaded it (or is not its body).
+func _poi_index_of(poi_id: String) -> int:
+	for i: int in range(_poi_layer.entries.size()):
+		if str(_poi_layer.entries[i].get("service_id", "")) == poi_id:
+			return i
+	return -1
+
+
 ## Go down onto a group of towns until it comes apart — the click on a marker carrying a number.
 ##
 ## The group exists because its towns share a few pixels, so the height asked for is the one at which
@@ -3350,9 +3760,12 @@ func _gesture(event: InputEvent) -> bool:
 	elif event.is_action_pressed("star_map_orbit"):
 		_dragging = true  # until released, see _input
 	elif event.is_action_pressed("star_map_zoom_step_in"):
-		_zoom_by(1.0 / StarMapCamera.ZOOM_STEP)
+		# The wheel has ONE answer while a mission marker stands: its width (see _mission_radius_step).
+		if not _mission_radius_step(true, MISSION_RADIUS_STEP):
+			_zoom_by(1.0 / StarMapCamera.ZOOM_STEP)
 	elif event.is_action_pressed("star_map_zoom_step_out"):
-		_zoom_by(StarMapCamera.ZOOM_STEP)
+		if not _mission_radius_step(false, MISSION_RADIUS_STEP):
+			_zoom_by(StarMapCamera.ZOOM_STEP)
 	else:
 		return false
 	return true
@@ -3423,11 +3836,16 @@ func _select_pressed(event: InputEvent) -> void:
 ## ...except YOU, before them. Your marker is drawn over everything, so whatever lies under it, what
 ## the cursor is on is you — the dot or its name (see _player_under).
 func _click_at(at: Vector2, double: bool) -> void:
-	# Placing a point of interest swallows the click: it is a name, not a selection.
+	# Placing answers with the MARKER on the map, never with this click: the right click's menu is
+	# where "where" is said, so this click only confirms the marker already standing — and does
+	# nothing at all until one does. The click is a name, not a selection.
 	if _placing_poi:
-		var place: Dictionary = _place_at(at)
+		if _mission_repere.is_empty():
+			return  # no marker yet: the menu is the only thing that can lay one
+		var place: Dictionary = _mission_place()
+		_clear_mission_repere()
 		if place.is_empty():
-			return  # nothing under the cursor: the mode stays armed for another try
+			return  # the body it stood on went with it: still armed, simply without an answer to give
 		poi_placed.emit(place)
 		return
 	var on_you: bool = _player_under(at)

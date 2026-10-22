@@ -99,6 +99,9 @@ var _emote_count: int = 0
 ## Seat state: replicated the same way ("seat:<role>:<n>" / "unseat:<n>") so every remote avatar shows the
 ## sit/drive pose (a seated remote is not reparented, so this is its only seat signal).
 var _seat_count: int = 0
+## Screen taps relayed (ScreenPoke.tap_action), and when the last one was (ms).
+var _tap_count: int = 0
+var _last_tap_ms: int = -1000000
 ## Vault (climb-onto): a scripted forward+up slide over a low obstacle / ledge, replicated like the
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
@@ -327,6 +330,8 @@ func spawn_state() -> Dictionary:
 	var seat: Node = player._seat_node
 	var role: String = "" if not is_instance_valid(seat) \
 			else ("driver" if seat.is_driver_seat() else "passenger")
+	if is_instance_valid(player.lying_on):
+		role = "bed"
 	return {"stance": _stance, "floating": player.floating, "thrusting": player.thrusting, "seat": role}
 
 ## Physics step: apply a pending stance change now that the space state is valid. Standing up to a taller
@@ -486,6 +491,30 @@ func server_action_received(data: Dictionary) -> void:
 				kiosk.server_request_spawn()
 			else:
 				print("🏪 Kiosk spawn refused: unknown kiosk or out of range (%s)" % str(data.get("kiosk", "")))
+		"screen_tap":
+			# The arm taps a screen (ScreenPoke): an EVENT for the others to see and hear, nothing to
+			# validate but its bounds -- within an arm's reach of the body, no faster than a finger.
+			var p_data = data.get("p")
+			if p_data is Dictionary:
+				var p := Vector3(float(p_data.get("x", 0.0)), float(p_data.get("y", 0.0)), float(p_data.get("z", 0.0)))
+				var now: int = Time.get_ticks_msec()
+				if may_relay_tap(p, now - _last_tap_ms):
+					_last_tap_ms = now
+					_tap_count += 1
+					player.server_send_properties_to_client({"action": ScreenPoke.tap_action(_tap_count, p)})
+		"furniture_use":
+			# A door, drawer, lamp or bed of a home: the client names it (building uuid + path inside it),
+			# the server checks the player lives there, reaches it and sees it.
+			var home: Node = _find_deletable_prop(str(data.get("target_uuid", "")))
+			var part: Node = home.get_node_or_null(NodePath(str(data.get("part", "")))) \
+					if home != null else null
+			var refused: String = "unknown part" if not (part is FurnitureTarget) \
+					else ("" if part == player.lying_on else _furniture_refusal(part as FurnitureTarget))
+			if refused == "":
+				(part as FurnitureTarget).server_use(player, data)
+			else:
+				print("🛏️ Furniture use refused for %s: %s (%s)" % [player.client_uuid, refused,
+						str(data.get("part", ""))])
 		"enter_vehicle":
 			var veh = _find_vehicle(str(data.get("target_uuid", "")))
 			if veh != null and veh.has_method("server_enter"):
@@ -498,6 +527,9 @@ func server_action_received(data: Dictionary) -> void:
 				if is_instance_valid(player._seat_node):  # enter succeeded (seat free, door open)
 					_seat_count += 1
 					var role := "driver" if player._seat_node.is_driver_seat() else "passenger"
+					# The driver is NOT a passenger to service-mission: it counts a disembark as the
+					# end of a passenger transport only for a non-driver seat.
+					MissionHeartbeat.on_player_seated(player.client_uuid, role == "driver")
 					# `seat` is the STATE, `action` the EVENT, and both ride ONE message so Horizon cannot
 					# interleave them. The event is what makes a live observer switch pose now; the state is
 					# the only thing a LATER arrival ever reads. `action` is a single field shared by seven
@@ -524,6 +556,10 @@ func server_action_received(data: Dictionary) -> void:
 				# parented to the cab, and the reply cemented the split instead of healing it.
 				_seat_count += 1
 				if not is_instance_valid(player._seat_node):
+					# A real disembark: the player asked to get out and is out. This is the ONLY place
+					# that is true — GameServer._unseat_for_transfer nulls the same seat on a zone
+					# crossing, and feeding that here would end a passenger transport at every border.
+					MissionHeartbeat.on_player_dismounted(player.client_uuid)
 					player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
 				else:
 					# Refused (door shut). Re-announce the seat we are STILL in, so a client that believes
@@ -720,8 +756,12 @@ func server_action_received(data: Dictionary) -> void:
 		"action":
 			print("action key pressed by player")
 			if player.hands_item != null:
-				# In hands (always solid now): release it (drop / bed-load). Shared with the auto-drop.
-				_server_drop_carried_item()
+				if _aims_into_foreign_home():
+					# Not into someone else's home: keep it, and set back the client that predicted the drop.
+					player.server_send_properties_to_client({"carrying": true})
+				else:
+					# In hands (always solid now): release it (drop / bed-load). Shared with the auto-drop.
+					_server_drop_carried_item()
 			else:
 				# Pick up the carriable the CLIENT aimed at: it sends the uuid under its crosshair, so we
 				# grab exactly that one (our own server ray can be a hair off — pitch is throttled). (#124)
@@ -1085,6 +1125,12 @@ func _physics_process_impl(delta: float) -> void:
 	# Before the seat / NPC early-returns below: an NPC returns out of this function, and an NPC is
 	# precisely who does the talking.
 	_server_update_dialog(delta)
+	if is_instance_valid(player.lying_on):
+		# Lying on a bed: the body on its lie point, the lay clip lays it down (BedSpot).
+		player._ride_bed(player.lying_on)
+		player.new_input_from_server = false
+		player.emit_move()
+		return
 	if player.piloting and is_instance_valid(player._seat_node):
 		# Seated in a vehicle: ride its seat. Server-authoritative; the emitted position replicates so
 		# the player follows the vehicle (camera rides too).
@@ -1704,6 +1750,11 @@ func _replicate_floating(now: bool) -> void:
 ## Seconds between pressing a door's handle on foot and the door moving: the reach-out gesture
 ## ("emote:interact") gets the hand to the handle first.
 const DOOR_REACH_S := 0.35
+## Shortest time (ms) between two relayed screen taps.
+const TAP_MIN_MS := 150
+## Farthest a tapped point may be from the body's origin (m): its eye's height and a screen's reach
+## (PlayerClient.SCREEN_REACH_M), with a margin.
+const TAP_BODY_REACH_M := 3.5
 
 ## Below this speed (m/s) the EVA brake has nothing left to cancel: held at rest, it fires nothing.
 const STABILIZED_SPEED := 0.05
@@ -1755,7 +1806,7 @@ func _npc_trim() -> void:
 		if n != null:
 			n.process_mode = Node.PROCESS_MODE_DISABLED
 	for ray in player.find_children("*", "RayCast3D", true, false):
-		(ray as RayCast3D).enabled = false  # _line_of_sight_blocked uses force_raycast_update: unaffected
+		(ray as RayCast3D).enabled = false  # SightLine uses force_raycast_update: unaffected
 
 ## move_and_slide integrates `velocity` over the ENGINE physics step (1/60 s), not over the delta we
 ## were handed: an NPC ticking every _NPC_TICK_DIVIDER steps would cover 1/N of its speed. Scale the
@@ -2745,131 +2796,77 @@ func _npc_nav_world_root() -> Node3D:
 	# want, but correct — better than silently baking one room.
 	return get_tree().get_current_scene() as Node3D
 
-## Primitive: true if a MASK_OBSTACLE ray from the eye to `target` (a world point) is cut by a solid
-## before reaching it. `exceptions` are solids to ignore besides ourselves. Used for look-at boxes that
-## sit in open air (door handles): the box on the near side is clear, the one behind the body is not.
-func _line_of_sight_blocked(target: Vector3, exceptions: Array) -> bool:
-	_ensure_los_ray()
-	# top_level → target_position is a world-space delta (no parent transform to fight).
-	_los_ray.global_position = player.interact_ray.global_position
-	_los_ray.target_position = target - _los_ray.global_position
-	_los_ray.clear_exceptions()
-	_los_ray.add_exception(player)
-	for node in exceptions:
-		if node is CollisionObject3D:
-			_los_ray.add_exception(node)
-	_los_ray.force_raycast_update()
-	if not _los_ray.is_colliding():
-		return false
-	# Float32 precision at astronomic world coordinates (the same limit behind the Jolt "dancing" bug)
-	# makes the PHYSICS raycast origin imprecise by tens of metres this far out, so it can report a body
-	# well off the true eye->box segment as a hit and lock a door that is actually clear. Validate in
-	# DOUBLE precision: a real obstruction sits BETWEEN the eye and the door box, so ignore any collider
-	# whose accurate position is farther from the eye than the box itself (+ a small size margin).
-	var c: Object = _los_ray.get_collider()
-	if c is Node3D:
-		var box_dist: float = _los_ray.global_position.distance_to(target)
-		var hit_dist: float = _los_ray.global_position.distance_to(_los_hit_world_pos(c))
-		if hit_dist > box_dist + 2.0:
-			return false
-	return true
+## True when a screen tap at [param p] (the body's frame, from its feet) [param since_ms] after the last
+## one may be relayed: within the eye's height plus an arm's reach, not faster than TAP_MIN_MS. Pure.
+static func may_relay_tap(p: Vector3, since_ms: int) -> bool:
+	return since_ms >= TAP_MIN_MS and p.length() <= TAP_BODY_REACH_M
 
-## Server-authoritative "can I actually SEE it?" gate, shared by EVERY look-at interaction (carry AND
-## door handles): nothing solid may stand in front of the target. MUST run on the server — the client
-## has no collisions, so its answer would always be "clear" and be trivially cheatable.
+## A bed was used (BedSpot.server_use): lie on it with empty hands when nobody does, or get up from it
+## when lying there -- standing at its stand point, solid again. Replicated as the seat state ("bed"),
+## so the others' avatars and a later arrival see the body lying.
+func server_toggle_lying(bed: BedSpot) -> void:
+	_seat_count += 1
+	if player.lying_on == bed:
+		player.lying_on = null
+		bed.occupant = null
+		player.global_transform = bed.free_stand_transform(_collider.shape, _collider.transform, [player]) \
+				if _collider != null else bed.stand_point.global_transform.orthonormalized()
+		player.set_seated(false)
+		# Standing still: the keys held as we lay down are not the keys held now. Lying, every move the
+		# client sent was dropped -- the last kept walked the body off the bed (playtest 2026-10-21); the
+		# client says what it holds once it stands (PlayerClient, leaving the bed).
+		player.input_direction = Vector2.ZERO
+		player.input_from_server["input_direction"] = Vector2.ZERO
+		player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
+	elif not is_instance_valid(player.lying_on) and not is_instance_valid(bed.occupant) \
+			and player.hands_item == null and not is_instance_valid(player._seat_node):
+		player.lying_on = bed
+		bed.occupant = player
+		player.set_seated(true)
+		player.server_stow_tools()
+		player.server_send_properties_to_client({"action": "seat:bed:%d" % _seat_count, "seat": "bed"})
+
+## Why this player may not use [param target] now, or "" when they may: it must be in their own home,
+## within its reach of the eye, and in sight.
+func _furniture_refusal(target: FurnitureTarget) -> String:
+	if target.refusal(player) != "":
+		var home := target.building() as SpawnBuilding
+		return "not their home (lives there: '%s')" % (home.occupant_of(target.apartment()) if home != null else "?")
+	var reach: float = player.interact_ray.global_position.distance_to(target.aim_point())
+	if reach > target.use_range:
+		return "out of reach (%.2f m > %.2f m)" % [reach, target.use_range]
+	if not _can_see(target):
+		return "out of sight (%s)" % _los_ray.get_collider()
+	return ""
+
 ## May this player sit in [param seat] now: within the seat's reach of the eye, and in sight of it.
 func _can_board(seat: VehicleSeat) -> bool:
 	return seat.within_reach(player.interact_ray.global_position) and _can_see(seat)
 
 
+## Server-authoritative "can I actually SEE it?" gate, shared by every look-at interaction (carry, door
+## handles, seats, furniture): nothing solid may stand between the eye and the target (SightLine). The
+## client runs the same check for its prompts; this one decides.
 func _can_see(target: Node) -> bool:
-	if not (target is Node3D):
-		return false
-	# Door handle: pick the box for the side the player is on — seated in this vehicle → indoor box,
-	# on foot → outdoor box — then require a clear sightline to it. The vehicle's own collision is a
-	# coarse CONVEX hull that encloses the boxes, so we exclude it (it can't self-block); FOREIGN walls
-	# still block. Choosing the box by seated-state is what stops opening a door you can't see.
-	if target.has_method("side_shape"):
-		var veh: Node = target.vehicle() if target.has_method("vehicle") else null
-		var inside: bool = veh != null and veh.has_method("is_occupied_by") and veh.is_occupied_by(player)
-		var box: Node3D = target.side_shape(inside)
-		if box == null:
-			return true  # handle without assigned boxes: don't lock the door
-		# Exclude the vehicle's coarse convex self-hull (it encloses the boxes, can't self-block); FOREIGN
-		# walls still block.
-		return not _line_of_sight_blocked(box.global_position, [veh])
-	# A seat sits inside the vehicle's coarse convex hull, which would always hide it: excluded, as for a
-	# handle. FOREIGN walls still block; the shut door is the door_id rule's (Vehicle._seat_door_blocked).
-	if target is VehicleSeat:
-		var seat_veh: Node = (target as VehicleSeat).vehicle()
-		return not _line_of_sight_blocked((target as VehicleSeat).aim_point(), [seat_veh])
-	# Otherwise the target IS the solid we look at (a carriable): a solids ray must reach IT first — a
-	# wall, a bed side or the bodywork in front is hit instead, so the target is not visible.
-	return _first_solid_hit_is(target)
-
-## True if a MASK_OBSTACLE ray from the eye toward `target` hits `target` ITSELF first (nothing solid
-## in front of it). We only ignore ourselves; whatever the target rests in/on is NOT excluded, so you
-## can't grab an object through the side of the bed it sits in — you must actually see it.
-func _first_solid_hit_is(target: Node3D) -> bool:
-	_ensure_los_ray()
-	_los_ray.global_position = player.interact_ray.global_position
-	var to_target: Vector3 = target.global_position - _los_ray.global_position
-	# Aim a touch past the centre so a thin/small target is still crossed by the ray.
-	_los_ray.target_position = to_target * 1.05
-	_los_ray.clear_exceptions()
-	_los_ray.add_exception(player)
-	_los_ray.force_raycast_update()
-	# Float32 precision at astronomic world coordinates makes this physics ray imprecise (same limit as
-	# the door LOS / Jolt "dancing" bug): far from the origin it can miss the target or catch a body well
-	# off the eye->target segment, so a grab is refused until you are almost inside the prop. The client
-	# already aimed at it; validate in DOUBLE precision. A miss, or a hit BEYOND the target, counts as
-	# visible; only a solid genuinely CLOSER than the target (a wall / bed side in front) blocks the grab.
-	if not _los_ray.is_colliding():
-		return true
-	var c: Object = _los_ray.get_collider()
-	if c == target or (c is Node and (target.is_ancestor_of(c) or (c as Node).is_ancestor_of(target))):
-		return true
-	if c is Node3D:
-		var target_dist: float = _los_ray.global_position.distance_to(target.global_position)
-		var hit_dist: float = _los_ray.global_position.distance_to(_los_hit_world_pos(c))
-		return hit_dist > target_dist
-	return false
+	if _los_ray == null:
+		_los_ray = SightLine.make_ray(self)
+	return SightLine.can_see(_los_ray, player.interact_ray.global_position, target, player)
 
 ## True if a solid wall stands between the eye and the carriable `prop`. Thin wrapper over `_can_see`
 ## for the carry call sites; tiny ore pieces detect unreliably, so we don't gate them on sight.
 func _is_blocked_by_geometry(prop: Node) -> bool:
 	if prop is Node3D and "type_name" in prop and prop.type_name == "miningrock":
 		return false
-	return not _can_see(prop)
+	return _behind_shut_hatch(prop) or not _can_see(prop)
 
-## World position of the SPECIFIC collision shape the LOS ray hit — NOT the whole CollisionObject's
-## origin. A building is a multi-cell StaticBody: get_collider() returns that body, whose origin sits at
-## one corner, far from the wall you actually hit. Comparing THAT distance to the target wrongly reads
-## the wall as "beyond" the target and lets you grab/open through it. The hit SHAPE's own transform is
-## right at the wall. Node transforms are double precision here; get_collision_point() is not (Jolt
-## float32 → km-off at astronomic coords). Falls back to the collider origin if the shape can't resolve.
-func _los_hit_world_pos(c: Object) -> Vector3:
-	if c is CollisionObject3D:
-		var obj := c as CollisionObject3D
-		var owner_id: int = obj.shape_find_owner(_los_ray.get_collider_shape())
-		if owner_id != -1:
-			return (obj.global_transform * obj.shape_owner_get_transform(owner_id)).origin
-	if c is Node3D:
-		return (c as Node3D).global_position
-	return Vector3.ZERO
-
-## Lazily create the body-only line-of-sight ray (a node, so force_raycast_update works in
-## _process / input / server alike — direct_space_state is only valid during physics).
-func _ensure_los_ray() -> void:
-	if _los_ray != null:
-		return
-	_los_ray = RayCast3D.new()
-	_los_ray.enabled = false
-	_los_ray.top_level = true  # ignore the player's transform → target_position is a world delta
-	_los_ray.collide_with_areas = false
-	_los_ray.collide_with_bodies = true
-	_los_ray.collision_mask = Globals.MASK_OBSTACLE  # solids only (world|vehicle|prop); player excluded via exceptions
-	add_child(_los_ray)
+## A part bolted in a bay is behind that bay's hatch: shut, nobody sees it. The hatch is a mesh that
+## swings, not a solid, and the hull it closes counts as the part's own body (SightLine.first_hit_is):
+## no ray can tell -- its prompts showed through the shut hatch (playtest 2026-10-21).
+func _behind_shut_hatch(prop: Node) -> bool:
+	if not prop.has_meta("component_slot_ref"):
+		return false
+	var slot = prop.get_meta("component_slot_ref")
+	return is_instance_valid(slot) and slot.vehicle() != null and not slot.vehicle().bays.hatch_open(slot)
 
 ## Put the carried prop DOWN on the placement disc the player is aiming at (see CarryPlacement): into
 ## a truck bed / a shelf slot when the disc landed on one, else resting on the aimed surface — or, if
@@ -2946,6 +2943,13 @@ func _rotate_held(rot: Basis) -> void:
 	if not is_instance_valid(player.hands_item):
 		return
 	_carry_basis = (rot * _carry_basis).orthonormalized()
+
+## True when the load would be put down in an apartment the player does not live in (a neighbour's
+## wardrobe, a free container): a home is its occupant's. Only the action key asks; a forced drop (a
+## jump, a crouch) still lets go wherever the player stands.
+func _aims_into_foreign_home() -> bool:
+	var place: Dictionary = _place if _place.has("position") else _resolve_placement()
+	return SpawnBuilding.is_foreign_home(place.get("collider") as Node, player.client_uuid)
 
 ## Where the crate would be put down right now, from the player's replicated aim. Shared by the tick
 ## (for the E prompt) and the drop itself; the owner's client runs the very same resolution to draw

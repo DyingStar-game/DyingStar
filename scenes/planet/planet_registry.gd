@@ -7,7 +7,7 @@ extends RefCounted
 ## Two ways to ask, and they are not interchangeable:
 ##   [method find_by_name]  — the authoritative registry the network fills (props_list["planets"]).
 ##                            This is what a server decision must use.
-##   [method live_planets]  — a walk of the scene tree, for anything that has to draw what is loaded.
+##   [method live_planets]  — the planets in the tree, for anything that has to draw what is loaded.
 ##
 ## ⚠️ NEVER look a body up by NODE name. The server renames its planets to Horizon's names
 ## ("tarsis_3_2" becomes "P3_M2"), so scene-root names only exist on the client and find_child() is
@@ -39,7 +39,15 @@ static func find_by_name(planet_name: String) -> Planet:
 ## is loaded", never "what exists" — for that, read the files ([SystemScenes]).
 static func live_planets() -> Array[Planet]:
 	var out: Array[Planet] = []
-	_walk(NetworkOrchestrator.universe_scene, out)
+	var universe: Node = NetworkOrchestrator.universe_scene
+	if universe == null or not universe.is_inside_tree():
+		_walk(universe, out)  # a universe not in the tree yet (a test): nothing is grouped there
+		return out
+	# From the planets' group: walking the whole universe (a village alone is thousands of nodes, 49 000
+	# in all) for the thirty bodies cost the star chart 4.7 ms a frame (playtest 2026-10-21).
+	for node: Node in universe.get_tree().get_nodes_in_group(Planet.GROUP):
+		if node is Planet and universe.is_ancestor_of(node):
+			out.append(node as Planet)
 	return out
 
 

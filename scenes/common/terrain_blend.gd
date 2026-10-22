@@ -364,6 +364,11 @@ func _up_at(planet: Planet, world_pos: Vector3) -> Vector3:
 ## refused by type, and every mesh whose bounds sit above the band is dropped before it is ever
 ## overlaid. The count of meshes FOUND buys one walk, once; only the meshes PAINTED cost per frame.
 const MAX_MESHES: int = 512
+## A part of an object that never meets the ground -- the furniture inside a home -- is left out of
+## the fringe, with all below it: each mesh the fringe dresses takes 16 slots of the shared instance
+## uniform buffer, and a bed, a wardrobe and a bedside table in each of a village's 124 containers
+## overflowed it ("Too many instances using shader instance variables", 2026-10-20).
+const NO_FRINGE_GROUP := &"no_ground_fringe"
 
 
 func _collect_targets() -> void:
@@ -381,7 +386,7 @@ func _collect_targets() -> void:
 ## below the slab it actually rests on. Same for a crate sitting in a truck's bed.
 func _gather(node: Node) -> void:
 	for child in node.get_children():
-		if child is TerrainBlend:
+		if child is TerrainBlend or child.is_in_group(NO_FRINGE_GROUP):
 			continue
 		# STOP at anything that is ANOTHER OBJECT -- not at anything that merely has a body.
 		#

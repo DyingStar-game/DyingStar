@@ -105,10 +105,6 @@ const ISSUER_TYPE_KEYS: Dictionary = {
 	"player": "%%SVC_ENUM_ISSUER_PLAYER",
 	"npc": "%%SVC_ENUM_ISSUER_NPC",
 }
-const VISIBILITY_KEYS: Dictionary = {
-	"public": "%%SVC_ENUM_VISIBILITY_PUBLIC",
-	"corporation": "%%SVC_ENUM_VISIBILITY_CORPORATION",
-}
 ## Availability zone kinds — the `MissionZone` discriminator, as the service validates them. Only
 ## `system` and `poi` exist in that union; `scene` and `area` are kept in the table so a zone an
 ## older build stored still reads back, but no form offers them any more.
@@ -241,12 +237,6 @@ const INSTANCE_STATUS_KEYS: Dictionary = {
 	"stored": "%%SVC_ENUM_INSTANCE_STORED",
 	"in_world": "%%SVC_ENUM_INSTANCE_IN_WORLD",
 }
-const HOLDER_TYPE_KEYS: Dictionary = {
-	"player": "%%SVC_ENUM_HOLDER_PLAYER",
-	"npc": "%%SVC_ENUM_HOLDER_NPC",
-	"corporation": "%%SVC_ENUM_HOLDER_CORPORATION",
-	"system": "%%SVC_ENUM_HOLDER_SYSTEM",
-}
 const GOOD_KIND_KEYS: Dictionary = {
 	"stack": "%%SVC_ENUM_GOOD_STACK",
 	"instance": "%%SVC_ENUM_GOOD_INSTANCE",
@@ -300,10 +290,6 @@ static func mission_category_label(value: Variant) -> String:
 
 static func issuer_type_label(value: Variant) -> String:
 	return _enum(value, ISSUER_TYPE_KEYS)
-
-
-static func visibility_label(value: Variant) -> String:
-	return _enum(value, VISIBILITY_KEYS)
 
 
 static func escrow_payer_label(value: Variant) -> String:
@@ -416,10 +402,6 @@ static func instance_status_label(value: Variant) -> String:
 	return _enum(value, INSTANCE_STATUS_KEYS)
 
 
-static func holder_type_label(value: Variant) -> String:
-	return _enum(value, HOLDER_TYPE_KEYS)
-
-
 static func good_kind_label(value: Variant) -> String:
 	return _enum(value, GOOD_KIND_KEYS)
 
@@ -468,25 +450,6 @@ static func profile_line(profile: Dictionary) -> String:
 	var name_text: String = dash(profile.get("displayName"))
 	var kind: String = entity_type_label(profile.get("entityType"))
 	return "%s  [%s]  rep %d" % [name_text, kind, num(profile.get("reputation"))]
-
-
-static func friend_line(friend: Dictionary) -> String:
-	var status: String = str(friend.get("status", ""))
-	var suffix: String = "  (%s)" % presence(status) if status != "" else ""
-	return profile_line(friend) + suffix
-
-
-static func friend_request_line(request: Dictionary) -> String:
-	var player: Dictionary = request.get("player", {}) if request.get("player") is Dictionary else {}
-	return "#%s  %s" % [dash(request.get("id")), profile_line(player)]
-
-
-static func suggestion_line(suggestion: Dictionary) -> String:
-	return text("%%SVC_FMT_SUGGESTION") % [profile_line(suggestion), num(suggestion.get("encounters"))]
-
-
-static func block_line(block: Dictionary) -> String:
-	return text("%%SVC_FMT_BLOCK_LINE") % [profile_line(block), dash(block.get("blockedAt"))]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -582,11 +545,6 @@ static func request_line(request: Dictionary) -> String:
 		other = "  %s" % corporation_ref_line(request.get("corporation"))
 	return "#%s  %s  %s%s" % [dash(request.get("id")), corp_request_kind_label(request.get("kind")),
 			dash(request.get("playerId")), other]
-
-
-static func corporation_activity_line(entry: Dictionary) -> String:
-	return text("%%SVC_FMT_CORP_ACTIVITY") % [dash(entry.get("type")),
-			dash(entry.get("actorId")), dash(entry.get("createdAt"))]
 
 
 # ---------------------------------------------------------------------------------------------

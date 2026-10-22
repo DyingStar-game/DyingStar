@@ -14,10 +14,19 @@ extends RefCounted
 
 const _CLEAR_MARGIN: float = 0.1  # start the stand-clearance ray just above the ledge
 const _PROBE_HEADROOM: float = 0.5  # probe a bit above vault_max so a slightly-too-tall ledge still measures
+const _TOP_INSET: float = 0.02  # the top is probed this far past the face found ahead
+const _THIN_DEPTH: float = 0.3  # nothing at the top's height this far past the face: a thin obstacle
 
 ## Probe from `body` (a Player). `stand_height` = the standing capsule height used for the clearance ray.
 ## The result ALWAYS carries the surface height found ahead (for the debug HUD) and a `reason` when it is
 ## not vaultable ("clear" / "slope" / "steep top" / "low" / "too tall" / "no room"). `ok` gates the server.
+## True when the obstacle whose top is at [param top] is thin: nothing at that height _THIN_DEPTH further
+## along [param fwd] -- a wall to step over, not a ledge to stand on.
+static func is_thin(space: PhysicsDirectSpaceState3D, top: Vector3, up: Vector3, fwd: Vector3, rid: Array) -> bool:
+	var beyond: Vector3 = top + fwd * _THIN_DEPTH
+	return _ray(space, beyond + up * 0.1, beyond - up * _THIN_DEPTH, rid).is_empty()
+
+
 static func probe(body, stand_height: float = 1.8) -> Dictionary:
 	var result: Dictionary = {"ok": false, "key": "", "height": 0.0, "landing": Vector3.ZERO, "reason": "clear"}
 	var world: World3D = body.get_world_3d()
@@ -35,6 +44,12 @@ static func probe(body, stand_height: float = 1.8) -> Dictionary:
 	var feet: Vector3 = body.global_position
 	var reach: Vector3 = fwd * body.vault_reach
 	var rid: Array = [body.get_rid()]
+	# The face ahead, when there is one within reach: the top is probed just past it. Probed at a fixed
+	# reach, the ray missed the 5 cm top of a railing and found the floor behind -- nothing to vault.
+	var knee: Vector3 = feet + up * body.vault_min_height
+	var face: Dictionary = _ray(space, knee, knee + reach, rid)
+	if not face.is_empty():
+		reach = fwd * ((Vector3(face["position"]) - feet).dot(fwd) + _TOP_INSET)
 	# Measure the surface height ahead FIRST (probe DOWN from above, just past the face), so the debug HUD
 	# always shows what is in front — then the checks below only decide whether it's climbable.
 	var top: Dictionary = _ray(space, feet + up * (body.vault_max_height + _PROBE_HEADROOM) + reach, feet + reach - up * 0.1, rid)
@@ -64,7 +79,9 @@ static func probe(body, stand_height: float = 1.8) -> Dictionary:
 		result["reason"] = "no room"  # a low ceiling over the ledge
 		return result
 	var key: String = "vault"
-	if height > body.vault_climb1_max:
+	if is_thin(space, feet + up * height + reach, up, fwd, rid) and height <= body.vault_climb1_max:
+		key = "vault"  # a railing, a fence: over it, never onto its few centimetres of top
+	elif height > body.vault_climb1_max:
 		key = "climb_2m"
 	elif height > body.vault_low_max:
 		key = "climb_1m"

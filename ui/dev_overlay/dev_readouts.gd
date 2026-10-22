@@ -7,6 +7,12 @@ extends RefCounted
 const ZONE_NAME_COLOR : String = "#ffd75e"
 const AXIS_COLOR : String = "#888888"
 const _COLUMN_GAP_PX : int = 18
+## The server border is measured up to this far (m) along the camera; beyond, the readout says "> 5000".
+const BORDER_FAR_M : float = 5000.0
+## Zones of the same server crossed on the way to the border, at most.
+const _BORDER_MAX_HOPS : int = 8
+## Past a zone's face before looking for the next zone (m): enough to leave it at 1e11 m in doubles.
+const _BORDER_STEP_M : float = 0.01
 
 
 # ── Alert ───────────────────────────────────────────────────────────────────────────────────────
@@ -133,13 +139,102 @@ static func _count(v: Variant) -> String:
 	return "-" if v == null else str(int(v))
 
 
-## The Godot server simulating us, and its zones — all of them: the section caps its height and
-## scrolls on its own (DevOverlay), so a long list no longer runs over the next section.
-static func box_lines(cache: ServerInfoCache) -> PackedStringArray:
-	var out : PackedStringArray = ["server name: %s" % ReadoutFormat.escape(str(cache.value("server_name", "-")))]
+## The Godot server simulating us, how far its border lies where the camera looks, and its zones — all
+## of them: the section caps its height and scrolls on its own (DevOverlay), so a long list no longer
+## runs over the next section. The border line comes before the table, so it never scrolls away.
+static func box_lines(cache: ServerInfoCache, body: Node3D = null) -> PackedStringArray:
+	var out : PackedStringArray = [
+		"server name: %s" % ReadoutFormat.escape(str(cache.value("server_name", "-"))),
+		border_line(body, cache),
+	]
 	for zone in cache.value("zones", []):
 		out.append(zone_block(zone))
 	return out
+
+
+## The server border straight ahead of the camera. Zone bounds are in the WORLD's coordinates (see
+## server.gd server_zones): planet-local on a planet — where the server keeps the planet at its origin,
+## unspun, while here it spins, hence the conversion — universe coordinates in space.
+static func border_line(body: Node3D, cache: ServerInfoCache) -> String:
+	if not is_instance_valid(body) or not body.is_inside_tree():
+		return "frontière : --"
+	var camera : Camera3D = body.get_viewport().get_camera_3d()
+	var zones : Array = cache.value("zones", [])
+	if camera == null or zones.is_empty():
+		return "frontière : --"
+	var pos : Vector3 = body.global_position
+	var dir : Vector3 = -camera.global_basis.z
+	var planet : Planet = Planet.of(body)
+	var planet_uuid : String = ""
+	if planet != null:
+		planet_uuid = str(planet.uuid)
+		pos = planet.global_transform.affine_inverse() * pos
+		dir = planet.global_basis.orthonormalized().inverse() * dir
+	return border_text(border_distance(zones, planet_uuid, pos, dir.normalized()))
+
+
+## Metres from [param pos] to the border of the zones in [param zones] along [param dir] (unit), in the
+## world of [param planet_uuid] ("" = space). A zone of the same server next to ours is no border: the
+## walk goes on through it. INF for a whole world, NAN when [param pos] is in none of our zones (a hand
+## over in progress), and anything past BORDER_FAR_M is not measured further.
+static func border_distance(zones: Array, planet_uuid: String, pos: Vector3, dir: Vector3) -> float:
+	var travelled : float = 0.0
+	var p : Vector3 = pos
+	for _hop in _BORDER_MAX_HOPS:
+		var bounds : Variant = false  # false = no zone holds p
+		for zone in zones:
+			if _zone_in_world(zone, planet_uuid) and _zone_holds(zone, p):
+				bounds = zone.get("bounds")
+				break
+		if bounds is bool:
+			return NAN if travelled == 0.0 else travelled
+		if bounds == null:
+			return INF
+		var t : float = _exit_distance(bounds, p, dir)
+		travelled += t
+		if travelled > BORDER_FAR_M:
+			return travelled
+		p += dir * (t + _BORDER_STEP_M)
+	return travelled
+
+
+static func border_text(distance: float) -> String:
+	if is_nan(distance):
+		return "frontière : hors zone"
+	if distance > BORDER_FAR_M:
+		return "frontière : > %d mètres" % int(BORDER_FAR_M)
+	return "frontière : %.2f mètres" % distance
+
+
+## Same world test as server.gd _zone_contains_node.
+static func _zone_in_world(zone: Dictionary, planet_uuid: String) -> bool:
+	match str(zone.get("world", "")):
+		"space":
+			return planet_uuid == ""
+		"planet":
+			return planet_uuid != "" and planet_uuid == str(zone.get("planet_uuid", ""))
+	return false
+
+
+static func _zone_holds(zone: Dictionary, p: Vector3) -> bool:
+	var b : Variant = zone.get("bounds")
+	if b == null:
+		return true
+	return p.x >= b["min_x"] and p.x <= b["max_x"] and p.y >= b["min_y"] and p.y <= b["max_y"] \
+			and p.z >= b["min_z"] and p.z <= b["max_z"]
+
+
+## Where a ray from inside the box leaves it: the nearest of the planes it heads towards.
+static func _exit_distance(b: Dictionary, p: Vector3, dir: Vector3) -> float:
+	var lo : Vector3 = Vector3(b["min_x"], b["min_y"], b["min_z"])
+	var hi : Vector3 = Vector3(b["max_x"], b["max_y"], b["max_z"])
+	var t : float = INF
+	for axis in 3:
+		if dir[axis] > 0.0:
+			t = minf(t, (hi[axis] - p[axis]) / dir[axis])
+		elif dir[axis] < 0.0:
+			t = minf(t, (lo[axis] - p[axis]) / dir[axis])
+	return maxf(t, 0.0)
 
 
 ## Its world (space or a planet), then "(whole)" or its bounds in that world's coordinates as a

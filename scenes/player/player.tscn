@@ -22,6 +22,9 @@
 [ext_resource type="Resource" uid="uid://6f0gseklfmuj" path="res://scenes/common/footsteps.tres" id="sfx_steps"]
 [ext_resource type="AudioStream" uid="uid://phrk7e54jbq2" path="res://assets/_universe/audio/sfx/characters/eva-thrust-loop.ogg" id="sfx_eva_thrust"]
 [ext_resource type="AudioStream" uid="uid://bydsk32s8ujl7" path="res://assets/_universe/audio/sfx/characters/clothes-short-1.ogg" id="sfx_clothes_short_1"]
+[ext_resource type="AudioStream" uid="uid://brhkfflu4q7ex" path="res://assets/_universe/audio/sfx/ui/touchscreen-tap-1.mp3" id="sfx_screen_tap_1"]
+[ext_resource type="AudioStream" uid="uid://daaj8l44r562t" path="res://assets/_universe/audio/sfx/ui/touchscreen-tap-2.mp3" id="sfx_screen_tap_2"]
+[ext_resource type="AudioStream" uid="uid://cyskn0p7d262m" path="res://assets/_universe/audio/sfx/ui/touchscreen-tap-3.mp3" id="sfx_screen_tap_3"]
 [ext_resource type="AudioStream" uid="uid://c4sfsi3mun6h8" path="res://assets/_universe/audio/sfx/characters/clothes-short-2.ogg" id="sfx_clothes_short_2"]
 [ext_resource type="AudioStream" uid="uid://bu27c80exvn0a" path="res://assets/_universe/audio/sfx/characters/clothes-long-1.ogg" id="sfx_clothes_long_1"]
 [ext_resource type="AudioStream" uid="uid://bsdgdkoadmvq3" path="res://assets/_universe/audio/sfx/characters/clothes-long-2.ogg" id="sfx_clothes_long_2"]
@@ -58,6 +61,7 @@ sfx_climb_2m = ExtResource("10_1u1sw")
 sfx_climb_2m_db = -19.0
 sfx_eva_thrust = ExtResource("sfx_eva_thrust")
 sfx_clothes_short = Array[AudioStream]([ExtResource("sfx_clothes_short_1"), ExtResource("sfx_clothes_short_2")])
+sfx_screen_tap = Array[AudioStream]([ExtResource("sfx_screen_tap_1"), ExtResource("sfx_screen_tap_2"), ExtResource("sfx_screen_tap_3")])
 sfx_clothes_long = Array[AudioStream]([ExtResource("sfx_clothes_long_1"), ExtResource("sfx_clothes_long_2"), ExtResource("sfx_clothes_long_3"), ExtResource("sfx_clothes_long_4")])
 seat_eye_height = 0.02
 passenger_eye_offset = 0.05
@@ -140,20 +144,19 @@ mouse_filter = 2
 
 [node name="InteractLabel" type="Label" parent="UserInterface/HUD" unique_id=2054616696]
 layout_mode = 1
-anchors_preset = 7
+anchors_preset = 8
 anchor_left = 0.5
-anchor_top = 1.0
+anchor_top = 0.5
 anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -45.5
-offset_top = -80.0
-offset_right = 45.5
-offset_bottom = -46.0
-grow_horizontal = 2
-grow_vertical = 0
+anchor_bottom = 0.5
+offset_left = 28.0
+offset_top = -17.0
+offset_right = 119.0
+offset_bottom = 17.0
+grow_vertical = 2
 text = "Interact"
 label_settings = SubResource("LabelSettings_kcm5r")
-horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="Control" type="Control" parent="UserInterface/HUD" unique_id=1793293513]
 anchors_preset = 0

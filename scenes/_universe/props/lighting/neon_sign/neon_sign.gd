@@ -83,9 +83,6 @@ extends Node3D
 const FONT_SIZE := 64
 ## Height of a capital letter as a fraction of the font size (Xolonium's cap height).
 const CAP_HEIGHT := 0.72
-## A neon tube does not come on clean: the gas strikes a few times first. [lit?, seconds] steps,
-## each stretched or shortened a little at random, then the tube holds.
-const IGNITION: Array = [[true, 0.05], [false, 0.12], [true, 0.04], [false, 0.25], [true, 0.08], [false, 0.06]]
 
 ## Whether the sign is switched on. A sign stays lit unless a Photocell switches it (set_lit).
 var lit: bool = true
@@ -120,7 +117,7 @@ func _notification(what: int) -> void:
 		_apply()
 
 
-## Switch the sign on or off. Coming on, the tube strikes a few times before it holds (IGNITION),
+## Switch the sign on or off. Coming on, the tube strikes a few times before it holds (NeonIgnition),
 ## unless [param animate] is false (a sign found lit when the player arrives does not flicker).
 func set_lit(on: bool, animate: bool = true) -> void:
 	if _ignition != null:
@@ -128,11 +125,7 @@ func set_lit(on: bool, animate: bool = true) -> void:
 		_ignition = null
 	lit = on
 	if on and animate and is_inside_tree():
-		_ignition = create_tween()
-		for step: Array in IGNITION:
-			_ignition.tween_callback(_show.bind(step[0]))
-			_ignition.tween_interval(step[1] * randf_range(0.6, 1.4))
-		_ignition.tween_callback(_show.bind(true))
+		_ignition = NeonIgnition.strike(self, _show)
 	else:
 		_show(on)
 

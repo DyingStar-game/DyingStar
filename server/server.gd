@@ -150,6 +150,9 @@ var props_scene: Dictionary = {
 }
 
 var debug_message_number: int = 0
+## Unix ms at physics frame 0, so that _sim_ms() reads the wall clock at start and then the simulation's own
+## time: under load, the steps a frame catches up on are 16.7 ms apart in it, not ~0 as on the wall clock.
+var _sim_epoch_ms: float = 0.0
 
 var serverinfo_uuid: String = ""
 var serverinfo_name: String = ""
@@ -1386,6 +1389,7 @@ func _debug_closest_planets(pos: Vector3, n: int) -> String:
 func start_server(receveid_universe_scene: Node) -> void:
 	Engine.physics_ticks_per_second = 60
 	Engine.max_fps = 60
+	_sim_epoch_ms = Time.get_unix_time_from_system() * 1000.0 - _physics_frames_ms()
 
 	universe_scene = receveid_universe_scene
 	# entities_spawn_node = receveid_player_spawn_node
@@ -1651,6 +1655,11 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 			"z": rotation[2]
 		}
 	}
+	# The simulation time of this pose, in whole ms, for a player who asked for it (move_clocks): Horizon
+	# forwards it to the client, which measures the body's speed against it rather than against when the
+	# packets happened to arrive (MovementProbe). Per player, so the clocks cost the traffic of those only.
+	if player.move_clocks:
+		prep["servergodot_ms"] = roundi(_sim_ms())
 
 	# players_newposition is one entry per player per flush, so a later move in the same window
 	# overwrites this one. Carry a frame change already queued onto the newer pose instead of losing
@@ -1667,10 +1676,24 @@ func _on_player_move(client_uuid: String, position: Vector3, rotation: Vector3) 
 		prep["out_of_zone"] = serverinfo_uuid
 		print("erase player (2): %s" % client_uuid)
 		players_list.erase(client_uuid)
+		# A hand-over, NOT a disembark: _unseat_for_transfer below nulls the seat and the seat flags
+		# must stay as they were until the destination server re-seats the player and calls
+		# on_player_live. Forget only the bookkeeping — a state left here would keep a body that has
+		# left this server inside every zone until the service's 30 s TTL expired.
+		MissionHeartbeat.forget(client_uuid)
 		_release_carried_for_transfer(player)
 		_unseat_for_transfer(player)
 		player.queue_free()
 	players_newposition[client_uuid] = prep
+
+## The simulation's time (unix ms at start, then 1/60 s per physics step), see _sim_epoch_ms.
+func _sim_ms() -> float:
+	return _sim_epoch_ms + _physics_frames_ms()
+
+
+func _physics_frames_ms() -> float:
+	return Engine.get_physics_frames() * 1000.0 / Engine.physics_ticks_per_second
+
 
 func send_players_newposition_to_horizon():
 	if players_newposition.values().size() == 0:
@@ -2061,6 +2084,7 @@ func create_player(event: Dictionary) -> void:
 
 	if player_data.has("is_npc") and player_data["is_npc"] == true:
 		spawned_entity_instance.is_npc = true
+	spawned_entity_instance.move_clocks = player_data.get("move_clocks", false) == true
 
 	var parented = false
 	if player_data["parent_id"] != "":
@@ -2068,6 +2092,8 @@ func create_player(event: Dictionary) -> void:
 		if parent != null:
 			parented = true
 			parent.add_child(spawned_entity_instance)
+			if spawned_entity_instance.is_npc and parent is SpawnBuilding:
+				parent.server_open_for_npc(player_uuid)  # an NPC never opens its own door
 
 	var adopted_planet: Planet = null
 	if not parented:
@@ -2157,6 +2183,11 @@ func _register_player(spawned_entity_instance: Node, player_uuid: String, adopte
 		if seat_name != "":
 			seat_parent.server_enter(spawned_entity_instance, seat_name, true)
 			print("[zone] player %s re-seated in %s of vehicle %s" % [player_uuid, seat_name, seat_parent.uuid])
+	# HERE and not next to on_player_joined above: that is the re-seat this had to happen after.
+	# MissionHeartbeat reads the seat ONCE and stores it, and this is the only place the seat is
+	# already the one the player landed in — a dormant hand-over was never seated, so reading
+	# before this line would call every arriving driver a passenger on foot.
+	MissionHeartbeat.on_player_live(player_uuid, spawned_entity_instance)
 	# Updates wired and seat settled: the posture this server holds, sent even at its defaults.
 	spawned_entity_instance.server_publish_spawn_state()
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
@@ -3598,16 +3629,60 @@ func _true_position(node: Node3D) -> Vector3:
 	return _planet_orbital_abs(planet) + node.global_position
 
 
-## Where [param node] is, for service-social's presence payload (see [SocialHeartbeat]): the true
-## universe position plus a readable {system, scene} pair — the star system and body key of the
-## planet it stands on ("tarsis", "tarsis_3"), or "" / "space" in open space. The UI renders the
-## pair as "system · scene" on a contact card.
+## Where [param node] is, for service-social's presence payload (see [SocialHeartbeat]): a readable
+## {system, scene} pair — the star system and body key of the planet it stands on ("tarsis",
+## "tarsis_3"), or "" / "space" in open space — plus the position IN THAT BODY'S FRAME. The UI
+## renders the pair as "system · scene" on a contact card.
+##
+## The same frame [method mission_place_of] uses, deliberately: one place, one frame, everywhere in
+## the game. It costs nothing here and buys the thing that matters — a presence and a POI sitting on
+## the same spot are stored the same way, so "where is my contact" and "where is that contract" can
+## never disagree about a frame, and neither has to be re-projected as the body moves. What made
+## absolute attractive here (a presence is compared to nothing, so staleness only blurs a dot) was
+## never worth a second convention.
 func social_presence_location(node: Node3D) -> Dictionary:
 	var planet := _planet_ancestor_of(node)
 	if planet == null:
-		return SocialHeartbeat.build_location("", "space", _true_position(node))
+		# No body to be relative to; the parent there is the system, whose frame is the universe one.
+		return SocialHeartbeat.build_location("", "space", node.global_position)
 	return SocialHeartbeat.build_location(_system_key_for(planet), _body_key_of(planet),
-			_true_position(node))
+			planet.to_local(node.global_position))
+
+
+## Where [param node] is for service-mission's player-state push (see [MissionHeartbeat]), in the
+## shape that service wants: {system, scene, x, y, z} flat, its Place carrying no radius.
+##
+## THE SAME frame as [method social_presence_location] above — measured from the body named by
+## `scene`, which is [method PlayerLocation.presence_of] on the client. One frame everywhere; read
+## the reason before "simplifying" it back to an absolute triple:
+##
+##   a planet both ORBITS and SPINS. Its node position is rewritten from the Kepler elements on the
+##   client every tick and its basis from the daily turn, so an absolute triple describes a spot the
+##   terrain has already left — stale the moment it is written, and more wrong every second after. A
+##   body-local place cannot drift: the frame rides along with the body.
+##
+## Here `to_local` is the identity (every body sits at the origin of its own physics world with an
+## identity basis — see create_planet), which is exactly what makes the client's `to_local` produce
+## the same NUMBER for the same spot: the client subtracts the orbit and the spin, and the server has
+## neither to subtract. The two sides agree without ever exchanging a pose.
+##
+## Null when the position is not a real number, where the presence above would have written a 0.
+## That 0 is defensible for a presence and WRONG here: service-mission reads a coordinate as a place
+## and matches zones against it, so a body mid-transfer would read as the origin — and the origin of
+## a planet is a perfectly ordinary spot — and could satisfy a `visit` aimed at a POI sitting there.
+## Nothing is the honest answer: a null place reads as outside every zone.
+func mission_place_of(node: Node3D) -> Variant:
+	if node == null or not is_instance_valid(node):
+		return null
+	var planet := _planet_ancestor_of(node)
+	var position: Vector3 = node.global_position if planet == null else planet.to_local(node.global_position)
+	if not (is_finite(position.x) and is_finite(position.y) and is_finite(position.z)):
+		return null
+	if planet == null:
+		# No body to be relative to; the parent there is the system, whose frame is the universe one.
+		return MissionHeartbeat.build_place(SocialHeartbeat.build_location("", "space", position))
+	return MissionHeartbeat.build_place(SocialHeartbeat.build_location(
+			_system_key_for(planet), _body_key_of(planet), position))
 
 
 ## The body's key — "tarsis_3" — which is what SystemScenes and the services speak in.
@@ -3681,6 +3756,11 @@ func remove_player(event: Dictionary) -> void:
 		# another server whose own beat takes over, and racing it would flicker them offline
 		# mid-hand-over (the presence TTL covers the gap either way).
 		SocialHeartbeat.on_player_left(str(player_uuid))
+		# Same rule for the mission store, and the same reason: a state must not outlive the body it
+		# describes. Kept here it would hold the player inside every zone until the service's 30 s TTL
+		# expired. The hand-over path in _on_player_move forgets for the same reason — there the next
+		# server is already pushing that player's state, which is exactly what must not be raced.
+		MissionHeartbeat.forget(str(player_uuid))
 		players_list.erase(player_uuid)
 		# A player who quits while SEATED leaves the seat first, the same way as on foot: the seat
 		# is freed now (not by the vehicle noticing a dead reference a tick later), the body gets its

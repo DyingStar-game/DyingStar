@@ -137,6 +137,7 @@
         "floors",
         "spawn_point",
         "apartments",
+        "furniture",
         "scenename",
         "name"
     ],

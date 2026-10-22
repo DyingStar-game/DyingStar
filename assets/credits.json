@@ -318,6 +318,24 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "container-door-close.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/container-door-close.ogg",
+			"author": "xdrav",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/112843/",
+			"license": "CC0"
+		},
+		{
+			"asset": "container-door-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/container-door-open.ogg",
+			"author": "xdrav",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/112843/",
+			"license": "CC0"
+		},
+		{
 			"asset": "crate-pick-up.mp3",
 			"path": "res://assets/_universe/audio/sfx/props/crate-pick-up.mp3",
 			"author": "WarpZone",
@@ -369,6 +387,24 @@
 			"source": "Freesound",
 			"id": "",
 			"url": "https://freesound.org/s/861546/",
+			"license": "CC0"
+		},
+		{
+			"asset": "drawer-close.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/drawer-close.ogg",
+			"author": "zazz.sound.design",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/353622/",
+			"license": "CC0"
+		},
+		{
+			"asset": "drawer-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/drawer-open.ogg",
+			"author": "zazz.sound.design",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/353622/",
 			"license": "CC0"
 		},
 		{
@@ -678,6 +714,33 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "touchscreen-tap-1.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/touchscreen-tap-1.mp3",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "touchscreen-tap-2.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/touchscreen-tap-2.mp3",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "touchscreen-tap-3.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/touchscreen-tap-3.mp3",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "truck-door-alarm.ogg",
 			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-door-alarm.ogg",
 			"author": "RanneM",
@@ -775,6 +838,24 @@
 			"id": "",
 			"url": "https://pixabay.com/sound-effects/wave-cape-cloth-in-wind-350430/",
 			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "wardrobe-door-close.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/wardrobe-door-close.ogg",
+			"author": "pagancow",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/15419/",
+			"license": "CC0"
+		},
+		{
+			"asset": "wardrobe-door-open.ogg",
+			"path": "res://assets/_universe/audio/sfx/props/wardrobe-door-open.ogg",
+			"author": "pagancow",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/15419/",
+			"license": "CC0"
 		},
 		{
 			"asset": "wheel_struck_constant.mp3",
@@ -1148,6 +1229,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "habitat_container.glb",
+			"path": "res://assets/_universe/structures/buildings/habitat_container.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "habitat_lateraux.blend",
 			"path": "res://assets_blender/_universe/structures/buildings/habitat_lateraux.blend",
 			"author": "Kankan",
@@ -1195,9 +1285,9 @@
 		{
 			"asset": "hammerdrill.glb",
 			"path": "res://assets/_universe/props/tools/tools/mining/hammerdrill.glb",
-			"author": "Irong",
+			"author": "Sir de XanTiuM",
 			"source": "Discord",
-			"id": "238210426100383744",
+			"id": "518522475613650960",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
