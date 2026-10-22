@@ -19,6 +19,9 @@ const LAYER_INTERACTABLE := 6  # look-at targets: door handles, seats, consoles,
 
 ## Precomputed bitmasks (bit = 1 << (index - 1)).
 const MASK_SOLID := (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3)  # world | player | vehicle | prop
+## What a planet's gravity area pulls: everything that moves, never `world` (statics would cost a Jolt
+## contact each per step without moving). A dynamic body on `world` alone would float.
+const MASK_MOVERS := (1 << 1) | (1 << 2) | (1 << 3)  # player | vehicle | prop
 const MASK_PROBE := (1 << 4)  # zone
 const MASK_OBSTACLE := (1 << 0) | (1 << 2) | (1 << 3)  # world | vehicle | prop — line-of-sight / tool rays
 
