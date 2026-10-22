@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://cj4djxpjv43oc"]
+
+[ext_resource type="Shader" uid="uid://bdb0hrfumlpwd" path="res://assets/_universe/_shared/shaders/painted_metal_smart.gdshader" id="1_eyqgv"]
+[ext_resource type="Texture2D" uid="uid://qr4nm0gwackl" path="res://assets/textures/grunge/scratch_tile.png" id="2_xmm0c"]
+
+[resource]
+resource_name = "metal"
+render_priority = 0
+shader = ExtResource("1_eyqgv")
+shader_parameter/paint_color = Color(0.6666667, 0.39191175, 0.07058823, 1)
+shader_parameter/paint_roughness = 0.20999999530608
+shader_parameter/paint_metallic = 0.0
+shader_parameter/metal_color = Color(0.7, 0.7, 0.7, 1)
+shader_parameter/metal_roughness = 0.26999999396496
+shader_parameter/emission_color = Color(0, 0, 0, 1)
+shader_parameter/emission_strength = 1.0
+shader_parameter/scratch_texture = ExtResource("2_xmm0c")
+shader_parameter/scratch_amount = 1.08999997563632
+shader_parameter/uv1_blend_sharpness = 2.71
