@@ -170,6 +170,10 @@ static func _globe() -> Dictionary:
 ## the costly part of a visit.
 static var _node_geom: Dictionary = {}
 const NODE_GEOM_KEPT: int = 65536
+## Guards the two caches both the main thread and the relief's workers write (_node_geom, _manifests):
+## a Dictionary grown on one thread while another writes it corrupts the heap (client crash with the
+## chart open, crash dump 2026-10-22).
+static var _cache_lock := Mutex.new()
 
 
 ## One node of the walk: dropped when it lies wholly outside what the camera can see, cut by
@@ -177,13 +181,17 @@ const NODE_GEOM_KEPT: int = 65536
 static func _quadtree(nside: int, ipix: int, cam_dir: Vector3, altitude_m: float, radius: float,
 		reach: float, ceiling: int, out: PackedInt64Array) -> void:
 	var id: int = StarMapGround.tile_id(nside, ipix)
+	_cache_lock.lock()
 	var geom: Array = _node_geom.get(id, [])
+	_cache_lock.unlock()
 	if geom.is_empty():
-		if _node_geom.size() >= NODE_GEOM_KEPT:
-			_node_geom.clear()
 		geom = [HEALPix.pix2vec_nest(nside, ipix), PlanetLod.chunk_diagonal(nside, ipix, 1.0),
 				pixel_reach(nside, ipix)]
+		_cache_lock.lock()
+		if _node_geom.size() >= NODE_GEOM_KEPT:
+			_node_geom.clear()
 		_node_geom[id] = geom
+		_cache_lock.unlock()
 	var centre: Vector3 = geom[0]
 	var diag: float = float(geom[1]) * radius
 	# Kept whenever any part of the pixel can be in view: its centre may lie outside while a corner
@@ -752,15 +760,21 @@ static func terrain_radius_m(body_key: String, fallback: float) -> float:
 
 
 static func _manifest(body_key: String) -> Dictionary:
-	if _manifests.has(body_key):
-		return _manifests[body_key]
+	_cache_lock.lock()
+	var known: Variant = _manifests.get(body_key)
+	_cache_lock.unlock()
+	if known != null:
+		return known
 	var out: Dictionary = {}
 	var path: String = "%s/%s_chunks/manifest.json" % [EXPORT_ROOT, body_key]
 	if FileAccess.file_exists(path):
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 		if typeof(parsed) == TYPE_DICTIONARY:
 			out = parsed
+	out.make_read_only()  # shared by every thread from now on: read, never written
+	_cache_lock.lock()
 	_manifests[body_key] = out
+	_cache_lock.unlock()
 	return out
 
 
