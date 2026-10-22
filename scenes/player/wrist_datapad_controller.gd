@@ -57,6 +57,7 @@ var _face_held: float = 0.0  # how far the device was turned to the eye then (0.
 var _over_screen: bool = false  # the cursor is on the wrist's screen (it was told so)
 var _held_basis: Basis = Basis.IDENTITY  # the body's orientation held while reading (_steady_body)
 var _basis_held: bool = false
+var _hidden_body: Array[GeometryInstance3D] = []  # our own body's meshes hidden while reading (_show_own_body)
 
 
 func setup(player, terminal, camera: Camera3D, animator, model) -> void:
@@ -147,6 +148,7 @@ func advance(delta: float) -> void:
 			_camera.fov = lerpf(_base_fov(), _zoom_fov, k)
 			if _t >= ZOOM_TIME:
 				phase = Phase.OPEN
+				_show_own_body(false)
 		Phase.OPEN:
 			# Every frame: the eyes drifting after the cursor. The device is not turned again: it was set
 			# straight at the end of the zoom and nothing moves it on the body since (the arm's pose is
@@ -254,6 +256,7 @@ func _lower() -> void:
 	_look_held = _look()
 	_basis_held = false
 	phase = Phase.LOWERING  # before closing the tablet: its visibility_changed must not lower again
+	_show_own_body(true)
 	_t = 0.0
 	if _model != null:
 		_model.set_live(false)
@@ -263,6 +266,29 @@ func _lower() -> void:
 	if _terminal.is_open():
 		_terminal.close()  # stopped during the zoom: the tablet had already opened on the screen
 	_set_raised(false)
+
+
+## Our own body hidden from our own eyes while the view is closed in on the wrist, the device kept: the
+## raised arm's upper half came into the bottom corner of the view, before the tablet, now and then
+## (depending on the pose the arm was raised from: playtest 2026-10-22). Only the owner reads its own
+## wrist, so the others still see the whole body. The meshes already hidden are left as they are.
+func _show_own_body(on: bool) -> void:
+	if on:
+		for mesh: GeometryInstance3D in _hidden_body:
+			if is_instance_valid(mesh):
+				mesh.visible = true
+		_hidden_body.clear()
+		return
+	var puppet: Node = _player.get("puppet") as Node if _player != null else null
+	if puppet == null:
+		return
+	var device: Node = _model as Node if _model is Node else null
+	for mesh: Node in puppet.find_children("*", "GeometryInstance3D", true, false):
+		var geometry := mesh as GeometryInstance3D
+		if not geometry.visible or (device != null and (device == geometry or device.is_ancestor_of(geometry))):
+			continue
+		geometry.visible = false
+		_hidden_body.append(geometry)
 
 
 ## Hold the body's orientation while the view is closed in on the wrist. Seated, the body rides a
