@@ -719,9 +719,12 @@ func _setup_gravity() -> void:
 	_gravity_area.gravity_point = true
 	_gravity_area.gravity = planet_data.surface_gravity
 	_gravity_area.gravity_point_unit_distance = planet_data.radius
-	# Apply gravity to every solid RigidBody (world|player|vehicle|prop). Without this the area
-	# defaults to scanning `world` only, so props/vehicles on their own layers would float.
-	_gravity_area.collision_mask = Globals.MASK_SOLID
+	# Apply gravity to what moves: players, vehicles and props, each on its own layer. NOT `world`:
+	# Jolt areas detect static bodies too (a monitoring area never sleeps), so every terrain chunk,
+	# road, building and piece of furniture of the planet was re-collided against this sphere each
+	# step — 6 800 bodies, 12 ms a step on the preprod server with two players. A dynamic body that
+	# needs this gravity must not sit on `world` alone.
+	_gravity_area.collision_mask = Globals.MASK_MOVERS
 
 	# The gravity sphere covers the terrain plus the configurable gravity_reach.
 	# gravity_reach is independent of the atmosphere shell — even airless bodies

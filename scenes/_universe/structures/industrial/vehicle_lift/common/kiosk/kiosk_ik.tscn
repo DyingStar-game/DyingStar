@@ -35,6 +35,7 @@ node_b = NodePath("../Kiosk Pivot Base Arm 01")
 angular_limit_y/enabled = false
 
 [node name="Kiosk Pivot Base Arm 01" type="RigidBody3D" parent="." unique_id=174207081]
+collision_layer = 8
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.036963567, 0)
 axis_lock_linear_x = true
 axis_lock_linear_y = true
@@ -57,6 +58,7 @@ node_b = NodePath("../Kiosk Arm 01")
 angular_limit_z/upper_angle = 0.34906584
 
 [node name="Kiosk Arm 01" type="RigidBody3D" parent="." unique_id=1055738612]
+collision_layer = 8
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06490927, 0)
 center_of_mass_mode = 1
 
@@ -74,6 +76,7 @@ node_b = NodePath("../Kiosk Arm 01")
 angular_limit_z/enabled = false
 
 [node name="Kiosk Pivot Z Arm 01 Arm 02" type="RigidBody3D" parent="." unique_id=1859331715]
+collision_layer = 8
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32066184, 0.06516334, 0)
 
 [node name="Visual" type="MeshInstance3D" parent="Kiosk Pivot Z Arm 01 Arm 02" unique_id=1014708221]
