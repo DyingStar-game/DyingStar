@@ -49,8 +49,46 @@ func test_every_zone_is_listed() -> void:
 		zones.append(_zone("P%d" % i, false))
 	NetworkOrchestrator.set_gameserver_zones.emit(zones)
 	var lines : PackedStringArray = DevReadouts.box_lines(_cache)
-	assert_eq(lines.size(), 1 + 10, "the name, then all ten zones: the section scrolls, nothing is cut")
+	assert_eq(lines.size(), 2 + 10, "the name, the border, then all ten zones: the section scrolls, nothing is cut")
+	assert_eq(lines[1], "frontière : --", "no body, no camera: no border to measure")
 	assert_string_contains(lines[-1], "P9", "down to the last one")
+
+
+func _box(min_x: float, max_x: float) -> Dictionary:
+	return {"world": "planet", "planet_uuid": "T3", "bounds": {
+		"min_x": min_x, "max_x": max_x, "min_y": -100.0, "max_y": 100.0, "min_z": -100.0, "max_z": 100.0}}
+
+
+func test_the_border_is_measured_along_the_camera() -> void:
+	var zones : Array = [_box(-100.0, 12.345)]
+	var d : float = DevReadouts.border_distance(zones, "T3", Vector3.ZERO, Vector3.RIGHT)
+	assert_almost_eq(d, 12.345, 1e-6, "straight to the max X face")
+	assert_eq(DevReadouts.border_text(d), "frontière : 12.35 mètres", "two decimals")
+	var diagonal : Vector3 = Vector3(1.0, 0.0, 1.0).normalized()
+	assert_almost_eq(DevReadouts.border_distance(zones, "T3", Vector3.ZERO, diagonal), 12.345 * sqrt(2.0), 1e-6,
+		"the nearest face crossed, not the nearest face")
+	assert_almost_eq(DevReadouts.border_distance(zones, "T3", Vector3.ZERO, Vector3.LEFT), 100.0, 1e-6,
+		"the other way, the other face")
+
+
+func test_a_zone_of_the_same_server_is_no_border() -> void:
+	var zones : Array = [_box(-10.0, 10.0), _box(10.0, 40.0)]
+	assert_almost_eq(DevReadouts.border_distance(zones, "T3", Vector3.ZERO, Vector3.RIGHT), 40.0, 0.1,
+		"walked on through the neighbouring zone")
+
+
+func test_far_whole_or_elsewhere() -> void:
+	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([_box(-10.0, 9000.0)], "T3", Vector3.ZERO,
+		Vector3.RIGHT)), "frontière : > 5000 mètres", "far away")
+	var whole : Dictionary = {"world": "planet", "planet_uuid": "T3"}
+	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([whole], "T3", Vector3.ZERO, Vector3.UP)),
+		"frontière : > 5000 mètres", "a whole world has no border")
+	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([_box(-10.0, 10.0)], "G1", Vector3.ZERO,
+		Vector3.UP)), "frontière : hors zone", "another planet's zone is not ours")
+	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([_box(-10.0, 10.0)], "T3", Vector3(50, 0, 0),
+		Vector3.UP)), "frontière : hors zone", "outside every zone")
+	assert_true(is_nan(DevReadouts.border_distance([_box(-10.0, 10.0)], "", Vector3.ZERO, Vector3.UP)),
+		"in space, a planet zone does not hold us")
 
 
 func test_a_bounded_zone_is_a_table_of_its_bounds() -> void:
