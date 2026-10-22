@@ -247,6 +247,10 @@ func setup() -> void:
 	player._interp.speed = OWN_CATCH_UP_RATE
 	if MovementProbe.wanted():
 		player.move_probe = MovementProbe.new()
+		if MovementProbe.csv_wanted():
+			var csv_path: String = player.move_probe.open_csv()
+			print("[MoveProbe] raw positions -> %s" % (ProjectSettings.globalize_path(csv_path)
+					if not csv_path.is_empty() else "<cannot open the file>"))
 
 	# Start at the scene's walk speed, mirrored for the debug HUD. It used to start at 0 as a "never
 	# set" marker, so the HUD read 0.0 m/s while the body actually walked at walk_speed.
