@@ -23,11 +23,21 @@ const QUICK_ARG := "--bench-quick"
 const SHOTS_ARG := "--bench-shots"
 ## The sun's height (degrees) for the day windows instead of LIGHTS' (a dawn: --bench-sun=5).
 const SUN_ARG := "--bench-sun="
+## Pictures only, from fixed poses (VIEWS), then quit: to show what a model change looks like up close.
+const VIEWS_ARG := "--bench-views"
+## Name -> [eye, look], in the village's frame: over the roofs of tarsis_4-1001, and its home 0-0-0's ceiling.
+const VIEWS := {
+	"roofs": [Vector3(-1.0, 12.0, -3.0), Vector3(-3.5, 7.0, 6.0)],
+	"roof_close": [Vector3(-0.5, 9.2, 0.5), Vector3(-3.5, 7.6, 3.5)],
+	"ceiling": [Vector3(-3.0, 1.4, 1.3), Vector3(-4.2, 2.6, 1.0)],
+}
+## The model's own roof, for --bench-hide=oldroof (the lighter one is the scene's override).
+const ORIGINAL_MODEL := "res://assets/_universe/structures/buildings/habitat_container.glb"
 ## The families --bench-hide can take out.
 const HIDE := ["shell", "interiors", "walkways", "lights", "shadows", "casters", "fringe", "labels", "props",
 		"village", "outpost", "terrain", "aerial", "skyrefl", "sunshadow", "ssao", "ssil", "ssr", "glow",
 		"hexq0", "hexq1", "terraincast", "aeriallut",
-		"interiorlights", "arealights", "spotlights", "omnilights", "shelllod"]
+		"interiorlights", "arealights", "spotlights", "omnilights", "shelllod", "oldroof"]
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
 ## Where the village stands from the stage's anchor (m, degrees from north): clear of the outpost.
 const DISTANCE_M := 350.0
@@ -138,6 +148,10 @@ func _ready() -> void:
 func _run() -> void:
 	_frame_at(STREET_EYE, STREET_EYE + Vector3.LEFT)
 	await _wait(SETTLE_S)
+	if VIEWS_ARG in OS.get_cmdline_user_args():
+		await _views()
+		get_tree().quit()
+		return
 	var quick: bool = not _arg_list(QUICK_ARG).is_empty() or QUICK_ARG in OS.get_cmdline_user_args()
 	var sun: PackedStringArray = _arg_list(SUN_ARG)
 	for light: Array in (LIGHTS.slice(0, 1) if quick else LIGHTS):
@@ -149,6 +163,18 @@ func _run() -> void:
 			await _shot("%s home" % light[0], _home)
 	_write_report()
 	get_tree().quit()
+
+
+## A picture from each of VIEWS, in user://benchmarks/shots/view_<name>.png.
+func _views() -> void:
+	StageClock.set_sun_elevation(_planet, _village.position, float(LIGHTS[0][1]))
+	_hide_families()
+	DirAccess.make_dir_recursive_absolute("user://benchmarks/shots")
+	for view: String in VIEWS:
+		_frame_at(VIEWS[view][0], VIEWS[view][1])
+		await _wait(SHOT_SETTLE_S)
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://benchmarks/shots/view_%s.png" % view)
 
 
 ## A turn on the spot in the street between the rows.
@@ -303,6 +329,12 @@ func _hide_families() -> void:
 			building.get_node("InteriorStreamer").set_process(false)
 		if "walkways" in _hidden and building.has_node("Walkways"):
 			(building.get_node("Walkways") as Node3D).visible = false
+	if "oldroof" in _hidden:
+		var model: Node = (load(ORIGINAL_MODEL) as PackedScene).instantiate()
+		var original: Mesh = (model.find_child("roof", true, false) as MeshInstance3D).mesh
+		model.free()
+		for roof: Node in _village.find_children("roof", "MeshInstance3D", true, false):
+			(roof as MeshInstance3D).mesh = original
 	if "shelllod" in _hidden:
 		for lod: Node in _village.find_children("ShellLod", "", true, false):
 			for path: String in ShellLod.DETAILED:
