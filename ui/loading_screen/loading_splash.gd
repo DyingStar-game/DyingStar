@@ -25,6 +25,12 @@ static func hide(tree: SceneTree) -> void:
 		screen.visible = false
 
 
+## True while the splash covers the screen.
+static func is_up(tree: SceneTree) -> bool:
+	var screen : CanvasLayer = _screen(tree)
+	return screen != null and screen.visible
+
+
 static func say(tree: SceneTree, text_key: String) -> void:
 	var label : Label = _label(_screen(tree))
 	if label != null:

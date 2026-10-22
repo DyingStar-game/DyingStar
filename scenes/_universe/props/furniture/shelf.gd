@@ -71,6 +71,10 @@ func _ready() -> void:
 	_slot_bodies.resize(shelf_slots.size())
 	# So the drop logic (player_server._shelf_for_drop) can find every shelf by group.
 	add_to_group("shelf")
+	# Its tick is the server's (stored crates, rebinds): 165 shelves in the village called it 60 times a
+	# second on every client to return at once.
+	if not GameOrchestrator.is_server():
+		set_physics_process(false)
 
 ## Server: re-assert a just-stored crate's resting pose for a few frames (cheap loss insurance),
 ## and run the post-restore rebind retry loop.

@@ -24,6 +24,11 @@ class_name RailwayTrack
 ## preview too, where autoloads are not registered (see BridgeSpawner).
 const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 
+## The chunk mesh's metadata holding its rail groups (build_multimeshes), built with the mesh by its
+## worker (stamp_rails) and saved with it in the disk cache: the assembly only adds the nodes. Laying the
+## modules on the main thread cost 6-18 ms a chunk of track, and their MultiMeshes 3.5-10 ms more.
+const RAILS_META := &"rail_groups"
+
 static var _meshes: Array[Mesh] = []
 static var _meshes_loaded := false
 static var _mesh_mutex: Mutex = Mutex.new()
@@ -244,6 +249,32 @@ static func build_multimeshes(transforms: Array, lod: int) -> Array:
 			var r_end: float = 0.0 if tier >= ranges.size() else float(ranges[tier])
 			out.append({"mm": mm, "center": centre, "range_begin": r_begin, "range_end": r_end})
 	return out
+
+
+## WORKER: the rail groups of chunk (nside, ipix) at [param lod] on [param mesh] (RAILS_META), [] when
+## it has no track. Nothing when the module meshes are not loaded yet (loading them is the main thread's
+## job: module_meshes) or when a railway of the chunk has no profile yet: the assembly lays them then.
+static func stamp_rails(mesh: ArrayMesh, planet_data: PlanetData, nside: int, ipix: int,
+		chunk_center: Vector3, lod: int) -> void:
+	if mesh == null or not _meshes_loaded:
+		return
+	var transforms: Array = []
+	for r in planet_data.get_roads_for_chunk(nside, ipix):
+		if not RailwaySettings.is_railway(r):
+			continue
+		var prof: Dictionary = planet_data.get_grade_profile(int(r.get("feature_id", -1)))
+		if prof.is_empty():
+			return
+		transforms.append_array(piece_module_transforms(r, prof, planet_data.radius, chunk_center))
+	mesh.set_meta(RAILS_META, build_multimeshes(transforms, lod))
+
+
+## The rail groups of a chunk: from its mesh when its worker built them (stamp_rails), else laid here.
+static func rail_groups(mesh: ArrayMesh, planet_data: PlanetData, nside: int, ipix: int,
+		chunk_center: Vector3, lod: int) -> Array:
+	if mesh != null and mesh.has_meta(RAILS_META):
+		return mesh.get_meta(RAILS_META)
+	return build_multimeshes(module_transforms(planet_data, nside, ipix, chunk_center), lod)
 
 
 ## The collision boxes of the chunk's track: one per track per straight run,

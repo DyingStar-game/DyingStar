@@ -775,8 +775,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		else:
 			# Client-only suffix, for what only the visual meshes carry: "_far50km" = the far tiers
 			# cut into quads of 50 km at most (PlanetData.get_resolution_for_lod) — no server
-			# collision to re-bake.
-			_cache_version += "_far50km"
+			# collision to re-bake; "_rail1" = the rail modules built with the mesh and saved on it
+			# (RailwayTrack.RAILS_META).
+			_cache_version += "_far50km_rail1"
 		# An exported build starts from an empty cache: a change no field above captures (a road
 		# re-export, a forgotten vNN bump) cannot reach players through a mesh baked by the build
 		# before. Not in relief_signature: the persisted pad altitudes survive a deploy. Empty in
@@ -787,6 +788,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 
 	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
 	planet_data.remote_source = RemoteTileSource.for_planet(planet_data.planet_name)
+	# The rail modules, loaded here on the main thread: the mesh tasks lay them (RailwayTrack.stamp_rails).
+	if not server_mode and planet_data.has_railways():
+		RailwayTrack.module_meshes()
 
 	# The geometry version is what a client and a server must SHARE for their
 	# terrains to agree (the sampler, the carve, the stitch are all in it):
@@ -1656,6 +1660,8 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 func _exit_tree() -> void:
 	_join_lod_task()
 	_join_worker_tasks()
+	if _chunk_cache != null:
+		_chunk_cache.save_trusted(true)
 	if _atmosphere_lod != null:
 		_atmosphere_lod.release()
 		_atmosphere_lod = null
@@ -2825,18 +2831,17 @@ func active_chunk_count() -> int:
 ## surface: a height query (carved, crack-aware, plus the biome relief) is what the chunk was built
 ## from, not what it shows — the outpost's plateau is drawn 20 cm above its relief query (2026-10-09),
 ## and the figures sank by that much.
+## One key lookup a level, finest first: a walk of every active chunk cost one HEALPix lookup each
+## (1 500 of them), 60 ms a second while the menu stage put its 40 props back on the ground.
 func drawn_mesh_at(dir: Vector3) -> MeshInstance3D:
-	var best: Dictionary = {}
-	for rec: Dictionary in _active_chunks.values():
+	var nside: int = 1 << planet_data.max_quadtree_depth
+	while nside >= 1:
+		var rec: Dictionary = _active_chunks.get(_chunk_key_hp(nside, HEALPix.vec2pix_nest(nside, dir)), {})
 		var mi: MeshInstance3D = rec.get("mesh_instance")
-		if mi == null or mi.mesh == null:
-			continue
-		var nside: int = int(rec.get("nside", 0))
-		if nside <= 0 or (not best.is_empty() and nside <= int(best["nside"])):
-			continue
-		if HEALPix.vec2pix_nest(nside, dir) == int(rec.get("ipix", -1)):
-			best = rec
-	return best.get("mesh_instance") if not best.is_empty() else null
+		if mi != null and mi.mesh != null:
+			return mi
+		nside >>= 1
+	return null
 
 
 ## How many chunks the last LOD update asked for (the menu's loading bar: active / desired).
@@ -3705,14 +3710,18 @@ func _poll_cache_loads() -> void:
 		var mesh: ArrayMesh = null
 		if ResourceLoader.load_threaded_get_status(entry.path) == ResourceLoader.THREAD_LOAD_LOADED:
 			mesh = ResourceLoader.load_threaded_get(entry.path) as ArrayMesh
-		if mesh != null and _cached_mesh_valid(mesh, info):
+		# A file found good once, or published from a good tile, is not checked again (ChunkDiskCache.trust).
+		if mesh != null and (_chunk_cache.is_trusted(entry.path) or _cached_mesh_valid(mesh, info)):
+			_chunk_cache.trust(entry.path)
 			_chunk_cache.cache_hits += 1
 			info["_from_disk_cache"] = true
 			_queue_insert(_assemble_queue, {"info": info, "mesh": mesh}, info.center)
 		else:
+			_chunk_cache.distrust(entry.path)
 			_stat_cache_rejected += 1
 			info["_skip_disk_cache"] = true
 			_try_create_or_defer(info)
+	_chunk_cache.save_trusted()
 
 
 ## Submit a mesh generation task to WorkerThreadPool for [param info].
@@ -3780,6 +3789,9 @@ func _queue_mesh_task(info: Dictionary) -> void:
 		func():
 			var mesh: ArrayMesh = PlanetChunk.generate_mesh_healpix(
 				pd, nside, ipix, res, chunk_center, prof, stitch)
+			# Its rail modules too, here rather than in the assembly (RailwayTrack.RAILS_META).
+			if lod <= RailwaySettings.RAIL_MAX_LOD and pd.has_railways():
+				RailwayTrack.stamp_rails(mesh, pd, nside, ipix, chunk_center, lod)
 			# The cache write here, while the mesh is still this thread's
 			# alone: once assembled, _split_road_surfaces edits it.
 			if cache != null and _persistable(mesh):
@@ -4240,9 +4252,9 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# box colliders in their own body. The transforms are computed once and
 	# shared by both.
 	if lod <= RailwaySettings.RAIL_MAX_LOD and planet_data.has_railways():
-		var rail_xforms := RailwayTrack.module_transforms(
-			planet_data, info.nside, info.ipix, chunk_center)
-		if not rail_xforms.is_empty():
+		var rail_groups: Array = RailwayTrack.rail_groups(mesh, planet_data, info.nside, info.ipix,
+				chunk_center, lod)
+		if not rail_groups.is_empty():
 			var rails := Node3D.new()
 			rails.name = key + "_rails"
 			rails.position = chunk_center
@@ -4251,7 +4263,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				corners_rail[2] * planet_data.radius)
 			var rail_far: float = minf(rail_diag * RailwaySettings.RAIL_VISIBILITY_DIAG,
 					RailwaySettings.RAIL_FAR_VISIBILITY_M)
-			for grp in RailwayTrack.build_multimeshes(rail_xforms, lod):
+			for grp in rail_groups:
 				var rail_mmi := MultiMeshInstance3D.new()
 				rail_mmi.multimesh = grp["mm"]
 				rail_mmi.position = grp["center"]

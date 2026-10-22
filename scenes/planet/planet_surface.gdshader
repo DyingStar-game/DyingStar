@@ -59,17 +59,19 @@ group_uniforms surface;
 // The seamless texture.  Organic patterns (sand, dirt, gravel, regolith) hide the
 // hex blend best.  Anisotropic: the ground is mostly seen at grazing angles.
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
-// Matching tangent-space normal map (OpenGL +Y).  Unset = flat.
-uniform sampler2D normal_texture : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+// Matching tangent-space normal map (OpenGL +Y).  Unset = flat.  Trilinear, not anisotropic: its three
+// textureGrad taps a plane cost 2.2 ms of GPU over the village from the air (RTX 3090, 1080p: 15.2 ->
+// 13.0 ms) for a relief that a grazing view shows a little softer, where the albedo keeps its sharpness.
+uniform sampler2D normal_texture : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform float normal_strength : hint_range(0.0, 4.0, 0.05) = 1.0;
 // Roughness map, hex-tiled with the same samples.  Unset = white (1.0), so
 // `roughness` alone drives the result.  Read from `roughness_channel`: R for
 // a plain *_rough map, G for an ORM (occlusion / roughness / metallic) map.
-// filter_linear_mipmap, NOT anisotropic, here and on height_texture: every tap in
+// filter_linear_mipmap, NOT anisotropic, here, on height_texture and normal_texture: every tap in
 // this shader is a textureGrad, and textureGrad + anisotropic is the slow path
 // of AMD samplers (a RX 5700 XT spent 30 ms of GPU per frame on this shader
-// where a RTX 3080 spent 3).  Albedo and normal keep it — they are what is seen
-// at grazing angles — the two scalar maps do not need it.
+// where a RTX 3080 spent 3).  The albedo keeps it — it is what is seen at grazing
+// angles — the other maps do not need it.
 uniform sampler2D roughness_texture : hint_roughness_r, filter_linear_mipmap, repeat_enable;
 uniform int roughness_channel : hint_enum("R", "G", "B", "A") = 0;
 // Multiplies the roughness map (1.0 = map as is).
@@ -134,6 +136,8 @@ const float WRAP = 8192.0;
 const float TWO_SQRT3 = 3.46410162;          // 2√3
 const float GRID_X = 3.5 / TWO_SQRT3;        // 1.01036297
 const float SNAP = 4096.0;
+// A hex tile weighing less than this in a fragment's blend is not read (hex_plane).
+const float SKIP_W = 0.004;
 
 varying vec3 world_normal;
 // The same normal in the MODEL frame — the frame tri_pos is in. The triplanar weights, the planes'
@@ -326,6 +330,12 @@ vec3 hex_weights(vec3 D, vec3 w, float r) {
 	return W;
 }
 
+// An isotropic footprint as wide as the longer of [a] and [b], along u: with its partner (the same,
+// along v) it asks the sampler for no anisotropy.
+vec2 iso_grad(vec2 a, vec2 b) {
+	return vec2(max(length(a), length(b)), 0.0);
+}
+
 /*
 	One hex-tiled plane, all maps.
 	  p        plane coordinate of the fragment (two components of tri_pos, metres)
@@ -373,40 +383,81 @@ vec3 hex_plane(vec2 p, vec2 dpdx, vec2 dpdy, vec2 view_t, float s, int k,
 	// shift is metres on the plane, i.e. view_t * s in tile UV, rotated into
 	// each tile's frame.  1/(V.N) is dropped on purpose (no swimming at grazing
 	// angles).
+	// Blended on the height alone (height_blend 1, the default), the weights are known before any other
+	// tap: the parallax below uses them, and a tile that weighs under SKIP_W here is not read at all (its
+	// albedo, normal and roughness), the others sharing its weight. Inside a hex one tile weighs nearly
+	// everything: up to six taps fewer a plane.
+	bool by_height = planet_hex_quality >= 2 && height_blend >= 1.0;
+	vec3 W = by_height ? hex_weights(H, w, r) : vec3(1.0);
 	if (planet_hex_quality >= 2 && height_scale > 0.0) {
-		vec3 W0 = hex_weights(mix(vec3(1.0), H, height_blend), w, r);
+		vec3 W0 = by_height ? W : hex_weights(mix(vec3(1.0), H, height_blend), w, r);
 		vec2 shift = view_t * ((dot(W0, H) - 0.5) * height_scale * s);
 		st1 += rot1 * shift;
 		st2 += rot2 * shift;
 		st3 += rot3 * shift;
 	}
 
-	vec4 c1 = textureGrad(albedo_texture, st1, g1x, g1y);
-	vec4 c2 = textureGrad(albedo_texture, st2, g2x, g2y);
-	vec4 c3 = textureGrad(albedo_texture, st3, g3x, g3y);
+	// The albedo's anisotropy for the tile that dominates here only: the other two get isotropic
+	// gradients (as long as the longest), which the anisotropic sampler serves with ONE trilinear probe.
+	// 1.6 ms of GPU over the village from the air (RTX 3090, 1080p: 12.1 -> 10.4 ms); the blend between
+	// tiles is a little softer, 0.3 / 255 on average.
+	bvec3 read = greaterThan(W, vec3(SKIP_W));
+	if (by_height) {
+		W *= vec3(read);
+		W /= (W.x + W.y + W.z);
+	}
+	vec4 c1 = vec4(0.0);
+	vec4 c2 = vec4(0.0);
+	vec4 c3 = vec4(0.0);
+	if (read.x) {
+		c1 = w.x >= w.y && w.x >= w.z ? textureGrad(albedo_texture, st1, g1x, g1y)
+				: textureGrad(albedo_texture, st1, iso_grad(g1x, g1y), iso_grad(g1y, g1x).yx);
+	}
+	if (read.y) {
+		c2 = w.y > w.x && w.y >= w.z ? textureGrad(albedo_texture, st2, g2x, g2y)
+				: textureGrad(albedo_texture, st2, iso_grad(g2x, g2y), iso_grad(g2y, g2x).yx);
+	}
+	if (read.z) {
+		c3 = w.z > w.x && w.z > w.y ? textureGrad(albedo_texture, st3, g3x, g3y)
+				: textureGrad(albedo_texture, st3, iso_grad(g3x, g3y), iso_grad(g3y, g3x).yx);
+	}
 
-	// Blend bias: luminance (Mikkelsen) or real height, per height_blend.
-	vec3 Lw = vec3(0.299, 0.587, 0.114);
-	vec3 D = vec3(dot(c1.rgb, Lw), dot(c2.rgb, Lw), dot(c3.rgb, Lw));
-	D = mix(D, H, height_blend);
-	vec3 W = hex_weights(D, w, r);
+	if (!by_height) {
+		// Blend bias: luminance (Mikkelsen) or real height, per height_blend.
+		vec3 Lw = vec3(0.299, 0.587, 0.114);
+		vec3 D = vec3(dot(c1.rgb, Lw), dot(c2.rgb, Lw), dot(c3.rgb, Lw));
+		D = mix(D, H, height_blend);
+		W = hex_weights(D, w, r);
+	}
 
 	// Normal map: same samples, same weights, at every hex quality — the relief (cracks, bumps) is
 	// what gives the repetition away first when it is left untiled.  Godot normal maps are OpenGL
 	// (+Y = image top) while the plane's v axis runs down the image, so y is flipped; then the tile
 	// was rotated by rot in UV space, so its gradient rotates back by rotᵀ.
 	const vec2 FLIP_V = vec2(1.0, -1.0);
-	vec2 n1 = transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V);
-	vec2 n2 = transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V);
-	vec2 n3 = transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V);
-	nxy = W.x * n1 + W.y * n2 + W.z * n3;
+	nxy = vec2(0.0);
+	if (read.x) {
+		nxy += W.x * (transpose(rot1) * ((textureGrad(normal_texture, st1, g1x, g1y).xy * 2.0 - 1.0) * FLIP_V));
+	}
+	if (read.y) {
+		nxy += W.y * (transpose(rot2) * ((textureGrad(normal_texture, st2, g2x, g2y).xy * 2.0 - 1.0) * FLIP_V));
+	}
+	if (read.z) {
+		nxy += W.z * (transpose(rot3) * ((textureGrad(normal_texture, st3, g3x, g3y).xy * 2.0 - 1.0) * FLIP_V));
+	}
 
 	if (planet_hex_quality >= 2) {
 		// Roughness: same samples, same weights, one channel.
-		vec4 r1 = textureGrad(roughness_texture, st1, g1x, g1y);
-		vec4 r2 = textureGrad(roughness_texture, st2, g2x, g2y);
-		vec4 r3 = textureGrad(roughness_texture, st3, g3x, g3y);
-		rough = W.x * r1[roughness_channel] + W.y * r2[roughness_channel] + W.z * r3[roughness_channel];
+		rough = 0.0;
+		if (read.x) {
+			rough += W.x * textureGrad(roughness_texture, st1, g1x, g1y)[roughness_channel];
+		}
+		if (read.y) {
+			rough += W.y * textureGrad(roughness_texture, st2, g2x, g2y)[roughness_channel];
+		}
+		if (read.z) {
+			rough += W.z * textureGrad(roughness_texture, st3, g3x, g3y)[roughness_channel];
+		}
 	} else {
 		// Quality 1: roughness from one untiled tap — its repetition does not show.
 		rough = textureGrad(roughness_texture, p * s, dSTdx, dSTdy)[roughness_channel];

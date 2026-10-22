@@ -339,7 +339,14 @@ var _frame_usec: Dictionary = {}
 ## Node count at the previous frame, so a hitch can say whether the tree grew or shrank across it —
 ## a spawn or a cleanup burst is invisible in a timing scope but obvious here.
 var _prev_nodes: int = 0
-## Filled by the deep census (_walk) every DEEP_EVERY reports.
+## The deep census walks the tree a slice a frame (CENSUS_BUDGET_US), not at once: the whole tree in one
+## frame was a 40-50 ms hitch every 4 s of every measured session. [node, planet] still to visit; its
+## figures are printed on the heartbeat after the walk ends (_census_ready), the same answer 2 s later.
+const CENSUS_BUDGET_US: int = 1000
+var _census_stack: Array = []
+var _census_ready: bool = false
+var _census_due: bool = false
+## Filled by the deep census (_visit) every DEEP_EVERY reports.
 var _deep: Dictionary = {}
 ## name -> last value pushed by gauge(). For counts a scope timer cannot express (nodes visited).
 var _gauges: Dictionary = {}
@@ -676,6 +683,8 @@ func _process(_delta: float) -> void:
 	var ms: float = float(now - prev) / 1000.0
 
 	_frames += 1
+	if not _census_stack.is_empty():
+		_census_step()
 	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 	# Everything below reads the frame that just ENDED, like _frame_usec and `ms` itself: the tail
@@ -870,6 +879,10 @@ func _report() -> void:
 	_print_frame_signal_subs()
 	_print_bands()
 	_report_extras(fps)
+	_census_ready = false
+	if _census_due and _census_stack.is_empty():
+		_census_due = false
+		_census_start()
 	# Measured and reported, because this monitor prints ~6 lines per heartbeat through a logger that
 	# costs milliseconds: any figure it produces has to be readable NEXT to the price of producing it,
 	# or the instrument starts describing itself. Shown on the next [CPerf~].
@@ -885,7 +898,7 @@ func _report_extras(fps: float) -> void:
 	_print_distribution()
 	_print_memory()
 	_print_engine()
-	if not _classes.is_empty():
+	if _census_ready and not _classes.is_empty():
 		_print_classes()
 	if fps < LOW_FPS:
 		_low_windows += 1
@@ -1145,19 +1158,8 @@ func _world_context() -> PackedStringArray:
 	# same order of work as the 3 Hz spin refresh does anyway — but doing it 30x/min would not be.
 	if _force_deep or _reports % _deep_every == 1:
 		_force_deep = false
-		_deep.clear()
-		_classes.clear()
-		_procs = 0
-		_phys_procs = 0
-		_phys_by_class.clear()
-		_phys_by_script.clear()
-		_proc_by_class.clear()
-		_proc_by_script.clear()
-		_areas_monitoring = 0
-		_areas_undeclared = 0
-		_areas_by_script.clear()
-		_areas_by_mask.clear()
-		_walk(tree.root, "")
+		_census_due = true  # started once this heartbeat has printed what the last walk found
+	if _census_ready:
 		out.append("areas_monitoring=%d" % _areas_monitoring)
 		if _areas_undeclared > 0:
 			out.append("areas_UNDECLARED=%d" % _areas_undeclared)
@@ -1168,10 +1170,38 @@ func _world_context() -> PackedStringArray:
 	return out
 
 
-## Recursive census. `planet` is the name of the Planet ancestor we are under, if any, so each
+## A new census: the counts from zero, the walk from the root (_census_step does it, a slice a frame).
+func _census_start() -> void:
+	_deep.clear()
+	_classes.clear()
+	_procs = 0
+	_phys_procs = 0
+	_phys_by_class.clear()
+	_phys_by_script.clear()
+	_proc_by_class.clear()
+	_proc_by_script.clear()
+	_areas_monitoring = 0
+	_areas_undeclared = 0
+	_areas_by_script.clear()
+	_areas_by_mask.clear()
+	_census_stack = [[get_tree().root, ""]]
+
+
+## Visit nodes of the census for CENSUS_BUDGET_US; a node freed since it was queued is skipped.
+func _census_step() -> void:
+	var deadline: int = Time.get_ticks_usec() + CENSUS_BUDGET_US
+	while not _census_stack.is_empty() and Time.get_ticks_usec() < deadline:
+		var entry: Array = _census_stack.pop_back()
+		if is_instance_valid(entry[0]):
+			_visit(entry[0], entry[1])
+	if _census_stack.is_empty():
+		_census_ready = true
+
+
+## One node of the census. `planet` is the name of the Planet ancestor we are under, if any, so each
 ## planet's subtree size is reported separately — that subtree is exactly what planet_body's spin
 ## refresh walks 3x/s, and exactly what a duplicated zone silently doubles.
-func _walk(node: Node, planet: String) -> void:
+func _visit(node: Node, planet: String) -> void:
 	# One extra dictionary bump and two flag reads per node. It doubles the cost of a walk that
 	# already runs at most every few seconds, and it is the difference between knowing HOW MANY nodes
 	# there are and knowing WHICH ones.
@@ -1239,7 +1269,7 @@ func _walk(node: Node, planet: String) -> void:
 	elif node.is_in_group("miningrock"):
 		_bump("miningrocks")
 	for c: Node in node.get_children():
-		_walk(c, planet)
+		_census_stack.append([c, planet])
 
 
 func _bump(key: String) -> void:

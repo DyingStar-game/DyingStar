@@ -61,6 +61,10 @@ func _ready() -> void:
 	_on_screen = VisibleOnScreenNotifier3D.new()
 	_on_screen.aabb = AABB(Vector3(-size.x * 0.5, -size.y * 0.5, -0.01), Vector3(size.x, size.y, 0.02))
 	add_child(_on_screen)
+	# Only a mirror on screen looks for the eye: 60 of them in the furnished homes around asked every frame.
+	_on_screen.screen_entered.connect(set_process.bind(true))
+	_on_screen.screen_exited.connect(_on_screen_exited)
+	set_process(false)
 	var quad := QuadMesh.new()
 	quad.size = size
 	_glass = MeshInstance3D.new()
@@ -73,6 +77,12 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if _current == self:
 		_stop()
+
+
+func _on_screen_exited() -> void:
+	if _current == self:
+		_stop()
+	set_process(false)
 
 
 func _process(_delta: float) -> void:

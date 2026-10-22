@@ -26,6 +26,6 @@ mesh = SubResource("BoxMesh_ws83t")
 transform = Transform3D(1, 0, 0, 0, 6.123233995736766e-17, 1, 0, -1, 6.123233995736766e-17, 0, -0.02999999999883584, 0)
 light_energy = 8.0
 shadow_enabled = true
-area_range = 50.0
+area_range = 16.0
 area_attenuation = 2.0
 area_size = Vector2(1, 0.3)

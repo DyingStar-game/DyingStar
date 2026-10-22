@@ -97,6 +97,8 @@ func _enter_tree() -> void:
 	if Engine.is_editor_hint():
 		return
 	_body_cache = null  # a reparent (carry / drop / bed-settle) took us out and back in
+	if not GameOrchestrator.is_server():
+		_client_refresh_process()  # under a carrier now, or no longer
 	if GameOrchestrator.is_server():
 		_server_live = true
 		server_reparenting = false
@@ -114,6 +116,7 @@ func _ready() -> void:
 		set_process(false)
 	else:
 		set_physics_process(false)
+		_client_refresh_process()
 	var body := _body()
 	if body == null:
 		return
@@ -182,8 +185,20 @@ func _process(delta: float) -> void:
 	PropNet.ride_pin(_body(), self)  # hold the constant local bed pose at render rate (no jitter)
 	if _interp != null and not PropNet.rides_parent(_body()):
 		_interp.update(_body(), delta)
+		_gliding = not _interp.settle(_body())
 	if _landing_watch:
 		_watch_landing(delta)
+	_client_refresh_process()
+
+
+## CLIENT: whether _process has work: hold the pose on a carrier (a truck's bed, a player's hands), glide
+## to the last pose received, watch a dropped prop land. Idle, it does not run at all: 250 props a frame
+## in the village (0.4-0.8 ms of the frame), nearly all of them standing still.
+func _client_refresh_process() -> void:
+	if Engine.is_editor_hint():
+		return
+	var body := _body()
+	set_process(_landing_watch or _gliding or (body != null and PropNet.rides_parent(body)))
 
 
 ## CLIENT: a prop we saw released is falling. Fire its landing sound the moment the replicated pose
@@ -266,6 +281,7 @@ func client_parent_change(parent: Node) -> void:
 		_landing_age = 0.0
 		_landing_quiet = 0.0
 		_landing_last_pos = Vector3.INF  # unset: the first frame only records, never compares
+	_client_refresh_process()
 
 ## Landing watch (CLIENT). A dropped prop should be heard when it HITS something, not when the hand
 ## opens -- release a crate at waist height and the two are half a second apart.
@@ -288,6 +304,9 @@ const LANDING_QUIET_S: float = 0.12
 ## not fire on some unrelated nudge minutes later.
 const LANDING_TIMEOUT_S: float = 10.0
 
+
+## CLIENT: gliding to the last pose received (smooth_transform), until NetInterpolator.settle.
+var _gliding: bool = false
 
 ## True while this prop hangs from a player -- ANY player, not just ours: a crate someone else picks
 ## up in front of us must sound the same. Derived from the replicated parent, so it costs no bytes.
@@ -347,6 +366,8 @@ func _set_smooth_target(body: Node3D, data: Dictionary) -> void:
 	if data.has("rotation"):
 		_ride_local_rot = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
 	_interp.set_target(body, _ride_local_pos, Basis.from_euler(_ride_local_rot))
+	_gliding = true
+	_client_refresh_process()
 
 # ── Carry contract (issue #124): a carriable prop becomes pickable with E ──
 ## The one question both the "Carry [E]" prompt and the grab ask (PlayerServer). It must check

@@ -79,14 +79,14 @@ public partial class OpenTelemetryManager : Node
                    }
                );
             }
-            if (!Enum.TryParse<LogLevelType>(_configFile.GetValue(SECTION_CONF, "level").AsString(), true, out var confLevel))
+            if (!Enum.TryParse<LogLevelType>(_configFile.GetValue(SECTION_CONF, "level", "Information").AsString(), true, out var confLevel))
                 confLevel = LogLevelType.Information;
             CurrentLevel = confLevel;
             resourceBuilder.AddAttributes(new[]
             {
-            new KeyValuePair<string, object>("environment", _configFile.GetValue(SECTION_CONF, "environnement").AsString()),
+            new KeyValuePair<string, object>("environment", _configFile.GetValue(SECTION_CONF, "environnement", "").AsString()),
         });
-            if (_configFile.GetValue(SECTION_CONF, "enabled").AsBool())
+            if (_configFile.GetValue(SECTION_CONF, "enabled", false).AsBool())
             {
                 _enabled = true;
                 var uri = new Uri(_configFile.GetValue(SECTION_CONF, "collectorHost").AsString());
@@ -323,6 +323,12 @@ public partial class OpenTelemetryManager : Node
                 case LogLevelType.Critical: _logger.LogCritical(ex, message); break;
             }
         }
+    }
+
+    /// <summary>True when client.ini / server.ini switched the export on and it started.</summary>
+    public static bool GDS_IsEnabled()
+    {
+        return _enabled;
     }
 
     public static int GDS_GetLogLevelType()
