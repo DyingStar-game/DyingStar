@@ -184,7 +184,7 @@ func _shot(label: String, path: Callable) -> void:
 	var pipe_at: int = PerfMath.pipeline_total()
 	var elapsed: float = 0.0
 	var spikes: PackedStringArray = []
-	var pipe_before: int = pipe_at
+	var pipe_before: PackedInt32Array = _pipes()
 	var nodes_before: int = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	_last_usec = Time.get_ticks_usec()
 	while elapsed < SHOT_S:
@@ -194,11 +194,14 @@ func _shot(label: String, path: Callable) -> void:
 		_last_usec = now
 		elapsed += frame_ms / 1000.0
 		# A slow frame, with what came with it: shaders compiled, nodes added or freed, where the time went.
-		var pipe_now: int = PerfMath.pipeline_total()
+		var pipe_now: PackedInt32Array = _pipes()
 		var nodes_now: int = int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 		if frame_ms > SPIKE_MS:
-			spikes.append("%.2fs %.0fms pipe+%d nodes%+d gpu %.1f proc %.1f phys %.1f setup %.1f" % [elapsed,
-					frame_ms, pipe_now - pipe_before, nodes_now - nodes_before,
+			var pipe_new: PackedStringArray = []
+			for i in pipe_now.size():
+				pipe_new.append(str(pipe_now[i] - pipe_before[i]))
+			spikes.append("%.2fs %.0fms pipe+%s nodes%+d gpu %.1f proc %.1f phys %.1f setup %.1f" % [elapsed,
+					frame_ms, "/".join(pipe_new), nodes_now - nodes_before,
 					RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid()),
 					Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 					Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
@@ -222,6 +225,14 @@ func _shot(label: String, path: Callable) -> void:
 	_results.append([label, window])
 	print("[VillageBench] %s: %.1f fps, p99 %.1f ms, worst %.1f ms, gpu %.2f ms" % [label, window["fps"],
 			window["p99"], window["max"], window["gpu"]])
+
+
+## The pipelines compiled so far, by source: canvas / mesh / surface / draw / specialization.
+static func _pipes() -> PackedInt32Array:
+	var out: PackedInt32Array = []
+	for monitor: int in PerfMath.PIPE_MONITORS:
+		out.append(int(Performance.get_monitor(monitor)))
+	return out
 
 
 func _sample(frame_ms: float) -> void:
