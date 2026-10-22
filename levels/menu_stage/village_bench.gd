@@ -26,7 +26,8 @@ const SUN_ARG := "--bench-sun="
 ## The families --bench-hide can take out.
 const HIDE := ["shell", "interiors", "walkways", "lights", "shadows", "casters", "fringe", "labels", "props",
 		"village", "outpost", "terrain", "aerial", "skyrefl", "sunshadow", "ssao", "ssil", "ssr", "glow",
-		"hexq0", "hexq1", "terraincast", "aeriallut"]
+		"hexq0", "hexq1", "terraincast", "aeriallut",
+		"interiorlights", "arealights", "spotlights", "omnilights"]
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
 ## Where the village stands from the stage's anchor (m, degrees from north): clear of the outpost.
 const DISTANCE_M := 350.0
@@ -125,6 +126,8 @@ func _ready() -> void:
 	DisplayServer.window_set_size(WINDOW_SIZE)
 	DisplayServer.window_set_position(Vector2i.ZERO)
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+	# The lamps' shadows as the game gives them: the local player carries this budget (PlayerClient).
+	add_child(LampShadowBudget.new())
 	_hidden = hidden_families()
 	_set = set_options()
 	if not _set.is_empty():
@@ -292,6 +295,14 @@ func _hide_families() -> void:
 	for node: Node in _village.find_children("*", "Light3D", true, false):
 		if "lights" in _hidden:
 			(node as Light3D).visible = false
+		if "interiorlights" in _hidden and _in_interior(node):
+			(node as Light3D).visible = false
+		if "arealights" in _hidden and node.get_class() == "AreaLight3D":
+			(node as Light3D).visible = false
+		if "spotlights" in _hidden and node is SpotLight3D:
+			(node as Light3D).visible = false
+		if "omnilights" in _hidden and node is OmniLight3D and not _in_interior(node):
+			(node as Light3D).visible = false
 		if "shadows" in _hidden:
 			(node as Light3D).shadow_enabled = false
 	for node: Node in _village.find_children("*", "GeometryInstance3D", true, false):
@@ -302,6 +313,15 @@ func _hide_families() -> void:
 			geometry.material_overlay = null
 		if "labels" in _hidden and geometry is Label3D:
 			geometry.visible = false
+
+
+## True when [param node] belongs to a home's furniture (an apartment's streamed Interior).
+static func _in_interior(node: Node) -> bool:
+	while node != null:
+		if node.name == &"Interior":
+			return true
+		node = node.get_parent()
+	return false
 
 
 func _wait(seconds: float) -> void:
