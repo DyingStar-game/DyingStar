@@ -53,10 +53,16 @@ func building() -> Node:
 	return MarkerSpawn.building_of(self)
 
 
-## The apartment (a copy of the building's 0-0-0) this target stands in, or null.
+## The apartment (a copy of the building's 0-0-0) this target stands in, or null. Found through the
+## building it stands in, not through the network (building): a building's state arrives before it has
+## its uuid, and the keys of its parts (ToggledPart.state_key) are read then -- found through the
+## network, they came out as the bare part's name, a door left open was shown shut on the server after
+## a restart, open on every client, and stood as an invisible wall (playtest 2026-10-22).
 func apartment() -> Node:
-	var home := building() as SpawnBuilding
-	return home.apartment_of(self) if home != null else null
+	var home: Node = get_parent()
+	while home != null and not (home is SpawnBuilding):
+		home = home.get_parent()
+	return (home as SpawnBuilding).apartment_of(self) if home != null else null
 
 
 ## True when [param player_uuid] lives in the apartment this target stands in.

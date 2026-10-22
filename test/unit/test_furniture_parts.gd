@@ -146,6 +146,21 @@ func test_a_state_that_arrives_before_the_building_is_placed_still_shows() -> vo
 	KnownEngineErrors.forgive_floor_material(self)
 
 
+func test_a_state_that_arrives_before_the_building_has_its_uuid_still_shows() -> void:
+	# The server's order on a restart: the state first, out of the tree and with no uuid yet. A door left
+	# open was shown shut there (its key unresolved), open on every client: an invisible wall.
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	var key := "0-0-0/habitat_container/frame/right_door/DoorR"
+	building.apply_prop_data({"apartments": [], "furniture": {key: true}})
+	PropSync.of(building).uuid = "home-uuid"
+	add_child_autofree(building)
+	building.apply_prop_data({"apartments": [], "furniture": {key: true}})  # the same state again, in the tree
+	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
+	assert_true(right.is_on, "open, as the state says")
+	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(right.open_angle_deg), 1e-4)
+	KnownEngineErrors.forgive_floor_material(self)
+
+
 func test_only_an_npc_s_door_is_opened() -> void:
 	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
 	building.cols = 2
