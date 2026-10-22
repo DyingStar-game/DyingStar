@@ -208,6 +208,14 @@ func test_a_door_stops_short_of_the_wall_it_would_cut_into() -> void:
 	assert_almost_eq(door.get_parent_node_3d().rotation_degrees.y, reached, 0.01, "and the leaf is shown there")
 
 
+func test_the_terrain_does_not_stop_a_door() -> void:
+	# Only the server has the terrain's collision: a door it stopped stood shut there and open on every
+	# client -- an invisible wall in the NPCs' doorways (playtest 2026-10-22).
+	_wall(Vector3(-0.2, 0.0, -0.6), Vector3(0.1, 2.0, 1.0))
+	(get_child(get_child_count() - 1) as Node).add_to_group(PlanetTerrain.COLLISION_GROUP)
+	assert_eq(_door(165.0).free_reach(), 1.0, "the client has no terrain: neither does the door's sweep")
+
+
 func test_what_touches_the_door_shut_does_not_stop_it() -> void:
 	# The frame it hangs in: overlapping the shut board along its edge.
 	_wall(Vector3(0.5, 0.0, 0.03), Vector3(1.2, 2.2, 0.02))

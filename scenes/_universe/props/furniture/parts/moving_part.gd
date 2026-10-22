@@ -7,7 +7,10 @@ extends ToggledPart
 ##
 ## It opens as far as it is set to, or less: the leaf's bodies are swept along the opening and it stops
 ## short of the first wall or piece of furniture they would cut into (free_reach). The same scene gives
-## the same answer on the server and every client; players and loose props never stop it.
+## the same answer on the server and every client; players and loose props never stop it, nor does the
+## terrain, which only the server has (PlanetTerrain.COLLISION_GROUP): there it held a container's door
+## shut where the ground rose before it, while every client drew it open -- an invisible wall in the
+## doorway of the NPCs' homes (playtest 2026-10-22).
 
 ## Opened by the server for an NPC living in its home (SpawnBuilding.server_open_for_npc): the door it
 ## goes out by -- an NPC never opens one itself.
@@ -187,20 +190,25 @@ func _leaf_shapes() -> Array[CollisionShape3D]:
 	return out
 
 
-## True when [param shape] at [param at] overlaps a solid [param cast] does not ignore; with
-## [param ignore_them], those solids are ignored from now on.
+## True when [param shape] at [param at] overlaps a solid [param cast] does not ignore -- never the
+## terrain (PlanetTerrain.COLLISION_GROUP), which only the server has; with [param ignore_them], those
+## solids are ignored from now on.
 static func _overlaps(cast: ShapeCast3D, shape: CollisionShape3D, at: Transform3D, ignore_them: bool) -> bool:
 	cast.shape = shape.shape
 	cast.global_transform = at
 	cast.force_shapecast_update()
-	if not cast.is_colliding():
-		return false
-	if ignore_them:
-		for i in cast.get_collision_count():
-			var hit := cast.get_collider(i) as CollisionObject3D
-			if hit != null:
-				cast.add_exception(hit)
-	return true
+	var blocked: bool = false
+	for i in cast.get_collision_count():
+		var hit := cast.get_collider(i) as CollisionObject3D
+		if hit == null:
+			continue
+		if hit.is_in_group(PlanetTerrain.COLLISION_GROUP):
+			cast.add_exception(hit)  # never counts: out of the way for good
+			continue
+		blocked = true
+		if ignore_them:
+			cast.add_exception(hit)
+	return blocked
 
 
 func _set_open(t: float) -> void:
