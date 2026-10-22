@@ -98,7 +98,7 @@ func _on_entry_pressed(key: StringName) -> void:
 		CREDITS:
 			_open_overlay(CREDITS)
 		QUIT:
-			get_tree().quit()
+			GameOrchestrator.quit_game()
 
 ## Esc closes the settings overlay (back to the main menu). No-op when it is already closed. The
 ## host menu owns its overlay's lifecycle, mirroring the pause menu — see PauseMenu._unhandled_input.

@@ -23,6 +23,9 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 }
 
 const LOADING_SCENE: PackedScene = preload("res://ui/loading.tscn")
+const LIVEKIT := preload("res://scenes/audio/livekit.gd")
+## Longest wait (s) for the voice room to be left before the game quits anyway.
+const QUIT_VOICE_TIMEOUT_S := 1.0
 
 
 var current_network_role = null
@@ -37,6 +40,7 @@ var univers_creation_entities: Dictionary = {}
 var connexion_error_message: String = ""
 
 @onready var game_is_paused: bool = false
+var _quitting: bool = false
 
 func _enter_tree() -> void:
 	# In editor mode, skip replacing the SceneTree script.
@@ -66,6 +70,8 @@ func _ready():
 		return
 
 	get_tree().connect("scene_changed_custom", _on_scene_changed)
+	# Closing the window goes through quit_game, which leaves the voice room before quitting.
+	get_tree().auto_accept_quit = false
 
 	if OS.has_feature("dedicated_server"):
 		change_network_role(NetworkRole.SERVER)
@@ -84,9 +90,20 @@ func _ready():
 func _notification(what):
 	match what:
 		NOTIFICATION_WM_CLOSE_REQUEST:
-			## TODO :
-			## TOUTES LES ACTIONS A FAIRE AVANT DE QUITTER (besoin d'envoyer l'info au serveur ?)
-			get_tree().quit()
+			quit_game()
+
+
+## Quit the game: leave the voice room first, waiting for it QUIT_VOICE_TIMEOUT_S at most, then quit.
+## Quitting at once unloaded LiveKit's library while its threads still ran, and the client crashed on
+## the way out (see LiveKitAudio.rooms_left). Every way out of the game comes here.
+func quit_game() -> void:
+	if _quitting:
+		return
+	_quitting = true
+	for voice in get_tree().get_nodes_in_group(LIVEKIT.GROUP):
+		voice.shutdown()
+	await LIVEKIT.rooms_left(get_tree(), QUIT_VOICE_TIMEOUT_S)
+	get_tree().quit()
 
 func is_server():
 	return current_network_role == NetworkRole.SERVER
