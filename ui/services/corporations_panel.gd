@@ -24,7 +24,7 @@ var _ranks: ItemList
 var _requests: ItemList
 var _page_requests: ServicePage
 var _invite_picker: ServiceTargetPicker
-var _rank_id: LineEdit
+var _rank_pick: OptionButton
 var _rank_name: LineEdit
 var _rank_priority: LineEdit
 var _rank_default: CheckBox
@@ -56,6 +56,9 @@ var _salary_roles: ItemList
 var _salary_members: ItemList
 var _page_salary_members: ServicePage
 var _salary_role: LineEdit
+## The roles this corporation already pays, offered next to the free-text role field so a typo is
+## not the price of a salary: a misspelled role does not error, it silently creates a second one.
+var _salary_role_known: OptionButton
 var _salary_role_amount: LineEdit
 var _salary_member_picker: ServiceTargetPicker
 var _salary_member_amount: LineEdit
@@ -143,9 +146,15 @@ func _build() -> void:
 	pages[2].add_child(detail_columns)
 
 	var manage_row := _row()
-	_rank_id = _number_field(tr("%%SVC_PH_RANK_ID"), 110.0)
+	# The rank a member gets, chosen BY NAME. It used to be a number field, which asked for a rank
+	# id the player could only read off a list further up the page — and the list was already there,
+	# already named, already selectable for the permissions grid below. A rank id is assigned by the
+	# service and means nothing to a person.
+	_rank_pick = OptionButton.new()
+	_rank_pick.custom_minimum_size = Vector2(160, 40)
+	ServiceStyle.apply_option(_rank_pick)
 	manage_row.add_child(_label(tr("%%SVC_LBL_RANK"), DIM))
-	manage_row.add_child(_rank_id)
+	manage_row.add_child(_rank_pick)
 	_action_button(manage_row, tr("%%SVC_ACT_APPLY"), func() -> void: _set_member_rank())
 	_action_button(manage_row, tr("%%SVC_ACT_REMOVE_MEMBER"), func() -> void: _remove_member())
 	_action_button(manage_row, tr("%%SVC_ACT_ACCEPT_REQUEST"), func() -> void: _request_action(true))
@@ -271,9 +280,18 @@ func _build() -> void:
 
 	var role_salary := _row()
 	_salary_role = _field(tr("%%SVC_PH_ROLE"), 140.0)
+	# Roles are free text BY DESIGN — a corporation names its own ("Deckhand", "Owner", whatever) —
+	# so this is a suggestion next to the field, never a replacement: picking one fills the field,
+	# and typing a name the list does not carry is exactly the case this has to keep working.
+	_salary_role_known = OptionButton.new()
+	_salary_role_known.custom_minimum_size = Vector2(160, 40)
+	ServiceStyle.apply_option(_salary_role_known)
+	_salary_role_known.item_selected.connect(func(_i: int) -> void: _adopt_known_role())
+	adopt_field(_salary_role)
 	_salary_role_amount = _number_field(tr("%%SVC_PH_AMOUNT"), 140.0)
 	role_salary.add_child(_label(tr("%%SVC_LBL_ROLE"), DIM))
 	role_salary.add_child(_salary_role)
+	role_salary.add_child(_salary_role_known)
 	role_salary.add_child(_salary_role_amount)
 	_action_button(role_salary, tr("%%SVC_ACT_SET_ROLE_SALARY"), func() -> void: _set_role_salary())
 	side4.add_child(role_salary)
@@ -518,6 +536,7 @@ func _open_detail(corporation_id: String) -> void:
 		_detail.text = HttpClient.describe_error(detail)
 	var ranks: Dictionary = await PlayerServices.corporation_ranks(_selected_id)
 	_fill_simple(_ranks, ranks, ServiceTypes.rank_line, tr("%%SVC_MSG_NO_RANKS"))
+	_fill_rank_pick(ranks)
 	# The two paged lists below are scoped to this corporation: start them at its first window.
 	_page_members.reset()
 	_page_requests.reset()
@@ -552,12 +571,13 @@ func _set_member_rank() -> void:
 	if not (member is Dictionary):
 		_say(tr("%%SVC_MSG_SELECT_MEMBER"), WARN)
 		return
-	if not _rank_id.text.strip_edges().is_valid_int():
+	var rank_id := _picked_rank_id()
+	if rank_id < 0:
 		_say(tr("%%SVC_MSG_NEED_RANK_ID"), WARN)
 		return
 	release_fields()
 	var result: Dictionary = await PlayerServices.corporation_member_rank(_selected_id,
-			str((member as Dictionary).get("playerId", "")), int(_rank_id.text))
+			str((member as Dictionary).get("playerId", "")), rank_id)
 	if _report(result, tr("%%SVC_MSG_RANK_UPDATED")):
 		_open_detail(_selected_id)
 
@@ -682,6 +702,31 @@ func _sync_perm_grid(permissions: Array) -> void:
 	for action: String in _perm_checks:
 		var check := _perm_checks[action] as CheckBox
 		check.set_pressed_no_signal(wanted.has(action) or check.disabled)
+
+
+## The rank ids of this corporation, by name, for the « apply to member » picker. Same rows the
+## permissions grid selects from, so the two can never disagree about which rank is which.
+func _fill_rank_pick(ranks: Dictionary) -> void:
+	if _rank_pick == null:
+		return
+	_rank_pick.clear()
+	var rows: Array = ranks.get("data", ranks) if ranks is Dictionary else []
+	if rows is Array:
+		for rank: Dictionary in rows:
+			var label := str(rank.get("name", "")).strip_edges()
+			_rank_pick.add_item(label if label != "" else "#" + str(rank.get("id", "")))
+			_rank_pick.set_item_metadata(_rank_pick.item_count - 1, rank.get("id", -1))
+	if _rank_pick.item_count == 0:
+		_rank_pick.add_item(tr("%%SVC_MSG_NO_RANKS"))
+		_rank_pick.set_item_metadata(0, -1)
+	_rank_pick.select(0)
+
+
+## The chosen rank's id, or -1 when the corporation has no rank to give.
+func _picked_rank_id() -> int:
+	if _rank_pick == null or _rank_pick.selected < 0:
+		return -1
+	return int(_rank_pick.get_item_metadata(_rank_pick.selected))
 
 
 ## Show the selected rank's rights. Nothing selected means the grid belongs to nobody — which is
@@ -1012,6 +1057,7 @@ func _load_salary_members() -> void:
 	var data: Dictionary = result.get("data", {}) if result.get("data") is Dictionary else {}
 	_apply_salary_list(_salary_roles, data.get("roleDefaults"), ServiceTypes.salary_role_line,
 			tr("%%SVC_MSG_NO_SALARIES"))
+	_fill_known_roles(data.get("roleDefaults"))
 	_apply_salary_list(_salary_members, _page_salary_members.rows(result),
 			ServiceTypes.salary_member_line, tr("%%SVC_MSG_NO_SALARIES"))
 
@@ -1025,6 +1071,37 @@ func _apply_salary_list(list: ItemList, value: Variant, formatter: Callable, emp
 	if lines.is_empty():
 		lines.append(empty)
 	_fill_list(list, lines, metadata)
+
+
+## Offer the corporation's existing roles next to the free-text field. A corporation's own salary
+## rows are the authority on which role names exist — service-social has no catalogue of them.
+func _fill_known_roles(role_defaults: Variant) -> void:
+	if _salary_role_known == null:
+		return
+	var previous := _salary_role.text.strip_edges() if _salary_role != null else ""
+	_salary_role_known.clear()
+	_salary_role_known.add_item("%%SVC_MSG_ROLES_KNOWN")
+	_salary_role_known.set_item_metadata(0, "")
+	if role_defaults is Array:
+		for entry: Variant in role_defaults:
+			var role := str((entry as Dictionary).get("role", "")) if entry is Dictionary else ""
+			if role == "":
+				continue
+			_salary_role_known.add_item(role)
+			_salary_role_known.set_item_metadata(_salary_role_known.item_count - 1, role)
+	_salary_role_known.select(0)
+	if previous != "":
+		_salary_role.text = previous
+
+
+## A suggestion was picked: it is a NAME the corporation already uses, so it goes in the field like
+## any typed name would, and the field stays editable afterwards.
+func _adopt_known_role() -> void:
+	if _salary_role_known == null or _salary_role_known.selected < 0:
+		return
+	var role := str(_salary_role_known.get_item_metadata(_salary_role_known.selected))
+	if role != "":
+		_salary_role.text = role
 
 
 func _set_role_salary() -> void:

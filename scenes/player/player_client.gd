@@ -318,6 +318,9 @@ func setup() -> void:
 	# A section wants a place named on the chart (a point of interest being created): the chart
 	# opens in placement mode, the point comes back the same way the chart itself does.
 	_services.placement_requested.connect(_begin_placement)
+	# A form pointed at a point of interest: the chart opens and goes to it. Nothing is asked of the
+	# chart but to LOOK, so nothing is armed and nothing comes back.
+	_services.focus_poi_requested.connect(_show_poi)
 	_star_map.poi_placed.connect(_on_poi_placed)
 	# F3 and F2 open it through the wrist: arm up, view in, tablet on, pointed with the crosshair
 	# (WristDatapad).
@@ -1716,26 +1719,110 @@ func _close_navigation() -> void:
 
 
 ## A section asked for a place: show the chart in placement mode. The tablet opens its NAVIGATION
-## tab, which is where the chart lives, and arms it so the next click names a point rather than
-## selecting whatever it lands on.
-func _begin_placement() -> void:
+## tab, which is where the chart lives, and arms it so the right click's menu lays a mission marker
+## instead of the click selecting whatever it lands on.
+##
+## [param radius_m] is the radius the asker's form says (0 = a point): the marker's starting width,
+## and the wheel what moves it from there — the width comes back on the place itself.
+func _begin_placement(radius_m: float) -> void:
 	if _star_map == null or _services == null:
 		return
 	_wrist.open_with(_services.open_navigation)  # already up: the tablet asked, from the wrist
-	_star_map.begin_poi_place()
+	_star_map.begin_poi_place(radius_m)
+	_services.open_navigation()
 
 
 ## The chart named the place: hand it back to the form that asked (through the tablet), leave the
-## placement mode, and take the player to where they can act on it — the creating segment, with the
+## placement mode, and take the player to where they can act on it — the creating form, with the
 ## place now shown and the name still theirs to give.
+##
+## When NO form asked — the player laid a marker on the chart for themselves, with no builder behind
+## it — the place is theirs: it becomes a point of interest of their own (see
+## [method _place_own_poi]). Offering it around instead used to lose it, or to hand it to a builder
+## that had not asked for anything.
 func _on_poi_placed(place: Dictionary) -> void:
 	if _star_map != null:
 		_star_map.end_poi_place()
 	if _services == null or place.is_empty():
 		return
-	_services.set_placed(place)
-	# Properties -> the POI section -> its creating segment.
-	_services.open_app("properties", 1)
+	# The console knows which app asked for the place and hands it to that one: several forms can
+	# be open, and opening the properties tab when it was the mission builder that asked is how the
+	# player loses the thread of what they were doing — they land in the inventory, looking at a POI
+	# form that never asked for anything.
+	var app: String = _services.set_placed(place)
+	if app == "":
+		await _place_own_poi(place)
+		return
+	_services.open_placed_app(app)
+
+
+## A form pointed at a point of interest: show it on the chart, which means going to the body it
+## stands on and turning that body until the point faces you.
+##
+## Nothing is armed and nothing comes back: this is a request to look, not to pick. The chart fetches
+## the point itself if the session's list does not hold it, so a point belonging to someone else's
+## contract is still shown.
+func _show_poi(poi_id: String) -> void:
+	if _star_map == null or _services == null or poi_id == "":
+		return
+	_services.open_navigation()
+	# Nothing armed, nothing to end: this is a request to look, not to pick. The chart fetches the
+	# point itself if the session's list does not hold it, so a point belonging to someone else's
+	# mission can still be shown as long as the player can READ it.
+	if await _star_map.focus_service_poi(poi_id):
+		return
+	# It could not be shown — outside this player's reach, or on a body the chart has no data for.
+	# An open chart that happens to show nothing is not an answer to a click that asked for a point.
+	if _notifications != null:
+		_notifications.push(tr("%%SVC_MSG_POI_NOT_SHOWN"))
+
+
+## The marker was laid on the chart with no form waiting for it: the player marked a place for
+## themselves, so it becomes a point of interest of their own.
+##
+## It is the same shape a point placed by the mission builder gets, but owned by nobody: no `owner`
+## in the body means the caller owns it, which is what the player's own list of points is made of.
+## The width the wheel gave the marker is its radius, and a marker wheeled down to none is a point
+## — carried by the ABSENCE of a radius, the service's own rule.
+func _place_own_poi(place: Dictionary) -> void:
+	var position: Variant = place.get("position", Vector3.ZERO)
+	var coords: Vector3 = position as Vector3 if position is Vector3 else Vector3.ZERO
+	var body := {
+		"name": _marker_name(place),
+		"x": coords.x,
+		"y": coords.y,
+		"z": coords.z,
+	}
+	var scene := str(place.get("scene", "")).strip_edges()
+	if scene != "":
+		body["scene"] = scene
+	var system := str(place.get("system", "")).strip_edges()
+	if system != "":
+		body["system"] = system
+	var radius := ServiceTypes.float_of(place.get("radiusM"))
+	if radius > 0.0:
+		body["radiusM"] = radius
+	var result: Dictionary = await PlayerServices.poi_create(body)
+	if not bool(result.get("ok", false)):
+		if _star_map != null:
+			_star_map.notice(HttpClient.describe_error(result))
+		return
+	var data: Variant = result.get("data")
+	if data is Dictionary:
+		MissionPoiCache.add(data as Dictionary)
+	if _star_map != null:
+		_star_map.notice(tr("%%SVC_MSG_POI_MARKED") % str(body["name"]))
+
+
+## The name a marker gets when the player gives none: the body it stands on, so the list of the
+## player's points says where each one is.
+##
+## The raw body key, the way the mission's own points are named ("Emplacement de mission — tarsis_3"):
+## it is the one thing about the place that is always true, and a name is not worth a prompt.
+func _marker_name(place: Dictionary) -> String:
+	var scene := str(place.get("scene", "")).strip_edges()
+	var label := scene if scene != "" and scene != "space" else tr("%%SVC_POI_OFFWORLD")
+	return tr("%%SVC_POI_MARKER_DEFAULT") % label
 
 
 ## The mouse/camera is taken over: a menu, a wheel, the chat, the chart or the tablet is up, OR AltGr

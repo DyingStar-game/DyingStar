@@ -14,10 +14,18 @@ extends VBoxContainer
 ## button emits this; TerminalUI routes it).
 signal home_requested
 
-## A section wants the chart to name a place for it (a point of interest being created asks for a
-## point to be picked). Relayed up through the shells that host it (see [method mount_segment]) so
+## A section wants the chart to name a place for it (a point of interest being created asks where it
+## should stand). Relayed up through the shells that host it (see [method mount_segment]) so
 ## the console — which owns the chart — can act on it; this file never reaches for [StarMap].
-signal placement_requested
+## [param radius_m] is what the asker's radius field says (0 = a point): the marker's starting width.
+signal placement_requested(radius_m: float)
+
+## A section wants the chart to SHOW a place of the player's (the mission builder naming the point
+## its clause points at). Relayed up through the shells that host it (see [method mount_segment]) so
+## the console — which owns the chart — can open it there; this file never reaches for [StarMap].
+##
+## Nothing is armed and nothing comes back: this is a request to look, not a question to answer.
+signal focus_poi_requested(poi_id: String)
 
 ## How the tablet should split the screen for the segment now on show: data on the left, this
 ## segment's actions in the right-hand column. Emitted when a segment is switched to, and once more
@@ -110,8 +118,18 @@ func refresh() -> void:
 
 ## The chart named a place for whatever asked for it (see [signal placement_requested]). Sections
 ## that can take one override; the default is to have nothing to say about it.
-func set_placed(_place: Dictionary) -> void:
-	pass
+##
+## Answers whether the place was TAKEN, because the chart came from one form and has to be handed
+## back to it: a no-answer lets the console try the next app rather than guessing which one asked.
+func set_placed(_place: Dictionary) -> bool:
+	return false
+
+
+## The segment to come back to when a place was placed for this app: the one that holds the form
+## that asked for it. The chart hands the place back and the player is taken straight to the form
+## they were filling in, which is not always the segment the app opens on.
+func placement_segment() -> int:
+	return 0
 
 
 # ---------------------------------------------------------------------------------------------
@@ -412,15 +430,6 @@ func _action_button(parent: Node, text: String, handler: Callable, min_width: fl
 	return button
 
 
-func _option(items: PackedStringArray, min_width: float = 160.0) -> OptionButton:
-	var option := OptionButton.new()
-	for item: String in items:
-		option.add_item(item)
-	option.custom_minimum_size = Vector2(min_width, 40)
-	ServiceStyle.apply_option(option)
-	return option
-
-
 ## An OptionButton whose labels are localized and whose item metadata keeps the raw API value.
 ## [param entries] is an array of `[value, translation key]` pairs.
 func _option_enum(entries: Array, min_width: float = 160.0) -> OptionButton:
@@ -438,6 +447,16 @@ static func _enum_value(option: OptionButton) -> String:
 	if option.selected < 0 or option.selected >= option.item_count:
 		return ""
 	return str(option.get_item_metadata(option.selected))
+
+
+## Select the row whose raw value is [param value], if the list has one. A filter that opens on
+## "everything" shows the player a wall of what is over; a filter that opens on what is live is the
+## list they came for.
+func _select_enum_value(option: OptionButton, value: String) -> void:
+	for i: int in range(option.item_count):
+		if str(option.get_item_metadata(i)) == value:
+			option.select(i)
+			return
 
 
 func _row(separation: int = 10) -> HBoxContainer:
@@ -621,8 +640,10 @@ func mount_segment(index: int, script_path: String) -> ServicePanel:
 	# A form-only segment of the section asks for the column: the shell relays it so the tablet splits
 	# the way the section on show needs, not the way the shell itself would.
 	panel.pane_layout.connect(_relay_pane.bind(panel))
-	# A section may ask the chart for a place; the shell carries that up, never to the chart itself.
+	# A section may ask the chart for a place; the shell carries it up, never to the chart itself.
 	panel.placement_requested.connect(placement_requested.emit)
+	# And a section may ask the chart to show one; same way round.
+	panel.focus_poi_requested.connect(focus_poi_requested.emit)
 	return panel
 
 

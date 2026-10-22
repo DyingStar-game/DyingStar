@@ -300,9 +300,15 @@ static func sanitize_display_name(raw: String) -> String:
 	return clean if clean.length() >= MIN_DISPLAY_NAME else ""
 
 
-## The presence payload for one player: true universe position plus a readable {system, scene}
-## ("tarsis" / "tarsis_3"; "space" when off-world, system then empty). Kept static and pure so the
-## shape is unit-testable without a scene tree.
+## The presence payload for one player: the position IN THE FRAME OF THE BODY named by `scene`, plus
+## a readable {system, scene} pair ("tarsis" / "tarsis_3"; "space" when off-world, system then
+## empty). Kept static and pure so the shape is unit-testable without a scene tree.
+##
+## The position is NOT an absolute spot in the universe, and must never be turned into one: a planet
+## both orbits and spins, so an absolute triple is stale the moment it is written. It is the frame
+## [method GameServer.mission_place_of] pushes to service-mission, on purpose — one place, one frame,
+## so a presence and a POI on the same spot are stored the same way and can never disagree about
+## which one they are talking in.
 ##
 ## A non-finite coordinate becomes 0 rather than being sent: a body mid-transfer or not yet placed
 ## can still carry INF (see the resend marker in server.gd), and JSON has no INF — it would serialise

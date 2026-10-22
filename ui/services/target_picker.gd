@@ -147,6 +147,20 @@ func picked_id() -> String:
 	return _picked_id
 
 
+## The pick in the shape a mission clause's params want, or null when nothing is picked. This is the
+## protocol the builder collectors speak: any control that answers [method param_value] can stand in
+## for a field, so a target picker (this one) and a place picker both drop into a clause without the
+## collector knowing which is which.
+func param_value() -> Variant:
+	return _picked_id if _picked_id != "" else null
+
+
+## What to print in a sentence that names this choice. A uuid would read as noise, so the picked
+## row's own label is used instead; a host with one shows nothing better and inherits that.
+func param_label() -> String:
+	return _picked_id
+
+
 func picked_kind() -> String:
 	return _picked_kind
 
