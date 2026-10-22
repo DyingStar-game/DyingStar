@@ -2,11 +2,13 @@ extends GutTest
 ## SpawnBuilding: one habitat container per apartment, laid on a grid of rows x cols x floors. The
 ## copies of the container stand side by side, the spawn point Horizon offsets for each slot stays in
 ## its own container, the door plate fits any name, and the buildings of a mining village never
-## overlap now that a container is longer and narrower than the old apartment.
+## overlap now that a container is longer and narrower than the old apartment, nor rise above three levels.
 
 const BUILDING := "res://scenes/_universe/structures/buildings/spawn_building.tscn"
 const APARTMENT := "res://scenes/_universe/structures/buildings/container_apartment.tscn"
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
+## A village's buildings stand three levels high at most: the ground floor, the 1st and the 2nd.
+const MAX_FLOORS := 3
 
 
 func test_the_copies_tile_the_grid_back_to_back() -> void:
@@ -92,6 +94,7 @@ func test_the_buildings_of_a_village_never_overlap() -> void:
 	for child in village.get_children():
 		if child is SpawnBuilding:
 			homes += child.rows * child.cols * child.floors
+			assert_lte(child.floors, MAX_FLOORS, "%s: the ground floor and two storeys at most" % child.name)
 	assert_eq(homes, 252, "about 250 apartments a village")
 	for i in rects.size():
 		for j in range(i + 1, rects.size()):

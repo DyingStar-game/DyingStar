@@ -60,8 +60,8 @@ floors = 3
 [node name="tarsis_4-1010" parent="." unique_id=1437436497 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736765e-17, 0, 1, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, -27, 0, -18)
 rows = 2
-cols = 3
-floors = 4
+cols = 4
+floors = 3
 
 [node name="tarsis_4-1011" parent="." unique_id=140903360 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736764e-17, 0, 1, 0, 1, 0, -0.9999999999999996, 0, 6.123233995736766e-17, -43, 0, -18)
@@ -71,8 +71,9 @@ floors = 2
 
 [node name="tarsis_4-1006" parent="." unique_id=1679624872 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736765e-17, 0, 1, 0, 0.9999999999999996, 0, -0.9999999999999998, 0, 6.123233995736765e-17, -10, 0, 48)
-cols = 6
-floors = 4
+rows = 2
+cols = 4
+floors = 3
 
 [node name="tarsis_4-1007" parent="." unique_id=873673048 instance=ExtResource("2_n6sqd")]
 transform = Transform3D(6.123233995736764e-17, 0, 1, 0, 1, 0, -0.9999999999999996, 0, 6.123233995736766e-17, -44, 0, 48)
