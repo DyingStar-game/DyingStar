@@ -143,6 +143,7 @@ func test_a_state_that_arrives_before_the_building_is_placed_still_shows() -> vo
 	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
 	assert_true(right.is_on)
 	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(right.open_angle_deg), 1e-4, "shown open once placed")
+	assert_eq(right.label, right.label_on, "and says it closes, not that it opens")
 	KnownEngineErrors.forgive_floor_material(self)
 
 

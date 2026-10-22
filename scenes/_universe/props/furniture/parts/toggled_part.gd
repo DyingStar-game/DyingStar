@@ -21,7 +21,9 @@ var is_on: bool = false
 
 func _ready() -> void:
 	super()
-	label = label_off
+	# As it is shown: a building's state often arrives before its parts enter the tree, and a door shown
+	# open then said "Open door" (playtest 2026-10-22).
+	label = label_on if is_on else label_off
 
 
 ## Its key in the building's state: "<apartment>/<its path in it>" ("0-1-0/Wardrobe/.../DoorR"),
