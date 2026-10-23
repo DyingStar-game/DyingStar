@@ -3250,17 +3250,24 @@ static func generate_collision_shape(
 		var _rw_step_m := HEALPix.pixel_side_length(hp_nside, data.radius) \
 				/ float(res) * 0.5
 		var _rw_mpd := data.radius * PI / 180.0
-		# The canonical tile on an export-tile border, as the mesh's samplers;
-		# crack carved like the mesh's patch (CrackCarve.AUTO, see generate_mesh).
-		var _rw_sampler := func(d: Vector3) -> float:
+		# The canonical tile on an export-tile border, as the mesh's samplers.
+		# Crack carved for the refinement patch only (CrackCarve.AUTO, see
+		# generate_mesh); the bed's skirts and the road slabs read the plateau
+		# (NONE) like the mesh's: with the canyon floor, a bed running under a
+		# deck dropped two 180 m skirts into the gorge — invisible walls under
+		# the bridge (tarsis_3, 39.561 W 24.842 N).
+		var _rw_ref_sampler := func(d: Vector3) -> float:
 			return data.sample_height_boundary(d, _height_ipix, -1,
 					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.AUTO)
+		var _rw_sampler := func(d: Vector3) -> float:
+			return data.sample_height_boundary(d, _height_ipix, -1,
+					Vector2i(-1, -1), null, _height_nside, _frame, _col_crack_spacing, CrackCarve.NONE)
 		# The same patch the mesh builder gets (same grid, same inputs): the
 		# refined cells' coarse faces are dropped and the patch's appended.
 		if not _col_rw_ctx.is_empty():
 			var _rw_ref := GradeRefine.build(data, hp_nside, hp_ipix, res, grid_dirs,
 					_col_rw_h, _col_rw_band, _col_rw_ctx, PackedByteArray(),
-					_rw_sampler, _rw_outward, grid)
+					_rw_ref_sampler, _rw_outward, grid)
 			if not _rw_ref.is_empty():
 				var _rq: PackedByteArray = _rw_ref["quads"]
 				var _kept := PackedVector3Array()
