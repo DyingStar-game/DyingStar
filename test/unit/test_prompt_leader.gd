@@ -64,10 +64,10 @@ func test_the_frame_sits_up_and_to_the_right_of_the_crosshair() -> void:
 	assert_not_null(_prompt.get_theme_stylebox("normal") as StyleBoxFlat, "framed, on a dark ground")
 
 
-func test_the_line_meets_the_frame_at_its_nearest_point() -> void:
+func test_the_line_always_meets_the_frame_at_its_lower_left_corner() -> void:
+	# Met at its nearest point, the line slid along an edge as the look moved.
 	var frame := Rect2(Vector2(100, 100), Vector2(80, 30))
-	assert_eq(LEADER.line_end(Vector2(50, 200), frame), Vector2(100, 130), "below-left: its lower-left corner")
-	assert_eq(LEADER.line_end(Vector2(50, 115), frame), Vector2(100, 115), "level with it: its left edge")
+	assert_eq(LEADER.line_end(frame), Vector2(100, 130), "its lower-left corner, the one facing the crosshair")
 
 
 func test_the_line_starts_on_the_object_and_stays_there_as_the_head_turns() -> void:

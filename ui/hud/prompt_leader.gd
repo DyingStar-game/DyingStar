@@ -96,10 +96,11 @@ static func frame_rect(centre: Vector2, text_size: Vector2) -> Rect2:
 	return Rect2(Vector2(bottom_left.x, bottom_left.y - text_size.y), text_size)
 
 
-## Where the line from [param from] meets [param frame]: its nearest point (the corner or the edge the
-## object lies towards). Pure, for the tests.
-static func line_end(from: Vector2, frame: Rect2) -> Vector2:
-	return Vector2(clampf(from.x, frame.position.x, frame.end.x), clampf(from.y, frame.position.y, frame.end.y))
+## Where the line meets [param frame]: always its lower-left corner, the one facing the crosshair. Met at
+## its nearest point instead, the line slid along an edge as the look moved (playtest 2026-10-23). Pure,
+## for the tests.
+static func line_end(frame: Rect2) -> Vector2:
+	return Vector2(frame.position.x, frame.end.y)
 
 
 func _process(delta: float) -> void:
@@ -166,5 +167,5 @@ func _draw() -> void:
 	var from: Vector2 = _camera.unproject_position(at) - global_position
 	var frame := Rect2(_prompt.global_position - global_position, _prompt.size)
 	var colour := Color(_prompt.modulate, 1.0)
-	draw_line(from, line_end(from, frame), colour, LINE_PX, true)
+	draw_line(from, line_end(frame), colour, LINE_PX, true)
 	draw_circle(from, DOT_PX, colour)
