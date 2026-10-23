@@ -125,6 +125,42 @@ visible = false
 [node name="Col_cabin" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="6" unique_id=1049753045]
 visible = false
 
+[node name="HatchNumber" type="Label3D" parent="Model/Carrosserie/Hatch_FL" parent_id_path=PackedInt32Array(327486982, 318282427) index="0" unique_id=1559450079]
+transform = Transform3D(0, 0, -5.714285811599422, 0, 4.444444562182017, 0, 3.076923189783947, 0, 0, -0.2742790235305319, 0, 0.99999976)
+pixel_size = 0.00171875
+double_sided = false
+modulate = Color(0.08, 0.08, 0.1, 1)
+text = "1"
+font_size = 64
+outline_size = 0
+
+[node name="HatchNumber" type="Label3D" parent="Model/Carrosserie/Hatch_FR" parent_id_path=PackedInt32Array(327486982, 883827531) index="0" unique_id=1661643247]
+transform = Transform3D(0, 0, 5.714285811599422, 0, 4.444444562182017, 0, -3.076923189783947, 0, 0, 0.2735674632812033, 0, 1)
+pixel_size = 0.00171875
+double_sided = false
+modulate = Color(0.08, 0.08, 0.1, 1)
+text = "2"
+font_size = 64
+outline_size = 0
+
+[node name="HatchNumber" type="Label3D" parent="Model/Carrosserie/Hatch_RL" parent_id_path=PackedInt32Array(327486982, 666649404) index="0" unique_id=1610474917]
+transform = Transform3D(0, 0, -5.714285811599422, 0, 4.444444562182017, 0, 3.076923189783947, 0, 0, -0.2742790235305319, 0, -0.9999999701976776)
+pixel_size = 0.00171875
+double_sided = false
+modulate = Color(0.08, 0.08, 0.1, 1)
+text = "3"
+font_size = 64
+outline_size = 0
+
+[node name="HatchNumber" type="Label3D" parent="Model/Carrosserie/Hatch_RR" parent_id_path=PackedInt32Array(327486982, 708773070) index="0" unique_id=1301159315]
+transform = Transform3D(0, 0, 5.714285811599422, 0, 4.444444562182017, 0, -3.076923189783947, 0, 0, 0.2735674632812033, 0, -0.9999998)
+pixel_size = 0.00171875
+double_sided = false
+modulate = Color(0.08, 0.08, 0.1, 1)
+text = "4"
+font_size = 64
+outline_size = 0
+
 [node name="SeatDriver" type="Area3D" parent="." unique_id=924961125 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, -1.1050032463626582)
 collision_layer = 32

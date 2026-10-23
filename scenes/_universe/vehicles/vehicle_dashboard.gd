@@ -385,7 +385,7 @@ func _status() -> Control:
 
 
 ## One framed box per bay ([param slots], VehicleComponentSlot), its number beside it -- the number
-## painted on the bay's hatch (HatchNumbers): green with the fitted part's icon in green while it
+## on the bay's hatch (a HatchNumber Label3D in the vehicle's scene): green with the fitted part's icon in green while it
 ## works, grey and empty when the bay is free. Only touched when it changes.
 func _show_bays(slots: Array) -> void:
 	while _bay_boxes.get_child_count() < slots.size():
