@@ -51,6 +51,42 @@ func test_a_lamp_lights_its_lights() -> void:
 	assert_false(light.visible)
 
 
+func test_two_switches_of_a_home_are_one_circuit() -> void:
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	building.cols = 2
+	PropSync.of(building).uuid = "home-uuid"
+	add_child_autofree(building)
+	building.apply_prop_data({"apartments": [], "furniture": {"0-1-0/CeilingLight": true}})
+	var rooms: Node = building.get_node("MultiMeshInstance3D")
+	var door := rooms.get_node("0-1-0/Interior/SwitchDoor") as WallSwitch
+	var bed := rooms.get_node("0-1-0/Interior/SwitchBed") as WallSwitch
+	assert_eq(door.state_key(), "0-1-0/CeilingLight", "keyed by its circuit, not its path")
+	assert_eq(bed.state_key(), door.state_key(), "the two switches: one state")
+	var lit := rooms.get_node("0-1-0/Interior/CeilingLight/AreaLight3D") as Light3D
+	var dark := rooms.get_node("0-0-0/Interior/CeilingLight/AreaLight3D") as Light3D
+	assert_true(door.is_on and bed.is_on, "lit from either, both say so")
+	assert_true(lit.visible, "the ceiling light of that home")
+	assert_false(dark.visible, "not the neighbour's")
+	building.apply_prop_data({"furniture": {"0-1-0/CeilingLight": false}})
+	assert_false(lit.visible, "put out from the other")
+	KnownEngineErrors.forgive_floor_material(self)
+
+
+func test_a_switch_without_a_circuit_is_its_own() -> void:
+	var switch := WallSwitch.new()
+	switch.name = "Switch"
+	var light := OmniLight3D.new()
+	switch.add_child(light)
+	switch.lights = [NodePath("OmniLight3D")]
+	light.name = "OmniLight3D"
+	add_child_autofree(switch)
+	assert_eq(switch.state_key(), "Switch", "out of a home: its name, like any part")
+	switch.show_state(true, false)
+	assert_true(light.visible)
+	switch.show_state(false, false)
+	assert_false(light.visible)
+
+
 func test_the_state_keeps_what_was_set() -> void:
 	var state := {"0-0-0/DoorL": true}
 	var lit: Dictionary = FurnitureState.with_part(state, "0-1-0/Lamp", true)
@@ -97,6 +133,20 @@ func test_a_home_is_its_occupant_s() -> void:
 	assert_true(SpawnBuilding.is_foreign_home(bed_there, "xyz"), "a neighbour's")
 	assert_true(SpawnBuilding.is_foreign_home(bed_free, "abc"), "a free one is nobody's")
 	assert_false(SpawnBuilding.is_foreign_home(null, "abc"), "the ground outside")
+	building.free()
+
+
+func test_a_player_wakes_up_in_the_bed_of_their_own_home() -> void:
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	building.cols = 2
+	building.apartments = [{"floor": 0, "row": 0, "col": 1, "player_uuid": "abc", "player_name": "Ann"}]
+	PropSync.of(building).uuid = "home-uuid"
+	building._create_apartments()
+	var bed: BedSpot = building.bed_of("abc")
+	assert_not_null(bed)
+	assert_eq(building.apartment_of(bed).name, &"0-1-0", "the bed of their own apartment")
+	assert_null(building.bed_of("xyz"), "no home here: stays standing")
+	assert_null(building.bed_of(""), "nobody: no bed, not the first free one")
 	building.free()
 
 

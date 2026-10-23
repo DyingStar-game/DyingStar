@@ -206,6 +206,24 @@ func occupant_of(apartment: Node) -> String:
 	return ""
 
 
+## The bed of the apartment [param player_uuid] lives in, or null: no home here, or its interior not
+## there yet (a client instances it once the camera nears, InteriorStreamer).
+func bed_of(player_uuid: String) -> BedSpot:
+	if player_uuid == "":
+		return null  # nobody: not the first free apartment's bed
+	for apt in apartments:
+		if str(apt.get("player_uuid", "")) != player_uuid:
+			continue
+		var room: Node = get_node_or_null("MultiMeshInstance3D/" + slot_name(apt))
+		if room == null:
+			return null
+		for node in room.find_children("*", "Area3D", true, false):
+			if node is BedSpot:
+				return node as BedSpot
+		return null
+	return null
+
+
 ## SERVER: a validated use of [param part] (PlayerServer "furniture_use"): set it [param on], show it
 ## here (a door's body moves with it) and replicate the new state.
 func server_set_part(part: ToggledPart, on: bool) -> void:

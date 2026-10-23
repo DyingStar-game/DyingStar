@@ -2146,13 +2146,16 @@ func create_player(event: Dictionary) -> void:
 	if bool(event["data"].get("dormant", false)):
 		_make_dormant_player(spawned_entity_instance, player_uuid, adopted_planet != null)
 		return
-	_register_player(spawned_entity_instance, player_uuid, adopted_planet != null)
+	_register_player(spawned_entity_instance, player_uuid, adopted_planet != null, true)
 
 
 ## The live half of create_player, shared with activate_object: list the player, seed what the moves
 ## are compared against, connect it to Horizon, seat it back in its vehicle, adopt what it carries.
 ## [param adopted] = WE put it under a planet while Horizon still has parent "" (see the seed below).
-func _register_player(spawned_entity_instance: Node, player_uuid: String, adopted: bool) -> void:
+## [param arriving] = the player just connected (create_player), not woken from a hand-over: they wake
+## up in bed (_wake_in_bed).
+func _register_player(spawned_entity_instance: Node, player_uuid: String, adopted: bool,
+		arriving: bool = false) -> void:
 	players_list.set(player_uuid, spawned_entity_instance)
 	# Tell the social heartbeat this player is live: it upserts their profile, starts their
 	# playtime clock and asks for a presence batch ahead of the next scheduled beat. Dormant
@@ -2198,10 +2201,24 @@ func _register_player(spawned_entity_instance: Node, player_uuid: String, adopte
 	# already the one the player landed in — a dormant hand-over was never seated, so reading
 	# before this line would call every arriving driver a passenger on foot.
 	MissionHeartbeat.on_player_live(player_uuid, spawned_entity_instance)
+	if arriving:
+		_wake_in_bed(spawned_entity_instance, player_uuid)
 	# Updates wired and seat settled: the posture this server holds, sent even at its defaults.
 	spawned_entity_instance.server_publish_spawn_state()
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500
 	_stream_adopt_waiting(player_uuid)  # what they carry, if it arrived first
+
+
+## A player who just connected starts lying in the bed of their apartment: Horizon puts a returning
+## player at home (new_player, "wakes up in its apartment"). An NPC stands, and a hand-over keeps the
+## posture it had (activate_object registers the player with arriving false).
+func _wake_in_bed(player: Node, player_uuid: String) -> void:
+	if bool(player.get("is_npc")):
+		return
+	var home := player.get_parent() as SpawnBuilding
+	var bed: BedSpot = home.bed_of(player_uuid) if home != null else null
+	if bed != null:
+		player.server_toggle_lying(bed)
 
 
 ## A player created for a hand-over, kept asleep until activate_object: placed in the tree (its scene

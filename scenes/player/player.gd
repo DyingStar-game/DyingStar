@@ -517,6 +517,9 @@ var _seat_is_driver: bool = false
 var lying_on: Node3D = null
 ## Owner: the bed we last asked to lie on (BedSpot.interact), taken as lying_on once the server agrees.
 var bed_asked: Node3D = null
+## Found lying, not seen lying down: woken up in bed on arrival, or already in bed when this client
+## first saw the body. The animator shows the lay clip's last pose at once (CharacterAnimator).
+var lying_found: bool = false
 # The Vehicle whose cargo bay we are standing in on foot (our AreaDetector reports it). Used both
 # for the bed-walker weight (server) and to load a crate we drop while standing in it.
 var _in_vehicle_bed: Node = null

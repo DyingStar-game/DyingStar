@@ -39,7 +39,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		take(Kind.DEBUG)
 
 
-func take(kind: Kind) -> void:
+## Take a capture of [param kind]; returns where it is written ("" when one is already under way). The
+## file is there once the worker has saved it, a moment later (the toast says so).
+func take(kind: Kind) -> String:
+	if _busy:
+		return ""
 	_busy = true
 	# The confirmation of the previous shot must not end up in this one.
 	_toast.clear()
@@ -59,6 +63,7 @@ func take(kind: Kind) -> void:
 	var prefix: String = "screenshot" if kind == Kind.PHOTO else "debug"
 	var path: String = dir.path_join("%s_%s.png" % [prefix, CapturePaths.stamp()])
 	WorkerThreadPool.add_task(_save.bind(image, path), false, "screenshot")
+	return path
 
 
 ## Show the debug panels for the capture, then give the player's own setting back. A preview rather

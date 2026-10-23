@@ -10,15 +10,21 @@ func set_lit(on: bool, animate: bool = false) -> void:
 	_switch_under(self, on, animate)
 
 
+## Switch [param target]: a lamp with set_lit (a NeonSign, a LedPanel, a group) is asked to, a bare Light3D
+## is shown or hidden, and anything else is walked for the lamps below it. Shared with whatever else
+## switches lamps it is pointed at (WallSwitch).
+static func switch(target: Node, on: bool, animate: bool = false) -> void:
+	if target.has_method("set_lit"):
+		target.set_lit(on, animate)
+	elif target is Light3D:
+		(target as Light3D).visible = on
+	else:
+		_switch_under(target, on, animate)
+
+
 ## Switch every lamp below [param node], walking into the sub-groups (a lamp's own children are its
 ## parts, not further lamps).
 static func _switch_under(node: Node, on: bool, animate: bool) -> void:
 	for child: Node in node.get_children():
-		if child is Photocell:
-			continue
-		if child.has_method("set_lit"):
-			child.set_lit(on, animate)
-		elif child is Light3D:
-			(child as Light3D).visible = on
-		else:
-			_switch_under(child, on, animate)
+		if not child is Photocell:
+			switch(child, on, animate)

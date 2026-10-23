@@ -132,6 +132,12 @@ var _god_mode_speed: float = 0.0  # the speed the wheel chose; seeded from playe
 var _god_mode_label: Label = null  # top of the HUD while in god mode: its speed
 ## The ray of our own sight check (SightLine, the server's): no prompt for what stands behind a wall.
 var _sight_ray: RayCast3D = null
+## The server says we lie on a bed we have not found yet (woken up at home: its interior comes later).
+var _bed_pending: bool = false
+## The server told our posture (its spawn state always carries the seat): the spawn splash waits for it.
+var _posture_known: bool = false
+## Dev probe of the lamps lighting the point under the crosshair (owner only, setup).
+var _light_probe: LightProbe = null
 var _step_last_sample: AudioStream = null  # last footstep played, so the library avoids repeating it
 var _last_stow_action: String = ""         # last "stow:<n>" applied (events repeat until they change)
 var _surface_family: StringName = &""      # ground under our feet, sampled in the physics frame
@@ -277,6 +283,11 @@ func setup() -> void:
 	var lamp_budget := LampShadowBudget.new()
 	lamp_budget.name = "LampShadowBudget"
 	player.add_child(lamp_budget)
+	# Dev: which lamps light the point under the crosshair, and through what (debug_light_probe).
+	_light_probe = LightProbe.new()
+	_light_probe.name = "LightProbe"
+	_light_probe.show_line = _flash_prompt
+	player.add_child(_light_probe)
 
 	# Emote wheel: hold the emote key (T) to pick an emote (the spawn wheel moved to Alt+T).
 	player._emote_wheel = RadialMenu.new()
@@ -418,12 +429,24 @@ func setup() -> void:
 	# Hold the splash a short minimum (so the world DRAWS behind it — there is no client terrain-ready
 	# signal) AND until the sun's day/night + the body orientation have settled (gravity resolved, up
 	# steady) AND until the zone entry is built (the objects still waiting, a building a frame, would
-	# stutter in front of the player). Capped by a timeout so a stuck spawn never hangs.
+	# stutter in front of the player) AND until the body is in the posture the server holds: woken up in
+	# bed, we stood until the bed's interior came, then lay down in front of the player. Capped by a
+	# timeout so a stuck spawn never hangs.
 	var net: Node = NetworkOrchestrator.network_agent
 	var waited: float = 0.0
-	while (waited < 2.5 or player.get_current_gravity_parent() == null or not sun.settled
-			or (is_instance_valid(net) and net.has_method("backlog_size") and net.backlog_size() > 0)) \
-			and waited < 10.0:
+	# Until when (s) each condition held the splash, for the line below: which one it waited on.
+	var held: Dictionary = {}
+	while waited < 10.0:
+		var holding := {
+			"gravity": player.get_current_gravity_parent() == null, "sun": not sun.settled,
+			"posture": not _posture_known, "bed": _bed_pending,
+			"zone": is_instance_valid(net) and net.has_method("backlog_size") and net.backlog_size() > 0,
+		}
+		for reason: String in holding:
+			if holding[reason]:
+				held[reason] = waited
+		if waited >= 2.5 and not holding.values().has(true):
+			break
 		await get_tree().process_frame
 		waited += get_process_delta_time()
 		# The ground under us: chunks built out of those asked for, or the time left, whichever is further.
@@ -435,8 +458,13 @@ func setup() -> void:
 
 	if loading != null:
 		loading.queue_free()
-	print("[PlayerClient] spawn splash lifted after %.1f s (%d zone events still to build)" % [waited,
-			net.backlog_size() if is_instance_valid(net) and net.has_method("backlog_size") else -1])
+	var held_text := PackedStringArray()
+	for reason: String in held:
+		held_text.append("%s %.1f s" % [reason, held[reason]])
+	print("[PlayerClient] spawn splash lifted after %.1f s (%d zone events still to build, posture %s; held by: %s)" % [
+			waited, net.backlog_size() if is_instance_valid(net) and net.has_method("backlog_size") else -1,
+			("in bed" if is_instance_valid(player.lying_on) else ("bed not found" if _bed_pending else "standing"))
+			if _posture_known else "not told", ", ".join(held_text) if not held_text.is_empty() else "the minimum"])
 
 	# The world is on screen: from here the music follows where this player is.
 	MusicDirector.follow(player)
@@ -500,13 +528,20 @@ func _process(_delta: float) -> void:
 		_point_screen(seated_focus)
 		return
 	_update_cab_screen(null)  # on foot: no cab screen, the chart goes home
-	# Lying on a bed: ride it like a seat (free look from the pillow); the action key gets up.
+	if not is_instance_valid(player.lying_on) and _bed_pending:
+		_lie_on(_own_bed())  # woken up in bed on arrival: the bed's interior may come a few frames after
+	# Lying on a bed: ride it like a seat (free look from the pillow). What the pillow reaches is used as
+	# on foot -- the lamp, the switch by the bed; aimed at nothing else, the action key gets up, said
+	# without a line, as dropping a load is (_prompt_target).
 	if is_instance_valid(player.lying_on):
 		if not _ui_focus():
 			player.mouse_motion += _stick_look(_delta)
 		player._ride_bed(player.lying_on)
 		_replicate_look()
-		player.interact_label.text = _prompt(&"action", tr("%%HUD_BED_GET_UP"))
+		var within_reach: Interactable = _aimed_from_bed()
+		player.interact_label.modulate = Color.WHITE
+		player.interact_label.text = _prompt(&"action",
+				tr(within_reach.label if within_reach != null else "%%HUD_BED_GET_UP"))
 		player.interact_label.show()
 		return
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
@@ -1233,7 +1268,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			player.mining_tool.toggle_equip()
 
 	if InputCombo.pressed(event, "action") and is_instance_valid(player.lying_on):
-		player.lying_on.interact(player)  # the server gets us up from the bed we lie on
+		player.interact_ray.force_raycast_update()
+		var within_reach: Interactable = _aimed_from_bed()
+		if within_reach != null:
+			within_reach.interact(player)  # the lamp, the switch by the bed: lying changes nothing to it
+		else:
+			player.lying_on.interact(player)  # the server gets us up from the bed we lie on
 		return
 	if InputCombo.pressed(event, "action"):
 		player.interact_ray.force_raycast_update()
@@ -1416,6 +1456,8 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 ## look meets (null); carrying, the spot the load would be fitted or loaded into ("install", "cargo"),
 ## and nothing for any other prompt -- "Drop" is about the load in the arms, which needs no line.
 func _prompt_target() -> Variant:
+	if is_instance_valid(player.lying_on) and _aimed_from_bed() == null:
+		return PROMPT_LEADER.NO_LINE  # getting up: about nothing under the crosshair
 	if not player._owner_carrying:
 		return null
 	if player._carry_prompt in ["install", "cargo"] and _placement_marker != null:
@@ -1430,6 +1472,30 @@ func _aimed_interactable() -> Interactable:
 		return null
 	var aimed := player.interact_ray.get_collider() as Interactable
 	return aimed if aimed != null and aimed.usable_by(player) and _seen(aimed) else null
+
+
+## What the crosshair rests on from the bed we lie on, usable: anything but that bed (aimed at, it
+## would offer to lie down on it).
+func _aimed_from_bed() -> Interactable:
+	var aimed: Interactable = _aimed_interactable()
+	return aimed if aimed != player.lying_on else null
+
+
+## The bed of our own apartment, where the server lays us on arrival (null until its interior is there).
+func _own_bed() -> BedSpot:
+	var home := SpawnBuilding.containing(player)
+	return home.bed_of(player.horizon_id()) if home != null else null
+
+
+## Lie on [param bed] as the server says we do: ride it, eyes to the ceiling. Null: not yet, the bed
+## is looked for again each frame (_bed_pending).
+func _lie_on(bed: Node3D) -> void:
+	_bed_pending = bed == null
+	if bed == null:
+		return
+	player.lying_on = bed
+	player.seated_role = "bed"
+	player.camera_pivot.rotation = Vector3(deg_to_rad(70.0), 0.0, 0.0)  # lying down: eyes to the ceiling
 
 
 ## Whether we see [param target] from our eye, nothing solid in between: the same check as the
@@ -1568,6 +1634,11 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 				"NO SKY AMBIENT: no diffuse, the sky lights nothing",
 			]
 			print("[Atmosphere] %s" % labels[renderer.cycle_light_isolation()])
+
+	# Names the lamps that light the point under the crosshair, and whether a wall stands between.
+	if (InputCombo.pressed(event, "debug_light_probe")
+			and Globals.is_dev_tool_enabled("debug_light_probe") and _light_probe != null):
+		_light_probe.ask()
 
 	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key; the panel
 	# follows the setting's signal (DevOverlay).
@@ -1732,6 +1803,8 @@ func _offer_play_hints() -> void:
 		PlayHints.row(&"action", "%%HUD_DROP"), PlayHints.row(&"carry_rotate_cw"),
 		PlayHints.row(&"carry_free_rotate"),
 	], func() -> bool: return player._owner_carrying, 20)
+	PlayHints.provide(self, &"lying", [PlayHints.row(&"action", "%%HUD_BED_GET_UP")],
+			func() -> bool: return is_instance_valid(player.lying_on), 20)
 	PlayHints.provide(self, &"mining_tool", [
 		PlayHints.row(&"aim"), PlayHints.row(&"perforate"), PlayHints.row(&"toggle_tool"),
 	], func() -> bool: return player.mining_tool != null and player.mining_tool.is_equipped(), 20)
@@ -2139,11 +2212,14 @@ func client_channel_data_update(data: Dictionary) -> void:
 		# Our own bed, from the seat STATE: the "seat:bed" EVENT shares the `action` field with the
 		# tools' stow sent with it, and Horizon keeps the last of the two -- read from the event, we
 		# lay on the server and stood here, locked (playtest 2026-10-21).
+		_posture_known = true
 		var lying: bool = str(data["seat"]) == "bed"
 		if lying and not is_instance_valid(player.lying_on):
-			player.lying_on = player.bed_asked  # the bed we asked to lie on (BedSpot.interact)
-			player.camera_pivot.rotation = Vector3(deg_to_rad(70.0), 0.0, 0.0)  # lying down: eyes to the ceiling
+			# The bed we asked to lie on (BedSpot.interact), or, arriving, our own: the server wakes us there.
+			player.lying_found = not is_instance_valid(player.bed_asked)
+			_lie_on(_own_bed() if player.lying_found else player.bed_asked)
 		elif not lying:
+			_bed_pending = false
 			if is_instance_valid(player.lying_on):
 				# Up from the bed: the server stood us still; tell it what we hold now, even unchanged.
 				player.client_last_input_direction = Vector2.INF
@@ -2254,6 +2330,7 @@ func client_channel_data_update(data: Dictionary) -> void:
 			# therefore what tells a client arriving LATER (fresh connection, or the player walking
 			# into its GORC zone) that the avatar it just built is sitting rather than standing.
 			player.seated_role = str(data["seat"])
+			player.lying_found = not live and player.seated_role == "bed"  # in bed when we first saw it
 		if data.has("conversation"):
 			print("RECU!!!")
 			if _conversation_text == null:
@@ -2340,6 +2417,7 @@ func _sample_locomotion(delta: float) -> void:
 		"airborne": _airborne,
 		"seated": player.seated_role not in ["", "bed"],  # replicated seat state (see Player.seated_role)
 		"lying": player.seated_role == "bed",  # on a bed: the lay clip (CharacterAnimator)
+		"lying_found": player.lying_found,  # found in bed: its last pose at once, no lying down
 		"driver": player.seated_role == "driver",
 		"carrying": _remote_carrying if player.remote_player else player._owner_carrying,
 		"stance": player.stance,  # 0 standing / 1 crouched / 2 prone (server-owned, drives crouch/crawl anim)

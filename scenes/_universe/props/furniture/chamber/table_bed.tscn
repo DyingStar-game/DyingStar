@@ -4,7 +4,6 @@
 [ext_resource type="PackedScene" uid="uid://bdi56gltsys6n" path="res://assets/_universe/props/furniture/chamber/table_bed.glb" id="2_lhmp7"]
 [ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="3_wb7vr"]
 [ext_resource type="Material" uid="uid://c71fgaq3itr5i" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="4_fq1pg"]
-[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="7_v5gro"]
 [ext_resource type="Script" uid="uid://8q12wied4qom" path="res://scenes/_universe/props/furniture/parts/light_switch.gd" id="part_light"]
 [ext_resource type="Script" uid="uid://c1q53e1a4jpjv" path="res://scenes/_universe/props/furniture/parts/moving_part.gd" id="part_moving"]
 
@@ -68,9 +67,6 @@ visible = false
 light_color = Color(1, 0.78, 0.55, 1)
 light_energy = 0.8
 omni_range = 2.0
-
-[node name="Photocell" type="Node3D" parent="table_bed/bed_table_lamp/Lamp" unique_id=346742018]
-script = ExtResource("7_v5gro")
 
 [node name="bed_table_decal" parent="table_bed" index="3" unique_id=2011193058]
 visibility_range_end = 8.0

@@ -227,7 +227,7 @@ func _light_for(moon: Node3D) -> DirectionalLight3D:
 	# OmniLight from the real direction, and this light is aimed moon->PLAYER.
 	light.light_cull_mask = Globals.RENDER_MASK_LOCAL_LIT
 	light.light_volumetric_fog_energy = 0.0
-	light.shadow_opacity = 0.69
+	light.shadow_opacity = 1.0  # a shadow stops all of it, as the sun's (PlayerSunLight)
 	light.shadow_blur = 1.649
 	light.directional_shadow_max_distance = SettingsManager.get_shadow_distance()
 	add_child(light)
