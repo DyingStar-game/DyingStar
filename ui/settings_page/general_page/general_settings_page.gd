@@ -1,12 +1,13 @@
 extends Control
 
 ## Wires the general options to SettingsManager (apply + persist): the display language, the size
-## of the interface, and the two display switches. The debug toggles have their own page (Debug).
+## of the interface, and the display switches. The debug toggles have their own page (Debug).
 
 const TOGGLES : Array[Dictionary] = [
 	{"node": "GraphicsOverlay", "owner": "render", "getter": "is_overlay_enabled", "setter": "set_overlay_enabled"},
 	{"node": "MenuStage", "owner": "render", "getter": "is_menu_stage_enabled", "setter": "set_menu_stage_enabled"},
 	{"node": "PlayHints", "getter": "is_play_hints_enabled", "setter": "set_play_hints_enabled"},
+	{"node": "FramedPrompts", "getter": "is_framed_prompts_enabled", "setter": "set_framed_prompts_enabled"},
 ]
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer

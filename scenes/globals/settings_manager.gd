@@ -136,6 +136,17 @@ func set_play_hints_enabled(on: bool) -> void:
 	save_settings()
 
 
+## Settings > General > Framed prompts: the interaction prompt in a frame beside the crosshair, a line
+## drawn to it from the object (PromptLeader); off, the plain text of before. On by default.
+func is_framed_prompts_enabled() -> bool:
+	return bool(config.get_value("general", "framed_prompts", true))
+
+
+func set_framed_prompts_enabled(on: bool) -> void:
+	config.set_value("general", "framed_prompts", on)
+	save_settings()
+
+
 func save_settings():
 	config.save(CONFIG_FILEPATH)
 

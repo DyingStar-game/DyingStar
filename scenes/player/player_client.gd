@@ -6,6 +6,7 @@ const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
 ## before the editor has registered a new class_name must still compile the player.
 const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
+const PROMPT_LEADER := preload("res://ui/hud/prompt_leader.gd")
 ## The DataPad worn on the wrist, and the owner's gesture into it -- preloaded for the same reason.
 const WRIST_DATAPAD_SCENE := preload("res://scenes/_universe/props/datapad/wrist_datapad.tscn")
 const WRIST_DATAPAD := preload("res://scenes/player/wrist_datapad_controller.gd")
@@ -360,12 +361,18 @@ func setup() -> void:
 		hints.place_under(player.direct_chat)
 	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
 	_offer_play_hints()
-	# A dark patch behind the interaction prompt, fitted to its width, so it reads over a bright ground.
-	var shade : ColorRect = PROMPT_SHADE.new()
+	# The interaction prompt in a frame beside the crosshair, a line drawn to it from what it is about;
+	# Settings > General can turn the frame off: the plain prompt, on a dark patch fitted to its width
+	# so it reads over a bright ground.
 	var hud : Control = player.interact_label.get_parent()
+	var shade : ColorRect = PROMPT_SHADE.new()
 	hud.add_child(shade)
 	hud.move_child(shade, 0)  # under the rest of the HUD
 	shade.follow(player.interact_label)
+	var leader : Control = PROMPT_LEADER.new()
+	hud.add_child(leader)
+	hud.move_child(leader, player.interact_label.get_index())  # under the prompt it draws the line to
+	leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
