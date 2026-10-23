@@ -132,6 +132,25 @@ func test_nothing_under_the_look_leaves_no_line() -> void:
 	assert_null(_leader._anchor_node, "a prompt about nothing under the crosshair: its frame, no line")
 
 
+func test_a_prompt_about_something_else_draws_from_it_or_draws_no_line() -> void:
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	# Carrying, "Drop": about the load in the arms, no line -- not to whatever the look meets.
+	_leader.target_rule = func() -> Variant: return LEADER.NO_LINE
+	_leader._process(0.016)
+	assert_null(_leader._anchor_node, "no line")
+	# "Fit" / "Load": to the spot the load would go, not to what the look meets.
+	var spot := Node3D.new()
+	add_child_autofree(spot)
+	_leader.target_rule = func() -> Variant: return spot
+	_leader._process(0.016)
+	assert_eq(_leader._anchor_node, spot, "the drop spot")
+	assert_eq(_leader._anchor_local, Vector3.ZERO, "its own point")
+	_leader.target_rule = func() -> Variant: return null
+	_leader._process(0.016)
+	assert_eq(_leader._anchor_node, _body, "nothing said: what the look meets")
+
+
 func test_turned_off_it_is_the_plain_prompt_of_before_on_its_shade() -> void:
 	# Settings > General > Framed prompts, off: the switch shows at once, no restart.
 	var plain := Vector2(_prompt.offset_left, _prompt.offset_top)

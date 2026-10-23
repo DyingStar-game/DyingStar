@@ -373,6 +373,7 @@ func setup() -> void:
 	hud.add_child(leader)
 	hud.move_child(leader, player.interact_label.get_index())  # under the prompt it draws the line to
 	leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
+	leader.target_rule = _prompt_target
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -1411,6 +1412,19 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 
 ## The Interactable (a console) under the crosshair, or null. Crates answer `interact()` too — whether they
 ## can be carried — but only an Interactable is something `action` USES.
+## What the interaction prompt is about, for its line (PromptLeader.target_rule): hands empty, what the
+## look meets (null); carrying, the spot the load would be fitted or loaded into ("install", "cargo"),
+## and nothing for any other prompt -- "Drop" is about the load in the arms, which needs no line.
+func _prompt_target() -> Variant:
+	if not player._owner_carrying:
+		return null
+	if player._carry_prompt in ["install", "cargo"] and _placement_marker != null:
+		var spot: Node3D = _placement_marker.spot()
+		if spot != null:
+			return spot
+	return PROMPT_LEADER.NO_LINE
+
+
 func _aimed_interactable() -> Interactable:
 	if not player.interact_ray.is_colliding():
 		return null

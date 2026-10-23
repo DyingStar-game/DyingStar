@@ -25,6 +25,8 @@ const DOT_PX := 3.0
 ## Opacity of the frame's dark ground.
 const GROUND_ALPHA := 0.6
 ## Fade speed, in opacity per second: aiming across objects does not make it blink.
+## What target_rule answers for a prompt about nothing to point at.
+const NO_LINE := &"no_line"
 const FADE_RATE := 8.0
 
 var _prompt: Label = null
@@ -34,6 +36,10 @@ var _anchor_node: Node3D = null  # what the line starts on
 var _anchor_local: Vector3 = Vector3.ZERO  # where on it, in its own frame (anchor_of)
 ## Whether the prompt is framed (Settings > General): read each frame, so the switch shows at once.
 var framed_rule: Callable = func() -> bool: return SettingsManager.is_framed_prompts_enabled()
+## What the prompt is about, asked each frame by whoever writes it (PlayerClient): null, what the look
+## meets (the ray); a Node3D, that node's own point (where a carried load would be fitted or loaded);
+## NO_LINE, nothing to point at (dropping what is carried: the line went to the load in the arms).
+var target_rule: Callable = func() -> Variant: return null
 var _framed: bool = false  # as shown now
 var _frame: StyleBoxFlat = null
 var _shade: Control = null  # the plain prompt's dark patch (PromptShade), shown when not framed
@@ -109,8 +115,17 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## The line starts on what the look meets, at its own point (anchor_of); nothing met, no line.
+## The line starts on what the prompt is about (target_rule), else on what the look meets, at its own
+## point (anchor_of); nothing, no line.
 func _track_anchor() -> void:
+	var target: Variant = target_rule.call()
+	if typeof(target) == TYPE_STRING_NAME and target == NO_LINE:
+		_anchor_node = null
+		return
+	if target is Node3D:
+		_anchor_node = target
+		_anchor_local = Vector3.ZERO
+		return
 	if _ray == null or not _ray.is_colliding():
 		_anchor_node = null
 		return
