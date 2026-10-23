@@ -7,8 +7,7 @@
 [ext_resource type="AudioStream" uid="uid://bt0o3a85bifv0" path="res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg" id="4_5dsot"]
 [ext_resource type="AudioStream" uid="uid://chree8iuckvgt" path="res://assets/_universe/audio/sfx/vehicles/ground/special-lee-horn.ogg" id="4_grru8"]
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="4_nd433"]
-[ext_resource type="AudioStream" uid="uid://bcabjxkjf7g1e" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-power-on.mp3" id="4_urxpd"]
-[ext_resource type="AudioStream" uid="uid://cat34iahwhgoq" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-power-off.mp3" id="5_2twiw"]
+[ext_resource type="AudioStream" uid="uid://cipdwv6lgccjg" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-power.ogg" id="4_urxpd"]
 [ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/_universe/vehicles/vehicle_dashboard.tscn" id="5_d2vf6"]
 [ext_resource type="AudioStream" uid="uid://c10qmvkxsm1yn" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-headlight-on.ogg" id="6_n6abw"]
 [ext_resource type="PackedScene" uid="uid://bjxceboesdb8w" path="res://scenes/_universe/vehicles/rear_camera.tscn" id="6_nd433"]
@@ -80,7 +79,9 @@ sfx_door_close = ExtResource("3_udf22")
 sfx_door_close_db = -10.0
 sfx_door_close_distance = 10.0
 sfx_engine_start = ExtResource("4_urxpd")
-sfx_engine_stop = ExtResource("5_2twiw")
+sfx_engine_start_db = -12.0
+sfx_engine_stop = ExtResource("4_urxpd")
+sfx_engine_stop_db = -12.0
 sfx_lights_on = ExtResource("6_n6abw")
 sfx_lights_on_distance = 5.0
 sfx_lights_off = ExtResource("7_lnse2")

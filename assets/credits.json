@@ -786,17 +786,8 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
-			"asset": "truck-elec-engine-power-off.mp3",
-			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-power-off.mp3",
-			"author": "Paglop",
-			"source": "Discord",
-			"id": "659872763439480873",
-			"url": "",
-			"license": "CC BY-NC-SA 4.0"
-		},
-		{
-			"asset": "truck-elec-engine-power-on.mp3",
-			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-power-on.mp3",
+			"asset": "truck-elec-engine-power.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-power.ogg",
 			"author": "Paglop",
 			"source": "Discord",
 			"id": "659872763439480873",
