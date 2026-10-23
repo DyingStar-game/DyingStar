@@ -98,6 +98,9 @@ var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from playe
 ## instant is_on_floor() becomes true again, so clients end the jump loop crisply. No extra replication.
 var _land_count: int = 0
 var _was_airborne: bool = false
+## Physics frame of the last _push_touched_bodies: an idle player or an NPC slides every few steps, and
+## the weight it puts down covers the steps in between.
+var _push_frame: int = 0
 ## Emotes: replicated like the jump ("emote:<key>:<n>" on the whitelisted action field) so every client
 ## plays the emote on this body. The counter defeats delta compression (same emote twice in a row).
 var _emote_count: int = 0
@@ -1311,8 +1314,13 @@ func _physics_process_impl(delta: float) -> void:
 		_server_update_step(delta)
 		return
 
+	# What this tick puts on the props and vehicles we touch (see _push_touched_bodies): the walk we ASK
+	# for, not `velocity`, which the last slide already cut down against the very crate we push.
+	var _fall_speed: float = maxf(0.0, -player.velocity.dot(player.up_direction)) if _was_airborne else 0.0
+	var _want: Vector3 = move_direction * speed if player.is_on_floor() and player.input_direction else Vector3.ZERO
 	var _tm: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 	player.move_and_slide()
+	_push_touched_bodies(_want, _fall_speed)
 	if PropNet.prof_on:
 		PropNet.prof_p_move_usec += Time.get_ticks_usec() - _tm
 		# A settled contact resolves in one iteration; an unstable one makes move_and_slide re-cast up
@@ -1346,6 +1354,86 @@ func _physics_process_impl(delta: float) -> void:
 	player.emit_move()
 	if PropNet.prof_on:
 		PropNet.prof_p_emit_usec += Time.get_ticks_usec() - _te
+
+
+## The force a walking body puts on the props and vehicles its last move_and_slide touched — the ONLY
+## one: they do not scan the player layer (Globals.MASK_DYNAMIC), because a CharacterBody3D is a Jolt
+## kinematic body of infinite mass, and the step-up / climb glides drove it through their edges: they
+## were thrown out of its way whatever they weighed (a rock slid like foam, a truck flipped or spun
+## under a climb onto its bed). Here it is a body's worth:
+## - standing on it: our weight (mass × local gravity), and on the landing tick the fall it stops;
+## - walking into it: a shove of at most player.push_force, and never past the speed we walk at, so
+##   friction decides what moves (a box yes, a rock no, an unbraked truck slowly);
+## - and the push comes back on what we stand on (our feet push it the other way): shoving the bed
+##   wall of a truck we stand in moves nothing, as it should.
+## [param want] is the walk asked for (m/s, horizontal), [param fall_speed] the speed (m/s) we land at,
+## 0 when we did not just land.
+func _push_touched_bodies(want: Vector3, fall_speed: float) -> void:
+	var frame: int = Engine.get_physics_frames()
+	# Two steps at most: a body asleep under an idle player gets nothing anyway (see the weight below).
+	var dt: float = float(clampi(frame - _push_frame, 1, 2)) / float(Engine.physics_ticks_per_second)
+	_push_frame = frame
+	var count: int = player.get_slide_collision_count()
+	if count == 0:
+		return
+	var up: Vector3 = player.up_direction
+	var floor_cos: float = cos(player.floor_max_angle)
+	# Pass 1: what we stand on, and where.
+	var floor_rb: RigidBody3D = null
+	var floor_at: Vector3 = Vector3.ZERO
+	for i in count:
+		var kc: KinematicCollision3D = player.get_slide_collision(i)
+		if kc.get_normal().dot(up) >= floor_cos:
+			floor_rb = kc.get_collider() as RigidBody3D
+			floor_at = kc.get_position()
+			break
+	if floor_rb != null and floor_rb.freeze:
+		floor_rb = null
+	if floor_rb != null:
+		var arm: Vector3 = floor_at - floor_rb.global_position
+		# Weight: on a body that is awake. A sleeping one is at rest under it, as it would stay (and
+		# waking it every tick would keep a truck someone stands in out of sleep for good). The share
+		# of a body lighter than us is its own weight: it is crushed against the ground, not launched.
+		var weight: float = 0.0
+		if not floor_rb.sleeping:
+			weight = minf(player.mass, floor_rb.mass) * player.gravity * dt
+		# Landing: the momentum two bodies share in a dead stop (reduced mass), capped like a hard jump.
+		var landing: float = player.mass * floor_rb.mass / (player.mass + floor_rb.mass) * minf(fall_speed, 10.0)
+		if weight + landing > 0.0:
+			floor_rb.apply_impulse(-up * (weight + landing), arm)
+	if want == Vector3.ZERO:
+		return
+	# Our walk is relative to what we stand on (move_and_slide adds its motion): so is the push. A crate
+	# riding in the bed of a moving truck is not 10 m/s ahead of us.
+	var base: Vector3 = Vector3.ZERO
+	if floor_rb != null:
+		base = floor_rb.linear_velocity + floor_rb.angular_velocity.cross(floor_at - floor_rb.global_position)
+	# Pass 2: the walls we walk into (once per body).
+	var pushed: Dictionary = {}
+	for i in count:
+		var kc: KinematicCollision3D = player.get_slide_collision(i)
+		var rb: RigidBody3D = kc.get_collider() as RigidBody3D
+		if rb == null or rb.freeze or rb == floor_rb or pushed.has(rb):
+			continue
+		var n: Vector3 = kc.get_normal()
+		if n.dot(up) >= floor_cos:
+			continue
+		var dir: Vector3 = -(n - up * n.dot(up))
+		if dir.length_squared() < 0.0001:
+			continue
+		dir = dir.normalized()
+		var into: float = want.dot(dir)
+		if into <= 0.0:
+			continue
+		pushed[rb] = true
+		var arm: Vector3 = kc.get_position() - rb.global_position
+		var body_speed: float = (rb.linear_velocity + rb.angular_velocity.cross(arm) - base).dot(dir)
+		var impulse: float = minf(player.push_force * dt, rb.mass * (into - body_speed))
+		if impulse <= 0.0:
+			continue
+		rb.apply_impulse(dir * impulse, arm)
+		if floor_rb != null:
+			floor_rb.apply_impulse(-dir * impulse, floor_at - floor_rb.global_position)
 
 ## The owner's body rotation, sent LOCAL to the frame the body has on its client ([param frame], its
 ## uuid; null from a client that does not say, taken as ours).
@@ -1836,13 +1924,16 @@ func _npc_trim() -> void:
 ## velocity up for the call and back down after, so the body travels the full interval's distance
 ## and `velocity` keeps its true meaning everywhere else (idle bleed, replication).
 func _npc_move_and_slide() -> void:
+	var _want: Vector3 = player.velocity - player.up_direction * player.velocity.dot(player.up_direction)
 	if _NPC_TICK_DIVIDER == 1:
 		player.move_and_slide()
+		_push_touched_bodies(_want, 0.0)
 		return
 	var _k: float = float(_NPC_TICK_DIVIDER)
 	player.velocity *= _k
 	player.move_and_slide()
 	player.velocity /= _k
+	_push_touched_bodies(_want, 0.0)
 
 ## NPC server tick: keep the body on the floor under gravity, then steer it along the nav path toward
 ## player.npc_go_to_position (baking walkable coverage around it on demand) with stuck recovery. Drives

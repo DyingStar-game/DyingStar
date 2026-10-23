@@ -22,6 +22,15 @@ const MASK_SOLID := (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3)  # world | player 
 ## What a planet's gravity area pulls: everything that moves, never `world` (statics would cost a Jolt
 ## contact each per step without moving). A dynamic body on `world` alone would float.
 const MASK_MOVERS := (1 << 1) | (1 << 2) | (1 << 3)  # player | vehicle | prop
+## What a DYNAMIC body (RigidBody3D, VehicleBody3D: props, rocks, vehicles) scans: MASK_SOLID minus
+## `player`. A player is a CharacterBody3D, i.e. a Jolt KINEMATIC body of infinite mass, and its step-up
+## and climb glides write its position through the edge of what it climbs: a dynamic body scanning it
+## was thrown out of the way whatever it weighed (an 800 kg rock slid like foam, a truck flipped or spun
+## under a climb onto its bed; test_kinematic_shove), and a truck's wheel rays stood on it. Not scanning
+## it, Jolt gives the dynamic body an infinite mass in that contact (one-way collision, see Godot's
+## JoltContactListener3D::_try_override_collision_response): the player still bumps into it (its own
+## mask has `vehicle` and `prop`), and what it pushes is PlayerServer._push_touched_bodies, bounded.
+const MASK_DYNAMIC := (1 << 0) | (1 << 2) | (1 << 3)  # world | vehicle | prop
 const MASK_PROBE := (1 << 4)  # zone
 const MASK_OBSTACLE := (1 << 0) | (1 << 2) | (1 << 3)  # world | vehicle | prop — line-of-sight / tool rays
 

@@ -12,7 +12,7 @@ points = PackedVector3Array(0.4769498263731843, 0.2783466984598298, 0.2143987856
 
 [node name="RockMiningSmall" type="RigidBody3D" unique_id=525353877]
 collision_layer = 8
-collision_mask = 15
+collision_mask = 13
 mass = 800.0
 continuous_cd = true
 script = ExtResource("1_6o14g")

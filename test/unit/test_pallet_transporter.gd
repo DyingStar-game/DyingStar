@@ -11,7 +11,7 @@ func test_it_is_a_networked_physics_prop_with_no_action() -> void:
 	add_child_autofree(prop)
 	assert_eq(MarkerSpawn.scene_type(load(PROP)), "box", "networked, as the pallets are")
 	assert_eq(prop.collision_layer, 1 << (Globals.LAYER_PROP - 1), "on the prop layer")
-	assert_eq(prop.collision_mask, Globals.MASK_SOLID, "rests on the world, pushed by players and vehicles")
+	assert_eq(prop.collision_mask, Globals.MASK_DYNAMIC, "rests on the world, pushed by vehicles (players: PlayerServer)")
 	assert_eq(prop.mass, 75.0, "a manual pallet truck's weight")
 	assert_false(prop.is_in_group("carriable"), "not carried")
 	assert_false(PropSync.of(prop).interact(), "no action offered")

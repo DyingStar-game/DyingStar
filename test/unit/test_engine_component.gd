@@ -7,10 +7,10 @@ extends GutTest
 ## pick up, or Horizon drops it and it never appears for anyone else.
 
 const ENGINE_SCENE := "res://scenes/_universe/props/vehicles/engine_t1.tscn"
-## From Globals: LAYER_PROP is index 4 (bit 8), LAYER_INTERACTABLE index 6 (bit 32), MASK_SOLID 15.
+## From Globals: LAYER_PROP is index 4 (bit 8), LAYER_INTERACTABLE index 6 (bit 32), MASK_DYNAMIC 13.
 const LAYER_PROP := 8
 const LAYER_INTERACTABLE := 32
-const MASK_SOLID := 15
+const MASK_DYNAMIC := 13
 
 var _part: VehicleComponent = null
 
@@ -54,7 +54,7 @@ func test_it_is_a_carriable_networked_prop() -> void:
 
 func test_collision_layers_let_it_be_carried_and_aimed_at() -> void:
 	assert_eq(_part.collision_layer, LAYER_PROP, "the body sits on the prop layer")
-	assert_eq(_part.collision_mask, MASK_SOLID, "and collides with the solid world")
+	assert_eq(_part.collision_mask, MASK_DYNAMIC, "and collides with the solid world, not shoved by players")
 	var area: Area3D = null
 	for c in _part.get_children():
 		if c is Area3D:

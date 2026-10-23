@@ -12,7 +12,7 @@ size = Vector3(1.2, 1, 0.8)
 
 [node name="PalletCrate" type="RigidBody3D" unique_id=780000001]
 collision_layer = 8
-collision_mask = 15
+collision_mask = 13
 mass = 200.0
 script = ExtResource("1_crate")
 sfx_pick_up = ExtResource("sfx_pick")

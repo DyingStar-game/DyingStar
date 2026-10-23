@@ -21,7 +21,7 @@ id_short_display = true
 sfx_pick_up = ExtResource("food_pick")
 sfx_landing = ExtResource("food_landing")
 collision_layer = 8
-collision_mask = 15
+collision_mask = 13
 mass = 0.05
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1144821358]
