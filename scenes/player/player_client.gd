@@ -6,6 +6,7 @@ const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
 ## before the editor has registered a new class_name must still compile the player.
 const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
+const PROMPT_LEADER := preload("res://ui/hud/prompt_leader.gd")
 ## The DataPad worn on the wrist, and the owner's gesture into it -- preloaded for the same reason.
 const WRIST_DATAPAD_SCENE := preload("res://scenes/_universe/props/datapad/wrist_datapad.tscn")
 const WRIST_DATAPAD := preload("res://scenes/player/wrist_datapad_controller.gd")
@@ -360,12 +361,19 @@ func setup() -> void:
 		hints.place_under(player.direct_chat)
 	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
 	_offer_play_hints()
-	# A dark patch behind the interaction prompt, fitted to its width, so it reads over a bright ground.
-	var shade : ColorRect = PROMPT_SHADE.new()
+	# The interaction prompt in a frame beside the crosshair, a line drawn to it from what it is about;
+	# Settings > General can turn the frame off: the plain prompt, on a dark patch fitted to its width
+	# so it reads over a bright ground.
 	var hud : Control = player.interact_label.get_parent()
+	var shade : ColorRect = PROMPT_SHADE.new()
 	hud.add_child(shade)
 	hud.move_child(shade, 0)  # under the rest of the HUD
 	shade.follow(player.interact_label)
+	var leader : Control = PROMPT_LEADER.new()
+	hud.add_child(leader)
+	hud.move_child(leader, player.interact_label.get_index())  # under the prompt it draws the line to
+	leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
+	leader.target_rule = _prompt_target
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -575,23 +583,24 @@ func _process(_delta: float) -> void:
 			player.interact_label.text = _door_prompt(aimed_handle)
 			player.interact_label.show()
 
-	# Looking at a seat (on foot): board, or say it's taken / that the door must be opened first. A shut
-	# door's handle box covers the seat behind it and was answered above.
+	# Looking at a seat (on foot): board, or say it's taken. Behind a shut door it says nothing: the
+	# door's handle offers to open it (above), and a second prompt telling to aim at the handle only
+	# repeated it (playtest 2026-10-23).
 	var aimed_seat: VehicleSeat = _aimed_seat() if not player.interact_label.visible else null
 	if aimed_seat != null:
+		var shown: bool = true
 		if _seat_is_taken(aimed_seat):
 			player.interact_label.text = tr("%%HUD_SEAT_TAKEN")
 		elif player._owner_carrying:
-			# Before the door check on purpose: telling someone to open a door and then refusing
-			# them the seat for a reason we already knew would be a wasted trip.
+			# Before the door check on purpose: hands full, the seat is refused whatever the door.
 			player.interact_label.text = (tr("%%HUD_HANDS_FULL")
 					% ("[%s]" % InputLabel.for_action(&"action")))
-		elif not _seat_door_open(aimed_seat):
-			player.interact_label.text = tr("%%HUD_DOOR_FIRST")
-		else:
+		elif _seat_door_open(aimed_seat):
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_SEAT_DRIVER"
 					if aimed_seat.is_driver_seat() else "%%HUD_SEAT_PASSENGER"))
-		player.interact_label.show()
+		else:
+			shown = false  # behind a shut door: the handle says it
+		player.interact_label.visible = shown
 
 	# Carry/drop prompt (no other prompt showing). The SERVER decides it (it owns the collisions
 	# and re-checks reachability + line of sight) and replicates _carry_prompt; we only display.
@@ -1403,6 +1412,19 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 
 ## The Interactable (a console) under the crosshair, or null. Crates answer `interact()` too — whether they
 ## can be carried — but only an Interactable is something `action` USES.
+## What the interaction prompt is about, for its line (PromptLeader.target_rule): hands empty, what the
+## look meets (null); carrying, the spot the load would be fitted or loaded into ("install", "cargo"),
+## and nothing for any other prompt -- "Drop" is about the load in the arms, which needs no line.
+func _prompt_target() -> Variant:
+	if not player._owner_carrying:
+		return null
+	if player._carry_prompt in ["install", "cargo"] and _placement_marker != null:
+		var spot: Node3D = _placement_marker.spot()
+		if spot != null:
+			return spot
+	return PROMPT_LEADER.NO_LINE
+
+
 func _aimed_interactable() -> Interactable:
 	if not player.interact_ray.is_colliding():
 		return null

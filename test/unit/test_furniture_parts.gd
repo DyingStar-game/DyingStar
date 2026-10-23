@@ -143,6 +143,49 @@ func test_a_state_that_arrives_before_the_building_is_placed_still_shows() -> vo
 	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
 	assert_true(right.is_on)
 	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(right.open_angle_deg), 1e-4, "shown open once placed")
+	assert_eq(right.label, right.label_on, "and says it closes, not that it opens")
+	KnownEngineErrors.forgive_floor_material(self)
+
+
+func test_a_state_that_arrives_before_the_building_has_its_uuid_still_shows() -> void:
+	# The server's order on a restart: the state first, out of the tree and with no uuid yet. A door left
+	# open was shown shut there (its key unresolved), open on every client: an invisible wall.
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	var key := "0-0-0/habitat_container/frame/right_door/DoorR"
+	building.apply_prop_data({"apartments": [], "furniture": {key: true}})
+	PropSync.of(building).uuid = "home-uuid"
+	add_child_autofree(building)
+	building.apply_prop_data({"apartments": [], "furniture": {key: true}})  # the same state again, in the tree
+	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
+	assert_true(right.is_on, "open, as the state says")
+	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(right.open_angle_deg), 1e-4)
+	KnownEngineErrors.forgive_floor_material(self)
+
+
+func test_anyone_may_shut_a_home_s_front_door_but_only_its_occupant_opens_it() -> void:
+	# A door left open on a walkway barred the way to everyone else (playtest 2026-10-22).
+	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
+	PropSync.of(building).uuid = "home-uuid"
+	add_child_autofree(building)
+	building.apply_prop_data({"apartments": [{"floor": 0, "row": 0, "col": 0, "player_uuid": "owner-1",
+			"player_name": "Ann"}]})
+	var room: Node = building.get_node("MultiMeshInstance3D/0-0-0")
+	var door := room.get_node("habitat_container/frame/right_door/DoorR") as MovingPart
+	var stranger := Player.new()
+	stranger.client_uuid = "stranger-1"
+	assert_ne(door.refusal(stranger), "", "shut: not theirs to open")
+	building.server_set_part(door, true)
+	assert_eq(door.refusal(stranger), "", "open: anyone may shut it")
+	door.server_use(stranger, {"on": true})
+	assert_false(door.is_on, "a stranger only ever shuts it, whatever they ask")
+	var wardrobe: MovingPart = null
+	for part in room.find_children("*", "Area3D", true, false):
+		if part is MovingPart and not (part as MovingPart).anyone_may_shut:
+			wardrobe = part
+	if wardrobe != null:
+		building.server_set_part(wardrobe, true)
+		assert_ne(wardrobe.refusal(stranger), "", "inside the home: still the occupant's alone")
+	stranger.free()
 	KnownEngineErrors.forgive_floor_material(self)
 
 
@@ -206,6 +249,14 @@ func test_a_door_stops_short_of_the_wall_it_would_cut_into() -> void:
 	assert_between(reached, 85.0, 99.0, "stops at the wall, not through it")
 	door.show_state(true, false)
 	assert_almost_eq(door.get_parent_node_3d().rotation_degrees.y, reached, 0.01, "and the leaf is shown there")
+
+
+func test_the_terrain_does_not_stop_a_door() -> void:
+	# Only the server has the terrain's collision: a door it stopped stood shut there and open on every
+	# client -- an invisible wall in the NPCs' doorways (playtest 2026-10-22).
+	_wall(Vector3(-0.2, 0.0, -0.6), Vector3(0.1, 2.0, 1.0))
+	(get_child(get_child_count() - 1) as Node).add_to_group(PlanetTerrain.COLLISION_GROUP)
+	assert_eq(_door(165.0).free_reach(), 1.0, "the client has no terrain: neither does the door's sweep")
 
 
 func test_what_touches_the_door_shut_does_not_stop_it() -> void:

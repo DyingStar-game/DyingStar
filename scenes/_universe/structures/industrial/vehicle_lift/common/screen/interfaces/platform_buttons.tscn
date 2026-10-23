@@ -11,16 +11,16 @@ script = ExtResource("1_k1pk8")
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-text = "UP"
+text = "%%LIFT_UP"
 
 [node name="Button Stop" type="Button" parent="." unique_id=758842375]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-text = "STOP"
+text = "%%LIFT_STOP"
 
 [node name="Button Down" type="Button" parent="." unique_id=473744513]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-text = "DOWN"
+text = "%%LIFT_DOWN"

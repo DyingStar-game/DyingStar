@@ -1,7 +1,7 @@
 class_name ScreenTarget
 extends RefCounted
 
-## A 3D screen as something the player aims at, the way a door handle or the truck kiosk is: the
+## A 3D screen as something the player aims at, the way a door handle or a seat is: the
 ## crosshair finds it (PlayerClient._point_screen), the client NAMES it in its action, and the server
 ## finds it again and checks the player stands within USE_RANGE_M before handing the action over.
 ##

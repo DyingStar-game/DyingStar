@@ -1,0 +1,74 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_sync"]
+[ext_resource type="Script" path="res://scenes/globals/generic_prop.gd" id="2_prop"]
+[ext_resource type="PackedScene" uid="uid://dx7d1bx2u5p3e" path="res://assets/_universe/props/handling/cargo_pallet_transporter.glb" id="3_model"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_yellow.tres" id="4_paint"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/mat_metal_ares_misc_decal/mat_metal_ares_misc_decal.tres" id="5_decal"]
+[ext_resource type="Resource" path="res://scenes/common/prop_landing.tres" id="6_landing"]
+
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_wheels"]
+friction = 0.3
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_platform"]
+size = Vector3(0.8, 0.175, 1.28)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_mast"]
+size = Vector3(0.27, 0.52, 0.08)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_column"]
+size = Vector3(0.11, 0.32, 0.06)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_handle"]
+size = Vector3(0.44, 0.07, 0.27)
+
+[node name="CargoPalletTransporter" type="RigidBody3D"]
+collision_layer = 8
+collision_mask = 15
+mass = 75.0
+physics_material_override = SubResource("PhysicsMaterial_wheels")
+script = ExtResource("2_prop")
+id_type = "PALT"
+sfx_landing = ExtResource("6_landing")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_sync")
+type_name = "box"
+
+[node name="Model" parent="." instance=ExtResource("3_model")]
+
+[node name="Cube_002" parent="Model" index="0"]
+surface_material_override/0 = ExtResource("4_paint")
+
+[node name="Cube_004" parent="Model" index="1"]
+surface_material_override/0 = ExtResource("4_paint")
+
+[node name="Cube_006" parent="Model/Cube_004" index="0"]
+surface_material_override/0 = ExtResource("4_paint")
+
+[node name="Cylinder_003" parent="Model" index="2"]
+surface_material_override/0 = ExtResource("4_paint")
+
+[node name="square_003" parent="Model" index="3"]
+surface_material_override/0 = ExtResource("5_decal")
+
+[node name="triangle_007" parent="Model" index="4"]
+surface_material_override/0 = ExtResource("5_decal")
+
+[node name="Platform" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0875, -0.0395)
+shape = SubResource("BoxShape3D_platform")
+
+[node name="Mast" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.436, -0.639)
+shape = SubResource("BoxShape3D_mast")
+
+[node name="Column" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.83, -0.64)
+shape = SubResource("BoxShape3D_column")
+
+[node name="Handle" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.97, -0.793)
+shape = SubResource("BoxShape3D_handle")
+
+[editable path="Model"]

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://c80p4xxhvqgb1"
-path="res://.godot/imported/hammerdrill.glb-5f01a88395d354cd24ef6e20926b6e27.scn"
+uid="uid://dx7d1bx2u5p3e"
+path="res://.godot/imported/cargo_pallet_transporter.glb-7e6339b0b1b50fb5ab8c4c2514389307.scn"
 
 [deps]
 
-source_file="res://assets/_universe/props/tools/tools/mining/hammerdrill.glb"
-dest_files=["res://.godot/imported/hammerdrill.glb-5f01a88395d354cd24ef6e20926b6e27.scn"]
+source_file="res://assets/_universe/props/handling/cargo_pallet_transporter.glb"
+dest_files=["res://.godot/imported/cargo_pallet_transporter.glb-7e6339b0b1b50fb5ab8c4c2514389307.scn"]
 
 [params]
 
@@ -35,11 +35,11 @@ animation/fps=30
 animation/trimming=false
 animation/remove_immutable_tracks=true
 animation/import_rest_as_RESET=false
-import_script/path="res://addons/dyingstar/post_import_shared_materials.gd"
+import_script/path="uid://kgqqvfi5nd42"
 materials/extract=0
 materials/extract_format=0
 materials/extract_path=""
 _subresources={}
 gltf/naming_version=2
 gltf/embedded_image_handling=1
-gltf/texture_map_mode=0
+gltf/texture_map_mode=1

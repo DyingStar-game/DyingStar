@@ -58,6 +58,12 @@ func _make_material(color: Color) -> StandardMaterial3D:
 
 ## Follow the aim every physics frame — direct_space_state is only valid inside the physics step, and
 ## a render-rate update would query it illegally.
+## The disc where the load would be put down, while it shows; else null. The prompt's line points at it
+## when the drop fits or loads the load (PromptLeader.target_rule).
+func spot() -> Node3D:
+	return _disc if _disc != null and _disc.visible else null
+
+
 func _physics_process(_delta: float) -> void:
 	if _player == null or _disc == null:
 		return

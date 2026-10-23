@@ -434,7 +434,7 @@ func server_action_received(data: Dictionary) -> void:
 			_god_mode_land()
 		"screen_state":
 			# A 3D screen (mining depot, teleporter, component dispenser) button was pressed. The client
-			# NAMES the screen (ScreenTarget.address_of), like a kiosk; we find it again and check the
+			# NAMES the screen (ScreenTarget.address_of); we find it again and check the
 			# player is within reach of it, so a tampered client reaches no screen it is not at.
 			var screen: Node3D = ScreenTarget.resolve(_find_deletable_prop(str(data.get("target_uuid", ""))),
 					data, player.interact_ray.global_position)
@@ -496,17 +496,6 @@ func server_action_received(data: Dictionary) -> void:
 		"admin_fill_shelves":
 			# Admin (refused at the top without an admin role): stock the shelves of the depot we stand in.
 			_admin_fill_shelves()
-		"kiosk_spawn":
-			# A SpawnKiosk button: the client names the kiosk (building uuid + path inside it), the kiosk
-			# decides the scene, the place and whether it is free.
-			var building: Node = _find_deletable_prop(str(data.get("target_uuid", "")))
-			var kiosk: Node = building.get_node_or_null(NodePath(str(data.get("kiosk", "")))) \
-					if building != null else null
-			if kiosk is SpawnKiosk \
-					and player.global_position.distance_to(kiosk.global_position) <= kiosk.use_range:
-				kiosk.server_request_spawn()
-			else:
-				print("🏪 Kiosk spawn refused: unknown kiosk or out of range (%s)" % str(data.get("kiosk", "")))
 		"screen_tap":
 			# The arm taps a screen (ScreenPoke): an EVENT for the others to see and hear, nothing to
 			# validate but its bounds -- within an arm's reach of the body, no faster than a finger.

@@ -73,7 +73,7 @@ layout_mode = 2
 
 [node name="Weight Label" type="Label" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer" unique_id=370290434]
 layout_mode = 2
-text = "Poids : "
+text = "%%LIFT_WEIGHT"
 
 [node name="Weight Value" type="Label" parent="Screen Global/Bottom Container/Infos Container/VBoxContainer/HBoxContainer" unique_id=1713204014]
 layout_mode = 2
@@ -294,7 +294,7 @@ theme_override_constants/separation = 0
 [node name="Lift State" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container" unique_id=1855441332]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Arrêté"
+text = "%%LIFT_STATE_STOPPED"
 horizontal_alignment = 1
 
 [node name="GridContainer" type="GridContainer" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container" unique_id=304100761]
@@ -307,7 +307,7 @@ columns = 2
 [node name="Arrival Label" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1075787376]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Arrivée :"
+text = "%%LIFT_ARRIVAL"
 horizontal_alignment = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1095492467]
@@ -322,12 +322,12 @@ horizontal_alignment = 2
 
 [node name="Arrival Units" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer/HBoxContainer" unique_id=671874852]
 layout_mode = 2
-text = "secondes"
+text = "%%LIFT_SECONDS"
 
 [node name="Distance Label" type="Label" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1703902265]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Distance :"
+text = "%%LIFT_DISTANCE"
 horizontal_alignment = 2
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="Screen Global/Bottom Container/Graphic Container/VBoxContainer/Progress Container/GridContainer" unique_id=1857412328]

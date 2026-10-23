@@ -2,11 +2,13 @@ extends GutTest
 ## SpawnBuilding: one habitat container per apartment, laid on a grid of rows x cols x floors. The
 ## copies of the container stand side by side, the spawn point Horizon offsets for each slot stays in
 ## its own container, the door plate fits any name, and the buildings of a mining village never
-## overlap now that a container is longer and narrower than the old apartment.
+## overlap now that a container is longer and narrower than the old apartment, nor rise above three levels.
 
 const BUILDING := "res://scenes/_universe/structures/buildings/spawn_building.tscn"
 const APARTMENT := "res://scenes/_universe/structures/buildings/container_apartment.tscn"
 const VILLAGE := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
+## A village's buildings stand three levels high at most: the ground floor, the 1st and the 2nd.
+const MAX_FLOORS := 3
 
 
 func test_the_copies_tile_the_grid_back_to_back() -> void:
@@ -64,6 +66,30 @@ func test_a_long_name_shrinks_to_fit_the_plate() -> void:
 	assert_eq(ApartmentPlates.name_pixel_size(0.0, 0.22, 0.0006), 0.0006, "no text")
 
 
+func test_the_id_plate_shows_its_colour_from_afar_too() -> void:
+	# Past ShellLod.DETAIL_END_M only the far stand-in's plate is drawn: in the same colour as the plate,
+	# red on a home someone lives in, green on a free one -- not the model's plain black.
+	var building: SpawnBuilding = _building(1, 2)
+	building.apartments = [{"floor": 0, "row": 0, "col": 1, "player_uuid": "abc", "player_name": "Ann"}]
+	building._create_apartments()
+	var rooms: Node = building.get_node("MultiMeshInstance3D")
+	ApartmentPlates.show(rooms, building.apartments, "uuid", "")
+	for slot: String in ["0-0-0", "0-1-0"]:
+		var taken: bool = slot == "0-1-0"
+		var plate := rooms.get_node(slot).find_child("ID", true, false) as GeometryInstance3D
+		var painted: int = 0
+		for mesh: MeshInstance3D in rooms.get_node(slot).find_child("ShellLod", true, false).find_children(
+				"*", "MeshInstance3D", true, false):
+			for i in mesh.mesh.get_surface_count():
+				if mesh.get_surface_override_material(i) == plate.material_override:
+					painted += 1
+		assert_eq(painted, 1, "%s: the far stand-in's plate in the plate's colour" % slot)
+		assert_eq((plate.material_override as StandardMaterial3D).albedo_color,
+				ApartmentPlates.ID_PLATE_TAKEN if taken else ApartmentPlates.ID_PLATE_FREE, slot)
+	building.free()
+	KnownEngineErrors.forgive_floor_material(self)
+
+
 func test_the_occupant_is_found_by_slot() -> void:
 	var building: SpawnBuilding = _building(1, 2)
 	building.apartments = [{"floor": 0, "row": 0, "col": 1, "player_uuid": "abc", "player_name": "Ann"}]
@@ -92,6 +118,7 @@ func test_the_buildings_of_a_village_never_overlap() -> void:
 	for child in village.get_children():
 		if child is SpawnBuilding:
 			homes += child.rows * child.cols * child.floors
+			assert_lte(child.floors, MAX_FLOORS, "%s: the ground floor and two storeys at most" % child.name)
 	assert_eq(homes, 252, "about 250 apartments a village")
 	for i in rects.size():
 		for j in range(i + 1, rects.size()):

@@ -15,6 +15,7 @@ class FakePlayer:
 	var datapad_raise_time: float = 0.4
 	var camera_sensitivity: float = 1.0
 	var camera_pivot: Node3D = null
+	var puppet: Node3D = null
 	var sent: Array = []
 
 	func client_send_action_to_server(data: Dictionary) -> void:
@@ -129,6 +130,26 @@ func test_f3_raises_the_arm_then_eases_into_the_tablet() -> void:
 	_run(WristDatapad.ZOOM_TIME + 0.02)
 	assert_eq(_wrist.phase, WristDatapad.Phase.OPEN)
 	assert_false(_wrist.is_busy(), "the open tablet holds the controls itself")
+
+
+func test_our_own_body_is_hidden_while_the_tablet_fills_the_view() -> void:
+	# The raised arm's upper half came into the corner of the view now and then (playtest 2026-10-22).
+	_player.puppet = Node3D.new()
+	add_child_autofree(_player.puppet)
+	var body := MeshInstance3D.new()
+	var placeholder := MeshInstance3D.new()
+	placeholder.visible = false  # hidden for its own reasons (the old astronaut)
+	_player.puppet.add_child(body)
+	_player.puppet.add_child(placeholder)
+	_wrist.toggle()
+	_run(_player.datapad_raise_time + 0.05)
+	assert_true(body.visible, "the arm is seen coming up")
+	_run(WristDatapad.ZOOM_TIME + 0.02)
+	assert_eq(_wrist.phase, WristDatapad.Phase.OPEN)
+	assert_false(body.visible, "closed in on the screen: no arm before it")
+	_wrist.toggle()
+	assert_true(body.visible, "back as the arm goes down")
+	assert_false(placeholder.visible, "what was hidden before stays hidden")
 
 
 func test_f3_during_the_raise_takes_the_arm_back_down() -> void:

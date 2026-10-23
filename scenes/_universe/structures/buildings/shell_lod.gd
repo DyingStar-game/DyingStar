@@ -56,6 +56,27 @@ static func _material(model: Node, name: String) -> Material:
 	return _materials.get(key)
 
 
+## The stand-in's ID plate in [room] painted with [param material], as ApartmentPlates paints the
+## detailed one: past DETAIL_END_M only the stand-in's is drawn, and in the model's plain black the
+## plate lost its colour there (playtest 2026-10-22). The stand-in's plate is the surface of the
+## detailed plate's own material (frame/ID), read off the model rather than named here: a material
+## renamed in Blender follows, where a name written here would have left the plate black in silence.
+static func paint_plate(room: Node, material: Material) -> void:
+	var lod := room.find_child("ShellLod", true, false)
+	var plate := room.find_child("ID", true, false) as MeshInstance3D
+	if lod == null or plate == null or plate.mesh == null or plate.mesh.get_surface_count() == 0:
+		return
+	var plate_material := plate.mesh.surface_get_material(0)
+	if plate_material == null:
+		return
+	var plate_name: String = base_name(plate_material.resource_name)
+	for mesh: MeshInstance3D in lod.find_children("*", "MeshInstance3D", true, false):
+		for i in mesh.mesh.get_surface_count():
+			var own := mesh.mesh.surface_get_material(i)
+			if own != null and base_name(own.resource_name) == plate_name:
+				mesh.set_surface_override_material(i, material)
+
+
 ## [param name] without a Blender ".NNN" suffix: "Material.001" -> "Material".
 static func base_name(name: String) -> String:
 	var dot := name.rfind(".")

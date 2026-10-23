@@ -3599,7 +3599,7 @@ horizontal_alignment = 1
 
 [node name="RockCountLabel" type="Label" parent="VB/RockCounter/VB" unique_id=295420600]
 layout_mode = 2
-text = "ROCK FRAGMENTS"
+text = "%%DEPOT_ROCK_FRAGMENTS"
 label_settings = SubResource("LabelSettings_75ksl")
 horizontal_alignment = 1
 

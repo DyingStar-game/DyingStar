@@ -13,6 +13,10 @@ extends Node3D
 ##              LOD 0-1 chunks only.  A base SphereShape3D provides rough
 ##              collision at all distances.
 
+## The terrain's collision bodies, which only the SERVER builds (the client has none): what must give the
+## same answer on both sides leaves them out (MovingPart.free_reach).
+const COLLISION_GROUP := &"terrain_collision"
+
 ## Emitted once when the first full set of visible chunks has been assembled.
 signal initial_chunks_ready
 ## SERVER: the set of chunks this terrain WANTS (zone ∪ pins) changed. [param added] / [param removed]
@@ -839,6 +843,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_collision_body.collision_layer = GlobalsDefs.LAYER_WORLD
 		_collision_body.set_collision_layer_value(GlobalsDefs.LAYER_WORLD, true)
 		_collision_body.collision_mask = GlobalsDefs.MASK_SOLID
+		_collision_body.add_to_group(COLLISION_GROUP)
 		add_child(_collision_body)
 
 		var base_sphere := SphereShape3D.new()
@@ -1455,6 +1460,7 @@ func _make_chunk_collision_body(key: String, nside: int, ipix: int,
 	body.collision_layer = GlobalsDefs.LAYER_WORLD
 	body.set_collision_layer_value(GlobalsDefs.LAYER_WORLD, true)
 	body.collision_mask = GlobalsDefs.MASK_SOLID
+	body.add_to_group(COLLISION_GROUP)
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	col.name = key + "_col"
