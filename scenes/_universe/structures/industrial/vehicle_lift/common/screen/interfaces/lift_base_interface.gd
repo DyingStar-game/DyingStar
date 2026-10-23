@@ -92,6 +92,13 @@ func display_mouse_coord(coord: Vector2) -> void:
 		mouse_coord_value_display.set_text("%.0v" % coord)
 
 
+## What the screen says for each state of the lift (the states themselves are the code's, in English).
+const STATE_KEYS: Dictionary = {
+	"Stopped": "%%LIFT_STATE_STOPPED",
+	"Going Up": "%%LIFT_STATE_GOING_UP",
+	"Going Down": "%%LIFT_STATE_GOING_DOWN",
+}
+
 func display_progress(progress: float, eta: int = 0, status: String = "Stopped") -> void:
 	if not vehicle_lift:
 		return
@@ -113,7 +120,7 @@ func display_progress(progress: float, eta: int = 0, status: String = "Stopped")
 
 		distance_value.text = "%.1f" % distance_to_show
 		arrival_value.text = "%d" % eta
-		state_value.text = status
+		state_value.text = tr(STATE_KEYS.get(status, status))
 
 	var active_segment_index: int = int(floor((progress / 100.0) * segment_controls.size()))
 	if active_segment_index >= segment_controls.size():

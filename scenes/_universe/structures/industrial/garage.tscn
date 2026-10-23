@@ -136,7 +136,7 @@ texture_albedo = ExtResource("6_5left")
 
 [node name="Label3D" type="Label3D" parent="." unique_id=1633786288]
 transform = Transform3D(6.123233995736765e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736765e-17, -0.0237599465859315, 1.2000011328085565, -9.112079011595531)
-text = "Recharging batteries"
+text = "%%SIGN_RECHARGING_BATTERIES"
 
 [node name="ChargingZone" type="Area3D" parent="." unique_id=5421193]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8391555582872652, 0.1831103834099197, -9.129739718076715)
