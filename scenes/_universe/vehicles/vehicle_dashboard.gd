@@ -191,10 +191,11 @@ func _preview() -> void:
 	_lights.modulate = GREEN
 	_doors.modulate = ORANGE
 	_show_batteries([{"fraction": 0.8, "active": true}, {"fraction": 0.35, "active": false}] as Array[Dictionary])
-	for icon_name: String in ["motor", "battery", "battery", ""]:
-		var box := _bay_box()
-		_bay_boxes.add_child(box)
-		_show_bay(box, load(ICON_DIR + icon_name + ".png") if icon_name != "" else null)
+	var sample: Array[String] = ["motor", "battery", "battery", ""]
+	for i in sample.size():
+		var row := _bay_box(i + 1)
+		_bay_boxes.add_child(row)
+		_show_bay(row, load(ICON_DIR + sample[i] + ".png") if sample[i] != "" else null)
 
 
 ## How far (px) to raise a [param small]-size label set at the bottom of a [param big]-size one in
@@ -383,18 +384,21 @@ func _status() -> Control:
 	return box
 
 
-## One framed box per bay ([param slots], VehicleComponentSlot): green with the fitted part's icon in
-## green while it works, grey and empty when the bay is free. Only touched when it changes.
+## One framed box per bay ([param slots], VehicleComponentSlot), its number beside it -- the number
+## painted on the bay's hatch (HatchNumbers): green with the fitted part's icon in green while it
+## works, grey and empty when the bay is free. Only touched when it changes.
 func _show_bays(slots: Array) -> void:
 	while _bay_boxes.get_child_count() < slots.size():
-		_bay_boxes.add_child(_bay_box())
+		_bay_boxes.add_child(_bay_box(_bay_boxes.get_child_count() + 1))
 	for i in _bay_boxes.get_child_count():
 		var part: Node = slots[i].occupant if i < slots.size() else null
-		_show_bay(_bay_boxes.get_child(i) as PanelContainer, bay_icon(part))
+		_show_bay(_bay_boxes.get_child(i), bay_icon(part))
 
 
-## One bay's box showing [param texture] (null: free), framed and tinted by bay_colour.
-static func _show_bay(box: PanelContainer, texture: Texture2D) -> void:
+## One bay's box ([param row]: its number and its box) showing [param texture] (null: free), framed and
+## tinted by bay_colour.
+static func _show_bay(row: Node, texture: Texture2D) -> void:
+	var box := row.get_child(1) as PanelContainer
 	var icon := box.get_child(0) as TextureRect
 	if icon.texture == texture:
 		return
@@ -418,7 +422,13 @@ static func bay_colour(fitted: bool) -> Color:
 	return GREEN if fitted else BAY_FREE_COLOR
 
 
-static func _bay_box() -> PanelContainer:
+## Bay [param number]'s row: its number, then its framed box.
+static func _bay_box(number: int) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var figure := _label(str(number), SMALL_FONT, WHITE)
+	figure.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(figure)
 	var box := PanelContainer.new()
 	box.custom_minimum_size = Vector2(BAY_BOX_PX, BAY_BOX_PX)
 	var frame := StyleBoxFlat.new()
@@ -428,7 +438,8 @@ static func _bay_box() -> PanelContainer:
 	frame.set_corner_radius_all(6)
 	box.add_theme_stylebox_override("panel", frame)
 	box.add_child(_icon("", BAY_ICON_PX))
-	return box
+	row.add_child(box)
+	return row
 
 
 ## Right: the drive (4x4) over the motor, the power used and the rpm; then each battery's charge.

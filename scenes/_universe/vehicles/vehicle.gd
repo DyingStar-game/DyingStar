@@ -966,6 +966,8 @@ func _ready() -> void:
 	_discover_steering_wheel()
 	_anim = _find_anim_player()
 	_attach_door_handles()  # make each handle ride its door so look-at works open OR closed
+	if not _server_live:  # the number of each bay on its hatch, as the dashboard shows it
+		HatchNumbers.paint(self, bays.all(), _door_mesh)
 	_apply_center_of_mass()  # pin COM to the wheelbase, so collision shapes can't make the truck nose-dive
 	# Late-join replay: a client replica receives the current door state into _net_doors via
 	# client_channel_data_update BEFORE this node is in the tree — where _apply_door can't find the
