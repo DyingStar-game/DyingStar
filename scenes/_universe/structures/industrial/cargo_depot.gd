@@ -31,6 +31,9 @@ const SHELVES_LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depo
 const SHELF_SCENE := "scenes/_universe/props/furniture/metal_shelf.tscn"
 ## Slots of a metal shelf (metal_shelf.tscn), all free on a new shelf.
 const SHELF_SLOTS := 24
+## The SpawnCatalog entry the admin fill stocks the shelves with (server_fill_shelves).
+const FILL_CATALOG_KEY := "hauling_box"
+const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
 # Resolved through a getter, not an initializer, so the editor can never read the button
 # callback back as Nil ("value is Nil, but Callable was expected").
@@ -100,6 +103,13 @@ func _ready() -> void:
 		# zone is empty while it is visibly full. Deferred by two physics frames because overlaps are
 		# only resolved once the bodies have been added to the space.
 		_seed_zone_contents.call_deferred()
+	else:
+		# Every area of the depot feeds server logic only (each handler returns at once on a client),
+		# yet a monitoring area costs its physics query every step: at 8e10 m from the origin each one
+		# walks every object in the space, and the 10 of them sat on the prop layer of a depot stocked
+		# with 2 400 crates (2026-10-23). They stay monitorable, so the player's probe still sees them.
+		for area: Area3D in find_children("*", "Area3D", true, true):
+			area.set_deferred(&"monitoring", false)
 	# DIAGNOSTIC: confirm the depot exists on the server and its reception_area is monitoring.
 	var _ra := get_node_or_null("reception_area")
 	print("[cargo_depot] _ready on %s  reception_area=%s monitoring=%s mask=%s" % [
@@ -279,6 +289,32 @@ static func shelf_uuid_for(depot_uuid: String, shelf_name: String) -> String:
 
 ## Is [param uuid] still a connected player on this server? The single source of truth for liveness
 ## is the server's own player registry — an event can be missed, a registry cannot be wrong.
+## SERVER, admin action: stock every shelf of this depot with hauling boxes, on each a random number of
+## its free slots between one and all of them (Shelf.reserve_random_slots). A box is spawned under its
+## shelf, on its slot: it settles on the tier and the shelf freezes it. Returns how many were spawned.
+## The shelves must be live — they are while the depot is, and the admin stands in it.
+func server_fill_shelves(rng: RandomNumberGenerator) -> int:
+	var box: Dictionary = SpawnCatalog.entry(FILL_CATALOG_KEY)
+	var batch: Array = []
+	for child in get_children():
+		if not (child is Shelf) or (child as Shelf).uuid == "":
+			continue
+		var shelf := child as Shelf
+		for idx in shelf.reserve_random_slots(rng):
+			var slot: Vector3 = shelf.shelf_slots[idx]
+			batch.append({
+				"type": str(box["type"]),
+				"uuid": UUID_UTIL.v4(),
+				"position": {"x": slot.x, "y": slot.y, "z": slot.z},
+				"rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+				"scenename": str(box["scene"]).trim_prefix("res://"),
+				"parent_id": shelf.uuid,
+			})
+	# Through the streaming, like the shelves: thousands of boxes are queued and built a few per frame.
+	NetworkOrchestrator.spawn_props_authoritative(batch, false)
+	return batch.size()
+
+
 func _server_player_exists(uuid: String) -> bool:
 	var agent = NetworkOrchestrator.network_agent
 	if agent == null or not ("players_list" in agent):

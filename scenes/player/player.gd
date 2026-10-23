@@ -427,6 +427,10 @@ var is_npc: bool = false
 ## Server: this player asked for the clocks of its moves (client.ini debug_move_clocks, through Horizon's
 ## spawn of it): its positions carry servergodot_ms.
 var move_clocks: bool = false
+## Server: this player's Keycloak realm roles, as Horizon verified them in its token and gives them with
+## every spawn of the player on a server (`roles` in its object_data). Gate admin actions on them through
+## AdminRoles.grants_admin, never on anything the client says.
+var roles: PackedStringArray = []
 ## Destination the NPC walks toward, or null when it has no goal. Set by external AI / spawn logic
 ## (consume-only here: PlayerServer only reads it). A Vector3 in the NPC PARENT's frame — the same frame
 ## as `position` — NOT world space: read it through PlayerServer._npc_target_global(), because the

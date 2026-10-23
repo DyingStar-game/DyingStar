@@ -1561,7 +1561,15 @@ func _driven_vehicle() -> Vehicle:
 ## its LOCAL position with WORLD axes, so the prop flew off in a skewed direction on a rotated parent;
 ## and it named the scene, which let any tampered client instance anything anywhere.
 func _on_spawn_selected(key) -> void:
+	var admin_action: String = SpawnCatalog.admin_action(str(key))
+	if admin_action != "":
+		player.client_send_action_to_server({"action": admin_action})  # the server checks the role
+		return
 	player.client_send_action_to_server({"action": "spawn_prop", "key": str(key)})
+
+## The spawn wheel's entries, with its Admin category for a player whose token holds an admin role.
+func _build_spawn_wheel() -> Array:
+	return SpawnCatalog.build_wheel(AdminRoles.grants_admin(PlayerServices.token_roles()))
 
 func _on_emote_selected(key) -> void:
 	player.client_send_action_to_server({"action": "emote", "key": str(key)})
@@ -1654,7 +1662,7 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 ## whatever sat under the cursor.
 func _handle_radial_wheels(event: InputEvent) -> void:
 	_service_wheel(event, "emote_wheel", player._emote_wheel, EmoteCatalog.build_wheel)
-	_service_wheel(event, "spawn_wheel", player._spawn_wheel, SpawnCatalog.build_wheel)
+	_service_wheel(event, "spawn_wheel", player._spawn_wheel, _build_spawn_wheel)
 
 ## Hold-to-open / release-to-confirm lifecycle of ONE wheel. `build` supplies the entries (labels +
 ## keys come from the catalogue) and is only called when the wheel actually opens, so the catalogue

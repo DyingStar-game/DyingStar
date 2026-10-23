@@ -87,13 +87,26 @@ const WHEEL := [
 	{"key": "truck"},
 ]
 
+## Admin entries of the wheel, shown only to a player whose token holds an admin role
+## (AdminRoles.grants_admin): wheel key -> {label, action}. Picking one sends `action` (a
+## PlayerServer.ADMIN_ACTIONS action), not a spawn — and the server checks the role again, on the roles
+## Horizon verified.
+const ADMIN_ENTRIES := {
+	"admin_fill_shelves": {"label": "%%SPAWN_FILL_SHELVES", "action": "admin_fill_shelves"},
+}
+
 ## The entry for a wheel key, or an empty Dictionary when the key is unknown (the server treats that
 ## as a refusal — see PlayerServer's "spawn_prop").
 static func entry(key: String) -> Dictionary:
 	return ENTRIES.get(key, {})
 
-## The options tree for the RadialMenu (see scenes/ui/radial_menu.gd), built from WHEEL + ENTRIES.
-static func build_wheel() -> Array:
+## The admin action a wheel key stands for, or "" for a spawn key.
+static func admin_action(key: String) -> String:
+	return str(ADMIN_ENTRIES.get(key, {}).get("action", ""))
+
+## The options tree for the RadialMenu (see scenes/ui/radial_menu.gd), built from WHEEL + ENTRIES, plus
+## an Admin category of ADMIN_ENTRIES when [param admin].
+static func build_wheel(admin: bool = false) -> Array:
 	var options: Array = []
 	for item in WHEEL:
 		if item.has("key"):
@@ -103,4 +116,9 @@ static func build_wheel() -> Array:
 		for key in item["keys"]:
 			children.append({"text": ENTRIES[key]["label"], "data": key})
 		options.append({"text": item["text"], "submenu": children})
+	if admin:
+		var admin_children: Array = []
+		for key in ADMIN_ENTRIES:
+			admin_children.append({"text": ADMIN_ENTRIES[key]["label"], "data": key})
+		options.append({"text": "%%SPAWN_ADMIN", "submenu": admin_children})
 	return options

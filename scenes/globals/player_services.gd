@@ -1009,6 +1009,16 @@ func token_display_name() -> String:
 	return name_text.strip_edges()
 
 
+## The player's own Keycloak realm roles (`realm_access.roles`), read from the token without checking
+## it: for the interface only (which admin entries to show). The server decides on the roles Horizon
+## verified (Player.roles). Empty without a token.
+func token_roles() -> PackedStringArray:
+	var access = _jwt_payload(_player_token()).get("realm_access", {})
+	if access is Dictionary and access.get("roles") is Array:
+		return PackedStringArray(access["roles"])
+	return PackedStringArray()
+
+
 static func _jwt_sub(token: String) -> String:
 	return str(_jwt_payload(token).get("sub", ""))
 
