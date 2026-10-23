@@ -23,6 +23,15 @@ const SPAWN_TIMEOUT_MS: int = 45000
 ## _flush_pending_parent_delete. Deliberately generous: the two cases it separates are metres
 ## apart and millions of kilometres apart, so there is nothing to tune between them.
 const STALE_EXIT_RANGE: float = 500.0
+## Horizon's `error` codes that have their own wording here, the rest show Horizon's message as is.
+## Must match ds_player_authentication (authentication.rs): the player's token has expired — the
+## launcher refreshes it only when it launches the game — or was refused.
+const ERROR_TOKEN_EXPIRED := 1340
+const ERROR_TOKEN_REFUSED := 1341
+const ERROR_MESSAGE_KEYS := {
+	ERROR_TOKEN_EXPIRED: "%%ERR_SESSION_EXPIRED",
+	ERROR_TOKEN_REFUSED: "%%ERR_AUTH_REFUSED",
+}
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -468,7 +477,7 @@ func _route(event: Dictionary) -> bool:
 				push_error(event["message"])
 				# close the connection
 				socket.close(1000, event["message"])
-				GameOrchestrator.connexion_error_message = event["message"]
+				GameOrchestrator.connexion_error_message = error_message_for(event)
 				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 				_net_t_end("net:route", _route_tok)
 				return false
@@ -1440,6 +1449,15 @@ func _watch_own_player_spawn() -> void:
 	push_error("Fatal error, my player never spawned on client side: 7002 (%s)"
 			% GameOrchestrator.connexion_error_message)
 	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+
+
+## What the connection-error screen says for Horizon's `error` [param event]: our own wording for the
+## codes of ERROR_MESSAGE_KEYS (both mean "relaunch from the launcher"), Horizon's message otherwise.
+static func error_message_for(event: Dictionary) -> String:
+	var key: String = str(ERROR_MESSAGE_KEYS.get(int(event.get("code", 0)), ""))
+	if key != "":
+		return TranslationServer.translate(key)
+	return str(event.get("message", ""))
 
 
 ## `net:update` — the steady-state counterpart of net:create: every replicated property change for
