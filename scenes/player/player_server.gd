@@ -784,7 +784,8 @@ func server_action_received(data: Dictionary) -> void:
 					picked_up = true
 					player.server_send_properties_to_client({"carrying": false})
 				if can_grab:
-					# If it's secured in a vehicle bed, take it out of the load first (retrieval).
+					# If it's secured in a vehicle bed or stored on a shelf, take it out of there first: the
+					# carrier frees the load / the slot (retrieval).
 					var prev_parent = parent_node.get_parent()
 					if prev_parent.has_method("release_cargo"):
 						prev_parent.release_cargo(parent_node)
@@ -794,12 +795,6 @@ func server_action_received(data: Dictionary) -> void:
 						parent_node.remove_meta("component_slot_ref")
 						if is_instance_valid(fitted_slot) and fitted_slot.vehicle() != null:
 							fitted_slot.vehicle().bays.remove(fitted_slot)
-					# If it was stored in a shelf slot, free that slot (the crate is parented to the world,
-					# not the shelf, so the release goes through the meta the shelf left on it, not prev_parent).
-					if parent_node.has_meta("shelf_ref"):
-						var stored_shelf = parent_node.get_meta("shelf_ref")
-						if is_instance_valid(stored_shelf) and stored_shelf.has_method("release_slot"):
-							stored_shelf.release_slot(parent_node)
 					# Mount it RIGIDLY on the body: reparented under the player and pinned at
 					# carry_mount_offset, it rides the player through the scene tree instead of being
 					# steered there by velocity — no bobbing, no fighting the geometry, and a constant local
@@ -2914,14 +2909,10 @@ func _server_drop_carried_item() -> void:
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return
-		# Drop ONTO a shelf slot -> snap the crate into the nearest free slot and freeze it there. The
-		# crate stays a normal resting world prop (parented to the world node, not the shelf, which never
-		# moves), so its replication rides the ordinary settled-prop path; the shelf only tracks the slot.
+		# Drop ONTO a shelf slot -> the shelf takes the crate under it, onto the nearest free slot, and
+		# freezes it once it has settled on its tier (see Shelf). No free slot left: an ordinary drop.
 		var shelf = place["shelf"] if place["shelf"] != null else _shelf_for_drop(place["position"])
-		if shelf != null:
-			var shelf_parent = player.get_parent()
-			item.server_parent_change(shelf_parent)  # out of the player, into the world
-			shelf.store_at_nearest_slot(item, str(shelf_parent.uuid) if "uuid" in shelf_parent else "")
+		if shelf != null and shelf.store_at_nearest_slot(item):
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return
