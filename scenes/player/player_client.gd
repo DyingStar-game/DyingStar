@@ -266,10 +266,12 @@ func setup() -> void:
 	_god_mode_speed = GOD_MODE.clamp_speed(player.god_mode_speed)
 	_build_god_mode_label()
 
-	# Dev spawn wheel: hold the spawn key (Alt+T) to pick what to spawn. Currently switched off (see
-	# Globals.ENABLED_DEV_TOOLS) — the wheel is simply never built, and everything downstream
-	# already handles a null wheel (_service_wheel, _any_wheel_open), so nothing else changes.
-	if Globals.is_dev_tool_enabled(&"spawn_wheel"):
+	# Dev spawn wheel: hold the spawn key (Alt+T) to pick what to spawn. Switched off in every build (see
+	# Globals.ENABLED_DEV_TOOLS) but for an admin (AdminRoles.DEV_TOOLS, on our own token: the server
+	# checks the verified roles again). Not built otherwise, and everything downstream already handles a
+	# null wheel (_service_wheel, _any_wheel_open), so nothing else changes.
+	if Globals.is_dev_tool_enabled(&"spawn_wheel") \
+			or AdminRoles.opens_dev_tool(&"spawn_wheel", PlayerServices.token_roles()):
 		player._spawn_wheel = RadialMenu.new()
 		player._spawn_wheel.title = "Spawn"
 		player.get_node("UserInterface").add_child(player._spawn_wheel)

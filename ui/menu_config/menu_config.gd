@@ -209,13 +209,16 @@ func create_action_list() -> void:
 
 ## The actions this page may show. Engine ui_* actions are none of the player's business, and a
 ## switched-off dev tool keeps its binding in the InputMap (so it can be brought back without
-## re-adding one) but must not be listed: rebinding a key that does nothing would only confuse.
+## re-adding one) but must not be listed: rebinding a key that does nothing would only confuse. One an
+## admin keeps (AdminRoles.DEV_TOOLS) is listed for an admin.
 func _listable_actions() -> Array[String]:
 	var out : Array[String] = []
+	var roles: PackedStringArray = PlayerServices.token_roles()
 	for action in InputMap.get_actions():
 		if action.begins_with("ui_"):
 			continue
-		if Globals.ENABLED_DEV_TOOLS.has(action) and not Globals.is_dev_tool_enabled(action):
+		if Globals.ENABLED_DEV_TOOLS.has(action) and not Globals.is_dev_tool_enabled(action) \
+				and not AdminRoles.opens_dev_tool(action, roles):
 			continue
 		out.append(action)
 	return out

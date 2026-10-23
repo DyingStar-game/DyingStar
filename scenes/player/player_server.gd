@@ -354,11 +354,12 @@ func _process_stance_request() -> void:
 		_server_drop_carried_item()
 	player.server_send_properties_to_client({"stance": _stance})
 
-## True when [param action] may run: it belongs to no dev tool, or its tool is on (DEV_TOOL_OF_ACTION).
+## True when [param action] may run: it belongs to no dev tool, or its tool is on (DEV_TOOL_OF_ACTION),
+## or it is one an admin keeps and [param player_roles] grant admin (AdminRoles.DEV_TOOLS).
 ## [param is_tool_enabled] takes a tool name and answers; the game passes Globals.is_dev_tool_enabled.
-static func is_action_allowed(action: String, is_tool_enabled: Callable) -> bool:
+static func is_action_allowed(action: String, is_tool_enabled: Callable, player_roles: Variant = null) -> bool:
 	var tool: StringName = DEV_TOOL_OF_ACTION.get(action, &"")
-	return tool == &"" or bool(is_tool_enabled.call(tool))
+	return tool == &"" or bool(is_tool_enabled.call(tool)) or AdminRoles.opens_dev_tool(tool, player_roles)
 
 ## True when [param action] may run for a player with [param player_roles]: it is no admin action, or the
 ## player holds an admin role (ADMIN_ACTIONS).
@@ -369,7 +370,7 @@ static func is_admin_action_allowed(action: String, player_roles: Variant) -> bo
 ## dedicated server ever receives it). Every branch reads/writes the shared body via `player`.
 func server_action_received(data: Dictionary) -> void:
 	var action: String = str(data.get("action", ""))
-	if not is_action_allowed(action, Globals.is_dev_tool_enabled):
+	if not is_action_allowed(action, Globals.is_dev_tool_enabled, player.roles):
 		push_warning("[DevTools] %s asked for '%s', but its dev tool is switched off: refused"
 				% [player.client_uuid, action])
 		return
@@ -490,7 +491,8 @@ func server_action_received(data: Dictionary) -> void:
 				print("🗑️ Admin delete: %s %s" % [del_type, del_uuid])
 				_server_delete_prop(_find_deletable_prop(del_uuid), del_type, del_uuid)
 		"spawn_prop":
-			# Dev spawn wheel (dev tool "spawn_wheel", refused at the top while it is off): the client only
+			# Dev spawn wheel (dev tool "spawn_wheel", refused at the top while it is off, unless the player
+			# is an admin — AdminRoles.DEV_TOOLS): the client only
 			# NAMES what it wants; we own everything else.
 			_spawn_from_catalog(str(data.get("key", "")))
 		"admin_fill_shelves":

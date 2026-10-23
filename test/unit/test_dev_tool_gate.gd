@@ -27,6 +27,17 @@ func test_an_ordinary_action_never_asks_a_dev_tool() -> void:
 		assert_true(PlayerServer.is_action_allowed(action, _off), "'%s' was gated as a dev tool" % action)
 
 
+## Every build switches the dev tools off; an admin keeps the spawn wheel (AdminRoles.DEV_TOOLS), on the
+## roles Horizon verified. Nobody else does, and an admin keeps no other tool.
+func test_an_admin_keeps_the_spawn_wheel_when_it_is_off() -> void:
+	for roles in [["admin"], PackedStringArray(["player", "supervisor"])]:
+		assert_true(PlayerServer.is_action_allowed("spawn_prop", _off, roles), "%s refused the wheel" % [roles])
+	for roles in [["player", "moderator"], [], null]:
+		assert_false(PlayerServer.is_action_allowed("spawn_prop", _off, roles), "%s opened the wheel" % [roles])
+	for action: String in ["delete_prop", "god_mode", "god_mode_speed", "god_mode_land"]:
+		assert_false(PlayerServer.is_action_allowed(action, _off, ["admin"]), "an admin ran %s while off" % action)
+
+
 ## The dispatcher passes Globals.is_dev_tool_enabled itself: if that reference were wrong, EVERY player
 ## action (jump, sprint...) would fail at the gate, not just the dev tools.
 func test_the_game_switch_answers_through_the_gate() -> void:
