@@ -1,0 +1,37 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/props/furniture/parts/wall_switch.gd" id="wall_switch"]
+
+[sub_resource type="StandardMaterial3D" id="Plastic"]
+resource_name = "SwitchPlastic"
+albedo_color = Color(0.86, 0.85, 0.82, 1)
+roughness = 0.55
+
+[sub_resource type="BoxMesh" id="Box_plate"]
+material = SubResource("Plastic")
+size = Vector3(0.08, 0.08, 0.01)
+
+[sub_resource type="BoxMesh" id="Box_rocker"]
+material = SubResource("Plastic")
+size = Vector3(0.04, 0.05, 0.012)
+
+[sub_resource type="BoxShape3D" id="Box_aim"]
+size = Vector3(0.12, 0.12, 0.06)
+
+[node name="WallSwitch" type="Area3D"]
+monitoring = false
+script = ExtResource("wall_switch")
+label_off = "%%HUD_LIGHT_ON"
+label_on = "%%HUD_LIGHT_OFF"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.03)
+shape = SubResource("Box_aim")
+
+[node name="Plate" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.005)
+mesh = SubResource("Box_plate")
+
+[node name="Rocker" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.014)
+mesh = SubResource("Box_rocker")
