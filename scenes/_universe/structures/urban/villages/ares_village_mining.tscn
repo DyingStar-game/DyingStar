@@ -128,9 +128,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 92.474681500292, -0.178254023
 [node name="OutdoorLamppost2_2002" parent="." unique_id=212726338 instance=ExtResource("7_ha2q5")]
 transform = Transform3D(6.123032e-17, 0, -1, 0, 1, 0, 1, 0, 6.123032e-17, 52.40516209630282, -0.11115334493148056, -118.14789357195843)
 
-[node name="OutdoorLamppost2_2003" parent="." unique_id=1350022243 instance=ExtResource("7_ha2q5")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 71.8764497605636, 0, -132.44165332802328)
-
 [node name="FloodlightOutdoor" parent="." unique_id=714726914 instance=ExtResource("8_80d3s")]
 transform = Transform3D(0.5000000000000001, 0, 0.8660254037844386, 0, 1, 0, -0.8660254037844386, 0, 0.5000000000000001, -26.4520975936149, 0.04870498323929517, -56.61475861360563)
 
