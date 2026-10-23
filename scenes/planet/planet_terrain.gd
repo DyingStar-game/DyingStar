@@ -1,10 +1,6 @@
 @tool
 class_name PlanetTerrain
 extends Node3D
-
-## The terrain's collision bodies, which only the SERVER builds (the client has none): what must give the
-## same answer on both sides leaves them out (MovingPart.free_reach).
-const COLLISION_GROUP := &"terrain_collision"
 ## Quadtree-based terrain manager for a planet.
 ##
 ## Uses **HEALPix NESTED** projection: 12 root base pixels, each recursively
@@ -16,6 +12,10 @@ const COLLISION_GROUP := &"terrain_collision"
 ##   • Server — collision ConcavePolygonShape3D on a StaticBody3D for
 ##              LOD 0-1 chunks only.  A base SphereShape3D provides rough
 ##              collision at all distances.
+
+## The terrain's collision bodies, which only the SERVER builds (the client has none): what must give the
+## same answer on both sides leaves them out (MovingPart.free_reach).
+const COLLISION_GROUP := &"terrain_collision"
 
 ## Emitted once when the first full set of visible chunks has been assembled.
 signal initial_chunks_ready

@@ -14,8 +14,6 @@ const MIC_CHANNELS := 1
 ## synchronously and the call returns at once. The audio thread already paces the capture ring.
 const MIC_QUEUE_SIZE := 0
 const _DEBUG_INTERVAL: float = 5.0
-## Every voice node, for quitting: GameOrchestrator.quit_game leaves their rooms first.
-const GROUP := &"livekit_audio"
 
 var livekit_url: String = ""
 var livekit_token: String = ""
@@ -91,14 +89,8 @@ var _pending_subscriptions: Array = []
 # — get_identity() on it then reads freed memory (client SIGSEGV 2026-10-05, in participant_disconnected).
 var _identity_by_participant: Dictionary = {}
 
-## Rooms told to leave (shutdown) that have not said they left yet. Quitting waits for them (rooms_left):
-## the extension leaves on threads of its own, and when Godot unloaded the library under them at exit
-## they ran code that was no longer there -- the client crashed on almost every quit after a voice
-## session (crash dump 2026-10-22, in livekit_ffi's network thread).
-static var _leaving: Array = []
-
 func _ready():
-	add_to_group(GROUP)
+	add_to_group(GameOrchestrator.VOICE_GROUP)  # quitting leaves this room first (GameOrchestrator.quit_game)
 	# print("[livekit] Starting connection to ", livekit_url, "...")
 	# SettingsManager owns the mute state, so it survives this node being destroyed and recreated
 	# (back to menu -> new game): a player who muted stays muted, with no restore code here.
@@ -516,22 +508,16 @@ func shutdown() -> void:
 	# thread), so we drop our reference right after and let it finish on its own.
 	if room != null:
 		if room.has_method("disconnect_from_room"):
+			# Quitting waits until it has left (GameOrchestrator.voice_rooms_leaving).
 			var leaving: LiveKitRoom = room
-			_leaving.append(leaving)
-			leaving.disconnected.connect(func(_reason: String) -> void: _leaving.erase(leaving), CONNECT_ONE_SHOT)
+			GameOrchestrator.voice_rooms_leaving.append(leaving)
+			leaving.disconnected.connect(func(_reason: String) -> void:
+				GameOrchestrator.voice_rooms_leaving.erase(leaving), CONNECT_ONE_SHOT)
 			room.disconnect_from_room()
 		room = null
 
 func _exit_tree() -> void:
 	shutdown()
-
-
-## Wait until every room told to leave has left, or [param timeout_s] seconds at most (a room that never
-## answers must not hold the game open).
-static func rooms_left(tree: SceneTree, timeout_s: float) -> void:
-	var deadline: int = Time.get_ticks_msec() + int(timeout_s * 1000.0)
-	while not _leaving.is_empty() and Time.get_ticks_msec() < deadline:
-		await tree.process_frame
 
 # ---------------------------------------------------------------- mic publish
 

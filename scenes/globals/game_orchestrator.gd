@@ -23,7 +23,10 @@ const GAME_STATES_SCENES_PATHS: Dictionary = {
 }
 
 const LOADING_SCENE: PackedScene = preload("res://ui/loading.tscn")
-const LIVEKIT := preload("res://scenes/audio/livekit.gd")
+## The voice nodes (LiveKitAudio): quit_game leaves their rooms first. Named here and not in livekit.gd,
+## which this autoload must never load: the dedicated server's export leaves the LiveKit extension out,
+## so livekit.gd does not compile there.
+const VOICE_GROUP := &"livekit_audio"
 ## Longest wait (s) for the voice room to be left before the game quits anyway.
 const QUIT_VOICE_TIMEOUT_S := 1.0
 
@@ -41,6 +44,11 @@ var connexion_error_message: String = ""
 
 @onready var game_is_paused: bool = false
 var _quitting: bool = false
+## Voice rooms told to leave (LiveKitAudio.shutdown) that have not said they left yet: quit_game waits for
+## them. The extension leaves on threads of its own, and when Godot unloaded the library under them at
+## exit they ran code that was no longer there -- the client crashed on almost every quit after a voice
+## session (crash dump 2026-10-22, in livekit_ffi's network thread).
+var voice_rooms_leaving: Array = []
 
 func _enter_tree() -> void:
 	# In editor mode, skip replacing the SceneTree script.
@@ -93,17 +101,24 @@ func _notification(what):
 			quit_game()
 
 
-## Quit the game: leave the voice room first, waiting for it QUIT_VOICE_TIMEOUT_S at most, then quit.
-## Quitting at once unloaded LiveKit's library while its threads still ran, and the client crashed on
-## the way out (see LiveKitAudio.rooms_left). Every way out of the game comes here.
+## Quit the game: leave the voice rooms first, waiting for them QUIT_VOICE_TIMEOUT_S at most, then quit
+## (see voice_rooms_leaving). Every way out of the game comes here.
 func quit_game() -> void:
 	if _quitting:
 		return
 	_quitting = true
-	for voice in get_tree().get_nodes_in_group(LIVEKIT.GROUP):
+	for voice in get_tree().get_nodes_in_group(VOICE_GROUP):
 		voice.shutdown()
-	await LIVEKIT.rooms_left(get_tree(), QUIT_VOICE_TIMEOUT_S)
+	await voice_rooms_left(QUIT_VOICE_TIMEOUT_S)
 	get_tree().quit()
+
+
+## Wait until every voice room told to leave has left, or [param timeout_s] seconds at most (a room that
+## never answers must not hold the game open).
+func voice_rooms_left(timeout_s: float) -> void:
+	var deadline: int = Time.get_ticks_msec() + int(timeout_s * 1000.0)
+	while not voice_rooms_leaving.is_empty() and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
 
 func is_server():
 	return current_network_role == NetworkRole.SERVER
