@@ -123,3 +123,48 @@ func test_crate_spawned_on_a_reserved_slot_binds_it() -> void:
 	_shelf.add_child(crate)
 	_shelf._bind_arrived(crate)
 	assert_eq(_shelf._slot_bodies[idx], crate)
+
+
+## Client: a stored crate is out of the physics space, body and interact area (1 650 of them cost a
+## stocked depot ~150 ms of physics a frame at 8e10 m), and back in once it leaves the shelf.
+func test_client_stored_crate_leaves_the_physics_space() -> void:
+	if GameOrchestrator.is_server():
+		pass_test("client-only behaviour")
+		return
+	var crate := _crate_at(_shelf.to_global(_shelf.shelf_slots[2]))
+	var area := Area3D.new()
+	area.add_child(CollisionShape3D.new())
+	crate.add_child(area)
+	crate.reparent(_shelf)
+	await get_tree().process_frame
+	assert_false(PhysicsServer3D.body_get_space(crate.get_rid()).is_valid(), "body out of the space")
+	assert_false(PhysicsServer3D.area_get_space(area.get_rid()).is_valid(), "interact area out too")
+	crate.reparent(self)
+	await get_tree().process_frame
+	assert_true(PhysicsServer3D.body_get_space(crate.get_rid()).is_valid(), "back in off the shelf")
+	assert_true(PhysicsServer3D.area_get_space(area.get_rid()).is_valid())
+
+
+## Client: the id frames of a stored crate are hidden (shown again only near the camera, and only the
+## faces turned to it) and its mesh casts no shadow but near, all as before once it leaves the shelf.
+func test_client_stored_crate_hides_its_id_frames() -> void:
+	if GameOrchestrator.is_server():
+		pass_test("client-only behaviour")
+		return
+	var crate := _crate_at(_shelf.to_global(_shelf.shelf_slots[3]))
+	var label := Label3D.new()
+	label.add_to_group(PropSerial.LABEL_GROUP)
+	crate.add_child(label)
+	var mesh := MeshInstance3D.new()
+	crate.add_child(mesh)
+	crate.reparent(_shelf)
+	assert_false(label.visible, "hidden on the shelf")
+	assert_eq(mesh.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "no shadow far")
+	Shelf._client_dress(crate, true, label.global_position + label.global_basis.z)
+	assert_true(label.visible, "shown near, facing the eye")
+	assert_eq(mesh.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "shadow near")
+	Shelf._client_dress(crate, true, label.global_position - label.global_basis.z)
+	assert_false(label.visible, "hidden from behind")
+	crate.reparent(self)
+	assert_true(label.visible, "shown again off the shelf")
+	assert_eq(mesh.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "shadow again off the shelf")

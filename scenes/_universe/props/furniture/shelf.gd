@@ -45,6 +45,20 @@ const _WATCH_EVERY := 30
 ## crates stored before they were parented to the shelf (world props resting on a slot).
 const _REBIND_FRAMES := 600
 const _REBIND_EVERY := 30
+## Client: a stored crate stays in the physics space only this close to the camera (m), so the
+## InteractRay (3 m) can still find it; checked every _REACH_EVERY_S seconds.
+const _REACH_M := 4.0
+const _REACH_EVERY_S := 0.25
+## Client: whether a stored crate is in the physics space right now (see _client_set_in_space).
+const _META_IN_SPACE := &"shelf_in_space"
+## Client: whether a stored crate is dressed as near the camera right now (see _client_dress).
+const _META_DRESSED_NEAR := &"shelf_dressed_near"
+## Client: the cast_shadow a stored crate's mesh had before the shelf turned it off (see _client_dress).
+const _META_CAST_SHADOW := &"shelf_cast_shadow"
+
+## Client: every crate stored on a shelf, for the reach check (_client_reach_loop).
+static var _client_stored: Array[CollisionObject3D] = []
+static var _client_reach_running: bool = false
 
 # Cached PropSync child. Resolved lazily (not @onready) because the uuid facade below is used
 # before _ready: spawn code assigns uuid right after instantiate(), before the node enters the tree.
@@ -115,6 +129,116 @@ func _ready() -> void:
 		# Its tick is the server's (settling, rebinds): 165 shelves in the village called it 60 times a
 		# second on every client to return at once.
 		set_physics_process(false)
+		child_entered_tree.connect(_client_on_child_entered_tree)
+		child_exiting_tree.connect(_client_on_child_exiting_tree)
+
+## Client: a stored crate is out of the physics space — body and interact area — unless the camera
+## is within _REACH_M of it. The server owns every collision it takes part in; the client only needs
+## it to be aimed at, and only within arm's reach. Measured 2026-10-23 in a depot stocked with 1 650
+## crates (client.ini bisection, one switch at a time, same spot): 7 fps as shipped, the physics steps
+## ~150 ms of each frame; 7 fps with the body's shape off, 17 with the interact area's off, 35 with
+## both out of the space. Layer and mask 0 were not enough: at 8e10 m from the origin every query of
+## a monitoring area (deposit zones, gravity spheres) walks every object in the space, whatever its
+## layers. Removed through PhysicsServer3D, not process_mode, so the crate keeps processing (pose
+## glide, landing watch); leaving the shelf (picked up) re-enters the tree, which puts it back.
+func _client_on_child_entered_tree(node: Node) -> void:
+	if not (node is CollisionObject3D) or _client_stored.has(node):
+		return
+	var body := node as CollisionObject3D
+	_client_stored.append(body)
+	body.set_meta(_META_IN_SPACE, true)  # entering the tree just put it there
+	_client_set_in_space.call_deferred(body, false)  # deferred: its Area3D enters after this signal
+	_client_dress(body, false, Vector3.ZERO)
+	if not _client_reach_running:
+		_client_reach_running = true
+		_client_reach_loop.call_deferred()
+
+func _client_on_child_exiting_tree(node: Node) -> void:
+	if node is CollisionObject3D:
+		_client_stored.erase(node)
+		node.remove_meta(_META_IN_SPACE)  # exiting the tree takes it out; the next parent puts it back
+		node.remove_meta(_META_DRESSED_NEAR)
+		# Off the shelf, the scene's own settings rule again: every id frame (with its draw range),
+		# every shadow.
+		for label in _id_labels(node):
+			label.visible = true
+		for mesh in _shadow_meshes(node):
+			if mesh.has_meta(_META_CAST_SHADOW):
+				mesh.cast_shadow = mesh.get_meta(_META_CAST_SHADOW)
+				mesh.remove_meta(_META_CAST_SHADOW)
+
+## Client: put [param body] (a stored crate) and its interact area in their world's physics space, or
+## take them out of it. No-op when it is already there / out, or no longer stored. Untyped: a deferred
+## call can land after the crate was freed, and a typed parameter refuses a freed object.
+static func _client_set_in_space(crate: Variant, inside: bool) -> void:
+	if not is_instance_valid(crate):
+		return
+	var body := crate as CollisionObject3D
+	if not body.is_inside_tree() or not body.has_meta(_META_IN_SPACE) \
+			or bool(body.get_meta(_META_IN_SPACE)) == inside:
+		return
+	body.set_meta(_META_IN_SPACE, inside)
+	var space: RID = body.get_world_3d().space if inside else RID()
+	PhysicsServer3D.body_set_space(body.get_rid(), space)
+	for area in body.find_children("*", "Area3D", false, false):
+		PhysicsServer3D.area_set_space((area as Area3D).get_rid(), space)
+
+## Client: the stored crates near the camera back in the physics space, the others out, every
+## _REACH_EVERY_S, for the whole session (one loop for every shelf).
+static func _client_reach_loop() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	var reach_sq := _REACH_M * _REACH_M
+	while true:
+		await tree.create_timer(_REACH_EVERY_S).timeout
+		var cam: Camera3D = tree.root.get_camera_3d()
+		for i in range(_client_stored.size() - 1, -1, -1):
+			var body := _client_stored[i]
+			if not is_instance_valid(body):
+				_client_stored.remove_at(i)
+				continue
+			var near: bool = cam != null \
+					and body.global_position.distance_squared_to(cam.global_position) < reach_sq
+			_client_set_in_space(body, near)
+			if near or bool(body.get_meta(_META_DRESSED_NEAR, false)):
+				_client_dress(body, near, cam.global_position if cam != null else Vector3.ZERO)
+
+## The id frames (PropSerial.LABEL_GROUP) of the crate [param body], its direct children.
+static func _id_labels(body: Node) -> Array[Label3D]:
+	var out: Array[Label3D] = []
+	for node in body.get_children():
+		if node is Label3D and node.is_in_group(PropSerial.LABEL_GROUP):
+			out.append(node)
+	return out
+
+## The meshes of the crate [param body] that may cast a shadow: every GeometryInstance3D under it but
+## its id frames.
+static func _shadow_meshes(body: Node) -> Array[GeometryInstance3D]:
+	var out: Array[GeometryInstance3D] = []
+	for node in body.find_children("*", "GeometryInstance3D", true, false):
+		if not (node is Label3D):
+			out.append(node)
+	return out
+
+## Client: dress the stored crate [param body] for the camera at [param eye], or for one far away
+## when not [param near]. Looking down an aisle of a stocked depot the renderer handled 20 000-30 000
+## objects, 13-17 ms of render CPU, against 5-6 ms facing a wall (2026-10-23):
+## - its id frames: only those facing [param eye] (the eye on their front, +Z, side), and only near.
+##   A crate prints its serial on five faces, 2 400 crates are 12 000 Label3D; hidden, an instance
+##   leaves the renderer's culling structure, while one merely out of its draw range stays in it and
+##   is re-placed with the rest every time the planet turns.
+## - its shadow: only near. Inside a shelf a crate's shadow is barely seen, yet it is drawn again for
+##   the sun's cascades and for every lamp of the depot whose range holds it.
+static func _client_dress(body: Node3D, near: bool, eye: Vector3) -> void:
+	for label in _id_labels(body):
+		label.visible = near and (eye - label.global_position).dot(label.global_basis.z) > 0.0
+	for mesh in _shadow_meshes(body):
+		if not mesh.has_meta(_META_CAST_SHADOW):
+			mesh.set_meta(_META_CAST_SHADOW, mesh.cast_shadow)
+		mesh.cast_shadow = mesh.get_meta(_META_CAST_SHADOW) if near \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.set_meta(_META_DRESSED_NEAR, near)
 
 ## Server: settle the crates just stored or woken, watch the frozen ones, run the post-restore rebind
 ## window and re-send the poses of the crates just frozen.
