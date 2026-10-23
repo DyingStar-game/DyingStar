@@ -116,7 +116,7 @@ size = Vector3(21, 1, 43)
 
 [node name="SpawnKiosk" parent="." unique_id=1096407299 node_paths=PackedStringArray("spawn_marker") instance=ExtResource("4_u0y64")]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -10.853278697055469, 0.01096325825641919, -19.76679997038584)
-kiosk_text = "Request a truck"
+kiosk_text = "%%KIOSK_REQUEST_TRUCK"
 spawn_scene = ExtResource("5_truck")
 spawn_marker = NodePath("../SpawnVehicule")
 spawn_cooldown = 30.0
