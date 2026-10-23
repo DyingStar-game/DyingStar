@@ -435,11 +435,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.399999
 
 [node name="Label3D" type="Label3D" parent="." unique_id=1281901473]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.857416347148768, 1.9449055731039908, 89.82074714987318)
-text = "Meal zone"
+text = "%%SIGN_MEAL_ZONE"
 
 [node name="Label3D2" type="Label3D" parent="." unique_id=1682449325]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, 5.864430206046919, 1.9449055731039908, 89.82074714987318)
-text = "Mandatory activity"
+text = "%%SIGN_MANDATORY_ACTIVITY"
 
 [node name="Building" type="StaticBody3D" parent="." unique_id=559847608]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 47.5)

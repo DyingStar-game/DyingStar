@@ -575,23 +575,24 @@ func _process(_delta: float) -> void:
 			player.interact_label.text = _door_prompt(aimed_handle)
 			player.interact_label.show()
 
-	# Looking at a seat (on foot): board, or say it's taken / that the door must be opened first. A shut
-	# door's handle box covers the seat behind it and was answered above.
+	# Looking at a seat (on foot): board, or say it's taken. Behind a shut door it says nothing: the
+	# door's handle offers to open it (above), and a second prompt telling to aim at the handle only
+	# repeated it (playtest 2026-10-23).
 	var aimed_seat: VehicleSeat = _aimed_seat() if not player.interact_label.visible else null
 	if aimed_seat != null:
+		var shown: bool = true
 		if _seat_is_taken(aimed_seat):
 			player.interact_label.text = tr("%%HUD_SEAT_TAKEN")
 		elif player._owner_carrying:
-			# Before the door check on purpose: telling someone to open a door and then refusing
-			# them the seat for a reason we already knew would be a wasted trip.
+			# Before the door check on purpose: hands full, the seat is refused whatever the door.
 			player.interact_label.text = (tr("%%HUD_HANDS_FULL")
 					% ("[%s]" % InputLabel.for_action(&"action")))
-		elif not _seat_door_open(aimed_seat):
-			player.interact_label.text = tr("%%HUD_DOOR_FIRST")
-		else:
+		elif _seat_door_open(aimed_seat):
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_SEAT_DRIVER"
 					if aimed_seat.is_driver_seat() else "%%HUD_SEAT_PASSENGER"))
-		player.interact_label.show()
+		else:
+			shown = false  # behind a shut door: the handle says it
+		player.interact_label.visible = shown
 
 	# Carry/drop prompt (no other prompt showing). The SERVER decides it (it owns the collisions
 	# and re-checks reachability + line of sight) and replicates _carry_prompt; we only display.

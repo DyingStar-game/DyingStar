@@ -3,8 +3,8 @@ extends RefCounted
 
 ## What the doors of a spawn building tell (client only): the occupant's name on the sticker of the
 ## right door, the apartment's serial on the ID plate over the doors -- lit red on a home someone lives
-## in, green on a free one -- and, for our own apartment, our home on the chart (HomeLocation), its own
-## marker stepping aside for that one.
+## in, green on a free one, on the far stand-in's plate too -- and, for our own apartment, our home on
+## the chart (HomeLocation), its own marker stepping aside for that one.
 
 ## Width (m) of the occupant's name on the sticker of the right door (the sticker is 57 cm wide).
 const NAME_WIDTH_M := 0.5
@@ -31,8 +31,10 @@ static func show(rooms: Node, apartments: Array, building_uuid: String, me: Stri
 		var occupant: String = occupants.get(slot, "")
 		_show_home(room, me != "" and occupant == me, me)
 		var id_plate := room.find_child("ID", true, false) as GeometryInstance3D
+		var colour: Color = ID_PLATE_TAKEN if occupant != "" else ID_PLATE_FREE
 		if id_plate != null:
-			id_plate.material_override = id_plate_material(ID_PLATE_TAKEN if occupant != "" else ID_PLATE_FREE)
+			id_plate.material_override = id_plate_material(colour)
+		ShellLod.paint_plate(room, id_plate_material(colour))  # the far stand-in's plate too
 		var serial := room.find_child("PlateSerial", true, false) as Label3D
 		if serial != null:
 			serial.text = serial_of(building_uuid, slot)

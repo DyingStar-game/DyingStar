@@ -53,15 +53,18 @@ func building() -> Node:
 	return MarkerSpawn.building_of(self)
 
 
-## The apartment (a copy of the building's 0-0-0) this target stands in, or null.
+## The apartment (a copy of the building's 0-0-0) this target stands in, or null. Through the building
+## it stands in (SpawnBuilding.containing), not the network (building): found through the network,
+## the keys of its parts came out as the bare part's name on a restart, a door left open was shown
+## shut on the server, open on every client, and stood as an invisible wall (playtest 2026-10-22).
 func apartment() -> Node:
-	var home := building() as SpawnBuilding
+	var home := SpawnBuilding.containing(self)
 	return home.apartment_of(self) if home != null else null
 
 
 ## True when [param player_uuid] lives in the apartment this target stands in.
 func is_home_of(player_uuid: String) -> bool:
-	var home := building() as SpawnBuilding
+	var home := SpawnBuilding.containing(self)
 	return player_uuid != "" and home != null and home.occupant_of(home.apartment_of(self)) == player_uuid
 
 

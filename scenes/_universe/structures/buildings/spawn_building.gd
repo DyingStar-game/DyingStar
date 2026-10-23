@@ -168,6 +168,16 @@ static func slot_name(apt: Dictionary) -> String:
 	return str(int(apt["row"]), "-", int(apt["col"]), "-", int(apt["floor"]))
 
 
+## The spawn building [param node] stands in, found up the tree -- not through the network
+## (MarkerSpawn.building_of), which knows a building only once it has its uuid: its state arrives
+## before, and its parts are looked up then (ToggledPart.state_key). Null when it is in none.
+static func containing(node: Node) -> SpawnBuilding:
+	var n: Node = node.get_parent() if node != null else null
+	while n != null and not (n is SpawnBuilding):
+		n = n.get_parent()
+	return n as SpawnBuilding
+
+
 ## The apartment (a copy of 0-0-0) [param node] stands in, or null when it is in none.
 func apartment_of(node: Node) -> Node:
 	var rooms: Node = get_node_or_null("MultiMeshInstance3D")

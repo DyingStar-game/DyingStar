@@ -374,6 +374,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## How long that fallback swing takes (s). 0 = snap instantly, which is what every door did before
 ## — the truck GLB carries no animation at all, so this path is the one every door actually uses.
 @export_range(0.0, 2.0, 0.05) var door_swing_secs: float = 0.45
+## Names of the model's materials that glow with the head lights (the lamp glass, emissive in the
+## model): lit only while the lights are on (LampGlow). Empty = no glass to switch.
+@export var headlight_glass_materials: PackedStringArray = []
 
 # The engine's own settings — propulsion type, motor speed, gearbox — are NOT here any more.
 # They belong to the PART that is fitted (VehicleEngineSpec), so that swapping an engine changes
@@ -556,6 +559,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 @export_range(0.0, 24.0, 0.5) var sfx_engine_rev_db: float = 6.0
 ## How fast the note follows the RPM (per second). Low = lazy, heavy engine; high = instant, nervous.
 @export_range(0.5, 20.0, 0.5) var sfx_engine_rev_response: float = 5.0
+## Seconds the note takes to rise from silence to its level once the engine has started: an electric
+## motor spools up, it does not burst in at full volume. 0 = at once.
+@export_range(0.0, 5.0, 0.1) var sfx_engine_idle_fade_in_s: float = 1.5
 
 @export_subgroup("Horn")
 ## Normal horn (key H): HELD — it blows for as long as the key is down (looped automatically).
@@ -800,6 +806,7 @@ var gravity_magnitude: float = 6.867
 var _handbrake: bool = true  # server: hand brake engaged — vehicles SPAWN parked (released on throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
 var _headlights_on: bool = false  # server: head lights on/off
+var _lamp_glow: LampGlow  # this vehicle's own lamp glass, found once in the tree (set_headlights)
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _powertrain := VehiclePowertrain.new()
 ## What is bolted into this vehicle, and what the chassis will take. Kept out of this file on
@@ -902,6 +909,7 @@ var _horn_player: AudioStreamPlayer3D = null  # client: the looping horn sound w
 var _idle_player: AudioStreamPlayer3D = null  # client: the looping engine-idle sound
 var _idle_sfx_on: bool = false              # client: is the engine sound currently running?
 var _rev: float = 0.0                       # client: smoothed rev ratio, 0 = idle, 1 = red line
+var _idle_rise: float = 1.0                 # client: how far the note has risen since the start, 0..1
 var _engine_sound_wait: float = 0.0         # client: seconds left of the start-up sample (loop waits)
 var _horn_held_secs: float = 0.0            # client: how long the current honk has been sounding
 var _horn_fade_left: float = 0.0            # client: seconds left of the horn's fade-out (0 = not fading)
@@ -2427,8 +2435,14 @@ func _update_engine_sound(delta: float) -> void:
 	# speed, so a raw follow would step and warble. This is the engine's "inertia".
 	var target: float = _rev_ratio()
 	_rev = move_toward(_rev, target, sfx_engine_rev_response * delta)
+	_idle_rise = move_toward(_idle_rise, 1.0, delta / maxf(sfx_engine_idle_fade_in_s, 0.001))
 	_idle_player.pitch_scale = lerpf(1.0, sfx_engine_rev_pitch, _rev)
-	_idle_player.volume_db = sfx_engine_idle_db + sfx_engine_rev_db * _rev
+	_idle_player.volume_db = sfx_engine_idle_db + sfx_engine_rev_db * _rev + _rise_db(_idle_rise)
+
+## The note's loudness offset (dB) [param rise] of the way up from silence (0) to its level (1): a
+## linear rise in amplitude, which the ear hears as a smooth swell. Pure, for the tests.
+static func _rise_db(rise: float) -> float:
+	return linear_to_db(maxf(rise, 0.001))
 
 ## Where the engine sits between idle (0.0) and the red line (1.0) right now. THERMAL revs between
 ## idle_rpm and redline_rpm within each gear (so the note falls back on every shift, like a real
@@ -2455,6 +2469,7 @@ func _start_or_stop_engine_sound(on: bool) -> void:
 	Sfx3D.configure(_idle_player, Sfx3D.as_looping(sfx_engine_idle), sfx_engine_idle_db,
 			sfx_engine_idle_falloff, sfx_engine_idle_distance, sfx_engine_idle_attenuation)
 	_rev = 0.0  # a fresh start is always at idle: the note climbs from there
+	_idle_rise = 0.0  # and from silence (sfx_engine_idle_fade_in_s)
 	_idle_player.pitch_scale = 1.0
 	_idle_player.play()
 
@@ -3876,6 +3891,10 @@ func set_headlights(on: bool) -> void:
 	_headlights_on = on
 	for light in _headlights():
 		(light as Node3D).visible = on
+	if _lamp_glow == null and is_inside_tree():
+		_lamp_glow = LampGlow.of(_find_model_root(), headlight_glass_materials)
+	if _lamp_glow != null:
+		_lamp_glow.set_lit(on)
 	if not flipped or not _spawned:
 		return
 	if on:

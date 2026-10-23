@@ -90,6 +90,7 @@ var _pending_subscriptions: Array = []
 var _identity_by_participant: Dictionary = {}
 
 func _ready():
+	add_to_group(GameOrchestrator.VOICE_GROUP)  # quitting leaves this room first (GameOrchestrator.quit_game)
 	# print("[livekit] Starting connection to ", livekit_url, "...")
 	# SettingsManager owns the mute state, so it survives this node being destroyed and recreated
 	# (back to menu -> new game): a player who muted stays muted, with no restore code here.
@@ -507,6 +508,11 @@ func shutdown() -> void:
 	# thread), so we drop our reference right after and let it finish on its own.
 	if room != null:
 		if room.has_method("disconnect_from_room"):
+			# Quitting waits until it has left (GameOrchestrator.voice_rooms_leaving).
+			var leaving: LiveKitRoom = room
+			GameOrchestrator.voice_rooms_leaving.append(leaving)
+			leaving.disconnected.connect(func(_reason: String) -> void:
+				GameOrchestrator.voice_rooms_leaving.erase(leaving), CONNECT_ONE_SHOT)
 			room.disconnect_from_room()
 		room = null
 

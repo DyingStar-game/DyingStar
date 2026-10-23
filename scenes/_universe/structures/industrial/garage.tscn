@@ -116,7 +116,7 @@ size = Vector3(21, 1, 43)
 
 [node name="SpawnKiosk" parent="." unique_id=1096407299 node_paths=PackedStringArray("spawn_marker") instance=ExtResource("4_u0y64")]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -10.853278697055469, 0.01096325825641919, -19.76679997038584)
-kiosk_text = "Request a truck"
+kiosk_text = "%%KIOSK_REQUEST_TRUCK"
 spawn_scene = ExtResource("5_truck")
 spawn_marker = NodePath("../SpawnVehicule")
 spawn_cooldown = 30.0
@@ -136,7 +136,7 @@ texture_albedo = ExtResource("6_5left")
 
 [node name="Label3D" type="Label3D" parent="." unique_id=1633786288]
 transform = Transform3D(6.123233995736765e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736765e-17, -0.0237599465859315, 1.2000011328085565, -9.112079011595531)
-text = "Recharging batteries"
+text = "%%SIGN_RECHARGING_BATTERIES"
 
 [node name="ChargingZone" type="Area3D" parent="." unique_id=5421193]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8391555582872652, 0.1831103834099197, -9.129739718076715)

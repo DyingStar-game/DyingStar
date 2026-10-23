@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" uid="uid://c2x18acm3qed1" path="res://assets/_universe/props/tools/tools/mining/hammerdrill-v2.glb" id="1_model"]
+[ext_resource type="Material" uid="uid://cj4djxpjv43oc" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_orange.tres" id="2_body"]
+[ext_resource type="Material" uid="uid://4r3k3u3bxfd4" path="res://assets/_universe/props/tools/tools/mining/mat_hammerdrill_decal.tres" id="3_decal"]
+
+[node name="Hammerdrill" instance=ExtResource("1_model")]
+
+[node name="hammerdrill" parent="." index="0"]
+surface_material_override/0 = ExtResource("2_body")
+
+[node name="hammerdrill_chiselflat" parent="." index="1"]
+surface_material_override/0 = ExtResource("2_body")
+
+[node name="hammerdrill_decals" parent="." index="2"]
+surface_material_override/0 = ExtResource("3_decal")

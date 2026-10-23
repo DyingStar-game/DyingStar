@@ -26,6 +26,9 @@ const SECTIONS : Array = [
 	["%%KM_GROUP_VEHICLE", [
 		{"label": "%%ACT_VEHICLE_ACCELERATE", "actions": [&"vehicle_accelerate"]},
 		{"label": "%%ACT_VEHICLE_DECELERATE", "actions": [&"vehicle_decelerate"]},
+		# Steered with the strafe keys (PlayerClient reads move_left / move_right in a seat).
+		{"label": "%%ACT_VEHICLE_STEER_LEFT", "actions": [&"move_left"]},
+		{"label": "%%ACT_VEHICLE_STEER_RIGHT", "actions": [&"move_right"]},
 		{"label": "%%ACT_VEHICLE_IGNITION", "actions": [&"vehicle_ignition"]},
 		{"label": "%%ACT_BRAKE", "actions": [&"brake"]},
 		{"label": "%%ACT_VEHICLE_LIGHTS", "actions": [&"vehicle_lights"]},
