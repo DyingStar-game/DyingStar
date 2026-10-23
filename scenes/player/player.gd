@@ -42,6 +42,10 @@ const _SURFACE_CATCH_MARGIN := 3.0
 ## Body mass (kg) added to a vehicle's total weight when seated. Mass is gravity-independent
 ## (75 kg everywhere); only the WEIGHT changes with gravity. CharacterBody3D has no built-in mass.
 @export var mass: float = 75.0
+## Strongest sustained shove (N) a walking body puts on a prop or a vehicle it walks into. Higher = heavier
+## things slide. At 500 a 15 kg box goes, an unbraked truck rolls slowly, a pallet or a rock (friction
+## × its weight is far more) does not budge. See PlayerServer._push_touched_bodies.
+@export var push_force: float = 500.0
 
 @export_subgroup("Movement")
 ## Default walk speed (m/s): the starting mouse-wheel tier, and the server's fallback until the owner

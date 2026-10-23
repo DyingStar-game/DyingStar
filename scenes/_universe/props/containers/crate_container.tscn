@@ -13,7 +13,7 @@ size = Vector3(0.8018728, 0.95316833, 1.1382587)
 
 [node name="CrateContainer" type="RigidBody3D" unique_id=923994791]
 collision_layer = 8
-collision_mask = 15
+collision_mask = 13
 mass = 500.0
 script = ExtResource("1_ync2l")
 sfx_pick_up = ExtResource("sfx_pick")

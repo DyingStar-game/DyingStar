@@ -52,7 +52,7 @@ size = Vector2(0.56, 0.13)
 
 [node name="Truck" type="VehicleBody3D" unique_id=1579985098]
 collision_layer = 4
-collision_mask = 15
+collision_mask = 13
 mass = 1425.0
 linear_damp_mode = 1
 script = ExtResource("1_vehicle")

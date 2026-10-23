@@ -12,7 +12,7 @@ size = Vector3(1.2, 0.15, 0.8)
 
 [node name="PalletPlate" type="RigidBody3D" unique_id=780003001]
 collision_layer = 8
-collision_mask = 15
+collision_mask = 13
 mass = 80.0
 script = ExtResource("1_plate")
 sfx_pick_up = ExtResource("sfx_pick")

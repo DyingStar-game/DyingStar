@@ -20,7 +20,7 @@ size = Vector3(0.3, 0.4, 0.6)
 
 [node name="BatteryT1" type="RigidBody3D" unique_id=1840273361]
 collision_layer = 8
-collision_mask = 15
+collision_mask = 13
 mass = 25.0
 script = ExtResource("1_battery")
 spec = ExtResource("2_spec")

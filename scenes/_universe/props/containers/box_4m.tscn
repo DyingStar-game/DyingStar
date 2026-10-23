@@ -22,7 +22,7 @@ properties/1/replication_mode = 1
 
 [node name="RigidBody3D" type="RigidBody3D" unique_id=1909729381]
 collision_layer = 8
-collision_mask = 15
+collision_mask = 13
 script = ExtResource("1_ealuu")
 
 [node name="PropSync" type="Node" parent="."]
