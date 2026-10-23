@@ -166,6 +166,27 @@ func store_at_nearest_slot(body: RigidBody3D) -> bool:
 		body.send_properties_to_client(uuid)
 	return true
 
+## Server: reserve between one and all of the free slots, drawn at random from [param rng] — occupied,
+## with no crate yet. The admin fill (CargoDepot.server_fill_shelves) spawns a crate on each one, under
+## the shelf, and it binds its slot as it arrives (_bind_arrived). Empty when the shelf is full.
+func reserve_random_slots(rng: RandomNumberGenerator) -> Array[int]:
+	var free: Array[int] = []
+	for i in range(mini(shelf_slots.size(), mini(shelf_slots_occupied.size(), _slot_bodies.size()))):
+		if not shelf_slots_occupied[i] and typeof(_slot_bodies[i]) == TYPE_NIL:
+			free.append(i)
+	if free.is_empty():
+		return free
+	for i in range(free.size() - 1, 0, -1):  # Fisher-Yates on the given rng: a seed replays a fill
+		var j := rng.randi_range(0, i)
+		var swap := free[i]
+		free[i] = free[j]
+		free[j] = swap
+	var picked: Array[int] = free.slice(0, rng.randi_range(1, free.size()))
+	for i in picked:
+		shelf_slots_occupied[i] = true
+	_send_slots_occupied()
+	return picked
+
 ## Server: [param body] is being taken off the shelf — the carry pickup, just before it reparents the
 ## crate to the player: free its slot. Same contract as Vehicle.release_cargo.
 func release_cargo(body: Node) -> void:

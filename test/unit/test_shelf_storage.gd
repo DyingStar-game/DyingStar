@@ -92,3 +92,34 @@ func test_woken_crate_is_settled_again_and_a_gone_one_frees_its_slot() -> void:
 	assert_true(_shelf._settling.has(kept), "woken: settled and frozen again")
 	assert_false(_shelf.shelf_slots_occupied[2], "its crate is gone: slot free")
 	assert_true(_shelf.shelf_slots_occupied[1])
+
+
+func test_admin_fill_reserves_one_to_all_free_slots_never_a_taken_one() -> void:
+	_shelf.shelf_slots_occupied[0] = true  # a crate already there
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var picked: Array[int] = _shelf.reserve_random_slots(rng)
+	assert_between(picked.size(), 1, _shelf.shelf_slots.size() - 1, "between one and every FREE slot")
+	assert_false(picked.has(0), "never the slot already taken")
+	for idx in picked:
+		assert_true(_shelf.shelf_slots_occupied[idx], "reserved until its crate arrives")
+	var unique := {}
+	for idx in picked:
+		unique[idx] = true
+	assert_eq(unique.size(), picked.size(), "each slot once")
+
+
+func test_admin_fill_of_a_full_shelf_reserves_nothing() -> void:
+	_shelf.shelf_slots_occupied.fill(true)
+	assert_eq(_shelf.reserve_random_slots(RandomNumberGenerator.new()).size(), 0)
+
+
+func test_crate_spawned_on_a_reserved_slot_binds_it() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var idx: int = _shelf.reserve_random_slots(rng)[0]
+	var crate := RigidBody3D.new()
+	crate.position = _shelf.shelf_slots[idx]  # where server_fill_shelves spawns it
+	_shelf.add_child(crate)
+	_shelf._bind_arrived(crate)
+	assert_eq(_shelf._slot_bodies[idx], crate)

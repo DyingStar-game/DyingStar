@@ -13,6 +13,8 @@ signal set_gameserver_zones(zones)
 signal set_gameserver_name(name)
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
+## Props per Horizon create_object message in spawn_props_authoritative (~250 bytes each).
+const SPAWN_BATCH := 200
 
 var sdo_server_url = ""
 var server_name = ""
@@ -176,6 +178,28 @@ func spawn_prop_authoritative(data: Dictionary, immediate: bool = true) -> void:
 			"object_data": data,
 		},
 	})
+
+## [method spawn_prop_authoritative] for many props: one Horizon message per SPAWN_BATCH of them instead
+## of one each (Horizon takes the `data` array whole), then each created on this server.
+func spawn_props_authoritative(props: Array, immediate: bool = true) -> void:
+	if not GameOrchestrator.is_server():
+		return
+	for start in range(0, props.size(), SPAWN_BATCH):
+		ServerNetwork.send_message({
+			"namespace": "props",
+			"event": "create_object",
+			"amessagenb": 1,
+			"data": props.slice(start, start + SPAWN_BATCH),
+		}, "devmodecreate_object")
+	for data in props:
+		network_agent.create_generic_object({
+			"_immediate": immediate,
+			"data": {
+				"object_uuid": data["uuid"],
+				"object_type": data["type"],
+				"object_data": data,
+			},
+		})
 
 ## Load configuration from server.ini file
 func load_server_config():

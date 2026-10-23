@@ -2095,6 +2095,9 @@ func create_player(event: Dictionary) -> void:
 	if player_data.has("is_npc") and player_data["is_npc"] == true:
 		spawned_entity_instance.is_npc = true
 	spawned_entity_instance.move_clocks = player_data.get("move_clocks", false) == true
+	var player_roles = player_data.get("roles", [])
+	if player_roles is Array:
+		spawned_entity_instance.roles = PackedStringArray(player_roles)
 
 	var parented = false
 	if player_data["parent_id"] != "":

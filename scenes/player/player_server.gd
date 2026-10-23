@@ -43,6 +43,11 @@ const DEV_TOOL_OF_ACTION: Dictionary = {
 	"god_mode_speed": &"god_mode",
 	"god_mode_land": &"god_mode",
 }
+## Client actions only an admin may run (AdminRoles.grants_admin, on the realm roles Horizon verified in the
+## player's token). Refused at the top of server_action_received, whatever the client shows or sends.
+const ADMIN_ACTIONS: Array[String] = ["admin_fill_shelves"]
+## How far (m) from a cargo depot's origin an admin may stand to fill its shelves.
+const _ADMIN_DEPOT_RANGE := 300.0
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
@@ -355,6 +360,11 @@ static func is_action_allowed(action: String, is_tool_enabled: Callable) -> bool
 	var tool: StringName = DEV_TOOL_OF_ACTION.get(action, &"")
 	return tool == &"" or bool(is_tool_enabled.call(tool))
 
+## True when [param action] may run for a player with [param player_roles]: it is no admin action, or the
+## player holds an admin role (ADMIN_ACTIONS).
+static func is_admin_action_allowed(action: String, player_roles: Variant) -> bool:
+	return not ADMIN_ACTIONS.has(action) or AdminRoles.grants_admin(player_roles)
+
 ## Authoritative dispatcher for a client action, called by the network layer through Player (only the
 ## dedicated server ever receives it). Every branch reads/writes the shared body via `player`.
 func server_action_received(data: Dictionary) -> void:
@@ -362,6 +372,9 @@ func server_action_received(data: Dictionary) -> void:
 	if not is_action_allowed(action, Globals.is_dev_tool_enabled):
 		push_warning("[DevTools] %s asked for '%s', but its dev tool is switched off: refused"
 				% [player.client_uuid, action])
+		return
+	if not is_admin_action_allowed(action, player.roles):
+		push_warning("[Admin] %s asked for '%s' without an admin role: refused" % [player.client_uuid, action])
 		return
 	match data["action"]:
 		JUMP:
@@ -480,6 +493,9 @@ func server_action_received(data: Dictionary) -> void:
 			# Dev spawn wheel (dev tool "spawn_wheel", refused at the top while it is off): the client only
 			# NAMES what it wants; we own everything else.
 			_spawn_from_catalog(str(data.get("key", "")))
+		"admin_fill_shelves":
+			# Admin (refused at the top without an admin role): stock the shelves of the depot we stand in.
+			_admin_fill_shelves()
 		"kiosk_spawn":
 			# A SpawnKiosk button: the client names the kiosk (building uuid + path inside it), the kiosk
 			# decides the scene, the place and whether it is free.
@@ -985,6 +1001,27 @@ func _spawn_prop(key: String) -> void:
 		"parent_id": PropSpawn.net_parent_uuid(net_parent),
 	})
 	print("🌱 Spawn '%s' (%s) for %s" % [key, entry["type"], player.client_uuid])
+
+## Admin: fill the shelves of the cargo depot nearest the player (within _ADMIN_DEPOT_RANGE) with hauling
+## boxes, a random number of free slots per shelf (CargoDepot.server_fill_shelves).
+func _admin_fill_shelves() -> void:
+	var depot: Node3D = null
+	var best_d := _ADMIN_DEPOT_RANGE * _ADMIN_DEPOT_RANGE
+	for node in get_tree().get_nodes_in_group("cargo_depots"):
+		if not (node is Node3D) or not node.has_method("server_fill_shelves") \
+				or (node as Node3D).get_world_3d() != player.get_world_3d():
+			continue
+		var d: float = (node as Node3D).global_position.distance_squared_to(player.global_position)
+		if d < best_d:
+			best_d = d
+			depot = node
+	if depot == null:
+		print("[Admin] %s: no cargo depot within %d m to fill" % [player.client_uuid, int(_ADMIN_DEPOT_RANGE)])
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var count: int = depot.server_fill_shelves(rng)
+	print("[Admin] %s filled the shelves of %s: %d hauling boxes" % [player.client_uuid, depot.name, count])
 
 ## A WORLD orientation expressed in the parent's frame, as the euler angles the network carries.
 func _to_parent_rotation(net_parent: Node, world_basis: Basis) -> Vector3:
