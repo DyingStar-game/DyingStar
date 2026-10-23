@@ -4,17 +4,18 @@
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_dtmlv"]
 [ext_resource type="Material" uid="uid://dkxs53ephoysf" path="res://assets/_universe/_shared/materials/mat_concrete_wall_smooth/mat_concrete_wall_smooth.tres" id="2_qn3cl"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_dtmlv"]
-[ext_resource type="PackedScene" uid="uid://dtcsox8hfg83s" path="res://scenes/_universe/structures/spawn_kiosk/spawn_kiosk.tscn" id="4_u0y64"]
-[ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/_universe/vehicles/ground/trucks/truck.tscn" id="5_truck"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/dispenser/vehicle_terminal.tscn" id="vehicle_terminal"]
 [ext_resource type="Texture2D" uid="uid://bkdgy355wbt83" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/floor/hazard_stripes.jpg" id="6_5left"]
 [ext_resource type="Script" uid="uid://db0rt5lmk5ogb" path="res://scenes/_universe/vehicles/charging_zone.gd" id="7_5iueg"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="8_neon"]
 [ext_resource type="PackedScene" uid="uid://bqc3pjlv1nipw" path="res://scenes/_universe/structures/dispenser/component_dispenser.tscn" id="disp_scene"]
 [ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="led_1x1"]
 [ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="light_group_script"]
+[ext_resource type="Texture2D" uid="uid://bp6i1s13f27g" path="res://assets/textures/map_markers/hangar.png" id="mm_icon"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/props/handling/cargo_pallet_transporter.tscn" id="pallet_transporter"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/spawn_kiosk/fixture_spawn.gd" id="fixture_spawn"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="pc_photocell"]
-[ext_resource type="Script" path="res://scenes/common/map_marker.gd" id="mm_script"]
-[ext_resource type="Texture2D" path="res://assets/textures/map_markers/hangar.png" id="mm_icon"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gy7pr"]
 size = Vector3(15.98678550078057, 1, 41.15108700777546)
@@ -114,12 +115,9 @@ metadata/_custom_type_script = "uid://custckqbhkkow"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.638463, -0.5275682651205718, -20.188978)
 size = Vector3(21, 1, 43)
 
-[node name="SpawnKiosk" parent="." unique_id=1096407299 node_paths=PackedStringArray("spawn_marker") instance=ExtResource("4_u0y64")]
+[node name="VehicleTerminal" parent="." unique_id=1096407299 node_paths=PackedStringArray("tray_marker") instance=ExtResource("vehicle_terminal")]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -10.853278697055469, 0.01096325825641919, -19.76679997038584)
-kiosk_text = "%%KIOSK_REQUEST_TRUCK"
-spawn_scene = ExtResource("5_truck")
-spawn_marker = NodePath("../SpawnVehicule")
-spawn_cooldown = 30.0
+tray_marker = NodePath("../SpawnVehicule")
 
 [node name="SpawnVehicule" type="Marker3D" parent="." unique_id=194993262]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -5.021331208860071, 0.5241000776928306, -19.9798519296165)
@@ -201,11 +199,16 @@ transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.03
 [node name="ItemDispenser4" parent="." unique_id=447734562 instance=ExtResource("disp_scene")]
 transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, -15.030244222750913, 0.01096325825641919, -37.58315279186995)
 
-[editable path="garage"]
-
-[node name="MapMarker" type="Node3D" parent="."]
+[node name="MapMarker" type="Node3D" parent="." unique_id=315086025]
 script = ExtResource("mm_script")
+icon = ExtResource("mm_icon")
 label = "%%MAP_MARKER_GARAGE"
 importance = 1
 max_view_m = 5000.0
-icon = ExtResource("mm_icon")
+
+[node name="PalletTransporterSpawn" type="Marker3D" parent="." unique_id=3994634]
+transform = Transform3D(0.8660254037844387, 0, 0.49999999999999994, 0, 1, 0, -0.49999999999999994, 0, 0.8660254037844387, -11.78014045598373, 0.010963522634321876, -38.425521649692534)
+script = ExtResource("fixture_spawn")
+scene = ExtResource("pallet_transporter")
+
+[editable path="garage"]

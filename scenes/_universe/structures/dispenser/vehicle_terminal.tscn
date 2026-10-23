@@ -1,0 +1,247 @@
+[gd_scene format=3 uid="uid://clw875f8p6pje"]
+
+[ext_resource type="Script" uid="uid://pl5fjy8ycjbl" path="res://scenes/_universe/structures/dispenser/item_dispenser.gd" id="1_disp"]
+[ext_resource type="Script" uid="uid://xh8aogh4jvdf" path="res://scenes/_universe/structures/dispenser/item_dispenser_ui.gd" id="2_ui"]
+[ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="3_gui3d"]
+[ext_resource type="Texture2D" uid="uid://dch5uq2s5ejv6" path="res://assets/textures/decals/ares_logo/ares_logo_decal_crop.png" id="5_logo"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="8_sync"]
+[ext_resource type="Script" uid="uid://q5rm52iyeiak" path="res://scenes/common/ambient_loop_3d.gd" id="9_hum"]
+[ext_resource type="AudioStream" uid="uid://cx4wvskq3o03s" path="res://assets/_universe/audio/sfx/structures/dispenser-idle-hum.ogg" id="10_idle"]
+[ext_resource type="Script" uid="uid://diyncoyyks1lr" path="res://scenes/common/loop_sound.gd" id="loop_sound"]
+
+[sub_resource type="BoxShape3D" id="Shape_plinth"]
+size = Vector3(0.7, 0.08, 0.7)
+
+[sub_resource type="BoxShape3D" id="Shape_pedestal"]
+size = Vector3(0.5, 0.9, 0.45)
+
+[sub_resource type="BoxShape3D" id="Shape_head"]
+size = Vector3(0.86, 0.6, 0.1)
+
+[sub_resource type="BoxShape3D" id="Shape_rail_front"]
+size = Vector3(0.85, 0.06, 0.06)
+
+[sub_resource type="BoxShape3D" id="Shape_rail_side"]
+size = Vector3(0.06, 0.06, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_trim"]
+albedo_color = Color(0.07, 0.075, 0.085, 1)
+metallic = 0.4
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.6, 0.61, 0.63, 1)
+metallic = 0.5
+roughness = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Mat_accent"]
+metallic = 0.2
+roughness = 0.45
+
+[sub_resource type="StandardMaterial3D" id="Mat_rail"]
+albedo_color = Color(0.22, 0.23, 0.25, 1)
+metallic = 0.8
+roughness = 0.35
+
+[sub_resource type="QuadMesh" id="Quad_screen"]
+size = Vector2(0.72, 0.48)
+
+[sub_resource type="BoxShape3D" id="Shape_touch"]
+size = Vector3(0.72, 0.48, 0.02)
+
+[sub_resource type="Resource" id="LoopSound_idle"]
+script = ExtResource("loop_sound")
+stream = ExtResource("10_idle")
+volume_db = -12.0
+falloff = 1.5
+distance = 8.0
+attenuation = 1
+
+[node name="VehicleTerminal" type="StaticBody3D" unique_id=1855328717 node_paths=PackedStringArray("tray_marker")]
+script = ExtResource("1_disp")
+brand = 0
+catalogue_dir = "res://scenes/_universe/vehicles/terminal_items/"
+title_key = "%%TERMINAL_VEHICLES_TITLE"
+dispense_key = "%%TERMINAL_REQUEST"
+tray_full_key = "%%TERMINAL_BAY_OCCUPIED"
+tray_marker = NodePath("BayMarker")
+tray_box_size = Vector3(4, 3, 8)
+tray_box_lift = 0.2
+delivery_s = 0.0
+tray_mask = 15
+
+[node name="PlinthCollision" type="CollisionShape3D" parent="." unique_id=1953480836]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, 0)
+shape = SubResource("Shape_plinth")
+
+[node name="PedestalCollision" type="CollisionShape3D" parent="." unique_id=785940342]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, -0.06)
+shape = SubResource("Shape_pedestal")
+
+[node name="HeadCollision" type="CollisionShape3D" parent="." unique_id=1352369686]
+transform = Transform3D(1, 0, 0, 0, 0.819152, 0.573576, 0, -0.573576, 0.819152, 0, 1.42, 0.02)
+shape = SubResource("Shape_head")
+
+[node name="RailFrontCollision" type="CollisionShape3D" parent="." unique_id=371541626]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0.42)
+shape = SubResource("Shape_rail_front")
+
+[node name="RailLeftCollision" type="CollisionShape3D" parent="." unique_id=1468940598]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4, 0.95, 0.17)
+shape = SubResource("Shape_rail_side")
+
+[node name="RailRightCollision" type="CollisionShape3D" parent="." unique_id=490069765]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4, 0.95, 0.17)
+shape = SubResource("Shape_rail_side")
+
+[node name="Blockout" type="CSGCombiner3D" parent="." unique_id=1522373736]
+
+[node name="Plinth" type="CSGBox3D" parent="Blockout" unique_id=1680558516]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, 0)
+size = Vector3(0.7, 0.08, 0.7)
+material = SubResource("Mat_trim")
+
+[node name="Pedestal" type="CSGBox3D" parent="Blockout" unique_id=933460853]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.505, -0.06)
+size = Vector3(0.46, 0.85, 0.42)
+material = SubResource("Mat_body")
+
+[node name="Hatch" type="CSGBox3D" parent="Blockout/Pedestal" unique_id=1919547528]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.12, 0.21)
+operation = 2
+size = Vector3(0.3, 0.4, 0.01)
+material = SubResource("Mat_trim")
+
+[node name="SideBandL" type="CSGBox3D" parent="Blockout" unique_id=280174736 groups=["brand_accent"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.235, 0.505, -0.06)
+size = Vector3(0.02, 0.8, 0.43)
+material = SubResource("Mat_accent")
+
+[node name="SideBandR" type="CSGBox3D" parent="Blockout" unique_id=274231458 groups=["brand_accent"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.235, 0.505, -0.06)
+size = Vector3(0.02, 0.8, 0.43)
+material = SubResource("Mat_accent")
+
+[node name="Desk" type="CSGBox3D" parent="Blockout" unique_id=1795845366]
+transform = Transform3D(1, 0, 0, 0, 0.939693, -0.34202, 0, 0.34202, 0.939693, 0, 0.98, 0.08)
+size = Vector3(0.5, 0.05, 0.36)
+material = SubResource("Mat_body")
+
+[node name="StrutL" type="CSGBox3D" parent="Blockout" unique_id=1388114422]
+transform = Transform3D(1, 0, 0, 0, 0.965926, -0.258819, 0, 0.258819, 0.965926, -0.3, 1.12, -0.05)
+size = Vector3(0.06, 0.55, 0.08)
+material = SubResource("Mat_body")
+
+[node name="StrutR" type="CSGBox3D" parent="Blockout" unique_id=653210156]
+transform = Transform3D(1, 0, 0, 0, 0.965926, -0.258819, 0, 0.258819, 0.965926, 0.3, 1.12, -0.05)
+size = Vector3(0.06, 0.55, 0.08)
+material = SubResource("Mat_body")
+
+[node name="ScreenHousing" type="CSGBox3D" parent="Blockout" unique_id=1547743681]
+transform = Transform3D(1, 0, 0, 0, 0.819152, 0.573576, 0, -0.573576, 0.819152, 0, 1.42, 0.02)
+size = Vector3(0.86, 0.6, 0.08)
+material = SubResource("Mat_trim")
+
+[node name="HandleL" type="CSGBox3D" parent="Blockout/ScreenHousing" unique_id=1445443760]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.35, 0.37, -0.02)
+size = Vector3(0.04, 0.16, 0.04)
+material = SubResource("Mat_rail")
+
+[node name="HandleR" type="CSGBox3D" parent="Blockout/ScreenHousing" unique_id=1862943249]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.35, 0.37, -0.02)
+size = Vector3(0.04, 0.16, 0.04)
+material = SubResource("Mat_rail")
+
+[node name="TopLight" type="CSGBox3D" parent="Blockout/ScreenHousing" unique_id=672796478 groups=["brand_accent"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.29, 0.035)
+size = Vector3(0.78, 0.015, 0.012)
+material = SubResource("Mat_accent")
+
+[node name="RailFront" type="CSGBox3D" parent="Blockout" unique_id=779883326]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0.42)
+size = Vector3(0.84, 0.045, 0.045)
+material = SubResource("Mat_rail")
+
+[node name="RailLeft" type="CSGBox3D" parent="Blockout" unique_id=1097374812]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4, 0.95, 0.17)
+size = Vector3(0.045, 0.045, 0.5)
+material = SubResource("Mat_rail")
+
+[node name="RailRight" type="CSGBox3D" parent="Blockout" unique_id=1868145130]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4, 0.95, 0.17)
+size = Vector3(0.045, 0.045, 0.5)
+material = SubResource("Mat_rail")
+
+[node name="RailBackL" type="CSGBox3D" parent="Blockout" unique_id=288196105]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.315, 0.95, -0.08)
+size = Vector3(0.17, 0.045, 0.045)
+material = SubResource("Mat_rail")
+
+[node name="RailBackR" type="CSGBox3D" parent="Blockout" unique_id=1681974082]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.315, 0.95, -0.08)
+size = Vector3(0.17, 0.045, 0.045)
+material = SubResource("Mat_rail")
+
+[node name="RailLight" type="CSGBox3D" parent="Blockout" unique_id=1612072846 groups=["brand_accent"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4, 0.975, 0.17)
+size = Vector3(0.02, 0.008, 0.4)
+material = SubResource("Mat_accent")
+
+[node name="LogoFront" type="Sprite3D" parent="." unique_id=1771525909 groups=["brand_logo"]]
+transform = Transform3D(0.5883270374457983, 0, 0, 0, 0.714439641922563, 0, 0, 0, 0.5883270374457983, 0, 0.72, 0.152)
+pixel_size = 0.0011
+alpha_cut = 2
+texture = ExtResource("5_logo")
+
+[node name="LogoSideL" type="Sprite3D" parent="." unique_id=354299465 groups=["brand_logo"]]
+transform = Transform3D(0, 0, -1, 0, 0.6610764535894491, 0, 0.6610764535894491, 0, 0, -0.247, 0.55, -0.06)
+pixel_size = 0.0011
+alpha_cut = 2
+texture = ExtResource("5_logo")
+
+[node name="LogoSideR" type="Sprite3D" parent="." unique_id=1286997123 groups=["brand_logo"]]
+transform = Transform3D(0, 0, 1, 0, 1.338923546410551, 0, -0.6610764535894491, 0, 0, 0.247, 0.55, -0.06)
+pixel_size = 0.0011
+alpha_cut = 2
+texture = ExtResource("5_logo")
+
+[node name="Gui3D" parent="." unique_id=608691527 node_paths=PackedStringArray("node_viewport", "node_quad", "node_area") instance=ExtResource("3_gui3d")]
+transform = Transform3D(1, 0, 0, 0, 0.819152, 0.573576, 0, -0.573576, 0.819152, 0, 1.4435, 0.0536)
+node_viewport = NodePath("SubViewport")
+node_quad = NodePath("ScreenMesh")
+node_area = NodePath("ScreenMesh/TouchScreen")
+
+[node name="SubViewport" type="SubViewport" parent="Gui3D" unique_id=1216632887]
+disable_3d = true
+handle_input_locally = false
+size = Vector2i(720, 480)
+
+[node name="ItemDispenserUI" type="Panel" parent="Gui3D/SubViewport" unique_id=915275452]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_ui")
+
+[node name="ScreenMesh" type="MeshInstance3D" parent="Gui3D" unique_id=2146361699]
+mesh = SubResource("Quad_screen")
+
+[node name="TouchScreen" type="Area3D" parent="Gui3D/ScreenMesh" unique_id=1884119802]
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Gui3D/ScreenMesh/TouchScreen" unique_id=1817335021]
+shape = SubResource("Shape_touch")
+
+[node name="PropSync" type="Node" parent="." unique_id=424145326]
+script = ExtResource("8_sync")
+type_name = "simple_building"
+
+[node name="IdleHum" type="Node3D" parent="." unique_id=1372200440]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -0.1)
+script = ExtResource("9_hum")
+sound = SubResource("LoopSound_idle")
+
+[node name="BayMarker" type="Marker3D" parent="." unique_id=1631339398]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 6)

@@ -1058,6 +1058,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "cargo_pallet_transporter.glb",
+			"path": "res://assets/_universe/props/handling/cargo_pallet_transporter.glb",
+			"author": "Irong",
+			"source": "Discord",
+			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "cargo_storage.png",
 			"path": "res://assets/textures/map_markers/cargo_storage.png",
 			"author": "WarpZone",

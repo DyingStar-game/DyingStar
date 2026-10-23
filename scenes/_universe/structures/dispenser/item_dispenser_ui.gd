@@ -47,6 +47,9 @@ var _delivery_total_s: float = 0.0
 var _ring: DeliveryRing
 ## The subsidiary's colour (AresBrand): the screen's lines, its chosen row, its ring, its button.
 var _accent: Color = Color.WHITE
+## The button's word and the full hatch's message (translation keys), set by the machine before setup.
+var dispense_key: String = "%%DISPENSER_DISPENSE"
+var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
 
 
 ## Build the screen for [param subsidiary] (AresBrand), under [param title_key], offering [param items]
@@ -124,17 +127,18 @@ func chosen() -> String:
 	return str(pressed.get_meta("spec_path", "")) if pressed != null else ""
 
 
-## What the status line says: [param tray_full] hatch, [param waiting] for one asked for, else pick.
-static func status_key(tray_full: bool, waiting: bool) -> String:
+## What the status line says: [param tray_full] hatch ([param full_key]), [param waiting] for one asked
+## for, else pick.
+static func status_key(tray_full: bool, waiting: bool, full_key: String = "%%DISPENSER_TAKE_ITEMS") -> String:
 	if tray_full:
-		return "%%DISPENSER_TAKE_ITEMS"
+		return full_key
 	return "%%DISPENSER_SENT" if waiting else "%%DISPENSER_PICK"
 
 
 func _show_status() -> void:
 	if _status == null:
 		return
-	_status.text = _refusal_key if _refusal_key != "" else status_key(_tray_full, _waiting)
+	_status.text = _refusal_key if _refusal_key != "" else status_key(_tray_full, _waiting, tray_full_key)
 	_status.add_theme_color_override("font_color", _accent if _tray_full or _refusal_key != "" else DIM)
 	_dispense.disabled = _tray_full or _waiting or chosen() == ""
 
@@ -184,7 +188,7 @@ func _build(subsidiary: AresBrand.Subsidiary, title_key: String) -> void:
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_status)
 	_dispense = Button.new()
-	_dispense.text = "%%DISPENSER_DISPENSE"
+	_dispense.text = dispense_key
 	_dispense.custom_minimum_size = Vector2(0, 80)
 	_dispense.focus_mode = Control.FOCUS_NONE
 	_style_button(_dispense, _accent, BG_COLOR, BUTTON_FONT)
