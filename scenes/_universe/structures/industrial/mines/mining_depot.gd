@@ -139,6 +139,13 @@ func _ready() -> void:
 			rock_detector.body_exited.connect(_on_rock_exited)
 		else:
 			push_warning("[mining_depot] $RockDetector missing, skipped body_exited connect")
+	else:
+		# The belt and collector detectors only feed server logic (_process / _physics_process return
+		# at once on a client), and each monitoring area costs a physics query every step: see the same
+		# note in cargo_depot.gd.
+		for area: Area3D in [rock_detector, rock_collector, box_detector]:
+			if area != null:
+				area.set_deferred(&"monitoring", false)
 
 ## Build a deterministic, valid-format uuid from a seed string. Same seed -> same uuid
 ## across restarts, so the depot is upserted (not duplicated) and Horizon can resolve it.
