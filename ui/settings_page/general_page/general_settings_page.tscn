@@ -136,6 +136,23 @@ theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "%%MENU_ON"
 
+[node name="FramedPrompts" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000013]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/FramedPrompts" unique_id=1700000014]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_FRAMED_PROMPTS_TOGGLE"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/FramedPrompts" unique_id=1700000015]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_ON"
+
 [node name="PlayHintsReset" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000010]
 layout_mode = 2
 
