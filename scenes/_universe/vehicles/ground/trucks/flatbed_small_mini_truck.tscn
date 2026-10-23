@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://dkhxn2gfxhqol"]
+
+[ext_resource type="PackedScene" uid="uid://cjkq1jpjbgd6a" path="res://assets/_universe/vehicles/ground/flatbed_small_mini_truck.glb" id="1_raf3k"]
+[ext_resource type="Material" uid="uid://b24pyc3nck5q7" path="res://assets/_universe/_shared/materials/mat_metal_smart_painted/mat_metal_smart_painted_blue.tres" id="2_dt3bm"]
+[ext_resource type="Material" uid="uid://dxv7ow7ndxo8l" path="res://assets/_universe/_shared/materials/mat_metal_yellow_rusty/mat_metal_yellow_rusty.tres" id="3_uledf"]
+
+[node name="flatbed_small_mini_truck" unique_id=572554810 instance=ExtResource("1_raf3k")]
+
+[node name="Cube" parent="." index="0" unique_id=1872251405]
+material_override = ExtResource("2_dt3bm")
+
+[node name="Cube_001" parent="." index="1" unique_id=1430582081]
+material_override = ExtResource("3_uledf")
