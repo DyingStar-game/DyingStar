@@ -13,6 +13,9 @@ extends Node
 ## CANYON_PROBE_LONLAT="lon,lat" for another site (lon < 0 = west),
 ## CANYON_PROBE_VERBOSE=1 to list the first filled vertices of each chunk,
 ## CANYON_PROBE_IDENTITY=1 to rebuild each chunk without the C# sampler and compare (bit for bit).
+## The chunk COLLISION too: a triangle wholly inside the canyon and half its depth tall is an
+## invisible wall — the bed skirts that read the canyon floor while the visual ones read the
+## plateau (tarsis_3, 39.561 W 24.842 N).
 ## Output: user://canyon_fill_probe.txt, last line "PASS" or "FAIL: …".
 
 const PLANET := "tarsis_3"
@@ -70,6 +73,7 @@ func _ready() -> void:
 	var filled := 0
 	var worst := 0.0
 	var worst_at := ""
+	var col_filled := 0
 	for c: int in ips:
 		var cc: Vector3 = PlanetChunk.snap_to_f32(HEALPix.pix2vec_nest(ns, c) * data.radius)
 		var t0 := Time.get_ticks_msec()
@@ -109,10 +113,57 @@ func _ready() -> void:
 					var dl := HEALPix.vec2lonlat(d)
 					worst_at = "%.5f %.5f" % [dl.x, dl.y]
 		say("PROBE chunk %d: %d vertices, %d filled, %d ms" % [c, verts.size(), chunk_filled, ms])
+		col_filled += _collision_filled(data, ns, c, cc, spacing)
 	say("PROBE %d vertices inside a canyon (>= %.0f m deep), %d filled, worst %.1f m at %s"
 			% [deep, DEEP_M, filled, worst, worst_at])
-	say("PASS" if filled == 0 else "FAIL: %d vertices filled into the canyon" % filled)
+	say("PROBE collision: %d wall triangles inside a canyon" % col_filled)
+	if filled == 0 and col_filled == 0:
+		say("PASS")
+	else:
+		say("FAIL: %d vertices filled into the canyon, %d collision walls standing in it"
+				% [filled, col_filled])
 	get_tree().quit()
+
+
+## Collision triangles of chunk [param c] lying wholly inside a canyon and taller than half its
+## depth (the floor's own relief reaches ~30 m on a coarse cell): walls nobody sees. A bed
+## crossing the gorge under its deck stands there too, flat and inside the deck; only its skirts
+## can be tall.
+func _collision_filled(data: PlanetData, ns: int, c: int, cc: Vector3, spacing: float) -> int:
+	var faces := PlanetChunk.generate_collision_shape_healpix(data, ns, c,
+			data.collision_col_res_for(ns)).get_faces()
+	var inside := {}
+	var out := 0
+	var worst := 0.0
+	for t in range(0, faces.size(), 3):
+		var lo := INF
+		var hi := -INF
+		var all_in := true
+		for e in 3:
+			var v: Vector3 = faces[t + e]
+			if not inside.has(v):
+				var d := (v + cc).normalized()
+				var ok := CrackCarve.offset(data, d, null, spacing, CrackCarve.AUTO) <= -DEEP_M \
+						and ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(d, data.radius,
+						data.crack_spacing_m, data.crack_width_m, spacing, data.crack_noise()) \
+						<= data.crack_width_m * 0.5 - RIM_M
+				inside[v] = ok
+			if not inside[v]:
+				all_in = false
+				break
+			var h := (v + cc).length()
+			lo = minf(lo, h)
+			hi = maxf(hi, h)
+		if not all_in or hi - lo <= 0.5 * data.crack_depth_m:
+			continue
+		out += 1
+		worst = maxf(worst, hi - lo)
+		if OS.get_environment("CANYON_PROBE_VERBOSE") == "1" and out <= 6:
+			var vl := HEALPix.vec2lonlat((faces[t] + cc).normalized())
+			say("PROBE   wall %.5f %.5f %.1f m tall" % [vl.x, vl.y, hi - lo])
+	say("PROBE chunk %d collision: %d triangles, %d walls inside the canyon, tallest %.1f m"
+			% [c, faces.size() / 3, out, worst])
+	return out
 
 
 ## The export tiles under the site and around it (hole_probe's walk up to a

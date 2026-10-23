@@ -772,10 +772,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# "_colrel1" = chunk-local (float32-safe) faces; "_colbf2" = double-
 		# sided (backface_collision) so bodies can't fall through the surface.
 		# Bumping it invalidates stale shapes without a client visual re-bake.
+		# "_skirt1": a bed's skirts and the road slabs read the plateau again, not
+		# the canyon floor — 180 m invisible walls under a bridge (tarsis_3,
+		# 39.561 W 24.842 N), since v67.
 		var _cache_base := ChunkDiskCache.BASE_DIR
 		if server_mode:
 			_cache_base = ChunkDiskCache.SERVER_COLLISION_BASE_DIR
-			_cache_version += "_colrel1_colbf2_grid8k"
+			_cache_version += "_colrel1_colbf2_grid8k_skirt1"
 		else:
 			# Client-only suffix, for what only the visual meshes carry: "_far50km" = the far tiers
 			# cut into quads of 50 km at most (PlanetData.get_resolution_for_lod) — no server
