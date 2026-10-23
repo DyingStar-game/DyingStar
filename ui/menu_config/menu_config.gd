@@ -119,6 +119,7 @@ const ACTION_GROUPS : Dictionary = {
 		"debug_time_back": "%%ACT_DEBUG_TIME_BACK",
 		"debug_toggle_moon_lights": "%%ACT_DEBUG_TOGGLE_MOON_LIGHTS",
 		"debug_isolate_light": "%%ACT_DEBUG_ISOLATE_LIGHT",
+		"debug_light_probe": "%%ACT_DEBUG_LIGHT_PROBE",
 	},
 }
 ## Anything the table above never classified lands here rather than disappearing from the page. A

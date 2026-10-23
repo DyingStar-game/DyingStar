@@ -699,6 +699,8 @@ func _select_clip(delta: float) -> StringName:
 		if not _lying_shown:
 			_lying_shown = true
 			_start_emote("lay")
+			if bool(s.get("lying_found", false)):
+				_hold_last_pose(_clip_or(_emote_enter, &""))
 		var lay: StringName = _emote_clip(0.0)
 		if lay != &"":
 			return lay
@@ -857,6 +859,17 @@ func _emote_clip(speed: float) -> StringName:
 	if _emote_phase == EmotePhase.ENTER:
 		return _clip_or(_emote_enter, _emote_idle if _has(_emote_idle) else _idle)
 	return _emote_idle if _has(_emote_idle) else _clip_or(_emote_enter, _idle)  # HOLD
+
+## Show the last pose of the emote's [param clip] at once, held (HOLD), without playing it: a body found
+## lying in bed (woken up there, or already there when we arrived) did not just lie down.
+func _hold_last_pose(clip: StringName) -> void:
+	if clip == &"":
+		return
+	_emote_phase = EmotePhase.HOLD
+	_anim.play(clip, 0.0)
+	_anim.seek(_anim.current_animation_length, true)
+	_current = clip
+
 
 ## Clear the emote and its request (so re-selecting the SAME emote re-triggers it).
 func _end_emote() -> void:

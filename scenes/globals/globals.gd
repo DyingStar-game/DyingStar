@@ -69,6 +69,7 @@ const ENABLED_DEV_TOOLS: Dictionary = {
 	"debug_time": true,    # sky clock sweep (debug_time_forward / debug_time_back)
 	"debug_toggle_moon_lights": true,  # moon lights on/off (Alt+key)
 	"debug_isolate_light": true,       # remove one light contributor at a time (Alt+key)
+	"debug_light_probe": true,         # name the lamps lighting the aimed point (Alt+key)
 	# Not an InputMap action: a build switch. The chunk mesh gets its edge skirts (the curtains
 	# dropped under every chunk border that hide LOD seams) only when ON — OFF bakes bare grids,
 	# to see the seams themselves or measure the skirt's share of the build. Part of the mesh
