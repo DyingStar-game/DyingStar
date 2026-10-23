@@ -374,6 +374,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 ## How long that fallback swing takes (s). 0 = snap instantly, which is what every door did before
 ## — the truck GLB carries no animation at all, so this path is the one every door actually uses.
 @export_range(0.0, 2.0, 0.05) var door_swing_secs: float = 0.45
+## Names of the model's materials that glow with the head lights (the lamp glass, emissive in the
+## model): lit only while the lights are on (LampGlow). Empty = no glass to switch.
+@export var headlight_glass_materials: PackedStringArray = []
 
 # The engine's own settings — propulsion type, motor speed, gearbox — are NOT here any more.
 # They belong to the PART that is fitted (VehicleEngineSpec), so that swapping an engine changes
@@ -803,6 +806,7 @@ var gravity_magnitude: float = 6.867
 var _handbrake: bool = true  # server: hand brake engaged — vehicles SPAWN parked (released on throttle)
 var _net_handbrake: bool = false  # client: replicated hand brake state (for the HUD)
 var _headlights_on: bool = false  # server: head lights on/off
+var _lamp_glow: LampGlow  # this vehicle's own lamp glass, found once in the tree (set_headlights)
 var _interp := NetInterpolator.new()  # client-side smoothing of the replica
 var _powertrain := VehiclePowertrain.new()
 ## What is bolted into this vehicle, and what the chassis will take. Kept out of this file on
@@ -3887,6 +3891,10 @@ func set_headlights(on: bool) -> void:
 	_headlights_on = on
 	for light in _headlights():
 		(light as Node3D).visible = on
+	if _lamp_glow == null and is_inside_tree():
+		_lamp_glow = LampGlow.of(_find_model_root(), headlight_glass_materials)
+	if _lamp_glow != null:
+		_lamp_glow.set_lit(on)
 	if not flipped or not _spawned:
 		return
 	if on:
