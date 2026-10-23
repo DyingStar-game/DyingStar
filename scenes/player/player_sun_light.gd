@@ -20,6 +20,14 @@ extends DirectionalLight3D
 ## already consider acceptable is a better bound than a number picked here.
 const MIN_SHADOW_DISTANCE := 50.0
 
+## client.ini measurement keys and the shadow setting each overrides (_apply_shadow_measurements).
+const SHADOW_MEASUREMENTS := {
+	"debug_sun_shadow_bias": &"shadow_bias",
+	"debug_sun_normal_bias": &"shadow_normal_bias",
+	"debug_sun_shadow_blur": &"shadow_blur",
+	"debug_sun_pancake_m": &"directional_shadow_pancake_size",
+}
+
 ## The owned player body this sun follows (set by PlayerClient right after instancing).
 var player: Node3D = null
 ## The atmosphere, for the air this light has to cross (set by PlayerClient). Null = airless: the
@@ -61,8 +69,12 @@ func _ready() -> void:
 	# and, when far, terrain chunks) are lit by the system star's OmniLight from the REAL star direction;
 	# this per-player sun is aimed star->PLAYER, wrong for a distant body, so it must not touch them.
 	light_cull_mask = Globals.RENDER_MASK_LOCAL_LIT  # the local layer, our own body included
-	shadow_opacity = 0.69  # softened shadow look carried over from the temporary day/night sun
+	# A shadow stops ALL of the direct light: the sky's ambient is what fills it, outside. The 0.69
+	# inherited from the temporary day/night sun (no sky ambient then) let 31 % of the sun through every
+	# roof -- ~28 000 lux at noon inside a container, 89 % of what lit its walls (measured 2026-10-23).
+	shadow_opacity = 1.0
 	shadow_blur = 1.649
+	_apply_shadow_measurements()
 	# Real-time shadows gated by the graphics settings (default on), reacting live to menu changes.
 	shadow_enabled = SettingsManager.is_shadows()
 	directional_shadow_max_distance = SettingsManager.get_shadow_distance()
@@ -142,6 +154,17 @@ func _process(delta: float) -> void:
 		light_color = star_tint(extinction)
 		light_energy = final_energy
 	_apply_shadow_distance()
+
+## Measurement switches from client.ini, for a light that crosses a thin roof right above what it lights
+## (LightProbe: the roof's shadow is cast, its collision hides the star, the wall under it is lit all
+## the same). Each overrides one shadow setting and says so; absent, the scene's values stand.
+func _apply_shadow_measurements() -> void:
+	for key: String in SHADOW_MEASUREMENTS:
+		if ClientConfig.has_key(key):
+			var value := ClientConfig.get_float(key, 0.0)
+			set(SHADOW_MEASUREMENTS[key], value)
+			print("[PlayerSunLight] !! %s=%s -- the sun's shadow is NOT the game's; a measurement." % [key, value])
+
 
 ## Orientation for a light shining FROM a celestial body TOWARD the player, given the unit vector
 ## [param to_source] pointing at that body. Shared with the moon lights, which need it built exactly
