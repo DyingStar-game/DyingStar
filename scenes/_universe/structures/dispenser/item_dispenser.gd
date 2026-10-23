@@ -6,7 +6,8 @@ extends StaticBody3D
 ## motor used to mean spawning a truck and stripping it), rations in the villages, the mining tool in
 ## the cargo depot — each run by an ARES subsidiary (brand): its screen, its lights and its logos take
 ## that subsidiary's colours (AresBrand). A variant is an inherited scene that sets brand,
-## catalogue_dir and title_key, and resizes the hatch if its items need it.
+## catalogue_dir and title_key, and resizes the hatch if its items need it. The vehicle terminal is one
+## too: its "hatch" is the parking bay beside it, and a player standing there fills it (tray_mask).
 ##
 ## SPLIT OF DUTIES, the teleporter's (ScreenTarget contract):
 ##   CLIENT — shows the catalogue (DispenserCatalog) and sends the chosen item's path as a
@@ -14,8 +15,8 @@ extends StaticBody3D
 ##   SERVER — update_screen() checks the path against the catalogue (never loads what the client
 ##            names), refuses while a delivery runs, and announces the delivery to the players around
 ##            (ScreenTarget.announce); delivery_s later, in a physics frame, it refuses while anything
-##            lies in the hatch and otherwise hands the item out there (MarkerSpawn, the truck kiosk's
-##            own spawning) — a batch when the item says so (rations by three). One delivery at a
+##            lies in the hatch and otherwise hands the item out there (MarkerSpawn, as the
+##            props a building holds from the start) — a batch when the item says so (rations by three). One delivery at a
 ##            time: the wait is what stops a player emptying it.
 ##
 ## Every client near shows the delivery the same way (screen_event): the screen's filling ring and
@@ -38,6 +39,9 @@ const TRAY_CHECK_RANGE_M: float = 20.0
 @export_dir var catalogue_dir: String = "res://scenes/_universe/vehicles/specs/"
 ## The screen's title (a translation key).
 @export var title_key: String = "%%DISPENSER_TITLE"
+## The button's word, and what the screen says while something lies in the hatch (translation keys).
+@export var dispense_key: String = "%%DISPENSER_DISPENSE"
+@export var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
 ## Seconds between a request and the item in the hatch; no other request is taken meanwhile.
 @export var delivery_s: float = 5.0
 ## Gap (m) between the items of a batch (DispenserItem.count), side by side across the hatch.
@@ -48,6 +52,9 @@ const TRAY_CHECK_RANGE_M: float = 20.0
 @export var tray_box_size: Vector3 = Vector3(0.66, 0.42, 0.4)
 ## Height (m) of that box's bottom over tray_marker: negative, the marker is the part's centre.
 @export var tray_box_lift: float = -0.21
+## What fills the hatch. Not the players by default: the hatch is an open pocket at waist height, and a
+## player pressed against the machine leans into it. A vehicle bay counts them (MASK_SOLID).
+@export_flags_3d_physics var tray_mask: int = Globals.MASK_OBSTACLE
 ## The hatch's flap, turned about its X axis (its bottom edge) to open: it falls forward like a
 ## letterbox's, flat under the hatch, rather than sticking out at knee height.
 @export var flap: Node3D
@@ -101,6 +108,8 @@ func _ready() -> void:
 		set_physics_process(false)  # only while a delivery runs (update_screen)
 		return
 	_wear_brand()
+	_ui.dispense_key = dispense_key
+	_ui.tray_full_key = tray_full_key
 	_ui.setup(brand, title_key, DispenserCatalog.all(catalogue_dir))
 	_ui.dispense_requested.connect(_on_dispense_requested)
 
@@ -256,16 +265,15 @@ static func flap_angle(current: float, open: bool, open_deg: float, speed_deg: f
 	return move_toward(current, target, deg_to_rad(speed_deg) * delta)
 
 
-## What lies in the hatch, or null. Players are not counted (MASK_OBSTACLE): the hatch is an open
-## pocket at waist height, and a player pressed against the machine leans into it — the flap opened
-## on them. The server and the clients read it with the same mask, so they agree.
+## What lies in the hatch (tray_mask), or null. The server and the clients read it with the same mask,
+## so they agree.
 ## The bodies of the networked node the machine belongs to are left out (the garage's walls reach
 ## into the hatch): the building it stands in, or the machine itself when a village placed it (or
 ## when it is in no networked node at all: offline, in a test).
 func _tray_blocker() -> Object:
 	var networked: Node = PropSync.networked_from(self)
 	return MarkerSpawn.blocker(tray_marker, tray_box_size, tray_box_lift, networked if networked != null else self,
-			Globals.MASK_OBSTACLE)
+			tray_mask)
 
 
 func _camera_near() -> bool:

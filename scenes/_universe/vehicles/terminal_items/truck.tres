@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="DispenserItem" format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/dispenser/dispenser_item.gd" id="1_item"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/truck.png" id="2_icon"]
+
+[resource]
+script = ExtResource("1_item")
+display_name = "%%ITEM_VEHICLE_TRUCK"
+icon = ExtResource("2_icon")
+scene_path = "res://scenes/_universe/vehicles/ground/trucks/truck.tscn"

@@ -2,8 +2,9 @@ class_name MarkerSpawn
 extends RefCounted
 
 ## SERVER: hand a networked prop out at a designer-placed marker, if the box over the marker is empty.
-## Shared by the machines that do it — the garage's truck kiosk (SpawnKiosk) and the component
-## dispenser (ItemDispenser) — which only decide WHAT to hand out and WHEN.
+## Shared by the machines that do it — the item dispensers (ItemDispenser), the garage's vehicle
+## terminal among them, and the props a building holds from the start (FixtureSpawn) — which only
+## decide WHAT to hand out and WHEN.
 
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 
@@ -69,8 +70,8 @@ static func _collect_body_rids(node: Node, out: Array[RID]) -> void:
 
 ## Hand [param scene] (network type [param type_name]) to the network at [param marker], placed in the
 ## frame of the networked parent it sits on (the planet): a prop left in world coordinates would drift
-## away with the moving planet. Returns the new prop's uuid.
-static func spawn(scene: PackedScene, type_name: String, marker: Node3D) -> String:
+## away with the moving planet. [param uuid] is the prop's (a new one when empty). Returns it.
+static func spawn(scene: PackedScene, type_name: String, marker: Node3D, uuid: String = "") -> String:
 	var net_parent: Node = PropSpawn.find_net_parent(marker)
 	var world: Transform3D = marker.global_transform
 	var local_pos: Vector3 = PropSpawn.to_parent_local(net_parent, world.origin)
@@ -78,7 +79,8 @@ static func spawn(scene: PackedScene, type_name: String, marker: Node3D) -> Stri
 	if net_parent is Node3D:
 		local_basis = (net_parent as Node3D).global_basis.inverse() * world.basis
 	var local_rot: Vector3 = local_basis.orthonormalized().get_euler()
-	var uuid: String = UUID_UTIL.v4()
+	if uuid == "":
+		uuid = UUID_UTIL.v4()
 	NetworkOrchestrator.spawn_prop_authoritative({
 		"type": type_name,
 		"uuid": uuid,

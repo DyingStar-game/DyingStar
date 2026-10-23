@@ -23,7 +23,7 @@ func test_a_switched_on_tool_runs() -> void:
 
 
 func test_an_ordinary_action_never_asks_a_dev_tool() -> void:
-	for action: String in ["jump", "sprint", "enter_vehicle", "kiosk_spawn", "screen_state", ""]:
+	for action: String in ["jump", "sprint", "enter_vehicle", "screen_state", ""]:
 		assert_true(PlayerServer.is_action_allowed(action, _off), "'%s' was gated as a dev tool" % action)
 
 

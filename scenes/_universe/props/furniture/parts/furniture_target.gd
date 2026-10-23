@@ -3,8 +3,8 @@ extends Interactable
 
 ## Something in a home a player works with the action key: a door, a drawer, a lamp, a bed.
 ##
-## The CLIENT only names it -- the uuid of the building it is in + its path inside it, as a SpawnKiosk
-## does (PlayerServer "furniture_use"). The SERVER checks that the player lives in the apartment it
+## The CLIENT only names it -- the uuid of the building it is in + its path inside it, as a screen
+## does (ScreenTarget; PlayerServer "furniture_use"). The SERVER checks that the player lives in the apartment it
 ## stands in (SpawnBuilding.occupant_of), reaches it and sees it, then calls server_use. Only the
 ## occupant is offered the prompt, and only with empty hands: carrying, the action key puts the load
 ## down, on a wardrobe shelf as anywhere else.
