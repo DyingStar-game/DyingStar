@@ -43,6 +43,16 @@ func test_server_values_come_from_the_signals() -> void:
 	assert_eq(lines[1], "9 players", "players")
 
 
+func test_universe_counts_are_whole_numbers() -> void:
+	assert_eq(DevReadouts.universe_lines(null, _cache)[0], "- servers", "unknown until the server says")
+	# JSON hands every number over as a float.
+	NetworkOrchestrator.set_universe_servers.emit(3.0)
+	NetworkOrchestrator.set_universe_players.emit(12.0)
+	var lines : PackedStringArray = DevReadouts.universe_lines(null, _cache)
+	assert_eq(lines[0], "3 servers", "servers")
+	assert_eq(lines[1], "12 players", "players")
+
+
 func test_every_zone_is_listed() -> void:
 	var zones : Array = []
 	for i in 10:

@@ -40,8 +40,8 @@ static func clock_alert_lines() -> PackedStringArray:
 
 static func universe_lines(body: Node3D, cache: ServerInfoCache) -> PackedStringArray:
 	var out : PackedStringArray = [
-		"%s servers" % str(cache.value("universe_servers", "-")),
-		"%s players" % str(cache.value("universe_players", "-")),
+		"%s servers" % _count(cache.value("universe_servers")),
+		"%s players" % _count(cache.value("universe_players")),
 		planet_time(body),
 	]
 	out.append_array(where(body))
