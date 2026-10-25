@@ -3,6 +3,7 @@ extends GutTest
 ## by the headroom over the side boards -- no box placed by hand. A drop point inside it loads.
 
 const TRUCK := "res://scenes/_universe/vehicles/ground/trucks/truck.tscn"
+const CRATE := "res://scenes/_universe/props/containers/box_50cm.tscn"
 
 
 func test_the_bed_box_rises_by_the_headroom() -> void:
@@ -49,9 +50,38 @@ func test_a_load_rests_on_the_visible_bed_floor() -> void:
 	truck.freeze = true
 	add_child_autofree(truck)
 	assert_almost_eq(truck._bed_floor_local_y(), VISIBLE_BED_FLOOR_Y, 0.005, "the floor is the model's, not the blockout's")
-	var crate := (load("res://scenes/_universe/props/containers/box_50cm.tscn") as PackedScene).instantiate() as RigidBody3D
+	var crate := (load(CRATE) as PackedScene).instantiate() as RigidBody3D
 	add_child_autofree(crate)
 	crate.global_position = truck.to_global(Vector3(0.0, 1.5, 1.0))
 	assert_true(truck.lock_dropped_cargo(crate))
 	var underside: float = Globals.collision_aabb(crate, truck.global_transform.affine_inverse() * crate.global_transform).position.y
 	assert_almost_eq(underside, VISIBLE_BED_FLOOR_Y, 0.005, "neither sunk into the floor nor floating")
+
+
+func test_the_boards_trim_the_floor() -> void:
+	var floor_piece := AABB(Vector3(-1.0, 0.0, 0.0), Vector3(2.0, 0.1, 2.0))
+	var pieces: Array[AABB] = [
+		AABB(Vector3(-0.95, 0.0, 0.0), Vector3(0.1, 0.6, 2.0)),  # left board
+		floor_piece,
+		AABB(Vector3(0.85, 0.0, 0.0), Vector3(0.1, 0.6, 2.0)),  # right board
+		AABB(Vector3(-1.0, 0.0, 1.9), Vector3(2.0, 0.6, 0.1)),  # rear board
+	]
+	var inside: AABB = Vehicle.bed_floor(pieces)
+	assert_almost_eq(inside.position, Vector3(-0.85, 0.0, 0.0), Vector3(1e-6, 1e-6, 1e-6))
+	assert_almost_eq(inside.end, Vector3(0.85, 0.1, 1.9), Vector3(1e-6, 1e-6, 1e-6), "the floor's top, between the boards")
+	assert_false(Vehicle.bed_floor([] as Array[AABB]).has_volume(), "no pieces, no floor")
+
+
+func test_a_load_dropped_towards_the_cab_lands_between_the_boards() -> void:
+	var truck: Vehicle = (load(TRUCK) as PackedScene).instantiate() as Vehicle
+	truck.freeze = true
+	add_child_autofree(truck)
+	var inside: AABB = truck._bed_floor
+	assert_lt(inside.size.x, truck._bed_box.size.x - 0.1, "the side boards are taken off")
+	var crate := (load(CRATE) as PackedScene).instantiate() as RigidBody3D
+	add_child_autofree(crate)
+	crate.global_position = truck.to_global(Vector3(inside.end.x, 1.5, inside.position.z - 0.3))
+	assert_true(truck.lock_dropped_cargo(crate))
+	var box: AABB = Globals.collision_aabb(crate, truck.global_transform.affine_inverse() * crate.global_transform)
+	assert_true(box.position.z >= inside.position.z - 0.001, "not into the cab")
+	assert_true(box.end.x <= inside.end.x + 0.001, "not into the side board")
