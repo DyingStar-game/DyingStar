@@ -3,12 +3,8 @@ extends RefCounted
 ## What the debug panel's sections say, as pure functions: data in, lines out. The panel (DevOverlay)
 ## decides when and where; these only format — so each is tested without a panel or a server.
 
-## The Server box's zone names, and its axis captions (the table of bounds, from TheMoye's #330).
-const ZONE_NAME_COLOR : String = "#ffd75e"
-const AXIS_COLOR : String = "#888888"
-const _COLUMN_GAP_PX : int = 18
-## The server border is measured up to this far (m) along the camera; beyond, the readout says "> 5000".
-const BORDER_FAR_M : float = 5000.0
+## The server border is measured up to this far (m) along the camera; beyond, the readout says "> 30000".
+const BORDER_FAR_M : float = 30000.0
 ## Zones of the same server crossed on the way to the border, at most.
 const _BORDER_MAX_HOPS : int = 8
 ## Past a zone's face before looking for the next zone (m): enough to leave it at 1e11 m in doubles.
@@ -122,14 +118,16 @@ static func frame(body: Node3D) -> String:
 
 # ── Server ──────────────────────────────────────────────────────────────────────────────────────
 
-static func server_lines(cache: ServerInfoCache) -> PackedStringArray:
+static func server_lines(cache: ServerInfoCache, body: Node3D = null) -> PackedStringArray:
 	var tps : Variant = cache.value("tps")
 	return [
+		"server name: %s" % ReadoutFormat.escape(str(cache.value("server_name", "-"))),
 		ReadoutFormat.rated(float(tps), 30.0, "TPS") if tps != null else "- TPS",
 		"%s players" % _count(cache.value("server_players")),
 		"%s objects" % _count(cache.value("server_objects")),
 		"%s scenes" % _count(cache.value("server_scenes")),
 		"%s active scenes" % _count(cache.value("server_active_scenes")),
+		border_line(body, cache),
 	]
 
 
@@ -137,19 +135,6 @@ static func server_lines(cache: ServerInfoCache) -> PackedStringArray:
 ## the server has sent it.
 static func _count(v: Variant) -> String:
 	return "-" if v == null else str(int(v))
-
-
-## The Godot server simulating us, how far its border lies where the camera looks, and its zones — all
-## of them: the section caps its height and scrolls on its own (DevOverlay), so a long list no longer
-## runs over the next section. The border line comes before the table, so it never scrolls away.
-static func box_lines(cache: ServerInfoCache, body: Node3D = null) -> PackedStringArray:
-	var out : PackedStringArray = [
-		"server name: %s" % ReadoutFormat.escape(str(cache.value("server_name", "-"))),
-		border_line(body, cache),
-	]
-	for zone in cache.value("zones", []):
-		out.append(zone_block(zone))
-	return out
 
 
 ## The server border straight ahead of the camera. Zone bounds are in the WORLD's coordinates (see
@@ -235,29 +220,6 @@ static func _exit_distance(b: Dictionary, p: Vector3, dir: Vector3) -> float:
 		elif dir[axis] < 0.0:
 			t = minf(t, (lo[axis] - p[axis]) / dir[axis])
 	return maxf(t, 0.0)
-
-
-## Its world (space or a planet), then "(whole)" or its bounds in that world's coordinates as a
-## table — one row per axis, min and max right-aligned, thousands apart.
-static func zone_block(zone: Dictionary) -> String:
-	var name : String = str(zone.get("world", "?"))
-	if name == "planet":
-		name += " " + str(zone.get("planet_name", zone.get("planet_uuid", "?")))
-	var head : String = "[color=%s]%s[/color]" % [ZONE_NAME_COLOR, ReadoutFormat.escape(name)]
-	var b : Variant = zone.get("bounds")
-	if b == null:
-		return head + " (whole)"
-	return head + "\n[table=3]%s%s%s[/table]" % [
-		_axis_row("X", b.get("min_x", 0.0), b.get("max_x", 0.0)),
-		_axis_row("Y", b.get("min_y", 0.0), b.get("max_y", 0.0)),
-		_axis_row("Z", b.get("min_z", 0.0), b.get("max_z", 0.0))]
-
-
-## Min and max right-aligned, each with room on its left so the two never touch.
-static func _axis_row(axis: String, lo: float, hi: float) -> String:
-	return ("[cell][color=%s]%s[/color][/cell][cell padding=%d,0,0,0][right]%s[/right][/cell]"
-		+ "[cell padding=%d,0,0,0][right]%s[/right][/cell]") % [AXIS_COLOR, axis,
-		_COLUMN_GAP_PX, ReadoutFormat.grouped(lo), _COLUMN_GAP_PX, ReadoutFormat.grouped(hi)]
 
 
 # ── Ground ──────────────────────────────────────────────────────────────────────────────────────

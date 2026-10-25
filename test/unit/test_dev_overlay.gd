@@ -93,11 +93,6 @@ func test_it_sits_on_the_right() -> void:
 	assert_eq(_panel._panel.anchor_left, 1.0, "right edge, the graphics panel has the left")
 
 
-func test_only_the_server_box_is_capped() -> void:
-	assert_gt(_section("%%HUD_DEV_SERVER_BOX").max_height_px, 0.0, "the zone list scrolls on its own")
-	assert_eq(_section("%%HUD_DEV_CLIENT").max_height_px, 0.0, "the other sections grow with their text")
-
-
 func test_the_music_section_has_its_own_switch() -> void:
 	SettingsManager.debug.preview(&"music_debug", true)
 	assert_true(_section("%%HUD_DEV_MUSIC").box.visible, "shown without the other debug readouts")

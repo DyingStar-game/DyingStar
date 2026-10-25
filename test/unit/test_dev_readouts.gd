@@ -34,13 +34,13 @@ func test_the_clock_alert_speaks_only_while_the_clock_is_shifted() -> void:
 
 
 func test_server_values_come_from_the_signals() -> void:
-	assert_eq(DevReadouts.server_lines(_cache)[0], "- TPS", "unknown until the server says")
+	assert_eq(DevReadouts.server_lines(_cache)[1], "- TPS", "unknown until the server says")
 	NetworkOrchestrator.set_gameserver_server_tps.emit(24)
 	NetworkOrchestrator.set_gameserver_number_players.emit(9)
 	var lines : PackedStringArray = DevReadouts.server_lines(_cache)
-	assert_string_contains(lines[0], "24", "TPS")
-	assert_string_contains(lines[0], SettingsStyle.ALERT_COLOR.to_html(false), "red under 30")
-	assert_eq(lines[1], "9 players", "players")
+	assert_string_contains(lines[1], "24", "TPS")
+	assert_string_contains(lines[1], SettingsStyle.ALERT_COLOR.to_html(false), "red under 30")
+	assert_eq(lines[2], "9 players", "players")
 
 
 func test_universe_counts_are_whole_numbers() -> void:
@@ -53,15 +53,15 @@ func test_universe_counts_are_whole_numbers() -> void:
 	assert_eq(lines[1], "12 players", "players")
 
 
-func test_every_zone_is_listed() -> void:
+func test_the_server_section_names_it_and_ends_on_its_border() -> void:
 	var zones : Array = []
 	for i in 10:
 		zones.append(_zone("P%d" % i, false))
 	NetworkOrchestrator.set_gameserver_zones.emit(zones)
-	var lines : PackedStringArray = DevReadouts.box_lines(_cache)
-	assert_eq(lines.size(), 2 + 10, "the name, the border, then all ten zones: the section scrolls, nothing is cut")
-	assert_eq(lines[1], "frontière : --", "no body, no camera: no border to measure")
-	assert_string_contains(lines[-1], "P9", "down to the last one")
+	var lines : PackedStringArray = DevReadouts.server_lines(_cache)
+	assert_string_contains(lines[0], "server name: ", "its name first")
+	assert_eq(lines.size(), 7, "name, TPS, players, objects, scenes, active scenes, border: no zone list")
+	assert_eq(lines[-1], "frontière : --", "no body, no camera: no border to measure")
 
 
 func _box(min_x: float, max_x: float) -> Dictionary:
@@ -88,39 +88,17 @@ func test_a_zone_of_the_same_server_is_no_border() -> void:
 
 
 func test_far_whole_or_elsewhere() -> void:
-	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([_box(-10.0, 9000.0)], "T3", Vector3.ZERO,
-		Vector3.RIGHT)), "frontière : > 5000 mètres", "far away")
+	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([_box(-10.0, 90000.0)], "T3", Vector3.ZERO,
+		Vector3.RIGHT)), "frontière : > 30000 mètres", "far away")
 	var whole : Dictionary = {"world": "planet", "planet_uuid": "T3"}
 	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([whole], "T3", Vector3.ZERO, Vector3.UP)),
-		"frontière : > 5000 mètres", "a whole world has no border")
+		"frontière : > 30000 mètres", "a whole world has no border")
 	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([_box(-10.0, 10.0)], "G1", Vector3.ZERO,
 		Vector3.UP)), "frontière : hors zone", "another planet's zone is not ours")
 	assert_eq(DevReadouts.border_text(DevReadouts.border_distance([_box(-10.0, 10.0)], "T3", Vector3(50, 0, 0),
 		Vector3.UP)), "frontière : hors zone", "outside every zone")
 	assert_true(is_nan(DevReadouts.border_distance([_box(-10.0, 10.0)], "", Vector3.ZERO, Vector3.UP)),
 		"in space, a planet zone does not hold us")
-
-
-func test_a_bounded_zone_is_a_table_of_its_bounds() -> void:
-	var zone : Dictionary = {"world": "planet", "planet_name": "Tarsis3", "bounds": {
-		"min_x": -4450658.9, "max_x": 1234567.0, "min_y": -2.0, "max_y": 999.0, "min_z": 0.4, "max_z": 1000.0}}
-	var block : String = DevReadouts.zone_block(zone)
-	assert_string_contains(block, "[color=%s]planet Tarsis3[/color]" % DevReadouts.ZONE_NAME_COLOR, "the name first")
-	assert_string_contains(block, "[table=3]", "then a table")
-	assert_eq(block.count("[/cell]"), 9, "three axes, each with its min and max")
-	assert_string_contains(block, "-4" + ReadoutFormat.THOUSANDS + "450" + ReadoutFormat.THOUSANDS + "659",
-		"thousands apart, rounded")
-	assert_string_contains(block, "1" + ReadoutFormat.THOUSANDS + "000", "a max on the Z row")
-
-
-func test_a_whole_world_says_so() -> void:
-	assert_eq(DevReadouts.zone_block(_zone("Gaea", false)),
-		"[color=%s]planet Gaea[/color] (whole)" % DevReadouts.ZONE_NAME_COLOR, "no table for a whole world")
-
-
-func test_a_zone_name_is_not_read_as_bbcode() -> void:
-	var block : String = DevReadouts.zone_block({"world": "space [test]"})
-	assert_string_contains(block, "space [lb]test]", "the bracket is escaped")
 
 
 func test_numbers_are_grouped_by_thousands() -> void:
