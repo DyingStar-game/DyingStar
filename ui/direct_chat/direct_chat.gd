@@ -34,6 +34,10 @@ var is_shown: bool = false
 var can_write: bool = false
 var loggin := "all"
 
+## Messages the log holds before it is trimmed, and how many of the newest a trim keeps.
+const _LOG_MAX: int = 100
+const _LOG_KEEP: int = 50
+
 # List for storing messages
 var messages_list: Array[ChatMessage] = []
 var messages_waiting: Array[ChatMessage] = []
@@ -104,6 +108,9 @@ func _ready():
 	# override, which would otherwise fall back to the theme's opaque default panel.
 	_empty_bg = StyleBoxEmpty.new()
 	add_theme_stylebox_override("panel", _empty_bg)
+	# The log's scrollbar is for write mode only: at rest the mouse drives the camera, so the bar
+	# could never be used and only stood over the end of the lines.
+	_set_scrollbar_shown(false)
 
 	# Populate the channel selector (inactive channels are greyed — see _refresh_channels).
 	_refresh_channels()
@@ -362,6 +369,7 @@ func _start_writing() -> void:
 	input_bar.visible = true
 	# Show the backdrop only while typing, for comfort when composing a message.
 	add_theme_stylebox_override("panel", _write_bg)
+	_set_scrollbar_shown(true)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	input_field.grab_focus()
 
@@ -374,7 +382,17 @@ func _stop_writing() -> void:
 	# Back to the transparent box → the log is background-free once the message is
 	# sent or the input closes (re-apply, don't remove — see _ready).
 	add_theme_stylebox_override("panel", _empty_bg)
+	_set_scrollbar_shown(false)
+	# Back to the newest line: with the bar gone, a log left scrolled up would just look frozen.
+	# Reaching the bottom also resumes scroll_following for the next messages.
+	output_field.scroll_to_line(maxi(output_field.get_line_count() - 1, 0))
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+## Show the log's scrollbar (write mode) or not (at rest). Faded rather than hidden: RichTextLabel
+## shows and hides the bar itself whenever the text outgrows the panel, so `visible = false` would not
+## hold. The lines keep wrapping short of the bar, so nothing reflows when it comes back.
+func _set_scrollbar_shown(shown: bool) -> void:
+	output_field.get_v_scroll_bar().modulate.a = 1.0 if shown else 0.0
 
 # Receives a message from the server
 func receive_message_from_server(receveid_message: ChatMessage) -> void:
@@ -385,7 +403,14 @@ func receive_message_from_server(receveid_message: ChatMessage) -> void:
 	if _is_dm(receveid_message) and receveid_message.peer_id != _dm_filter_peer:
 		return
 	messages_list.append(receveid_message)
-	parse_message(receveid_message)
+	if messages_list.size() > _LOG_MAX:
+		# Rebuilt from the newest _LOG_KEEP only, each line with its own time (see parse_message).
+		messages_list = messages_list.slice(-_LOG_KEEP)
+		output_field.clear()
+		for message in messages_list:
+			parse_message(message)
+	else:
+		parse_message(receveid_message)
 
 
 ## True for a private message — one that belongs to a thread of its own.
@@ -407,18 +432,13 @@ func _channel_tag(message: ChatMessage) -> String:
 	return "(" + ChannelE.keys()[message.channel] + ") "
 
 
-# Parse a message for display, and memory management
+## Append one message to the log.
 func parse_message(message_to_parse: ChatMessage) -> void:
-	# If there are more than 100 messages → keep the last 50
-	if messages_list.size() > 100:
-		output_field.clear()
-		messages_list = messages_list.slice(50, messages_list.size() - 50)
-		for message in messages_list:
-			parse_message(message)
-		return
-
-	var now: Dictionary = Time.get_datetime_dict_from_system()
-	var gdh: String = "%02d:%02d:%02d" % [now.hour, now.minute, now.second]
+	# The message's own time (stamped when it arrived), not the clock now: a log rebuilt after a trim
+	# prints every line again, and each must keep the time it came in at.
+	var at: Dictionary = Time.get_datetime_dict_from_unix_time(
+			int(message_to_parse.creation_schedule) + Time.get_time_zone_from_system().bias * 60)
+	var gdh: String = "%02d:%02d:%02d" % [at.hour, at.minute, at.second]
 
 	# Order: [time] (channel) name: message — channel first, then the player name, then the text.
 	output_field.append_text(
