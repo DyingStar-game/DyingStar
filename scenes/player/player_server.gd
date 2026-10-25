@@ -2129,6 +2129,11 @@ func _npc_physics_process(delta: float) -> void:
 ## reachability, bake box, reparent frames...). Costs several nav queries per report: keep off outside
 ## debugging sessions.
 const _NPC_DEBUG: bool = false
+## The full report on an NPC's 6th detour: ~75 nav path queries and a dozen prints in ONE physics step,
+## 150-240 ms on a 45-player preprod pod (2026-10-25) — a jerk every player of the pod felt, every
+## 30-60 s. So its own switch, `[debug] npc_nav_report=true` or DS_NPC_NAV_REPORT=1, never part of
+## `perf`. -1 = not read yet: SettingsManager is an autoload, not there when a static initializer runs.
+static var _npc_nav_report: int = -1
 
 ## Dump why the NPC is (not) pathing. The decisive numbers are `target off navmesh` — the target is not
 ## on any baked polygon, so map_get_path can only return a PARTIAL path and the NPC stops at the nearest
@@ -2540,7 +2545,9 @@ func _npc_pick_detour() -> bool:
 		# a visible cause.
 		push_warning("NPC %s has taken %d detours without reaching goal %s; it may be unreachable"
 				% [player.name, _npc_detour_count, player.npc_go_to_position])
-		if PropNet.prof_on:
+		if _npc_nav_report < 0:
+			_npc_nav_report = 1 if SettingsManager._server_ini_flag("debug", "npc_nav_report") else 0
+		if _npc_nav_report == 1:
 			# One full diagnostic for THIS failure (coverage / reachability along the route, physics
 			# ground, box state): the only way to tell an unreachable goal from a coverage hole.
 			_npc_debug_report()
