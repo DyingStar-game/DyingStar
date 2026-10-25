@@ -149,6 +149,11 @@ const LYING_EYE := Vector3(0.0, 0.12, 0.08)
 ## while the stride itself moves the camera under 3 cm (MovementProbe "cam swing", playtest
 ## 2026-10-19). Too low and the neck shows for a moment as a run starts: head_cam_forward is the margin.
 @export_range(0.5, 30.0, 0.5) var head_cam_lean_smooth: float = 5.0
+## Clearance (m) kept between a wall and the corners of the camera's near plane. The eye leans out of the
+## capsule (forward offset, sprint lean, crouched or prone head over the knees) and its near plane went
+## into the wall in front: you saw through it. The eye is held back from any wall by the near plane's
+## reach plus this. Higher = farther from walls; 0 = the near plane may just touch them.
+@export_range(0.0, 0.1, 0.005) var head_cam_wall_margin: float = 0.02
 
 @export_group("Wrist DataPad")
 ## Where the raised wrist goes, from the LEFT SHOULDER as the animation holds it, in the body's axes (m;
@@ -208,6 +213,10 @@ var _vault_key: String = ""  # current vault TYPE (vault / climb_1m / climb_2m),
 var _vault_height: float = 0.0  # obstacle height (m) of the current vault, for the height-based pose offset
 var _vault_debug: Dictionary = {}  # cached VaultProbe result for the debug HUD (sampled in _physics_process)
 var _step_debug: Dictionary = {}   # same, for StepProbe: what the STEP-UP made of what is ahead
+## How often (s) those two probes run: the movement readout refreshes every 0.1 s (DevOverlay), so a
+## probe between two refreshes is never seen.
+const MOVEMENT_PROBE_S: float = 0.1
+var _movement_probe_age: float = INF  # s since the last probe; INF = probe on the next physics step
 var _warp_max: float = 3.0    # fastest walk playback, = walk_speed_max / WALK_REF_SPEED (see setup)
 var _sprint_min: float = 4.0  # walk -> sprint boundary (m/s), midpoint of walk_speed_max and sprint_speed
 
@@ -233,6 +242,9 @@ var _wrist_held: bool = false  # the raised pose is taken (_hold_wrist_pose), he
 var _wrist_hold_wrist: Vector3 = Vector3.ZERO  # skeleton space: where the wrist is held
 var _wrist_hold_pole: Vector3 = Vector3.ZERO  # skeleton space: where the elbow points
 var _wrist_hold_eye: Vector3 = Vector3.ZERO  # skeleton space: the eye the screen faces
+var _eye_sphere := SphereShape3D.new()  # swept from the body axis to the eye (see _eye_clear_of_walls)
+var _eye_query := PhysicsShapeQueryParameters3D.new()
+var _body_radius: float = 0.25  # the physics capsule's radius (m), read in setup
 
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
@@ -256,6 +268,11 @@ func set_dormant(dormant: bool) -> void:
 func setup(player_body, is_local: bool) -> void:
 	_player = player_body
 	_is_local = is_local
+	var capsule := _player.get_node_or_null(^"Placeholder_Collider") as CollisionShape3D
+	if capsule != null and capsule.shape is CapsuleShape3D:
+		_body_radius = (capsule.shape as CapsuleShape3D).radius
+	_eye_query.shape = _eye_sphere
+	_eye_query.collision_mask = Globals.MASK_OBSTACLE
 	# Speed tiers from the player's actual stats (GDD: walk is mouse-wheel-variable 0.5-3, sprint 5).
 	# The Walk clip covers the WHOLE wheel range, sped up with the wheel; only sprint changes gait.
 	# Carrying (x0.5), crouch and walking backward are all slow -> the same Walk, played slower.
@@ -521,7 +538,7 @@ func _process(delta: float) -> void:
 			# to a stop alike; a posture change or a vault still moves the whole view at head_cam_smooth.
 			if not one_shot:
 				eased.z = lerpf(pivot.z, target.z, 1.0 - exp(-head_cam_lean_smooth * delta))
-			_player.camera_pivot.position = eased
+			_player.camera_pivot.position = eased  # kept out of walls by PlayerClient, once the body moved
 		else:
 			# NOT gated on _head_rest_captured. That reference is only taken on an idle frame ON FOOT, so a
 			# player who sat down before it was captured never entered this branch at all: the pivot kept
@@ -538,6 +555,65 @@ func _process(delta: float) -> void:
 			if not bool(_player.locomotion_sample.get("driver", false)):
 				eye += _player.passenger_eye_offset
 			_player.camera_pivot.position = _head_cam.camera_base + Vector3(0.0, eye, 0.0)
+
+## The first-person eye, pulled back towards the body as far as a wall in front needs: the camera's near
+## plane never reaches into it. The capsule keeps walls a body radius from its axis, but the eye leans
+## past that (head_cam_forward, a sprint, a crouched or prone head out over the knees), and the near
+## plane reaches further still: its corners were inside the wall and the room behind showed.
+## A sphere as wide as the near plane's reach is swept from the axis at eye height out to the eye; the
+## camera stops where the sphere first touches. Off a wall it eases back out at head_cam_smooth, since
+## the pivot keeps the pulled-back value and the next frame lerps from it.
+##
+## Called by the OWNER's PlayerClient once the body is where it is drawn this frame. From this node's
+## _process, the body moved after the sweep and carried the eye one step into the wall. [param anchor]
+## (world): the body where the SERVER has it, clear of every wall. Led ahead of the server while a move
+## key is held, the drawn body runs into a wall for a few frames before the server's stop pulls it
+## back, and a sweep that STARTS in the wall ignores it (cast_motion skips what it begins inside): the
+## room behind showed for those frames. So the sweep starts from the drawn body only while its sphere is
+## sure to sit inside the server's capsule, clear by construction; past that, from the server's body.
+## Costs ~5-180 us against a building's trimesh (test/perf/eye_sweep_bench); "eye:walls" on [CPerf+].
+func keep_eye_out_of_walls(anchor: Vector3) -> void:
+	var cam := _player.camera as Camera3D
+	if cam == null or _player.camera_pivot == null:
+		return
+	var tok: int = ClientPerf.scope_begin()
+	# A sphere narrower than the capsule, from its axis, cannot start in a wall.
+	_eye_sphere.radius = minf(_near_plane_reach(cam) + head_cam_wall_margin, _body_radius - 0.02)
+	# Not ourselves, nor what we carry: a carried box is reparented under the body.
+	var exclude: Array[RID] = [_player.get_rid()]
+	for child: Node in _player.get_children():
+		if child is CollisionObject3D:
+			exclude.append((child as CollisionObject3D).get_rid())
+	_eye_query.exclude = exclude
+	var eye_local: Vector3 = _player.camera_pivot.position
+	var eye: Vector3 = _player.to_global(eye_local)
+	var lift: Vector3 = _player.global_basis * Vector3(0.0, eye_local.y, 0.0)
+	var body: Vector3 = _player.global_position
+	if body.distance_to(anchor) > _body_radius - _eye_sphere.radius:
+		body = anchor  # led too far ahead: the drawn body may be in the wall
+	_eye_query.transform = Transform3D(Basis.IDENTITY, body + lift)
+	_eye_query.motion = eye - (body + lift)
+	if _eye_query.motion.length_squared() > 1e-6:
+		# Untyped: cast_motion returns a PackedFloat64Array in this double-precision build, not the
+		# documented PackedFloat32Array, and either typed variable fails in one of the two builds.
+		var fractions = _player.get_world_3d().direct_space_state.cast_motion(_eye_query)
+		if fractions.size() >= 2 and fractions[1] < 1.0:
+			_player.camera_pivot.position = _player.to_local(body + lift + _eye_query.motion * fractions[0])
+	ClientPerf.scope_end("eye:walls", tok)
+
+## Distance (m) from the camera to the corners of its near plane: how far the view reaches into
+## whatever is in front of the eye, whichever way it looks.
+static func _near_plane_reach(cam: Camera3D) -> float:
+	var aspect: float = 16.0 / 9.0
+	var viewport := cam.get_viewport()
+	if viewport != null:
+		var size: Vector2 = viewport.get_visible_rect().size
+		if size.y > 0.0:
+			aspect = size.x / size.y
+	var t: float = tan(deg_to_rad(cam.fov) * 0.5)
+	var tv: float = t if cam.keep_aspect == Camera3D.KEEP_HEIGHT else t / aspect
+	var th: float = tv * aspect
+	return cam.near * sqrt(1.0 + tv * tv + th * th)
 
 ## A driver's hands go to the wheel's grips, faded in over hands_on_wheel_time; off the driver's seat they
 ## let go at once. On every avatar: the seat and the vehicle are known to every client.
@@ -665,20 +741,29 @@ func _hold_wrist_pose() -> void:
 				eye.distance_to(shoulder), _anim.current_animation])
 
 ## Local only: cache the vault probe here — the physics space state it needs is null in _process, so the
-## debug panel reads this snapshot instead. Cheap, and only while the movement debug is on.
-func _physics_process(_delta: float) -> void:
-	if _is_local and SettingsManager.debug.is_on(&"movement_debug"):
-		_vault_debug = VaultProbe.probe(_player)
-		# The step-up itself decides on the direction we MOVE in -- sidling along a wall steps up on the
-		# wall's face, not on whatever the camera faces. But a READOUT probed that way is blank exactly
-		# when you want to read it: you stop walking to look at the HUD, input_direction falls to zero,
-		# and it reports "clear" while you stand against a step. So the readout falls back to the body's
-		# facing when still -- the same direction VaultProbe uses on the line above.
-		var move: Vector3 = _player.global_basis * Vector3(
-			_player.input_direction.x, 0.0, _player.input_direction.y)
-		if move.length() < 0.01:
-			move = -_player.global_basis.z
-		_step_debug = StepProbe.probe(_player, move, _player.vault_min_height)
+## debug panel reads this snapshot instead. Only while the movement debug is on, and only as often as the
+## panel reads it (MOVEMENT_PROBE_S): run every physics step, the probes took a client from 50 to 25 fps
+## against a wall (2026-10-25) -- StepProbe tries every lift there before calling it a wall, and each
+## sweep is slow this far from the world origin.
+func _physics_process(delta: float) -> void:
+	if not _is_local or not SettingsManager.debug.is_on(&"movement_debug"):
+		_movement_probe_age = INF  # turned back on: probe at once, not a period later
+		return
+	_movement_probe_age += delta
+	if _movement_probe_age < MOVEMENT_PROBE_S:
+		return
+	_movement_probe_age = 0.0
+	_vault_debug = VaultProbe.probe(_player)
+	# The step-up itself decides on the direction we MOVE in -- sidling along a wall steps up on the
+	# wall's face, not on whatever the camera faces. But a READOUT probed that way is blank exactly
+	# when you want to read it: you stop walking to look at the HUD, input_direction falls to zero,
+	# and it reports "clear" while you stand against a step. So the readout falls back to the body's
+	# facing when still -- the same direction VaultProbe uses on the line above.
+	var move: Vector3 = _player.global_basis * Vector3(
+		_player.input_direction.x, 0.0, _player.input_direction.y)
+	if move.length() < 0.01:
+		move = -_player.global_basis.z
+	_step_debug = StepProbe.probe(_player, move, _player.vault_min_height)
 
 ## Pick the clip for the current state, highest priority first.
 func _select_clip(delta: float) -> StringName:

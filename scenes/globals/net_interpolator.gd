@@ -48,6 +48,10 @@ func set_target(node: Node3D, local_pos: Vector3, local_basis: Basis) -> void:
 		node.transform.basis = local_basis
 		_has = true
 
+## True once a target came in: before that, lead_target has nothing to say.
+func has_target() -> bool:
+	return _has
+
 ## Glide the node toward the target. Call every frame (typically from _process).
 func update(node: Node3D, delta: float) -> void:
 	if not _has:
