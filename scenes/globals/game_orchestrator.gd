@@ -29,6 +29,9 @@ const LOADING_SCENE: PackedScene = preload("res://ui/loading.tscn")
 const VOICE_GROUP := &"livekit_audio"
 ## Longest wait (s) for the voice room to be left before the game quits anyway.
 const QUIT_VOICE_TIMEOUT_S := 1.0
+## LiveKit's Rust library, kept loaded until the process dies (see tools/native/NativeLibraryPin.cs).
+const VOICE_NATIVE_LIBRARY := "livekit_ffi.dll"
+const NATIVE_LIBRARY_PIN_SCRIPT := "res://tools/native/NativeLibraryPin.cs"
 
 
 var current_network_role = null
@@ -45,9 +48,8 @@ var connexion_error_message: String = ""
 @onready var game_is_paused: bool = false
 var _quitting: bool = false
 ## Voice rooms told to leave (LiveKitAudio.shutdown) that have not said they left yet: quit_game waits for
-## them. The extension leaves on threads of its own, and when Godot unloaded the library under them at
-## exit they ran code that was no longer there -- the client crashed on almost every quit after a voice
-## session (crash dump 2026-10-22, in livekit_ffi's network thread).
+## them, so the room sees us go. That wait alone did not stop the crash at quit: LiveKit's threads outlive
+## every room, and only pinning its library does (_pin_voice_library).
 var voice_rooms_leaving: Array = []
 
 func _enter_tree() -> void:
@@ -86,6 +88,7 @@ func _ready():
 		change_game_state(GameStates.SERVER_UNIVERS_CREATION)
 	else:
 		change_network_role(NetworkRole.PLAYER)
+		_pin_voice_library()
 		# With no player in the world yet, this is the menu music (see MusicDirector).
 		MusicDirector.start()
 		if OS.has_feature("devmode"):
@@ -111,6 +114,17 @@ func quit_game() -> void:
 		voice.shutdown()
 	await voice_rooms_left(QUIT_VOICE_TIMEOUT_S)
 	get_tree().quit()
+
+
+## Keep LiveKit's library loaded until the process dies (Windows). Its threads start with the extension,
+## before any room, and never stop; when Godot unloaded the library under them at exit, the first to wake
+## ran code that was no longer there -- the client crashed on quit (crash dumps 2026-10-22, 2026-10-25).
+func _pin_voice_library() -> void:
+	if OS.get_name() != "Windows":
+		return
+	var script: Script = NativeScript.load_usable(NATIVE_LIBRARY_PIN_SCRIPT, ["Pin"])
+	if script == null or not script.new().Pin(VOICE_NATIVE_LIBRARY):
+		push_warning("[voice] %s not pinned: quitting may crash" % VOICE_NATIVE_LIBRARY)
 
 
 ## Wait until every voice room told to leave has left, or [param timeout_s] seconds at most (a room that

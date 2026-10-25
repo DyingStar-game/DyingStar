@@ -37,3 +37,12 @@ func test_the_autoload_that_quits_never_loads_the_voice_script() -> void:
 	# and an autoload loading it would stop the server.
 	var source: String = FileAccess.get_file_as_string("res://scenes/globals/game_orchestrator.gd")
 	assert_false(source.contains("audio/livekit.gd"), "GameOrchestrator must not load livekit.gd")
+
+
+func test_the_voice_library_pin_is_usable_and_harmless() -> void:
+	# The pin that keeps LiveKit's library loaded at exit must be in the assembly, and pinning a library
+	# that is not loaded (or any library off Windows) only answers false.
+	var script: Script = NativeScript.load_usable(GameOrchestrator.NATIVE_LIBRARY_PIN_SCRIPT, ["Pin"])
+	assert_not_null(script, "NativeLibraryPin.cs is built into the assembly")
+	if script != null:
+		assert_false(script.new().Pin("no_such_library_dyingstar.dll"), "nothing loaded under that name")
