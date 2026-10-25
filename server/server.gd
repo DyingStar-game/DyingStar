@@ -2046,6 +2046,19 @@ func update_planet_biome(event: Dictionary) -> void:
 	planet.planet_terrain.rebuild_chunks(chunk_keys, biome_update)
 
 
+## Is the player described by [param player_data] (Horizon's object_data) an NPC bot? Horizon already
+## derives `is_npc` from the realm role `npc` of the verified token; asking for the role here too is
+## defence in depth, so a Horizon that still forwards the client's own claim cannot make a human an NPC.
+## Without roles (BYPASS_AUTH on a local Horizon, no token) `is_npc` alone decides, as before.
+static func spawn_is_npc(player_data: Dictionary) -> bool:
+	if player_data.get("is_npc", false) != true:
+		return false
+	var player_roles = player_data.get("roles", [])
+	if (player_roles is Array or player_roles is PackedStringArray) and not player_roles.is_empty():
+		return "npc" in player_roles
+	return true
+
+
 func create_player(event: Dictionary) -> void:
 	var player_uuid = ""
 	if event["data"].has("object_uuid"):
@@ -2092,8 +2105,11 @@ func create_player(event: Dictionary) -> void:
 	var spawned_entity_instance = player_scene.instantiate()
 	spawned_entity_instance.name = player_data["name"]
 
-	if player_data.has("is_npc") and player_data["is_npc"] == true:
+	# The only place is_npc is set: PlayerServer.setup() trims the NPC body from it once in the tree.
+	if spawn_is_npc(player_data):
 		spawned_entity_instance.is_npc = true
+	elif player_data.get("is_npc", false) == true:
+		push_warning("Player %s flagged is_npc without the 'npc' realm role: spawned as a human" % player_uuid)
 	spawned_entity_instance.move_clocks = player_data.get("move_clocks", false) == true
 	var player_roles = player_data.get("roles", [])
 	if player_roles is Array:

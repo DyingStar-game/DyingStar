@@ -685,10 +685,8 @@ func server_action_received(data: Dictionary) -> void:
 		"npc_go_to_position":
 			# Server-authoritative: set the NPC's target position (the AI sets it on the Player facade,
 			# then this role drives the body toward it). The AI can change it at any time, and the NPC
-			# will re-path to it.
-			if not player.is_npc:
-				player.is_npc = true
-				_npc_trim()
+			# will re-path to it. Only for a player spawned as an NPC (server.gd, from Horizon's
+			# object_data): the action itself never makes one, or any client could turn into a bot.
 			if player.is_npc:
 				# Walking owns the body orientation (_npc_face): drop any pending facing goal.
 				player.npc_face_position = null
