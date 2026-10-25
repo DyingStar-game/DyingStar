@@ -5,6 +5,8 @@ extends GutTest
 
 const BUILDING := "res://scenes/_universe/structures/buildings/spawn_building.tscn"
 const BED := "res://scenes/_universe/props/furniture/chamber/bed.tscn"
+## A door of a home that opens and shuts like any (the front doors stand open for good).
+const WARDROBE_DOOR := "Interior/Wardrobe/wardrobe2/wardrobe_door_door_r/DoorR"
 
 
 func test_a_door_turns_about_its_hinge() -> void:
@@ -155,15 +157,15 @@ func test_the_building_shows_its_state() -> void:
 	building.cols = 2
 	PropSync.of(building).uuid = "home-uuid"
 	add_child_autofree(building)
-	var key := "0-1-0/habitat_container/frame/left_door/DoorL"
+	var key := "0-1-0/" + WARDROBE_DOOR
 	building.apply_prop_data({"apartments": [], "furniture": {key: true}})
 	var rooms: Node = building.get_node("MultiMeshInstance3D")
-	var there := rooms.get_node("0-1-0/habitat_container/frame/left_door/DoorL") as MovingPart
-	var here := rooms.get_node("0-0-0/habitat_container/frame/left_door/DoorL") as MovingPart
+	var there := rooms.get_node("0-1-0/" + WARDROBE_DOOR) as MovingPart
+	var here := rooms.get_node("0-0-0/" + WARDROBE_DOOR) as MovingPart
 	assert_eq(there.state_key(), key)
 	assert_true(there.is_on, "listed: open")
 	assert_false(here.is_on, "not listed: shut")
-	assert_almost_eq((there.get_parent() as Node3D).rotation.y, deg_to_rad(there.open_angle_deg), 1e-4, "open at once on arrival")
+	assert_gt(there._open, 0.0, "open at once on arrival")
 	building.apply_prop_data({"furniture": {key: false}})
 	assert_false(there.is_on, "closed by a later change")
 	var lamps: Array = rooms.find_children("Lamp", "Area3D", true, false)
@@ -187,13 +189,13 @@ func test_a_body_lies_down_on_the_mattress() -> void:
 func test_a_state_that_arrives_before_the_building_is_placed_still_shows() -> void:
 	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
 	PropSync.of(building).uuid = "home-uuid"
-	var key := "0-0-0/habitat_container/frame/right_door/DoorR"
+	var key := "0-0-0/" + WARDROBE_DOOR
 	building.apply_prop_data({"apartments": [], "furniture": {key: true}})  # not in the tree yet, as on arrival
 	add_child_autofree(building)
-	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
-	assert_true(right.is_on)
-	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(right.open_angle_deg), 1e-4, "shown open once placed")
-	assert_eq(right.label, right.label_on, "and says it closes, not that it opens")
+	var door := building.get_node("MultiMeshInstance3D/0-0-0/" + WARDROBE_DOOR) as MovingPart
+	assert_true(door.is_on)
+	assert_gt(door._open, 0.0, "shown open once placed")
+	assert_eq(door.label, door.label_on, "and says it closes, not that it opens")
 	KnownEngineErrors.forgive_floor_material(self)
 
 
@@ -201,60 +203,37 @@ func test_a_state_that_arrives_before_the_building_has_its_uuid_still_shows() ->
 	# The server's order on a restart: the state first, out of the tree and with no uuid yet. A door left
 	# open was shown shut there (its key unresolved), open on every client: an invisible wall.
 	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
-	var key := "0-0-0/habitat_container/frame/right_door/DoorR"
+	var key := "0-0-0/" + WARDROBE_DOOR
 	building.apply_prop_data({"apartments": [], "furniture": {key: true}})
 	PropSync.of(building).uuid = "home-uuid"
 	add_child_autofree(building)
 	building.apply_prop_data({"apartments": [], "furniture": {key: true}})  # the same state again, in the tree
-	var right := building.get_node("MultiMeshInstance3D/0-0-0/habitat_container/frame/right_door/DoorR") as MovingPart
-	assert_true(right.is_on, "open, as the state says")
-	assert_almost_eq((right.get_parent() as Node3D).rotation.y, deg_to_rad(right.open_angle_deg), 1e-4)
+	var door := building.get_node("MultiMeshInstance3D/0-0-0/" + WARDROBE_DOOR) as MovingPart
+	assert_true(door.is_on, "open, as the state says")
+	assert_gt(door._open, 0.0)
 	KnownEngineErrors.forgive_floor_material(self)
 
 
-func test_anyone_may_shut_a_home_s_front_door_but_only_its_occupant_opens_it() -> void:
-	# A door left open on a walkway barred the way to everyone else (playtest 2026-10-22).
-	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
-	PropSync.of(building).uuid = "home-uuid"
-	add_child_autofree(building)
-	building.apply_prop_data({"apartments": [{"floor": 0, "row": 0, "col": 0, "player_uuid": "owner-1",
-			"player_name": "Ann"}]})
-	var room: Node = building.get_node("MultiMeshInstance3D/0-0-0")
-	var door := room.get_node("habitat_container/frame/right_door/DoorR") as MovingPart
-	var stranger := Player.new()
-	stranger.client_uuid = "stranger-1"
-	assert_ne(door.refusal(stranger), "", "shut: not theirs to open")
-	building.server_set_part(door, true)
-	assert_eq(door.refusal(stranger), "", "open: anyone may shut it")
-	door.server_use(stranger, {"on": true})
-	assert_false(door.is_on, "a stranger only ever shuts it, whatever they ask")
-	var wardrobe: MovingPart = null
-	for part in room.find_children("*", "Area3D", true, false):
-		if part is MovingPart and not (part as MovingPart).anyone_may_shut:
-			wardrobe = part
-	if wardrobe != null:
-		building.server_set_part(wardrobe, true)
-		assert_ne(wardrobe.refusal(stranger), "", "inside the home: still the occupant's alone")
-	stranger.free()
-	KnownEngineErrors.forgive_floor_material(self)
-
-
-func test_only_an_npc_s_door_is_opened() -> void:
+func test_a_home_s_front_is_a_doorway_and_a_shut_leaf() -> void:
+	# NPCs could not always get out of their homes nor walk the walkways past the front doors: for the
+	# 2026-10-26 playtest the left leaf is out of the model (the doorway) and the right one stays shut, with nothing
+	# to use -- shut, it does not stand out over the walkway as an open leaf would.
 	var building := (load(BUILDING) as PackedScene).instantiate() as SpawnBuilding
 	building.cols = 2
 	PropSync.of(building).uuid = "home-uuid"
 	add_child_autofree(building)
+	var old_key := "0-0-0/habitat_container/frame/right_door/DoorR"
 	building.apply_prop_data({"apartments": [
 		{"floor": 0, "row": 0, "col": 0, "player_uuid": "npc-1", "player_name": "Bob"},
-		{"floor": 0, "row": 0, "col": 1, "player_uuid": "player-1", "player_name": "Ann"},
-	]})
+	], "furniture": {old_key: true}})  # a front door saved open before the change
+	var room: Node = building.get_node("MultiMeshInstance3D/0-0-0")
+	var right := room.get_node("habitat_container/frame/right_door") as Node3D
+	assert_eq(right.find_children("*", "MovingPart", true, false).size(), 0, "nothing to use on the right leaf")
+	assert_almost_eq(right.rotation.y, 0.0, 1e-6, "shut, whatever was saved")
+	assert_not_null(right.get_node_or_null("DoorBody"), "and still solid")
+	assert_null(room.get_node_or_null("habitat_container/frame/left_door"), "the left leaf is gone from the model")
 	building.server_open_for_npc("npc-1")
-	var rooms: Node = building.get_node("MultiMeshInstance3D")
-	var door := "habitat_container/frame/right_door/DoorR"
-	assert_true((rooms.get_node("0-0-0/" + door) as MovingPart).is_on, "the NPC's home")
-	assert_false((rooms.get_node("0-1-0/" + door) as MovingPart).is_on, "a player's: shut")
-	assert_eq(building.furniture, {"0-0-0/" + door: true}, "kept, like any use")
-	assert_eq(FurnitureState.npc_doors(rooms.get_node("0-0-0")).size(), 1, "one door opens for an NPC")
+	assert_eq(FurnitureState.npc_doors(room).size(), 0, "no door to open for an NPC")
 	KnownEngineErrors.forgive_floor_material(self)
 
 
