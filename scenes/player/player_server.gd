@@ -2107,6 +2107,13 @@ func _npc_physics_process(delta: float) -> void:
 	player.velocity = _direction * _NPC_WALK_SPEED + _vertical
 	var _tm2: int = Time.get_ticks_usec() if PropNet.prof_on else 0
 	_npc_move_and_slide()
+	# A sill the capsule cannot roll over on its own: the round bottom (r 0.265 m) only climbs ~8 cm
+	# before the contact is steeper than floor_max_angle and reads as a wall. Every building door on a
+	# TerrainPad has one (the pad levels the ground 10 cm under the floor slab), so the depot's workers
+	# stood forever at its staff door. Same glide as a player's (_physics_process picks it up next
+	# step); probed only once a slide has hit something, since the probe is several shape sweeps.
+	if player.is_on_floor() and player.is_on_wall():
+		_try_start_step_up(_direction)
 	if PropNet.prof_on:
 		PropNet.prof_npc_move_usec += Time.get_ticks_usec() - _tm2
 		_tm2 = Time.get_ticks_usec()
