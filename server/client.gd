@@ -1698,6 +1698,10 @@ func vocal_manage(event: Dictionary) -> void:
 	if get_node_or_null("LiveKitAudio") != null:
 		print("[livekit] Already connected, ignoring duplicate token")
 		return
+	var missing: Array[String] = LIVEKIT_SCRIPT.missing_system_libraries()
+	if not missing.is_empty():
+		push_warning("[livekit] Voice chat off: %s not found on this system" % ", ".join(missing))
+		return
 	# Message type:
 	# {
 	#   "event_type": "livekit_token",

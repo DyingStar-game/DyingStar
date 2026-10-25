@@ -14,6 +14,11 @@ const MIC_CHANNELS := 1
 ## synchronously and the call returns at once. The audio thread already paces the capture ring.
 const MIC_QUEUE_SIZE := 0
 const _DEBUG_INTERVAL: float = 5.0
+## System libraries LiveKit's library loads by itself when it joins a room (Linux, VA-API video
+## encoding). Its loader stubs abort the whole game when one is missing -- the client closed as the
+## player entered the game on NixOS through appimage-run (2026-10-25) -- so voice is left off instead.
+const SYSTEM_LIBRARIES: Array[String] = ["libva.so.2", "libva-drm.so.2"]
+const NATIVE_LIBRARY_PROBE_SCRIPT := "res://tools/native/NativeLibraryProbe.cs"
 
 var livekit_url: String = ""
 var livekit_token: String = ""
@@ -50,6 +55,22 @@ static func link_state_view(state: int) -> Dictionary:
 		LinkState.DISCONNECTED:
 			return {"key": "%%SVC_STATE_LINK_DISCONNECTED", "tone": 0, "joined": false}
 	return {"key": "%%SVC_STATE_LINK_NONE", "tone": 0, "joined": false}
+
+## The libraries of [param names] the system's loader does not find, on Linux: joining a room
+## without them would abort the game (see SYSTEM_LIBRARIES). Empty elsewhere, and when the probe is
+## not in the assembly (voice then tries as before).
+static func missing_system_libraries(names: Array[String] = SYSTEM_LIBRARIES) -> Array[String]:
+	var missing: Array[String] = []
+	if OS.get_name() != "Linux":
+		return missing
+	var script: Script = NativeScript.load_usable(NATIVE_LIBRARY_PROBE_SCRIPT, ["CanLoad"])
+	if script == null:
+		return missing
+	var probe: Object = script.new()
+	for library: String in names:
+		if not probe.CanLoad(library):
+			missing.append(library)
+	return missing
 
 ## Set to true to force non-spatial AudioStreamPlayer (bypasses 3D attenuation/listener).
 ## Use to isolate whether silence is a 3D positioning issue vs. mic/stream issue.
