@@ -751,6 +751,7 @@ var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL 
 var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
 var _cargo_area: Area3D = null
 var _bed_box: AABB = AABB()  # the model's bed pieces, vehicle frame (empty = none: see _bay_box)
+var _bed_floor_top: float = INF  # top of the model's bed floor piece, vehicle frame (INF = none)
 var _bay_scan_tick: int = 0  # throttles _scan_bay_for_settled_cargo (see BAY_SCAN_FRAMES)
 var _cargo_debug: bool = false  # Settings > General: draw a green envelope on really-locked cargo
 var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off by default)
@@ -1029,6 +1030,7 @@ func _rebuild() -> void:
 			child.free()
 	_wheels.clear()
 	_bed_box = AABB()  # read again off the model's col_bed* pieces (_build_model_collision)
+	_bed_floor_top = INF
 	_cargo_area = null
 	_cab_cam = null
 	_nav_footprint_valid = false  # the collision shapes are about to be regenerated
@@ -1134,8 +1136,12 @@ func _build_model_collision() -> bool:
 		mi.visible = false  # collision-only mesh: never rendered (hidden in the editor AND in game)
 		found = true
 		if _strip_lod(mi.name).begins_with("col_bed") and col.shape is ConvexPolygonShape3D:
+			var piece := PackedVector3Array()
 			for point in (col.shape as ConvexPolygonShape3D).points:
-				bed_points.append(col.transform * point)
+				piece.append(col.transform * point)
+			bed_points.append_array(piece)
+			# The floor is the bed piece with the LOWEST top: the side boards all rise above it.
+			_bed_floor_top = minf(_bed_floor_top, points_box(piece).end.y)
 	_bed_box = points_box(bed_points)
 	return found
 
@@ -1408,8 +1414,12 @@ static func _fit_shift(item_min: float, item_max: float, bay_min: float, bay_max
 		return bay_max - item_max
 	return 0.0
 
-## Local Y of the bed floor's top surface (where cargo rests), matching the generated floor box.
+## Local Y of the bed floor's top surface (where cargo rests): the model's own bed floor collision, or
+## the generated floor box for a blockout. (The blockout's height on a real model sank every load into
+## the floor by the gap between the two.)
 func _bed_floor_local_y() -> float:
+	if _bed_floor_top != INF:
+		return _bed_floor_top
 	return body_height * 0.5 + BED_WALL_THICKNESS
 
 ## AABB of a body's OWN collision shapes, expressed in `frame_from_body`: pass IDENTITY for

@@ -37,3 +37,21 @@ func test_the_truck_reads_its_bed_off_its_model() -> void:
 			Vector3(box.get_center().x, truck._bed_box.end.y + 0.2, box.get_center().z))), "a crate proud of the boards loads")
 	assert_false(truck.is_point_in_loading_zone(truck.to_global(Vector3(0.0, 0.3, -1.5))), "the cab does not")
 	assert_false(truck.is_point_in_loading_zone(truck.to_global(Vector3(box.end.x + 0.5, 0.3, 1.0))), "beside the bed does not")
+
+
+## The diamond-plate floor of mini_truck.glb, in the truck's frame (the model sits 0.435 m up, the plate
+## at -0.002 in the model). The model's col_bed was 9 cm under it: truck.tscn raises it to the plate.
+const VISIBLE_BED_FLOOR_Y := 0.433
+
+
+func test_a_load_rests_on_the_visible_bed_floor() -> void:
+	var truck: Vehicle = (load(TRUCK) as PackedScene).instantiate() as Vehicle
+	truck.freeze = true
+	add_child_autofree(truck)
+	assert_almost_eq(truck._bed_floor_local_y(), VISIBLE_BED_FLOOR_Y, 0.005, "the floor is the model's, not the blockout's")
+	var crate := (load("res://scenes/_universe/props/containers/box_50cm.tscn") as PackedScene).instantiate() as RigidBody3D
+	add_child_autofree(crate)
+	crate.global_position = truck.to_global(Vector3(0.0, 1.5, 1.0))
+	assert_true(truck.lock_dropped_cargo(crate))
+	var underside: float = Globals.collision_aabb(crate, truck.global_transform.affine_inverse() * crate.global_transform).position.y
+	assert_almost_eq(underside, VISIBLE_BED_FLOOR_Y, 0.005, "neither sunk into the floor nor floating")
