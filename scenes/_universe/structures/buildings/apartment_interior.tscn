@@ -8,11 +8,14 @@
 [ext_resource type="PackedScene" uid="uid://dlvo567apcx4g" path="res://scenes/_universe/props/furniture/hygene/restroom_cabin.tscn" id="13_jfqwv"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/props/lighting/led_bar_2m.tscn" id="led_bar"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/props/lighting/wall_switch.tscn" id="wall_switch"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/buildings/interior_probe.gd" id="interior_probe"]
 
 [node name="Interior" type="Node3D" unique_id=941846073]
 
 [node name="InteriorProbe" type="ReflectionProbe" parent="." unique_id=941538264]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.05, 1.3, 1.3)
+visible = false
+script = ExtResource("interior_probe")
 blend_distance = 0.04
 size = Vector3(6.1, 2.6, 2.6)
 box_projection = true
@@ -49,7 +52,7 @@ transform = Transform3D(-1, 0, 6.123032e-17, 0, 1, 0, -6.123032e-17, 0, -1, -5.6
 circuit = "CeilingLight"
 lights = Array[NodePath]([NodePath("../CeilingLight")])
 
-[node name="NightLight" type="OmniLight3D" parent="."]
+[node name="NightLight" type="OmniLight3D" parent="." unique_id=1081635369]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.6, 0.35, 1.3)
 light_color = Color(1, 0.75, 0.5, 1)
 light_energy = 0.4
