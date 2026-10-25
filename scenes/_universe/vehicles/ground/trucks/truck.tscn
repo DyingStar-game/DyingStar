@@ -113,6 +113,7 @@ sfx_suspension_pitch_jitter = 0.1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.10000000000582077, 0.4349999999976717, -0.5050000000046566)
 
 [node name="Col_bed" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="2" unique_id=630403907]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.09441419690847397, -0.2133914864063263, 1.5900483131408691)
 visible = false
 
 [node name="Col_bed_left" parent="Model/Carrosserie" parent_id_path=PackedInt32Array(327486982, 1043592288) index="3" unique_id=1194082000]

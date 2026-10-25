@@ -751,6 +751,7 @@ var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL 
 var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
 var _cargo_area: Area3D = null
 var _bed_box: AABB = AABB()  # the model's bed pieces, vehicle frame (empty = none: see _bay_box)
+var _bed_floor: AABB = AABB()  # the bed floor inside the boards, vehicle frame (empty = none: see bed_floor)
 var _bay_scan_tick: int = 0  # throttles _scan_bay_for_settled_cargo (see BAY_SCAN_FRAMES)
 var _cargo_debug: bool = false  # Settings > General: draw a green envelope on really-locked cargo
 var _cargo_debug_accum: float = 0.0  # throttle the debug refresh (dev aid, off by default)
@@ -1029,6 +1030,7 @@ func _rebuild() -> void:
 			child.free()
 	_wheels.clear()
 	_bed_box = AABB()  # read again off the model's col_bed* pieces (_build_model_collision)
+	_bed_floor = AABB()
 	_cargo_area = null
 	_cab_cam = null
 	_nav_footprint_valid = false  # the collision shapes are about to be regenerated
@@ -1122,6 +1124,7 @@ func _build_model_collision() -> bool:
 		return false
 	var found := false
 	var bed_points := PackedVector3Array()  # the bed pieces' corners, in the vehicle's frame
+	var bed_pieces: Array[AABB] = []  # each bed piece's box, in the vehicle's frame
 	for n in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		if mi.mesh == null or not _strip_lod(mi.name).begins_with("col_"):
@@ -1134,9 +1137,13 @@ func _build_model_collision() -> bool:
 		mi.visible = false  # collision-only mesh: never rendered (hidden in the editor AND in game)
 		found = true
 		if _strip_lod(mi.name).begins_with("col_bed") and col.shape is ConvexPolygonShape3D:
+			var piece := PackedVector3Array()
 			for point in (col.shape as ConvexPolygonShape3D).points:
-				bed_points.append(col.transform * point)
+				piece.append(col.transform * point)
+			bed_points.append_array(piece)
+			bed_pieces.append(points_box(piece))
 	_bed_box = points_box(bed_points)
+	_bed_floor = bed_floor(bed_pieces)
 	return found
 
 func _add_collision_box(box_size: Vector3, pos: Vector3) -> void:
@@ -1377,8 +1384,33 @@ func _lock_cargo(body: RigidBody3D) -> void:
 		body.send_properties_to_client(str(uuid))
 	_refresh_mass()
 
+## The bed floor between the boards, from the model's bed pieces (vehicle frame): the piece with the
+## LOWEST top is the floor (the boards all rise above it), and each board trims the side of it that it
+## stands on -- a board long along Z is a side board, one long along X the front or the rear. Its top
+## (end.y) is where loads rest, its X/Z the room they fit in. An empty AABB for no pieces. Static and pure.
+static func bed_floor(pieces: Array[AABB]) -> AABB:
+	if pieces.is_empty():
+		return AABB()
+	var floor_box: AABB = pieces[0]
+	for piece in pieces:
+		if piece.end.y < floor_box.end.y:
+			floor_box = piece
+	var lo := floor_box.position
+	var hi := floor_box.end
+	var mid := floor_box.get_center()
+	for board in pieces:
+		if board == floor_box:
+			continue
+		var axis: int = Vector3.AXIS_X if board.size.x < board.size.z else Vector3.AXIS_Z
+		if board.get_center()[axis] < mid[axis]:
+			lo[axis] = clampf(board.end[axis], lo[axis], mid[axis])
+		else:
+			hi[axis] = clampf(board.position[axis], mid[axis], hi[axis])
+	return AABB(lo, hi - lo)
+
 ## Place a just-locked body INTO the cargo bay: shift its X/Z so its WHOLE footprint fits inside the
-## cargo_bay (an item dropped from far / over the rim ends up entirely in the bay, not poking out),
+## bed floor between the boards (cargo_bay for a blockout) -- an item dropped from far / over the rim
+## ends up entirely in the bed, not poking out of it or into the cab --
 ## then rest its lowest collision point on the bed floor. Uses the real collision AABB, so it works
 ## for any pivot (a cut ore piece keeps the original rock's off-centre pivot) and any size.
 func _settle_on_bed_floor(body: Node3D) -> void:
@@ -1391,9 +1423,12 @@ func _settle_on_bed_floor(body: Node3D) -> void:
 	var mn := bounds.position
 	var mx := bounds.end
 	var local := to_local(body.global_position)
-	# Fit the whole item inside the cargo bay footprint (centred if it is wider than the bay).
-	local.x += _fit_shift(mn.x, mx.x, cargo_bay_offset.x - cargo_bay_size.x * 0.5, cargo_bay_offset.x + cargo_bay_size.x * 0.5)
-	local.z += _fit_shift(mn.z, mx.z, cargo_bay_offset.z - cargo_bay_size.z * 0.5, cargo_bay_offset.z + cargo_bay_size.z * 0.5)
+	# Fit the whole item inside the bed footprint (centred if it is wider than the bed).
+	var room := AABB(cargo_bay_offset - cargo_bay_size * 0.5, cargo_bay_size)
+	if _bed_floor.has_volume():
+		room = _bed_floor
+	local.x += _fit_shift(mn.x, mx.x, room.position.x, room.end.x)
+	local.z += _fit_shift(mn.z, mx.z, room.position.z, room.end.z)
 	local.y += _bed_floor_local_y() - mn.y  # rest the underside on the floor
 	body.global_position = to_global(local)
 
@@ -1408,8 +1443,12 @@ static func _fit_shift(item_min: float, item_max: float, bay_min: float, bay_max
 		return bay_max - item_max
 	return 0.0
 
-## Local Y of the bed floor's top surface (where cargo rests), matching the generated floor box.
+## Local Y of the bed floor's top surface (where cargo rests): the model's own bed floor collision, or
+## the generated floor box for a blockout. (The blockout's height on a real model sank every load into
+## the floor by the gap between the two.)
 func _bed_floor_local_y() -> float:
+	if _bed_floor.has_volume():
+		return _bed_floor.end.y
 	return body_height * 0.5 + BED_WALL_THICKNESS
 
 ## AABB of a body's OWN collision shapes, expressed in `frame_from_body`: pass IDENTITY for

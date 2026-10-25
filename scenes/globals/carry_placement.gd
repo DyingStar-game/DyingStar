@@ -14,6 +14,10 @@ extends RefCounted
 ## flat in mid-air at the end of the ray (`on_surface` false) and the dropped crate simply falls from
 ## there. There is no "nothing to aim at" case, so E always drops and the player can never be stuck
 ## holding a crate.
+##
+## A load is put down on what it can stand on: aimed at a wall (or a ceiling), the disc goes to the
+## floor at the foot of it instead of lying flat against it. Only a body in the WALL_MOUNTABLE_GROUP (a
+## poster, a sign) keeps any surface the aim meets.
 
 ## How far ahead of the eye the placement ray reaches (m). Short on purpose: you place things at
 ## arm's length, you don't fling them across the room.
@@ -25,13 +29,23 @@ const SNAP_DIST := 0.30
 ## Only crates whose origin is within this distance (m) of the raw hit are considered for snapping —
 ## keeps the per-frame candidate scan to the handful of props actually around the aim point.
 const SNAP_SEARCH := 1.5
+## Steepest surface (degrees from the player's up) a load is put down on. Anything steeper is a wall or
+## a ceiling: the load goes to the floor at its foot instead.
+const MAX_SLOPE_DEG := 45.0
+## How far (m) below the point aimed at on a wall the foot-of-wall ray looks for a floor.
+const FOOT_REACH := 3.0
+## Gap (m) kept between a wall and a load put down at its foot.
+const WALL_GAP := 0.02
+## Bodies that may be put down against a wall or a ceiling (a poster, a sign).
+const WALL_MOUNTABLE_GROUP := &"wall_mountable"
 
 ## Resolve the placement under the crosshair. [param eye] is the camera pivot's global transform
 ## (-Z = gaze), [param up] the player's up_direction, [param exclude] the RIDs to ignore (the player
 ## and the crate it holds), [param held] the carried body (its footprint drives the neighbour snap;
 ## may be null). Must be called from the physics step — direct_space_state is null outside it.
 ##
-## Returns {position: Vector3, normal: Vector3, on_surface: bool, snapped: bool, shelf: Node}.
+## Returns {position: Vector3, normal: Vector3, on_surface: bool, snapped: bool, shelf: Node} (and
+## `collider` when a surface was hit).
 static func resolve(space: PhysicsDirectSpaceState3D, eye: Transform3D, up: Vector3,
 		exclude: Array[RID], tree: SceneTree, held: Node3D) -> Dictionary:
 	var from: Vector3 = eye.origin
@@ -53,18 +67,61 @@ static func resolve(space: PhysicsDirectSpaceState3D, eye: Transform3D, up: Vect
 	# far away. A hit well beyond the ray's own length is nonsense — treat it as a miss.
 	if pos.distance_to(from) > RAY_LENGTH * 1.5:
 		return result
+	var normal: Vector3 = (hit["normal"] as Vector3).normalized()
+	if not stands_on(normal, up) and not wall_mountable(held):
+		return _foot_of_wall(result, space, pos, normal, up, exclude, tree, held)
 	result["position"] = pos
-	result["normal"] = (hit["normal"] as Vector3).normalized()
+	result["normal"] = normal
 	result["on_surface"] = true
 	result["collider"] = hit.get("collider")
-	_snap(result, tree, held)
+	_snap(result, tree, held, up)
+	return result
+
+## True when a load can stand on a surface of this [param normal]: no steeper than MAX_SLOPE_DEG from
+## [param up]. A wall, an overhang or a ceiling is not.
+static func stands_on(normal: Vector3, up: Vector3) -> bool:
+	return normal.normalized().dot(up.normalized()) >= cos(deg_to_rad(MAX_SLOPE_DEG))
+
+## True when [param held] may be put down against a wall or a ceiling (WALL_MOUNTABLE_GROUP).
+static func wall_mountable(held: Node3D) -> bool:
+	return held != null and held.is_in_group(WALL_MOUNTABLE_GROUP)
+
+## The aim met a wall at [param pos] (or a ceiling): put the load down on the floor at its foot, out
+## from the wall by the load's own footprint and straight down along [param up]. No floor within
+## FOOT_REACH (a cliff, a truck's tailgate over a drop): it hangs there, clear of the wall, and falls.
+static func _foot_of_wall(result: Dictionary, space: PhysicsDirectSpaceState3D, pos: Vector3,
+		normal: Vector3, up: Vector3, exclude: Array[RID], tree: SceneTree, held: Node3D) -> Dictionary:
+	var start: Vector3 = pos + normal * WALL_GAP
+	var away: Vector3 = normal - up * normal.dot(up)  # out of the wall, level; zero under a ceiling
+	if away.length_squared() > 1e-6:
+		start += away.normalized() * disc_radius(held)
+	result["position"] = start
+	result["normal"] = up
+	var query := PhysicsRayQueryParameters3D.create(start, start - up * FOOT_REACH, Globals.MASK_OBSTACLE,
+			exclude)
+	query.collide_with_areas = false
+	var hit: Dictionary = space.intersect_ray(query)
+	if hit.is_empty():
+		return result
+	var floor_pos: Vector3 = hit["position"]
+	var floor_normal: Vector3 = (hit["normal"] as Vector3).normalized()
+	# Same float32 guard as the aim ray; and a floor too steep to stand on is no floor either.
+	if floor_pos.distance_to(start) > FOOT_REACH * 1.5 or not stands_on(floor_normal, up):
+		return result
+	result["position"] = floor_pos
+	result["normal"] = floor_normal
+	result["on_surface"] = true
+	result["collider"] = hit.get("collider")
+	_snap(result, tree, held, up)
 	return result
 
 ## Pull the disc onto the nearest snap candidate within SNAP_DIST of the raw hit, in place. Only runs
 ## for a hit on a real surface — there is nothing to line up against in mid-air.
-static func _snap(result: Dictionary, tree: SceneTree, held: Node3D) -> void:
+## A crate or a shelf tipped too far from [param up] to stand on offers no candidate.
+static func _snap(result: Dictionary, tree: SceneTree, held: Node3D, up: Vector3) -> void:
 	if tree == null:
 		return
+	var any_surface: bool = wall_mountable(held)
 	var raw: Vector3 = result["position"]
 	var best: Vector3 = raw
 	var best_normal: Vector3 = result["normal"]
@@ -88,6 +145,8 @@ static func _snap(result: Dictionary, tree: SceneTree, held: Node3D) -> void:
 		if bounds.size == Vector3.ZERO:
 			continue
 		var xform: Transform3D = body.global_transform
+		if not any_surface and not stands_on(xform.basis.y, up):
+			continue
 		var mid: Vector3 = bounds.get_center()
 		var top: Vector3 = xform * Vector3(mid.x, bounds.end.y, mid.z)
 		var base: Vector3 = xform * Vector3(mid.x, bounds.position.y, mid.z)
@@ -115,6 +174,8 @@ static func _snap(result: Dictionary, tree: SceneTree, held: Node3D) -> void:
 		var slots: Array = shelf.shelf_slots
 		var occupied: Array = shelf.shelf_slots_occupied if "shelf_slots_occupied" in shelf else []
 		var shelf_up: Vector3 = shelf.global_basis.y.normalized()
+		if not any_surface and not stands_on(shelf_up, up):
+			continue
 		for i in slots.size():
 			if i < occupied.size() and bool(occupied[i]):
 				continue
