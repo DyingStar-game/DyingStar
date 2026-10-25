@@ -104,6 +104,9 @@ func _ready():
 	# override, which would otherwise fall back to the theme's opaque default panel.
 	_empty_bg = StyleBoxEmpty.new()
 	add_theme_stylebox_override("panel", _empty_bg)
+	# The log's scrollbar is for write mode only: at rest the mouse drives the camera, so the bar
+	# could never be used and only stood over the end of the lines.
+	_set_scrollbar_shown(false)
 
 	# Populate the channel selector (inactive channels are greyed — see _refresh_channels).
 	_refresh_channels()
@@ -362,6 +365,7 @@ func _start_writing() -> void:
 	input_bar.visible = true
 	# Show the backdrop only while typing, for comfort when composing a message.
 	add_theme_stylebox_override("panel", _write_bg)
+	_set_scrollbar_shown(true)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	input_field.grab_focus()
 
@@ -374,7 +378,17 @@ func _stop_writing() -> void:
 	# Back to the transparent box → the log is background-free once the message is
 	# sent or the input closes (re-apply, don't remove — see _ready).
 	add_theme_stylebox_override("panel", _empty_bg)
+	_set_scrollbar_shown(false)
+	# Back to the newest line: with the bar gone, a log left scrolled up would just look frozen.
+	# Reaching the bottom also resumes scroll_following for the next messages.
+	output_field.scroll_to_line(maxi(output_field.get_line_count() - 1, 0))
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+## Show the log's scrollbar (write mode) or not (at rest). Faded rather than hidden: RichTextLabel
+## shows and hides the bar itself whenever the text outgrows the panel, so `visible = false` would not
+## hold. The lines keep wrapping short of the bar, so nothing reflows when it comes back.
+func _set_scrollbar_shown(shown: bool) -> void:
+	output_field.get_v_scroll_bar().modulate.a = 1.0 if shown else 0.0
 
 # Receives a message from the server
 func receive_message_from_server(receveid_message: ChatMessage) -> void:
