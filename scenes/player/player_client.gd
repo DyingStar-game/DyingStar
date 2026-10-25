@@ -87,6 +87,7 @@ var player
 ## camera moves. Projecting the head to the screen on the CPU (double precision) and drawing a plain
 ## 2D Label is rock-steady.
 var _name_tag: Label = null
+var _animator = null  # the puppet's CharacterAnimator (untyped, like in setup), null on a rig without one
 ## A refusal said where the prompts are, for FLASH_PROMPT_S (_flash_prompt), and until when (ms).
 var _flash_text: String = ""
 var _flash_until_ms: int = 0
@@ -236,6 +237,7 @@ func setup() -> void:
 	# The animated puppet is the visible body now — for the owner (first person) and remotes alike.
 	player.astronaut.visible = false
 	var animator = player.puppet.get_node_or_null("CharacterAnimator")
+	_animator = animator
 	if animator != null:
 		animator.setup(player, not player.remote_player)
 	_mount_torch()  # every avatar, owner and remote alike: the beam belongs on the head, not on a camera
@@ -549,6 +551,13 @@ func _process(_delta: float) -> void:
 	# On foot: smooth our server-driven position (no client prediction yet) — position only, so
 	# the mouse look stays immediate.
 	player._interp.update_position(player, _delta, player.input_direction != Vector2.ZERO)
+	# Now that the body is where it is drawn this frame: the eye out of the walls, from the server's
+	# position when the glide led the body into one (see CharacterAnimator.keep_eye_out_of_walls).
+	if _animator != null:
+		var server_at: Vector3 = player.global_position
+		if player._interp.has_target() and player.get_parent() is Node3D:
+			server_at = (player.get_parent() as Node3D).to_global(player._interp.lead_target(false))
+		_animator.keep_eye_out_of_walls(server_at)
 	if player.move_probe != null:
 		if player.camera_pivot != null:
 			player.move_probe.on_camera(player.camera_pivot.position, player.input_direction != Vector2.ZERO)
