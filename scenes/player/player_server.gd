@@ -32,6 +32,9 @@ const GROUND_SEARCH := 30.0
 const _DIALOG_LINE_INTERVAL := 4.0
 ## Max distance (m) between the player and a shelf for a drop to snap into it (see _shelf_for_drop).
 const _SHELF_DROP_RANGE := 4.0
+## Max distance (m) between the player and a garage's vehicle terminal for a "kiosk_spawn" to order a truck:
+## the reach the truck kiosk it replaced had.
+const _KIOSK_RANGE := 4.0
 ## Client actions that belong to a dev tool (Globals.ENABLED_DEV_TOOLS), and that tool. While the tool is
 ## off, server_action_received refuses the action before running it. A tool is switched off where it RUNS,
 ## not where it is triggered: the client only hides the key, so a client that asks anyway (an old build,
@@ -498,6 +501,16 @@ func server_action_received(data: Dictionary) -> void:
 			# is an admin — AdminRoles.DEV_TOOLS): the client only
 			# NAMES what it wants; we own everything else.
 			_spawn_from_catalog(str(data.get("key", "")))
+		"kiosk_spawn":
+			# The garage's old truck kiosk, which the NPC service's truck routine (drive_to_factory) still
+			# presses: the vehicle terminal that took its place, at the same spot, serves the order. The
+			# kiosk path the NPC sends no longer exists; the building's terminal is found by its catalogue.
+			var terminal: ItemDispenser = ItemDispenser.vehicle_terminal_of(
+					_find_deletable_prop(str(data.get("target_uuid", ""))))
+			if terminal != null and player.global_position.distance_to(terminal.global_position) <= _KIOSK_RANGE:
+				terminal.server_order_first(player)
+			else:
+				print("[Kiosk] spawn refused: no vehicle terminal in reach of %s" % player.client_uuid)
 		"admin_fill_shelves":
 			# Admin (refused at the top without an admin role): stock the shelves of the depot we stand in.
 			_admin_fill_shelves()
