@@ -32,6 +32,8 @@ const REFUSED: String = "refused"
 ## must be for it to bother.
 const TRAY_CHECK_S: float = 0.25
 const TRAY_CHECK_RANGE_M: float = 20.0
+## The catalogue of the garage's vehicle terminal.
+const VEHICLE_CATALOGUE: String = "res://scenes/_universe/vehicles/terminal_items/"
 
 ## The ARES subsidiary running the machine: the colours of its screen, its lights and its logos.
 @export var brand: AresBrand.Subsidiary = AresBrand.Subsidiary.HAULING
@@ -140,6 +142,26 @@ func update_screen(data: Dictionary) -> void:
 	set_physics_process(true)
 	if is_instance_valid(_actor):
 		ScreenTarget.announce(self, _actor, {"state": DELIVERING, "seconds": delivery_s})
+
+
+## SERVER: order the first item of the catalogue for [param actor], as its screen's button would -- for a
+## caller with no screen: an NPC pressing the garage's old truck kiosk (PlayerServer, "kiosk_spawn").
+func server_order_first(actor: Player) -> void:
+	var items: Array[Resource] = DispenserCatalog.all(catalogue_dir)
+	if items.is_empty():
+		return
+	set_screen_actor(actor)
+	update_screen({"state": STATE, "spec": items[0].resource_path})
+
+
+## The vehicle terminal inside [param building], or null when it has none.
+static func vehicle_terminal_of(building: Node) -> ItemDispenser:
+	if building == null:
+		return null
+	for found: Node in building.find_children("*", "ItemDispenser", true, false):
+		if (found as ItemDispenser).catalogue_dir == VEHICLE_CATALOGUE:
+			return found
+	return null
 
 
 ## SERVER: why [param actor] may not have an item from this machine, as a translation key; "" when

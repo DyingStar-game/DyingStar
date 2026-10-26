@@ -65,3 +65,20 @@ func test_a_vehicle_comes_at_once_no_countdown() -> void:
 	var terminal := (load(TERMINAL) as PackedScene).instantiate() as ItemDispenser
 	assert_eq(terminal.delivery_s, 0.0, "the order is served on the next physics frame")
 	terminal.free()
+
+
+func test_the_garage_s_terminal_is_found_for_the_old_kiosk_button() -> void:
+	# The NPC service's truck routine still sends "kiosk_spawn" with the garage and the old kiosk's path.
+	var garage := (load(GARAGE) as PackedScene).instantiate() as Node3D
+	assert_eq(ItemDispenser.vehicle_terminal_of(garage), garage.get_node("VehicleTerminal"),
+			"the terminal standing where the kiosk was")
+	garage.free()
+
+
+func test_a_building_without_a_terminal_has_none() -> void:
+	var parts := (load(PARTS) as PackedScene).instantiate() as Node3D
+	var building := Node3D.new()
+	building.add_child(parts)
+	assert_null(ItemDispenser.vehicle_terminal_of(building), "a parts dispenser is no vehicle terminal")
+	assert_null(ItemDispenser.vehicle_terminal_of(null), "no building, no terminal")
+	building.free()
