@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://c7jjgmfdmsu85" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn" id="lamp"]
 [ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="mining"]
 [ext_resource type="PackedScene" uid="uid://dbhjkpit6n4ns" path="res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn" id="S1"]
+[ext_resource type="PackedScene" uid="uid://dyoytajqysjhf" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="tele"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/storage/pad_storage_area.tscn" id="storage_area"]
 
 [node name="AresCityFactory" type="Node3D" unique_id=362023481]
@@ -46,6 +47,12 @@ transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -74.81, 0, 29.36)
 
 [node name="GarageEast" parent="." unique_id=149572251 instance=ExtResource("garage")]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 115.19, 0, 29.36)
+
+[node name="TeleporterWest" parent="." unique_id=778395602 instance=ExtResource("tele")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -38, 0, 30)
+
+[node name="TeleporterEast" parent="." unique_id=759223279 instance=ExtResource("tele")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 38, 0, 30)
 
 [node name="LampTeleEast_1" parent="." unique_id=148668996 instance=ExtResource("lamp")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30, 0, 21.5)

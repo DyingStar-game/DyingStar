@@ -31,20 +31,14 @@ func test_the_cabin_is_a_networked_building_that_levels_its_ground() -> void:
 ## cabin instanced right under the layout's root is one per village. Read from the file rather than
 ## instantiated: the layout's buildings pull in every material they use, for nothing this test asks.
 func test_every_mining_village_spawns_a_teleporter() -> void:
-	pending("cabins taken out of the layouts for the 2026-10-26 playtest (no teleport across server meshing); put back after")
-	return
 	assert_eq(_cabins_in(VILLAGE), 1, "one cabin, a direct child of the layout")
 
 
 func test_every_factory_city_spawns_two_teleporters() -> void:
-	pending("cabins taken out of the layouts for the 2026-10-26 playtest (no teleport across server meshing); put back after")
-	return
 	assert_eq(_cabins_in(FACTORY), 2, "two cabins, direct children of the layout")
 
 
 func test_no_scene_but_the_layouts_places_a_cabin() -> void:
-	pending("cabins taken out of the layouts for the 2026-10-26 playtest (no teleport across server meshing); put back after")
-	return
 	var holders: PackedStringArray = []
 	for root: String in SCENE_ROOTS:
 		holders.append_array(_scenes_referencing(root, TELEPORTER))
