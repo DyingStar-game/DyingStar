@@ -2,7 +2,7 @@
   "planet_name": "tarsis_3",
   "planet_radius": 6356000.0,
   "crs": "EPSG:4326",
-  "count": 140,
+  "count": 142,
   "pois": [
     {
       "id": 23,
@@ -962,6 +962,17 @@
       "elevation": null
     },
     {
+      "id": 141,
+      "name": "M0072",
+      "poi_type": "mining village",
+      "population": 250,
+      "radius": 1000.0,
+      "description": "",
+      "lon": -39.48615027098147,
+      "lat": 24.53526209785169,
+      "elevation": null
+    },
+    {
       "id": 69,
       "name": "M0035",
       "poi_type": "mining village",
@@ -1542,6 +1553,17 @@
       "description": "",
       "lon": -40.87616752676157,
       "lat": 23.472245782622494,
+      "elevation": null
+    },
+    {
+      "id": 142,
+      "name": "M0073",
+      "poi_type": "mining village",
+      "population": 100,
+      "radius": 500.0,
+      "description": "",
+      "lon": -39.68983664038959,
+      "lat": 24.864568864570803,
       "elevation": null
     }
   ]
