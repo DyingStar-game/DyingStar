@@ -2,8 +2,8 @@ class_name PropSpawn
 extends RefCounted
 
 ## Placing a networked prop in a world whose frames MOVE. The primitives shared by everything that
-## spawns a prop server-side (the dev spawn wheel, MiningZonePlanner, MiningZone; mining_depot and
-## rock still carry their own copies of stable_uuid / the net-parent walk and should migrate here).
+## spawns a prop server-side (the dev spawn wheel, MiningZonePlanner, MiningZone, mining_depot; rock
+## still carries its own copy of the net-parent walk and should migrate here).
 ##
 ## The rule they exist to enforce: a prop must be parented to the networked frame it sits on (the
 ## planet, the city) and its position expressed LOCALLY to that frame. A prop left at the root
@@ -41,12 +41,28 @@ static func to_parent_local(net_parent: Node, world_position: Vector3) -> Vector
 		return (net_parent as Node3D).global_transform.affine_inverse() * world_position
 	return world_position
 
-## A valid-format uuid derived from `seed_str` — same seed, same uuid, across restarts and across
-## servers. This is what lets a server RE-spawn world infrastructure it already spawned (a depot, a
-## mining zone, the rocks in a field) and have the database upsert it instead of piling a duplicate
-## on every boot. Never use it for something that must be unique per instance; use uuid.v4() there.
+## Namespace of the game's name-based uuids (stable_uuid). Never change it: every stable uuid in the
+## database is drawn from it, and a new one would give the whole world infrastructure new ids.
+const STABLE_UUID_NAMESPACE := "a0affe13-815e-4162-b78b-e3988ca71339"
+static var _stable_uuid_namespace: PackedByteArray = STABLE_UUID_NAMESPACE.replace("-", "").hex_decode()
+
+## A uuid derived from `seed_str` — same seed, same uuid, across restarts and across servers. This
+## is what lets a server RE-spawn world infrastructure it already spawned (a depot, a mining zone,
+## the rocks in a field) and have the database upsert it instead of piling a duplicate on every
+## boot. Never use it for something that must be unique per instance; use uuid.v4() there.
+## A version 5 uuid (RFC 9562: SHA-1 of STABLE_UUID_NAMESPACE then the seed, version and variant
+## set), so the services that check a uuid strictly take it, and any language recomputes it
+## (Python `uuid.uuid5`, Rust `Uuid::new_v5`).
 static func stable_uuid(seed_str: String) -> String:
-	var h: String = seed_str.sha256_text()
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA1)
+	ctx.update(_stable_uuid_namespace)
+	if not seed_str.is_empty():  # update() refuses an empty buffer
+		ctx.update(seed_str.to_utf8_buffer())
+	var b: PackedByteArray = ctx.finish().slice(0, 16)
+	b[6] = (b[6] & 0x0F) | 0x50  # version 5
+	b[8] = (b[8] & 0x3F) | 0x80  # variant RFC 9562
+	var h: String = b.hex_encode()
 	return "%s-%s-%s-%s-%s" % [
 		h.substr(0, 8), h.substr(8, 4), h.substr(12, 4), h.substr(16, 4), h.substr(20, 12)]
 

@@ -88,7 +88,7 @@ func _ready() -> void:
 			# this game server (the server copy is what holds the collision and the detectors
 			# / collect / SEND logic). Sending only to Horizon would leave the server without
 			# a depot node, since Horizon does not echo create_object back.
-			# Deterministic, VALID-format uuid so this depot is always the SAME object across
+			# Deterministic uuid (PropSpawn.stable_uuid) so this depot is always the SAME object across
 			# restarts (the database upserts by uuid -> no duplicate pile-up, and no delete is
 			# needed). Seed from the explicit stable_id, else from the fixed placement position
 			# so no manual setup is required.
@@ -98,7 +98,7 @@ func _ready() -> void:
 			# fixed in the parent's frame, so the same depot keeps the same uuid across restarts.
 			var uuid_seed: String = stable_id if stable_id != "" \
 				else "%s|%.3f,%.3f,%.3f" % [parent_uuid, place_pos.x, place_pos.y, place_pos.z]
-			var depot_uuid: String = _stable_uuid(uuid_seed)
+			var depot_uuid: String = PropSpawn.stable_uuid(uuid_seed)
 			# Designer-placed depot = world infrastructure: protect it from the admin cleanup
 			# tool (only player-spawned depots should be deletable).
 			NetworkOrchestrator.protected_prop_uuids[depot_uuid] = true
@@ -146,12 +146,6 @@ func _ready() -> void:
 		for area: Area3D in [rock_detector, rock_collector, box_detector]:
 			if area != null:
 				area.set_deferred(&"monitoring", false)
-
-## Build a deterministic, valid-format uuid from a seed string. Same seed -> same uuid
-## across restarts, so the depot is upserted (not duplicated) and Horizon can resolve it.
-func _stable_uuid(uuid_seed: String) -> String:
-	var h: String = uuid_seed.sha256_text()
-	return "%s-%s-%s-%s-%s" % [h.substr(0, 8), h.substr(8, 4), h.substr(12, 4), h.substr(16, 4), h.substr(20, 12)]
 
 ## In collect mode, a rock that slides off the conveyor end (leaves the detector) is
 ## collected. Skip rocks a player just picked up (carried) so grabbing one off the belt
