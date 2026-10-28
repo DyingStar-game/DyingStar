@@ -1,0 +1,51 @@
+[gd_resource type="Resource" script_class="CaveAssetLibrary" load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_asset_library.gd" id="1"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_decoration_rule.gd" id="2"]
+
+[sub_resource type="StandardMaterial3D" id="Wall"]
+resource_name = "mat_sand_cave_preview"
+albedo_color = Color(0.68, 0.45, 0.22, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Floor"]
+resource_name = "mat_sand_cave_floor_preview"
+albedo_color = Color(0.78, 0.6, 0.36, 1)
+roughness = 1.0
+
+[sub_resource type="SphereMesh" id="DecorationMesh"]
+radius = 0.5
+height = 0.3
+radial_segments = 10
+rings = 4
+
+[sub_resource type="Resource" id="FloorRule"]
+script = ExtResource("2")
+rule_name = "sand_formations"
+mesh = SubResource("DecorationMesh")
+material = SubResource("Wall")
+support = "floor"
+radius_m = 0.55
+scale_min = 0.7
+scale_max = 1.2
+spacing_m = 5.0
+
+[sub_resource type="Resource" id="CeilingRule"]
+script = ExtResource("2")
+rule_name = "sand_ceiling"
+mesh = SubResource("DecorationMesh")
+material = SubResource("Wall")
+support = "ceiling"
+radius_m = 0.55
+scale_min = 0.5
+scale_max = 0.9
+spacing_m = 9.0
+
+[resource]
+script = ExtResource("1")
+library_id = "sand_preview_v1"
+display_name = "Sable — assets de démonstration"
+surface_family = "sand"
+wall_material = SubResource("Wall")
+floor_material = SubResource("Floor")
+decorations = Array[ExtResource("2")]([SubResource("FloorRule"), SubResource("CeilingRule")])

@@ -54,6 +54,9 @@ func _disable_plugin() -> void:
 
 
 func _enter_tree() -> void:
+	var globals_script := preload("res://scenes/globals/globals.gd")
+	if globals_script.is_stargrot_explorer():
+		load(globals_script.STARGROT_LIFETIME).prepare(true)  # load(), not preload(): see Globals._ready()
 	main_panel_instance = MainPanel.instantiate()
 	add_control_to_bottom_panel(main_panel_instance, "DyingStar")
 	_http = HTTPRequest.new()

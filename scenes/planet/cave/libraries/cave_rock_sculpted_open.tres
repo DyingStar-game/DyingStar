@@ -1,0 +1,121 @@
+[gd_resource type="Resource" script_class="CaveAssetLibrary" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_decoration_rule.gd" id="1_irjid"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_stylized/rock_boulder_01_collision.tres" id="2_cr1mm"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/rock_stylized/rock_shared_material.tres" id="3_0k2vd"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_stylized/rock_boulder_01.tres" id="4_26k1m"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_stylized/rock_boulder_02_collision.tres" id="5_mthvw"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_stylized/rock_boulder_02.tres" id="6_81w78"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_stylized/rock_boulder_03_collision.tres" id="7_syphp"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_stylized/rock_boulder_03.tres" id="8_t1v73"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_stylized/rock_rubble_01.tres" id="9_jkc84"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_stylized/rock_stalagmite_01.tres" id="10_qx5ag"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_stylized/rock_stalactite_01.tres" id="11_n1qsv"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/rock_floor.tres" id="12_klhhh"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_asset_library.gd" id="13_o1f0c"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/rock_wall.tres" id="14_encjl"]
+
+[ext_resource type="Resource" path="res://scenes/planet/cave/libraries/cave_rock_exterior.tres" id="exterior"]
+
+[sub_resource type="Resource" id="Resource_0qky1"]
+script = ExtResource("1_irjid")
+rule_name = "rock_boulder_01"
+distribution = "scattered"
+max_slope_deg = 38.0
+align_to_surface = true
+mesh = ExtResource("4_26k1m")
+material = ExtResource("3_0k2vd")
+collision_shape = ExtResource("2_cr1mm")
+zone = "entrance"
+scale_min = 0.7
+scale_max = 1.8
+spacing_m = 8.0
+radius_m = 0.9
+max_instances = 10
+
+[sub_resource type="Resource" id="Resource_yor8h"]
+script = ExtResource("1_irjid")
+rule_name = "rock_boulder_02"
+distribution = "scattered"
+max_slope_deg = 38.0
+align_to_surface = true
+mesh = ExtResource("6_81w78")
+material = ExtResource("3_0k2vd")
+collision_shape = ExtResource("5_mthvw")
+zone = "entrance"
+scale_min = 0.7
+scale_max = 1.8
+spacing_m = 8.0
+radius_m = 1.13
+max_instances = 10
+
+[sub_resource type="Resource" id="Resource_bafxh"]
+script = ExtResource("1_irjid")
+rule_name = "rock_boulder_03"
+distribution = "scattered"
+max_slope_deg = 38.0
+align_to_surface = true
+mesh = ExtResource("8_t1v73")
+material = ExtResource("3_0k2vd")
+collision_shape = ExtResource("7_syphp")
+zone = "entrance"
+scale_min = 0.7
+scale_max = 1.8
+spacing_m = 8.0
+radius_m = 0.58
+max_instances = 10
+
+[sub_resource type="Resource" id="Resource_ujpcq"]
+script = ExtResource("1_irjid")
+rule_name = "rock_rubble_01"
+distribution = "clustered"
+max_slope_deg = 38.0
+align_to_surface = true
+mesh = ExtResource("9_jkc84")
+material = ExtResource("3_0k2vd")
+scale_min = 0.7
+scale_max = 1.3
+spacing_m = 6.0
+radius_m = 0.67
+max_instances = 28
+
+[sub_resource type="Resource" id="Resource_5idpf"]
+script = ExtResource("1_irjid")
+rule_name = "rock_stalagmite_01"
+distribution = "scattered"
+max_slope_deg = 14.0
+align_to_surface = false
+mesh = ExtResource("10_qx5ag")
+material = ExtResource("3_0k2vd")
+zone = "chamber"
+scale_min = 0.6
+scale_max = 1.1
+spacing_m = 6.0
+radius_m = 0.58
+max_instances = 28
+
+[sub_resource type="Resource" id="Resource_d0gvr"]
+script = ExtResource("1_irjid")
+rule_name = "rock_stalactite_01"
+distribution = "scattered"
+max_slope_deg = 55.0
+align_to_surface = false
+mesh = ExtResource("11_n1qsv")
+material = ExtResource("3_0k2vd")
+support = "ceiling"
+zone = "deep"
+scale_min = 0.6
+scale_max = 1.1
+spacing_m = 6.0
+radius_m = 0.45
+max_instances = 28
+
+[resource]
+script = ExtResource("13_o1f0c")
+entrance_library = ExtResource("exterior")
+library_id = "rock_sculpted_open_v1"
+display_name = "Roche sculptée — bouche ouverte"
+wall_material = ExtResource("14_encjl")
+floor_material = ExtResource("12_klhhh")
+decorations = Array[ExtResource("1_irjid")]([SubResource("Resource_0qky1"), SubResource("Resource_yor8h"), SubResource("Resource_bafxh"), SubResource("Resource_ujpcq"), SubResource("Resource_5idpf"), SubResource("Resource_d0gvr")])
+instance_budget = 180

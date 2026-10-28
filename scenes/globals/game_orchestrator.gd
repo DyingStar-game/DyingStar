@@ -66,6 +66,8 @@ func _enter_tree() -> void:
 
 
 func _ready():
+	if Globals.is_stargrot_explorer():
+		return
 	if OS.has_feature("editor"):
 		var current := get_tree().current_scene
 		if current == null:

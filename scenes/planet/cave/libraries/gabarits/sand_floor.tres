@@ -1,0 +1,6 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[resource]
+resource_name = "sand_floor_gabarit"
+albedo_color = Color(0.78, 0.63, 0.37, 1)
+roughness = 0.92

@@ -1,0 +1,15 @@
+[gd_resource type="StandardMaterial3D" load_steps=3 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/textures/grounds/rock/Rock029_2K_Color.jpg" id="albedo"]
+[ext_resource type="Texture2D" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="normal"]
+
+[resource]
+resource_name = "rock_wall"
+albedo_color = Color(0.72, 0.66, 0.58, 1)
+albedo_texture = ExtResource("albedo")
+roughness = 0.95
+normal_enabled = true
+normal_scale = 0.65
+normal_texture = ExtResource("normal")
+uv1_triplanar = true
+uv1_scale = Vector3(0.22, 0.22, 0.22)

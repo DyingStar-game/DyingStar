@@ -14,6 +14,36 @@ const ModifierPackScript = preload("res://scenes/planet/modifier_pack.gd")
 @export_group("General")
 ## for example "tarsis_3" correspond to the QGIS file name
 @export var planet_name: String = ""
+@export_group("Stargrot")
+## Persisted authored placements, independent of HEALPix chunks and visual LOD.
+@export var cave_placements: Array[CavePlacement] = []
+## When supplied, this catalog is the source of placements at terrain initialization.
+@export var cave_catalog: CaveSiteCatalog
+## Main-thread prepared plans, immutable while chunk workers consume them.
+var stargrot_plans: Array[Dictionary] = []
+## Fixed before terrain workers start. Surface cuts do not depend on cave mesh residency.
+var stargrot_cut_sites: Array[CavePlacement] = []
+@export_group("General")
+
+
+func stargrot_placements() -> Array[CavePlacement]:
+	if not stargrot_cut_sites.is_empty():
+		return stargrot_cut_sites
+	var result: Array[CavePlacement] = []
+	for plan: Dictionary in stargrot_plans:
+		result.append(plan.placement)
+	return result
+
+
+## Cache suffix of the cave cuts. Its tag changes with the cut's geometry (sg5: version 9 approach hollows and notches),
+## so chunks cut by older code are never read back.
+func stargrot_signature() -> String:
+	var parts := PackedStringArray()
+	for placement in cave_placements:
+		if placement != null:
+			parts.append(placement.signature())
+	return "" if parts.is_empty() else "_sg5_" + str(parts).sha256_text().substr(0, 16)
+
 ## Radius in meters (distance from center to sea-level surface).
 var radius: float = 1000.0
 ## Maximum terrain elevation above sea-level radius, in meters.

@@ -153,6 +153,7 @@ const FAR_GROUND := preload("res://scenes/planet/far_ground.gd")
 @export var editor_snap_height_offset: float = 0.0
 
 var planet_data: PlanetData
+var stargrot_registry: CavePlanetRegistry
 var is_server: bool = false
 
 ## Cached editor camera position (planet-local) to detect movement.
@@ -506,6 +507,8 @@ var _server_chunk_queue: Array[Dictionary] = []
 func initialize(data: PlanetData, server_mode: bool) -> void:
 	planet_data = data
 	is_server = server_mode
+	if data.cave_catalog != null:
+		data.cave_placements = data.cave_catalog.sites.duplicate()
 
 	# File mode: apply the chunk manifest (radius / export nside / tile res /
 	# height range) before anything reads these values below.
@@ -793,6 +796,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# the editor, where the key stays the one above.
 		if BuildInfo.build_id() != "":
 			_cache_version += "_b" + BuildInfo.build_id()
+		_cache_version += data.stargrot_signature()
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
@@ -800,6 +804,8 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# The rail modules, loaded here on the main thread: the mesh tasks lay them (RailwayTrack.stamp_rails).
 	if not server_mode and planet_data.has_railways():
 		RailwayTrack.module_meshes()
+	if not data.cave_placements.is_empty():
+		stargrot_registry = CavePlanetRegistry.attach(self)
 
 	# The geometry version is what a client and a server must SHARE for their
 	# terrains to agree (the sampler, the carve, the stitch are all in it):
@@ -1046,10 +1052,7 @@ func _apply_residency() -> void:
 	for k in _pinned_chunks.keys():
 		effective[k as String] = true
 
-	var diff: Array = residency_diff(_residency_keys, effective)
-	_residency_keys = effective.duplicate()
-	if not (diff[0] as PackedStringArray).is_empty() or not (diff[1] as PackedStringArray).is_empty():
-		residency_changed.emit(diff[0], diff[1])
+	_publish_residency(effective)
 
 	# Fine collision chunks (deeper nside, pinned under active bodies) carve
 	# the cracks the coarse export chunks flatten.  Drop the coarse export
@@ -1111,6 +1114,42 @@ func _apply_residency() -> void:
 ## SERVER: the chunk keys currently wanted (zone ∪ pins), as a set. Do not modify it.
 func residency_keys() -> Dictionary:
 	return _residency_keys
+
+
+## Stargrot: stale chunks a cave's visitor must not see (key → true), hidden by _hide_stale_in_caves.
+var _stargrot_hidden: Dictionary = {}
+
+
+## Stargrot: a stale chunk kept on screen until its replacement arrives lies metres under the fine ground (a
+## coarse parent cuts corners) and its material is double-sided. Seen from inside a cave it crossed the
+## galleries as a flat slab of ground. From inside the rock (CavePlanetRegistry.inside_rock) the surface is
+## only seen through the openings, so stale chunks are not drawn there; they come back on leaving.
+func _hide_stale_in_caves(desired: Dictionary, local_cam: Vector3) -> void:
+	var underground := CavePlanetRegistry.inside_rock(planet_data, local_cam)
+	for key: String in _stargrot_hidden.keys():
+		if underground and _active_chunks.has(key) and not desired.has(key):
+			continue
+		var shown: MeshInstance3D = (_active_chunks.get(key, {}) as Dictionary).get("mesh_instance")
+		if is_instance_valid(shown):
+			shown.visible = true
+		_stargrot_hidden.erase(key)
+	if not underground:
+		return
+	for key: String in _active_chunks:
+		if desired.has(key) or _stargrot_hidden.has(key):
+			continue
+		var hidden: MeshInstance3D = _active_chunks[key].get("mesh_instance")
+		if is_instance_valid(hidden) and hidden.visible:
+			hidden.visible = false
+			_stargrot_hidden[key] = true
+
+
+## Both server zone/pins and client LOD publish their native desired leaves to shared subscribers.
+func _publish_residency(effective: Dictionary) -> void:
+	var diff: Array = residency_diff(_residency_keys, effective)
+	_residency_keys = effective.duplicate()
+	if not (diff[0] as PackedStringArray).is_empty() or not (diff[1] as PackedStringArray).is_empty():
+		residency_changed.emit(diff[0], diff[1])
 
 
 ## [added, removed] between two key sets, both as PackedStringArray.
@@ -1212,6 +1251,8 @@ func _server_drain_chunk_queue() -> void:
 ## generate_collision_shape_healpix (phase 1).
 ## Rend false quand le chunk est DIFFÉRÉ faute de tuiles : l'appelant le remet en file.
 func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
+	if stargrot_registry != null and not stargrot_registry.ready_for_chunk(key):
+		return false
 	# A pad waiting for its elevation tiles is waiting for the SAME tiles this chunk needs: if it only
 	# came in at the next throttled poll (_poll_starved_pads), the chunk would be built bare and then
 	# rebuilt — on the server an unload and a reload, the ground gone from under whatever stands on it,
@@ -1668,7 +1709,63 @@ func rebuild_chunks(chunk_keys: Array, biome_update: Dictionary) -> void:
 		print("[PlanetTerrain] rebuild_chunks: rebuilt '%s'" % key)
 
 
+## Offline authoring checkpoint: preserve native terrain/remote-source lifetimes,
+## join workers before changing their inputs, and reuse native chunk retirement.
+func refresh_stargrot_sites(placements: Array[CavePlacement]) -> void:
+	assert(Globals.is_stargrot_explorer())
+	await quiesce_stargrot()
+	_join_lod_task()
+	_join_worker_tasks()
+	_mesh_task_backlog.clear()
+	_mesh_slots = 0
+	_server_chunk_queue.clear()
+	_clear_all_chunks()
+	for key in _server_collision_chunks.keys():
+		_unload_chunk(key)
+	if stargrot_registry != null:
+		stargrot_registry.retire()
+		stargrot_registry.queue_free()
+		stargrot_registry = null
+	var previous_signature := planet_data.stargrot_signature()
+	planet_data.cave_placements = placements
+	planet_data.stargrot_plans = []
+	planet_data.stargrot_cut_sites = []
+	if _chunk_cache != null:
+		var version := _chunk_cache.version.trim_suffix(previous_signature) + planet_data.stargrot_signature()
+		var base := ChunkDiskCache.SERVER_COLLISION_BASE_DIR if is_server else ChunkDiskCache.BASE_DIR
+		_chunk_cache = ChunkDiskCache.new(planet_data.planet_name, version, base)
+	if not placements.is_empty():
+		stargrot_registry = CavePlanetRegistry.attach(self)
+		stargrot_registry.ensure_ready()
+	if is_server and (stargrot_registry == null or stargrot_registry.prepared):
+		_apply_residency()
+	# Retired geometry must leave the tree before new chunks are assembled.
+	await get_tree().process_frame
+	set_process(true)
+	set_physics_process(true)
+
+
+## Authoring closes/refreshes a live world. Drain before leaving the tree: a worker
+## may need main-thread deferred work as well as RenderingServer synchronization.
+func quiesce_stargrot() -> void:
+	assert(Globals.is_stargrot_explorer())
+	set_process(false)
+	set_physics_process(false)
+	var pending: Array[int] = []
+	if _lod_task >= 0:
+		pending.append(_lod_task)
+	for tasks: Dictionary in [_mesh_tasks, _pending_recipes, _server_chunk_tasks, _bridge_tasks]:
+		for entry: Dictionary in tasks.values():
+			var id := int(entry.get("task_id", -1))
+			if id >= 0:
+				pending.append(id)
+	while pending.any(func(id: int): return not WorkerThreadPool.is_task_completed(id)):
+		await get_tree().process_frame
+
+
 func _exit_tree() -> void:
+	if stargrot_registry != null:
+		stargrot_registry.retire()
 	_join_lod_task()
 	_join_worker_tasks()
 	if _chunk_cache != null:
@@ -1680,6 +1777,7 @@ func _exit_tree() -> void:
 	if planet_data != null and planet_data.remote_source != null:
 		planet_data.remote_source.stop()
 		planet_data.remote_source = null
+
 
 
 ## Wait for every task still running on the WorkerThreadPool before the planet goes. They read
@@ -1716,6 +1814,9 @@ static func join_task(task_id: int) -> void:
 
 func _physics_process(_delta: float) -> void:
 	if not _initialized:
+		return
+	# Wait for canonical entrance tiles before any chunk can bake an uncut surface.
+	if stargrot_registry != null and not stargrot_registry.ensure_ready():
 		return
 	# Editor flight: drive the body under the viewport camera BEFORE anything reads a
 	# transform this frame, so the LOD and the camera agree on where the body is.
@@ -1948,16 +2049,21 @@ func _update_terrain() -> void:
 	# the player's sun + shadows drive the surface. A per-planet switch, so your whole planet (horizon too)
 	# stays local while other planets go celestial. Re-tag existing chunks only on a transition.
 	if not is_server:
-		_star_dir_world = _compute_star_dir()
+		var next_star_dir := _compute_star_dir()
+		var star_dir_changed := not next_star_dir.is_equal_approx(_star_dir_world)
+		_star_dir_world = next_star_dir
 		var want_celestial: bool = planet_lod >= 3
-		if want_celestial != _chunks_on_celestial:
+		var layer_changed := want_celestial != _chunks_on_celestial
+		if layer_changed or star_dir_changed:
 			_chunks_on_celestial = want_celestial
 			var layer: int = GlobalsDefs.RENDER_MASK_CELESTIAL if want_celestial else GlobalsDefs.RENDER_MASK_LOCAL
 			for ck in _active_chunks:
 				var cmi: MeshInstance3D = _active_chunks[ck].get("mesh_instance")
 				if is_instance_valid(cmi):
 					cmi.layers = layer
-					FAR_GROUND.apply(cmi, want_celestial)  # every ground lights itself from afar
+					cmi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
+					if layer_changed:
+						FAR_GROUND.apply(cmi, want_celestial)  # native distant materials
 
 	# Update camera history ring-buffer for look-ahead prefetch.
 	_cam_history.append(local_cam)
@@ -2013,6 +2119,8 @@ func _update_terrain() -> void:
 	_tk = _perf_begin()
 
 	_desired_count = desired.size()
+	if stargrot_registry != null:
+		_publish_residency(desired)
 	# One-shot: log chunk count breakdown by LOD
 	if _active_chunks.is_empty() and not desired.is_empty():
 		var lod_counts := [0, 0, 0, 0, 0]
@@ -2114,6 +2222,8 @@ func _update_terrain() -> void:
 			break
 		_remove_chunk(to_remove[i])
 	_perf_end("steps:remove", _tks)
+	if stargrot_registry != null and not is_server:
+		_hide_stale_in_caves(desired, local_cam)
 	_tks = _perf_begin()
 
 	# Step 3 — Re-queue chunks whose LOD quality changed (same key, different lod).
@@ -3958,6 +4068,7 @@ func _process_assemble_queue() -> void:
 	_queue_refresh(_assemble_queue, _assemble_rank_at)
 	_perf_end("asm:sort", _tks)
 	var assembled := 0
+	var waiting_caves: Array[Dictionary] = []
 	var _batch_t0 := Time.get_ticks_usec()
 	while assembled < MAX_ASSEMBLE_PER_FRAME and not _assemble_queue.is_empty():
 		if assembled > 0 and (Time.get_ticks_usec() - _batch_t0) / 1000.0 >= ASSEMBLE_BUDGET_MS:
@@ -3965,6 +4076,14 @@ func _process_assemble_queue() -> void:
 		var item: Dictionary = _assemble_queue.pop_back()
 		var info: Dictionary = item.info
 		var mesh: ArrayMesh = item.mesh
+		if stargrot_registry != null and not stargrot_registry.ready_for_chunk(info.key):
+			# Keep the old ground visible until the cavity is ready. Reinsert after the drain so
+			# a nearby pending cave cannot keep us popping the same item or starve other chunks.
+			if _residency_keys.has(info.key):
+				waiting_caves.append(item)
+			else:
+				_drop_cache_write(info)  # The visitor left: do not retain an unwanted mesh forever.
+			continue
 		# Built before a line profile was born under it (the mesh has the
 		# terrain-hugging ribbon where the bed now goes), or before a pad
 		# levelled its ground: dropped. Checked BEFORE the swap below, which
@@ -3995,6 +4114,8 @@ func _process_assemble_queue() -> void:
 		# An assembly that returned before its cache section.
 		_drop_cache_write(info)
 		assembled += 1
+	for item: Dictionary in waiting_caves:
+		_queue_insert(_assemble_queue, item, item.info.center)
 
 
 ## Forget the worker's unpublished cache copy of a mesh that will not be shown.
@@ -5375,4 +5496,3 @@ func _editor_flight_place(planet: Planet, cam: Vector3, radius: float) -> void:
 func _editor_camera_world() -> Vector3:
 	var local := _get_editor_camera_local()
 	return Vector3.INF if local == Vector3.INF else global_position + local
-

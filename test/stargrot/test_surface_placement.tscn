@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://test/stargrot/test_surface_placement.gd" id="1"]
+
+[node name="SurfacePlacementTest" type="Node"]
+script = ExtResource("1")

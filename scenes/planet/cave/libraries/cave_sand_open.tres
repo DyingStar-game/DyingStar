@@ -1,0 +1,99 @@
+[gd_resource type="Resource" script_class="CaveAssetLibrary" load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_asset_library.gd" id="lib"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_decoration_rule.gd" id="rule"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/sand_wall.tres" id="wall"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/sand_floor.tres" id="floor"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/sand_accent.tres" id="accent"]
+[ext_resource type="Mesh" path="res://scenes/planet/cave/libraries/gabarits/bank.tres" id="bank"]
+[ext_resource type="Mesh" path="res://scenes/planet/cave/libraries/gabarits/boulder.tres" id="boulder"]
+[ext_resource type="Mesh" path="res://scenes/planet/cave/libraries/gabarits/plate.tres" id="plate"]
+[ext_resource type="Mesh" path="res://scenes/planet/cave/libraries/gabarits/rubble.tres" id="rubble"]
+
+[sub_resource type="Resource" id="Rule0"]
+script = ExtResource("rule")
+rule_name = "sand_bouche_blocs"
+mesh = ExtResource("boulder")
+material = ExtResource("accent")
+support = "floor"
+zone = "entrance"
+radius_m = 1.05
+spacing_m = 7.0
+scale_min = 0.6
+scale_max = 1.3
+max_instances = 35
+
+[sub_resource type="Resource" id="Rule1"]
+script = ExtResource("rule")
+rule_name = "sand_bouche_depots"
+mesh = ExtResource("bank")
+material = ExtResource("accent")
+support = "floor"
+zone = "entrance"
+radius_m = 1.25
+spacing_m = 9.0
+scale_min = 0.5
+scale_max = 1.0
+max_instances = 24
+
+[sub_resource type="Resource" id="Rule2"]
+script = ExtResource("rule")
+rule_name = "sand_bouche_surplombs"
+mesh = ExtResource("plate")
+material = ExtResource("accent")
+support = "ceiling"
+zone = "entrance"
+radius_m = 0.55
+spacing_m = 8.0
+scale_min = 0.5
+scale_max = 0.9
+max_instances = 24
+
+[sub_resource type="Resource" id="Rule3"]
+script = ExtResource("rule")
+rule_name = "sand_debris"
+mesh = ExtResource("rubble")
+material = ExtResource("accent")
+support = "floor"
+zone = "all"
+radius_m = 0.4
+spacing_m = 8.0
+scale_min = 0.7
+scale_max = 1.2
+max_instances = 70
+
+[sub_resource type="Resource" id="Rule4"]
+script = ExtResource("rule")
+rule_name = "sand_formations"
+mesh = ExtResource("bank")
+material = ExtResource("accent")
+support = "floor"
+zone = "chamber"
+radius_m = 1.25
+spacing_m = 8.0
+scale_min = 0.8
+scale_max = 1.3
+max_instances = 45
+
+[sub_resource type="Resource" id="Rule5"]
+script = ExtResource("rule")
+rule_name = "sand_plafond"
+mesh = ExtResource("plate")
+material = ExtResource("accent")
+support = "ceiling"
+zone = "deep"
+radius_m = 0.55
+spacing_m = 11.0
+scale_min = 0.5
+scale_max = 1.0
+max_instances = 35
+
+[resource]
+script = ExtResource("lib")
+library_id = "sand_open_v1"
+display_name = "Sable — bouche ouverte (gabarits)"
+surface_family = "sand"
+wall_material = ExtResource("wall")
+floor_material = ExtResource("floor")
+decorations = Array[ExtResource("rule")]([SubResource("Rule0"), SubResource("Rule1"), SubResource("Rule2"), SubResource("Rule3"), SubResource("Rule4"), SubResource("Rule5")])
+instance_budget = 180

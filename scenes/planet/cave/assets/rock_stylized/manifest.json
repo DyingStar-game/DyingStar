@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "direction": "Original stylized sculpted rock, inspired by readable game environments",
+  "units": "metres",
+  "source_up": "Z",
+  "runtime_up": "Y",
+  "seeded": true,
+  "assets": [
+    {
+      "id": "rock_boulder_01",
+      "triangles": 698,
+      "dimensions_m": [
+        1.7861,
+        1.2485,
+        1.0932
+      ],
+      "support": "floor",
+      "collision": "convex"
+    },
+    {
+      "id": "rock_boulder_02",
+      "triangles": 738,
+      "dimensions_m": [
+        2.245,
+        1.2991,
+        0.65
+      ],
+      "support": "floor",
+      "collision": "convex"
+    },
+    {
+      "id": "rock_boulder_03",
+      "triangles": 598,
+      "dimensions_m": [
+        1.1412,
+        1.0467,
+        1.643
+      ],
+      "support": "floor",
+      "collision": "convex"
+    },
+    {
+      "id": "rock_rubble_01",
+      "triangles": 2614,
+      "dimensions_m": [
+        1.2334,
+        1.0138,
+        0.4367
+      ],
+      "support": "floor",
+      "collision": "none"
+    },
+    {
+      "id": "rock_stalagmite_01",
+      "triangles": 454,
+      "dimensions_m": [
+        1.0961,
+        0.8759,
+        2.6
+      ],
+      "support": "floor",
+      "collision": "none"
+    },
+    {
+      "id": "rock_stalactite_01",
+      "triangles": 504,
+      "dimensions_m": [
+        0.8113,
+        0.686,
+        2.15
+      ],
+      "support": "ceiling",
+      "collision": "none"
+    }
+  ]
+}

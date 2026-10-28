@@ -1148,6 +1148,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "exterior_rocks.blend",
+			"path": "res://assets_blender/stargrot/exterior/exterior_rocks.blend",
+			"author": "StarGrotte (Codex)",
+			"source": "Procedural",
+			"id": "",
+			"url": "https://github.com/DyingStar-game/DyingStar",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "factory.png",
 			"path": "res://assets/textures/map_markers/factory.png",
 			"author": "WarpZone",

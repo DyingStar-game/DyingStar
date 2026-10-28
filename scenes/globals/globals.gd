@@ -105,11 +105,22 @@ var player_uuid: String = ""
 var online_mode: bool = false
 var is_gut_running: bool = false
 
+## Dev-only cave authoring guard, absent from exported games: see _ready().
+const STARGROT_LIFETIME := "res://tools/stargrot/cave_native_lifetime.gd"
+
+## Explicit offline boot mode shared by autoloads and the local player role.
+static func is_stargrot_explorer() -> bool:
+	return "--stargrot-explorer" in OS.get_cmdline_user_args()
+
 ## Seconds to add to the local clock to land on the reference one. See sync_clock().
 var _clock_offset: float = 0.0
 
 
 func _ready() -> void:
+	# load(), never preload(): the cave authoring tool (tools/stargrot) is left out of exported games
+	# (exclude_filter in export_presets.cfg), and a preload would break this autoload without it.
+	if is_stargrot_explorer() and ResourceLoader.exists(STARGROT_LIFETIME):
+		load(STARGROT_LIFETIME).prepare(true)
 	# AltGr and its fake Ctrl, tracked from EVERY window event before any node can swallow it.
 	if not OS.has_feature("dedicated_server"):
 		get_tree().root.window_input.connect(AltGr.feed)
