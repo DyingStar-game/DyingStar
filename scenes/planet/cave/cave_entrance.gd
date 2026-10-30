@@ -18,10 +18,13 @@ const KNEE_DROP_M := 0.3
 const COLLAR_M := 3.0
 const COLLAR_DROP_M := 1.0
 const CURTAIN_M := 2.0
+const ROOF_OUT_ERROR := "La grotte ressort du terrain : choisir un autre emplacement."
 
+## The ground (cracks included) under the site-frame plan point ([param x], [param z]), in the site frame. Native
+## inside a CaveGround job, the same value as PlanetData.crack_aware_surface_dist.
 static func ground_in_frame(data: PlanetData, frame: Transform3D, x: float, z: float) -> Vector3:
     var direction := (frame * Vector3(x, 0.0, z)).normalized()
-    return frame.affine_inverse() * (direction * data.crack_aware_surface_dist(direction, data.export_nside))
+    return frame.affine_inverse() * (direction * CaveGround.surface_dist(data, direction))
 
 static func ground_point(data: PlanetData, placement: CavePlacement, x: float, z: float) -> Vector3:
     return ground_in_frame(data, placement.surface_transform(), x, z)
@@ -238,18 +241,27 @@ static func _in_porch(placement: CavePlacement, opening: Dictionary, point: Vect
 
 ## The generated roof, including its relief, stays under the terrain, and a porch's bend inside the rock.
 static func site_error(data: PlanetData, placement: CavePlacement, cave: Dictionary) -> String:
-    var offset := placement.network_offset
-    # Large authored rooms contribute hundreds of thousands of roof vertices. The placement is
-    # immutable during this job: keep its frame/inverse and depth once, but still check EVERY point
-    # against the same canonical terrain query (no coarser sampling or relaxed cover tolerance).
-    var frame := placement.surface_transform()
-    var inverse := frame.affine_inverse()
-    var depth := placement.mouth_depth()
-    for vertex in CaveGenerator.cover_points(cave):
-        var direction := (frame * Vector3(vertex.x + offset.x, 0.0, vertex.z + offset.z)).normalized()
-        var ground := inverse * (direction * data.crack_aware_surface_dist(direction, data.export_nside))
-        if vertex.y - depth > ground.y - 0.5:
-            return "La grotte ressort du terrain : choisir un autre emplacement."
+    # Large authored rooms contribute hundreds of thousands of roof vertices: EVERY point is checked against
+    # the same canonical terrain query (no coarser sampling or relaxed cover tolerance).
+    var points := CaveGenerator.cover_points(cave)
+    if roof_out(data, placement, points, 0, points.size()):
+        return ROOF_OUT_ERROR
     if placement.profile.entrance_type != "shaft":
         return CavePortal.porch_error(data, placement)
     return ""
+
+
+## Does a roof point of [param points] (indices [param from] to [param to] excluded) stand within 0.5 m of the
+## ground or above it? The site_error test over a slice, for CaveFitter to share the points between threads.
+static func roof_out(data: PlanetData, placement: CavePlacement, points: PackedVector3Array, from: int, to: int) -> bool:
+    var offset := placement.network_offset
+    var frame := placement.surface_transform()
+    var inverse := frame.affine_inverse()
+    var depth := placement.mouth_depth()
+    for index in range(from, to):
+        var vertex := points[index]
+        var direction := (frame * Vector3(vertex.x + offset.x, 0.0, vertex.z + offset.z)).normalized()
+        var ground := inverse * (direction * CaveGround.surface_dist(data, direction))
+        if vertex.y - depth > ground.y - 0.5:
+            return true
+    return false

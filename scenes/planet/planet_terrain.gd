@@ -4814,6 +4814,17 @@ var _runtime_cave_pixels: Dictionary = {}
 ## Caves registered at run time that were refused, by placement id: [definition signature, reason]. The same
 ## definition is not tried again; a new one is.
 var _cave_refusals: Dictionary = {}
+## SERVER: the networked caves waiting for their fit to this relief, made on the first request.
+var _cave_fit_queue: CaveFitQueue = null
+
+
+## SERVER: fit [param site] (a CaveSite near a player) to this relief, after the caves already asked for.
+func request_cave_fit(site: CaveSite) -> void:
+	if _cave_fit_queue == null:
+		_cave_fit_queue = CaveFitQueue.new()
+		_cave_fit_queue.name = "CaveFitQueue"
+		add_child(_cave_fit_queue)
+	_cave_fit_queue.request(site, planet_data)
 
 
 ## Add or update a cave that arrives at run time: a networked "cave" prop (CaveSite), or the server from the

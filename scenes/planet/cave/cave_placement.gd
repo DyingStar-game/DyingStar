@@ -59,6 +59,24 @@ const PROP_FIELDS: Array[String] = ["placement_id", "planet_name", "longitude_de
     "cover_m", "format_version", "fitted_mouth_depth_m", "portal_descent_deg", "portal_axis_m", "skylight_depth_m"]
 ## The fields a networked cave cannot be built without: lacking one, its data is still incomplete.
 const PROP_REQUIRED: Array[String] = ["placement_id", "longitude_deg", "latitude_deg", "seed", "generator_version"]
+## The fields a fit measures on the relief (CaveFitter.refit): everything else is authored (QGIS).
+const FIT_FIELDS: Array[String] = ["surface_height_m", "planet_radius_m", "terrain_version", "terrain_relief_signature",
+    "fitted_mouth_depth_m", "portal_descent_deg", "portal_axis_m", "skylight_depth_m", "network_offset", "light_wells"]
+
+
+## Is this cave still to be fitted to [param data]'s relief: never fitted (a QGIS export), or fitted on
+## another one? It is then refused by validation_error and the server fits it again (CaveSite).
+func needs_fit(data: PlanetData) -> bool:
+    return terrain_version != data.chunk_data_version or terrain_relief_signature != data.relief_signature
+
+
+## A digest of the authored definition (FIT_FIELDS left out): a fit refused for this key is not tried again
+## until the cave or the relief changes.
+func authored_key() -> String:
+    var data := to_prop_data()
+    for field in FIT_FIELDS:
+        data.erase(field)
+    return JSON.stringify(data, "", true, true).sha256_text()
 
 
 ## This placement and its profile as the flat plain values of a networked cave's object_data:
