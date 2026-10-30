@@ -2775,6 +2775,8 @@ func _stream_place(uuid: String) -> void:
 		pos = abs_pos - _planet_orbital_abs(planet)
 	if planet.planet_data == null or planet.planet_terrain == null:
 		prop_registry.place_always(uuid)
+	elif str(e["type"]) == CAVE_TYPE:
+		_stream_place_cave(uuid, planet, pos, od)
 	elif not planet.within_ground_reach(pos):
 		_stream_place_radius(uuid, planet.uuid, pos)  # aloft: no chunk under it, distance decides
 	else:
@@ -2787,6 +2789,29 @@ func _stream_place_radius(uuid: String, world: String, pos: Vector3) -> void:
 		prop_registry.place_always(uuid)  # no definition: we cannot tell when it is needed
 	else:
 		prop_registry.place_radius(uuid, world, pos, r)
+
+
+## A cave streams by distance, not by resident chunk: its server node fits it to the relief (CaveSite) when a
+## player comes within its zone-6 radius (~3 km), long before the chunks the pins keep resident reach it. One not
+## fitted to this relief has no known altitude (a QGIS export gives only its longitude and latitude): it waits
+## at sea level, "level", and the distance test brings each viewer down to sea level too (_stream_level_viewer).
+func _stream_place_cave(uuid: String, planet: Planet, pos: Vector3, od: Dictionary) -> void:
+	var site := CavePlacement.from_prop_data(od)
+	var level := site == null or site.needs_fit(planet.planet_data)
+	if level and not pos.is_zero_approx():
+		pos = pos.normalized() * planet.planet_data.radius
+	_stream_place_radius(uuid, planet.uuid, pos)
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if int(e.get("kind", -1)) == PropRegistry.KIND_RADIUS:
+		e["level"] = level
+
+
+## [param viewer] of [param world] brought down to its planet's sea level (the "level" caves), or null in space.
+func _stream_level_viewer(world: String, viewer: Vector3) -> Variant:
+	var planet = props_list["planets"].get(world)
+	if not (planet is Planet) or (planet as Planet).planet_data == null or viewer.is_zero_approx():
+		return null
+	return viewer.normalized() * (planet as Planet).planet_data.radius
 
 
 ## The chunk keys an item at planet-local [param pos] stands on: the fine collision key (what the pins
@@ -2859,7 +2884,8 @@ func _stream_should_live(entry: Dictionary) -> bool:
 			var reach: float = float(entry["radius"])
 			var r2: float = reach * reach
 			for v in _stream_viewers(str(entry["world"])):
-				if (v as Vector3).distance_squared_to(entry["pos"]) <= r2:
+				var at: Variant = _stream_level_viewer(str(entry["world"]), v) if entry.get("level", false) else v
+				if at != null and (at as Vector3).distance_squared_to(entry["pos"]) <= r2:
 					return true
 			return false
 	return false
@@ -3146,6 +3172,15 @@ func _stream_sweep() -> void:
 					_stream_enqueue(u)
 				for u in prop_registry.uuids_near(str(world), v, keep_factor):
 					keep[u] = true
+				var lv: Variant = _stream_level_viewer(str(world), v)
+				if lv == null:
+					continue
+				for u in prop_registry.uuids_near(str(world), lv, 1.0):
+					if prop_registry.entries[u].get("level", false):
+						_stream_enqueue(u)
+				for u in prop_registry.uuids_near(str(world), lv, keep_factor):
+					if prop_registry.entries[u].get("level", false):
+						keep[u] = true
 		var now: int = Time.get_ticks_msec()
 		for u in _stream_live_radius.keys():
 			var e: Dictionary = prop_registry.get_entry(u)
@@ -3467,7 +3502,8 @@ func _stream_register_cave(uuid: String) -> void:
 	if not (planet is Planet) or (planet as Planet).planet_terrain == null:
 		return
 	var site := CavePlacement.from_prop_data(e["event"]["data"].get("object_data", {}))
-	if site != null:
+	# Not fitted to this relief yet: nothing to cut until its node fits it (CaveSite).
+	if site != null and not site.needs_fit((planet as Planet).planet_data):
 		(planet as Planet).planet_terrain.register_cave_site(site)
 
 

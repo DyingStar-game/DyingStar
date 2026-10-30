@@ -97,3 +97,55 @@ func test_a_refused_cave_never_takes_the_others_with_it() -> void:
     terrain.register_cave_site(moved)
     assert_eq(terrain.planet_data.stargrot_cut_sites.size(), 1, "an update replaces the site")
     assert_eq(terrain.planet_data.stargrot_cut_sites[0].longitude_deg, moved.longitude_deg)
+
+
+func _unfitted(entrance: String) -> CavePlacement:
+    var site := Fixture.placement(Fixture.profile(0))
+    site.placement_id = "qgis-%s" % entrance
+    site.profile.entrance_type = entrance
+    site.terrain_version = ""  # as export_cave_sites.py imports it
+    return site
+
+
+func test_a_qgis_cave_needs_a_fit_and_its_key_ignores_the_fit() -> void:
+    var site := _unfitted("shaft")
+    var data := Fixture.data(_site(1))
+    assert_true(site.needs_fit(data), "never fitted")
+    var key := site.authored_key()
+    Fixture.fit(site, data)
+    site.terrain_version = data.chunk_data_version
+    assert_false(site.needs_fit(data), "fitted on this relief")
+    assert_eq(site.authored_key(), key, "the fit changes no authored field")
+    site.seed += 1
+    assert_ne(site.authored_key(), key, "an edited cave is another definition")
+    data.relief_signature = "re-exported"
+    assert_true(site.needs_fit(data), "a new relief asks for a new fit")
+
+
+## The server path: a CaveSite near a player asks CaveFitQueue, which persists the fit or the refusal on it.
+func test_the_server_fits_a_cave_or_records_why_not() -> void:
+    var data := Fixture.data(_site(1))
+    var queue: CaveFitQueue = add_child_autofree(CaveFitQueue.new())
+    var doline: CaveSite = add_child_autofree(CaveSite.new())
+    doline.apply_prop_data(_unfitted("shaft").to_prop_data())
+    var broken := _unfitted("ramp")
+    broken.network_offset = Vector3(5000.0, 0.0, 0.0)  # past CavePlacement.definition_error's bound
+    var porch: CaveSite = add_child_autofree(CaveSite.new())
+    porch.apply_prop_data(broken.to_prop_data())
+    queue.request(doline, data)
+    queue.request(porch, data)
+    queue.request(doline, data)  # asked twice: fitted once
+    var deadline := Time.get_ticks_msec() + 120000
+    while (queue._current != null or not queue._queue.is_empty()) and Time.get_ticks_msec() < deadline:
+        await get_tree().process_frame
+    var fitted := doline.placement()
+    assert_false(fitted.needs_fit(data), "the doline is fitted")
+    assert_eq(fitted.validation_error(data), "")
+    assert_eq(doline._data[CaveSite.FIT_ERROR], {})
+    assert_almost_eq(doline.position.length(), data.radius, 0.01, "stands on its entrance point")
+    var refusal: Dictionary = porch._data.get(CaveSite.FIT_ERROR, {})
+    assert_false(str(refusal.get("error", "")).is_empty(), "the broken cave's refusal is kept")
+    assert_true(porch.placement().needs_fit(data), "and nothing fitted")
+    assert_true(porch._refused(porch.placement(), data), "not tried again on this relief")
+    data.relief_signature = "re-exported"
+    assert_false(porch._refused(porch.placement(), data), "a new relief tries again")

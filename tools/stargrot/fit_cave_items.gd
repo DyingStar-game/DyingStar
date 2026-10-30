@@ -3,18 +3,21 @@ extends Node
 ## writes the file the admin panel imports into the persistence: one networked "cave" prop (CaveSite) each.
 ##
 ##   <godot> --headless --path <repo> res://tools/stargrot/fit_cave_items.tscn -- \
-##       --in=<dir>/<planet>_cave_sites.json [--out=<dir>/<planet>_cave_items.json] [--parent=_planet_SandBox]
+##       --in=<dir>/<planet>_cave_sites.json [--out=<dir>/<planet>_cave_items.json] [--parent=_planet_SandBox] \
+##       [--jobs=<caves fitted at once, default half the CPU threads>]
 ##
 ## A cave is pinned to one relief: its mouth depth, network offset, porch and light shafts are measured on the
-## terrain (CavePopulation.refit, the workbench's "Recaler"), and a cave measured on another relief is refused by
+## terrain (CaveFitter.refit, the workbench's "Recaler"), and a cave measured on another relief is refused by
 ## the game. Run this again after every terrain re-export, then import again: the prop uuids derive from the
 ## placement ids, so the import updates the caves instead of adding new ones.
 ##
-## Each fit is saved as it ends in <out>_checkpoint.json (a run of 200 caves takes about 1 h 40): run the same
-## command again after a crash or an interruption and only the caves not fitted yet are measured. A checkpoint
-## entry is reused while the relief and the cave's QGIS parameters are unchanged.
+## The server fits a cave itself when a player comes near it (CaveSite), so this step is optional: it checks
+## the caves before the import (the refused ones are listed) and spares the server the fit. Each fit is saved
+## as it ends in <out>_checkpoint.json: run the same command again after a crash or an interruption and only the
+## caves not fitted yet are measured. A checkpoint entry is reused while the relief and the cave's QGIS parameters
+## are unchanged.
 ##
-## A porch on a real slope is turned to face uphill whatever heading QGIS gave it (CavePopulation.prepare_site):
+## A porch on a real slope is turned to face uphill whatever heading QGIS gave it (CaveFitter.prepare_site):
 ## the imported heading is the fitted one. Caves refused by the fit, or too close to a cave already accepted, are
 ## left out of the import and listed, with the reason, in <out>_rejected.json.
 
@@ -24,6 +27,9 @@ const SCENE := "scenes/planet/cave/cave_site.tscn"
 const PARENT_ALIASES := {"tarsis_3": "_planet_SandBox"}
 
 var _status := 0
+var _pending: Array[int] = []
+var _running := 0
+var _done := 0
 
 
 func _ready() -> void:
@@ -70,26 +76,29 @@ func _run() -> void:
 
     var checkpoint_path := output.get_basename() + "_checkpoint.json"
     var checkpoint := _checkpoint(checkpoint_path, data)
-    var population := CavePopulation.new()
-    add_child(population)
-    var fitted: Array[CavePlacement] = []
-    var reused := 0
+    var todo: Array[int] = []
     for index in sites.size():
-        var site := sites[index]
-        var saved: Dictionary = checkpoint.sites.get(site.placement_id, {})
+        var saved: Dictionary = checkpoint.sites.get(sites[index].placement_id, {})
         if saved.get("authored") != keys[index]:
-            if index - reused == 0 or (index - reused) % 10 == 0:
-                print("[fit_cave_items] grotte %d / %d (%d reprises du point de reprise)" % [index + 1, sites.size(), reused])
-            var report: Dictionary = await population.refit(data, [site] as Array[CavePlacement])
-            saved = {"authored": keys[index]}
-            if report.sites.is_empty():
-                saved["error"] = ", ".join(report.rejected.keys()).trim_prefix(site.placement_id + " : ")
-            else:
-                saved["fitted"] = (report.sites[0] as CavePlacement).to_prop_data()
-            checkpoint.sites[site.placement_id] = saved
-            _write(checkpoint_path, checkpoint)
-        else:
-            reused += 1
+            todo.append(index)
+    var reused := sites.size() - todo.size()
+    @warning_ignore("integer_division")
+    var jobs := clampi(int(args.get("jobs", OS.get_processor_count() / 2)), 1, 64)
+    print("[fit_cave_items] %d grottes à recaler, %d reprises du point de reprise, %d à la fois" % [
+        todo.size(), reused, jobs])
+    var started := Time.get_ticks_msec()
+    _pending = todo.duplicate()
+    for job in mini(jobs, todo.size()):
+        var fitter := CaveFitter.new()
+        add_child(fitter)
+        _fit_next(fitter, data, sites, keys, checkpoint, checkpoint_path, todo.size())
+    while _running > 0 or not _pending.is_empty():
+        await get_tree().process_frame
+    print("[fit_cave_items] recalage en %.1f s" % ((Time.get_ticks_msec() - started) / 1000.0))
+
+    var fitted: Array[CavePlacement] = []
+    for site in sites:
+        var saved: Dictionary = checkpoint.sites.get(site.placement_id, {})
         var back := CavePlacement.from_prop_data(saved.get("fitted", {})) if saved.has("fitted") else null
         if back == null:
             rejected[site.placement_id] = str(saved.get("error", "recalage illisible"))
@@ -121,6 +130,27 @@ func _run() -> void:
     get_tree().quit(_status)
 
 
+## One fitter's loop: fit the next pending cave, save it in the checkpoint, until none is left.
+func _fit_next(fitter: CaveFitter, data: PlanetData, sites: Array[CavePlacement], keys: Array[String],
+        checkpoint: Dictionary, checkpoint_path: String, total: int) -> void:
+    _running += 1
+    while not _pending.is_empty():
+        var index: int = _pending.pop_front()
+        var site := sites[index]
+        var report: Dictionary = await fitter.refit(data, [site] as Array[CavePlacement])
+        var saved := {"authored": keys[index]}
+        if report.sites.is_empty():
+            saved["error"] = ", ".join(report.rejected.keys()).trim_prefix(site.placement_id + " : ")
+        else:
+            saved["fitted"] = (report.sites[0] as CavePlacement).to_prop_data()
+        checkpoint.sites[site.placement_id] = saved
+        _write(checkpoint_path, checkpoint)
+        _done += 1
+        if _done % 10 == 0 or _done == total:
+            print("[fit_cave_items] %d / %d recalées" % [_done, total])
+    _running -= 1
+
+
 ## The fits already measured on this relief: {relief, terrain_version, sites: {placement_id: {authored, fitted|error}}}.
 static func _checkpoint(path: String, data: PlanetData) -> Dictionary:
     var fresh := {"relief": data.relief_signature, "terrain_version": data.chunk_data_version, "sites": {}}
@@ -144,6 +174,7 @@ static func _item(site: CavePlacement, parent: String) -> Dictionary:
         "scenename": SCENE,
         "position": {"x": frame.origin.x, "y": frame.origin.y, "z": frame.origin.z},
         "rotation": {"x": euler.x, "y": euler.y, "z": euler.z},
+        CaveSite.FIT_ERROR: {},  # clears a refusal the server persisted for an older definition
     })
     return {"object_type": "cave", "object_uuid": PropSpawn.stable_uuid("cave:" + site.placement_id),
         "object_data": data}

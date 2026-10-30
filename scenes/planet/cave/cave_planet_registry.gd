@@ -140,6 +140,10 @@ static func prepare(data: PlanetData) -> String:
 ## CPU geometry and canonical heights only, like the native terrain workers.
 ## The caller must warm the native modules and acquire tiles before dispatching.
 static func build_plan(data: PlanetData, placement: CavePlacement, dressing: Dictionary = {}) -> Dictionary:
+    return CaveGround.run(data, func(): return _build_plan(data, placement, dressing))
+
+
+static func _build_plan(data: PlanetData, placement: CavePlacement, dressing: Dictionary) -> Dictionary:
     var cave := CaveGenerator.build(placement.profile.snapshot(placement.seed))
     if not str(cave.error).is_empty():
         return {"error": cave.error}

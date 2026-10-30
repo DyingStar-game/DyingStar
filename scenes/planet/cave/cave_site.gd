@@ -10,6 +10,14 @@ extends Node3D
 ##
 ## The server also registers the cave from its stored data before this node exists (server.gd), so the
 ## collision chunks are cut from the start; registering the same definition again changes nothing.
+##
+## A cave not fitted to the current relief (imported from QGIS, or fitted before a terrain re-export) is cut
+## nowhere: the server node fits it (CaveFitQueue) when a player comes within its zone-6 radius, then persists
+## the fitted fields, its true position on the ground included, or the refusal in fit_error. Clients wait for
+## those fields.
+
+## The prop field holding why the server refused to fit this cave: {relief, terrain_version, key, error}.
+const FIT_ERROR := "fit_error"
 
 ## Set by the server (sleep, zone hand-over) or the client (out of range) before freeing this node while the
 ## cave stays in the world: its terrain cut stays registered, as TerrainPad.keep_on_exit.
@@ -53,6 +61,12 @@ func _register() -> void:
     var terrain := _planet_terrain()
     if site == null or terrain == null:
         return
+    if site.needs_fit(terrain.planet_data):
+        if _terrain != null:
+            _unregister()  # a re-import replaced a fitted definition: the old cut goes until the fit
+        if terrain.is_server and not _refused(site, terrain.planet_data):
+            terrain.request_cave_fit(self)
+        return
     var signature := site.signature()
     if terrain == _terrain and site.placement_id == _placement_id and signature == _signature:
         return
@@ -62,6 +76,40 @@ func _register() -> void:
     _placement_id = site.placement_id
     _signature = signature
     terrain.register_cave_site(site)
+
+
+## SERVER (CaveFitQueue): [param site] is this cave fitted to the current relief. Persist it, standing on its
+## entrance point, and cut it.
+func fitted(site: CavePlacement) -> void:
+    var frame := site.surface_transform()  # the planet's frame: PlanetTerrain sits at the planet's origin
+    var update := site.to_prop_data()
+    update[FIT_ERROR] = {}
+    _data.merge(update, true)
+    position = frame.origin
+    rotation = frame.basis.get_euler()
+    var sync := get_node_or_null("PropSync") as PropSync
+    if sync != null:
+        sync.server_prop_update(update.merged({"position": position, "rotation": rotation}))
+    _register()
+
+
+## SERVER (CaveFitQueue): the fit refused this cave. Persisted, so no server tries again until the cave or the
+## relief changes; the admin panel shows why.
+func fit_refused(data: PlanetData, key: String, error: String) -> void:
+    var refusal := {"relief": data.relief_signature, "terrain_version": data.chunk_data_version, "key": key, "error": error}
+    _data[FIT_ERROR] = refusal
+    var sync := get_node_or_null("PropSync") as PropSync
+    if sync != null:
+        sync.server_prop_update({FIT_ERROR: refusal})
+    push_warning("[CaveSite] grotte '%s' refusée par le recalage : %s" % [str(_data.get("placement_id", "?")), error])
+
+
+## Was this very definition already refused on [param data]'s relief?
+func _refused(site: CavePlacement, data: PlanetData) -> bool:
+    var refusal: Variant = _data.get(FIT_ERROR)
+    return refusal is Dictionary and str(refusal.get("relief", "")) == data.relief_signature \
+        and str(refusal.get("terrain_version", "")) == data.chunk_data_version \
+        and str(refusal.get("key", "")) == site.authored_key()
 
 
 func _unregister() -> void:
