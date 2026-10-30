@@ -1742,6 +1742,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "stargrot_rock_pilot.blend",
+			"path": "res://assets_blender/stargrot/stargrot_rock_pilot.blend",
+			"author": "StarGrotte (Codex)",
+			"source": "Procedural",
+			"id": "",
+			"url": "https://github.com/DyingStar-game/DyingStar",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "table_bed.glb",
 			"path": "res://assets/_universe/props/furniture/chamber/table_bed.glb",
 			"author": "Irong",
