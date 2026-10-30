@@ -31,6 +31,8 @@ var _logger: CustomLogger = null
 
 
 func _ready() -> void:
+	if Globals.is_stargrot_explorer():
+		return
 	if OS.has_feature("dedicated_server"):
 		print("[Obs] dedicated server: observability bridge disabled")
 		return

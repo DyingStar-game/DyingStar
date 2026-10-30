@@ -1,0 +1,6 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[resource]
+resource_name = "ice_wall_gabarit"
+albedo_color = Color(0.22, 0.59, 0.72, 1)
+roughness = 0.3

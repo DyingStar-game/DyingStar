@@ -1,0 +1,12 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://cpokhidy8ugee" path="res://scenes/planet/cave/cave_site.gd" id="1_cave"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
+
+[node name="CaveSite" type="Node3D"]
+script = ExtResource("1_cave")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_sync")
+type_name = "cave"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"

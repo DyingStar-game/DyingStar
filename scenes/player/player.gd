@@ -455,6 +455,8 @@ var piloting: bool = false
 # Server-authoritative: true while in god mode, the dev free-flight (toggled by the `god_mode`
 # action). The server flies the body where the camera looks, no gravity, no collision. See GodMode.
 var god_mode: bool = false
+## Local authoring uses the native server controller without a network client.
+@export var stargrot_local_authority: bool = false
 
 var hands_item: Node3D = null
 
@@ -697,7 +699,8 @@ func _ready() -> void:
 	# Strategy: pick this player's behaviour ONCE — authority on the dedicated server, presentation
 	# (owner + remote) on a client. The role is a child node driving this body; each role's setup()
 	# runs its own spawn-time init (server placement vs owner tools/camera vs remote name tag).
-	_role = PlayerServer.new() if OS.has_feature("dedicated_server") else PlayerClient.new()
+	var local_explorer := stargrot_local_authority and Globals.is_stargrot_explorer()
+	_role = PlayerServer.new() if OS.has_feature("dedicated_server") or local_explorer else PlayerClient.new()
 	_role.name = "Role"
 	_role.player = self
 	add_child(_role)

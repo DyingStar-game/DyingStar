@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "purpose": "Dedicated exterior entrance geology",
+  "assets": [
+    {
+      "id": "exterior_block_01",
+      "family": "block",
+      "triangles": 162,
+      "dimensions_m": [
+        2.615919589996338,
+        2.081389904022217,
+        1.5650103092193604
+      ],
+      "seed": 7103
+    },
+    {
+      "id": "exterior_block_02",
+      "family": "block",
+      "triangles": 144,
+      "dimensions_m": [
+        2.4175524711608887,
+        1.7809494733810425,
+        1.7652688026428223
+      ],
+      "seed": 7140
+    },
+    {
+      "id": "exterior_slab_01",
+      "family": "slab",
+      "triangles": 152,
+      "dimensions_m": [
+        3.6271982192993164,
+        2.0584168434143066,
+        0.5902339220046997
+      ],
+      "seed": 7230
+    },
+    {
+      "id": "exterior_slab_02",
+      "family": "slab",
+      "triangles": 146,
+      "dimensions_m": [
+        3.868950843811035,
+        1.8861545324325562,
+        0.576961100101471
+      ],
+      "seed": 7267
+    },
+    {
+      "id": "exterior_wedge_01",
+      "family": "wedge",
+      "triangles": 98,
+      "dimensions_m": [
+        1.9691638946533203,
+        1.119469404220581,
+        1.9252432584762573
+      ],
+      "seed": 7357
+    },
+    {
+      "id": "exterior_wedge_02",
+      "family": "wedge",
+      "triangles": 98,
+      "dimensions_m": [
+        2.1342320442199707,
+        1.3661274909973145,
+        2.003221035003662
+      ],
+      "seed": 7394
+    },
+    {
+      "id": "exterior_elongated_01",
+      "family": "elongated",
+      "triangles": 184,
+      "dimensions_m": [
+        3.5164847373962402,
+        1.1448599100112915,
+        1.3649226427078247
+      ],
+      "seed": 7484
+    },
+    {
+      "id": "exterior_elongated_02",
+      "family": "elongated",
+      "triangles": 180,
+      "dimensions_m": [
+        3.842318058013916,
+        1.3977227210998535,
+        1.2414575815200806
+      ],
+      "seed": 7521
+    },
+    {
+      "id": "exterior_erratic_01",
+      "family": "erratic",
+      "triangles": 402,
+      "dimensions_m": [
+        2.4679064750671387,
+        2.1518542766571045,
+        1.5760632753372192
+      ],
+      "seed": 7611
+    },
+    {
+      "id": "exterior_erratic_02",
+      "family": "erratic",
+      "triangles": 417,
+      "dimensions_m": [
+        2.3472588062286377,
+        2.170785903930664,
+        1.7270973920822144
+      ],
+      "seed": 7648
+    },
+    {
+      "id": "exterior_layered_01",
+      "family": "layered",
+      "triangles": 482,
+      "dimensions_m": [
+        3.267446517944336,
+        2.0597164630889893,
+        1.9007277488708496
+      ],
+      "seed": 7738
+    },
+    {
+      "id": "exterior_layered_02",
+      "family": "layered",
+      "triangles": 500,
+      "dimensions_m": [
+        3.1014788150787354,
+        1.750032663345337,
+        1.7842565774917603
+      ],
+      "seed": 7775
+    }
+  ]
+}

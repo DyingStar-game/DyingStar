@@ -43,6 +43,7 @@ const VEHICLE_CATALOGUE: String = "res://scenes/_universe/vehicles/terminal_item
 @export var title_key: String = "%%DISPENSER_TITLE"
 ## The button's word, and what the screen says while something lies in the hatch (translation keys).
 @export var dispense_key: String = "%%DISPENSER_DISPENSE"
+## Translation key shown while items remain in the hatch and must be collected.
 @export var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
 ## Seconds between a request and the item in the hatch; no other request is taken meanwhile.
 @export var delivery_s: float = 5.0
@@ -62,6 +63,7 @@ const VEHICLE_CATALOGUE: String = "res://scenes/_universe/vehicles/terminal_item
 @export var flap: Node3D
 ## How far the flap swings open (degrees) and how fast (degrees per second).
 @export var flap_open_deg: float = 90.0
+## Flap rotation speed (degrees per second); higher values open and close the hatch faster.
 @export var flap_speed_deg: float = 240.0
 
 @export_group("Hatch sound")

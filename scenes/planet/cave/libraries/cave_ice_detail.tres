@@ -1,0 +1,58 @@
+[gd_resource type="Resource" script_class="CaveAssetLibrary" load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_asset_library.gd" id="lib"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_decoration_rule.gd" id="rule"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/ice_wall.tres" id="wall"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/ice_floor.tres" id="floor"]
+[ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/ice_accent.tres" id="accent"]
+[ext_resource type="Mesh" path="res://scenes/planet/cave/libraries/gabarits/rubble.tres" id="rubble"]
+[ext_resource type="Mesh" path="res://scenes/planet/cave/libraries/gabarits/spire.tres" id="spire"]
+
+[sub_resource type="Resource" id="Rule0"]
+script = ExtResource("rule")
+rule_name = "ice_debris"
+mesh = ExtResource("rubble")
+material = ExtResource("accent")
+support = "floor"
+zone = "all"
+radius_m = 0.4
+spacing_m = 8.0
+scale_min = 0.7
+scale_max = 1.2
+max_instances = 70
+
+[sub_resource type="Resource" id="Rule1"]
+script = ExtResource("rule")
+rule_name = "ice_formations"
+mesh = ExtResource("spire")
+material = ExtResource("accent")
+support = "floor"
+zone = "chamber"
+radius_m = 0.55
+spacing_m = 8.0
+scale_min = 0.8
+scale_max = 1.3
+max_instances = 45
+
+[sub_resource type="Resource" id="Rule2"]
+script = ExtResource("rule")
+rule_name = "ice_plafond"
+mesh = ExtResource("spire")
+material = ExtResource("accent")
+support = "ceiling"
+zone = "deep"
+radius_m = 0.55
+spacing_m = 11.0
+scale_min = 0.5
+scale_max = 1.0
+max_instances = 35
+
+[resource]
+script = ExtResource("lib")
+library_id = "ice_detail_v1"
+display_name = "Glace — salles et profondeur (gabarits)"
+surface_family = "ice"
+wall_material = ExtResource("wall")
+floor_material = ExtResource("floor")
+decorations = Array[ExtResource("rule")]([SubResource("Rule0"), SubResource("Rule1"), SubResource("Rule2")])
+instance_budget = 180

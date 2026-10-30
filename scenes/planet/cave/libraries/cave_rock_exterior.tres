@@ -1,0 +1,396 @@
+[gd_resource type="Resource" script_class="CaveAssetLibrary" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_decoration_rule.gd" id="1_cfbjk"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_block_01_collision.tres" id="2_52ii2"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/rock_exterior/exterior_material.tres" id="3_p0tsd"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_block_01.tres" id="4_02h0y"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_block_02_collision.tres" id="5_vhadh"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_block_02.tres" id="6_qlosd"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_slab_01_collision.tres" id="7_j5dmo"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_slab_01.tres" id="8_2kj5q"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_slab_02_collision.tres" id="9_no33o"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_slab_02.tres" id="10_up5th"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_wedge_01_collision.tres" id="11_o5gqw"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_wedge_01.tres" id="12_x4x1f"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_wedge_02_collision.tres" id="13_ora8v"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_wedge_02.tres" id="14_dqg0q"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_elongated_01_collision.tres" id="15_tghy8"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_elongated_01.tres" id="16_ormu3"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_elongated_02_collision.tres" id="17_fwu82"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_elongated_02.tres" id="18_ktuo4"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_erratic_01_collision.tres" id="19_rb3c6"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_erratic_01.tres" id="20_ykwqp"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_erratic_02_collision.tres" id="21_qf04p"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_erratic_02.tres" id="22_ebeh2"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_layered_01_collision.tres" id="23_gkl2d"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_layered_01.tres" id="24_fc48i"]
+[ext_resource type="Shape3D" path="res://scenes/planet/cave/assets/rock_exterior/exterior_layered_02_collision.tres" id="25_sotlb"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/rock_exterior/exterior_layered_02.tres" id="26_qi6xq"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_asset_library.gd" id="27_qhs76"]
+
+[sub_resource type="Resource" id="Resource_fyjs8"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_block_01"
+mesh = ExtResource("4_02h0y")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("2_52ii2")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.31
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_qsfrr"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_block_01"
+mesh = ExtResource("4_02h0y")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("2_52ii2")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.31
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_bnhg7"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_block_02"
+mesh = ExtResource("6_qlosd")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("5_vhadh")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.21
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_h3gam"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_block_02"
+mesh = ExtResource("6_qlosd")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("5_vhadh")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.21
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_3gxlb"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_slab_01"
+mesh = ExtResource("8_2kj5q")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("7_j5dmo")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.83
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_4osnu"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_slab_01"
+mesh = ExtResource("8_2kj5q")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("7_j5dmo")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.83
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_i65yf"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_slab_02"
+mesh = ExtResource("10_up5th")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("9_no33o")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.94
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_s824h"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_slab_02"
+mesh = ExtResource("10_up5th")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("9_no33o")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.94
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_avgg7"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_wedge_01"
+mesh = ExtResource("12_x4x1f")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("11_o5gqw")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 0.99
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_k4q3i"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_wedge_01"
+mesh = ExtResource("12_x4x1f")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("11_o5gqw")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 0.99
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_jt55x"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_wedge_02"
+mesh = ExtResource("14_dqg0q")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("13_ora8v")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.07
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_ves1p"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_wedge_02"
+mesh = ExtResource("14_dqg0q")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("13_ora8v")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.07
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_q6pe1"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_elongated_01"
+mesh = ExtResource("16_ormu3")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("15_tghy8")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.78
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_vcwkm"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_elongated_01"
+mesh = ExtResource("16_ormu3")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("15_tghy8")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.78
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_k5e4q"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_elongated_02"
+mesh = ExtResource("18_ktuo4")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("17_fwu82")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.93
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_4rh7e"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_elongated_02"
+mesh = ExtResource("18_ktuo4")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("17_fwu82")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.93
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_iotyt"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_erratic_01"
+mesh = ExtResource("20_ykwqp")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("19_rb3c6")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.24
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_rhgna"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_erratic_01"
+mesh = ExtResource("20_ykwqp")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("19_rb3c6")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.24
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_lpxt6"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_erratic_02"
+mesh = ExtResource("22_ebeh2")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("21_qf04p")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.18
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_c56pt"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_erratic_02"
+mesh = ExtResource("22_ebeh2")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("21_qf04p")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.18
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_gu8tq"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_layered_01"
+mesh = ExtResource("24_fc48i")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("23_gkl2d")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.64
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_k8550"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_layered_01"
+mesh = ExtResource("24_fc48i")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("23_gkl2d")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.64
+max_instances = 7
+
+[sub_resource type="Resource" id="Resource_5qhlk"]
+script = ExtResource("1_cfbjk")
+rule_name = "ground_exterior_layered_02"
+mesh = ExtResource("26_qi6xq")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("25_sotlb")
+distribution = "clustered"
+support = "entrance_ground"
+zone = "entrance"
+scale_min = 0.35
+scale_max = 1.2
+spacing_m = 2.0
+radius_m = 1.56
+max_instances = 5
+
+[sub_resource type="Resource" id="Resource_hdkfq"]
+script = ExtResource("1_cfbjk")
+rule_name = "wall_exterior_layered_02"
+mesh = ExtResource("26_qi6xq")
+material = ExtResource("3_p0tsd")
+collision_shape = ExtResource("25_sotlb")
+distribution = "clustered"
+support = "entrance_wall"
+zone = "entrance"
+scale_min = 0.5
+scale_max = 1.65
+spacing_m = 2.0
+radius_m = 1.56
+max_instances = 7
+
+[resource]
+script = ExtResource("27_qhs76")
+library_id = "rock_exterior_v1"
+display_name = "Rochers extérieurs — fractures, dalles et affleurements"
+decorations = Array[ExtResource("1_cfbjk")]([SubResource("Resource_fyjs8"), SubResource("Resource_qsfrr"), SubResource("Resource_bnhg7"), SubResource("Resource_h3gam"), SubResource("Resource_3gxlb"), SubResource("Resource_4osnu"), SubResource("Resource_i65yf"), SubResource("Resource_s824h"), SubResource("Resource_avgg7"), SubResource("Resource_k4q3i"), SubResource("Resource_jt55x"), SubResource("Resource_ves1p"), SubResource("Resource_q6pe1"), SubResource("Resource_vcwkm"), SubResource("Resource_k5e4q"), SubResource("Resource_4rh7e"), SubResource("Resource_iotyt"), SubResource("Resource_rhgna"), SubResource("Resource_lpxt6"), SubResource("Resource_c56pt"), SubResource("Resource_gu8tq"), SubResource("Resource_k8550"), SubResource("Resource_5qhlk"), SubResource("Resource_hdkfq")])
+instance_budget = 180

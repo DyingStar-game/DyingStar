@@ -26,7 +26,7 @@ const DEFS_API := "https://api.github.com/repos/DyingStar-game/horizonserver/con
 const DEFS_HEADERS := ["User-Agent: dyingstar-godot-plugin", "Accept: application/vnd.github+json"]
 ## Fallback type list when the GitHub API listing is rate-limited (403): each file is then fetched
 ## by its own api.github.com contents URL. The listing is preferred when available (discovers new types).
-const DEFS_KNOWN := ["box", "building", "cargo_depot", "city", "crate_container", "food", "mining_depot",
+const DEFS_KNOWN := ["box", "building", "cargo_depot", "cave", "city", "crate_container", "food", "mining_depot",
 	"miningrock", "miningzone", "planet", "player", "poi_village", "shelf", "spawnbuilding", "star",
 	"storagewarehouse", "tool", "vehicle", "vehicle_component", "vehicle_lift", "vehicle_lift_platform",
 	"vehicle_lift_platformsystem"]
@@ -54,6 +54,9 @@ func _disable_plugin() -> void:
 
 
 func _enter_tree() -> void:
+	var globals_script := preload("res://scenes/globals/globals.gd")
+	if globals_script.is_stargrot_explorer():
+		load(globals_script.STARGROT_LIFETIME).prepare(true)  # load(), not preload(): see Globals._ready()
 	main_panel_instance = MainPanel.instantiate()
 	add_control_to_bottom_panel(main_panel_instance, "DyingStar")
 	_http = HTTPRequest.new()

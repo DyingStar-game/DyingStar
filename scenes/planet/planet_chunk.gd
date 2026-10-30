@@ -2742,7 +2742,7 @@ static func generate_mesh(
 
 	# Zéro = tous les sommets ont lu leur propre tuile ; le mesh est persistable.
 	mesh.set_meta("provisional_climbs", data.climb_count())
-	return mesh
+	return CaveTerrainCut.mesh(mesh, chunk_center, data.stargrot_placements())
 
 
 ## Generate a [ConcavePolygonShape3D] for server-side collision.
@@ -3330,7 +3330,7 @@ static func generate_collision_shape(
 	# surface from above. Double-sided collision makes the terrain solid
 	# regardless of triangle winding.
 	shape.backface_collision = true
-	shape.set_faces(faces)
+	shape.set_faces(CaveTerrainCut.collision_faces(faces, col_origin, data.stargrot_placements()))
 	return shape
 
 

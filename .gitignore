@@ -61,3 +61,9 @@ heights.pack
 
 # Written into the exported pack by addons/dyingstar/build_id_export.gd, never committed
 /build_id.json
+
+# Local StarGrotte compatibility evidence
+.stargrot-validation/
+
+# Results written by the StarGrotte test scenes
+test/stargrot/*-results.json

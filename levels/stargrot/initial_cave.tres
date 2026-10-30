@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="CavePlacement" format=4]
+
+[ext_resource type="Resource" path="res://scenes/planet/cave/libraries/cave_rock_open.tres" id="1_p1idv"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_profile.gd" id="2_qd8j0"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_placement.gd" id="3_s87i8"]
+
+[sub_resource type="Resource" id="Resource_5vmme"]
+script = ExtResource("2_qd8j0")
+generator_version = 9
+asset_library = ExtResource("1_p1idv")
+length_m = 180.0
+tunnel_width_m = 7.0
+tunnel_height_m = 5.0
+depth_m = 38.0
+level_count = 3
+chamber_width_m = 32.0
+chamber_height_m = 14.0
+roughness = 0.7
+bend = 0.6
+entrance_type = "hangar"
+entrance_width_m = 15.0
+entrance_height_m = 12.0
+exit_open = true
+entrance_noise = 0.55
+
+[resource]
+resource_name = "Grotte 1"
+script = ExtResource("3_s87i8")
+placement_id = "site-41580294"
+longitude_deg = 39.58000000000001
+latitude_deg = 24.819999999999993
+seed = 7654321
+profile = SubResource("Resource_5vmme")
+surface_height_m = -213.71837805677205
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 2.1
+format_version = 2
+fitted_mouth_depth_m = 20.3
+network_offset = Vector3(0, 0, 36.902226345230474)
+portal_descent_deg = 23.95084434922692
+portal_axis_m = 34.5
+light_wells = PackedVector4Array(-31.606931864281886, 145.64512749430457, 1.7420016112056733, 2.8308869397496075)

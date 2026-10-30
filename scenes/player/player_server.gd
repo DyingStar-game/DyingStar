@@ -431,6 +431,7 @@ func server_action_received(data: Dictionary) -> void:
 			# Switched off with its dev tool by the gate at the top (DEV_TOOL_OF_ACTION): movement is
 			# server-authoritative, so that refusal, not the client's hidden key, is the check that counts.
 			# The state the client asks for ("on"); a bare toggle from an older client flips it.
+			cancel_scripted_motion()
 			player.god_mode = bool(data.get("on", not player.god_mode))
 			player.velocity = Vector3.ZERO
 			player.server_send_properties_to_client({"god_mode": player.god_mode})
@@ -1487,7 +1488,14 @@ func _apply_client_rotation(rot: Vector3, frame: Variant) -> void:
 ## they move or not, so being held does not stop the ground being built. And SPAWN_GROUND_TIMEOUT
 ## releases the body regardless — a player frozen forever would be worse than the bug being fixed.
 func _hold_until_ground(delta: float) -> bool:
+	if player.god_mode:
+		return false
 	if _ground_seen:
+		return false
+	var cave_body := Planet.of(player.get_parent())
+	if cave_body != null and CavePlanetRegistry.contains(cave_body.planet_data,
+			cave_body.to_local(player.global_position)):
+		_ground_seen = true
 		return false
 	var terrain: PlanetTerrain = null
 	var body: Planet = Planet.of(player.get_parent())
@@ -3291,6 +3299,8 @@ func _catch_if_below_surface(area: Area3D) -> void:
 		return
 	var planet_basis: Basis = planet.global_transform.basis
 	var local_body: Vector3 = planet_basis.inverse() * local_world
+	if CavePlanetRegistry.contains(pdata, local_body):
+		return
 	var dir: Vector3 = local_body.normalized()
 	var player_dist: float = local_body.length()
 	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
@@ -3339,11 +3349,21 @@ func teleport_to(destination: Node, local_pos: Vector3) -> void:
 	# You do not keep the speed you had before the jump: arriving with the run you were carrying sends
 	# you sliding off whatever you land on, and on a new body it does it before the ground exists.
 	player.velocity = Vector3.ZERO
+	cancel_scripted_motion()
 	rearm_ground_hold()
 	# BUG FIXED IN PASSING: this emitted on `self` (PlayerServer, a plain Node that does NOT declare
 	# hs_server_move) instead of on the body, so the teleport reparent was never replicated at all.
 	# Going through the body's single emitter removes the whole class of mistake.
 	player.emit_move()
+
+
+## A step or vault stores an endpoint in the old frame. It must not resume
+## after a teleport or a switch to free flight and pull the player back there.
+func cancel_scripted_motion() -> void:
+	_stepping = false
+	_vaulting = false
+	_vault_cooldown = 0.0
+	player.is_jumping = false
 
 
 ## God mode's landing (the middle mouse button by default): ends the flight on the ground right under

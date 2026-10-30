@@ -1,0 +1,504 @@
+[gd_resource type="Resource" script_class="CaveSiteCatalog" format=4]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_site_catalog.gd" id="1_ji3je"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_placement.gd" id="2_rghex"]
+[ext_resource type="Resource" path="res://scenes/planet/cave/libraries/cave_rock_open.tres" id="3_tym8c"]
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_profile.gd" id="4_3oj3p"]
+[ext_resource type="Resource" path="res://scenes/planet/cave/libraries/cave_rock_sculpted_open.tres" id="5_ecx17"]
+
+[sub_resource type="Resource" id="Resource_5vmme"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("3_tym8c")
+length_m = 180.0
+tunnel_width_m = 7.0
+tunnel_height_m = 5.0
+depth_m = 38.0
+level_count = 3
+chamber_width_m = 32.0
+chamber_height_m = 14.0
+roughness = 0.7
+bend = 0.6
+entrance_type = "hangar"
+entrance_width_m = 15.0
+entrance_height_m = 12.0
+exit_open = true
+entrance_noise = 0.55
+
+[sub_resource type="Resource" id="Resource_1cv7r"]
+resource_name = "Grotte 1"
+script = ExtResource("2_rghex")
+placement_id = "site-41580294"
+longitude_deg = 39.58000000000001
+latitude_deg = 24.819999999999993
+seed = 7654321
+profile = SubResource("Resource_5vmme")
+surface_height_m = -213.71837805677205
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 2.1
+format_version = 2
+fitted_mouth_depth_m = 20.3
+network_offset = Vector3(0, 0, 36.902226345230474)
+portal_descent_deg = 23.95084434922692
+portal_axis_m = 34.5
+light_wells = PackedVector4Array(-31.606931864281886, 145.64512749430457, 1.7420016112056733, 2.8308869397496075)
+
+[sub_resource type="Resource" id="Resource_jjrf6"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 381.0
+tunnel_width_m = 10.618454545462257
+tunnel_height_m = 7.521239687667306
+chamber_count = 6
+depth_m = 0.0
+chamber_width_m = 148.05631714207277
+chamber_height_m = 54.70562577110125
+branch_count = 4
+pillar_count = 1
+roughness = 0.7250540165841792
+bend = 0.2259991432332661
+entrance_type = "shaft"
+entrance_width_m = 100.0
+entrance_height_m = 38.29393803977087
+exit_open = true
+exit_width_m = 8.494763636369806
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.8
+light_shafts = 0
+
+[sub_resource type="Resource" id="Resource_fbig6"]
+resource_name = "Grotte 002 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-0"
+longitude_deg = -40.330943567766674
+latitude_deg = 24.293185505582358
+heading_deg = -177.93059372616727
+seed = 527445468
+profile = SubResource("Resource_jjrf6")
+surface_height_m = 5483.320551189594
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 213.9
+network_offset = Vector3(-8.352898179622885, 0, -160.69887666888295)
+skylight_depth_m = 155.694374229
+light_wells = PackedVector4Array()
+
+[sub_resource type="Resource" id="Resource_ayg08"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 190.0
+tunnel_width_m = 5.412271489827237
+tunnel_height_m = 5.464289888131954
+chamber_count = 3
+depth_m = 12.638
+level_count = 2
+chamber_width_m = 17.341533176126926
+chamber_height_m = 7.637698879921939
+branch_count = 1
+pillar_count = 6
+bridge_count = 0
+roughness = 0.70183795121551
+bend = 0.7669949948535049
+entrance_type = "hangar"
+entrance_width_m = 10.580941049685968
+entrance_height_m = 2.8848267290751375
+exit_width_m = 4.32981719186179
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.5
+light_shafts = 0
+
+[sub_resource type="Resource" id="Resource_6odjh"]
+resource_name = "Grotte 003 · versant"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-1"
+longitude_deg = 154.8554101654235
+latitude_deg = -41.6444730097735
+heading_deg = -114.43000961897651
+seed = 1119481384
+profile = SubResource("Resource_ayg08")
+surface_height_m = 87.15548351127654
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 6.8
+network_offset = Vector3(0, 0, 10.199233171821607)
+portal_descent_deg = 20.21500664301935
+portal_axis_m = 13.0
+light_wells = PackedVector4Array()
+
+[sub_resource type="Resource" id="Resource_27er6"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 160.0
+tunnel_width_m = 7.158663838174533
+tunnel_height_m = 5.2647015563787845
+chamber_count = 5
+depth_m = 36.997
+level_count = 3
+chamber_width_m = 16.28121017873208
+chamber_height_m = 13.498371263551864
+branch_count = 1
+pillar_count = 5
+roughness = 0.34958438513929785
+bend = 0.6628690163691108
+entrance_type = "shaft"
+entrance_width_m = 8.200910332945007
+entrance_height_m = 4.22762071765983
+exit_width_m = 5.726931070539627
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.5
+light_shafts = 0
+
+[sub_resource type="Resource" id="Resource_boq04"]
+resource_name = "Grotte 004 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-2"
+longitude_deg = -39.67289110833634
+latitude_deg = 24.774367100411585
+heading_deg = 49.802227027180905
+seed = 611386696
+profile = SubResource("Resource_27er6")
+surface_height_m = 5641.314682358876
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 20.2
+network_offset = Vector3(11.013335493274782, 0, -50.24006878085342)
+skylight_depth_m = 3.8425641228297316
+light_wells = PackedVector4Array()
+
+[sub_resource type="Resource" id="Resource_7fa7n"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+tunnel_width_m = 7.958201156433601
+tunnel_height_m = 4.368461460768872
+chamber_count = 3
+depth_m = 0.0
+chamber_width_m = 19.778130023356606
+chamber_height_m = 11.18653230412925
+branch_count = 1
+pillar_count = 6
+bridge_count = 0
+roughness = 0.44772527581568444
+bend = 0.3870345563369172
+entrance_type = "shaft"
+entrance_width_m = 13.5589557006301
+entrance_height_m = 3.6705986846690672
+exit_width_m = 6.3665609251468815
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.8
+light_shafts = 2
+
+[sub_resource type="Resource" id="Resource_r5dva"]
+resource_name = "Grotte 005 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-3"
+longitude_deg = -33.52826371868676
+latitude_deg = 39.73571093154242
+heading_deg = -45.726000463532614
+seed = 227202844
+profile = SubResource("Resource_7fa7n")
+surface_height_m = 989.4562537753955
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 26.2
+network_offset = Vector3(21.825204609601425, 0, -61.096011246943505)
+skylight_depth_m = 4.6005643892683175
+light_wells = PackedVector4Array()
+
+[sub_resource type="Resource" id="Resource_7ijic"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 111.0
+tunnel_width_m = 6.3079980078571785
+tunnel_height_m = 5.3005389574585475
+chamber_count = 5
+depth_m = 18.417
+level_count = 2
+chamber_width_m = 29.030039767432164
+chamber_height_m = 13.416373511411267
+branch_count = 1
+pillar_count = 2
+bridge_count = 2
+roughness = 0.5069029612663158
+bend = 0.5920855220473824
+entrance_width_m = 16.978467636509553
+entrance_height_m = 4.007029156467553
+exit_open = true
+exit_width_m = 5.046398406285743
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.55
+light_shafts = 2
+
+[sub_resource type="Resource" id="Resource_yrrov"]
+resource_name = "Grotte 006 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-4"
+longitude_deg = -39.65725792764537
+latitude_deg = 24.72731064914042
+heading_deg = 16.119154323696833
+seed = 240350047
+profile = SubResource("Resource_7ijic")
+surface_height_m = 5645.727380516939
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 18.8
+network_offset = Vector3(0, 0, 38.66184857165174)
+portal_descent_deg = 23.94895186800577
+portal_axis_m = 15.5
+light_wells = PackedVector4Array(19.162969523116438, 79.85589055485988, 1.5975133804071986, 3.1891860579834983, -40.895489611065436, 122.7491588343521, 1.5, 3.1891860579834983)
+
+[sub_resource type="Resource" id="Resource_jxn5k"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 118.0
+tunnel_width_m = 7.353234988112206
+tunnel_height_m = 4.538164586350498
+chamber_count = 7
+depth_m = 26.889
+level_count = 3
+chamber_width_m = 26.173135434391607
+chamber_height_m = 8.444451109173393
+branch_count = 5
+pillar_count = 5
+bridge_count = 2
+roughness = 0.5365546608013195
+bend = 0.37976413803279496
+entrance_type = "shaft"
+entrance_width_m = 15.036952313218256
+entrance_height_m = 3.171917713581969
+exit_width_m = 5.882587990489765
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.55
+light_shafts = 2
+
+[sub_resource type="Resource" id="Resource_8yo31"]
+resource_name = "Grotte 007 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-5"
+longitude_deg = 20.13861975277686
+latitude_deg = -10.145116001280886
+heading_deg = 152.09790308120608
+seed = 988367782
+profile = SubResource("Resource_jxn5k")
+surface_height_m = 2151.073737394996
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 24.5
+network_offset = Vector3(-10.428072798271149, 0, -48.743822761748994)
+skylight_depth_m = 5.75978475324704
+light_wells = PackedVector4Array(32.09904173340452, 14.284486165431453, 1.5139764548623877, 5.75978475324704, -41.794511766990176, 29.25798551930236, 1.5969236169958794, 5.75978475324704)
+
+[sub_resource type="Resource" id="Resource_6kotx"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 165.0
+tunnel_width_m = 6.867707330012835
+tunnel_height_m = 4.269085210819831
+chamber_count = 6
+depth_m = 0.0
+chamber_width_m = 30.03037648284359
+chamber_height_m = 8.457359142026405
+branch_count = 4
+roughness = 0.33727336904736166
+bend = 0.24065830939700153
+entrance_width_m = 11.325101832802181
+entrance_height_m = 3.3992495740729964
+exit_width_m = 5.494165864010268
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.65
+light_shafts = 0
+
+[sub_resource type="Resource" id="Resource_7gfw8"]
+resource_name = "Grotte 008 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-6"
+longitude_deg = -42.32850710565166
+latitude_deg = 18.030392704428376
+heading_deg = 103.13967721226649
+seed = 756145971
+profile = SubResource("Resource_6kotx")
+surface_height_m = 4852.393652629107
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 16.0
+network_offset = Vector3(0, 0, 31.357015822879774)
+portal_descent_deg = 23.882683169908667
+portal_axis_m = 14.5
+light_wells = PackedVector4Array()
+
+[sub_resource type="Resource" id="Resource_v8f7j"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 168.0
+tunnel_width_m = 5.780959985837429
+tunnel_height_m = 5.025267288848848
+chamber_count = 7
+depth_m = 15.655
+level_count = 2
+chamber_width_m = 18.75999035370835
+chamber_height_m = 10.654322542955253
+pillar_count = 1
+roughness = 0.370679121520773
+bend = 0.31342201196836095
+entrance_width_m = 13.131993247595844
+entrance_height_m = 7.4580257800686764
+exit_width_m = 4.6247679886699435
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.45
+light_shafts = 0
+
+[sub_resource type="Resource" id="Resource_q2wk3"]
+resource_name = "Grotte 009 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-7"
+longitude_deg = -97.58585220249101
+latitude_deg = 47.37567351996079
+heading_deg = -16.213847522778803
+seed = 1724522665
+profile = SubResource("Resource_v8f7j")
+surface_height_m = -546.2768200654536
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 10.2
+network_offset = Vector3(0, 0, 18.568429519564916)
+portal_descent_deg = 23.914354782325226
+portal_axis_m = 22.5
+light_wells = PackedVector4Array()
+
+[sub_resource type="Resource" id="Resource_1nmtp"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 186.0
+tunnel_width_m = 5.077721381450223
+tunnel_height_m = 4.1660922385579955
+chamber_count = 7
+depth_m = 32.273
+level_count = 3
+chamber_width_m = 22.330151661844717
+chamber_height_m = 11.136474815281675
+branch_count = 4
+pillar_count = 4
+bridge_count = 2
+roughness = 0.8764194199614412
+bend = 0.770413014089484
+entrance_width_m = 11.505015149646953
+entrance_height_m = 4.128838964972042
+exit_open = true
+exit_width_m = 4.0621771051601785
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.4
+light_shafts = 0
+
+[sub_resource type="Resource" id="Resource_brvdo"]
+resource_name = "Grotte 010 · relief doux"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-8"
+longitude_deg = -39.55612376253481
+latitude_deg = 24.78011048815016
+heading_deg = -5.823824317861757e-07
+seed = 34899999
+profile = SubResource("Resource_1nmtp")
+surface_height_m = 5646.919236075133
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 11.4
+network_offset = Vector3(0, 0, 13.021383065532468)
+portal_descent_deg = 23.868846899275802
+portal_axis_m = 16.0
+light_wells = PackedVector4Array()
+
+[sub_resource type="Resource" id="Resource_6scnl"]
+script = ExtResource("4_3oj3p")
+generator_version = 9
+asset_library = ExtResource("5_ecx17")
+length_m = 152.0
+tunnel_width_m = 5.181764479583968
+tunnel_height_m = 4.220514752550006
+chamber_count = 5
+depth_m = 0.0
+chamber_width_m = 25.369976657882326
+chamber_height_m = 7.541102103463722
+branch_count = 4
+pillar_count = 5
+bridge_count = 2
+roughness = 0.3262359096705014
+bend = 0.7456763590624609
+entrance_type = "hangar"
+entrance_width_m = 12.701952218763397
+entrance_height_m = 4.192423669546378
+exit_width_m = 4.145411583667175
+exit_height_m = 3.0
+entrance_noise = 0.55
+gallery_noise = 0.35000000000000003
+light_shafts = 0
+
+[sub_resource type="Resource" id="Resource_spcsa"]
+resource_name = "Grotte 011 · versant"
+script = ExtResource("2_rghex")
+placement_id = "auto-tarsis_3-20261005-9"
+longitude_deg = -91.7231748530742
+latitude_deg = -7.756280574629231
+heading_deg = 139.50133181864314
+seed = 1563943328
+profile = SubResource("Resource_6scnl")
+surface_height_m = 4557.838727139868
+terrain_version = "af187a067b584b4d"
+terrain_relief_signature = "9ea4cee4bf5b3c8d"
+ramp_length_m = 20.0
+cover_m = 3.0
+format_version = 2
+fitted_mouth_depth_m = 6.2
+network_offset = Vector3(0, 0, 13.736965037336176)
+portal_descent_deg = 17.49266165492699
+portal_axis_m = 16.5
+light_wells = PackedVector4Array()
+
+[resource]
+script = ExtResource("1_ji3je")
+sites = Array[ExtResource("2_rghex")]([SubResource("Resource_1cv7r"), SubResource("Resource_fbig6"), SubResource("Resource_6odjh"), SubResource("Resource_boq04"), SubResource("Resource_r5dva"), SubResource("Resource_yrrov"), SubResource("Resource_8yo31"), SubResource("Resource_7gfw8"), SubResource("Resource_q2wk3"), SubResource("Resource_brvdo"), SubResource("Resource_spcsa")])

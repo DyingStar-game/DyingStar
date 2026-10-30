@@ -14,6 +14,7 @@ using Godot;
 ///
 /// Windows only: elsewhere Pin answers false and does nothing.
 /// </summary>
+[Tool]
 public partial class NativeLibraryPin : RefCounted
 {
     private const uint GetModuleHandleExFlagPin = 0x1;

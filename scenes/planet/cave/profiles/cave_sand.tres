@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CaveProfile" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_profile.gd" id="1"]
+[ext_resource type="Resource" path="res://scenes/planet/cave/libraries/cave_sand.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+profile_id = "sand"
+display_name = "Sable"
+generator_version = 9
+asset_library = ExtResource("2")
+length_m = 100.0
+tunnel_width_m = 6.5
+tunnel_height_m = 3.5
+chamber_count = 2
+depth_m = 8.0
+roughness = 0.25
+bend = 0.6

@@ -14,6 +14,7 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `layers/` | library | **Where the layers are defined.** One small declarative module per category (`layers/biomes/forest.py`, `layers/roads.py`…); `layers/core.py` is the PostGIS plumbing, `layers/dialog.py` the picker. See "Layer definitions" below. |
 | `export_elevation.py` | QGIS Python Console | **Elevation-only**: builds the whole height pyramid into a single `heights.pack`. Documented at [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export). |
 | `export_poi.py` | QGIS Python Console | **POI-only**: flattens the `poi` point layer to `<planet>_poi.json`, read back by the `PlanetTerrain` inspector button. See below. |
+| `export_cave_sites.py` | QGIS Python Console | **Caves-only**: the `cave_site` point layer → `<planet>_cave_sites.json`, in a private folder outside the repository. Fitted by `tools/stargrot/fit_cave_items.tscn`, then imported into the persistence. See "Caves pipeline" below. |
 | `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`; also still writes the legacy `<planet>_roads_buffered.json`. See below. |
 | `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
 | `export_mountains.py` | QGIS Python Console | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
@@ -95,6 +96,42 @@ so a re-export from QGIS is always safe to re-import.
 > The generated areas use `collision_layer`/`collision_mask` = 0 by default —
 > they are inert markers. Set `poi_collision_layer` / `poi_collision_mask` on
 > `PlanetTerrain` **before** importing if gameplay code needs to detect them.
+
+---
+
+## Caves pipeline (`export_cave_sites.py` → fit → persistence)
+
+The StarGrotte caves are networked props (`scenes/planet/cave/cave_site.tscn`,
+Horizon type `cave`) stored in the persistence. QGIS is where they are placed
+and tuned; the game never reads this layer directly.
+
+1. **Edit** the `cave_site` point layer (`layers/caves.py`, category `caves`,
+   QGIS's `poi_cave` icon): one point per cave entrance, with the cave's
+   authored parameters (heading, seed, size, entrance type…). A new point gets a
+   `placement_id` and a seed by default; never change the `placement_id` of an
+   existing cave, it is its identity.
+2. **Export** from the QGIS Python Console:
+   ```python
+   exec(open('…/tools/planettech/qgis/export_cave_sites.py').read())
+   ```
+   Output: `<dir>/<planet>_cave_sites.json`, where `<dir>` is
+   `$DS_CAVE_EXPORT_DIR`, else `export_config.ini [paths] cave_export_dir`,
+   else `~/dyingstar-private/caves/`. Not public, not in the repository.
+3. **Fit to the current terrain** (Godot, headless, several minutes):
+   ```sh
+   <godot> --headless --path <repo> res://tools/stargrot/fit_cave_items.tscn -- \
+       --in=<dir>/<planet>_cave_sites.json
+   ```
+   It measures each entrance on the relief (as the StarGrotte workbench's
+   "Recaler" does) and writes `<dir>/<planet>_cave_items.json`, the admin-panel
+   import file (`{object_type: "cave", object_uuid, object_data}` per cave), plus
+   `<planet>_cave_items_rejected.json` with every cave left out and why. A porch
+   on a slope is turned to face uphill: the imported heading is the fitted one.
+4. **Import** `<planet>_cave_items.json` in the admin panel (bulk import).
+
+The game refuses a cave fitted on another relief: after every terrain
+re-export, run steps 3 and 4 again. The prop uuids derive from the
+`placement_id`s, so the import updates the caves instead of duplicating them.
 
 ---
 
