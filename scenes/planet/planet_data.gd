@@ -21,8 +21,26 @@ const ModifierPackScript = preload("res://scenes/planet/modifier_pack.gd")
 @export var cave_catalog: CaveSiteCatalog
 ## Main-thread prepared plans, immutable while chunk workers consume them.
 var stargrot_plans: Array[Dictionary] = []
-## Fixed before terrain workers start. Surface cuts do not depend on cave mesh residency.
-var stargrot_cut_sites: Array[CavePlacement] = []
+## The sites the terrain cuts: the catalog's, fixed before terrain workers start, plus the caves registered at
+## run time (networked caves, CavePlanetRegistry.set_site). Surface cuts do not depend on cave mesh residency.
+## Read by the chunk builders on workers and replaced on the main thread: as for CrackPoiSet, the reference is
+## swapped and copied under one lock, and a published list is never edited.
+var stargrot_cut_sites: Array[CavePlacement]:
+	set(value):
+		_stargrot_mutex.lock()
+		_stargrot_cut_sites = value
+		_stargrot_mutex.unlock()
+	get:
+		_stargrot_mutex.lock()
+		var out := _stargrot_cut_sites
+		_stargrot_mutex.unlock()
+		return out
+var _stargrot_cut_sites: Array[CavePlacement] = []
+## Finest-level pixels reached by the caves registered at run time, and those pixels lifted to coarser levels on
+## demand (nside -> {ipix: true}): such caves are in no cache key, so their chunks stay out of the disk cache.
+var _stargrot_runtime_pixels: Dictionary = {}
+var _stargrot_runtime_levels: Dictionary = {}
+var _stargrot_mutex := Mutex.new()
 @export_group("General")
 
 
@@ -33,6 +51,44 @@ func stargrot_placements() -> Array[CavePlacement]:
 	for plan: Dictionary in stargrot_plans:
 		result.append(plan.placement)
 	return result
+
+
+## Publish the finest-level pixels the runtime caves reach (main thread).
+func set_stargrot_runtime_pixels(pixels: Dictionary) -> void:
+	_stargrot_mutex.lock()
+	_stargrot_runtime_pixels = pixels
+	_stargrot_runtime_levels = {}
+	_stargrot_mutex.unlock()
+
+
+## Does a cave registered at run time reach the chunk (nside, ipix)? From any thread.
+func stargrot_runtime_touches(nside: int, ipix: int) -> bool:
+	var finest := 1 << max_quadtree_depth
+	_stargrot_mutex.lock()
+	var pixels := _stargrot_runtime_pixels
+	var hit := false
+	if not pixels.is_empty() and nside > 0 and ipix >= 0:
+		if nside >= finest:
+			var p := ipix
+			var ns := nside
+			while ns > finest:
+				p >>= 2
+				ns >>= 1
+			hit = pixels.has(p)
+		else:
+			if not _stargrot_runtime_levels.has(nside):
+				var shift := 0
+				var ns := nside
+				while ns < finest:
+					shift += 2
+					ns <<= 1
+				var level := {}
+				for p: int in pixels:
+					level[p >> shift] = true
+				_stargrot_runtime_levels[nside] = level
+			hit = (_stargrot_runtime_levels[nside] as Dictionary).has(ipix)
+	_stargrot_mutex.unlock()
+	return hit
 
 
 ## Cache suffix of the cave cuts. Its tag changes with the cut's geometry (sg5: version 9 approach hollows and notches),
@@ -3988,7 +4044,7 @@ func grade_chunk_provisional(nside: int, ipix: int) -> bool:
 ## Two reasons it may not, and they are different:
 ##   · a profiled line under it has no profile yet — the geometry WILL change
 ##     (grade_chunk_provisional);
-##   · a terrain pad reaches it. The cache key (PlanetTerrain._cache_version)
+##   · a terrain pad, or a cave registered at run time, reaches it. The cache key (PlanetTerrain._cache_version)
 ##     describes the planet's baked data, and a pad is not baked data: it is
 ##     registered at runtime by a building the editor placed, the server
 ##     spawned or the client received through GORC. Folding a live pad into a
@@ -4004,6 +4060,9 @@ func chunk_cache_ineligible(nside: int, ipix: int) -> bool:
 	var villages: Array = _crack_set.networked()
 	if not villages.is_empty() and not crack_pois_near(HEALPix.pix2vec_nest(nside, ipix),
 			HEALPix.pixel_side_length(nside, radius), villages).is_empty():
+		return true
+	# A cave registered at run time (a networked cave) is no baked data either.
+	if stargrot_runtime_touches(nside, ipix):
 		return true
 	return _pads != null and not _pads.is_empty() and not _pads.gather(nside, ipix).is_empty()
 

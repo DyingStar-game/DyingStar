@@ -1,0 +1,71 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 3000.0,
+			"frequency": 1.0,
+			"properties": [
+				"position",
+				"rotation",
+				"parent_id"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 3000.0,
+			"frequency": 1.0,
+			"properties": [
+				"scenename",
+				"name",
+				"placement_id",
+				"planet_name",
+				"longitude_deg",
+				"latitude_deg",
+				"heading_deg",
+				"seed",
+				"surface_height_m",
+				"planet_radius_m",
+				"terrain_version",
+				"terrain_relief_signature",
+				"ramp_length_m",
+				"cover_m",
+				"format_version",
+				"fitted_mouth_depth_m",
+				"portal_descent_deg",
+				"portal_axis_m",
+				"skylight_depth_m",
+				"network_offset",
+				"light_wells",
+				"asset_library",
+				"profile_id",
+				"generator_version",
+				"length_m",
+				"tunnel_width_m",
+				"tunnel_height_m",
+				"chamber_count",
+				"depth_m",
+				"level_count",
+				"chamber_width_m",
+				"chamber_height_m",
+				"branch_count",
+				"pillar_count",
+				"bridge_count",
+				"crawl_count",
+				"roughness",
+				"bend",
+				"entrance_type",
+				"entrance_width_m",
+				"entrance_height_m",
+				"exit_open",
+				"exit_width_m",
+				"exit_height_m",
+				"shaft_length_m",
+				"walkable_target",
+				"entrance_noise",
+				"network_style",
+				"gallery_noise",
+				"light_shafts"
+			]
+		}
+	]
+}

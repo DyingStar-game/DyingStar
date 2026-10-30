@@ -21,13 +21,48 @@ func initialize(owner: CavePlanetRegistry, terrain: PlanetTerrain) -> void:
     _owner = owner
     _terrain = terrain
     _index_nside = terrain.planet_data.collision_detail_nside()
-    for site in terrain.planet_data.cave_placements:
-        _sites[site.placement_id] = site
-        for tile: int in CavePlanetRegistry.site_tiles(terrain.planet_data, site, _index_nside):
-            if not _index.has(tile): _index[tile] = []
-            _index[tile].append(site.placement_id)
+    for site in owner._catalog_cuts:
+        if site != null:
+            _index_site(site)
     terrain.residency_changed.connect(_changed)
     _changed(PackedStringArray(), PackedStringArray())
+
+
+## Add or replace one site at run time (a networked cave): its built network, if any, is dropped and rebuilt
+## from the new definition once its sectors are resident.
+func add_site(site: CavePlacement) -> void:
+    _forget(site.placement_id)
+    _index_site(site)
+    _changed(PackedStringArray(), PackedStringArray())
+
+
+## Drop one site at run time: its network, its colliders and its plan go with it.
+func remove_site(id: String) -> void:
+    if _forget(id):
+        _changed(PackedStringArray(), PackedStringArray())
+
+
+func _index_site(site: CavePlacement) -> void:
+    _sites[site.placement_id] = site
+    for tile: int in CavePlanetRegistry.site_tiles(_terrain.planet_data, site, _index_nside):
+        if not _index.has(tile): _index[tile] = []
+        _index[tile].append(site.placement_id)
+
+
+func _forget(id: String) -> bool:
+    if not _sites.has(id):
+        return false
+    _sites.erase(id)
+    _errors.erase(id)
+    for tile: int in _index.keys():
+        var ids: Array = _index[tile]
+        ids.erase(id)
+        if ids.is_empty():
+            _index.erase(tile)
+    if _active.has(id):
+        (_active[id] as Node).queue_free()
+        _active.erase(id)
+    return true
 
 
 func _changed(_added: PackedStringArray, _removed: PackedStringArray) -> void:
@@ -71,11 +106,12 @@ func pump() -> bool:
             continue
         WorkerThreadPool.wait_for_task_completion(task.id)
         _tasks.erase(id)
-        if not _wanted.has(id):
-            continue
+        if not _wanted.has(id) or task.site != _sites.get(id):
+            continue  # unwanted now, or built from a definition replaced since
         var plan: Dictionary = task.result[0]
         if not str(plan.error).is_empty():
             _errors[id] = plan.error
+            _owner.site_failed(id, str(plan.error))
             continue
         var node := _owner.assemble_plan(plan)
         node.set_meta("plan", plan)
@@ -95,7 +131,7 @@ func pump() -> bool:
         var result: Array = [{}]
         var dressing := CavePreviewBuilder.decoration_request(site.profile.asset_library)
         var task_id := WorkerThreadPool.add_task(func(): result[0] = CavePlanetRegistry.build_plan(data, site, dressing))
-        _tasks[id] = {"id": task_id, "result": result}
+        _tasks[id] = {"id": task_id, "result": result, "site": site}
     _owner.error_message = "" if _errors.is_empty() else str(_errors.values()[0])
     _ready = true
     for id: String in _wanted:

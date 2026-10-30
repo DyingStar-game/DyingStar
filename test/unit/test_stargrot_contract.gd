@@ -148,12 +148,11 @@ func test_saved_placements_and_decoration_rules_reject_non_finite_values() -> vo
     assert_false(placement.definition_error().is_empty())
 
 
-func test_standard_planet_uses_the_shipped_catalog_without_inline_demo_sites() -> void:
+func test_standard_planet_leaves_its_caves_to_the_network() -> void:
     var properties := SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn")
     var data := properties.planet_data as PlanetData
-    assert_true(data.cave_placements.is_empty(), "authored content stays in its runtime catalog")
-    assert_true(data.cave_catalog != null and data.cave_catalog.sites.size() == 200,
-        "normal Tarsis III scene supplies the user's 200 cave definitions")
+    assert_true(data.cave_placements.is_empty(), "no inline demo sites")
+    assert_null(data.cave_catalog, "Tarsis III's caves are networked props (CaveSite), not a scene catalog")
 
 
 func test_legacy_coordinate_migration_preserves_world_position_and_is_idempotent() -> void:

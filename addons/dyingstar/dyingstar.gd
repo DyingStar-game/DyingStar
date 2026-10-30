@@ -26,7 +26,7 @@ const DEFS_API := "https://api.github.com/repos/DyingStar-game/horizonserver/con
 const DEFS_HEADERS := ["User-Agent: dyingstar-godot-plugin", "Accept: application/vnd.github+json"]
 ## Fallback type list when the GitHub API listing is rate-limited (403): each file is then fetched
 ## by its own api.github.com contents URL. The listing is preferred when available (discovers new types).
-const DEFS_KNOWN := ["box", "building", "cargo_depot", "city", "crate_container", "food", "mining_depot",
+const DEFS_KNOWN := ["box", "building", "cargo_depot", "cave", "city", "crate_container", "food", "mining_depot",
 	"miningrock", "miningzone", "planet", "player", "poi_village", "shelf", "spawnbuilding", "star",
 	"storagewarehouse", "tool", "vehicle", "vehicle_component", "vehicle_lift", "vehicle_lift_platform",
 	"vehicle_lift_platformsystem"]

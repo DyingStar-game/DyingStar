@@ -78,6 +78,55 @@ extends Resource
 ## column of rock above a chamber is free; each one opens a small hole in the terrain.
 @export_range(0, 4, 1) var light_shafts: int = 1
 
+## Where a networked cave may take its dressing from: a library path received in prop data is loaded only
+## under this folder.
+const LIBRARY_DIR := "res://scenes/planet/cave/libraries/"
+## The authored fields a networked cave carries flat in its object_data (CaveSite, Horizon type "cave"), next
+## to the asset library's path. Every one must be declared in the type's network definition (cave_def.json),
+## or Horizon drops it.
+const PROP_FIELDS: Array[String] = ["profile_id", "generator_version", "length_m", "tunnel_width_m",
+    "tunnel_height_m", "chamber_count", "depth_m", "level_count", "chamber_width_m", "chamber_height_m",
+    "branch_count", "pillar_count", "bridge_count", "crawl_count", "roughness", "bend", "entrance_type",
+    "entrance_width_m", "entrance_height_m", "exit_open", "exit_width_m", "exit_height_m", "shaft_length_m",
+    "walkable_target", "entrance_noise", "network_style", "gallery_noise", "light_shafts"]
+
+
+## This profile as plain values for a networked cave's object_data (see PROP_FIELDS).
+func to_prop_data() -> Dictionary:
+    var data := {"asset_library": asset_library.resource_path if asset_library != null else ""}
+    for field: String in PROP_FIELDS:
+        data[field] = get(field)
+    return data
+
+
+## A profile from prop data; a field it lacks keeps this script's default. Numbers arriving as JSON floats
+## take the type of the field they fill.
+static func from_prop_data(data: Dictionary) -> CaveProfile:
+    var profile := CaveProfile.new()
+    for field: String in PROP_FIELDS:
+        if data.has(field) and data[field] != null:
+            profile.set(field, prop_value(profile.get(field), data[field]))
+    var library := str(data.get("asset_library", ""))
+    if library.begins_with(LIBRARY_DIR) and ResourceLoader.exists(library):
+        profile.asset_library = load(library) as CaveAssetLibrary
+    elif not library.is_empty():
+        push_warning("[CaveProfile] bibliothèque de grotte refusée : '%s'" % library)
+    return profile
+
+
+## [param value] converted to the type of [param template] (the field's current value).
+static func prop_value(template: Variant, value: Variant) -> Variant:
+    match typeof(template):
+        TYPE_INT:
+            return int(value)
+        TYPE_FLOAT:
+            return float(value)
+        TYPE_BOOL:
+            return bool(value)
+        TYPE_STRING:
+            return str(value)
+    return value
+
 
 ## Plain values only: neither nodes nor mutable resources enter the geometry worker.
 func snapshot(cave_seed: int) -> Dictionary:

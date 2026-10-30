@@ -1874,6 +1874,11 @@ func _on_prop_delete(
 		var gp = props_list["planets"].get(gone["world"])
 		if gp is Planet and (gp as Planet).planet_terrain != null:
 			(gp as Planet).planet_terrain.unregister_terrain_pad("prop:" + uuid)
+	if not gone.is_empty() and str(gone["type"]) == CAVE_TYPE:
+		var cp = props_list["planets"].get(gone["world"])
+		var cave_od: Dictionary = gone["event"]["data"].get("object_data", {})
+		if cp is Planet and (cp as Planet).planet_terrain != null:
+			(cp as Planet).planet_terrain.unregister_cave_site(str(cave_od.get("placement_id", "")))
 	for de in prop_registry.forget(uuid):
 		_stream_queued.erase(de["uuid"])
 		_stream_far.erase(de["uuid"])
@@ -2621,6 +2626,8 @@ func update_generic_object(event: Dictionary) -> void:
 
 ## Types that never sleep (tuning hook; empty = everything streams).
 const STREAM_ALWAYS_TYPES: Array[String] = []
+## Horizon type of a networked cave (CaveSite): registered with its planet's terrain from its data.
+const CAVE_TYPE := "cave"
 
 var prop_registry := PropRegistry.new()
 var _stream_load_factor: float = SettingsManager._server_ini_number("streaming", "load_factor", 1.2)
@@ -3335,13 +3342,16 @@ func _free_without_delete(node: Node, do_free: bool = true) -> void:
 
 
 ## The TerrainPads under [param node] stay registered when it leaves the tree: the building sleeps or
-## goes to another server, the level ground under it does not (TerrainPad.keep_on_exit).
+## goes to another server, the level ground under it does not (TerrainPad.keep_on_exit). Nor does a
+## cave's opening (CaveSite.keep_on_exit).
 func _keep_pads_of(node: Node) -> void:
 	var stack: Array = [node]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		if n is TerrainPad:
 			(n as TerrainPad).keep_on_exit = true
+		elif n is CaveSite:
+			(n as CaveSite).keep_on_exit = true
 		stack.append_array(n.get_children())
 
 
@@ -3408,6 +3418,7 @@ func _stream_register_poi_zone(uuid: String) -> void:
 ## built rebuilds them — and a server collision rebuild is an unload then a reload, the ground gone
 ## from under whoever stands there for the length of a chunk build, once per building.
 func _stream_register_pads(uuid: String) -> void:
+	_stream_register_cave(uuid)
 	var e: Dictionary = prop_registry.get_entry(uuid)
 	if e.is_empty() or int(e["kind"]) != PropRegistry.KIND_GROUND or prop_registry.live.has(uuid):
 		return
@@ -3443,6 +3454,21 @@ func _stream_register_pads(uuid: String) -> void:
 			if not st.is_empty():
 				rec["settled"] = st
 		terrain.register_terrain_pad(rec)
+
+
+## A cave (CaveSite), from its DATA: its openings are cut into the collision chunks before its node is
+## built, and stay cut while it sleeps — the record its live node registers later, under the same
+## placement id, so nothing is rebuilt then.
+func _stream_register_cave(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty() or str(e["type"]) != CAVE_TYPE:
+		return
+	var planet = props_list["planets"].get(e["world"])
+	if not (planet is Planet) or (planet as Planet).planet_terrain == null:
+		return
+	var site := CavePlacement.from_prop_data(e["event"]["data"].get("object_data", {}))
+	if site != null:
+		(planet as Planet).planet_terrain.register_cave_site(site)
 
 
 ## The notch a vehicle lift cuts under itself (VehicleLift.notch_length_m), from its DATA: a lift that
