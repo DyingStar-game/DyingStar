@@ -4809,6 +4809,76 @@ func unregister_terrain_pad(uuid: String) -> void:
 	_announce_caught_up_pads()
 
 
+## Finest-level pixels each cave registered at run time reaches, by placement id.
+var _runtime_cave_pixels: Dictionary = {}
+## Caves registered at run time that were refused, by placement id: [definition signature, reason]. The same
+## definition is not tried again; a new one is.
+var _cave_refusals: Dictionary = {}
+
+
+## Add or update a cave that arrives at run time: a networked "cave" prop (CaveSite), or the server from the
+## prop's stored data before its node exists (server.gd). Its openings are cut into the chunks it reaches,
+## which are rebuilt, and its network is meshed while they are resident. The same definition again changes
+## nothing; a refused one (another relief, too close to another cave) is skipped with one warning and never
+## takes the other caves with it.
+func register_cave_site(placement: CavePlacement) -> void:
+	if planet_data == null or placement == null:
+		return
+	var id := placement.placement_id
+	var signature := placement.signature()
+	var previous: CavePlacement = stargrot_registry.networked_site(id) if stargrot_registry != null else null
+	if previous != null and previous.signature() == signature:
+		return
+	if (_cave_refusals.get(id, [""]) as Array)[0] == signature:
+		return
+	if stargrot_registry == null:
+		stargrot_registry = CavePlanetRegistry.attach(self)
+	var error := stargrot_registry.set_site(placement)
+	if not error.is_empty():
+		if previous != null:
+			unregister_cave_site(id)
+		_refuse_cave_site(id, signature, error)
+		return
+	_cave_refusals.erase(id)
+	var dirty: Dictionary = _runtime_cave_pixels.get(id, {})
+	_runtime_cave_pixels[id] = CavePlanetRegistry.site_tiles(planet_data, placement, 1 << planet_data.max_quadtree_depth)
+	dirty = dirty.merged(_runtime_cave_pixels[id])
+	_publish_runtime_cave_pixels()
+	_pads_changed(dirty, {}, "d'une grotte")
+
+
+## Drop a cave registered at run time: the ground it opened closes again.
+func unregister_cave_site(id: String) -> void:
+	_cave_refusals.erase(id)
+	if planet_data == null or stargrot_registry == null or not stargrot_registry.remove_site(id):
+		return
+	var dirty: Dictionary = _runtime_cave_pixels.get(id, {})
+	_runtime_cave_pixels.erase(id)
+	_publish_runtime_cave_pixels()
+	_pads_changed(dirty, {}, "d'une grotte")
+
+
+## The network of a cave registered at run time could not be built (CavePlanetRegistry.site_failed): drop it.
+func drop_failed_cave_site(id: String, error: String) -> void:
+	var site: CavePlacement = stargrot_registry.networked_site(id) if stargrot_registry != null else null
+	if site == null:
+		return
+	unregister_cave_site(id)
+	_refuse_cave_site(id, site.signature(), error)
+
+
+func _refuse_cave_site(id: String, signature: String, error: String) -> void:
+	push_warning("[PlanetTerrain] grotte '%s' refusée sur '%s' : %s" % [id, planet_data.planet_name, error])
+	_cave_refusals[id] = [signature, error]
+
+
+func _publish_runtime_cave_pixels() -> void:
+	var union := {}
+	for pixels: Dictionary in _runtime_cave_pixels.values():
+		union.merge(pixels)
+	planet_data.set_stargrot_runtime_pixels(union)
+
+
 ## The altitude a pad levels the ground to, NAN while its tiles are unreadable.
 func terrain_pad_altitude(rec: Dictionary) -> float:
 	return planet_data.pad_altitude(rec) if planet_data != null else NAN
@@ -4902,7 +4972,8 @@ func _flush_late_pads() -> void:
 
 
 ## [param skip]: server chunk tasks already built with these pads — nothing to redo for them.
-func _pads_changed(dirty: Dictionary, skip: Dictionary = {}) -> void:
+## Also the path of a cave registered at run time ([param why]): same pixels, same stale-result guard.
+func _pads_changed(dirty: Dictionary, skip: Dictionary = {}, why: String = "d'un pad de bâtiment") -> void:
 	if dirty.is_empty() or planet_data == null:
 		return
 	_pad_dirty_pixels.merge(dirty)
@@ -4912,7 +4983,7 @@ func _pads_changed(dirty: Dictionary, skip: Dictionary = {}) -> void:
 	if not _initialized:
 		return  # warm-up: no chunk has been built yet
 	var nside: int = 1 << planet_data.max_quadtree_depth
-	_rebuild_chunks_on_tiles(dirty, nside, "d'un pad de bâtiment", skip)
+	_rebuild_chunks_on_tiles(dirty, nside, why, skip)
 	_invalidate_nav_over(dirty, nside)
 
 

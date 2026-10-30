@@ -5,7 +5,7 @@ Layer registry — every layer the planet setup can create, and how to create th
     from layers import all_categories, setup_all
 
 Categories are discovered from:
-    layers/base.py, layers/poi.py, layers/roads.py,
+    layers/base.py, layers/poi.py, layers/caves.py, layers/roads.py,
     layers/mountains.py, layers/volcanoes.py,
     layers/rocky_terrain.py                           (non-biome, listed by hand)
     layers/biomes/*.py                                (one module per biome category)
@@ -22,6 +22,7 @@ the order the layers apply on the ground::
                             volcanoes/  volcano
     layer 03 - rocky terrain/  rocky terrain
     layer 10 - final/       poi
+                            cave site
                             roads/      highway, road, path, trail, railway
                             volcanoes/  lava flow, fumarole field, fumarole vent
     uncategorized/          every other biome category (aride desert/, forest/, …)
@@ -44,9 +45,9 @@ from .model import (  # noqa: F401 — re-exported for convenience
 # ============================================================
 def all_categories():
     """Non-biome categories first, then ``layers/biomes/*`` in alphabetical order."""
-    from . import base, poi, roads, mountains, volcanoes, rocky_terrain
+    from . import base, poi, caves, roads, mountains, volcanoes, rocky_terrain
     from . import biomes as biomes_pkg
-    cats = [base.CATEGORY, poi.CATEGORY, roads.CATEGORY, mountains.CATEGORY,
+    cats = [base.CATEGORY, poi.CATEGORY, caves.CATEGORY, roads.CATEGORY, mountains.CATEGORY,
             volcanoes.CATEGORY, rocky_terrain.CATEGORY]
     for info in sorted(pkgutil.iter_modules(biomes_pkg.__path__), key=lambda m: m.name):
         if info.name.startswith("_"):

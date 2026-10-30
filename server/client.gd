@@ -960,6 +960,8 @@ func _retire(node: Node) -> void:
 		var n: Node = stack.pop_back()
 		if n is TerrainPad:
 			(n as TerrainPad).keep_on_exit = true
+		elif n is CaveSite:
+			(n as CaveSite).keep_on_exit = true  # nor does a cave's opening
 		stack.append_array(n.get_children())
 	if node is Node3D:
 		(node as Node3D).visible = false

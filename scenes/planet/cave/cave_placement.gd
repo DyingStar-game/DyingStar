@@ -51,6 +51,59 @@ extends Resource
 @export var light_wells: PackedVector4Array = PackedVector4Array()
 
 
+## The placement fields a networked cave carries flat in its object_data (CaveSite, Horizon type "cave"), next
+## to its profile's (CaveProfile.PROP_FIELDS), network_offset and light_wells. Every one must be declared in the
+## type's network definition (cave_def.json), or Horizon drops it.
+const PROP_FIELDS: Array[String] = ["placement_id", "planet_name", "longitude_deg", "latitude_deg", "heading_deg",
+    "seed", "surface_height_m", "planet_radius_m", "terrain_version", "terrain_relief_signature", "ramp_length_m",
+    "cover_m", "format_version", "fitted_mouth_depth_m", "portal_descent_deg", "portal_axis_m", "skylight_depth_m"]
+## The fields a networked cave cannot be built without: lacking one, its data is still incomplete.
+const PROP_REQUIRED: Array[String] = ["placement_id", "longitude_deg", "latitude_deg", "seed", "generator_version"]
+
+
+## This placement and its profile as the flat plain values of a networked cave's object_data:
+## network_offset is {x, y, z}, light_wells a list of [x, z, radius, depth].
+func to_prop_data() -> Dictionary:
+    var data := profile.to_prop_data() if profile != null else {}
+    for field: String in PROP_FIELDS:
+        data[field] = get(field)
+    data["network_offset"] = {"x": network_offset.x, "y": network_offset.y, "z": network_offset.z}
+    var wells: Array = []
+    for well in light_wells:
+        wells.append([well.x, well.y, well.z, well.w])
+    data["light_wells"] = wells
+    return data
+
+
+## A placement from a networked cave's object_data (see to_prop_data), or null while a required field is
+## still missing. A field it lacks keeps this script's default.
+static func from_prop_data(data: Dictionary) -> CavePlacement:
+    for field: String in PROP_REQUIRED:
+        if data.get(field) == null:
+            return null
+    var placement := CavePlacement.new()
+    for field: String in PROP_FIELDS:
+        if data.has(field) and data[field] != null:
+            placement.set(field, CaveProfile.prop_value(placement.get(field), data[field]))
+    var offset: Variant = data.get("network_offset")
+    if offset is Vector3:
+        placement.network_offset = offset
+    elif offset is Dictionary:
+        placement.network_offset = Vector3(float(offset.get("x", 0.0)), float(offset.get("y", 0.0)),
+            float(offset.get("z", 0.0)))
+    var wells := PackedVector4Array()
+    var listed: Variant = data.get("light_wells")
+    if listed is Array:
+        for well: Variant in listed:
+            if well is Array and (well as Array).size() == 4:
+                wells.append(Vector4(float(well[0]), float(well[1]), float(well[2]), float(well[3])))
+    elif listed is PackedVector4Array:
+        wells = listed
+    placement.light_wells = wells
+    placement.profile = CaveProfile.from_prop_data(data)
+    placement.resource_name = str(data.get("name", placement.placement_id))
+    return placement
+
 func validation_error(data: PlanetData) -> String:
     var error := definition_error()
     if not error.is_empty():

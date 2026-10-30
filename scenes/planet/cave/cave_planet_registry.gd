@@ -10,6 +10,13 @@ var error_message: String = ""
 var _terrain: PlanetTerrain
 var _retry_at: int = 0
 var _residents: CaveResidentSet
+## The catalog's sites, cut since the terrain started (see attach).
+var _catalog_cuts: Array[CavePlacement] = []
+## Caves registered at run time (networked "cave" props, CaveSite), by placement id.
+var _networked: Dictionary = {}
+## World-space footprint of every cut site, by placement id: the spacing check of a networked cave. Filled on
+## the first networked cave, so a catalog-only body never pays for it.
+var _footprints: Dictionary = {}
 
 
 func ensure_ready() -> bool:
@@ -153,12 +160,74 @@ static func attach(terrain: PlanetTerrain) -> CavePlanetRegistry:
     registry.error_message = definition_error(terrain.planet_data)
     if registry.error_message.is_empty():
         # Cuts depend on persistent definitions, never on which meshes happen to be resident.
-        terrain.planet_data.stargrot_cut_sites = terrain.planet_data.cave_placements.duplicate()
+        registry._catalog_cuts = terrain.planet_data.cave_placements.duplicate()
+        registry._publish_cuts()
         # Networks subscribe to native chunk residency: only the caves near the player are meshed.
-        if not terrain.planet_data.cave_placements.is_empty():
-            registry._residents = CaveResidentSet.new()
-            registry._residents.initialize(registry, terrain)
+        registry._ensure_residents()
     return registry
+
+
+## The networked cave registered under [param id], or null.
+func networked_site(id: String) -> CavePlacement:
+    return _networked.get(id)
+
+
+## Add or replace a cave that arrived at run time. Returns why it was refused ("" when it is in): a site is
+## judged alone, so one bad cave never takes the others' cuts away. The caller rebuilds the chunks it reaches.
+func set_site(placement: CavePlacement) -> String:
+    var id := placement.placement_id
+    var error := placement.validation_error(_terrain.planet_data)
+    if error.is_empty() and _catalog_cuts.any(func(site: CavePlacement): return site.placement_id == id):
+        error = "Identifiant déjà porté par une grotte du catalogue."
+    if not error.is_empty():
+        return error
+    if _footprints.is_empty():
+        for site in _catalog_cuts:
+            _footprints[site.placement_id] = site.footprint_bounds()
+    var footprint := placement.footprint_bounds()
+    for other: String in _footprints:
+        if other != id and footprint.intersects(_footprints[other]):
+            return "Trop proche de la grotte %s." % other
+    _footprints[id] = footprint
+    _networked[id] = placement
+    _publish_cuts()
+    _ensure_residents()
+    _residents.add_site(placement)
+    return ""
+
+
+## Drop a cave registered at run time; false when there was none under [param id].
+func remove_site(id: String) -> bool:
+    if not _networked.has(id):
+        return false
+    _networked.erase(id)
+    _footprints.erase(id)
+    _publish_cuts()
+    if _residents != null:
+        _residents.remove_site(id)
+    return true
+
+
+## A networked cave whose network cannot be built is dropped (its ground stays whole) rather than left holding
+## back every chunk it reaches; a catalog cave keeps them waiting, as before.
+func site_failed(id: String, error: String) -> void:
+    if _networked.has(id):
+        _terrain.drop_failed_cave_site.call_deferred(id, error)
+
+
+## Copy-on-write: chunk workers read the published array, so a new one replaces it in one assignment.
+func _publish_cuts() -> void:
+    var cuts: Array[CavePlacement] = _catalog_cuts.duplicate()
+    for site: CavePlacement in _networked.values():
+        cuts.append(site)
+    _terrain.planet_data.stargrot_cut_sites = cuts
+
+
+## An invalid catalog is never cut (see attach), but the networked caves still get their residency.
+func _ensure_residents() -> void:
+    if _residents == null:
+        _residents = CaveResidentSet.new()
+        _residents.initialize(self, _terrain)
 
 
 func _assemble() -> void:

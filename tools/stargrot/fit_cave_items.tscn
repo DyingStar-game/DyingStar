@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://bafuueo782knr" path="res://tools/stargrot/fit_cave_items.gd" id="1_fit"]
+
+[node name="FitCaveItems" type="Node"]
+script = ExtResource("1_fit")

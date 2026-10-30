@@ -2,7 +2,7 @@
 
 ## Livraison avec 200 grottes sur Tarsis III
 
-Le module et l’atelier sont livrés avec le catalogue `levels/stargrot/catalogs/tarsis_3_200_grottes.tres`, déjà affecté à la scène normale de Tarsis III. Il contient 105 entrées en rampe, 89 dolines et 6 entrées de type hangar. Le chargement client/serveur utilise les secteurs du terrain ; l’atelier n’apparaît pas en jeu. Voir [le dossier de PR](STARGROT-PR-2026-10-28.md) pour l’intégration courante et les essais.
+Les grottes de Tarsis III sont des props réseau (type Horizon `cave`, scène `scenes/planet/cave/cave_site.tscn`) stockés dans la persistance ; leurs emplacements ne sont pas dans le dépôt. Elles sont placées dans QGIS (couche `cave_site`), recalées hors ligne puis importées par le panel admin : voir « Caves pipeline » dans [tools/planettech/qgis/README.md](tools/planettech/qgis/README.md). Le chargement client/serveur utilise les secteurs du terrain ; l’atelier n’apparaît pas en jeu. Voir [le dossier de PR](STARGROT-PR-2026-10-28.md) pour l’intégration courante et les essais.
 
 ## Revue du porche — 28 octobre 2026
 

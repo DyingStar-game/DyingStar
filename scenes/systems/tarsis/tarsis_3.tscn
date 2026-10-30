@@ -7,12 +7,9 @@
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="script_debug_export"]
 [ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="script_terrain"]
 
-[ext_resource type="Resource" path="res://levels/stargrot/catalogs/tarsis_3_200_grottes.tres" id="stargrot_catalog"]
-
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("script_data")
 planet_name = "tarsis_3"
-cave_catalog = ExtResource("stargrot_catalog")
 atmosphere_profile = ExtResource("atmosphere_tarsis4")
 surface_gravity = 7.77
 chunk_export_depth = 10
