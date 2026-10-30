@@ -1,7 +1,10 @@
 extends Node3D
-## Test the shipped catalog through native client/server terrain initialization, with no atelier.
+## Test the Tarsis III caves through native client/server terrain initialization, with no atelier.
+##
+## The caves are networked props whose positions are not public: they are read from the private import file
+## written by tools/stargrot/fit_cave_items.tscn (DS_CAVE_ITEMS, default below). Without it the test is skipped.
 
-const CATALOG := "res://levels/stargrot/catalogs/tarsis_3_200_grottes.tres"
+const ITEMS := "~/dyingstar-private/caves/tarsis_3_cave_items.json"
 var checks: int = 0
 var failures: Array[String] = []
 var load_ms: Dictionary = {}
@@ -20,22 +23,28 @@ func check(condition: bool, label: String) -> void:
 
 
 func _run() -> void:
-    var catalog: CaveSiteCatalog = load(CATALOG)
-    check(catalog != null and not catalog.sites.is_empty(), "delivery catalog exists")
-    if catalog == null or catalog.sites.is_empty():
+    var path := OS.get_environment("DS_CAVE_ITEMS")
+    if path.is_empty():
+        path = ITEMS.replace("~", OS.get_environment("HOME"))
+    if not FileAccess.file_exists(path):
+        print("STARGROT DEVELOP CATALOG skipped: no private cave import file at ", path)
+        get_tree().quit(0)
+        return
+    var catalog := _catalog(path)
+    check(not catalog.sites.is_empty(), "every cave of the import file reads back")
+    if catalog.sites.is_empty():
         get_tree().quit(1)
         return
-    check(catalog.sites.size() == 200, "all 200 authored Tarsis III definitions ship")
-    check(not FileAccess.get_file_as_string(CATALOG).contains("tools/stargrot"), "runtime catalog has no atelier dependency")
     var original: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data
-    check(original.cave_catalog != null and original.cave_catalog.resource_path == CATALOG,
-        "normal game scene references the shipped catalog")
+    # Tarsis III's caves are networked props (CaveSite) now: the scene must not cut them a second time.
+    check(original.cave_catalog == null, "normal game scene leaves the caves to the network")
     check(original.cave_placements.is_empty(), "no duplicate inline cave definitions")
     var terrains: Array[PlanetTerrain] = []
     var anchor := catalog.sites[0].surface_transform().origin
     var first_id := catalog.sites[0].placement_id
     for server_mode in [false, true]:
         var data: PlanetData = original.duplicate(true)
+        data.cave_catalog = catalog
         var terrain := PlanetTerrain.new()
         terrain.name = "ServerTerrain" if server_mode else "ClientTerrain"
         add_child(terrain)
@@ -83,6 +92,17 @@ func _run() -> void:
     file.close()
     print("STARGROT DEVELOP CATALOG ", checks, " checks; failures=", failures)
     get_tree().quit(0 if failures.is_empty() else 1)
+
+
+## The import file's caves as an in-memory catalog (never saved: their positions stay private).
+static func _catalog(path: String) -> CaveSiteCatalog:
+    var catalog := CaveSiteCatalog.new()
+    var items: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+    for item: Variant in items if items is Array else []:
+        var site := CavePlacement.from_prop_data((item as Dictionary).get("object_data", {}) if item is Dictionary else {})
+        if site != null:
+            catalog.sites.append(site)
+    return catalog
 
 
 ## Match by stable ID: several cave workers can finish in a different order on client and server.

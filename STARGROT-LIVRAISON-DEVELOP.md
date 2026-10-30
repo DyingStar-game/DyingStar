@@ -8,7 +8,7 @@ La contribution complète porte sur le module planétaire des grottes (`scenes/p
 
 ## Contenu déjà raccordé dans cette PR
 
-Le catalogue `levels/stargrot/catalogs/tarsis_3_200_grottes.tres` est déjà affecté au champ **Cave Catalog** de `scenes/systems/tarsis/tarsis_3.tscn`. L’application de la contribution complète active donc les 200 grottes créées dans l’atelier sur Tarsis III, pour le client et le serveur. Les étapes de référence de scène ci-dessous servent aux livraisons suivantes ou à une autre planète.
+Les grottes de Tarsis III sont des props réseau (type Horizon `cave`, scène `scenes/planet/cave/cave_site.tscn`) stockés dans la persistance ; leurs emplacements ne sont pas dans le dépôt. Elles sont placées dans QGIS (couche `cave_site`), recalées hors ligne puis importées par le panel admin : voir « Caves pipeline » dans [tools/planettech/qgis/README.md](tools/planettech/qgis/README.md). Le champ **Cave Catalog** de `scenes/systems/tarsis/tarsis_3.tscn` reste vide, sinon chaque grotte serait découpée deux fois.
 
 ## Préparer le paquet
 
@@ -44,7 +44,7 @@ Les arguments utilisateur de l’atelier sont `--stargrot-explorer --stargrot-wo
 3. Dans Godot, ouvrir la scène de cette planète. Dans sa ressource **Planet Data**, groupe **Stargrot**, affecter le fichier au champ **Cave Catalog**. Enregistrer la scène.
 4. Livrer le catalogue et cette référence de scène dans la même modification. Client et serveur doivent recevoir le même contenu et la même version du relief.
 
-Le catalogue utilisé par le jeu est `levels/stargrot/catalogs/tarsis_3_200_grottes.tres` (200 grottes version 9). `levels/stargrot/catalogs/tarsis_3_example.tres` reste une démonstration de onze grottes, séparée du contenu activé.
+Pour Tarsis III, ne pas livrer de catalogue : ses grottes passent par QGIS et la persistance (voir plus haut). `levels/stargrot/catalogs/tarsis_3_example.tres` reste une démonstration de onze grottes, séparée du contenu activé.
 
 Les bibliothèques fournies font partie du module. Pour une bibliothèque personnelle, ajouter également ses modèles, matériaux et textures au dépôt en conservant leurs chemins `res://`.
 

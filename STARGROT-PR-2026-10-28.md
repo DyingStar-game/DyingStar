@@ -2,11 +2,11 @@
 
 ## Contenu proposé pour develop
 
-Cette contribution réunit le module d’exécution, l’atelier de création StarGrotte, les bibliothèques de rochers, les tests et le catalogue des 200 grottes créées par l’auteur. Elle cible `develop`, base `b4f834df9142f9af7ed92174d8c8ab23431fe64e`, vérifiée le 28 octobre 2026.
+Cette contribution réunit le module d’exécution, l’atelier de création StarGrotte, les bibliothèques de rochers, les tests et le raccordement réseau des 200 grottes créées par l’auteur. Elle cible `develop`, base `b4f834df9142f9af7ed92174d8c8ab23431fe64e`, vérifiée le 28 octobre 2026.
 
-Le catalogue [tarsis_3_200_grottes.tres](levels/stargrot/catalogs/tarsis_3_200_grottes.tres) est déjà référencé par [la scène de Tarsis III](scenes/systems/tarsis/tarsis_3.tscn). Il contient 105 entrées en rampe, 89 dolines et 6 entrées de type hangar, toutes en version 9. Le catalogue de onze exemples reste une ressource de démonstration distincte ; il n’est pas celui utilisé par le jeu.
+Les grottes de Tarsis III sont des props réseau (type Horizon `cave`, scène `scenes/planet/cave/cave_site.tscn`) stockés dans la persistance ; leurs emplacements ne sont pas dans le dépôt. Elles sont placées dans QGIS (couche `cave_site`), recalées hors ligne puis importées par le panel admin : voir « Caves pipeline » dans [tools/planettech/qgis/README.md](tools/planettech/qgis/README.md). Le catalogue de onze exemples reste une ressource de démonstration de l’atelier ; il n’est pas utilisé par le jeu.
 
-La collection de travail de l’atelier reste locale et distincte du catalogue livré. Un poste neuf ouvre sa propre collection de travail ; il n’hérite pas de la sauvegarde personnelle de l’auteur. Le jeu normal, lui, utilise directement les 200 définitions référencées par la scène. La sauvegarde personnelle et les caches de terrain ne sont pas ajoutés au dépôt.
+La collection de travail de l’atelier reste locale et distincte du catalogue livré. Un poste neuf ouvre sa propre collection de travail ; il n’hérite pas de la sauvegarde personnelle de l’auteur. Le jeu normal, lui, reçoit ses grottes par le réseau. La sauvegarde personnelle et les caches de terrain ne sont pas ajoutés au dépôt.
 
 ## Comportement en jeu
 
@@ -16,7 +16,7 @@ Les porches conservent le contour irrégulier de leurs parois, avec un sol couvr
 
 La création, le placement, les raccords, la gestion des secteurs et les décors sont en GDScript. Le calcul CPU du champ de densité et de sa triangulation reste en C# dans `CaveNetworkMesher.cs`. L’import Windows et l’atelier réutilisent le garde de bibliothèque native du jeu.
 
-L’atelier reste un outil de développement, exclu des exports. Il se lance avec `--stargrot-explorer --stargrot-workbench`. Le jeu normal démarre comme auparavant et reçoit le catalogue par sa ressource de planète. Ses grottes utilisent l’éclairage normal du jeu ; les lampes de démonstration restent réservées à l’atelier.
+L’atelier reste un outil de développement, exclu des exports. Il se lance avec `--stargrot-explorer --stargrot-workbench`. Le jeu normal démarre comme auparavant et reçoit ses grottes par le réseau. Ses grottes utilisent l’éclairage normal du jeu ; les lampes de démonstration restent réservées à l’atelier.
 
 ## Fermeture de l’atelier
 
