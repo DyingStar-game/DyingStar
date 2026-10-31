@@ -62,6 +62,14 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 			# No actor: this one's about YOU (the service notified the player who joined), and its
 			# data is a corporationId, so there is nobody to name.
 			return TranslationServer.translate("%%NOTIF_CORPORATION_JOINED")
+		"place_name_approved":
+			# ARES (the admins) approved the name a discoverer proposed (Discovery): the place, not a who.
+			return TranslationServer.translate("%%NOTIF_PLACE_NAME_APPROVED") % str(data.get("name", ""))
+		"place_name_refused":
+			var reason := str(data.get("reason", "")).strip_edges()
+			if reason == "":
+				return TranslationServer.translate("%%NOTIF_PLACE_NAME_REFUSED") % str(data.get("name", ""))
+			return TranslationServer.translate("%%NOTIF_PLACE_NAME_REFUSED_REASON") % [str(data.get("name", "")), reason]
 		_:
 			# An unknown type is still worth saying out loud, as long as it is never blank.
 			if type == "":
