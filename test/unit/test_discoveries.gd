@@ -163,3 +163,21 @@ func test_notifications_and_the_star_map_speak_of_the_place() -> void:
 	poi["metadata"] = Discoveries.poi_metadata("u", {"place_kind": "cave"}, false)
 	poi["name"] = "Gouffre"
 	assert_eq(StarMapPoi.service_entry(poi, "tarsis_3")["label"], "Gouffre", "named after the proposal")
+
+
+func test_a_discovery_stored_without_its_place_is_created_again_once() -> void:
+	var discoveries := _discoveries()
+	_now += Discoveries.SETTLE_MS
+	var uuid := Discovery.uuid_for("cave", "site-1")
+	# What Horizon kept of it while it had no definition of the type: the fields, no parent, no name.
+	var stored := Discovery.record("cave", "site-1", CAVE_UUID, "tarsis_3", PLAYER, "", 1793300000)
+	stored.merge({"type": Discovery.TYPE, "uuid": uuid})
+	_registry[uuid] = stored
+	discoveries.found(PLAYER, "Ada", "cave", "site-1", CAVE_UUID, "tarsis_3", _location())
+	assert_eq(_spawned.size(), 1, "created again")
+	var data: Dictionary = _spawned[0]
+	assert_eq(data["parent_id"], CAVE_UUID, "under its place this time")
+	assert_eq(data["discovered_at"], 1793300000, "what it held is kept")
+	assert_eq(data["discoverer_name"], "Ada", "the missing name filled in by its discoverer")
+	discoveries.found(PLAYER, "Ada", "cave", "site-1", CAVE_UUID, "tarsis_3", _location())
+	assert_eq(_spawned.size(), 1, "once")

@@ -3816,7 +3816,7 @@ func _discover_from(player: Node3D, planet: Planet) -> void:
 	if site == null:
 		return
 	var entrance: Vector3 = site.surface_transform().origin
-	discoveries.found(str(player.get("client_uuid")), str(player.get("player_display_name")), "cave",
+	discoveries.found(str(player.get("client_uuid")), str(player.name), "cave",
 			site.placement_id, _cave_uuid_of(site.placement_id), _body_key_of(planet),
 			{"system": _system_key_for(planet), "scene": _body_key_of(planet),
 				"x": entrance.x, "y": entrance.y, "z": entrance.z})

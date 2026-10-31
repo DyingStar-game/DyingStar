@@ -30,6 +30,17 @@ var _terrain: PlanetTerrain = null
 var _placement_id := ""
 var _signature := ""
 
+## The PropSync child's uuid on the node itself: what makes the cave a networked parent (PropSpawn.find_net_parent),
+## so a prop placed under it — its Discovery — keeps it as parent_id instead of being sent to the world root.
+var uuid: String:
+    get:
+        var sync := PropSync.of(self)
+        return sync.uuid if sync != null else ""
+    set(value):
+        var sync := PropSync.of(self)
+        if sync != null:
+            sync.uuid = value
+
 
 func apply_prop_data(data: Dictionary) -> void:
     _data.merge(data, true)

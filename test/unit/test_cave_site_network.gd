@@ -149,3 +149,14 @@ func test_the_server_fits_a_cave_or_records_why_not() -> void:
     assert_true(porch._refused(porch.placement(), data), "not tried again on this relief")
     data.relief_signature = "re-exported"
     assert_false(porch._refused(porch.placement(), data), "a new relief tries again")
+
+
+func test_a_cave_is_the_network_parent_of_what_is_placed_under_it() -> void:
+    # Its Discovery (scenes/exploration): without the uuid on the cave node, PropNet sends parent_id "" and
+    # Horizon moves the discovery to the world root, where no player receives it.
+    var cave: Node3D = autofree((load("res://scenes/planet/cave/cave_site.tscn") as PackedScene).instantiate())
+    cave.uuid = "4b9b5f0e-0000-5000-8000-000000000001"
+    assert_eq(PropSync.of(cave).uuid, cave.uuid, "the uuid is the PropSync child's")
+    var child := Node3D.new()
+    cave.add_child(child)
+    assert_eq(PropSpawn.parent_frame_uuid(child), cave.uuid)
