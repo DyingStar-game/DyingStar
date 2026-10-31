@@ -11,6 +11,12 @@ const MAX_DESCENT_DEG := 24.0
 const TRANSITION_GRADE_DEG := 18.0
 ## How deep (m) every mouth point must sit under the relief before the porch may bend towards the network.
 const COVERED_M := 1.0
+## Porch lengths a fit tries, 2 m apart, before refusing the site.
+const PORCH_LENGTHENINGS := 40
+## The fit's coarse pass (_porch_may_clear): one cover point in COARSE_STRIDE (a multiple of the bend's stride 7,
+## so its points are among those), and the rock (m) it may miss above the bend before the site is refused.
+const COARSE_STRIDE := 63
+const COARSE_MARGIN_M := 2.0
 ## Spacing (m) of porch rings along the gallery.
 const STEP_M := 1.5
 ## An eroded mouth carries this many outline points per vestibule ring segment, so its notches show.
@@ -557,29 +563,57 @@ static func fit(data: PlanetData, placement: CavePlacement, cave: Dictionary) ->
     if axis < 0.0:
         return {"error": "Le relief ne recouvre pas ce porche : choisir un versant ou une falaise plus marqués."}
     var height := float(spec.entrance_height_m)
+    if not _porch_may_clear(data, frame, points, cover, descent, axis, height):
+        return {"error": "Le relief ne recouvre pas la galerie de ce porche : choisir un autre emplacement."}
     # While the bend straightens the section its vault rises (h·(1 − cos descent)): lengthen the straight part
     # until the whole bend stays under the relief too.
-    for lengthen in 40:
-        var start: Vector3 = axes.forward * axis
-        var bend := maxf(12.0, height * 1.5)
-        var depth := 0.0
-        var offset := Vector3.ZERO
-        for iteration in 10:
-            offset = Vector3(0.0, 0.0, start.z + bend - CaveNaturalOpening.REAR_Z)
-            depth = maxf(_required_depth(data, frame, points, offset, cover, 7), -start.y)
-            var needed := maxf(maxf(12.0, height * 1.5), (depth + start.y) / tan(deg_to_rad(TRANSITION_GRADE_DEG)))
-            if needed <= bend + 0.05:
-                break
-            bend = needed
-        if bend > 400.0:
+    for lengthen in PORCH_LENGTHENINGS:
+        var at := _porch_at(data, frame, points, cover, descent, axis, height, 7, 1)
+        if at.is_empty():
             return {"error": "Le réseau est trop profond sous ce porche : choisir un relief plus haut."}
-        depth = ceil(maxf(_required_depth(data, frame, points, offset, cover, 1), -start.y) * 10.0) / 10.0
-        var origin := offset + Vector3.DOWN * depth
-        if _bend_clearance(data, frame, _bend(descent, axis, origin), height) >= 0.5:
-            return {"error": "", "offset": offset, "depth": depth, "descent": descent, "axis": axis, "sky_depth": 0.0,
-                "lights": light_wells(cave, offset, depth), "relief_signature": data.relief_signature}
+        if float(at.clearance) >= 0.5:
+            return {"error": "", "offset": at.offset, "depth": at.depth, "descent": descent, "axis": axis,
+                "sky_depth": 0.0, "lights": light_wells(cave, at.offset, at.depth), "relief_signature": data.relief_signature}
         axis += 2.0
     return {"error": "Le relief ne recouvre pas la galerie de ce porche : choisir un autre emplacement."}
+
+
+## The porch's bend at straight length [param axis]: the network's offset and depth keeping every cover point under
+## the relief (one point in [param stride] while the bend is sized, one in [param depth_stride] for the depth), and
+## the rock left above the bend's vault ("clearance"). {} when the network would sink too deep under the porch.
+static func _porch_at(data: PlanetData, frame: Transform3D, points: PackedVector3Array, cover: float, descent: float,
+        axis: float, height: float, stride: int, depth_stride: int) -> Dictionary:
+    var start: Vector3 = (porch_axes(descent).forward as Vector3) * axis
+    var bend := maxf(12.0, height * 1.5)
+    var depth := 0.0
+    var offset := Vector3.ZERO
+    for iteration in 10:
+        offset = Vector3(0.0, 0.0, start.z + bend - CaveNaturalOpening.REAR_Z)
+        depth = maxf(_required_depth(data, frame, points, offset, cover, stride), -start.y)
+        var needed := maxf(maxf(12.0, height * 1.5), (depth + start.y) / tan(deg_to_rad(TRANSITION_GRADE_DEG)))
+        if needed <= bend + 0.05:
+            break
+        bend = needed
+    if bend > 400.0:
+        return {}
+    depth = ceil(maxf(_required_depth(data, frame, points, offset, cover, depth_stride), -start.y) * 10.0) / 10.0
+    var origin := offset + Vector3.DOWN * depth
+    return {"offset": offset, "depth": depth, "clearance": _bend_clearance(data, frame, _bend(descent, axis, origin), height)}
+
+
+## Can some length of the porch keep its bend under the relief? The same lengths as the fit, on one cover point in
+## COARSE_STRIDE: a refused porch tried all PORCH_LENGTHENINGS on all its points, ~5 min for a 409 m network of
+## 134 k points (tarsis_3, 2026-10-31), against ~4 s here. The few points find a shallower network, so a bend a
+## little closer to the surface: their clearance came within 0.14 m of the exact one, COARSE_MARGIN_M keeps the
+## doubt for the exact pass. A network too deep at some length is left to the exact pass too, for its own message.
+static func _porch_may_clear(data: PlanetData, frame: Transform3D, points: PackedVector3Array, cover: float,
+        descent: float, axis: float, height: float) -> bool:
+    for lengthen in PORCH_LENGTHENINGS:
+        var at := _porch_at(data, frame, points, cover, descent, axis, height, COARSE_STRIDE, COARSE_STRIDE)
+        if at.is_empty() or float(at.clearance) >= 0.5 - COARSE_MARGIN_M:
+            return true
+        axis += 2.0
+    return false
 
 
 ## Version 9 light shafts pinned for a fitted network ([param offset], [param depth]), in the site frame: the
