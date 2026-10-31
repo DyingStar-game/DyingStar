@@ -457,6 +457,16 @@ func server_action_received(data: Dictionary) -> void:
 				# it within reach is a disagreement between the two (or a tampered client).
 				push_warning("[Screen] %s pressed '%s' on '%s' but no such screen is within reach"
 						% [player.client_uuid, str(data.get("state", "")), str(data.get("screen", ""))])
+		"place_name_propose":
+			# The discoverer of a place proposes its name (PlaceWatcher). WHO proposes is the player Horizon
+			# authenticated, never a field of the payload: only the discoverer's own proposal is taken.
+			var agent: Node = NetworkOrchestrator.network_agent
+			if agent != null and "discoveries" in agent:
+				var refused: String = agent.discoveries.propose(str(player.client_uuid), str(data.get("uuid", "")),
+						str(data.get("name", "")))
+				if refused != "":
+					push_warning("[Discoveries] %s proposed a name for %s: refused, %s"
+							% [player.client_uuid, str(data.get("uuid", "")), refused])
 		"update_property":
 			# Generic player-property update (tech-debt A): apply the authoritative side-effects we
 			# know about, then replicate every property to nearby clients.

@@ -300,13 +300,19 @@ func ready_for_chunk(key: String) -> bool:
 ## the ground; not an open-air hollow. From there the ground is only seen through the openings (PlanetTerrain
 ## hides its stale chunks, see _hide_stale_in_caves).
 static func inside_rock(data: PlanetData, planet_point: Vector3) -> bool:
+    return site_at(data, planet_point) != null
+
+
+## The resident cave whose rock [param planet_point] is inside (see [method inside_rock]), or null: which cave
+## a player has entered, for its discovery (server/discoveries.gd, PlaceWatcher).
+static func site_at(data: PlanetData, planet_point: Vector3) -> CavePlacement:
     for plan: Dictionary in data.stargrot_plans:
         var placement: CavePlacement = plan.placement
         if CaveGenerator.contains(plan.cave, placement.cave_transform().affine_inverse() * planet_point):
-            return true
+            return placement
         if CaveEntrance.in_gallery(data, placement, planet_point):
-            return true
-    return false
+            return placement
+    return null
 
 
 ## Only the actual cavity exempts a body from the below-surface rescue.

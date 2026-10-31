@@ -169,6 +169,8 @@ const ACTIVITY_TYPE_KEYS: Dictionary = {
 	"friend_added": "%%SVC_ENUM_ACTIVITY_FRIEND_ADDED",
 	"player_blocked": "%%SVC_ENUM_ACTIVITY_PLAYER_BLOCKED",
 	"corporation_application_sent": "%%SVC_ENUM_ACTIVITY_CORP_APPLICATION_SENT",
+	"place_name_approved": "%%SVC_ENUM_ACTIVITY_PLACE_NAME_APPROVED",
+	"place_name_refused": "%%SVC_ENUM_ACTIVITY_PLACE_NAME_REFUSED",
 }
 ## Legacy corporation permissions (pre-ACL). They remain valid rank permissions, and they are the
 ## labels a list line uses; the full catalogue — localized descriptions, `satisfiedBy`,

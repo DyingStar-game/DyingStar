@@ -23,6 +23,9 @@ extends RefCounted
 ## remaps scenes to [code].tscn.remap[/code] but leaves json alone, so this path is the same in the
 ## editor and in the shipped client. That distinction is exactly what broke the teleporter's list.
 const POI_DIR: String = "res://assets/qgis/export"
+## The kinds of discovered places (Discovery) a service point can mark, with the chart's words for one that
+## has no proposed name yet.
+const UNCHARTED_KEYS: Dictionary = {"cave": "%%PLACE_UNCHARTED_CAVE"}
 
 ## Words a level designer writes in a file name that should not be title-cased back at the player.
 const KEEP_UPPER: Array[String] = ["hq", "poi", "lz"]
@@ -139,9 +142,15 @@ static func service_entry(poi: Dictionary, body_key: String) -> Dictionary:
 	var raw_name := str_of(poi.get("name"))
 	dir = dir.normalized()
 	var lonlat := HEALPix.vec2lonlat(dir)
+	var metadata: Dictionary = poi.get("metadata") if poi.get("metadata") is Dictionary else {}
+	# A discovered place still without a proposed name (server/discoveries.gd): the service holds a
+	# placeholder, the chart says it in the player's language.
+	var label := label_of(raw_name)
+	if bool(metadata.get("uncharted", false)) and UNCHARTED_KEYS.has(str(metadata.get("kind", ""))):
+		label = ServiceTypes.text(str(UNCHARTED_KEYS[str(metadata.get("kind", ""))]))
 	return {
 		"name": raw_name,
-		"label": label_of(raw_name),
+		"label": label,
 		"kind": _kind_of(poi),
 		"population": 0,
 		"radius_m": ServiceTypes.float_of(poi.get("radiusM")),
@@ -164,6 +173,10 @@ static func service_entry(poi: Dictionary, body_key: String) -> Dictionary:
 ## mission's — the older of the two readings, and the one that is right when the client does not
 ## know.
 static func _kind_of(poi: Dictionary) -> String:
+	# A discovered place's point (server/discoveries.gd) is drawn as what it marks — a cave — whoever owns it.
+	var metadata: Dictionary = poi.get("metadata") if poi.get("metadata") is Dictionary else {}
+	if UNCHARTED_KEYS.has(str(metadata.get("kind", ""))) and str(metadata.get("discovery_uuid", "")) != "":
+		return str(metadata.get("kind", ""))
 	var owner := str_of(poi.get("ownerType"))
 	if owner != "mission":
 		return owner
