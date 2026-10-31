@@ -78,6 +78,14 @@ static func site_tiles(data: PlanetData, placement: CavePlacement, index_nside: 
             func(rule: CaveDecorationRule): return rule != null and rule.support == "entrance_ground") else 0.0
         _collect_tiles(data, opening.frame, -float(opening.length) - apron, float(opening.get("back", 0.0)) + apron,
             float(opening.width) * 0.5 + apron, tiles, index_nside)
+    # The ground refined round the openings (CaveRefine), up to two grid pitches past it: a chunk whose border cell
+    # is refined beside it must be rebuilt with it, or the edge they share opens.
+    var surface := placement.surface_transform()
+    var reach := CaveRefine.MARGIN_M + 2.0 * GradeSettings.CARVE_MAX_VTX_SPACING_M
+    for rect in CaveRefine.footprints(placement):
+        var grown := rect.grow(reach)
+        _collect_tiles(data, surface * Transform3D(Basis.IDENTITY, Vector3(grown.get_center().x, 0.0, 0.0)),
+            grown.position.y, grown.end.y, grown.size.x * 0.5, tiles, index_nside)
     return tiles
 
 
@@ -140,6 +148,10 @@ static func prepare(data: PlanetData) -> String:
 ## CPU geometry and canonical heights only, like the native terrain workers.
 ## The caller must warm the native modules and acquire tiles before dispatching.
 static func build_plan(data: PlanetData, placement: CavePlacement, dressing: Dictionary = {}) -> Dictionary:
+    return CaveGround.run(data, func(): return _build_plan(data, placement, dressing))
+
+
+static func _build_plan(data: PlanetData, placement: CavePlacement, dressing: Dictionary) -> Dictionary:
     var cave := CaveGenerator.build(placement.profile.snapshot(placement.seed))
     if not str(cave.error).is_empty():
         return {"error": cave.error}
@@ -296,13 +308,19 @@ func ready_for_chunk(key: String) -> bool:
 ## the ground; not an open-air hollow. From there the ground is only seen through the openings (PlanetTerrain
 ## hides its stale chunks, see _hide_stale_in_caves).
 static func inside_rock(data: PlanetData, planet_point: Vector3) -> bool:
+    return site_at(data, planet_point) != null
+
+
+## The resident cave whose rock [param planet_point] is inside (see [method inside_rock]), or null: which cave
+## a player has entered, for its discovery (server/discoveries.gd, PlaceWatcher).
+static func site_at(data: PlanetData, planet_point: Vector3) -> CavePlacement:
     for plan: Dictionary in data.stargrot_plans:
         var placement: CavePlacement = plan.placement
         if CaveGenerator.contains(plan.cave, placement.cave_transform().affine_inverse() * planet_point):
-            return true
+            return placement
         if CaveEntrance.in_gallery(data, placement, planet_point):
-            return true
-    return false
+            return placement
+    return null
 
 
 ## Only the actual cavity exempts a body from the below-surface rescue.

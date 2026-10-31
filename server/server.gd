@@ -12,6 +12,8 @@ const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
 ## Seeds mining zones under players as they walk the planet. Server-owned: it publishes zones
 ## through NetworkOrchestrator.spawn_prop_authoritative and arms/disarms their detection.
 var _mining_planner := MiningZonePlanner.new()
+## Who discovered which place first, and the names they propose (server/discoveries.gd).
+var discoveries := Discoveries.new()
 ## Stops stepping the physics space of every planet with nothing in it that can move (see the class).
 var planet_spaces := PlanetSpaceGate.new()
 ## Max number of [Pin] log entries before suppressing further output.
@@ -227,6 +229,15 @@ func _ready() -> void:
 	# created lazily, which is why the planner re-reads it through .get() instead of caching one.
 	_mining_planner.bind_props_list(props_list)
 	_mining_planner.bind_registry(func(uuid: String) -> bool: return prop_registry.has(uuid))
+	discoveries.registry_data = func(uuid: String) -> Dictionary:
+		return ((prop_registry.get_entry(uuid).get("event", {}) as Dictionary).get("data", {}) as Dictionary) \
+				.get("object_data", {})
+	discoveries.update_prop = func(uuid: String, props: Dictionary, type: String) -> void:
+		_on_prop_update(uuid, props, type)
+	discoveries.spawn_prop = func(data: Dictionary) -> void:
+		NetworkOrchestrator.protected_prop_uuids[str(data["uuid"])] = true
+		NetworkOrchestrator.spawn_prop_authoritative(data, false)
+	add_child(discoveries)
 	_send_metrics()
 	# Say it out loud at boot, both ways. A rig that is silently off looks exactly like a server with
 	# nothing to report, and that ambiguity is what a low-TPS log must never contain.
@@ -860,6 +871,7 @@ func _refresh_active_body_pins() -> void:
 				player_planet, player_node as Node3D, player_uuid as String)
 			if _perf_report:
 				_perf_planner_usec += Time.get_ticks_usec() - _tpl
+			_discover_from(player_node as Node3D, player_planet)
 	_mining_planner.end_sweep()
 	# Players asleep for a hand-over: the ground under them is built before they wake (pins only, no
 	# mining plan — they are not playing here yet).
@@ -2775,6 +2787,8 @@ func _stream_place(uuid: String) -> void:
 		pos = abs_pos - _planet_orbital_abs(planet)
 	if planet.planet_data == null or planet.planet_terrain == null:
 		prop_registry.place_always(uuid)
+	elif str(e["type"]) == CAVE_TYPE:
+		_stream_place_cave(uuid, planet, pos, od)
 	elif not planet.within_ground_reach(pos):
 		_stream_place_radius(uuid, planet.uuid, pos)  # aloft: no chunk under it, distance decides
 	else:
@@ -2787,6 +2801,29 @@ func _stream_place_radius(uuid: String, world: String, pos: Vector3) -> void:
 		prop_registry.place_always(uuid)  # no definition: we cannot tell when it is needed
 	else:
 		prop_registry.place_radius(uuid, world, pos, r)
+
+
+## A cave streams by distance, not by resident chunk: its server node fits it to the relief (CaveSite) when a
+## player comes within its zone-6 radius (~3 km), long before the chunks the pins keep resident reach it. One not
+## fitted to this relief has no known altitude (a QGIS export gives only its longitude and latitude): it waits
+## at sea level, "level", and the distance test brings each viewer down to sea level too (_stream_level_viewer).
+func _stream_place_cave(uuid: String, planet: Planet, pos: Vector3, od: Dictionary) -> void:
+	var site := CavePlacement.from_prop_data(od)
+	var level := site == null or site.needs_fit(planet.planet_data)
+	if level and not pos.is_zero_approx():
+		pos = pos.normalized() * planet.planet_data.radius
+	_stream_place_radius(uuid, planet.uuid, pos)
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if int(e.get("kind", -1)) == PropRegistry.KIND_RADIUS:
+		e["level"] = level
+
+
+## [param viewer] of [param world] brought down to its planet's sea level (the "level" caves), or null in space.
+func _stream_level_viewer(world: String, viewer: Vector3) -> Variant:
+	var planet = props_list["planets"].get(world)
+	if not (planet is Planet) or (planet as Planet).planet_data == null or viewer.is_zero_approx():
+		return null
+	return viewer.normalized() * (planet as Planet).planet_data.radius
 
 
 ## The chunk keys an item at planet-local [param pos] stands on: the fine collision key (what the pins
@@ -2859,7 +2896,8 @@ func _stream_should_live(entry: Dictionary) -> bool:
 			var reach: float = float(entry["radius"])
 			var r2: float = reach * reach
 			for v in _stream_viewers(str(entry["world"])):
-				if (v as Vector3).distance_squared_to(entry["pos"]) <= r2:
+				var at: Variant = _stream_level_viewer(str(entry["world"]), v) if entry.get("level", false) else v
+				if at != null and (at as Vector3).distance_squared_to(entry["pos"]) <= r2:
 					return true
 			return false
 	return false
@@ -3146,6 +3184,15 @@ func _stream_sweep() -> void:
 					_stream_enqueue(u)
 				for u in prop_registry.uuids_near(str(world), v, keep_factor):
 					keep[u] = true
+				var lv: Variant = _stream_level_viewer(str(world), v)
+				if lv == null:
+					continue
+				for u in prop_registry.uuids_near(str(world), lv, 1.0):
+					if prop_registry.entries[u].get("level", false):
+						_stream_enqueue(u)
+				for u in prop_registry.uuids_near(str(world), lv, keep_factor):
+					if prop_registry.entries[u].get("level", false):
+						keep[u] = true
 		var now: int = Time.get_ticks_msec()
 		for u in _stream_live_radius.keys():
 			var e: Dictionary = prop_registry.get_entry(u)
@@ -3467,7 +3514,8 @@ func _stream_register_cave(uuid: String) -> void:
 	if not (planet is Planet) or (planet as Planet).planet_terrain == null:
 		return
 	var site := CavePlacement.from_prop_data(e["event"]["data"].get("object_data", {}))
-	if site != null:
+	# Not fitted to this relief yet: nothing to cut until its node fits it (CaveSite).
+	if site != null and not site.needs_fit((planet as Planet).planet_data):
 		(planet as Planet).planet_terrain.register_cave_site(site)
 
 
@@ -3757,6 +3805,38 @@ func mission_place_of(node: Node3D) -> Variant:
 			_system_key_for(planet), _body_key_of(planet), position))
 
 
+## A player standing in a cave reports it to [member discoveries]: the first one to enter becomes its
+## discoverer. The cave is the one whose rock they are inside (CavePlanetRegistry.site_at): a fitted,
+## registered cave, so the discovery is never made of one the server refused.
+func _discover_from(player: Node3D, planet: Planet) -> void:
+	var data: PlanetData = planet.planet_data
+	if data == null or data.stargrot_plans.is_empty():
+		return
+	var site := CavePlanetRegistry.site_at(data, planet.to_local(player.global_position))
+	if site == null:
+		return
+	var entrance: Vector3 = site.surface_transform().origin
+	discoveries.found(str(player.get("client_uuid")), str(player.get("player_display_name")), "cave",
+			site.placement_id, _cave_uuid_of(site.placement_id), _body_key_of(planet),
+			{"system": _system_key_for(planet), "scene": _body_key_of(planet),
+				"x": entrance.x, "y": entrance.y, "z": entrance.z})
+
+
+## The uuid of the cave prop placed as [param placement_id]: the import's stable one, else whichever live cave
+## carries that placement; "" when the server holds neither.
+func _cave_uuid_of(placement_id: String) -> String:
+	var stable := PropSpawn.stable_uuid("cave:" + placement_id)
+	if prop_registry.has(stable):
+		return stable
+	var caves: Dictionary = props_list.get(CAVE_TYPE, {})
+	for uuid: String in caves:
+		var cave = caves[uuid]
+		if is_instance_valid(cave) and cave is CaveSite and str((cave as CaveSite)._data.get("placement_id", "")) \
+				== placement_id:
+			return uuid
+	return ""
+
+
 ## The body's key — "tarsis_3" — which is what SystemScenes and the services speak in.
 ##
 ## ⚠️ NOT str(planet.name): that is the name the node carries on the wire, which is the body's
@@ -4013,6 +4093,7 @@ func manage_zone(event: Dictionary) -> void:
 	# Push HEALPix chunk residency to every spawned planet so collision
 	# memory tracks our authoritative zones.  See _push_zone_residency_*.
 	_zones_initialized = true
+	discoveries.zones_assigned()
 	_push_zone_residency_to_all()
 	if server_zones.is_empty():
 		_unload_world_objects()

@@ -64,7 +64,8 @@
 				"entrance_noise",
 				"network_style",
 				"gallery_noise",
-				"light_shafts"
+				"light_shafts",
+				"fit_error"
 			]
 		}
 	]

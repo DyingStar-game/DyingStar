@@ -1,0 +1,36 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 3000.0,
+			"frequency": 1.0,
+			"properties": [
+				"position",
+				"rotation",
+				"parent_id"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 3000.0,
+			"frequency": 1.0,
+			"properties": [
+				"scenename",
+				"place_kind",
+				"place_id",
+				"place_uuid",
+				"planet_name",
+				"discoverer_id",
+				"discoverer_name",
+				"discovered_at",
+				"status",
+				"proposed_name",
+				"proposed_at",
+				"approved_name",
+				"refusal_reason",
+				"decided_at",
+				"poi_id"
+			]
+		}
+	]
+}

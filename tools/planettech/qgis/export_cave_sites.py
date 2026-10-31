@@ -1,17 +1,28 @@
 """
-Export the `cave_site` point layer (layers/caves.py) to the authored cave file.
+Export the `cave_site` point layer (layers/caves.py) to the persistence import.
 ==============================================================================
 
 One entry per point: its longitude / latitude (EPSG:4326, the game's
 CavePlacement.longitude_deg / latitude_deg with no conversion, format 2) and
 every attribute of the layer, under the names CavePlacement.from_prop_data
-reads.  It is NOT the persistence import yet: the values fitted to the relief
-are computed by Godot on the current terrain, which writes the import file::
+reads.  Two files::
 
-    QGIS ── export_cave_sites.py ──▶ <dir>/<planet>_cave_sites.json
-    <godot> --headless --path <repo> res://tools/stargrot/fit_cave_items.tscn \\
-        -- --in=<dir>/<planet>_cave_sites.json --out=<dir>/<planet>_cave_items.json
+    QGIS ── export_cave_sites.py ──▶ <dir>/<planet>_cave_sites.json   (authored)
+                                 ──▶ <dir>/<planet>_cave_items.json   (admin panel import)
     admin panel ▸ import ◀── <dir>/<planet>_cave_items.json
+
+The import carries the authored caves NOT fitted to the relief (terrain_version
+empty): the game server fits each one when a player first comes within ~3 km
+of it (CaveSite) and persists the result.  The optional Godot step fits them
+all beforehand, lists the refused ones and rewrites the same import file::
+
+    <godot> --headless --path <repo> res://tools/stargrot/fit_cave_items.tscn \\
+        -- --in=<dir>/<planet>_cave_sites.json
+
+Importing this file again resets every cave to "not fitted": the server fits
+them again as players come near.  The prop uuids derive from the placement ids
+(PropSpawn.stable_uuid), so an import updates the caves instead of adding new
+ones.
 
 A point added in QGIS without a `placement_id` gets one here, written back
 into the layer: it is the cave's identity (its prop uuid derives from it), so
@@ -26,6 +37,7 @@ Run from the QGIS Python Console:
 """
 import configparser
 import json
+import math
 import os
 import uuid
 
@@ -38,11 +50,18 @@ DEFAULT_EXPORT_DIR = os.path.expanduser("~/dyingstar-private/caves")
 SKIPPED = {"fid", "geom", "last_updated"}
 # Integer columns the game reads as booleans.
 BOOLEANS = {"exit_open"}
+# PropSpawn.STABLE_UUID_NAMESPACE: a cave's prop uuid is uuid5(namespace, "cave:" + placement_id).
+STABLE_UUID_NAMESPACE = uuid.UUID("a0affe13-815e-4162-b78b-e3988ca71339")
+# The Horizon alias of each planet's object, the caves' parent (fit_cave_items.gd PARENT_ALIASES); the
+# project variable planet_parent_id overrides it.
+PARENT_ALIASES = {"tarsis_3": "_planet_SandBox"}
+CAVE_SCENE = "scenes/planet/cave/cave_site.tscn"
 
 _project = QgsProject.instance()
 _scope = QgsExpressionContextUtils.projectScope(_project)
 PLANET_NAME = str(_scope.variable("planet_name") or "")
 PLANET_RADIUS = float(_scope.variable("planet_radius_m") or 6_356_000)
+PLANET_PARENT = str(_scope.variable("planet_parent_id") or PARENT_ALIASES.get(PLANET_NAME, ""))
 
 
 def resolve_export_dir():
@@ -107,9 +126,43 @@ def _assign_missing_ids(layer):
     return len(missing)
 
 
+def _item(site):
+    """The admin panel import entry of an authored cave: a "cave" prop not fitted to the relief yet."""
+    lon = math.radians(site["longitude_deg"])
+    lat = math.radians(site["latitude_deg"])
+    # CaveTerrain.lonlat_to_dir, at sea level: the server places it on the ground once fitted.
+    direction = (math.cos(lat) * math.cos(lon), math.sin(lat), -math.cos(lat) * math.sin(lon))
+    data = dict(site)
+    data.update({
+        "parent_id": PLANET_PARENT,
+        "scenename": CAVE_SCENE,
+        "position": {"x": direction[0] * PLANET_RADIUS, "y": direction[1] * PLANET_RADIUS,
+                     "z": direction[2] * PLANET_RADIUS},
+        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+        # Clears a previous fit and refusal: the definition may have changed.
+        "terrain_version": "",
+        "terrain_relief_signature": "",
+        "fit_error": {},
+    })
+    return {"object_type": "cave",
+            "object_uuid": str(uuid.uuid5(STABLE_UUID_NAMESPACE, "cave:" + site["placement_id"])),
+            "object_data": data}
+
+
+def _write_json(path, payload):
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as out:
+        json.dump(payload, out, indent=1, ensure_ascii=False)
+        out.write("\n")
+    os.replace(tmp_path, path)
+
+
 def export():
     if not PLANET_NAME:
         raise RuntimeError("The project has no planet_name variable (setup_planet_project.py sets it)")
+    if not PLANET_PARENT:
+        raise RuntimeError("No Horizon parent known for %s: set the project variable planet_parent_id "
+                           "(_planet_<name>, as the admin panel shows it)" % PLANET_NAME)
     layer = find_cave_layer()
     if layer.isEditable():
         raise RuntimeError("Save or roll back the edits of %s first" % layer.name())
@@ -137,14 +190,12 @@ def export():
     out_dir = resolve_export_dir()
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "%s_cave_sites.json" % PLANET_NAME)
-    payload = {"planet_name": PLANET_NAME, "planet_radius": PLANET_RADIUS, "crs": "EPSG:4326",
-               "count": len(sites), "sites": sites}
-    tmp_path = out_path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as out:
-        json.dump(payload, out, indent=1, ensure_ascii=False)
-        out.write("\n")
-    os.replace(tmp_path, out_path)
+    _write_json(out_path, {"planet_name": PLANET_NAME, "planet_radius": PLANET_RADIUS, "crs": "EPSG:4326",
+                           "count": len(sites), "sites": sites})
+    items_path = os.path.join(out_dir, "%s_cave_items.json" % PLANET_NAME)
+    _write_json(items_path, [_item(site) for site in sites])
     print("[export_cave_sites] %d caves (%d new ids) -> %s" % (len(sites), added, out_path))
+    print("[export_cave_sites] admin panel import (not fitted, the server fits them) -> %s" % items_path)
     return out_path
 
 
