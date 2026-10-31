@@ -78,6 +78,14 @@ static func site_tiles(data: PlanetData, placement: CavePlacement, index_nside: 
             func(rule: CaveDecorationRule): return rule != null and rule.support == "entrance_ground") else 0.0
         _collect_tiles(data, opening.frame, -float(opening.length) - apron, float(opening.get("back", 0.0)) + apron,
             float(opening.width) * 0.5 + apron, tiles, index_nside)
+    # The ground refined round the openings (CaveRefine), up to two grid pitches past it: a chunk whose border cell
+    # is refined beside it must be rebuilt with it, or the edge they share opens.
+    var surface := placement.surface_transform()
+    var reach := CaveRefine.MARGIN_M + 2.0 * GradeSettings.CARVE_MAX_VTX_SPACING_M
+    for rect in CaveRefine.footprints(placement):
+        var grown := rect.grow(reach)
+        _collect_tiles(data, surface * Transform3D(Basis.IDENTITY, Vector3(grown.get_center().x, 0.0, 0.0)),
+            grown.position.y, grown.end.y, grown.size.x * 0.5, tiles, index_nside)
     return tiles
 
 

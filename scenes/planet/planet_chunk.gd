@@ -248,6 +248,19 @@ static func generate_mesh(
 			_rw_shave = GradeBed.make_coarse_ctx(data, hp_nside, hp_ipix, _rw_pitch)
 			if not _rw_shave.is_empty():
 				_rw_band.resize((res + 1) * (res + 1))
+	# Cave openings refine their cells like a pad (CaveRefine): the ground meets
+	# an entrance built on the exact relief instead of passing metres under it
+	# on a mountain slope. Same finest-grid gate, so never alongside the shave.
+	if hp_mode and res > 0:
+		var _cv_pitch := HEALPix.pixel_side_length(hp_nside, data.radius) / float(res)
+		var _cv_zones := CaveRefine.zones(data, hp_nside, hp_ipix, _cv_pitch)
+		if not _cv_zones.is_empty():
+			if _rw_ctx.is_empty():
+				_rw_ctx = {"m_per_deg": data.radius * PI / 180.0,
+						"floor_margin": GradeBed.floor_margin_m(_cv_pitch)}
+				_rw_band.resize((res + 1) * (res + 1))
+				_rw_h.resize((res + 1) * (res + 1))
+			_rw_ctx["caves"] = _cv_zones
 
 	# Quick check: does this chunk potentially overlap any liquid/shallow zone?
 	# Derived from recipe data — no GeoJSON needed.
@@ -2742,7 +2755,15 @@ static func generate_mesh(
 
 	# Zéro = tous les sommets ont lu leur propre tuile ; le mesh est persistable.
 	mesh.set_meta("provisional_climbs", data.climb_count())
-	return CaveTerrainCut.mesh(mesh, chunk_center, data.stargrot_placements())
+	return CaveTerrainCut.mesh(mesh, chunk_center, data.stargrot_placements(), data,
+			_cell_m(data, hp_nside, resolution))
+
+
+## Side (m) of a HEALPix chunk's grid cell, INF off the HEALPix path (a cave cut then keeps the clipped heights).
+static func _cell_m(data: PlanetData, hp_nside: int, resolution: int) -> float:
+	if hp_nside <= 0 or resolution <= 0:
+		return INF
+	return data.radius * sqrt(PI / 3.0) / float(hp_nside) / float(resolution)
 
 
 ## Generate a [ConcavePolygonShape3D] for server-side collision.
@@ -2846,6 +2867,16 @@ static func generate_collision_shape(
 		if not _col_rw_ctx.is_empty():
 			_col_rw_band.resize((res + 1) * (res + 1))
 			_col_rw_h.resize((res + 1) * (res + 1))
+	# Cave openings, as the mesh's (CaveRefine).
+	if hp_mode and res > 0:
+		var _cv_zones := CaveRefine.zones(data, hp_nside, hp_ipix, _col_crack_spacing)
+		if not _cv_zones.is_empty():
+			if _col_rw_ctx.is_empty():
+				_col_rw_ctx = {"m_per_deg": data.radius * PI / 180.0,
+						"floor_margin": GradeBed.floor_margin_m(_col_crack_spacing)}
+				_col_rw_band.resize((res + 1) * (res + 1))
+				_col_rw_h.resize((res + 1) * (res + 1))
+			_col_rw_ctx["caves"] = _cv_zones
 
 	var has_liquid_overlap := false
 	var has_linear_overlap := false
@@ -3330,7 +3361,8 @@ static func generate_collision_shape(
 	# surface from above. Double-sided collision makes the terrain solid
 	# regardless of triangle winding.
 	shape.backface_collision = true
-	shape.set_faces(CaveTerrainCut.collision_faces(faces, col_origin, data.stargrot_placements()))
+	shape.set_faces(CaveTerrainCut.collision_faces(faces, col_origin, data.stargrot_placements(), data,
+			_cell_m(data, hp_nside, res)))
 	return shape
 
 

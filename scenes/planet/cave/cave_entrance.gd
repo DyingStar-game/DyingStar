@@ -6,12 +6,13 @@ extends RefCounted
 ## Depth (m) under the relief where the ground cover is gone: on rock faces, and on flat floors and talus.
 const COVER_STEEP_M := 1.5
 const COVER_FLAT_M := 6.0
-## Rim seal (seal_rim). The terrain shown is a mesh of ~25 m cells over a smoother relief, so the cut ground's
-## edge stands up to ~0.6 m above or below a rim built on the exact relief: a slit. The rim's lip rises LIP_M
-## above the ground LIP_OUT_M outside the cut and dips back KNEE_DROP_M under it KNEE_M out (a narrow rounded
-## lip, not a berm), then a collar runs COLLAR_M out under the ground, its outer edge COLLAR_DROP_M below it,
-## and a curtain hangs CURTAIN_M from that edge for a ground shown even lower.
-const LIP_M := 0.6
+## Rim seal (seal_rim). The terrain shown is a mesh of ~25 m cells over a finer relief; the cut puts its edge
+## back on the exact relief the rim is built on (CaveTerrainCut._snap), and the ground near it follows within a
+## few centimetres. The rim's lip rises LIP_M above the ground LIP_OUT_M outside the cut (it was 0.6 m while the
+## cut edge kept the mesh's heights: a kerb round every opening) and dips back KNEE_DROP_M under it KNEE_M out,
+## then a collar runs COLLAR_M out under the ground, its outer edge COLLAR_DROP_M below it, and a curtain hangs
+## CURTAIN_M from that edge for a ground shown lower (a coarse chunk seen from afar keeps the mesh's heights).
+const LIP_M := 0.1
 const LIP_OUT_M := 0.4
 const KNEE_M := 1.0
 const KNEE_DROP_M := 0.3
