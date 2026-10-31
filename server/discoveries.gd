@@ -35,6 +35,7 @@ var now_unix: Callable = func() -> int: return int(Time.get_unix_time_from_syste
 var _settled_at := 0
 var _poi_retry_at: Dictionary = {}  # discovery uuid -> now_ms() before which the point is not asked again
 var _poi_busy: Dictionary = {}  # discovery uuid -> true while its point is being created
+var _repaired: Dictionary = {}  # discovery uuid -> true once created again under its place (_repair)
 var _inventory_url := ""
 var _client: HttpClient = null
 
@@ -64,18 +65,40 @@ func found(player_id: String, player_name: String, kind: String, place_id: Strin
 	var uuid := Discovery.uuid_for(kind, place_id)
 	var known: Dictionary = registry_data.call(uuid)
 	if not known.is_empty():
-		if str(known.get("discoverer_id", "")) == player_id and str(known.get("poi_id", "")) == "":
+		if str(known.get("parent_id", "")) == "":
+			_repair(uuid, known, place_uuid, player_id, player_name)
+		elif str(known.get("discoverer_id", "")) == player_id and str(known.get("poi_id", "")) == "":
 			_ensure_poi(uuid, known, location)
 		return
 	if int(now_ms.call()) < _settled_at:
 		return
 	var data := Discovery.record(kind, place_id, place_uuid, planet_name, player_id, player_name,
 			int(now_unix.call()))
-	data.merge({"type": Discovery.TYPE, "uuid": uuid, "scenename": Discovery.SCENE, "parent_id": place_uuid,
-		"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}})
+	data.merge(_prop_fields(uuid, place_uuid))
 	spawn_prop.call(data)
 	print("[Discoveries] %s discovered %s %s" % [player_name, kind, place_id])
 	_ensure_poi(uuid, data, location)
+
+
+## A discovery stored without its place as parent: created while Horizon had no definition of the type, which
+## keeps the row but drops its zone-0 fields. It then sits at the origin of the universe, where no player
+## ever receives it. Created again whole, once per boot, with what it holds (a create replaces the row).
+func _repair(uuid: String, known: Dictionary, place_uuid: String, player_id: String, player_name: String) -> void:
+	if _repaired.has(uuid) or int(now_ms.call()) < _settled_at:
+		return
+	_repaired[uuid] = true
+	var data := known.duplicate(true)
+	data.merge(_prop_fields(uuid, place_uuid), true)
+	if str(data.get("discoverer_name", "")) == "" and str(data.get("discoverer_id", "")) == player_id:
+		data["discoverer_name"] = player_name
+	spawn_prop.call(data)
+	push_warning("[Discoveries] %s had no parent: created again under %s" % [uuid, place_uuid])
+
+
+## The prop's own fields: a child of the place, at its origin.
+static func _prop_fields(uuid: String, place_uuid: String) -> Dictionary:
+	return {"type": Discovery.TYPE, "uuid": uuid, "scenename": Discovery.SCENE, "parent_id": place_uuid,
+		"position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}}
 
 
 ## The player [param player_id] proposes [param raw_name] for the discovery [param uuid]. Returns "" when it is
