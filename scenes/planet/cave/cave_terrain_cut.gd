@@ -42,6 +42,19 @@ static func _pieces(poly: Array, half_width: float, length_m: float, outline: Pa
         remainder = _clip_axis(remainder, axis.y, false)
         if remainder.size() < 3:
             return kept
+    for plane in _planes(half_width, length_m, outline):
+        if remainder.size() < 3:
+            break
+        var outside := _clip(remainder, plane, false)
+        if outside.size() >= 3:
+            kept.append(outside)
+        remainder = _clip(remainder, plane, true)
+    return kept
+
+
+## The inward planes of one convex region ([method _distance] >= 0 inside): [param outline], or the
+## [param half_width] × [param length_m] rectangle in front of the frame.
+static func _planes(half_width: float, length_m: float, outline: PackedVector2Array) -> Array[Vector3]:
     var planes: Array[Vector3] = [Vector3(1.0, 0.0, half_width), Vector3(-1.0, 0.0, half_width),
         Vector3(0.0, 1.0, length_m), Vector3(0.0, -1.0, 0.0)]
     if not outline.is_empty():
@@ -55,14 +68,7 @@ static func _pieces(poly: Array, half_width: float, length_m: float, outline: Pa
             var normal := Vector2(-delta.y, delta.x).normalized()
             if normal.dot(center - a) < 0: normal = -normal
             planes.append(Vector3(normal.x, normal.y, -normal.dot(a)))
-    for plane in planes:
-        if remainder.size() < 3:
-            break
-        var outside := _clip(remainder, plane, false)
-        if outside.size() >= 3:
-            kept.append(outside)
-        remainder = _clip(remainder, plane, true)
-    return kept
+    return planes
 
 
 static func _clip(poly: Array, plane: Vector3, inside: bool) -> Array:
@@ -130,7 +136,260 @@ static func _axis(opening: Dictionary) -> Vector2:
     return opening.get("axis", Vector2(-1000.0, 1000.0))
 
 
-static func collision_faces(faces: PackedVector3Array, origin: Vector3, placements: Array[CavePlacement]) -> PackedVector3Array:
+## Cut edge on the relief. The terrain shown is a mesh of ~25 m cells over a finer relief and clipping keeps its
+## interpolated heights, so the cut edge stood up to ~0.5 m off the cave's rim, which is built on the exact relief
+## (CaveEntrance.ground_in_frame); a 0.6 m lip hid the slit, a kerb round every opening (2026-10-31). Every vertex
+## a cut leaves on an opening's outline now moves onto that relief, and the ground meets the rim; the other
+## vertices of the cut triangles follow, less and less, up to SNAP_FADE_M from the outline (the clipping leaves
+## some a few centimetres from the edge, which would otherwise raise the ground right back up). On the finest grid
+## the cells round an opening are refined first (CaveRefine), so this only takes up what the ~3 m sub-cells miss.
+## Returns what [method _triangles] needs, or {} when the edge stays as clipped: an opening not cut straight down
+## (a porch bored into its approach's cliff) or a chunk whose cells ([param cell_m]) exceed SNAP_MAX_CELL_M: a
+## coarse chunk, seen from afar, lies tens of metres off the relief on a mountain, and its edge pulled onto the
+## relief rose as a spike through the cave's mouth (2026-10-31). Near such a porch ([param porches], its cave's) the ground
+## stays as clipped, PORCH_CLEAR_M around it: moved, it rose into the mouth (a hangar on a slope, 2026-10-31).
+const SNAP_FADE_M := 4.0
+const PORCH_CLEAR_M := 2.0
+const SNAP_MAX_CELL_M := 30.0
+
+
+static func _snap(opening: Dictionary, data: PlanetData, cell_m: float, porches: Array = []) -> Dictionary:
+    if data == null or cell_m > SNAP_MAX_CELL_M or opening.has("axis"):
+        return {}
+    var frame: Transform3D = opening.frame
+    if frame.basis.y.normalized().dot(frame.origin.normalized()) < 0.999:
+        return {}
+    var half := float(opening.width) * 0.5
+    var regions: Array = []
+    for part: PackedVector2Array in opening.get("parts", []):
+        regions.append(_planes(half, float(opening.length), part))
+    if regions.is_empty():
+        regions.append(_planes(half, float(opening.length), opening.get("polygon", PackedVector2Array())))
+    var clear: Array = []
+    for porch: Dictionary in porches:
+        var parts: Array = porch.get("parts", [])
+        var porch_regions: Array = []
+        for part: PackedVector2Array in parts if not parts.is_empty() else [porch.get("polygon", PackedVector2Array())]:
+            porch_regions.append(_planes(float(porch.width) * 0.5, float(porch.length), part))
+        clear.append({"to_porch": (porch.frame as Transform3D).affine_inverse() * frame, "regions": porch_regions,
+            "axis": _axis(porch)})
+    return {"data": data, "frame": frame, "regions": regions,
+        "outline": opening.get("polygon", PackedVector2Array()), "clear": clear}
+
+
+## How much of its shift a vertex at [param position] (opening frame) takes: none on a bored porch's prism, all
+## from PORCH_CLEAR_M away (the distance from a convex prism, through its farthest plane, bounds the true one).
+static func _porch_weight(position: Vector3, snap: Dictionary) -> float:
+    var nearest := INF
+    for porch: Dictionary in snap.clear:
+        var local: Vector3 = (porch.to_porch as Transform3D) * position
+        var axis: Vector2 = porch.axis
+        for planes: Array in porch.regions:
+            var outside := maxf(axis.x - local.y, local.y - axis.y)
+            for plane: Vector3 in planes:
+                outside = maxf(outside, -_distance(local, plane))
+            nearest = minf(nearest, maxf(outside, 0.0))
+    return 1.0 if nearest == INF else smoothstep(0.0, PORCH_CLEAR_M, nearest)
+
+
+## Whether a vertex kept by the cut lies on the removed region's outline (it is outside or on every region).
+static func _on_outline(point: Vector3, regions: Array) -> bool:
+    for planes: Array in regions:
+        var inside := true
+        for plane: Vector3 in planes:
+            if _distance(point, plane) < -0.001:
+                inside = false
+                break
+        if inside:
+            return true
+    return false
+
+
+## How far (m) the vertex at [param position] moves to meet the relief, faded out SNAP_FADE_M from the outline.
+static func _fade_shift(position: Vector3, snap: Dictionary) -> Vector3:
+    var outline: PackedVector2Array = snap.outline
+    var plan := Vector2(position.x, position.z)
+    var distance := INF
+    for index in outline.size():
+        distance = minf(distance, plan.distance_to(
+            Geometry2D.get_closest_point_to_segment(plan, outline[index], outline[(index + 1) % outline.size()])))
+    if outline.is_empty() or distance >= SNAP_FADE_M:
+        return Vector3.ZERO
+    var weight := (1.0 - smoothstep(0.0, SNAP_FADE_M, distance)) * _porch_weight(position, snap)
+    if weight <= 0.0:
+        return Vector3.ZERO
+    var ground := CaveEntrance.ground_in_frame(snap.data, snap.frame, position.x, position.z)
+    return (ground - position) * weight
+
+
+## Where [param point] lies along the segment [param a] → [param b] (0..1, ends excluded), or -1 off it.
+static func _along(a: Vector3, b: Vector3, point: Vector3) -> float:
+    var ab := b - a
+    var length_sq := ab.length_squared()
+    if length_sq < 1.0e-12 or point.distance_squared_to(a) < 1.0e-12 or point.distance_squared_to(b) < 1.0e-12:
+        return -1.0
+    var t := (point - a).dot(ab) / length_sq
+    if t <= 0.0 or t >= 1.0 or (a + ab * t).distance_squared_to(point) > 1.0e-8:
+        return -1.0
+    return t
+
+
+## One cut triangle ([param poly], opening frame) as triangles from its [param pieces]: fanned as clipped, or,
+## with [param snap], with the outline's vertices on the relief and the others near it following (_fade_shift).
+## Moving them must open no slit:
+## - inside the triangle, the pieces' T-junctions (a piece edge running past another piece's vertex, harmless
+##   while everything stayed in the triangle's plane) get that vertex, and a moved piece is fanned from its centre;
+## - the triangle's corners stay put, and a vertex on its edges, shared with a neighbour cut the same way, moves
+##   by the shift interpolated along the edge between the corners and its outline crossings, which both share.
+static func _triangles(poly: Array, pieces: Array, snap: Dictionary) -> Array:
+    var result: Array = []
+    if snap.is_empty():
+        for piece: Array in pieces:
+            _fan(piece, result)
+        return result
+    var vertices: Dictionary = {}  # position -> vertex
+    for piece: Array in pieces:
+        for vertex: Array in piece:
+            vertices[vertex[0]] = vertex
+    var shift: Dictionary = {}  # position -> displacement, opening frame
+    for position: Vector3 in vertices:
+        if _on_outline(position, snap.regions):
+            var weight := _porch_weight(position, snap)
+            if weight > 0.0:
+                shift[position] = (CaveEntrance.ground_in_frame(snap.data, snap.frame, position.x, position.z)
+                    - position) * weight
+    if shift.is_empty():
+        for piece: Array in pieces:
+            _fan(piece, result)
+        return result
+    var fixed: Dictionary = {}  # corners and edge vertices: moved only along their edge's knots
+    for corner: Array in poly:
+        fixed[corner[0]] = true
+    for edge in 3:
+        var a: Vector3 = poly[edge][0]
+        var b: Vector3 = poly[(edge + 1) % 3][0]
+        var knots: Array = [[0.0, Vector3.ZERO], [1.0, Vector3.ZERO]]
+        for position: Vector3 in vertices:
+            var t := _along(a, b, position)
+            if t <= 0.0:
+                continue
+            if shift.has(position):
+                knots.append([t, shift[position]])
+            else:
+                fixed[position] = true
+        if knots.size() == 2:
+            continue
+        knots.sort_custom(func(p: Array, q: Array) -> bool: return p[0] < q[0])
+        for position: Vector3 in vertices:
+            var t := _along(a, b, position)
+            if t <= 0.0 or shift.has(position):
+                continue
+            for index in range(1, knots.size()):
+                if t <= knots[index][0]:
+                    var span: float = knots[index][0] - knots[index - 1][0]
+                    var weight := 0.0 if span <= 0.0 else (t - float(knots[index - 1][0])) / span
+                    shift[position] = (knots[index - 1][1] as Vector3).lerp(knots[index][1], weight)
+                    break
+    for position: Vector3 in vertices:
+        if not shift.has(position) and not fixed.has(position):
+            var fade := _fade_shift(position, snap)
+            if fade != Vector3.ZERO:
+                shift[position] = fade
+    # Every piece edge runs along a clipping line or a side of the triangle: index the vertices by the lines they
+    # lie on, and look for a T-junction only among the vertices of the edge's own line.
+    var lines: Array[Vector3] = []
+    for planes: Array in snap.regions:
+        lines.append_array(planes)
+    for edge in 3:
+        var a: Vector3 = poly[edge][0]
+        var b: Vector3 = poly[(edge + 1) % 3][0]
+        var normal := Vector2(b.z - a.z, a.x - b.x).normalized()
+        lines.append(Vector3(normal.x, normal.y, -normal.dot(Vector2(a.x, a.z))))
+    var on_line: Array = []  # line index -> positions on it
+    on_line.resize(lines.size())
+    var lines_of: Dictionary = {}  # position -> PackedInt32Array of line indices
+    for position: Vector3 in vertices:
+        var mine := PackedInt32Array()
+        for line in lines.size():
+            if absf(_distance(position, lines[line])) < 1.0e-6:
+                mine.append(line)
+                if on_line[line] == null:
+                    on_line[line] = []
+                on_line[line].append(position)
+        lines_of[position] = mine
+    for piece: Array in pieces:
+        var ring: Array = []
+        for index in piece.size():
+            var a: Vector3 = piece[index][0]
+            var b: Vector3 = piece[(index + 1) % piece.size()][0]
+            ring.append(piece[index])
+            var between: Array = []
+            var b_lines: PackedInt32Array = lines_of[b]
+            for line: int in lines_of[a]:
+                if not b_lines.has(line):
+                    continue
+                for position: Vector3 in on_line[line]:
+                    var t := _along(a, b, position)
+                    if t > 0.0:
+                        between.append([t, vertices[position]])
+            between.sort_custom(func(p: Array, q: Array) -> bool: return p[0] < q[0])
+            for pair: Array in between:
+                if (ring.back()[0] as Vector3).distance_squared_to(pair[1][0]) > 1.0e-12:
+                    ring.append(pair[1])
+        var moved := false
+        for vertex: Array in ring:
+            if shift.has(vertex[0]):
+                moved = true
+                break
+        if not moved:
+            _fan(piece, result)
+            continue
+        var centre: Array = (ring[0] as Array).duplicate()
+        for index in range(1, ring.size()):
+            for slot in centre.size():
+                centre[slot] += ring[index][slot]
+        for slot in centre.size():
+            centre[slot] /= float(ring.size())
+        var flat_centre: Vector3 = centre[0]
+        centre[0] = flat_centre + _fade_shift(flat_centre, snap)
+        for index in ring.size():
+            var a: Array = ring[index]
+            var b: Array = ring[(index + 1) % ring.size()]
+            if (a[0] - flat_centre).cross(b[0] - flat_centre).length_squared() < 1.0e-16:
+                continue
+            result.append([centre, _shifted(a, shift), _shifted(b, shift)])
+    return result
+
+
+static func _shifted(vertex: Array, shift: Dictionary) -> Array:
+    if not shift.has(vertex[0]):
+        return vertex
+    var moved := vertex.duplicate()
+    moved[0] = vertex[0] + shift[vertex[0]]
+    return moved
+
+
+## A convex piece fanned from its first vertex, slivers dropped.
+static func _fan(piece: Array, result: Array) -> void:
+    for corner in range(1, piece.size() - 1):
+        var a: Vector3 = piece[0][0]
+        var b: Vector3 = piece[corner][0]
+        var c: Vector3 = piece[corner + 1][0]
+        if (b - a).cross(c - a).length_squared() >= 1.0e-16:
+            result.append([piece[0], piece[corner], piece[corner + 1]])
+
+
+## [param faces] (around [param origin]) minus every opening of [param placements]. With [param data] and the
+## chunk's cell size [param cell_m], the cut edge lands on the relief (see [method _snap]).
+static func collision_faces(faces: PackedVector3Array, origin: Vector3, placements: Array[CavePlacement],
+        data: PlanetData = null, cell_m: float = INF) -> PackedVector3Array:
+    if data != null and not placements.is_empty():
+        return CaveGround.run(data, func(): return _collision_faces(faces, origin, placements, data, cell_m))
+    return _collision_faces(faces, origin, placements, null, INF)
+
+
+static func _collision_faces(faces: PackedVector3Array, origin: Vector3, placements: Array[CavePlacement],
+        data: PlanetData, cell_m: float) -> PackedVector3Array:
     var result := faces
     if faces.is_empty() or placements.is_empty():
         return faces
@@ -139,9 +398,15 @@ static func collision_faces(faces: PackedVector3Array, origin: Vector3, placemen
     for point in faces:
         world_bounds = world_bounds.expand(point + origin)
     var openings: Array[Dictionary] = []
+    var bored: Array = []  # per opening: the bored porches of its cave (see _snap)
     for placement in placements:
-        openings.append_array(placement.openings())
-    for opening: Dictionary in openings:
+        var own := placement.openings()
+        var porches := own.filter(func(other: Dictionary) -> bool: return other.has("axis"))
+        for opening in own:
+            openings.append(opening)
+            bored.append(porches)
+    for opening_index in openings.size():
+        var opening := openings[opening_index]
         var frame: Transform3D = opening.frame
         var inverse := frame.affine_inverse()
         if result.is_empty():
@@ -151,6 +416,7 @@ static func collision_faces(faces: PackedVector3Array, origin: Vector3, placemen
             Vector3(float(opening.width), axis.y - axis.x, float(opening.length) + float(opening.get("back", 0.0))))
         if not (inverse * world_bounds).intersects(cut_bounds):
             continue
+        var snap := _snap(opening, data, cell_m, bored[opening_index])
         var out := PackedVector3Array()
         for index in range(0, result.size(), 3):
             var poly: Array = []
@@ -160,16 +426,11 @@ static func collision_faces(faces: PackedVector3Array, origin: Vector3, placemen
                 for corner in 3:
                     out.append(result[index + corner])
                 continue
-            for piece: Array in _pieces(poly, float(opening.width) * 0.5, float(opening.length),
-                    opening.get("polygon", PackedVector2Array()), axis, opening.has("axis"), opening.get("parts", [])):
-                for corner in range(1, piece.size() - 1):
-                    var a: Vector3 = piece[0][0]
-                    var b: Vector3 = piece[corner][0]
-                    var c: Vector3 = piece[corner + 1][0]
-                    if (b - a).cross(c - a).length_squared() < 1.0e-16:
-                        continue
-                    for point in [a, b, c]:
-                        out.append(frame * point - origin)
+            var pieces := _pieces(poly, float(opening.width) * 0.5, float(opening.length),
+                opening.get("polygon", PackedVector2Array()), axis, opening.has("axis"), opening.get("parts", []))
+            for triangle: Array in _triangles(poly, pieces, snap):
+                for vertex: Array in triangle:
+                    out.append(frame * (vertex[0] as Vector3) - origin)
         result = out
     return result
 
@@ -199,14 +460,30 @@ static func subtract(faces: PackedVector3Array, to_frame: Transform3D, opening: 
     return out
 
 
-static func mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlacement]) -> ArrayMesh:
+## [param source] (around [param origin]) minus every opening of [param placements], attributes interpolated.
+## With [param data] and the chunk's cell size [param cell_m], the cut edge lands on the relief (see [method _snap]).
+static func mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlacement], data: PlanetData = null,
+        cell_m: float = INF) -> ArrayMesh:
     if placements.is_empty():
         return source
+    if data != null:
+        return CaveGround.run(data, func(): return _mesh(source, origin, placements, data, cell_m))
+    return _mesh(source, origin, placements, null, INF)
+
+
+static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlacement], data: PlanetData,
+        cell_m: float) -> ArrayMesh:
     var result := source
     var openings: Array[Dictionary] = []
+    var bored: Array = []  # per opening: the bored porches of its cave (see _snap)
     for placement in placements:
-        openings.append_array(placement.openings())
-    for opening: Dictionary in openings:
+        var own := placement.openings()
+        var porches := own.filter(func(other: Dictionary) -> bool: return other.has("axis"))
+        for opening in own:
+            openings.append(opening)
+            bored.append(porches)
+    for opening_index in openings.size():
+        var opening := openings[opening_index]
         var frame: Transform3D = opening.frame
         var inverse := frame.affine_inverse()
         var axis := _axis(opening)
@@ -214,6 +491,7 @@ static func mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlace
             Vector3(float(opening.width), axis.y - axis.x, float(opening.length) + float(opening.get("back", 0.0))))
         if not (inverse * (Transform3D(Basis.IDENTITY, origin) * result.get_aabb())).intersects(cut_bounds):
             continue
+        var snap := _snap(opening, data, cell_m, bored[opening_index])
         var output := ArrayMesh.new()
         var surface_map: Dictionary = {}
         for surface_index in result.get_surface_count():
@@ -250,27 +528,22 @@ static func mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlace
                         Vector3(custom[vi * 3], custom[vi * 3 + 1], custom[vi * 3 + 2]) if not custom.is_empty() else Vector3.ZERO,
                         Color(rocks[vi * 4], rocks[vi * 4 + 1], rocks[vi * 4 + 2], rocks[vi * 4 + 3]) \
                             if not rocks.is_empty() else Color(0, 0, 0, 0)])
+                var cut := _overlaps(poly, float(opening.width) * 0.5, float(opening.length),
+                    float(opening.get("back", 0.0)), axis)
                 var pieces: Array = _pieces(poly, float(opening.width) * 0.5, float(opening.length),
                     opening.get("polygon", PackedVector2Array()), axis, opening.has("axis"), opening.get("parts", [])) \
-                    if _overlaps(poly, float(opening.width) * 0.5, float(opening.length), float(opening.get("back", 0.0)), axis) \
-                    else [poly]
-                for piece: Array in pieces:
-                    for corner in range(1, piece.size() - 1):
-                        var a: Vector3 = piece[0][0]
-                        var b: Vector3 = piece[corner][0]
-                        var c: Vector3 = piece[corner + 1][0]
-                        if (b - a).cross(c - a).length_squared() < 1.0e-16:
-                            continue
-                        for vertex: Array in [piece[0], piece[corner], piece[corner + 1]]:
-                            out_pos.append(frame * vertex[0] - origin)
-                            out_norm.append((vertex[1] as Vector3).normalized())
-                            out_uv.append(vertex[2])
-                            out_col.append(vertex[3])
-                            out_uv2.append(vertex[4])
-                            var offset: Vector3 = vertex[5]
-                            out_custom.append_array(PackedFloat32Array([offset.x, offset.y, offset.z]))
-                            var rock: Color = vertex[6]
-                            out_rocks.append_array(PackedFloat32Array([rock.r, rock.g, rock.b, rock.a]))
+                    if cut else [poly]
+                for triangle: Array in _triangles(poly, pieces, snap if cut else {}):
+                    for vertex: Array in triangle:
+                        out_pos.append(frame * vertex[0] - origin)
+                        out_norm.append((vertex[1] as Vector3).normalized())
+                        out_uv.append(vertex[2])
+                        out_col.append(vertex[3])
+                        out_uv2.append(vertex[4])
+                        var offset: Vector3 = vertex[5]
+                        out_custom.append_array(PackedFloat32Array([offset.x, offset.y, offset.z]))
+                        var rock: Color = vertex[6]
+                        out_rocks.append_array(PackedFloat32Array([rock.r, rock.g, rock.b, rock.a]))
             if out_pos.is_empty():
                 continue
             var output_arrays: Array = []

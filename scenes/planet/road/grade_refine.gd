@@ -1,9 +1,11 @@
 @tool
 class_name GradeRefine
 ## Local refinement of the terrain grid around a profiled line (railway or
-## graded road) or a TERRAIN PAD: the cells a cutting, a tunnel mouth or a
-## building's platform runs through are re-meshed k × k finer, so a 5 m trench,
-## a 6 m bore and a 30 m pad exist in a grid whose vertices are 13 m apart.
+## graded road), a TERRAIN PAD or a CAVE OPENING: the cells a cutting, a tunnel
+## mouth, a building's platform or a cave's entrance runs through are re-meshed
+## k × k finer, so a 5 m trench, a 6 m bore and a 30 m pad exist in a grid
+## whose vertices are 13 m apart, and the ground meets a cave built on the
+## exact relief (CaveRefine).
 ##
 ## A pad is why this matters as much for buildings as for railways: on tarsis_3
 ## the finest grid is ~12 m, so a 30 × 20 m platform spans two cells and would
@@ -81,6 +83,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	var pieces: Array = rw_ctx.get("pieces", [])
 	var profiles: Dictionary = rw_ctx.get("profiles", {})
 	var pads: Array = rw_ctx.get("pads", [])
+	# CaveRefine.zones of this chunk: a cave opening refines like a pad.
+	var caves: Array = rw_ctx.get("caves", [])
 
 	# Which coarse vertices stand near a tunnel mouth, and does any tunnel
 	# reach this chunk at all (the bore test is only paid then).
@@ -115,6 +119,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			# sharing a border hold identically.
 			if not pads.is_empty() and PadBed.near(pads, ll, mpd, pitch):
 				near_track[idx] = 1
+			if not caves.is_empty() and CaveRefine.near(caves, grid_dirs[yi][xi], pitch):
+				near_track[idx] = 1
 			if pieces.is_empty():
 				continue
 			var q := GradeGeom.nearest_on_pieces(pieces, ll, mpd)
@@ -145,8 +151,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 					has_portal = true
 					break
 
-	# Cells to refine: a carved corner, a corner within a cell of the bed or of
-	# a pad, or a corner near a mouth.
+	# Cells to refine: a carved corner, a corner within a cell of the bed, of
+	# a pad or of a cave opening, or a corner near a mouth.
 	var quads := PackedByteArray()
 	quads.resize(res * res)
 	var any := false
@@ -270,7 +276,7 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 								var gy := -1 if oy < 0 else res + 1
 								other_refined = _border_cell_shared(near_track, res, xi, yi,
 										xi, gy, xi + 1, gy, outer_nt, grid_dirs, pieces,
-										profiles, pads, mpd, floor_margin, pitch)
+										profiles, pads, caves, mpd, floor_margin, pitch)
 						else:
 							c_from = yi * (res + 1) + (xi + a_end)
 							c_to = c_from + res + 1
@@ -282,7 +288,7 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 								var gx := -1 if ox < 0 else res + 1
 								other_refined = _border_cell_shared(near_track, res, xi, yi,
 										gx, yi, gx, yi + 1, outer_nt, grid_dirs, pieces,
-										profiles, pads, mpd, floor_margin, pitch)
+										profiles, pads, caves, mpd, floor_margin, pitch)
 						var key := (c_from * n_coarse + c_to) * (k + 1) + j
 						if edge_cache.has(key):
 							gidx = int(edge_cache[key])
@@ -380,7 +386,7 @@ static func _near_track(q: Dictionary, prof: Dictionary, floor_margin: float,
 static func _border_cell_shared(near_track: PackedByteArray, res: int, xi: int, yi: int,
 		gx0: int, gy0: int, gx1: int, gy1: int, outer_nt: Dictionary,
 		grid_dirs: Array, pieces: Array, profiles: Dictionary, pads: Array,
-		mpd: float, floor_margin: float, pitch: float) -> bool:
+		caves: Array, mpd: float, floor_margin: float, pitch: float) -> bool:
 	# Our cell — by near_track alone, never by a carved corner: the neighbour
 	# judges our cell from these same four directions.
 	var c00 := yi * (res + 1) + xi
@@ -405,7 +411,7 @@ static func _border_cell_shared(near_track: PackedByteArray, res: int, xi: int, 
 		var key := "%d_%d" % [g.x, g.y]
 		if not outer_nt.has(key):
 			outer_nt[key] = _outer_near_track(g.x, g.y, res, grid_dirs, pieces, profiles,
-					pads, mpd, floor_margin, pitch)
+					pads, caves, mpd, floor_margin, pitch)
 		if bool(outer_nt[key]):
 			return true
 	return false
@@ -420,7 +426,7 @@ static func _border_cell_shared(near_track: PackedByteArray, res: int, xi: int, 
 ## ours. The neighbour extrapolates OUR inner corners the same way, so both
 ## sides run the threshold test on the same points.
 static func _outer_near_track(gx: int, gy: int, res: int, grid_dirs: Array, pieces: Array,
-		profiles: Dictionary, pads: Array, mpd: float, floor_margin: float,
+		profiles: Dictionary, pads: Array, caves: Array, mpd: float, floor_margin: float,
 		pitch: float) -> bool:
 	var near: Vector3
 	var next: Vector3
@@ -439,6 +445,8 @@ static func _outer_near_track(gx: int, gy: int, res: int, grid_dirs: Array, piec
 	var dir := (near * 2.0 - next).normalized()
 	var ll := HEALPix.vec2lonlat(dir)
 	if not pads.is_empty() and PadBed.near(pads, ll, mpd, pitch):
+		return true
+	if not caves.is_empty() and CaveRefine.near(caves, dir, pitch):
 		return true
 	if pieces.is_empty():
 		return false

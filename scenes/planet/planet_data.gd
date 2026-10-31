@@ -98,7 +98,9 @@ func stargrot_signature() -> String:
 	for placement in cave_placements:
 		if placement != null:
 			parts.append(placement.signature())
-	return "" if parts.is_empty() else "_sg5_" + str(parts).sha256_text().substr(0, 16)
+	# _sg6_: cut edges on the relief (CaveTerrainCut._snap); _sg7_: ground refined round the openings
+	# (CaveRefine), 2026-10-31.
+	return "" if parts.is_empty() else "_sg7_" + str(parts).sha256_text().substr(0, 16)
 
 ## Radius in meters (distance from center to sea-level surface).
 var radius: float = 1000.0
