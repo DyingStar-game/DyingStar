@@ -12,6 +12,7 @@ class Relief extends PlanetData:
             "slope": return maxf(0.0, z) * tan(deg_to_rad(30.0))
             "cross_slope": return 3.0 * z + 0.8 * x + 0.12 * x * x
             "ridge": return maxf(0.0, 45.0 - absf(z - 45.0))  # a 45 m crest, falling again beyond it
+            "bumps": return 0.5 * sin(x * 0.9) * cos(z * 0.7)  # metre-scale relief a 25 m terrain mesh misses
         return 0.0
 
     func crack_aware_surface_dist(direction: Vector3, _nside: int = -1, _spacing: float = 0.0) -> float:
@@ -236,6 +237,108 @@ func test_porch_cut_spares_the_far_side_of_a_ridge() -> void:
     var far: Vector3 = (axes.forward as Vector3) * 88.0 + (axes.up as Vector3) * 3.0
     assert_true(_hits(cut, frame * (far + Vector3.UP * 20.0), frame * (far + Vector3.DOWN * 20.0)),
         "the far flank keeps its ground")
+
+
+func test_cut_edges_meet_the_relief_without_a_slit() -> void:
+    var case := _fitted("bumps", "shaft", 30.0, 8.0)
+    var site: CavePlacement = case.site
+    var data: Relief = case.data
+    var frame := site.surface_transform()
+    # The terrain as a coarse chunk shows it: 25 m cells whose corners only are on the relief.
+    var openings: Array[Dictionary] = []
+    var low := Vector2(INF, INF)
+    var high := Vector2(-INF, -INF)
+    for opening: Dictionary in site.openings():
+        if not CaveTerrainCut._snap(opening, data, 25.0).is_empty():
+            openings.append(opening)
+            var at := frame.affine_inverse() * (opening.frame as Transform3D).origin
+            low = low.min(Vector2(at.x, at.z))
+            high = high.max(Vector2(at.x, at.z))
+    assert_gt(openings.size(), 0, "a doline is cut straight down")
+    var faces := PackedVector3Array()
+    var cell := 25.0
+    for x in range(floori((low.x - 50.0) / cell), ceili((high.x + 50.0) / cell)):
+        for z in range(floori((low.y - 50.0) / cell), ceili((high.y + 50.0) / cell)):
+            var corners: Array[Vector3] = []
+            for offset: Vector2 in [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]:
+                var direction := (frame * Vector3((x + offset.x) * cell, 0, (z + offset.y) * cell)).normalized()
+                corners.append(direction * data.crack_aware_surface_dist(direction))
+            faces.append_array([corners[0], corners[1], corners[2], corners[0], corners[2], corners[3]])
+    var sites: Array[CavePlacement] = [site]
+    var clipped := CaveTerrainCut.collision_faces(faces, Vector3.ZERO, sites)
+    var cut := CaveTerrainCut.collision_faces(faces, Vector3.ZERO, sites, data, cell)
+    assert_eq(CaveTerrainCut.collision_faces(faces, Vector3.ZERO, sites, data, 100.0), clipped,
+        "a coarse chunk, far off the relief, keeps its clipped edge")
+    for opening in openings:
+        var snap := CaveTerrainCut._snap(opening, data, 25.0)
+        var inverse := (opening.frame as Transform3D).affine_inverse()
+        var off_before := 0.0
+        for point in clipped:
+            var local := inverse * point
+            if CaveTerrainCut._on_outline(local, snap.regions):
+                off_before = maxf(off_before, absf(local.y - CaveEntrance.ground_in_frame(data, opening.frame, local.x, local.z).y))
+        assert_gt(off_before, 0.05, "%s: the coarse mesh alone leaves its cut edge off the relief" % opening.kind)
+        var on_edge := 0
+        var off := 0.0
+        for point in cut:
+            var local := inverse * point
+            if CaveTerrainCut._on_outline(local, snap.regions):
+                on_edge += 1
+                off = maxf(off, absf(local.y - CaveEntrance.ground_in_frame(data, opening.frame, local.x, local.z).y))
+        assert_gt(on_edge, 8, "%s: the cut has an edge" % opening.kind)
+        assert_lt(off, 0.001, "%s: its cut edge lies on the relief the rim is built on" % opening.kind)
+    # No slit: an edge used by one triangle only is on an outline, on the grid's border, or along another such
+    # edge (a T-junction, closed as long as both stay on the same line).
+    var border := _open_edges(faces)
+    var loose: Array = []
+    var used := _edge_uses(cut)
+    for key: Array in used:
+        if used[key] != 1 or border.has(key):
+            continue
+        var outline := false
+        for opening in openings:
+            var regions: Array = CaveTerrainCut._snap(opening, data, 25.0).regions
+            var inverse := (opening.frame as Transform3D).affine_inverse()
+            if CaveTerrainCut._on_outline(inverse * key[0], regions) and CaveTerrainCut._on_outline(inverse * key[1], regions):
+                outline = true
+        if not outline:
+            loose.append(key)
+    var widest := 0.0
+    for edge: Array in loose:
+        var gap := INF
+        for other: Array in loose:
+            if other == edge:
+                continue
+            var inside := 0.0
+            for point: Vector3 in edge:
+                inside = maxf(inside, point.distance_to(Geometry3D.get_closest_point_to_segment(point, other[0], other[1])))
+            var around := 0.0
+            for point: Vector3 in other:
+                around = maxf(around, point.distance_to(Geometry3D.get_closest_point_to_segment(point, edge[0], edge[1])))
+            gap = minf(gap, minf(inside, around))
+        widest = maxf(widest, gap)
+    assert_lt(widest, 0.001, "every open edge inside the ground closes on another one")
+
+
+## Each triangle edge (end points to 0.1 mm, either way round) -> how many triangles use it.
+func _edge_uses(faces: PackedVector3Array) -> Dictionary:
+    var count := {}
+    for index in range(0, faces.size(), 3):
+        for corner in 3:
+            var a := faces[index + corner].snappedf(0.0001)
+            var b := faces[index + (corner + 1) % 3].snappedf(0.0001)
+            var key := [a, b] if str(a) < str(b) else [b, a]
+            count[key] = count.get(key, 0) + 1
+    return count
+
+
+func _open_edges(faces: PackedVector3Array) -> Dictionary:
+    var used := _edge_uses(faces)
+    var result := {}
+    for key: Array in used:
+        if used[key] == 1:
+            result[key] = true
+    return result
 
 
 func test_doline_opens_its_chamber_to_the_sky() -> void:
