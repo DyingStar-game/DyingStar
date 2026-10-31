@@ -1,0 +1,12 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/exploration/discovery.gd" id="1_discovery"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
+
+[node name="Discovery" type="Node3D"]
+script = ExtResource("1_discovery")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_sync")
+type_name = "discovery"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"

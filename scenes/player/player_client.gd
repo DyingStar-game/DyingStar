@@ -172,6 +172,8 @@ var _cab: CabScreenPointer = null
 ## The controls help (F1, or a long press of the chart's pad button), open until closed like the chart.
 ## Local player only.
 var _help: ControlsHelp = null
+## The place the player stands in — its banner, and its name asked of its discoverer (PlaceWatcher).
+var _places: PlaceWatcher = null
 ## The chart's pad button is down: a short press opens the chart when it comes up, a long one opens the
 ## controls help instead — the pad has no free button to give the help its own.
 var _map_pad_down: bool = false
@@ -358,6 +360,10 @@ func setup() -> void:
 	_notifications.pushed.connect(_on_notification_pushed)
 	_watch_debug_notification()
 	ChatNetwork.notification_received.connect(_on_notification)
+	_places = PlaceWatcher.new()
+	_places.name = "PlaceWatcher"
+	add_child(_places)
+	_places.setup(player, _screens_root(), func(text: String) -> void: _notifications.push(text), _input_locked)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -1781,11 +1787,12 @@ func _help_open() -> bool:
 
 
 ## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart, the
-## controls help, the services terminal. A 3D screen is deliberately NOT in this list — it takes the
+## controls help, the services terminal, a discovered place's name being typed. A 3D screen is deliberately NOT in this list — it takes the
 ## pointer, never the game — which is what lets the view still pan across a console while its filter
 ## box has the keyboard.
 func _modal_open() -> bool:
-	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open() or _services_open()
+	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open() or _services_open() \
+			or (_places != null and _places.is_open())
 
 ## The play hints of our own situations (see PlayHints): on foot, floating, at the wheel or a passenger,
 ## carrying, the drill out. Each is a plain state of ours, asked by the panel a few times a second.
