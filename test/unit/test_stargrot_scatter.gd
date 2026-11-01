@@ -104,6 +104,31 @@ func test_scatter_is_seeded_bounded_and_attached_to_the_actual_volume() -> void:
         "a changed library budget invalidates its dressing plan")
 
 
+func test_wall_crystals_stand_out_of_the_chamber_walls() -> void:
+    var library := CaveAssetLibrary.default_for("rock")
+    var profile := CaveWorkbench.preset(1, "rock", library)
+    profile.chamber_count = 5
+    profile.level_count = 1
+    profile.depth_m = 0
+    profile.chamber_width_m = 40
+    profile.chamber_height_m = 18
+    profile.network_style = "ramiform"
+    var data := CaveGenerator.build(profile.snapshot(7654321))
+    var rule: CaveDecorationRule = null
+    for candidate in library.decorations:
+        if candidate.support == "wall":
+            rule = candidate
+    assert_not_null(rule, "the rock library has a wall rule")
+    var placed := CavePreviewBuilder.decoration_transforms(data, rule, 40)
+    assert_gt(placed.size(), 0, "crystals find chamber walls")
+    assert_eq(placed, CavePreviewBuilder.decoration_transforms(data, rule, 40), "same seed, same placements")
+    for transform in placed:
+        var out := transform.basis.y.normalized()
+        assert_lt(absf(out.y), sin(deg_to_rad(rule.max_slope_deg)) + 1e-4, "grows out of a wall, not a floor")
+        var origin_wall := transform.origin + out * (rule.mesh.get_aabb().position.y * transform.basis.y.length())
+        assert_gt(float(data.sampler.call("Sample", origin_wall + out * 0.4)), -0.4, "air in front of it")
+
+
 ## Every turn goes the same way (collinear points allowed).
 static func _convex(polygon: PackedVector2Array) -> bool:
     var sign := 0.0

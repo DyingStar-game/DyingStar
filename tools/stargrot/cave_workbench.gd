@@ -31,6 +31,9 @@ var _size_choice: OptionButton
 var _entrance: OptionButton
 var _style: OptionButton
 var _library_choice: OptionButton
+## The rock the preview is dug in (CaveMineral): wall tint, crystals and their glow. Item 0 = none.
+var _mineral_choice: OptionButton
+var _mineral_slugs: Array[String] = []
 var _libraries: Array[CaveAssetLibrary] = []
 var _cutaway: bool = false
 var _walk_view: bool = false
@@ -214,6 +217,12 @@ func _make_controls(parent: Node) -> void:
         _profile.asset_library = _libraries[index]
         _mark_dirty())
     _button(column, "Charger une bibliothèque d’assets…", func(): _open_file("library"))
+    _mineral_choice = _choice(column, ["Roche (aperçu) : aucune"])
+    for slug: String in RockCatalogue.slugs():
+        if not RockCatalogue.crystal_habit_of(slug).is_empty():
+            _mineral_slugs.append(slug)
+            _mineral_choice.add_item("Roche (aperçu) : %s" % RockCatalogue.get_rock(slug).get("label", slug))
+    _mineral_choice.item_selected.connect(func(_index: int): _refresh_preview())
     _size_choice = _choice(column, SIZE_NAMES)
     _size_choice.select(1)
     _size_choice.item_selected.connect(func(index: int):
@@ -564,7 +573,9 @@ func _refresh_preview() -> void:
     var shown := data.duplicate(false)
     if _cutaway:
         shown.wall = CaveGenerator._empty_surface()
-    _preview = CavePreviewBuilder.instantiate(shown, built_profile.asset_library, true, false)
+    var pick := _mineral_choice.selected if _mineral_choice else 0
+    var mineral := CaveMineral.for_slug(_mineral_slugs[pick - 1]) if pick > 0 else null
+    _preview = CavePreviewBuilder.instantiate(shown, built_profile.asset_library, true, false, Vector3.ZERO, mineral)
     _world.add_child(_preview)
     if _walk_view and data.has("reach_points"):
         _preview.add_child(_point_cloud(data.reach_points, Color("4fd18b")))

@@ -6,8 +6,10 @@ class_name CavePreviewBuilder
 const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 
 
+## [param mineral]: the rock the cave is dug in (CaveMineral, client side), which tints its walls and grows
+## its crystals when the library has a mineral style; null keeps the authored look and draws no crystal.
 static func instantiate(data: Dictionary, library: CaveAssetLibrary, visual: bool = true, physics: bool = true,
-        texture_origin: Vector3 = Vector3.ZERO) -> Node3D:
+        texture_origin: Vector3 = Vector3.ZERO, mineral: CaveMineral = null) -> Node3D:
     var root := Node3D.new()
     root.name = "CavePreview"
     root.set_meta("cave_spec", data.spec)
@@ -34,13 +36,19 @@ static func instantiate(data: Dictionary, library: CaveAssetLibrary, visual: boo
             var material: Material = null
             if library:
                 material = library.wall_material if key == "wall" else library.floor_material
+                if mineral != null:
+                    material = mineral.surface_material(key, material, library.mineral_style)
             mesh.surface_set_material(mesh.get_surface_count() - 1, material)
         var instance := MeshInstance3D.new()
         instance.name = "CaveSurface"
         instance.mesh = mesh
         # Triplanar textures share the site's coordinates with the entrance, while geometry and physics stay put.
         instance.position = -texture_origin
+        if mineral != null and library != null:
+            mineral.dress_surface(instance, library.mineral_style)
         root.add_child(instance)
+        if mineral != null and library != null:
+            mineral.add_inclusion_lights(root, data, texture_origin, library.mineral_style)
     if physics:
         var body := StaticBody3D.new()
         body.name = "CaveCollision"
@@ -53,18 +61,24 @@ static func instantiate(data: Dictionary, library: CaveAssetLibrary, visual: boo
         body.add_child(collision)
         root.add_child(body)
     if library and (visual or physics):
-        _add_decorations(root, data, library, visual, physics)
+        _add_decorations(root, data, library, visual, physics, mineral)
     return root
 
 
 static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetLibrary,
-        visual: bool, physics: bool) -> void:
+        visual: bool, physics: bool, mineral: CaveMineral = null) -> void:
     var request := decoration_request(library)
     var plan: Dictionary = data.get("decoration_plan", {})
     if plan.get("signature", "") != request.signature:
         plan = prepare_decorations(data, request)
+    var style := library.mineral_style
+    var grows_crystals := mineral != null and mineral.crystals and style != null
+    var crystal_placements: Array = []
     for rule in library.decoration_rules():
         if rule == null or rule.mesh == null:
+            continue
+        # Crystals only show in a rock that grows them; they have no collider (the server has no mineral).
+        if rule.mineral_crystal and not grows_crystals:
             continue
         var placements: Array = plan.groups.get(rule.rule_name, [])
         if placements.is_empty():
@@ -80,6 +94,12 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
             instance.name = "Decor_" + rule.rule_name.validate_node_name()
             instance.multimesh = multimesh
             instance.material_override = rule.material
+            if rule.mineral_crystal:
+                mineral.dress_crystals(instance, style)
+                crystal_placements.append_array(placements)
+            elif mineral != null and rule.material != null:
+                instance.material_override = mineral.surface_material("decor", rule.material, style)
+                mineral.dress_surface(instance, style)
             root.add_child(instance)
         if physics and rule.collision_shape:
             var body := StaticBody3D.new()
@@ -92,6 +112,8 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
                 shape.transform = transform
                 body.add_child(shape)
             root.add_child(body)
+    if visual and grows_crystals:
+        mineral.add_glow_lights(root, crystal_placements, style)
 
 
 ## Snapshot mesh bounds on the main thread; geometry workers receive plain immutable values only.
@@ -109,7 +131,7 @@ static func decoration_request(library: CaveAssetLibrary) -> Dictionary:
 static func _rule_snapshot(rule: CaveDecorationRule) -> Dictionary:
     var result := {"bounds": rule.mesh.get_aabb()}
     for property in ["rule_name", "scale_min", "scale_max", "spacing_m", "radius_m", "max_instances",
-            "support", "zone", "distribution", "max_slope_deg", "align_to_surface"]:
+            "support", "zone", "distribution", "max_slope_deg", "align_to_surface", "mineral_crystal"]:
         result[property] = rule.get(property)
     return result
 
@@ -129,26 +151,30 @@ static func prepare_decorations(data: Dictionary, request: Dictionary) -> Dictio
             var saved: Dictionary = applicable[index]
             applicable[index] = applicable[other]
             applicable[other] = saved
-    var rules_left: int = applicable.size()
     var occupied: Array[AABB] = []
     var groups := {}
-    for rule: Dictionary in applicable:
-        var share := int(ceil(float(remaining) / maxi(rules_left, 1)))
-        rules_left -= 1
-        var placements := _decoration_transforms(data, rule, share)
-        var separated: Array[Transform3D] = []
-        for transform in placements:
-            var box: AABB = (transform * (rule.bounds as AABB)).grow(0.08)
-            var overlaps := false
-            for other in occupied:
-                if box.intersects(other):
-                    overlaps = true
-                    break
-            if not overlaps:
-                separated.append(transform)
-                occupied.append(box)
-        remaining -= separated.size()
-        groups[rule.rule_name] = separated
+    # The rock's crystals come last and share what the other rules leave: adding them never thins the rocks.
+    var crystal := func(rule: Dictionary) -> bool: return bool(rule.get("mineral_crystal", false))
+    for rules: Array in [applicable.filter(func(rule: Dictionary): return not crystal.call(rule)),
+            applicable.filter(crystal)]:
+        var rules_left: int = rules.size()
+        for rule: Dictionary in rules:
+            var share := int(ceil(float(remaining) / maxi(rules_left, 1)))
+            rules_left -= 1
+            var placements := _decoration_transforms(data, rule, share)
+            var separated: Array[Transform3D] = []
+            for transform in placements:
+                var box: AABB = (transform * (rule.bounds as AABB)).grow(0.08)
+                var overlaps := false
+                for other in occupied:
+                    if box.intersects(other):
+                        overlaps = true
+                        break
+                if not overlaps:
+                    separated.append(transform)
+                    occupied.append(box)
+            remaining -= separated.size()
+            groups[rule.rule_name] = separated
     return {"signature": request.signature, "groups": groups}
 
 

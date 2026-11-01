@@ -76,6 +76,7 @@ const ACTION_GROUPS : Dictionary = {
 		"walk_speed_up": "%%ACT_WALK_SPEED_UP",
 		"walk_speed_down": "%%ACT_WALK_SPEED_DOWN",
 		"toggle_flashlight": "%%ACT_TOGGLE_FLASHLIGHT",
+		"toggle_torch_uv": "%%ACT_TOGGLE_TORCH_UV",
 		"emote_wheel": "%%ACT_EMOTE_WHEEL",
 		"toggle_tool": "%%ACT_TOGGLE_TOOL",
 		"aim": "%%ACT_AIM",

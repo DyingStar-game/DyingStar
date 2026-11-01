@@ -605,10 +605,26 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 @onready var is_inside_box4m: bool = false
 
 @onready var flashlight: SpotLight3D = $CameraPivot/Camera3D/Torch
+## The torch's UV beam: a NEGATIVE light that only the fluorescent render layer sees (the caves' clear
+## crystals, Globals.RENDER_MASK_FLUORESCENT), shown with the torch in UV mode. A child of the torch, it
+## follows the head and goes out with it.
+@onready var uv_beam: SpotLight3D = $CameraPivot/Camera3D/Torch/UvBeam
+## The torch is in UV mode (server-authoritative, replicated as "torch_uv"): violet light and the UV beam.
+var torch_uv: bool = false
+var _torch_white := Color.WHITE
+var _torch_white_energy := -1.0
 ## Where the torch sits relative to the HEAD BONE, which PlayerClient mounts it on. The bone sits at the
 ## base of the skull, so the lamp has to come forward (-Z) and up to clear the face instead of shining
 ## from inside it. Tune live in the Inspector.
 @export var torch_head_offset: Vector3 = Vector3(0, 0.08, -0.2)
+@export_group("Torch UV")
+## Visible colour of the torch in UV mode: the faint violet glow of a UV lamp (the UV itself is the beam).
+@export var torch_uv_color: Color = Color(0.5, 0.3, 1.0)
+## Visible energy of the torch in UV mode (the white torch's is 2): low, a UV lamp barely lights the cave.
+@export_range(0.0, 4.0, 0.05) var torch_uv_energy: float = 0.5
+## Strength of the UV beam on the crystals' fluorescence: higher = they blaze brighter in the cone.
+@export_range(0.0, 16.0, 0.1) var torch_uv_beam_energy: float = 4.0
+@export_group("")
 ## How long (s) the left wrist takes to come up before the eyes to read the DataPad (F3), and to go back
 ## down. The view then closes in on its screen (WristDatapad) before the full tablet shows.
 @export_range(0.1, 1.5, 0.05) var datapad_raise_time: float = 0.4
@@ -1010,6 +1026,21 @@ func server_set_owns_mining_tool(owns: bool) -> void:
 	if mining_tool != null:
 		mining_tool.server_set_tool(tool)
 	server_send_properties_to_client({MINING_TOOL_KEY: owns, "tools": tool})
+
+
+## Shows the torch as [member torch_uv] asks: violet with its UV beam, or its own white light. Its on/off
+## stays the torch's visibility; the beam, a child of the torch, goes out with it.
+func apply_torch_mode() -> void:
+	if flashlight == null:
+		return
+	if _torch_white_energy < 0.0:
+		_torch_white = flashlight.light_color
+		_torch_white_energy = flashlight.light_energy
+	flashlight.light_color = torch_uv_color if torch_uv else _torch_white
+	flashlight.light_energy = torch_uv_energy if torch_uv else _torch_white_energy
+	if uv_beam != null:
+		uv_beam.light_energy = torch_uv_beam_energy
+		uv_beam.visible = torch_uv
 
 
 func server_send_properties_to_client(data: Dictionary):

@@ -12,8 +12,11 @@ func test_imported_pilot_has_shared_colour_material_and_grounded_meshes() -> voi
     for path in [LIBRARY, "res://scenes/planet/cave/libraries/cave_rock_sculpted_open.tres"]:
         var library: CaveAssetLibrary = load(path)
         assert_eq(library.validation_error(), "", path)
-        assert_eq(library.decorations.size(), 6, "interior art remains independent")
-        for rule in library.decorations:
+        # The rock's crystals (CaveMineral) are generated, not imported: buried roots, no index, their own material.
+        var imported := library.decorations.filter(func(rule: CaveDecorationRule): return not rule.mineral_crystal)
+        assert_eq(imported.size(), 6, "interior art remains independent")
+        assert_eq(library.decorations.size() - imported.size(), 3, "floor, wall and ceiling crystals")
+        for rule: CaveDecorationRule in imported:
             var box := rule.mesh.get_aabb()
             assert_almost_eq(box.position.y, 0.0, 0.001, rule.rule_name + " support pivot")
             assert_gt(box.size.y, 0.2)
@@ -43,8 +46,8 @@ func test_exterior_library_has_distinct_meshes_and_can_be_replaced_independently
     assert_eq(geometry.size(), 12, "different geometry, not copies of the same mesh")
     var custom: CaveAssetLibrary = interior.duplicate()
     custom.entrance_library = null
-    assert_eq(custom.decoration_rules().size(), 6, "exterior art can be detached without changing interiors")
-    assert_eq(interior.decoration_rules().size(), 30)
+    assert_eq(custom.decoration_rules().size(), 9, "exterior art can be detached without changing interiors")
+    assert_eq(interior.decoration_rules().size(), 33, "6 rocks + 3 crystal rules + 24 exterior blocks")
 
 
 func test_resident_physics_uses_the_same_bounded_transforms_as_visuals() -> void:

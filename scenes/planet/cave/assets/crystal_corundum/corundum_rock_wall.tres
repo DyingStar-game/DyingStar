@@ -1,0 +1,35 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://cu57re1kbh0d1"]
+
+[ext_resource type="Shader" uid="uid://ctx8ny3popfpm" path="res://scenes/planet/cave/cave_corundum_rock.gdshader" id="1"]
+[ext_resource type="Texture2D" uid="uid://cmxvmps1gfe7p" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="2"]
+
+[resource]
+resource_name = "corundum_rock_wall"
+render_priority = 0
+shader = ExtResource("1")
+shader_parameter/normal_tex = ExtResource("2")
+shader_parameter/milk_color = Color(0.95, 0.94, 0.91, 1)
+shader_parameter/depth_brightness = 0.76999998278896
+shader_parameter/depth_saturation = 0.6999999843536
+shader_parameter/cloud_scale = 1.6
+shader_parameter/cloud_cover = 0.3499999921768
+shader_parameter/milk_density = 3.6000000536443197
+shader_parameter/clear_density = 1.60000002384192
+shader_parameter/layer_depth_m = 0.12
+shader_parameter/band_axis = Vector3(0.25, 1, 0.15)
+shader_parameter/band_spacing_m = 0.06
+shader_parameter/band_sharpness = 32.0
+shader_parameter/band_strength = 0.07
+shader_parameter/stain_color = Color(0.78, 0.5, 0.26, 1)
+shader_parameter/stain_amount = 0.06
+shader_parameter/stain_scale = 2.5
+shader_parameter/normal_scale = 0.05
+shader_parameter/normal_strength = 0.2
+shader_parameter/wrap = 0.5
+shader_parameter/scatter = 0.35
+shader_parameter/subsurface = 0.25
+shader_parameter/spot_spacing_m = 4.0
+shader_parameter/spot_chance = 0.6
+shader_parameter/spot_size_m = 1.0
+shader_parameter/spot_raggedness = 0.4
+shader_parameter/spot_color = Color(1, 0.08, 0.05, 1)

@@ -1281,6 +1281,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		# torch with the head lights.
 		player.client_send_action_to_server({"action": "toggle_flashlight"})
 
+	if InputCombo.pressed(event, "toggle_torch_uv"):
+		# The torch's UV mode (Alt+U): the crystals of the caves fluoresce in its beam (CaveMineral). Ask for
+		# the state we want, the server lights the torch with it.
+		player.client_send_action_to_server({"action": "torch_uv", "on": not player.torch_uv})
+
 	if InputCombo.pressed(event, "god_mode") and Globals.is_dev_tool_enabled("god_mode"):
 		# God mode (dev free-flight): ask for the state we want — not a bare toggle, so a missed message
 		# cannot leave us flipping the wrong way for ever. The server applies it and flies the body
@@ -2299,6 +2304,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 		if _sfx_live and torch_on != player.flashlight.visible:
 			_play_torch_sfx(torch_on)
 		player.flashlight.visible = torch_on
+	if data.has("torch_uv"):
+		player.torch_uv = bool(data["torch_uv"])  # replicated UV mode (owner + remotes)
+		player.apply_torch_mode()
 	if data.has("carry_prompt") and not player.remote_player:
 		player._carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
 	if data.has(Player.MINING_TOOL_KEY):

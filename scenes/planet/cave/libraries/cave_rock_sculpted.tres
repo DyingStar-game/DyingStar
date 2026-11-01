@@ -16,6 +16,11 @@
 [ext_resource type="Material" path="res://scenes/planet/cave/libraries/gabarits/rock_wall.tres" id="14_rtpf0"]
 
 [ext_resource type="Resource" path="res://scenes/planet/cave/libraries/cave_rock_exterior.tres" id="exterior"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_cluster_floor.tres" id="crystal_floor"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_cluster_wall.tres" id="crystal_wall"]
+[ext_resource type="ArrayMesh" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_cluster_ceiling.tres" id="crystal_ceiling"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_crystal_material.tres" id="crystal_material"]
+[ext_resource type="Resource" path="res://scenes/planet/cave/libraries/gabarits/corundum_mineral_style.tres" id="mineral_style"]
 
 [sub_resource type="Resource" id="Resource_vtp2o"]
 script = ExtResource("1_1paku")
@@ -110,6 +115,56 @@ spacing_m = 6.0
 radius_m = 0.45
 max_instances = 28
 
+[sub_resource type="Resource" id="Resource_crystal_floor"]
+script = ExtResource("1_1paku")
+rule_name = "corundum_floor"
+mesh = ExtResource("crystal_floor")
+material = ExtResource("crystal_material")
+distribution = "clustered"
+max_slope_deg = 40.0
+align_to_surface = true
+zone = "chamber"
+scale_min = 0.6
+scale_max = 1.5
+spacing_m = 5.0
+radius_m = 0.85
+max_instances = 14
+mineral_crystal = true
+
+[sub_resource type="Resource" id="Resource_crystal_wall"]
+script = ExtResource("1_1paku")
+rule_name = "corundum_wall"
+mesh = ExtResource("crystal_wall")
+material = ExtResource("crystal_material")
+distribution = "clustered"
+max_slope_deg = 35.0
+align_to_surface = true
+support = "wall"
+zone = "chamber"
+scale_min = 0.6
+scale_max = 1.3
+spacing_m = 5.0
+radius_m = 0.65
+max_instances = 18
+mineral_crystal = true
+
+[sub_resource type="Resource" id="Resource_crystal_ceiling"]
+script = ExtResource("1_1paku")
+rule_name = "corundum_ceiling"
+mesh = ExtResource("crystal_ceiling")
+material = ExtResource("crystal_material")
+distribution = "clustered"
+max_slope_deg = 55.0
+align_to_surface = true
+support = "ceiling"
+zone = "deep"
+scale_min = 0.6
+scale_max = 1.2
+spacing_m = 5.0
+radius_m = 0.55
+max_instances = 10
+mineral_crystal = true
+
 [resource]
 script = ExtResource("13_0sjo7")
 entrance_library = ExtResource("exterior")
@@ -117,5 +172,6 @@ library_id = "rock_sculpted_detail_v1"
 display_name = "Roche sculptée — salles et profondeur"
 wall_material = ExtResource("14_rtpf0")
 floor_material = ExtResource("12_gf61r")
-decorations = Array[ExtResource("1_1paku")]([SubResource("Resource_vtp2o"), SubResource("Resource_x6bab"), SubResource("Resource_w0lr7"), SubResource("Resource_khgb1"), SubResource("Resource_vv03k"), SubResource("Resource_pwa54")])
+decorations = Array[ExtResource("1_1paku")]([SubResource("Resource_vtp2o"), SubResource("Resource_x6bab"), SubResource("Resource_w0lr7"), SubResource("Resource_khgb1"), SubResource("Resource_vv03k"), SubResource("Resource_pwa54"), SubResource("Resource_crystal_floor"), SubResource("Resource_crystal_wall"), SubResource("Resource_crystal_ceiling")])
 instance_budget = 180
+mineral_style = ExtResource("mineral_style")

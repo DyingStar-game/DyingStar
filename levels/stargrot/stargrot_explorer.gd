@@ -448,6 +448,17 @@ func _unhandled_input(event: InputEvent) -> void:
             KEY_L:
                 player.flashlight.visible = not player.flashlight.visible
                 _inspection_light.visible = player.flashlight.visible
+            KEY_U:
+                # The torch's UV mode: the crystals fluoresce in its beam (CaveMineral).
+                player.torch_uv = not player.torch_uv
+                if player.torch_uv:
+                    player.flashlight.visible = true
+                player.apply_torch_mode()
+            KEY_K:
+                # The inspection lamps off, to judge the crystals' own glow and the torch alone.
+                _inspection_light.visible = not _inspection_light.visible
+                for lamp: Node in get_tree().get_nodes_in_group(CavePlanetRegistry.AUTHORING_LIGHTS):
+                    (lamp as Light3D).visible = _inspection_light.visible
             KEY_P:
                 _markers.visible = not _markers.visible
                 if not _markers.visible:
@@ -1047,7 +1058,7 @@ func _make_ui() -> void:
     controls.position = Vector2(24, 92)
     controls.text = "G : God Mode   •   ZQSD / WASD : déplacement   •   Espace / Ctrl : haut / bas\n" \
         + "Molette : vitesse   •   Maj : accélérer   •   Début : entrée   •   O : orbite   •   L : lampe" \
-        + "   •   P : repères   •   + / − : heure (lumière)\n" \
+        + "   •   U : UV   •   K : lampes d'inspection   •   P : repères   •   + / − : heure (lumière)\n" \
         + "Clic dans la vue : explorer • Échap : libérer la souris et rejoindre l’atelier"
     controls.mouse_filter = Control.MOUSE_FILTER_IGNORE
     layer.add_child(controls)

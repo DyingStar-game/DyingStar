@@ -1,0 +1,11 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://scenes/planet/cave/cave_corundum_rock.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/textures/grounds/rock/Rock029_2K_NormalGL.jpg" id="2"]
+
+[resource]
+resource_name = "corundum_rock_decor"
+render_priority = 0
+shader = ExtResource("1")
+shader_parameter/normal_tex = ExtResource("2")
+shader_parameter/cloud_scale = 2.4

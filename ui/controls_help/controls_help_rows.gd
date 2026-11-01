@@ -18,6 +18,7 @@ const SECTIONS : Array = [
 		{"label": "%%ACT_PRONE", "actions": [&"prone"]},
 		{"label": "%%ACT_ACTION", "actions": [&"action"]},
 		{"label": "%%ACT_TOGGLE_FLASHLIGHT", "actions": [&"toggle_flashlight"]},
+		{"label": "%%ACT_TOGGLE_TORCH_UV", "actions": [&"toggle_torch_uv"]},
 		{"label": "%%ACT_EMOTE_WHEEL", "actions": [&"emote_wheel"]},
 		{"label": "%%ACT_TOGGLE_TOOL", "actions": [&"toggle_tool"]},
 		{"label": "%%ACT_AIM", "actions": [&"aim"]},

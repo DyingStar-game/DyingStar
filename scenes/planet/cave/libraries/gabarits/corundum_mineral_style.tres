@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="CaveMineralStyle" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/cave/cave_mineral_style.gd" id="1"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_crystal_material.tres" id="2"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_crystal_material_low.tres" id="3"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_rock_wall.tres" id="4"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_rock_floor.tres" id="5"]
+[ext_resource type="Material" path="res://scenes/planet/cave/assets/crystal_corundum/corundum_rock_decor.tres" id="6"]
+
+[resource]
+script = ExtResource("1")
+translucent_wall_material = ExtResource("4")
+translucent_floor_material = ExtResource("5")
+translucent_decor_material = ExtResource("6")
+crystal_material = ExtResource("2")
+crystal_material_low = ExtResource("3")
+glow_light_energy = 0.5
