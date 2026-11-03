@@ -167,7 +167,7 @@ func spawn_prop_authoritative(data: Dictionary, immediate: bool = true) -> void:
 		"event": "create_object",
 		"amessagenb": 1,
 		"data": [data],
-	}, "devmodecreate_object")
+	}, "create_object")
 	# 2) Create it locally on this game server (Horizon won't echo it back). Right away, not through
 	# the streaming queue: the caller stands next to it and may look the node up on its next line.
 	network_agent.create_generic_object({
@@ -190,7 +190,7 @@ func spawn_props_authoritative(props: Array, immediate: bool = true) -> void:
 			"event": "create_object",
 			"amessagenb": 1,
 			"data": props.slice(start, start + SPAWN_BATCH),
-		}, "devmodecreate_object")
+		}, "create_object")
 	for data in props:
 		network_agent.create_generic_object({
 			"_immediate": immediate,

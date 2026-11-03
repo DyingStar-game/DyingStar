@@ -1435,7 +1435,6 @@ func start_server(receveid_universe_scene: Node) -> void:
 
 	if ServerNetwork.start_websocket_server():
 		set_process(true)
-	ServerNetwork._init_server_network_devmode()
 
 # Instantiate server player
 func instantiate_player(message: Dictionary):

@@ -20,7 +20,7 @@ extends RefCounted
 ##   * booleans accept true/1/yes/on/oui and their quoted forms, since ConfigFile hands back a
 ##     String for `debug_perf=true` written without quotes in some hand-edited files.
 ##
-## Only DIAGNOSTIC keys go through here. `[network] websocket_url` and `[chat] broker_url` keep
+## Only DIAGNOSTIC keys go through here. `[network] horizon_url` and `[chat] broker_url` keep
 ## their own local loads in client.gd / chat_network.gd: those run at connect time and must not
 ## depend on a cache warmed at boot.
 
