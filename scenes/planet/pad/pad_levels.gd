@@ -117,7 +117,7 @@ static func level(idx: PadIndex, u: String, own: Dictionary, memo: Dictionary,
 	var talus := float(mine["talus_m"])
 	if not best.is_empty():
 		var up := level(idx, str(best["uuid"]), own, memo, finest, mpd, near)
-		talus = minf(talus + absf(float(up[0]) - z) / PadSettings.TALUS_SLOPE, PadSettings.TALUS_MAX_M)
+		talus = minf(talus + PadBed.talus_width(absf(float(up[0]) - z)), PadSettings.TALUS_MAX_M)
 		z = float(up[0])
 	memo[u] = [z, talus]
 	return memo[u]

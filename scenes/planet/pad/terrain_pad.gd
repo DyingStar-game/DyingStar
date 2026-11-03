@@ -731,7 +731,7 @@ func _get_configuration_warnings() -> PackedStringArray:
 	var z: float = terrain.terrain_pad_altitude(rec)
 	if not is_nan(z):
 		var span: float = terrain.terrain_pad_height_span(rec)
-		if span / PadSettings.TALUS_SLOPE > PadSettings.TALUS_MAX_M:
+		if PadBed.talus_width(span) > PadSettings.TALUS_MAX_M:
 			out.append(("Le terrain varie de %.0f m sous ce pad : le talus est écrêté à "
 					+ "%.0f m et laisse une marche. Déplacez le bâtiment sur un terrain "
 					+ "moins pentu ou réduisez son emprise.") % [span, PadSettings.TALUS_MAX_M])

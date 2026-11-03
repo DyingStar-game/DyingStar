@@ -30,6 +30,13 @@ const APRON_M := 8.0
 ## a wall at exactly the character's limit makes the player hop in place.
 const TALUS_SLOPE := 0.5
 
+## How much wider the talus is than a straight ramp of TALUS_SLOPE. The talus is
+## an S curve (smoothstep), flat where it leaves the apron and flat where it
+## meets the relief, so neither edge shows a crease; its steepest point, in the
+## middle, is 1.5 times its mean slope. Spreading it 1.5 times wider keeps that
+## steepest point at TALUS_SLOPE exactly.
+const TALUS_SPREAD := 1.5
+
 ## Hard cap on the talus WIDTH. This is a safety bound, not a design choice:
 ## PadIndex hands a chunk the pads of its own HEALPix pixel plus its eight
 ## neighbours, exactly like GradeBed.gather_pieces, so a pad whose influence
