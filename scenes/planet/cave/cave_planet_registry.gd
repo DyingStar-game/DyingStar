@@ -129,7 +129,7 @@ static func placements_error(placements: Array[CavePlacement], data: PlanetData)
 
 static func prepare(data: PlanetData) -> String:
     CaveNetwork.warm()
-    data.stargrot_plans.clear()
+    data.stargrot_plans = []  # a published list is never edited in place: workers may hold it
     var error := definition_error(data)
     if not error.is_empty():
         return error

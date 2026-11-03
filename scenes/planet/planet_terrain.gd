@@ -1773,10 +1773,12 @@ func _exit_tree() -> void:
 	if _atmosphere_lod != null:
 		_atmosphere_lod.release()
 		_atmosphere_lod = null
-	# Joindre le fil de téléchargement avant que la planète disparaisse.
+	# Joindre le fil de téléchargement avant que la planète disparaisse. La source reste
+	# attachée, arrêtée : les tâches de la carte stellaire qui lisent ces données (et que
+	# _join_worker_tasks n'attend pas) la lisent sans verrou, et la remettre à null pouvait
+	# libérer l'objet sous elles. Un nouveau terrain la remplace au démarrage.
 	if planet_data != null and planet_data.remote_source != null:
 		planet_data.remote_source.stop()
-		planet_data.remote_source = null
 
 
 
