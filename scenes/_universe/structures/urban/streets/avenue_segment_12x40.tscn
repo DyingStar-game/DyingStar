@@ -1,0 +1,28 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/environment/terrain/road_asphalt.tres" id="3_road_asphalt"]
+
+[node name="AvenueSegment" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 2
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(12, 1, 40)
+
+[node name="Slab" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.02, 0)
+use_collision = true
+collision_mask = 0
+size = Vector3(12, 0.1, 40)
+material = ExtResource("3_road_asphalt")

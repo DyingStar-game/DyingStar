@@ -1,0 +1,110 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="7_map_marker"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/charging_station.png" id="8_charging_sta"]
+
+[node name="BatteryPark" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 6
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(46, 1, 14)
+
+[node name="Blockout" type="CSGCombiner3D" parent="."]
+use_collision = true
+collision_mask = 0
+
+[node name="Battery11" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.5, 1.2, -3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Battery12" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.5, 1.2, -3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Battery13" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.5, 1.2, -3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Battery14" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, 1.2, -3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Battery15" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.5, 1.2, -3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Battery16" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, 1.2, -3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Battery21" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.5, 1.2, 3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Battery22" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.5, 1.2, 3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Battery23" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.5, 1.2, 3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Battery24" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, 1.2, 3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Battery25" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.5, 1.2, 3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Battery26" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, 1.2, 3)
+size = Vector3(6, 2.6, 2.4)
+material = ExtResource("3_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 3.2, -7.1)
+script = ExtResource("5_neon_sign")
+branded = true
+brand = 7
+text_key = "%%SIGN_BATTERY_PARK"
+glow = 1.5
+letter_height = 0.6
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign"]
+script = ExtResource("6_photocell")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("7_map_marker")
+icon = ExtResource("8_charging_sta")
+label = "%%MAP_MARKER_BATTERY_PARK"
+importance = 4

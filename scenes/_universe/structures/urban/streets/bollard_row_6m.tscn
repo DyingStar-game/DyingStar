@@ -1,0 +1,50 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/mat_metal_yellow_rusty/mat_metal_yellow_rusty.tres" id="2_mat_metal_ye"]
+
+[node name="BollardRow" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="Blockout" type="CSGCombiner3D" parent="."]
+use_collision = true
+collision_mask = 0
+
+[node name="Bollard1" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0.25, 0)
+radius = 0.12
+height = 1.5
+sides = 10
+material = ExtResource("2_mat_metal_ye")
+
+[node name="Bollard2" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.25, 0)
+radius = 0.12
+height = 1.5
+sides = 10
+material = ExtResource("2_mat_metal_ye")
+
+[node name="Bollard3" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+radius = 0.12
+height = 1.5
+sides = 10
+material = ExtResource("2_mat_metal_ye")
+
+[node name="Bollard4" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.25, 0)
+radius = 0.12
+height = 1.5
+sides = 10
+material = ExtResource("2_mat_metal_ye")
+
+[node name="Bollard5" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0.25, 0)
+radius = 0.12
+height = 1.5
+sides = 10
+material = ExtResource("2_mat_metal_ye")

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dnsn1bltth3xg"]
 
-[ext_resource type="PackedScene" uid="uid://b5xfna23cscve" path="res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn" id="1_furn_lamppos"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_3.4m.tscn" id="1_furn_lamppos"]
 [ext_resource type="PackedScene" uid="uid://p8lbfuk68g7s" path="res://scenes/_universe/vehicles/ground/trucks/truck.tscn" id="2_truck"]
 [ext_resource type="PackedScene" uid="uid://nc8eir5a4h68" path="res://scenes/_universe/props/containers/container_standard_b_1200x240x240.tscn" id="4_container_st"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn" id="5_container_li"]
@@ -34,17 +34,17 @@ transform = Transform3D(-0.5150320327816812, 0.6996138429139889, 0.4952600084923
 [node name="Outpost" type="Node3D" parent="Tarsis3" unique_id=1776462311]
 script = ExtResource("16_stage_outpos")
 
-[node name="furn_floodlight_outdoor_lg" parent="Tarsis3/Outpost" unique_id=188534170 instance=ExtResource("1_furn_lamppos")]
-transform = Transform3D(0.00528218368316019, 0.6921318405134516, 0.7217517674955845, 0.8142419334775127, 0.41601286136570254, -0.40489921331749057, -0.5805016557274744, 0.5898193066743268, -0.5613653116927313, 4450724.587371, 2674224.728684, 3675573.877019)
+[node name="furn_lamppost_outdoor" parent="Tarsis3/Outpost" unique_id=188534170 instance=ExtResource("1_furn_lamppos")]
+transform = Transform3D(-0.721751767496, 0.692131840513, 0.005282183683, 0.404899213317, 0.416012861366, 0.814241933478, 0.561365311693, 0.589819306674, -0.580501655727, 4450724.587371, 2674224.728684, 3675573.877019)
 
-[node name="furn_floodlight_outdoor_lg_2" parent="Tarsis3/Outpost" unique_id=688764420 instance=ExtResource("1_furn_lamppos")]
-transform = Transform3D(0.7032869858836182, 0.6996217644280283, 0.12616180969433022, -0.26236253780306035, 0.4203693512118506, -0.8685939830089002, -0.6607218130531738, 0.577770711701745, 0.4791948355892267, 4450731.186449369, 2674232.1013921807, 3675560.504168019)
+[node name="furn_lamppost_outdoor_2" parent="Tarsis3/Outpost" unique_id=688764420 instance=ExtResource("1_furn_lamppos")]
+transform = Transform3D(-0.126161809694, 0.699621764428, 0.703286985884, 0.868593983009, 0.420369351212, -0.262362537803, -0.479194835589, 0.577770711702, -0.660721813053, 4450731.186449369, 2674232.1013921807, 3675560.504168019)
 
-[node name="furn_floodlight_outdoor_lg_3" parent="Tarsis3/Outpost" unique_id=2018399000 instance=ExtResource("1_furn_lamppos")]
-transform = Transform3D(-0.624299476666814, 0.6943322821377723, 0.35798442063153524, 0.7515131295307309, 0.4087126871855822, 0.5178628732362145, 0.213256136081636, 0.5923315130185919, -0.7769589430006173, 4450734.614447, 2674212.233399, 3675570.772498)
+[node name="furn_lamppost_outdoor_3" parent="Tarsis3/Outpost" unique_id=2018399000 instance=ExtResource("1_furn_lamppos")]
+transform = Transform3D(-0.357984420632, 0.694332282138, -0.624299476667, -0.517862873236, 0.408712687186, 0.751513129531, 0.776958943001, 0.592331513019, 0.213256136082, 4450734.614447, 2674212.233399, 3675570.772498)
 
-[node name="furn_floodlight_outdoor_lg_4" parent="Tarsis3/Outpost" unique_id=1150259216 instance=ExtResource("1_furn_lamppos")]
-transform = Transform3D(0.15221641117127505, 0.7068709393400451, -0.690770323107949, -0.8873801784444231, 0.4054882160769302, 0.21939855406700648, 0.4351856880391193, 0.5795798320673972, 0.6889852213122185, 4450739.539458, 2674220.641402, 3675558.54512)
+[node name="furn_lamppost_outdoor_4" parent="Tarsis3/Outpost" unique_id=1150259216 instance=ExtResource("1_furn_lamppos")]
+transform = Transform3D(0.690770323108, 0.70687093934, 0.152216411171, -0.219398554067, 0.405488216077, -0.887380178444, -0.688985221312, 0.579579832067, 0.435185688039, 4450739.539458, 2674220.641402, 3675558.54512)
 
 [node name="truck" parent="Tarsis3/Outpost" unique_id=1194811120 instance=ExtResource("2_truck")]
 transform = Transform3D(-0.0643847425425463, 0.6996227656352652, 0.7116056427071057, 0.8424236952171648, 0.4203666313466324, -0.3370670749078618, -0.5349550660236687, 0.5777714782291936, -0.6164439928172427, 4450737.777102, 2674214.931626, 3675565.563324)
@@ -190,8 +190,8 @@ far = 10000000000000.0
 script = ExtResource("15_stage_statio")
 key = &"settings_controls"
 
-[node name="furn_floodlight_outdoor_lg_5" parent="Tarsis3/Outpost" unique_id=1239394709 instance=ExtResource("1_furn_lamppos")]
-transform = Transform3D(-0.5122627021629276, 0.6931399317534633, 0.5070936392635398, 0.8588224575379542, 0.4111608765065008, 0.30556622859680604, 0.00330308964528477, 0.5920335874249127, -0.805906521229096, 4450737.327954, 2674203.799481, 3675573.721319)
+[node name="furn_lamppost_outdoor_5" parent="Tarsis3/Outpost" unique_id=1239394709 instance=ExtResource("1_furn_lamppos")]
+transform = Transform3D(-0.507093639264, 0.693139931753, -0.512262702163, -0.305566228597, 0.411160876507, 0.858822457538, 0.805906521229, 0.592033587425, 0.003303089645, 4450737.327954, 2674203.799481, 3675573.721319)
 
 [node name="container_standard_b_1200x240x241" parent="Tarsis3/Outpost" unique_id=618593321 instance=ExtResource("4_container_st")]
 transform = Transform3D(-0.4077761681927117, 0.6996199082444395, -0.5867287112815522, -0.42909980236584144, 0.4203698316738651, 0.7994764313149462, 0.8059726771198045, 0.5777726097752715, 0.12878996517511312, 4450718.995386288, 2674234.8336596694, 3675573.3154624808)

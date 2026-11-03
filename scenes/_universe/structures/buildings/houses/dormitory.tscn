@@ -1,0 +1,84 @@
+[gd_scene format=3 uid="uid://gpmf3bwml5up"]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="7_map_marker"]
+[ext_resource type="Texture2D" uid="uid://dypi84bwtjvwy" path="res://assets/textures/map_markers/habitat_block.png" id="8_habitat_bloc"]
+
+[node name="Dormitory" type="Node3D" unique_id=632612200]
+
+[node name="PropSync" type="Node" parent="." unique_id=393959213]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=1460969473]
+transform = Transform3D(1.5239332302496245, 0, 0, 0, 1, 0, 0, 0, 1.4825070986859985, 0, 0, 0)
+script = ExtResource("2_terrain_pad")
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1601298608]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(32, 1, 40)
+
+[node name="Blockout" type="CSGCombiner3D" parent="." unique_id=128412326]
+use_collision = true
+collision_mask = 0
+
+[node name="Wing1" type="CSGBox3D" parent="Blockout" unique_id=1407903797]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 2.9, 0)
+size = Vector3(12, 6.2, 40)
+material = ExtResource("3_placeholder_")
+
+[node name="Wing1Door" type="CSGBox3D" parent="Blockout/Wing1" unique_id=1293443232]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.7, -20)
+operation = 2
+size = Vector3(1.6, 2.4, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Wing1Roof" type="CSGPolygon3D" parent="Blockout" unique_id=852005208]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 6, 20.3)
+polygon = PackedVector2Array(-6.3, 0, 6.3, 0, 0, 3)
+depth = 40.6
+material = ExtResource("4_placeholder_")
+
+[node name="Wing2" type="CSGBox3D" parent="Blockout" unique_id=1357749939]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 2.9, 0)
+size = Vector3(12, 6.2, 40)
+material = ExtResource("3_placeholder_")
+
+[node name="Wing2Door" type="CSGBox3D" parent="Blockout/Wing2" unique_id=1705581527]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.7, -20)
+operation = 2
+size = Vector3(1.6, 2.4, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Wing2Roof" type="CSGPolygon3D" parent="Blockout" unique_id=1890527074]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 6, 20.3)
+polygon = PackedVector2Array(-6.3, 0, 6.3, 0, 0, 3)
+depth = 40.6
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=1560870373]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -10.050553360693373, 4.5, -20.05)
+script = ExtResource("5_neon_sign")
+text_key = "%%SIGN_DORMITORIES"
+branded = true
+brand = 5
+glow = 1.5
+letter_height = 0.68
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=2092754621]
+script = ExtResource("6_photocell")
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=749828874]
+script = ExtResource("7_map_marker")
+icon = ExtResource("8_habitat_bloc")
+label = "%%MAP_MARKER_DORMITORIES"
+importance = 4

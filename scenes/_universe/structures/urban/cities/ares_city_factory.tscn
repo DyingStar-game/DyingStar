@@ -4,7 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://nc8eir5a4h68" path="res://scenes/_universe/props/containers/container_standard_b_1200x240x240.tscn" id="B1"]
 [ext_resource type="PackedScene" uid="uid://sn4ohukiewv6" path="res://scenes/_universe/structures/industrial/cargo_depot.tscn" id="cargo"]
 [ext_resource type="PackedScene" uid="uid://d2s14o4v7mrcl" path="res://scenes/_universe/props/containers/crate_container.tscn" id="crate"]
-[ext_resource type="PackedScene" uid="uid://b5xfna23cscve" path="res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn" id="flood"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_3.4m.tscn" id="flood"]
 [ext_resource type="PackedScene" uid="uid://dk07ej5iwa2mg" path="res://scenes/_universe/structures/industrial/garage.tscn" id="garage"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn" id="L1"]
 [ext_resource type="PackedScene" uid="uid://c7jjgmfdmsu85" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn" id="lamp"]
@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" uid="uid://dbhjkpit6n4ns" path="res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn" id="S1"]
 [ext_resource type="PackedScene" uid="uid://dyoytajqysjhf" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="tele"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/storage/pad_storage_area.tscn" id="storage_area"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/urban/streets/road_snap.gd" id="road_snap"]
 
 [node name="AresCityFactory" type="Node3D" unique_id=362023481]
 
@@ -79,37 +80,37 @@ transform = Transform3D(0.34202, 0, -0.939693, 0, 1, 0, 0.939693, 0, 0.34202, 41
 transform = Transform3D(0.669131, 0, -0.7431449999999999, 0, 1, 0, 0.7431449999999999, 0, 0.669131, 40.6, 0.95, -30.1)
 
 [node name="FloodAvenueNorth_1" parent="." unique_id=451754742 instance=ExtResource("flood")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -110.1, 0, -19.61)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -110.1, 0, -19.61)
 
 [node name="FloodAvenueNorth_2" parent="." unique_id=1368690540 instance=ExtResource("flood")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30.1, 0.08917677624092057, -44.77930534202625)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -30.1, 0.089176776241, -44.779305342026)
 
 [node name="FloodAvenueNorth_3" parent="." unique_id=219585218 instance=ExtResource("flood")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 49.9, 0, -19.61)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 49.9, 0, -19.61)
 
 [node name="FloodAvenueNorth_4" parent="." unique_id=1902241555 instance=ExtResource("flood")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 129.9, 0, -19.61)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 129.9, 0, -19.61)
 
 [node name="FloodAvenueSouth_1" parent="." unique_id=1865141072 instance=ExtResource("flood")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -51.085503972913095, 0, 26.960566816508702)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -51.085503972913, 0, 26.960566816509)
 
 [node name="FloodAvenueSouth_2" parent="." unique_id=1792743591 instance=ExtResource("flood")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.1, 0, 19.61)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 0.1, 0, 19.61)
 
 [node name="FloodAvenueSouth_3" parent="." unique_id=2132349122 instance=ExtResource("flood")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 54.1, 0, 19.61)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 54.1, 0, 19.61)
 
 [node name="FloodCargoWest" parent="." unique_id=578869963 instance=ExtResource("flood")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -91.9, 0, -84.39)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -91.9, 0, -84.39)
 
 [node name="FloodCargoEast" parent="." unique_id=1839646856 instance=ExtResource("flood")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 84.1, 0, -84.39)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 84.1, 0, -84.39)
 
 [node name="FloodCentralYard" parent="." unique_id=1015002019 instance=ExtResource("flood")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -1.9, 0, -100.39)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -1.9, 0, -100.39)
 
 [node name="FloodSouthBlock" parent="." unique_id=587641960 instance=ExtResource("flood")]
-transform = Transform3D(0.8102038682353256, 0, 0.5861481825413392, 0, 1, 0, -0.5861481825413392, 0, 0.8102038682353256, 13.493239730028684, 0, 54.14908388084621)
+transform = Transform3D(-0.586148182541, 0, 0.810203868235, 0, 1, 0, -0.810203868235, 0, -0.586148182541, 13.493239730029, 0, 54.149083880846)
 
 [node name="Storage_CentralYard" parent="." instance=ExtResource("storage_area")]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 4.432986, 0, -118.756878)
@@ -366,3 +367,16 @@ transform = Transform3D(0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, 0.999986, 
 
 [node name="EastYard_7_3" parent="Storage_WestYard" instance=ExtResource("A1")]
 transform = Transform3D(0.999986, 0, -0.005236, 0, 1, 0, 0.005236, 0, 0.999986, 37.729518, 5.1, 0.414787)
+
+[node name="RoadSnapEast" type="Marker3D" parent="."]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 157, 0, 0)
+script = ExtResource("road_snap")
+
+[node name="RoadSnapWest" type="Marker3D" parent="."]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -165, 0, 0)
+script = ExtResource("road_snap")
+
+[node name="RailwaySnapSouth" type="Marker3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 74)
+script = ExtResource("road_snap")
+kind = 3

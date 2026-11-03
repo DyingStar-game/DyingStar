@@ -1,7 +1,7 @@
 extends GutTest
 ## ares_city_factory, the layout of the factory POIs (spawn_scene of their poi_village entries in
 ## Horizon's seed): an industrial zone with no homes. At least two garages, mining depots aligned in
-## groups of three or four, at least two cargo depots with stacked containers around them, floodlights,
+## groups of three or four, at least two cargo depots with stacked containers around them, lampposts,
 ## two teleporter cabins. Every item is a networked prop, spawned by poi_villages.gd: the direct children,
 ## and the containers under their storage area.
 ## Read from the file: its buildings pull in materials that raise engine errors on load.
@@ -11,7 +11,7 @@ const GARAGE := "res://scenes/_universe/structures/industrial/garage.tscn"
 const CARGO := "res://scenes/_universe/structures/industrial/cargo_depot.tscn"
 const MINING := "res://scenes/_universe/structures/industrial/mines/mining_depot.tscn"
 const HOME := "res://scenes/_universe/structures/buildings/spawn_building.tscn"
-const FLOODLIGHT := "res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn"
+const LAMPPOST := "res://scenes/_universe/props/furniture/furn_lamppost_outdoor_3.4m.tscn"
 const CONTAINERS := "res://scenes/_universe/props/containers/container_"
 ## Depots further apart than this on one line belong to two groups (side by side: 32 m, apron to apron).
 const SIDE_BY_SIDE_M := 40.0
@@ -42,10 +42,10 @@ func test_it_has_no_homes() -> void:
 	assert_eq(_count(HOME), 0, "a factory city houses nobody: Horizon sends new players to the mining villages")
 
 
-func test_it_has_two_garages_two_cargo_depots_and_floodlights() -> void:
+func test_it_has_two_garages_two_cargo_depots_and_lampposts() -> void:
 	assert_gte(_count(GARAGE), 2)
 	assert_gte(_count(CARGO), 2)
-	assert_gte(_count(FLOODLIGHT), 4)
+	assert_gte(_count(LAMPPOST), 4)
 
 
 func test_its_mining_depots_stand_in_aligned_groups_of_three_or_four() -> void:

@@ -1,0 +1,70 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="7_map_marker"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/power_plant.png" id="8_power_plant"]
+
+[node name="TransformerStation" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 6
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(22, 1, 16)
+
+[node name="Blockout" type="CSGCombiner3D" parent="."]
+use_collision = true
+collision_mask = 0
+
+[node name="ControlRoom" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 2.05, 4)
+size = Vector3(10, 4.5, 6)
+material = ExtResource("3_placeholder_")
+
+[node name="Transformer1" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 1.55, -4)
+size = Vector3(3, 3.5, 2.5)
+material = ExtResource("4_placeholder_")
+
+[node name="Transformer2" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 1.55, -4)
+size = Vector3(3, 3.5, 2.5)
+material = ExtResource("4_placeholder_")
+
+[node name="Transformer3" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 1.55, -4)
+size = Vector3(3, 3.5, 2.5)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -5, 3.6, 0.95)
+script = ExtResource("5_neon_sign")
+branded = true
+brand = 7
+text_key = "%%SIGN_SUBSTATION"
+glow = 1.5
+letter_height = 0.6
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign"]
+script = ExtResource("6_photocell")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("7_map_marker")
+icon = ExtResource("8_power_plant")
+label = "%%MAP_MARKER_SUBSTATION"
+importance = 4
