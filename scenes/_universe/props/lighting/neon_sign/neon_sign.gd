@@ -21,10 +21,21 @@ extends Node3D
 	set(value):
 		text_key = value
 		_apply()
-## Colour of the tube. The light takes the same colour.
+## Colour of the tube. The light takes the same colour. Ignored when [member branded].
 @export var color: Color = Color(1.0, 0.729, 0.031):
 	set(value):
 		color = value
+		_apply()
+## Whether the tube takes the colour of the ARES subsidiary that runs the building ([member brand],
+## from AresBrand: one place for the brand colours) instead of [member color].
+@export var branded: bool = false:
+	set(value):
+		branded = value
+		_apply()
+## The ARES subsidiary that runs the building, when [member branded].
+@export var brand: AresBrand.Subsidiary = AresBrand.Subsidiary.CORP:
+	set(value):
+		brand = value
 		_apply()
 ## How bright the tube is (emission energy). Above roughly 1 the environment's glow makes it bloom;
 ## 2 to 2.5 reads as neon in game (tuned on the village signs), far below the LED panels' 25.
@@ -149,6 +160,11 @@ func shown_text() -> String:
 	return shown
 
 
+## The colour of the tube and of its light: the subsidiary's when [member branded], else [member color].
+func tube_colour() -> Color:
+	return AresBrand.colour(brand) if branded else color
+
+
 func _apply() -> void:
 	if not is_node_ready() or _tube == null:
 		return
@@ -161,12 +177,13 @@ func _apply() -> void:
 	var tube := _tube.material_override as StandardMaterial3D
 	# Switched off (by day), the tube keeps its colour: painted glass, without glow or light. Darkened, it
 	# read as a black word on the facade.
-	tube.albedo_color = color
+	var tint := tube_colour()
+	tube.albedo_color = tint
 	tube.emission_enabled = _glowing
-	tube.emission = color
+	tube.emission = tint
 	tube.emission_energy_multiplier = glow
 	_tube.visibility_range_end = fade_distance
-	_light.light_color = color
+	_light.light_color = tint
 	_light.light_energy = light_energy
 	_light.visible = _glowing and light_energy > 0.0
 	_light.omni_range = light_range

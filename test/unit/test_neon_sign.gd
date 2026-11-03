@@ -71,6 +71,20 @@ func test_switched_off_the_tube_keeps_its_colour_without_glow_or_light() -> void
 	assert_true(light.visible)
 
 
+func test_a_branded_sign_wears_its_subsidiary_colour() -> void:
+	var sign := NeonSign.new()
+	sign.branded = true
+	sign.brand = AresBrand.Subsidiary.MINING
+	add_child_autofree(sign)
+	var tube := _internal(sign, MeshInstance3D) as MeshInstance3D
+	var light := _internal(sign, OmniLight3D) as OmniLight3D
+	var mining := AresBrand.colour(AresBrand.Subsidiary.MINING)
+	assert_eq((tube.material_override as StandardMaterial3D).emission, mining, "the tube: ARES MINING's colour")
+	assert_eq(light.light_color, mining, "and its light")
+	sign.branded = false
+	assert_eq(light.light_color, sign.color, "unbranded, its own colour again")
+
+
 func test_the_text_follows_the_language() -> void:
 	var before := TranslationServer.get_locale()
 	var sign := NeonSign.new()

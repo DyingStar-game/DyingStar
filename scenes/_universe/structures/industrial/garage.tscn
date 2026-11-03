@@ -151,6 +151,8 @@ shape = SubResource("BoxShape3D_fyfm0")
 [node name="NeonSign" type="Node3D" parent="." unique_id=1647205584]
 transform = Transform3D(6.123032e-17, 0, 1, 0, 1, 0, -1, 0, 6.123032e-17, 0.48, 6.6, -26.15)
 script = ExtResource("8_neon")
+branded = true
+brand = 6
 text_key = "%%SIGN_GARAGE"
 letter_height = 1.4
 depth = 0.08

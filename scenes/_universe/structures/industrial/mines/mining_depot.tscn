@@ -398,8 +398,9 @@ size = Vector3(16, 1, 16)
 [node name="NeonSign" type="Node3D" parent="." unique_id=2097194347]
 transform = Transform3D(5.983101295944607e-17, -0.2125652951723511, -0.9771468647487396, 1.3015440553509511e-17, 0.9771468647487396, -0.2125652951723511, 1, 0, 6.123032e-17, 0.8074256255904775, 2.497089331236124, 0)
 script = ExtResource("15_x2sd0")
+branded = true
+brand = 2
 text_key = "%%SIGN_MINING_DEPOT"
-color = Color(1, 0.4, 0, 1)
 glow = 2.0
 letter_height = 0.14
 light_energy = 0.7
