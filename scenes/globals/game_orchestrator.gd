@@ -31,6 +31,9 @@ const VOICE_GROUP := &"livekit_audio"
 const QUIT_VOICE_TIMEOUT_S := 1.0
 ## LiveKit's Rust library, kept loaded until the process dies (see tools/native/NativeLibraryPin.cs).
 const VOICE_NATIVE_LIBRARY := "livekit_ffi.dll"
+## The network link's library (addons/ds_net): its threads stop when the link closes, but one may still
+## be resolving the server's name when Godot unloads it at exit.
+const NETWORK_NATIVE_LIBRARY := "ds_godot_net.windows.x86_64.dll"
 const NATIVE_LIBRARY_PIN_SCRIPT := "res://tools/native/NativeLibraryPin.cs"
 
 
@@ -91,14 +94,12 @@ func _ready():
 	else:
 		change_network_role(NetworkRole.PLAYER)
 		_pin_voice_library()
+		_pin_network_library()
 		# With no player in the world yet, this is the menu music (see MusicDirector).
 		MusicDirector.start()
-		if OS.has_feature("devmode"):
-			change_game_state(GameStates.PLAYING)
-		else:
-			var instance = LOADING_SCENE.instantiate()
-			get_tree().root.add_child.call_deferred(instance)
-			change_game_state(GameStates.UNIVERSE_MENU)
+		var instance = LOADING_SCENE.instantiate()
+		get_tree().root.add_child.call_deferred(instance)
+		change_game_state(GameStates.UNIVERSE_MENU)
 
 func _notification(what):
 	match what:
@@ -127,6 +128,15 @@ func _pin_voice_library() -> void:
 	var script: Script = NativeScript.load_usable(NATIVE_LIBRARY_PIN_SCRIPT, ["Pin"])
 	if script == null or not script.new().Pin(VOICE_NATIVE_LIBRARY):
 		push_warning("[voice] %s not pinned: quitting may crash" % VOICE_NATIVE_LIBRARY)
+
+
+## Keep the network link's library loaded until the process dies (Windows), like LiveKit's.
+func _pin_network_library() -> void:
+	if OS.get_name() != "Windows":
+		return
+	var script: Script = NativeScript.load_usable(NATIVE_LIBRARY_PIN_SCRIPT, ["Pin"])
+	if script == null or not script.new().Pin(NETWORK_NATIVE_LIBRARY):
+		push_warning("[client] %s not pinned: quitting may crash" % NETWORK_NATIVE_LIBRARY)
 
 
 ## Wait until every voice room told to leave has left, or [param timeout_s] seconds at most (a room that

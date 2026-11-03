@@ -7,7 +7,6 @@ signal hs_client_action_move
 ## whatever node this body is a child of RIGHT NOW; the frame itself is NOT a parameter — the
 ## receiver derives it from the tree (see Server._on_player_move). Emit it through emit_move().
 signal hs_server_move(uuid: String, local_position: Vector3, local_rotation: Vector3)
-signal hs_client_action_pressed
 signal hs_server_player_update
 
 @warning_ignore("unused_signal")

@@ -153,6 +153,43 @@ jobs:
               || { echo "::error::dev tool '${tool}' not switched off in globals.gd"; exit 1; }
           done
 
+      - name: Pin of the network extension
+        id: ds_net
+        run: echo "rev=$(cat addons/ds_net/HORIZONSERVER_REV)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout horizonserver (network extension source)
+        uses: actions/checkout@v4
+        with:
+          repository: DyingStar-game/horizonserver
+          ref: ${{ steps.ds_net.outputs.rev }}
+          path: .ds_net/horizonserver
+          submodules: true
+
+      - name: Build the network extension (addons/ds_net)
+        run: |
+          # The client's WebTransport + bitcode link to Horizon: a Rust GDExtension (godot-rust)
+          # from horizonserver/godot_net, at the commit pinned in addons/ds_net/HORIZONSERVER_REV.
+          # Windows is cross-built with MinGW-w64. The Windows job also builds the Linux library:
+          # the editor that runs the export is Linux, and without it HorizonLink would not exist
+          # when it loads the project (the export only ships the library of its platform).
+          sudo apt-get install -y build-essential gcc-mingw-w64-x86-64
+          if ! command -v rustup > /dev/null && [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
+          fi
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install stable --profile minimal
+          LIBS=linux
+          if [ "${{ matrix.os_name }}" = windows ]; then
+            rustup target add --toolchain stable x86_64-pc-windows-gnu
+            LIBS=all
+          fi
+          rm -rf addons/ds_net/bin
+          RUSTUP_TOOLCHAIN=stable .ds_net/horizonserver/godot_net/build.sh \
+            ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64 \
+            addons/ds_net/bin "$LIBS"
+          # Out of the project before the export: Godot would import the checkout.
+          rm -rf .ds_net
+
       - name: Create build output directory
         run: |
           # Self-hosted runners reuse the workspace: wipe stale exports so a
@@ -184,12 +221,12 @@ jobs:
         run: |
           cp client.ini "${{ matrix.build_dir }}/client.ini"
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            WS_URL="ws://server.dyingstar-game.space:80"
+            HORIZON_URL="https://server.dyingstar-game.space:30001"
             CHAT_URL="ws://chat.dyingstar-game.space:80"
             CHANNEL="prod"
             SERVICES_URL="https://services.dyingstar-game.space"
           else
-            WS_URL="ws://server-preprod.dyingstar-game.space:80"
+            HORIZON_URL="https://server-preprod.dyingstar-game.space:30101"
             CHAT_URL="ws://chat-preprod.dyingstar-game.space:80"
             CHANNEL="preprod"
             SERVICES_URL="https://services-preprod.dyingstar-game.space"
@@ -201,7 +238,8 @@ jobs:
             sed -i -E "s|^[[:space:]]*$1[[:space:]]*=.*|$1=\"$2\"|" "$INI"
             grep -qE "^$1=\"$2\"$" "$INI" || { echo "::error::client.ini: key '$1' not found"; exit 1; }
           }
-          set_key websocket_url "$WS_URL"
+          set_key horizon_url "$HORIZON_URL"
+          set_key tls_verify "true"
           set_key broker_url "$CHAT_URL"
           set_key channel "$CHANNEL"
           set_key scheme "https"

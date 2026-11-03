@@ -68,7 +68,7 @@ func _enter_tree() -> void:
 	_build_id_export = BuildIdExport.new()
 	add_export_plugin(_build_id_export)
 	# Never update on our own: ask the developer first. Downloading on every editor start froze the
-	# editor for seconds, and every devmode/N-clients restart from the bottom panel re-triggered the
+	# editor for seconds, and every N-clients restart from the bottom panel re-triggered the
 	# whole thing. The items_def/ files alone decide whether Import/Export are usable — this MUST be
 	# set here, or they would stay greyed out forever since no update runs at startup.
 	_defs_ready = ServerPropsIO.has_network_defs()

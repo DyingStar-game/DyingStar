@@ -3,7 +3,9 @@ extends Node
 const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const LIVEKIT_SCRIPT = preload("res://scenes/audio/livekit.gd")
 
-const WEBSOCKET_CONNECT_TIMEOUT_SECS: float = 2.0
+## How long we wait for Horizon to answer (QUIC handshake, then its HelloAck) before showing the
+## connection error. Longer than the WebSocket's 2 s: a WebTransport session is TLS + HTTP/3 first.
+const HORIZON_CONNECT_TIMEOUT_SECS: float = 5.0
 ## How long a prop may sit half-received before it counts as lost rather than merely in transit. Well
 ## past any plausible gap between two channels of the same zone entry.
 const STUCK_PROP_MS: int = 8000
@@ -32,6 +34,13 @@ const ERROR_MESSAGE_KEYS := {
 	ERROR_TOKEN_EXPIRED: "%%ERR_SESSION_EXPIRED",
 	ERROR_TOKEN_REFUSED: "%%ERR_AUTH_REFUSED",
 }
+## Codes Horizon closes the session with (horizon_protocol::CloseCode) that have their own wording.
+## 4000-4002: this client's protocol, frame format or compression is not the server's — an outdated build.
+const CLOSE_PROTOCOL_MISMATCH := 4000
+const CLOSE_SETTINGS_MISMATCH := 4001
+const CLOSE_DICTIONARY_MISMATCH := 4002
+const CLOSE_KICKED := 4005
+const CLOSE_SERVER_FULL := 4007
 
 var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
@@ -44,9 +53,16 @@ var universe_scene: Node = null
 var player_instance: Node = null
 var spawn_point: Vector3 = Vector3.ZERO
 
-# For connection with Horizon server
-var websocket_url: String = "ws://server.dyingstar-game.space:7040"
-var socket := WebSocketPeer.new()
+# For connection with Horizon server: WebTransport (QUIC/UDP), frames in bitcode, through the
+# GDExtension in addons/ds_net. client.ini [network] overrides these.
+var horizon_url: String = "https://server.dyingstar-game.space:30001"
+## The compression of Horizon's WebTransport listener; the frames must match it.
+var horizon_compression: String = "zstd"
+## false accepts any certificate (a local Horizon's self-signed one); ignored by release builds.
+var horizon_tls_verify: bool = true
+## The link (HorizonLink). Untyped on purpose: the class exists only when the extension's library is
+## there, and a typed reference would stop this whole script from parsing without it (unit tests).
+var link = null
 var player_entity
 var players_list: Dictionary = {}
 var props_list: Dictionary = {
@@ -264,43 +280,49 @@ func start_client(receveid_universe_scene: Node, _ip, _port) -> void:
 			Globals.player_name = own_name
 
 	# initiate connection to the Horizon server
-	var err = socket.connect_to_url(websocket_url)
+	if not ClassDB.class_exists("HorizonLink"):
+		push_error("[client] HorizonLink is missing: the network extension (addons/ds_net) did not load")
+		remove_loading_node()
+		GameOrchestrator.connexion_error_message = TranslationServer.translate("%%ERR_NETWORK_EXTENSION")
+		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+		return
+	link = ClassDB.instantiate("HorizonLink")
+	var err: int = link.connect_to_url(horizon_url, {
+		"compression": horizon_compression,
+		"tls_verify": horizon_tls_verify,
+		"client": "dyingstar/%s" % ProjectSettings.get_setting("application/config/version", "dev"),
+		"connect_timeout": HORIZON_CONNECT_TIMEOUT_SECS,
+	})
 	if err != OK:
 		push_error("connect_to_url returned error: %d" % err)
-		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
-		return
-
-	print("Connecting to %s..." % websocket_url)
-	# Poll until socket becomes OPEN (or timeout). We must poll the client so it advances states.
-	var deadline := Time.get_unix_time_from_system() + int(WEBSOCKET_CONNECT_TIMEOUT_SECS)
-	while socket.get_ready_state() != WebSocketPeer.STATE_OPEN and Time.get_unix_time_from_system() < deadline:
-		socket.poll()
-		# yield a frame so we don't block the engine
-		await get_tree().process_frame
-
-	if socket.get_ready_state() == WebSocketPeer.STATE_CONNECTING:
 		remove_loading_node()
-		push_error("connect_to_url returned error: %d" % err)
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		return
 
-	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		print("WebSocket OPEN")
+	print("Connecting to %s..." % horizon_url)
+	# The link gives up by itself after HORIZON_CONNECT_TIMEOUT_SECS; poll it so it moves on.
+	while link != null and link.get_status() == link.STATUS_CONNECTING:
+		for event in link.poll(0):
+			_backlog.push(event)
+		await get_tree().process_frame
+	if link == null:
+		return  # shut down while connecting
+
+	if link.get_status() == link.STATUS_OPEN:
+		print("Horizon session OPEN (WebTransport)")
 		set_process(true)
 		# Initialization request to the server (player name + spawn point)
-		socket.send_text(JSON.stringify({
-			"namespace": "player",
-			"event": "init",
-			"data": {
-				"token": token,
-				# client.ini debug_move_clocks: the clocks of our own moves (MovementProbe), for us only.
-				"move_clocks": ClientConfig.get_bool("debug_move_clocks", false),
-			}
-		}))
-		network_events_sent += 1
+		_send_event("player", "init", {
+			"token": token,
+			# client.ini debug_move_clocks: the clocks of our own moves (MovementProbe), for us only.
+			"move_clocks": ClientConfig.get_bool("debug_move_clocks", false),
+		})
 	else:
 		remove_loading_node()
-		push_error("Unable to connect (timeout or error). State: %d" % socket.get_ready_state())
+		push_error("Unable to connect to %s: %s %d %s"
+				% [horizon_url, link.get_close_kind(), link.get_close_code(), link.get_close_reason()])
+		GameOrchestrator.connexion_error_message = close_message_for(
+				link.get_close_kind(), link.get_close_code(), link.get_close_reason())
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 		set_process(false)
 
@@ -319,10 +341,14 @@ func _load_client_ini_file() -> void:
 		print("No client.ini file found, using default settings.")
 		return
 
-	if OS.has_feature("devmode"):
-		websocket_url = "ws://localhost:7041"
-	elif config_file.has_section_key("network", "websocket_url"):
-		websocket_url = config_file.get_value("network", "websocket_url", websocket_url)
+	horizon_url = str(config_file.get_value("network", "horizon_url", horizon_url))
+	horizon_compression = str(config_file.get_value("network", "compression", horizon_compression))
+	# A bool, or the text "true"/"false" when written quoted (the build workflow quotes every value).
+	var tls_verify = config_file.get_value("network", "tls_verify", horizon_tls_verify)
+	horizon_tls_verify = tls_verify if tls_verify is bool else str(tls_verify).strip_edges().to_lower() != "false"
+	if config_file.has_section_key("network", "websocket_url"):
+		push_warning("[client] client.ini: websocket_url is obsolete, Horizon is reached at horizon_url (%s)"
+				% horizon_url)
 
 func _process(_delta: float) -> void:
 	_free_retired()
@@ -382,53 +408,61 @@ func _process(_delta: float) -> void:
 	# count is the number of frames that drained anything, not the number of packets; that one is
 	# the `network/events_received` custom monitor.
 	var _net_tok: int = ClientPerf.scope_begin()
-	socket.poll()
-
-	# get_ready_state() tells you what state the socket is in.
-	var state = socket.get_ready_state()
-
-	# `WebSocketPeer.STATE_OPEN` means the socket is connected and ready
-	# to send and receive data.
-	if state == WebSocketPeer.STATE_OPEN:
-		while socket.get_available_packet_count():
-			var packet = socket.get_packet()
-			if socket.was_string_packet():
-				# `net:parse` — UTF-8 decode plus JSON parse, per packet. Its x<n> count IS the packet
-				# count, which is the number the drain was missing: a 1036 ms frame says nothing
-				# until you know whether it carried 50 packets or 5000.
-				var _parse_tok: int = _net_t()
-				var packet_text = packet.get_string_from_utf8()
-				if _net_echo:
-					print("< Client - Got text data from server: %s" % packet_text)
-				network_events_received += 1
-				var event = JSON.parse_string(packet_text)
-				_net_t_end("net:parse", _parse_tok)
-				if event is Dictionary:
-					_backlog.push(event)
-				else:
-					print("< Client - ERROR - Unknown event format: %s" % packet_text)
-
-			else:
-				print("< Client - Got binary data from server: %d bytes" % packet.size())
-		# Handled in arrival order within the frame's budget; the rest waits for the next frame.
-		if not _backlog.drain(_route, BACKLOG_BUDGET_LOADING_US if LoadingSplash.is_up(get_tree())
-				else BACKLOG_BUDGET_PLAYING_US):
-			ClientPerf.scope_end("net:poll", _net_tok)
-			return
-
-	# `WebSocketPeer.STATE_CLOSING` means the socket is closing.
-	# It is important to keep polling for a clean close.
-	elif state == WebSocketPeer.STATE_CLOSING:
-		pass
-
-	# `WebSocketPeer.STATE_CLOSED` means the connection has fully closed.
-	# It is now safe to stop polling.
-	elif state == WebSocketPeer.STATE_CLOSED:
-		# The code will be `-1` if the disconnection was not properly notified by the remote peer.
-		var code = socket.get_close_code()
-		print("< Client - WebSocket closed with code: %d. Clean: %s" % [code, code != -1])
-		set_process(false) # Stop processing.
+	if link == null:
+		ClientPerf.scope_end("net:poll", _net_tok)
+		return
+	# `net:parse` — what the frame received, already decoded by the extension (bitcode, off the main
+	# thread) and turned into Dictionaries here. The x<n> count is the number of frames that received
+	# anything; `network/events_received` counts the messages.
+	var _parse_tok: int = _net_t()
+	var received: Array = link.poll(0)
+	_net_t_end("net:parse", _parse_tok)
+	for event in received:
+		if _net_echo:
+			print("< Client - Got data from server: %s" % event)
+		network_events_received += 1
+		_backlog.push(event)
+	# Handled in arrival order within the frame's budget; the rest waits for the next frame.
+	if not _backlog.drain(_route, BACKLOG_BUDGET_LOADING_US if LoadingSplash.is_up(get_tree())
+			else BACKLOG_BUDGET_PLAYING_US):
+		ClientPerf.scope_end("net:poll", _net_tok)
+		return
+	# A session that ended: what it delivered before ending is handled first (the server's `error`
+	# comes before its kick, and words the error screen better than the close does).
+	if link.get_status() == link.STATUS_CLOSED and _backlog.size() == 0:
+		_on_link_closed()
 	ClientPerf.scope_end("net:poll", _net_tok)
+
+
+## The session ended without us closing it: the error screen, worded after why.
+func _on_link_closed() -> void:
+	set_process(false)
+	var kind: String = link.get_close_kind()
+	var code: int = link.get_close_code()
+	var reason: String = link.get_close_reason()
+	print("< Client - Horizon session closed: %s (code %d) %s" % [kind, code, reason])
+	if kind == "local":
+		return
+	remove_loading_node()
+	GameOrchestrator.connexion_error_message = close_message_for(kind, code, reason)
+	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+
+
+## What the connection-error screen says when the session with Horizon ended, from HorizonLink's
+## close [param kind] and the server's close [param code] (see HorizonLink.get_close_kind).
+static func close_message_for(kind: String, code: int, reason: String) -> String:
+	if kind == "protocol" or code in [CLOSE_PROTOCOL_MISMATCH, CLOSE_SETTINGS_MISMATCH, CLOSE_DICTIONARY_MISMATCH]:
+		return TranslationServer.translate("%%ERR_UPDATE_REQUIRED")
+	if code == CLOSE_SERVER_FULL:
+		return TranslationServer.translate("%%ERR_SERVER_FULL")
+	if code == CLOSE_KICKED and reason != "":
+		return reason
+	match kind:
+		"timeout", "address", "refused":
+			return TranslationServer.translate("%%ERR_SERVER_UNREACHABLE")
+		"tls":
+			return TranslationServer.translate("%%ERR_SERVER_CERTIFICATE")
+	return TranslationServer.translate("%%ERR_CONNECTION_LOST")
 
 
 ## Events received and not handled yet: the zone still being built (the spawn splash waits for it).
@@ -476,7 +510,7 @@ func _route(event: Dictionary) -> bool:
 				# when have error in server side
 				push_error(event["message"])
 				# close the connection
-				socket.close(1000, event["message"])
+				_close_link()
 				GameOrchestrator.connexion_error_message = error_message_for(event)
 				GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
 				_net_t_end("net:route", _route_tok)
@@ -535,11 +569,18 @@ func _physics_process(_delta: float) -> void:
 	_net_beat += 1
 	if _net_beat % _NET_HEARTBEAT != 1:
 		return
-	if socket == null:
+	if link == null:
 		return
-	var state: int = socket.get_ready_state()
-	print("[net] beat — idle loop %s | socket state %d | sent %d | received %d"
-			% ["on" if is_processing() else "OFF", state, network_events_sent, network_events_received])
+	# What the link threw away: totals since the connection, a growing one is the place to look when
+	# remote bodies stutter (stale_seq = datagrams overtaken, unknown_handle = frames for an object
+	# never entered).
+	var stats: Dictionary = link.get_stats()
+	print(("[net] beat — idle loop %s | link status %d | rtt %.0f ms | sent %d | received %d"
+			+ " | datagrams %d | dropped seq %d epoch %d handle %d event %d payload %d")
+			% ["on" if is_processing() else "OFF", link.get_status(), link.get_rtt_ms(), network_events_sent,
+			network_events_received, stats.get("datagrams_in", 0), stats.get("dropped_stale_seq", 0),
+			stats.get("dropped_stale_epoch", 0), stats.get("dropped_unknown_handle", 0),
+			stats.get("dropped_unknown_event", 0), stats.get("dropped_bad_payload", 0)])
 
 
 ## Says the moment our own body stops existing. Silent for a whole session when all is well.
@@ -711,7 +752,7 @@ func _search_parent_node(parent_id: String) -> Node:
 ########################################################################
 # TODO NetworkOrchestrator calls, not sure used with new system, needed to check it
 ########################################################################
-## Full stop for this network session: leave the voice room, then close the socket. Idempotent,
+## Full stop for this network session: leave the voice room, then close the link. Idempotent,
 ## and synchronous — NetworkOrchestrator.release_network_agent() calls it right before freeing us,
 ## because queue_free() alone would let this node (and its LiveKitAudio child) keep processing until
 ## the end of the frame, still publishing the mic and still receiving voice.
@@ -740,8 +781,23 @@ func shutdown() -> void:
 	if lk != null and lk.has_method("shutdown"):
 		lk.shutdown()
 	_drop_monitors()
-	if socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		socket.close(1000, "client disconnected")
+	_close_link()
+
+
+## Ends the session with Horizon, if any (waits up to about a second for the link's threads to stop).
+func _close_link() -> void:
+	if link != null:
+		link.close()
+		link = null
+
+
+## Sends client event [param event_namespace]:[param event] to Horizon, reliably and in order. The link
+## refuses (and logs) a [param data] that does not fit the event's type in ds_protocol.
+func _send_event(event_namespace: String, event: String, data: Dictionary) -> void:
+	if link == null or link.get_status() != link.STATUS_OPEN:
+		return
+	if link.send_event(event_namespace, event, data) == OK:
+		network_events_sent += 1
 
 ## Historical public name for the same shutdown.
 func disconnect_from_server() -> void:
@@ -769,14 +825,7 @@ func complete_client_initialization(entity) -> void:
 ########################################################################
 
 func _on_client_action_requested(datas: Dictionary) -> void:
-	var message = JSON.stringify({
-		"namespace": "player",
-		"event": "client_action",
-		"data": datas,
-	})
-	# print("Client action requested to server: %s" % message)
-	socket.send_text(message)
-	network_events_sent += 1
+	_send_event("player", "client_action", datas)
 
 
 	# NOTE: the dev spawn wheel used to ALSO send a "props/spawn_request" straight to Horizon here,
@@ -801,45 +850,23 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> void:
 	# print("action move")
 	# print("action move: %s - %s" % [move_direction, move_rotation])
-	var message = JSON.stringify({
-		"namespace": "movement",
-		"event": "update_velocity",
-		"data": {
-			"pos": {
-				"x": move_direction[0],
-				"y": move_direction[1]
-			},
-			"rot": {
-				"x": move_rotation[0],
-				"y": move_rotation[1],
-				"z": move_rotation[2]
-			},
-			"uuid": player_entity.client_uuid,
-			"seq": MoveOrder.number(Time.get_unix_time_from_system(), _move_counter),
-			# The frame "rot" is local to (our parent's uuid, "" = world). The server moves us into a new
-			# frame a round trip before we hear of it, and must not read this rotation in that one.
-			"frame": PropSpawn.parent_frame_uuid(player_entity),
+	_send_event("movement", "update_velocity", {
+		"pos": {
+			"x": move_direction[0],
+			"y": move_direction[1]
 		},
+		"rot": {
+			"x": move_rotation[0],
+			"y": move_rotation[1],
+			"z": move_rotation[2]
+		},
+		"uuid": player_entity.client_uuid,
+		"seq": MoveOrder.number(Time.get_unix_time_from_system(), _move_counter),
+		# The frame "rot" is local to (our parent's uuid, "" = world). The server moves us into a new
+		# frame a round trip before we hear of it, and must not read this rotation in that one.
+		"frame": PropSpawn.parent_frame_uuid(player_entity),
 	})
 	_move_counter += 1
-	# print("Client action move to server: %s" % message)
-
-	socket.send_text(message)
-	network_events_sent += 1
-
-func _on_client_action_pressed(action: String) -> void:
-	var message = JSON.stringify({
-		"namespace": "actions",
-		"event": "action_pressed",
-		"data": {
-			"action": action,
-			"uuid": player_entity.client_uuid
-		},
-	})
-	print("Client action pressed to server: %s" % message)
-
-	socket.send_text(message)
-	network_events_sent += 1
 
 #########################################################################
 # Horizon server messages handling
@@ -1145,7 +1172,6 @@ func create_player(event: Dictionary) -> void:
 		)
 		spawned_entity_instance.name = my_player_uuid
 		spawned_entity_instance.connect("hs_client_action_move", _on_client_action_move)
-		spawned_entity_instance.connect("hs_client_action_pressed", _on_client_action_pressed)
 		spawned_entity_instance.tree_entered.connect(func():
 			spawned_entity_instance.owner = get_tree().current_scene
 		)

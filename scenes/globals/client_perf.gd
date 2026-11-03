@@ -516,11 +516,11 @@ func _print_boot_detail() -> void:
 	])
 
 	# Feature tags cannot be enumerated, so this is the list that actually changes behaviour here.
-	# `devmode` in particular REROUTES the websocket url in client.gd, and a build tagged `debug`
-	# runs with checks a release build does not have — both have been mistaken for slowness before.
+	# A build tagged `debug` runs with checks a release build does not have — it has been mistaken
+	# for slowness before.
 	var tags: PackedStringArray = []
 	for tag: String in ["editor", "template", "debug", "release", "standalone", "dedicated_server",
-			"devmode", "windows", "linuxbsd", "macos", "web", "x86_64", "arm64", "mono", "double"]:
+			"windows", "linuxbsd", "macos", "web", "x86_64", "arm64", "mono", "double"]:
 		if OS.has_feature(tag):
 			tags.append(tag)
 	# The adapter NAME is already on the machine line; vendor/type/api are not, and "is this the
