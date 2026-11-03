@@ -19,8 +19,22 @@ const ModifierPackScript = preload("res://scenes/planet/modifier_pack.gd")
 @export var cave_placements: Array[CavePlacement] = []
 ## When supplied, this catalog is the source of placements at terrain initialization.
 @export var cave_catalog: CaveSiteCatalog
-## Main-thread prepared plans, immutable while chunk workers consume them.
-var stargrot_plans: Array[Dictionary] = []
+## Main-thread prepared plans, immutable while chunk workers consume them. Read by the chunk builders on workers
+## (stargrot_placements, when no cut site is published) and replaced on the main thread at every residency change:
+## the reference is swapped and copied under one lock, like stargrot_cut_sites, and a published list is never
+## edited in place (assign a new one). Unlocked, a worker could ref the Array the main thread was freeing — the
+## heap corruption of 2026-11-01.
+var stargrot_plans: Array[Dictionary]:
+	set(value):
+		_stargrot_mutex.lock()
+		_stargrot_plans = value
+		_stargrot_mutex.unlock()
+	get:
+		_stargrot_mutex.lock()
+		var out := _stargrot_plans
+		_stargrot_mutex.unlock()
+		return out
+var _stargrot_plans: Array[Dictionary] = []
 ## The sites the terrain cuts: the catalog's, fixed before terrain workers start, plus the caves registered at
 ## run time (networked caves, CavePlanetRegistry.set_site). Surface cuts do not depend on cave mesh residency.
 ## Read by the chunk builders on workers and replaced on the main thread: as for CrackPoiSet, the reference is
@@ -568,6 +582,12 @@ var _bridge_spans_starved: Array[Dictionary] = []
 const BRIDGE_PREFETCH_BUDGET_MS := 5000
 var _bridge_plans_built: bool = false
 var _bridge_plans_mutex: Mutex = Mutex.new()
+## _bridge_plans and _bridge_excl, the two tables the chunk builders read, are copy-on-write once
+## built: a span planned late (retry_starved_bridge_plans, main thread) goes into copies and the
+## references are swapped under this lock, which a reader takes only to copy a reference — never
+## _bridge_plans_mutex, held through a whole catch-up. Edited in place, a worker read a Dictionary
+## mid-rehash and exclusion Arrays freed under it (heap corruption, 2026-11-01).
+var _bridge_pub_mutex: Mutex = Mutex.new()
 var _whole_roads_by_fid: Dictionary = {}
 var _bridge_profile_cache: BridgeProfile = null
 
@@ -589,6 +609,12 @@ var _grade_plans: Dictionary = {}             # span key → deck plan
 var _grade_excl: Dictionary = {}              # feature_id → Array[Vector2] merged
 var _grade_built: bool = false
 var _grade_mutex: Mutex = Mutex.new()
+## The four published tables above (_grade_profiles, _grade_spans, _grade_plans, _grade_excl) are
+## copy-on-write once built: a line profiled late (retry_starved_grade_profiles, main thread) is
+## registered into copies and the references swapped under this lock, which the chunk builders take
+## only to copy a reference — never _grade_mutex, held through a whole catch-up. Edited in place, a
+## worker read a Dictionary mid-rehash and an Array freed under it (heap corruption, 2026-11-01).
+var _grade_pub_mutex: Mutex = Mutex.new()
 ## Lines refused at warm-up for a tile not yet downloaded: {road, tiles}.
 ## Same discipline as _bridge_spans_starved — the tiles are queued on the
 ## streaming source and retry_starved_grade_profiles() replays the line once
@@ -1841,6 +1867,12 @@ func inject_biome_feature(nside: int, ipix: int, biome_update: Dictionary) -> vo
 				"depth_m": geometry.get("depth", 5.0),
 				"profile": "v",
 			}
+			# Prepared here, on the main thread, while it is still ours alone: the overlay hands this
+			# same Dictionary to every mesh task under the tile, whose prepare_zone() would otherwise
+			# INSERT the derived fields into it from two workers at once (see PlanetChunk.prepare_linear_zone).
+			PlanetChunk.prepare_linear_zone(feature, radius)
+			if biome_type == "maritime_river-river":
+				MaritimeRiverRiverTerrain.prepare_zone(feature, radius)
 			if not _chunk_linear_features.has(key):
 				_chunk_linear_features[key] = []
 			_chunk_linear_features[key].append(feature)
@@ -2734,7 +2766,10 @@ func get_whole_road(fid: int) -> Dictionary:
 ## The deck/ramp plan for [param span], or an empty dictionary when it has none.
 func get_bridge_plan(span: Dictionary) -> Dictionary:
 	_ensure_bridge_plans()
-	return _bridge_plans.get(bridge_span_key(span), {})
+	_bridge_pub_mutex.lock()
+	var plans := _bridge_plans
+	_bridge_pub_mutex.unlock()
+	return plans.get(bridge_span_key(span), {})
 
 
 ## Stretches of road [param fid] that a bridge occupies, as merged, sorted,
@@ -2744,7 +2779,10 @@ func get_bridge_exclusions_for_feature(fid: int) -> Array:
 	if not corundum_default_biome:
 		return []
 	_ensure_bridge_plans()
-	return _bridge_excl.get(fid, [])
+	_bridge_pub_mutex.lock()
+	var excl := _bridge_excl
+	_bridge_pub_mutex.unlock()
+	return excl.get(fid, [])
 
 
 ## Build every deck/ramp plan now, on the calling thread.
@@ -2769,8 +2807,11 @@ func warm_bridge_plans() -> void:
 
 func clear_bridge_plans() -> void:
 	_bridge_plans_mutex.lock()
-	_bridge_plans.clear()
-	_bridge_excl.clear()
+	# New tables, not cleared ones: a worker may still hold the published references.
+	_bridge_pub_mutex.lock()
+	_bridge_plans = {}
+	_bridge_excl = {}
+	_bridge_pub_mutex.unlock()
 	_bridge_excl_raw.clear()
 	_bridge_spans_starved.clear()
 	_whole_roads_by_fid.clear()
@@ -2823,7 +2864,9 @@ func _prefetch_bridge_span_tiles(spans: Array) -> void:
 ##
 ## Une travée refusée faute de tuile est mémorisée pour rattrapage ; une travée dont
 ## BridgePlan dit non est un refus définitif et n'est pas mémorisée.
-func _plan_one_span(s: Dictionary, profile: BridgeProfile) -> bool:
+## [param plans] is the table the plan goes into: the published one while it is first built, a copy
+## during a catch-up (see _bridge_pub_mutex). _bridge_excl_raw is the writer's own and edited in place.
+func _plan_one_span(s: Dictionary, profile: BridgeProfile, plans: Dictionary) -> bool:
 	if s.get("truncated", false):
 		return true      # Hors sujet, pas un échec : ne pas la compter comme sautée.
 	var fid: int = int(s.get("feature_id", -1))
@@ -2861,7 +2904,7 @@ func _plan_one_span(s: Dictionary, profile: BridgeProfile) -> bool:
 			bridge_height_sampler(ipix), terrain_vertex_spacing_m())
 	if not bool(plan.get("ok", false)):
 		return false
-	_bridge_plans[bridge_span_key(s)] = plan
+	plans[bridge_span_key(s)] = plan
 	if not _bridge_excl_raw.has(fid):
 		_bridge_excl_raw[fid] = []
 	(_bridge_excl_raw[fid] as Array).append(
@@ -2875,8 +2918,12 @@ func _plan_one_span(s: Dictionary, profile: BridgeProfile) -> bool:
 ## se recouvrent laisseraient sinon un ruban en écharpe entre deux tabliers, c'est-à-dire un
 ## trou dans lequel on roule.
 func _remerge_bridge_exclusions() -> void:
+	var excl := {}
 	for fid: int in _bridge_excl_raw:
-		_bridge_excl[fid] = RoadCut.merge_intervals(_bridge_excl_raw[fid])
+		excl[fid] = RoadCut.merge_intervals(_bridge_excl_raw[fid])
+	_bridge_pub_mutex.lock()
+	_bridge_excl = excl
+	_bridge_pub_mutex.unlock()
 
 
 ## Y a-t-il des travées en attente de leur tuile ?
@@ -2897,10 +2944,14 @@ func retry_starved_bridge_plans() -> PackedStringArray:
 	var pending := _bridge_spans_starved.duplicate()
 	_bridge_spans_starved.clear()
 	var profile := get_bridge_profile()
+	var plans := _bridge_plans.duplicate()
 	for s: Dictionary in pending:
-		if _plan_one_span(s, profile):
+		if _plan_one_span(s, profile, plans):
 			born.append(bridge_span_key(s))
 	if not born.is_empty():
+		_bridge_pub_mutex.lock()
+		_bridge_plans = plans
+		_bridge_pub_mutex.unlock()
 		_remerge_bridge_exclusions()
 	_bridge_plans_mutex.unlock()
 	if not born.is_empty():
@@ -2918,6 +2969,8 @@ func _build_bridge_plans() -> void:
 	var profile := get_bridge_profile()
 	var skipped := 0
 	var baked := _baked_bridges()
+	# Built aside and published at the end (see _bridge_pub_mutex).
+	var built := {}
 	if not baked.is_empty():
 		# Baked with every tile at hand: no span waits for one here.
 		var plans: Dictionary = baked.get("plans", {})
@@ -2928,7 +2981,7 @@ func _build_bridge_plans() -> void:
 			if plan.is_empty():
 				skipped += 1
 				continue
-			_bridge_plans[bridge_span_key(s)] = plan
+			built[bridge_span_key(s)] = plan
 			var fid: int = int(s.get("feature_id", -1))
 			if not _bridge_excl_raw.has(fid):
 				_bridge_excl_raw[fid] = []
@@ -2936,8 +2989,11 @@ func _build_bridge_plans() -> void:
 					Vector2(float(plan["excl_lo_along"]), float(plan["excl_hi_along"])))
 	else:
 		for s in spans:
-			if not _plan_one_span(s, profile):
+			if not _plan_one_span(s, profile, built):
 				skipped += 1
+	_bridge_pub_mutex.lock()
+	_bridge_plans = built
+	_bridge_pub_mutex.unlock()
 	_remerge_bridge_exclusions()
 	var stranded: PackedStringArray = []
 	var steepened := 0
@@ -3053,6 +3109,7 @@ func warm_mountains() -> void:
 	GradeBed.native_available()
 	HEALPix._build_tables()
 	RockImpurity.warm()  # rule_of is read lock-free by every task: filled now, never written again
+	warm_biome_cache()  # the crack and corundum rules ask for biomes; the star map's offline copy came here cold
 	var found := false
 	var pack = _ensure_modifier_pack()
 	if pack != null:
@@ -3477,11 +3534,14 @@ func clear_grade_profiles() -> void:
 		WorkerThreadPool.wait_for_task_completion(int((_grade_pending[fid] as Dictionary)["task_id"]))
 	_grade_pending.clear()
 	_grade_mutex.lock()
-	_grade_profiles.clear()
-	_grade_spans.clear()
+	# New tables, not cleared ones: a worker may still hold the published references.
+	_grade_pub_mutex.lock()
+	_grade_profiles = {}
+	_grade_spans = []
+	_grade_plans = {}
+	_grade_excl = {}
+	_grade_pub_mutex.unlock()
 	_span_owner_index_ok = false
-	_grade_plans.clear()
-	_grade_excl.clear()
 	_grade_starved.clear()
 	_grade_starved_tiles.clear()
 	_grade_tiles_by_fid.clear()
@@ -3506,7 +3566,10 @@ func get_grade_profile(fid: int) -> Dictionary:
 	if not has_profiled_lines():
 		return {}
 	_ensure_grade_profiles()
-	return _grade_profiles.get(fid, {})
+	_grade_pub_mutex.lock()
+	var profiles := _grade_profiles
+	_grade_pub_mutex.unlock()
+	return profiles.get(fid, {})
 
 
 ## Every line profile that is KNOWN without working for one, feature_id →
@@ -3542,7 +3605,10 @@ func get_grade_spans() -> Array:
 	if not has_profiled_lines():
 		return []
 	_ensure_grade_profiles()
-	return _grade_spans
+	_grade_pub_mutex.lock()
+	var spans := _grade_spans
+	_grade_pub_mutex.unlock()
+	return spans
 
 
 ## The spans a chunk on export pixel [param eipix] owns — same answer as
@@ -3568,7 +3634,10 @@ func get_grade_plan(span: Dictionary) -> Dictionary:
 	if not has_profiled_lines():
 		return {}
 	_ensure_grade_profiles()
-	return _grade_plans.get(bridge_span_key(span), {})
+	_grade_pub_mutex.lock()
+	var plans := _grade_plans
+	_grade_pub_mutex.unlock()
+	return plans.get(bridge_span_key(span), {})
 
 
 ## Stretches of line [param fid] a viaduct deck occupies, as merged, sorted
@@ -3577,7 +3646,10 @@ func get_grade_exclusions_for_feature(fid: int) -> Array:
 	if not has_profiled_lines():
 		return []
 	_ensure_grade_profiles()
-	return _grade_excl.get(fid, [])
+	_grade_pub_mutex.lock()
+	var excl := _grade_excl
+	_grade_pub_mutex.unlock()
+	return excl.get(fid, [])
 
 
 func _ensure_grade_profiles() -> void:
@@ -3972,7 +4044,12 @@ func _grade_register(road: Dictionary, profile: Dictionary) -> bool:
 	# stations × 2 doubles on a line round the planet (~140 MB) nobody reads.
 	profile.erase("stations_along")
 	profile.erase("stations_terrain")
-	_grade_profiles[fid] = profile
+	# Copy-on-write (see _grade_pub_mutex): edited copies, published together at the end.
+	var profiles := _grade_profiles.duplicate()
+	var spans := _grade_spans.duplicate()
+	var plans_by_key := _grade_plans.duplicate()
+	var excl := _grade_excl.duplicate()
+	profiles[fid] = profile
 	# The authoritative "lava never climbs" report, from the real relief (the
 	# exporter only guessed it): the flow is built anyway, its channel cut.
 	if float(profile.get("uphill_m", 0.0)) > 0.0:
@@ -3985,11 +4062,17 @@ func _grade_register(road: Dictionary, profile: Dictionary) -> bool:
 		var plan := GradeProfile.plan_of(profile, span, road, radius)
 		if not bool(plan.get("ok", false)):
 			continue
-		_grade_spans.append(span)
+		spans.append(span)
 		_span_owner_index_ok = false
-		_grade_plans[bridge_span_key(span)] = plan
+		plans_by_key[bridge_span_key(span)] = plan
 		plans.append(plan)
-	_grade_excl[fid] = GradeProfile.exclusions_of(plans)
+	excl[fid] = GradeProfile.exclusions_of(plans)
+	_grade_pub_mutex.lock()
+	_grade_profiles = profiles
+	_grade_spans = spans
+	_grade_plans = plans_by_key
+	_grade_excl = excl
+	_grade_pub_mutex.unlock()
 	return true
 
 
@@ -4066,7 +4149,8 @@ func chunk_cache_ineligible(nside: int, ipix: int) -> bool:
 	# A cave registered at run time (a networked cave) is no baked data either.
 	if stargrot_runtime_touches(nside, ipix):
 		return true
-	return _pads != null and not _pads.is_empty() and not _pads.gather(nside, ipix).is_empty()
+	var pads := _pad_index()
+	return pads != null and not pads.is_empty() and not pads.gather(nside, ipix).is_empty()
 
 
 ## Collect the profiles whose computation has finished, and submit the
@@ -5203,11 +5287,17 @@ func get_resolution_for_lod(lod: int, nside: int = 0) -> int:
 var _biome_by_index: Dictionary = {}  # int → BiomeDefinition
 var _biome_by_type: Dictionary = {}   # String → BiomeDefinition
 var _biome_cache_built: bool = false
+## Builds the cache once whichever thread asks first: two workers arriving together on a cold cache (the star
+## map's offline copy of a planet, 2026-11-01) both cleared and filled the same dictionaries — heap corruption.
+## Built, the dictionaries are never written again and are read without it.
+var _biome_cache_mutex := Mutex.new()
 
 ## Shared cache: all BiomeDefinitions auto-loaded from disk.
 ## Populated once, shared across all PlanetData instances.
 static var _all_biomes_loaded: bool = false
 static var _all_biomes: Array[BiomeDefinition] = []
+## The same for the shared list: the flag is raised before the list is filled, so a second caller must wait.
+static var _all_biomes_mutex := Mutex.new()
 
 const BIOMES_DIR := "res://scenes/planet/biomes/"
 
@@ -5268,6 +5358,12 @@ const _BIOME_FILES: PackedStringArray = [
 ## Uses DirAccess first (works in editor), then falls back to the hardcoded
 ## _BIOME_FILES list (required for exported / packed builds).
 static func _auto_load_all_biomes() -> void:
+	_all_biomes_mutex.lock()
+	_auto_load_all_biomes_locked()
+	_all_biomes_mutex.unlock()
+
+
+static func _auto_load_all_biomes_locked() -> void:
 	if _all_biomes_loaded:
 		return
 	_all_biomes_loaded = true
@@ -5304,6 +5400,13 @@ static func _auto_load_all_biomes() -> void:
 
 
 func _build_biome_cache() -> void:
+	_biome_cache_mutex.lock()
+	if not _biome_cache_built:
+		_build_biome_cache_locked()
+	_biome_cache_mutex.unlock()
+
+
+func _build_biome_cache_locked() -> void:
 	_biome_by_index.clear()
 	_biome_by_type.clear()
 
@@ -5770,7 +5873,18 @@ func _ensure_pads() -> PadIndex:
 ## Does this body carry any pad? O(1) — asked by the chunk builders on every
 ## vertex loop and by collision_detail_nside() on every residency pass.
 func has_pads() -> bool:
-	return _pads != null and not _pads.is_empty()
+	var pads := _pad_index()
+	return pads != null and not pads.is_empty()
+
+
+## The published pad index, its reference taken under _pad_mutex. The main thread swaps
+## [member _pads] (register_pad, copy-on-write) and drops the old index: a worker still inside
+## it through the member read it freed. Workers read the index through this, never the member.
+func _pad_index() -> PadIndex:
+	_pad_mutex.lock()
+	var pads := _pads
+	_pad_mutex.unlock()
+	return pads
 
 
 ## The sampler a pad's altitude is read with: the same function, with the same
@@ -5887,9 +6001,10 @@ func _settle_pad_levels(next: PadIndex, published: PadIndex, seeds: Array) -> Ar
 ## eight neighbours, the same reach as GradeBed.gather_pieces. Read-only, and
 ## every record in it carries a settled `z`.
 func pads_for_chunk(nside: int, ipix: int) -> Array:
-	if _pads == null or _pads.is_empty():
+	var pads := _pad_index()
+	if pads == null or pads.is_empty():
 		return []
-	return _pads.gather(nside, ipix)
+	return pads.gather(nside, ipix)
 
 
 ## The altitude [param rec] levels the ground to, or NAN while an elevation
@@ -5980,7 +6095,12 @@ func _pad_stats_if_readable(rec: Dictionary) -> Dictionary:
 ## warehouse; it stops at the wall and resumes on the other side, which is what
 ## RoadCut.split already does for a bridge.
 func road_exclusions_for_feature(fid: int) -> Array:
-	var pads: Array = _pad_road_excl.get(fid, [])
+	# Swapped by the main thread (_set_pad_road_cuts) while the chunk builders read it: the
+	# reference is taken under the lock, as for the pad index.
+	_pad_mutex.lock()
+	var pad_excl := _pad_road_excl
+	_pad_mutex.unlock()
+	var pads: Array = pad_excl.get(fid, [])
 	var bridges := get_bridge_exclusions_for_feature(fid)
 	if pads.is_empty():
 		return bridges
