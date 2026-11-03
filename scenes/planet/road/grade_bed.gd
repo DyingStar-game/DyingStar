@@ -123,8 +123,7 @@ static func carve_enabled(data: PlanetData, hp_nside: int, vtx_spacing_m: float)
 ## carve (no profiled line nearby, or the grid is too coarse).
 static func make_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 		vtx_spacing_m: float) -> Dictionary:
-	if not (data.has_profiled_lines() or data.has_pads()) \
-			or not carve_enabled(data, hp_nside, vtx_spacing_m):
+	if not has_work(data) or not carve_enabled(data, hp_nside, vtx_spacing_m):
 		return {}
 	var ctx := _gather_ctx(data, hp_nside, hp_ipix)
 	if not ctx.is_empty():
@@ -141,13 +140,18 @@ static func make_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 ## would be at that pitch. {} when nothing is nearby or the fine carve applies.
 static func make_coarse_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 		vtx_spacing_m: float) -> Dictionary:
-	if not (data.has_profiled_lines() or data.has_pads()) or vtx_spacing_m <= 0.0 \
-			or carve_enabled(data, hp_nside, vtx_spacing_m):
+	if not has_work(data) or vtx_spacing_m <= 0.0 or carve_enabled(data, hp_nside, vtx_spacing_m):
 		return {}
 	var ctx := _gather_ctx(data, hp_nside, hp_ipix)
 	if not ctx.is_empty():
 		ctx["coarse_band_m"] = 1.5 * vtx_spacing_m
 	return ctx
+
+
+## Does [param data] carry anything this file shapes the ground with: a profiled line, a building
+## pad, a village's common ground?
+static func has_work(data: PlanetData) -> bool:
+	return data.has_profiled_lines() or data.has_pads() or data.has_village_beds()
 
 
 static func _gather_ctx(data: PlanetData, hp_nside: int, hp_ipix: int) -> Dictionary:
@@ -162,10 +166,11 @@ static func _gather_ctx(data: PlanetData, hp_nside: int, hp_ipix: int) -> Dictio
 				continue
 			pieces.append(r)
 	var pads: Array = data.pads_for_chunk(hp_nside, hp_ipix) if data.has_pads() else []
-	if pieces.is_empty() and pads.is_empty():
+	var villages: Array = data.village_beds_for_chunk(hp_nside, hp_ipix) if data.has_village_beds() else []
+	if pieces.is_empty() and pads.is_empty() and villages.is_empty():
 		return {}
 	profiles = slice_profiles(pieces, profiles)
-	return {"pieces": pieces, "profiles": profiles, "pads": pads,
+	return {"pieces": pieces, "profiles": profiles, "pads": pads, "villages": villages,
 			"m_per_deg": data.radius * PI / 180.0, "native": make_native(pieces, profiles)}
 
 
@@ -240,8 +245,12 @@ static func apply(h: float, lonlat: Vector2, ctx: Dictionary) -> float:
 				else:
 					out = carved_height(out, prof, float(q["along"]), float(q["lat_m"]),
 							float(ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M)))
-	# The pad levels what the cutting left, never the other way round: a
-	# building's apron beside a graded road meets the road bed.
+	# A village's common ground, then the pads levelling what it and the cutting
+	# left, never the other way round: a building's apron beside a graded road
+	# meets the road bed, and a village's buildings stand on its gentle plane.
+	var villages: Array = ctx.get("villages", [])
+	if not villages.is_empty():
+		out = VillageBed.apply(out, lonlat, villages, mpd)
 	var pads: Array = ctx.get("pads", [])
 	if not pads.is_empty():
 		if coarse:

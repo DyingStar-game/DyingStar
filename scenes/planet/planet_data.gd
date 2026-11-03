@@ -4886,16 +4886,20 @@ func carved_surface_dist(dir: Vector3) -> float:
 	var raw := crack_aware_surface_dist(dir)
 	var lines := has_profiled_lines()
 	var pads := has_pads()
-	if not lines and not pads:
+	var beds := has_village_beds()
+	if not lines and not pads and not beds:
 		return raw
 	var nside: int = 1 << max_quadtree_depth
 	var ipix := HEALPix.vec2pix_nest(nside, dir)
 	var lonlat := HEALPix.vec2lonlat(dir)
 	var h := raw - radius
-	# Same order as the chunk builders: the line first, then the pad on top of
-	# what it left — a building beside a road meets the road bed.
+	# Same order as the chunk builders (GradeBed.apply): the line first, then the
+	# village's ground, then the pad on top of what they left — a building beside
+	# a road meets the road bed.
 	if lines:
 		h = _carved_line_height(h, nside, ipix, lonlat)
+	if beds:
+		h = VillageBed.apply(h, lonlat, village_beds_for_chunk(nside, ipix), radius * PI / 180.0)
 	if pads:
 		h = PadBed.apply(h, lonlat, pads_for_chunk(nside, ipix), radius * PI / 180.0)
 	return radius + h
@@ -5893,10 +5897,140 @@ func _pad_index() -> PadIndex:
 ## arguments, that PlanetTerrain.surface_point_for_direction uses for the
 ## editor snap. Client and server feed it the same heights.pack and therefore
 ## agree to the bit — the pattern grade_height_sampler() established.
+##
+## A pad inside a village is measured on the village's common ground (VillageBed), not on the raw
+## relief: that is what puts the buildings of a village on one gentle plane. Inside a bed's footprint
+## the relief is not even read.
 func pad_sampler() -> Callable:
+	var raw := relief_sampler()
+	var beds: Array = _village_beds
+	if beds.is_empty():
+		return raw
+	var mpd := radius * PI / 180.0
+	return func(dir: Vector3) -> float:
+		var lonlat := HEALPix.vec2lonlat(dir)
+		var floor_h := VillageBed.floor_at(lonlat, beds, mpd)
+		if not is_nan(floor_h):
+			return floor_h
+		return VillageBed.apply(float(raw.call(dir)), lonlat, beds, mpd)
+
+
+## The raw relief a village bed is fitted to: [method pad_sampler] without the beds.
+func relief_sampler() -> Callable:
 	return func(dir: Vector3) -> float:
 		return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
 				CrackCarve.NONE)
+
+
+# ── Village beds (VillageBed) ────────────────────────────────────────────
+
+## The village beds of this body, published whole (copy-on-write, like the pad index): the mesh
+## workers read it while the main thread edits. A handful per planet, so a plain array.
+var _village_beds: Array = []
+## uuid → record of beds waiting for an elevation tile under their fitting grid.
+var _beds_starved: Dictionary = {}
+
+
+func has_village_beds() -> bool:
+	return not _village_beds.is_empty()
+
+
+## The beds that can move a vertex of the chunk ([param nside], [param ipix]): every bed whose reach
+## comes within the chunk's half diagonal of its centre.
+func village_beds_for_chunk(nside: int, ipix: int) -> Array:
+	var beds: Array = _village_beds
+	if beds.is_empty():
+		return []
+	var centre := HEALPix.pix2vec_nest(nside, ipix)
+	var half_diag := HEALPix.pixel_side_length(nside, radius) * 0.75
+	var out: Array = []
+	for rec: Dictionary in beds:
+		var c := HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"]))
+		if centre.angle_to(c) * radius <= PadBed.reach_m(rec) + half_diag:
+			out.append(rec)
+	return out
+
+
+## Register or move the village bed [param rec_in] (VillageBed.record): its plane is fitted to the
+## relief, and every pad its ground reaches is measured again on it. Returns the finest-level pixels
+## whose chunks are now stale ({} when nothing changed, or while it waits for a tile).
+func register_village_bed(rec_in: Dictionary) -> Dictionary:
+	var rec := PadBed.quantise(rec_in)
+	var uuid := str(rec.get("uuid", ""))
+	if uuid.is_empty():
+		return {}
+	var old: Dictionary = {}
+	for b: Dictionary in _village_beds:
+		if str(b["uuid"]) == uuid:
+			old = b
+	if not old.is_empty() and PadBed.same_geometry(old, rec) and not _beds_starved.has(uuid):
+		return {}
+	var dirs := VillageBed.fit_dirs(rec, radius * PI / 180.0)
+	if not _tiles_readable(dirs):
+		_beds_starved[uuid] = rec
+		return {}
+	_beds_starved.erase(uuid)
+	rec = VillageBed.fit(rec, relief_sampler(), radius * PI / 180.0)
+	var next: Array = _village_beds.filter(func(b: Dictionary) -> bool: return str(b["uuid"]) != uuid)
+	next.append(rec)
+	next.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a["uuid"]) < str(b["uuid"]))
+	_village_beds = next
+	var pads := _ensure_pads()
+	var dirty: Dictionary = pads.pixels_of(rec)
+	if not old.is_empty():
+		dirty.merge(pads.pixels_of(old))
+	dirty.merge(_remeasure_pads_on(rec))
+	return dirty
+
+
+## Measure again every pad whose ground [param bed] reaches: their altitude follows the bed now.
+## They are queued as caught up, so their buildings come down (or up) onto it.
+func _remeasure_pads_on(bed: Dictionary) -> Dictionary:
+	var dirty := {}
+	if _pads == null:
+		return dirty
+	var mpd := radius * PI / 180.0
+	for rec: Dictionary in _pads.all():
+		if PadBed.is_notch(rec) or not _bed_reaches(bed, rec, mpd):
+			continue
+		var uuid := str(rec["uuid"])
+		_pad_mutex.lock()
+		_pad_alt.erase(uuid)
+		_pad_mutex.unlock()
+		dirty.merge(register_pad(rec))
+		_pads_caught_up.append(uuid)
+	return dirty
+
+
+## Does the ground of [param bed] reach the centre of the pad [param rec]?
+static func _bed_reaches(bed: Dictionary, rec: Dictionary, mpd: float) -> bool:
+	return PadBed.sdf_m(bed, Vector2(float(rec["lon"]), float(rec["lat"])), mpd) <= PadBed.talus_cap(bed)
+
+
+## Is a pad [param rec] on the ground of one of this body's village beds? Then what it persisted
+## (terrain_settled) may have been measured before the bed, and it is measured again instead.
+func _on_village_bed(rec: Dictionary) -> bool:
+	var mpd := radius * PI / 180.0
+	for bed: Dictionary in _village_beds:
+		if _bed_reaches(bed, rec, mpd):
+			return true
+	return false
+
+
+## Is every elevation tile under [param dirs] readable? A direction that falls through to the flat
+## global map would put the ground at two different altitudes on the client and on the server.
+func _tiles_readable(dirs: PackedVector3Array) -> bool:
+	if chunk_heightmaps_dir == "":
+		return true
+	var seen := {}
+	for d in dirs:
+		var ipix := HEALPix.vec2pix_nest(export_nside, d)
+		if seen.has(ipix):
+			continue
+		seen[ipix] = true
+		if not _grade_tile_available(ipix):
+			return false
+	return true
 
 
 ## Register or move a pad. Returns the finest-level pixels whose chunks are now
@@ -5909,6 +6043,8 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 	var rec := PadBed.quantise(rec_in)
 	var settled: Dictionary = rec.get("settled", {})
 	rec.erase("settled")
+	if not settled.is_empty() and _on_village_bed(rec):
+		settled = {}
 	var uuid := str(rec.get("uuid", ""))
 	if uuid.is_empty():
 		return {}
@@ -6042,9 +6178,12 @@ func pad_pixels(rec: Dictionary) -> Dictionary:
 ## are now stale, so PlanetTerrain can rebuild them in one pass — the pad
 ## counterpart of retry_starved_grade_profiles().
 func retry_starved_pads() -> Dictionary:
-	if _pads_starved.is_empty():
-		return {}
 	var dirty := {}
+	# The village beds first: the pads under them are measured on them.
+	for uuid: String in _beds_starved.keys().duplicate():
+		dirty.merge(register_village_bed(_beds_starved[uuid]))
+	if _pads_starved.is_empty():
+		return dirty
 	for uuid: String in _pads_starved.keys().duplicate():
 		var rec: Dictionary = _pads_starved[uuid]
 		dirty.merge(register_pad(rec))
@@ -6062,7 +6201,7 @@ func take_caught_up_pads() -> Array[String]:
 
 ## Are any pads still waiting for their elevation tiles?
 func pads_incomplete() -> bool:
-	return not _pads_starved.is_empty()
+	return not _pads_starved.is_empty() or not _beds_starved.is_empty()
 
 
 ## {z, span} of [param rec], or {} when a tile under its footprint cannot be
@@ -6072,17 +6211,8 @@ func pads_incomplete() -> bool:
 func _pad_stats_if_readable(rec: Dictionary) -> Dictionary:
 	var m_per_deg := radius * PI / 180.0
 	var dirs := PadBed.sample_dirs(rec, m_per_deg)
-	if dirs.is_empty():
+	if dirs.is_empty() or not _tiles_readable(dirs):
 		return {}
-	if chunk_heightmaps_dir != "":
-		var seen := {}
-		for d in dirs:
-			var ipix := HEALPix.vec2pix_nest(export_nside, d)
-			if seen.has(ipix):
-				continue
-			seen[ipix] = true
-			if not _grade_tile_available(ipix):
-				return {}
 	return PadBed.quantise_stats(PadBed.pad_stats(rec, pad_sampler(), m_per_deg))
 
 

@@ -212,7 +212,8 @@ func _register_zone() -> void:
 		return
 	var planet := terrain.get_parent() as Node3D
 	var local: Vector3 = planet.global_transform.affine_inverse() * global_position
-	terrain.set_poi_zone(s.uuid, str(name), local, float(radius_m))
+	var heading: Basis = planet.global_basis.inverse() * global_basis
+	terrain.set_poi_zone(s.uuid, str(name), local, float(radius_m), heading, spawn_scene)
 
 
 ## The terrain of the body this village stands on: its nearest Planet ancestor's.

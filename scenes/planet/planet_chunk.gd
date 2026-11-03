@@ -401,7 +401,7 @@ static func generate_mesh(
 	# but the terrain is still shaved down to the bed top around the line so
 	# it never pierces the bed — `_rw_shave` (visual only, see GradeBed).
 	var _rw_shave: Dictionary = {}
-	if hp_mode and res > 0 and (data.has_profiled_lines() or data.has_pads()):
+	if hp_mode and res > 0 and GradeBed.has_work(data):
 		var _rw_pitch := HEALPix.pixel_side_length(hp_nside, data.radius) / float(res)
 		_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _rw_pitch)
 		if not _rw_ctx.is_empty():
@@ -3126,7 +3126,7 @@ static func generate_collision_shape(
 	var _col_rw_ctx: Dictionary = {}
 	var _col_rw_band := PackedByteArray()
 	var _col_rw_h := PackedFloat64Array()
-	if hp_mode and (data.has_profiled_lines() or data.has_pads()):
+	if hp_mode and GradeBed.has_work(data):
 		_col_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _col_crack_spacing)
 		if not _col_rw_ctx.is_empty():
 			_col_rw_band.resize((res + 1) * (res + 1))

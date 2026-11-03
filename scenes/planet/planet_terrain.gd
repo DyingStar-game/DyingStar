@@ -2648,9 +2648,15 @@ static func poi_crack_exclusions(body_key: String) -> Array:
 ## [param local_pos] (planet frame) that the crack network leaves whole and the mining zones keep
 ## away from. A real change re-carves the chunks it reaches — on the server an unload and reload, on
 ## a client a swap — and keeps them out of the disk cache from now on.
-func set_poi_zone(uuid: String, poi_name: String, local_pos: Vector3, radius_m: float) -> void:
+##
+## With its [param layout] (the village's spawn_scene) and its heading [param basis] (planet frame),
+## the village also gets its common ground (VillageBed) over the layout's footprint.
+func set_poi_zone(uuid: String, poi_name: String, local_pos: Vector3, radius_m: float,
+		basis: Basis = Basis.IDENTITY, layout: String = "") -> void:
 	if uuid.is_empty() or radius_m <= 0.0 or local_pos.length_squared() < 1.0:
 		return
+	if layout != "":
+		_register_village_bed(uuid, local_pos, basis, layout)
 	var old: Dictionary = _poi_zones.get(uuid, {})
 	var dir := local_pos.normalized()
 	if not old.is_empty() and float(old["radius"]) == radius_m \
@@ -2659,6 +2665,31 @@ func set_poi_zone(uuid: String, poi_name: String, local_pos: Vector3, radius_m: 
 		return  # the same ground: a village re-seated radially, or a mere update
 	_poi_zones[uuid] = {"name": poi_name, "local_pos": local_pos, "radius": radius_m, "ground": null}
 	_poi_zones_changed([old, _poi_zones[uuid]])
+
+
+## The common ground of the village [param uuid] (VillageBed): its [param layout]'s footprint
+## (LayoutFootprint), laid at [param local_pos] with the heading of [param basis] (planet frame).
+## Registering the same ground again changes nothing.
+func _register_village_bed(uuid: String, local_pos: Vector3, basis: Basis, layout: String) -> void:
+	if planet_data == null:
+		return
+	var fp := LayoutFootprint.of(layout)
+	if fp.is_empty():
+		return
+	var centre: Vector2 = fp["centre"]
+	var half: Vector2 = fp["half"]
+	var planet := get_parent() as Node3D
+	var to_terrain := global_transform.affine_inverse() * planet.global_transform \
+			if planet != null else Transform3D.IDENTITY
+	var rel := to_terrain * Transform3D(basis.orthonormalized(), local_pos)
+	var rec := TerrainPad.record_from(planet_data, rel, Vector3(half.x * 2.0, 1.0, half.y * 2.0),
+			Transform3D(Basis.IDENTITY, Vector3(centre.x, 0.0, centre.y)), 0.0, 0.0, "village:" + uuid)
+	if rec.has("_refusal"):
+		return
+	var bed := VillageBed.record(str(rec["uuid"]), float(rec["lon"]), float(rec["lat"]),
+			float(rec["yaw"]), float(rec["hx"]), float(rec["hy"]))
+	_pads_changed(planet_data.register_village_bed(bed), {}, "du sol d'un village")
+	_announce_caught_up_pads()
 
 
 ## Forget the POI zone [param uuid] (its village was deleted): the cracks come back under it.
