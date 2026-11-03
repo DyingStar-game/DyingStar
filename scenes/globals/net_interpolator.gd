@@ -17,9 +17,16 @@ const LEAD_MAX_S: float = 0.15
 ## The lead runs this many times the last gap between targets: they come every 70 ms give or take 10,
 ## and a lead that stopped at exactly the last gap stopped the body ~50 ms whenever the next one came a
 ## little later than the one before (MovementProbe "stall" in bursts, playtest 2026-10-19). Past it the
-## lead comes back as fast as it went: the server sends nothing for a body that stopped (a wall, a
-## step), and a lead held there kept the view half a metre inside the wall for as long as the key was.
+## lead comes back (RETRACT_SHARE): the server sends nothing for a body that stopped (a wall, a step),
+## and a lead held there kept the view half a metre inside the wall for as long as the key was.
 const LEAD_GAP_SHARE: float = 1.5
+## The lead comes back this many times slower than it went. Coming back as fast (1) was itself a stutter:
+## a position later than the cap (1 in 5 to 14 while walking, probe CSVs of 2026-10-22/25) first drew the
+## body back by as much as it was late, "3 or 4 frames on, one back" (preprod playtest). Three times
+## slower, it gives back a third as much before the next one comes. Against a wall the view goes no further
+## into it (still the cap's worth of speed) but comes out of it slower: over RETRACT_SHARE times the cap,
+## ~150 ms instead of 50 at 30 Hz, never more than LEAD_MAX_S * RETRACT_SHARE.
+const RETRACT_SHARE: float = 3.0
 ## Longest step (s) of the server's clock still read as the time between two positions of one stream; past
 ## it (or going back) the clock is another one -- a zone hand-over to another server -- and gives no speed.
 const SERVER_GAP_MAX_S: float = 1.0
@@ -123,11 +130,12 @@ func lead_target(lead: bool, usec: int = -1) -> Vector3:
 
 
 ## How far ahead (s) the lead runs [param age] s after the last target: on with it up to [param cap],
-## then back down to nothing over as long again. Static and pure.
+## then back down to nothing over RETRACT_SHARE times as long (it is over at (1 + RETRACT_SHARE) * cap).
+## Static and pure.
 static func lead_time(age: float, cap: float) -> float:
 	if age <= cap:
 		return maxf(age, 0.0)
-	return maxf(2.0 * cap - age, 0.0)
+	return maxf(cap - (age - cap) / RETRACT_SHARE, 0.0)
 
 ## Apply the latest target immediately (no smoothing). Use when smoothing would hurt — e.g. the
 ## object the local player is actively controlling (a driver wants responsiveness, not lag).
