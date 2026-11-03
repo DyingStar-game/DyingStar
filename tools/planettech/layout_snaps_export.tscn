@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tools/planettech/layout_snaps_export.gd" id="1"]
+
+[node name="LayoutSnapsExport" type="Node"]
+script = ExtResource("1")

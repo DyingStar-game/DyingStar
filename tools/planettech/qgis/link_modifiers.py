@@ -89,6 +89,21 @@ def resolve_export_dir():
     return _DEFAULT_EXPORT_DIR
 
 
+def resolve_path(env_name, ini_key, default):
+    """$<env_name> -> export_config.ini [paths] <ini_key> -> [default]."""
+    env = os.environ.get(env_name)
+    if env:
+        return env
+    ini = os.path.join(_HERE, "export_config.ini")
+    if os.path.exists(ini):
+        import configparser
+        cp = configparser.ConfigParser()
+        cp.read(ini)
+        if cp.has_option("paths", ini_key) and cp.get("paths", ini_key).strip():
+            return os.path.expanduser(cp.get("paths", ini_key).strip())
+    return default
+
+
 def chunks_dir_for(planet_name, export_dir=None):
     return os.path.join(export_dir or resolve_export_dir(),
                         "%s_chunks" % planet_name)

@@ -83,6 +83,7 @@ import math
 import sys
 
 from qgis.core import (
+    QgsPointXY,
     QgsProject,
     QgsVectorLayer,
     QgsGeometry,
@@ -110,6 +111,7 @@ import link_modifiers                                   # noqa: E402
 from export.planet import dsmp                          # noqa: E402
 from export.planet import roads as roads_lib            # noqa: E402
 from export.planet.dsmp_strings import StringTable      # noqa: E402
+from export.planet import village_snaps                 # noqa: E402
 
 # ============================================================
 # CONFIGURATION — edit for your planet
@@ -124,6 +126,16 @@ PLANET_RADIUS = int(_proj_planet_radius) if _proj_planet_radius else 6_356_000
 
 # DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> the historical path.
 EXPORT_DIR = link_modifiers.resolve_export_dir()
+
+# Where the villages and cities stand (Horizon's seed) and what their layouts look like (written by
+# the game, tools/planettech/layout_snaps_export.gd): the roads are cut out of them and led to their
+# road snaps (export/planet/village_snaps.py). The seed defaults to the horizonserver checkout beside
+# this repository.
+_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", ".."))
+STARTUP_ITEMS = link_modifiers.resolve_path(
+    "DS_STARTUP_ITEMS", "startup_items",
+    os.path.join(_REPO_ROOT, "..", "horizonserver", "ds_genericprops", "startup_items.json"))
+LAYOUT_SNAPS = os.path.join(_REPO_ROOT, "assets", "qgis", "export", "layout_snaps.json")
 
 # Chunk-export nside, i.e. the finest level heights.pack was baked at. Read from
 # <planet>_chunks/manifest.json at run time; this is only the fallback.
@@ -327,6 +339,12 @@ def run_export():
               + (f" → road_type={road_type}" if road_type else " (legacy, per-feature road_type)"))
 
     m_per_deg = PLANET_RADIUS * math.pi / 180.0
+    villages = []
+    if os.path.exists(STARTUP_ITEMS) and os.path.exists(LAYOUT_SNAPS):
+        villages = village_snaps.load_villages(STARTUP_ITEMS, LAYOUT_SNAPS, PLANET_RADIUS)
+        print(f"  Villages   : {len(villages)} (roads cut out of them, led to their snaps)")
+    else:
+        print(f"  ! Villages not read ({STARTUP_ITEMS} / {LAYOUT_SNAPS}): roads may cross them")
     features = []
     # Same road dicts feed the pack part, so the two outputs cannot disagree.
     roads = []
@@ -354,9 +372,13 @@ def run_export():
         if _attr(feat, "width") is None:
             defaulted_width += 1
 
+        pieces = []
         for part in parts:
+            line = [[float(pt.x()), float(pt.y())] for pt in part]
+            pieces.extend(village_snaps.reroute(line, props.get("road_type"), villages, m_per_deg))
+        for centerline in pieces:
             hw_m = _half_width_m(props)
-            centerline = [[float(pt.x()), float(pt.y())] for pt in part]
+            part = [QgsPointXY(x, y) for x, y in centerline]
 
             road = dict(props)
             road["centerline"] = centerline
