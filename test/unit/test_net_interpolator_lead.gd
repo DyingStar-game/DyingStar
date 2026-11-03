@@ -32,10 +32,15 @@ func test_the_lead_waits_for_a_late_position_and_lets_a_stopped_one_go() -> void
 	node.free()
 
 
-func test_the_lead_comes_back_as_fast_as_it_went() -> void:
+## Coming back as fast as it went drew the body back by as much as a position was late (the preprod
+## "3 or 4 frames on, one back"): it comes back RETRACT_SHARE times slower.
+func test_the_lead_comes_back_slower_than_it_went() -> void:
+	var r: float = NetInterpolator.RETRACT_SHARE
 	assert_eq(NetInterpolator.lead_time(0.05, 0.1), 0.05)
-	assert_almost_eq(NetInterpolator.lead_time(0.15, 0.1), 0.05, 1e-9, "past the cap: coming back")
-	assert_eq(NetInterpolator.lead_time(0.3, 0.1), 0.0)
+	assert_almost_eq(NetInterpolator.lead_time(0.15, 0.1), 0.1 - 0.05 / r, 1e-9, "past the cap: coming back slowly")
+	assert_almost_eq(NetInterpolator.lead_time(0.1 + 0.05 * r, 0.1), 0.05, 1e-9, "half way back")
+	assert_almost_eq(NetInterpolator.lead_time(0.1 * (1.0 + r), 0.1), 0.0, 1e-9, "back on what the server said")
+	assert_eq(NetInterpolator.lead_time(1.0, 0.1), 0.0)
 
 
 func test_released_keys_settle_on_what_the_server_said() -> void:
