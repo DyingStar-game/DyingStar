@@ -71,7 +71,16 @@ def resolve_export_dir():
     The historical constant points at a checkout path that does not exist on
     every machine, so it is the last resort rather than the only option.
     """
-    env = os.environ.get("DS_EXPORT_DIR")
+    return resolve_path("DS_EXPORT_DIR", "export_dir", _DEFAULT_EXPORT_DIR)
+
+
+def resolve_path(env_name, ini_key, default):
+    """$<env_name> -> export_config.ini [paths] <ini_key> -> [default].
+
+    One lookup for every configurable path, so each machine points the exporters at its own
+    checkout without editing them. An unreadable export_config.ini is reported and skipped.
+    """
+    env = os.environ.get(env_name)
     if env:
         return env
     ini = os.path.join(_HERE, "export_config.ini")
@@ -80,13 +89,13 @@ def resolve_export_dir():
             import configparser
             cp = configparser.ConfigParser()
             cp.read(ini)
-            if cp.has_option("paths", "export_dir"):
-                v = cp.get("paths", "export_dir").strip()
+            if cp.has_option("paths", ini_key):
+                v = cp.get("paths", ini_key).strip()
                 if v:
-                    return v
+                    return os.path.expanduser(v)
         except Exception as exc:                      # pragma: no cover
             print("  ! could not read export_config.ini: %s" % exc)
-    return _DEFAULT_EXPORT_DIR
+    return default
 
 
 def chunks_dir_for(planet_name, export_dir=None):

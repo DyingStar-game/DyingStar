@@ -137,7 +137,7 @@ func _reference_level(idx: PadIndex, u: String, own: Dictionary, memo: Dictionar
 	var talus := float(mine["talus_m"])
 	if not best.is_empty():
 		var up := _reference_level(idx, str(best["uuid"]), own, memo, finest, recs)
-		talus = minf(talus + absf(float(up[0]) - z) / PadSettings.TALUS_SLOPE, PadSettings.TALUS_MAX_M)
+		talus = minf(talus + PadBed.talus_width(absf(float(up[0]) - z)), PadSettings.TALUS_MAX_M)
 		z = float(up[0])
 	memo[u] = [z, talus]
 	return memo[u]

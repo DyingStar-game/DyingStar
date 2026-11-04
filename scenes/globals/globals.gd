@@ -287,7 +287,14 @@ const DEBUG_TIME_STEP: float = 3600.0
 
 
 func sim_time() -> float:
-	return (Time.get_unix_time_from_system() + _clock_offset) * time_scale + debug_time_offset
+	return reference_time() * time_scale + debug_time_offset
+
+
+## Real seconds since the unix epoch on the authority's clock ([method sync_clock]): what every machine
+## agrees on, unscaled and without the client-only debug offset — for what keeps its own pace whatever
+## the pace the sky is shown at (a wind turbine's rotor).
+func reference_time() -> float:
+	return Time.get_unix_time_from_system() + _clock_offset
 
 
 ## Feed a reference timestamp coming off the network (seconds since the unix epoch, as sent by the

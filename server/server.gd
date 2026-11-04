@@ -2720,6 +2720,10 @@ func create_generic_object(event: Dictionary) -> void:
 		if prop_registry.has(uuid):
 			prop_registry.merge_data(uuid, data.get("object_data", {}))
 			_stream_moved[uuid] = true  # an adopted hand-over may have moved it
+		# A start village built during the warm-up comes back here: its zone (its common ground, its
+		# roads and fences) was never registered, and the player walked through fences only the client
+		# drew. Registering the same zone again changes nothing.
+		_stream_register_poi_zone(uuid)
 		return
 	prop_registry.upsert(event)
 	_stream_place(uuid)
@@ -3455,7 +3459,8 @@ func _stream_register_poi_zone(uuid: String) -> void:
 		return
 	var od: Dictionary = e["event"]["data"].get("object_data", {})
 	(planet as Planet).planet_terrain.set_poi_zone(uuid, str(od.get("name", uuid)), e["pos"],
-			float(od.get("radius_m", 0)))
+			float(od.get("radius_m", 0)), Basis.from_euler(_stream_vec(od.get("rotation", {}))),
+			str(od.get("spawn_scene", "")))
 
 
 ## Register the terrain pads of a building from its DATA, before (or without) its node: the chunks

@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://b0nvj345w1pd6"]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="2_placeholder_"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="9_terrain_pad"]
+
+[node name="SpoilHeap" type="Node3D" unique_id=1564714661]
+
+[node name="PropSync" type="Node" parent="." unique_id=409845470]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="Heap" type="CSGCylinder3D" parent="." unique_id=2004069819]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.7, 0, 8.73865380496136, 0)
+use_collision = true
+collision_mask = 0
+radius = 32.0
+height = 18.0
+sides = 14
+cone = true
+material = ExtResource("2_placeholder_")
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=986956876]
+script = ExtResource("9_terrain_pad")
+apron_m = 2.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=655059726]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.55, 0)
+size = Vector3(64, 1, 45)

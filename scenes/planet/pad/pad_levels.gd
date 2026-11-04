@@ -12,6 +12,13 @@ extends RefCounted
 ## the ground is drawn at. The level depends on the set of pads only, never on
 ## the order they were registered in, which keeps the client and the server on
 ## the same ground.
+##
+## Not on a village's common ground (VillageBed): there the pads are measured on
+## one plane that already follows the relief, and a pad keeps its own level. Borrowed
+## from neighbour to neighbour across a village on an 8° slope, one level buried
+## walls 21 m deep and raised bollards 15 m off the plane (M0002, 2026-11-03).
+## Except in an area the layout levels on purpose (LayoutPads, its uuid tagged): a pad touching
+## one takes its level, or the mine's yard buried its own buildings (2026-11-04).
 
 
 ## Re-level every pad connected to [param seeds] (the old and new records of the
@@ -19,7 +26,7 @@ extends RefCounted
 ## measured altitudes [param own] (uuid → {z, talus_m}). Returns the uuids whose
 ## record now differs from [param published].
 static func settle(next: PadIndex, published: PadIndex, seeds: Array, own: Dictionary,
-		finest: int, mpd: float) -> Array[String]:
+		finest: int, mpd: float, beds: Array = []) -> Array[String]:
 	var comp := {}
 	var queue: Array = []
 	# The neighbours of each pad of [param next], found once: the flood fill and level() both need them,
@@ -47,7 +54,7 @@ static func settle(next: PadIndex, published: PadIndex, seeds: Array, own: Dicti
 	var changed: Array[String] = []
 	for u: String in comp:
 		var cur: Dictionary = next.get_rec(u)
-		var lvl := level(next, u, own, memo, finest, mpd, near)
+		var lvl := level(next, u, own, memo, finest, mpd, near, beds)
 		if float(cur["z"]) != float(lvl[0]) or float(cur["talus_m"]) != float(lvl[1]):
 			var r := cur.duplicate()  # records are replaced whole, never patched (PadIndex)
 			r["z"] = float(lvl[0])
@@ -100,24 +107,31 @@ static func _touching_of(idx: PadIndex, u: String, finest: int, mpd: float, near
 
 ## [level, talus_m] pad [param u] is drawn at. The talus measured for its own
 ## altitude is widened by what the shared level adds, so the ground still meets
-## the relief at the promised slope.
+## the relief at the promised slope. A pad whose centre the ground of one of the
+## village [param beds] reaches (VillageBed.reaches) keeps its own level.
 static func level(idx: PadIndex, u: String, own: Dictionary, memo: Dictionary,
-		finest: int, mpd: float, near: Dictionary = {}) -> Array:
+		finest: int, mpd: float, near: Dictionary = {}, beds: Array = []) -> Array:
 	if memo.has(u):
 		return memo[u]
 	var rec: Dictionary = idx.get_rec(u)
 	var mine: Dictionary = own.get(u, {"z": float(rec["z"]), "talus_m": float(rec["talus_m"])})
 	var area := float(rec["hx"]) * float(rec["hy"])
 	var best: Dictionary = {}
+	# On a village's plane a pad keeps its own level, unless it stands in an area the layout levels
+	# on purpose (LayoutPads: the mine's yard), whose level it takes: the buildings of the yard stand
+	# on the yard, not buried under it.
+	var bed_only := VillageBed.reaches(beds, rec, mpd)
 	for t: String in _touching_of(idx, u, finest, mpd, near):
 		var c: Dictionary = idx.get_rec(t)
+		if bed_only and not str(c["uuid"]).contains(LayoutPads.UUID_TAG):
+			continue
 		if float(c["hx"]) * float(c["hy"]) > area and (best.is_empty() or PadBed.outranks(c, best)):
 			best = c
 	var z := float(mine["z"])
 	var talus := float(mine["talus_m"])
 	if not best.is_empty():
-		var up := level(idx, str(best["uuid"]), own, memo, finest, mpd, near)
-		talus = minf(talus + absf(float(up[0]) - z) / PadSettings.TALUS_SLOPE, PadSettings.TALUS_MAX_M)
+		var up := level(idx, str(best["uuid"]), own, memo, finest, mpd, near, beds)
+		talus = minf(talus + PadBed.talus_width(absf(float(up[0]) - z)), PadSettings.TALUS_MAX_M)
 		z = float(up[0])
 	memo[u] = [z, talus]
 	return memo[u]

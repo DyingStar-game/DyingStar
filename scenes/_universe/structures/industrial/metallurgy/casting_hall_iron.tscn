@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/metallurgy/casting_hall.tscn" id="1_casting_hall"]
+
+[node name="CastingHallIron" instance=ExtResource("1_casting_hall")]
+
+[node name="NeonSign" parent="."]
+text_key = "%%SIGN_CASTING_IRON"
+
+[node name="MapMarker" parent="."]
+label = "%%MAP_MARKER_CASTING_IRON"

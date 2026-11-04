@@ -1,0 +1,203 @@
+[gd_scene format=3 uid="uid://8jpuf1fvoiaf"]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="7_map_marker"]
+[ext_resource type="Texture2D" uid="uid://cd8f3gvov6o61" path="res://assets/textures/map_markers/habitat.png" id="8_habitat"]
+
+[node name="WorkerHouses" type="Node3D" unique_id=314938238]
+
+[node name="PropSync" type="Node" parent="." unique_id=1135560464]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=184472155]
+script = ExtResource("2_terrain_pad")
+apron_m = 6.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1467842330]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(34, 1, 34)
+
+[node name="Blockout" type="CSGCombiner3D" parent="." unique_id=1621184098]
+use_collision = true
+collision_mask = 0
+
+[node name="House11" type="CSGBox3D" parent="Blockout" unique_id=159741151]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13, 1.5, -13)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House11Door" type="CSGBox3D" parent="Blockout/House11" unique_id=1031052422]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House11Roof" type="CSGPolygon3D" parent="Blockout" unique_id=1175123547]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13, 3.2, -8.7)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House12" type="CSGBox3D" parent="Blockout" unique_id=43760744]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -13)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House12Door" type="CSGBox3D" parent="Blockout/House12" unique_id=968282657]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House12Roof" type="CSGPolygon3D" parent="Blockout" unique_id=1829385389]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, -8.7)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House13" type="CSGBox3D" parent="Blockout" unique_id=737669187]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13, 1.5, -13)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House13Door" type="CSGBox3D" parent="Blockout/House13" unique_id=724796985]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House13Roof" type="CSGPolygon3D" parent="Blockout" unique_id=2089085355]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13, 3.2, -8.7)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House21" type="CSGBox3D" parent="Blockout" unique_id=271366116]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13, 1.5, 0)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House21Door" type="CSGBox3D" parent="Blockout/House21" unique_id=404291339]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House21Roof" type="CSGPolygon3D" parent="Blockout" unique_id=578750899]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13, 3.2, 4.3)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House22" type="CSGBox3D" parent="Blockout" unique_id=2010177498]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House22Door" type="CSGBox3D" parent="Blockout/House22" unique_id=1167109525]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House22Roof" type="CSGPolygon3D" parent="Blockout" unique_id=1959791853]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, 4.3)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House23" type="CSGBox3D" parent="Blockout" unique_id=538491479]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13, 1.5, 0)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House23Door" type="CSGBox3D" parent="Blockout/House23" unique_id=2020957907]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House23Roof" type="CSGPolygon3D" parent="Blockout" unique_id=845507604]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13, 3.2, 4.3)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House31" type="CSGBox3D" parent="Blockout" unique_id=799956828]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13, 1.5, 13)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House31Door" type="CSGBox3D" parent="Blockout/House31" unique_id=935475713]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House31Roof" type="CSGPolygon3D" parent="Blockout" unique_id=1559691417]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13, 3.2, 17.3)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House32" type="CSGBox3D" parent="Blockout" unique_id=1045141444]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 13)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House32Door" type="CSGBox3D" parent="Blockout/House32" unique_id=1488605128]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House32Roof" type="CSGPolygon3D" parent="Blockout" unique_id=972245763]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.2, 17.3)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="House33" type="CSGBox3D" parent="Blockout" unique_id=667670625]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13, 1.5, 13)
+size = Vector3(8, 3.4, 8)
+material = ExtResource("3_placeholder_")
+
+[node name="House33Door" type="CSGBox3D" parent="Blockout/House33" unique_id=2130553945]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, -4)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="House33Roof" type="CSGPolygon3D" parent="Blockout" unique_id=1155866943]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13, 3.2, 17.3)
+polygon = PackedVector2Array(-4.3, 0, 4.3, 0, 0, 2.2)
+depth = 8.6
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=1263654709]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 3.4, -17.312004518248308)
+script = ExtResource("5_neon_sign")
+text_key = "%%SIGN_WORKER_HOUSING"
+branded = true
+brand = 5
+glow = 1.5
+letter_height = 0.38
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=114900921]
+script = ExtResource("6_photocell")
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=953899718]
+script = ExtResource("7_map_marker")
+icon = ExtResource("8_habitat")
+label = "%%MAP_MARKER_WORKER_HOUSING"
+importance = 4

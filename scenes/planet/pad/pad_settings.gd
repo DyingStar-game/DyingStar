@@ -30,6 +30,13 @@ const APRON_M := 8.0
 ## a wall at exactly the character's limit makes the player hop in place.
 const TALUS_SLOPE := 0.5
 
+## How much wider the talus is than a straight ramp of TALUS_SLOPE. The talus is
+## an S curve (smoothstep), flat where it leaves the apron and flat where it
+## meets the relief, so neither edge shows a crease; its steepest point, in the
+## middle, is 1.5 times its mean slope. Spreading it 1.5 times wider keeps that
+## steepest point at TALUS_SLOPE exactly.
+const TALUS_SPREAD := 1.5
+
 ## Hard cap on the talus WIDTH. This is a safety bound, not a design choice:
 ## PadIndex hands a chunk the pads of its own HEALPix pixel plus its eight
 ## neighbours, exactly like GradeBed.gather_pieces, so a pad whose influence
@@ -40,8 +47,11 @@ const TALUS_SLOPE := 0.5
 ## the talus still joins the relief continuously, but steeper. 120 m absorbs a
 ## 60 m height difference, which is a building halfway down a cliff — and
 ## TerrainPad says so in the inspector rather than letting it pass quietly.
-## Raising this is only safe while a pad's whole reach (PadBed.reach_m) stays
-## inside half a finest-level HEALPix pixel: 198 m on tarsis_3.
+## Raising this is only safe while a building pad's whole reach (PadBed.reach_m,
+## from its half-diagonal) stays inside half a finest-level HEALPix pixel: 198 m on
+## tarsis_3. A village bed (VillageBed) reaches further, and may: it is not handed
+## out by PadIndex but filtered per chunk on its whole reach
+## (PlanetData.village_beds_for_chunk).
 const TALUS_MAX_M := 120.0
 
 ## Extra lateral reach of the pad rule past the talus toe, so the refinement
@@ -117,10 +127,23 @@ const CARVE_MAX_VTX_SPACING_M := GradeSettings.CARVE_MAX_VTX_SPACING_M
 const REFINE_K := GradeSettings.REFINE_K
 
 
+## Version of the rules that shape the ground of pads and villages (PadLevels, VillageBed,
+## VillageRoadBed): bump it whenever one of them changes what is drawn.
+const LEVEL_RULE := 7
+
+
 ## Cache-key fragment covering every constant that changes baked geometry.
 ## Folded into PlanetTerrain's _cache_version, so tweaking a number above
 ## re-bakes the meshes and the shapes instead of serving a stale pad.
+## (GDScript's % has no %e: the quanta are written in fixed point.)
 static func signature() -> String:
-	return "%.1f_%.3f_%.0f_%.1f_%d_%.0e_%.0e_%.2f_%.2f" % [
-		APRON_M, TALUS_SLOPE, TALUS_MAX_M, REACH_MARGIN_M,
-		SAMPLE_N, Q_DEG, Q_RAD, Q_M, ROAD_CUT_MARGIN_M]
+	return "%.1f_%.3f_%.2f_%.0f_%.1f_%d_%.7f_%.4f_%.2f_%.2f_L%d" % [
+		APRON_M, TALUS_SLOPE, TALUS_SPREAD, TALUS_MAX_M, REACH_MARGIN_M,
+		SAMPLE_N, Q_DEG, Q_RAD, Q_M, ROAD_CUT_MARGIN_M, LEVEL_RULE]
+
+
+## The rule a persisted pad measure was taken under (PadBed.settled_entry): the talus slope and
+## spread its talus width is derived from, and LEVEL_RULE. A building's measure persisted under
+## another rule (the straight ramp before the S curve) is measured again rather than reused.
+static func talus_rule() -> String:
+	return "%.3f_%.2f_L%d" % [TALUS_SLOPE, TALUS_SPREAD, LEVEL_RULE]

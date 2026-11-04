@@ -122,17 +122,20 @@ static func quantise_stats(stats: Dictionary) -> Dictionary:
 
 ## What a building persists about one of its pads once the server has measured
 ## it (the building's terrain_settled field): the geometry the measure was
-## taken for, and the measure.
+## taken for, the rule it was taken under (PadSettings.talus_rule), and the measure.
 static func settled_entry(rec: Dictionary, stats: Dictionary) -> Dictionary:
 	var q := quantise(rec)
 	var out := quantise_stats(stats)
 	for k in ["lon", "lat", "yaw", "hx", "hy", "apron_m", "z_off"]:
 		out[k] = float(q[k])
+	out["rule"] = PadSettings.talus_rule()
 	return out
 
 
 ## The persisted stats of [param entry] if it was measured for the geometry of
-## [param rec], else {} — the building moved, or its footprint changed, since.
+## [param rec], else {} — the building moved, or its footprint changed, since,
+## or the talus rule did (PadSettings.talus_rule: the talus width is part of the
+## measure, and a width measured for the straight ramp is too narrow for the S curve).
 ## Both sides are re-quantised: [param entry] came back through JSON.
 ##
 ## Within ONE quantum, not exactly: the building's pose itself is persisted
@@ -142,6 +145,8 @@ static func settled_entry(rec: Dictionary, stats: Dictionary) -> Dictionary:
 ## anything that moves the median the platform sits at.
 static func settled_stats(rec: Dictionary, entry: Dictionary) -> Dictionary:
 	if entry.is_empty() or not (entry.has("z") and entry.has("talus_m") and entry.has("span")):
+		return {}
+	if str(entry.get("rule", "")) != PadSettings.talus_rule():
 		return {}
 	var a := quantise(rec)
 	var b := quantise(entry)
@@ -203,8 +208,13 @@ static func same_geometry(a: Dictionary, b: Dictionary) -> bool:
 ## and by GradeRefine to size the refinement band. It is an upper bound by
 ## construction (the talus is capped), never an estimate — see
 ## PadSettings.TALUS_MAX_M for why a bound and not a measurement.
+##
+## Measured from the half-diagonal, not the longer half side: a point d metres
+## off the footprint lies up to |(hx, hy)| + d from its centre, past a corner.
+## With the longer half side, the corner chunks of a 300 m village bed were
+## never handed its ground.
 static func reach_m(rec: Dictionary) -> float:
-	return maxf(float(rec.get("hx", 0.0)), float(rec.get("hy", 0.0))) \
+	return Vector2(float(rec.get("hx", 0.0)), float(rec.get("hy", 0.0))).length() \
 			+ float(rec.get("apron_m", PadSettings.APRON_M)) \
 			+ talus_cap(rec) + PadSettings.REACH_MARGIN_M
 
@@ -239,6 +249,15 @@ static func talus_cap(rec: Dictionary) -> float:
 ## over the ~170 m a pad can reach, the difference with the true spherical
 ## distance is nanometres on a body of planetary radius.
 static func sdf_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
+	var p := local_m(rec, lonlat, m_per_deg)
+	var qx := absf(p.x) - float(rec["hx"])
+	var qy := absf(p.y) - float(rec["hy"])
+	return Vector2(maxf(qx, 0.0), maxf(qy, 0.0)).length() + minf(maxf(qx, qy), 0.0)
+
+
+## [param lonlat] in the record's own frame: metres along its +X and +Y on the
+## tangent plane at its centre (+X at `yaw` from east toward north).
+static func local_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> Vector2:
 	var lat0: float = float(rec["lat"])
 	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
 	var e := wrapf(lonlat.x - float(rec["lon"]), -180.0, 180.0) * ls * m_per_deg
@@ -246,9 +265,20 @@ static func sdf_m(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
 	var yaw: float = float(rec["yaw"])
 	var c := cos(yaw)
 	var s := sin(yaw)
-	var qx := absf(e * c + n * s) - float(rec["hx"])
-	var qy := absf(-e * s + n * c) - float(rec["hy"])
-	return Vector2(maxf(qx, 0.0), maxf(qy, 0.0)).length() + minf(maxf(qx, qy), 0.0)
+	return Vector2(e * c + n * s, -e * s + n * c)
+
+
+## The direction of the point [param x], [param y] metres from the record's
+## centre in its own frame: the inverse of [method local_m].
+static func dir_at(rec: Dictionary, x: float, y: float, m_per_deg: float) -> Vector3:
+	var lat0: float = float(rec["lat"])
+	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
+	var yaw: float = float(rec["yaw"])
+	var c := cos(yaw)
+	var s := sin(yaw)
+	var lon := float(rec["lon"]) + (x * c - y * s) / (ls * m_per_deg)
+	var lat := clampf(lat0 + (x * s + y * c) / m_per_deg, -90.0, 90.0)
+	return HEALPix.lonlat2vec(lon, lat)
 
 
 ## Do the footprints-plus-aprons of [param a] and [param b] touch? Then the two
@@ -308,27 +338,20 @@ static func sample_dirs(rec: Dictionary, m_per_deg: float) -> PackedVector3Array
 	var n := PadSettings.SAMPLE_N
 	if n < 2 or m_per_deg <= 0.0:
 		return out
-	var lat0: float = float(rec["lat"])
-	var lon0: float = float(rec["lon"])
-	var ls := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6)
 	var apron: float = float(rec["apron_m"])
-	var ex: float = float(rec["hx"]) + apron
-	var ey: float = float(rec["hy"]) + apron
-	var yaw: float = float(rec["yaw"])
-	var c := cos(yaw)
-	var s := sin(yaw)
+	return grid_dirs(rec, float(rec["hx"]) + apron, float(rec["hy"]) + apron, n, m_per_deg)
+
+
+## An even [param n] × [param n] grid of directions over ±[param ex] × ±[param ey]
+## metres of the record's own frame, row by row.
+static func grid_dirs(rec: Dictionary, ex: float, ey: float, n: int, m_per_deg: float) -> PackedVector3Array:
+	var out := PackedVector3Array()
 	var inv := 1.0 / float(n - 1)
 	out.resize(n * n)
 	for j in n:
 		var y := -ey + 2.0 * ey * float(j) * inv
 		for i in n:
-			var x := -ex + 2.0 * ex * float(i) * inv
-			# Pad frame → (east, north) metres → lon/lat degrees.
-			var e := x * c - y * s
-			var nn := x * s + y * c
-			var lon := lon0 + e / (ls * m_per_deg)
-			var lat := clampf(lat0 + nn / m_per_deg, -90.0, 90.0)
-			out[j * n + i] = HEALPix.lonlat2vec(lon, lat)
+			out[j * n + i] = dir_at(rec, -ex + 2.0 * ex * float(i) * inv, y, m_per_deg)
 	return out
 
 
@@ -376,7 +399,7 @@ static func pad_stats(rec: Dictionary, sampler: Callable, m_per_deg: float) -> D
 	var worst := hs[n - 1] - z
 	for d in reach_probe_dirs(rec, m_per_deg):
 		worst = maxf(worst, absf(float(sampler.call(d)) - z))
-	var talus := minf(worst * 1.25 / PadSettings.TALUS_SLOPE + 4.0, PadSettings.TALUS_MAX_M)
+	var talus := minf(talus_width(worst * 1.25) + 4.0, PadSettings.TALUS_MAX_M)
 	return {"z": z, "span": hs[n - 1] - hs[0], "talus_m": talus}
 
 
@@ -427,21 +450,28 @@ static func nearest(pads: Array, lonlat: Vector2, m_per_deg: float) -> Dictionar
 ## modifier (the railway carve included — a building beside a road meets the
 ## road bed, not the raw relief).
 ##
-## Flat over the footprint and its apron, then a talus of the fixed slope
-## PadSettings.TALUS_SLOPE whose WIDTH is derived from the height it has to
-## absorb, so the ramp is walkable and drivable whatever the dénivelé. The
-## interpolation is linear and not a smoothstep on purpose: a smoothstep's
-## derivative peaks at 1.5, which would make the steepest part of the talus
-## half again as steep as the slope this file promises.
+## Flat over the footprint and its apron — the ground that MUST be level —
+## then a talus whose WIDTH is derived from the height it has to absorb
+## ([method talus_width]), so the ramp is walkable and drivable whatever the
+## height difference. The talus is an S curve (smoothstep): it leaves the apron and meets
+## the relief level, with no crease at either edge, and its steepest point is
+## PadSettings.TALUS_SLOPE because the width is spread to allow for it.
 static func height_at(h: float, rec: Dictionary, d: float) -> float:
 	var z: float = float(rec["z"])
 	var apron: float = float(rec["apron_m"])
 	if d <= apron:
 		return z
-	var talus := minf(absf(h - z) / PadSettings.TALUS_SLOPE, talus_cap(rec))
+	var talus := minf(talus_width(absf(h - z)), talus_cap(rec))
 	if talus <= 1e-6 or d >= apron + talus:
 		return h
-	return lerpf(z, h, (d - apron) / talus)
+	return lerpf(z, h, smoothstep(0.0, 1.0, (d - apron) / talus))
+
+
+## The width of a talus that absorbs [param dh] metres of height with its
+## steepest point at PadSettings.TALUS_SLOPE (an S curve is TALUS_SPREAD times
+## wider than a straight ramp of that slope). Uncapped: the callers cap it.
+static func talus_width(dh: float) -> float:
+	return PadSettings.TALUS_SPREAD * dh / PadSettings.TALUS_SLOPE
 
 
 ## The per-vertex pad rule: [param h] moved by the nearest of [param pads],

@@ -15,6 +15,7 @@ const UNDER_THE_VEIL_M := -406.0
 const WIRED := {
 	"res://scenes/_universe/props/furniture/furn_floodlight_outdoor_lg.tscn": ["SpotLight3D"],
 	"res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn": ["SpotLight3D"],
+	"res://scenes/_universe/props/furniture/furn_lamppost_outdoor_3.4m.tscn": ["SpotLight3D"],
 	"res://scenes/_universe/structures/industrial/garage.tscn": ["NeonSign", "Lights"],
 	"res://scenes/_universe/structures/industrial/cargo_depot.tscn": ["NeonSign", "Lights"],
 	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn": ["NeonSign"],

@@ -106,7 +106,7 @@ func test_talus_is_continuous_at_both_ends() -> void:
 	var h := 60.0                                   # 40 m below the platform
 	var apron: float = float(_rec["apron_m"])
 	var edge: float = float(_rec["hx"]) + apron     # 18 m: where the talus starts
-	var width := absf(h - 100.0) / PadSettings.TALUS_SLOPE
+	var width := PadBed.talus_width(absf(h - 100.0))
 	assert_eq(PadBed.apply(h, _east(edge), [_rec], MPD), 100.0,
 			"at the apron edge the ground is still the platform")
 	assert_eq(PadBed.apply(h, _east(edge + width), [_rec], MPD), h,
@@ -116,8 +116,8 @@ func test_talus_is_continuous_at_both_ends() -> void:
 
 
 func test_talus_never_exceeds_the_slope() -> void:
-	# Every height difference the cap admits: TALUS_MAX_M × TALUS_SLOPE.
-	for dh: float in [-60.0, -40.0, -12.0, -2.0, 2.0, 12.0, 40.0, 60.0]:
+	# Every height difference the cap admits: TALUS_MAX_M × TALUS_SLOPE / TALUS_SPREAD.
+	for dh: float in [-40.0, -25.0, -12.0, -2.0, 2.0, 12.0, 25.0, 40.0]:
 		var h := 100.0 + dh
 		var prev := 100.0
 		var step := 0.25
@@ -128,6 +128,19 @@ func test_talus_never_exceeds_the_slope() -> void:
 			assert_lte(absf(y - prev) / step, PadSettings.TALUS_SLOPE + 1e-6,
 					"Δh=%.0f m: the talus must stay walkable" % dh)
 			prev = y
+
+
+func test_the_talus_leaves_the_apron_and_meets_the_relief_without_a_crease() -> void:
+	# An S curve: level where it leaves the apron and where it lands on the relief, so neither
+	# edge shows a kink a wheel would bump on.
+	var h := 76.0                                   # 24 m below the platform
+	var edge: float = float(_rec["hx"]) + float(_rec["apron_m"])
+	var width := PadBed.talus_width(100.0 - h)
+	var d := 0.05
+	var leaving := (100.0 - PadBed.apply(h, _east(edge + d), [_rec], MPD)) / d
+	var landing := (PadBed.apply(h, _east(edge + width - d), [_rec], MPD) - h) / d
+	assert_lt(leaving, 0.01, "leaves the apron level")
+	assert_lt(landing, 0.01, "meets the relief level")
 
 
 func test_past_the_cap_the_talus_steepens_but_stays_continuous() -> void:

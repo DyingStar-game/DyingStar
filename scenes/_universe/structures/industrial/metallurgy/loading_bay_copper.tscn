@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/metallurgy/loading_bay.tscn" id="1_loading_bay"]
+
+[node name="LoadingBayCopper" instance=ExtResource("1_loading_bay")]
+
+[node name="NeonSign" parent="."]
+text_key = "%%SIGN_LOADING_COPPER"
+
+[node name="MapMarker" parent="."]
+label = "%%MAP_MARKER_LOADING_COPPER"

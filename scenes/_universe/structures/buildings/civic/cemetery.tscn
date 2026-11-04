@@ -1,0 +1,240 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/cemetery.png" id="mm_icon"]
+
+[node name="Cemetery" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 4
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(50, 1, 44)
+
+[node name="Blockout" type="CSGCombiner3D" parent="."]
+use_collision = true
+collision_mask = 0
+
+[node name="WallBack" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 22)
+size = Vector3(50, 1.4, 0.4)
+material = ExtResource("3_placeholder_")
+
+[node name="WallLeft" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -25, 0.6, 0)
+size = Vector3(0.4, 1.4, 44)
+material = ExtResource("3_placeholder_")
+
+[node name="WallRight" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25, 0.6, 0)
+size = Vector3(0.4, 1.4, 44)
+material = ExtResource("3_placeholder_")
+
+[node name="WallFrontLeft" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.5, 0.6, -22)
+size = Vector3(23, 1.4, 0.4)
+material = ExtResource("3_placeholder_")
+
+[node name="WallFrontRight" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.5, 0.6, -22)
+size = Vector3(23, 1.4, 0.4)
+material = ExtResource("3_placeholder_")
+
+[node name="GatePostLeft" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2, 1.7, -22)
+size = Vector3(0.5, 3.6, 0.5)
+material = ExtResource("3_placeholder_")
+
+[node name="GatePostRight" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.2, 1.7, -22)
+size = Vector3(0.5, 3.6, 0.5)
+material = ExtResource("3_placeholder_")
+
+[node name="GateLintel" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.6, -22)
+size = Vector3(4.9, 0.4, 0.5)
+material = ExtResource("3_placeholder_")
+
+[node name="Grave11" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.5, 0.4, -12)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave12" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.5, 0.4, -12)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave13" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, 0.4, -12)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave16" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, 0.4, -12)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave17" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.5, 0.4, -12)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave18" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, 0.4, -12)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave21" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.5, 0.4, -5)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave22" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.5, 0.4, -5)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave23" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, 0.4, -5)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave26" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, 0.4, -5)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave27" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.5, 0.4, -5)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave28" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, 0.4, -5)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave31" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.5, 0.4, 2)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave32" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.5, 0.4, 2)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave33" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, 0.4, 2)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave36" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, 0.4, 2)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave37" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.5, 0.4, 2)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave38" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, 0.4, 2)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave41" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.5, 0.4, 9)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave42" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.5, 0.4, 9)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave43" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, 0.4, 9)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave46" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, 0.4, 9)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave47" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.5, 0.4, 9)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave48" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, 0.4, 9)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave51" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -17.5, 0.4, 16)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave52" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.5, 0.4, 16)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave53" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.5, 0.4, 16)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave56" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.5, 0.4, 16)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave57" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.5, 0.4, 16)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="Grave58" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, 0.4, 16)
+size = Vector3(0.7, 1, 0.2)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 4.2, -22.3)
+script = ExtResource("5_neon_sign")
+branded = true
+brand = 5
+text_key = "%%SIGN_CEMETERY"
+glow = 1.5
+letter_height = 0.45
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign"]
+script = ExtResource("6_photocell")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("mm_script")
+icon = ExtResource("mm_icon")
+label = "%%MAP_MARKER_CEMETERY"
+importance = 3

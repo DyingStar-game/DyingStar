@@ -401,7 +401,7 @@ static func generate_mesh(
 	# but the terrain is still shaved down to the bed top around the line so
 	# it never pierces the bed — `_rw_shave` (visual only, see GradeBed).
 	var _rw_shave: Dictionary = {}
-	if hp_mode and res > 0 and (data.has_profiled_lines() or data.has_pads()):
+	if hp_mode and res > 0 and GradeBed.has_work(data):
 		var _rw_pitch := HEALPix.pixel_side_length(hp_nside, data.radius) / float(res)
 		_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _rw_pitch)
 		if not _rw_ctx.is_empty():
@@ -2324,6 +2324,12 @@ static func generate_mesh(
 			return data.sample_height_for_chunk(
 				_fuv["face"], _fuv["u"], _fuv["v"], u_min, u_max, v_min, v_max)
 		var _max_seg_deg := _ribbon_pitch_deg(_rd_cbb, res)
+		# A village road (VillageRoad) lies on the village's ground: the plane of its bed and the pads
+		# on it, which the raw relief knows nothing of — on a slope the ribbon floated metres above.
+		var _rd_village_at: Callable = _rd_height_at
+		if PlanetChunk.has_village_zone(_rd_sources):
+			_rd_village_at = PlanetChunk.village_ground_sampler(_rw_ctx if not _rw_ctx.is_empty() else _rw_shave,
+					_rd_height_at)
 
 		for _rd_zone in _rd_sources:
 			var _rd_rt := RoadTerrain.get_road_type(_rd_zone)
@@ -2385,7 +2391,9 @@ static func generate_mesh(
 					_road_group_append_slab(road_groups, grp, _rd_surf, _rd_tile_m,
 							RoadRibbon.emit_strip(
 									_rd_piece[0], _rd_piece[1], _rd_strip, _rd_m_per_deg,
-									data.radius, _max_seg_deg, _rd_height_at, cc_f32,
+									data.radius, _max_seg_deg,
+									PlanetChunk.sunk(_rd_village_at, _rd_zone) if bool(_rd_zone.get("village", false))
+											else _rd_height_at, cc_f32,
 									true, true, _rd_surf["uv_mode"], _rd_tile_m,
 									_rd_surf["tint"]))
 
@@ -3126,7 +3134,7 @@ static func generate_collision_shape(
 	var _col_rw_ctx: Dictionary = {}
 	var _col_rw_band := PackedByteArray()
 	var _col_rw_h := PackedFloat64Array()
-	if hp_mode and (data.has_profiled_lines() or data.has_pads()):
+	if hp_mode and GradeBed.has_work(data):
 		_col_rw_ctx = GradeBed.make_ctx(data, hp_nside, hp_ipix, _col_crack_spacing)
 		if not _col_rw_ctx.is_empty():
 			_col_rw_band.resize((res + 1) * (res + 1))
@@ -3595,6 +3603,9 @@ static func generate_collision_shape(
 		# RoadRibbon.emit_strip calls, minus the visual arrays.
 		if not _col_rd.is_empty():
 			var _rd_pitch := _ribbon_pitch_deg(_healpix_lonlat_bbox(hp_nside, hp_ipix), res)
+			var _rd_village_col: Callable = _rw_sampler
+			if PlanetChunk.has_village_zone(_col_rd):
+				_rd_village_col = PlanetChunk.village_ground_sampler(_col_rw_ctx, _rw_sampler)
 			for _rd_zone in _col_rd:
 				var _rd_cl: PackedVector2Array = _rd_zone.get("centerline", PackedVector2Array())
 				var _rd_cum: PackedFloat64Array = _rd_zone.get("_cum_lengths", PackedFloat64Array())
@@ -3613,7 +3624,9 @@ static func generate_collision_shape(
 					for _rd_strip in _rd_layout["strips"]:
 						faces.append_array(RoadRibbon.emit_strip(
 								_rd_piece[0], _rd_piece[1], _rd_strip, _rw_mpd,
-								data.radius, _rd_pitch, _rw_sampler, col_origin,
+								data.radius, _rd_pitch,
+								PlanetChunk.sunk(_rd_village_col, _rd_zone) if bool(_rd_zone.get("village", false))
+										else _rw_sampler, col_origin,
 								false, _rw_outward)["faces"])
 
 	var shape := ConcavePolygonShape3D.new()
@@ -4422,3 +4435,35 @@ static func _compute_tangents(verts: PackedVector3Array,
 		out[vi * 4 + 2] = t.z
 		out[vi * 4 + 3] = sign_w
 	return out
+
+
+## The ground a village road (VillageRoad) lies on: [param relief] (the chunk's own
+## `func(dir) -> altitude`) shaped by the chunk's ground rules, GradeBed.apply with [param ctx] — the
+## context the chunk built for its own vertices (GradeBed.make_ctx, or make_coarse_ctx on a coarse
+## LOD), so the ribbon lies on the very ground drawn under it: railway cutting, village bed, pads,
+## village roads, in that order. [param relief] alone when [param ctx] is empty. Thread-safe: the
+## context holds the published copies, read once for the chunk.
+static func village_ground_sampler(ctx: Dictionary, relief: Callable) -> Callable:
+	if ctx.is_empty():
+		return relief
+	return func(d: Vector3) -> float:
+		return GradeBed.apply(float(relief.call(d)), HEALPix.vec2lonlat(d), ctx)
+
+
+## Does one of the road zones [param zones] come from a village layout (VillageRoad)? Only then is
+## [method village_ground_sampler] needed.
+static func has_village_zone(zones: Array) -> bool:
+	for z in zones:
+		if bool((z as Dictionary).get("village", false)):
+			return true
+	return false
+
+
+## [param sampler] lowered by the road [param zone]'s `_sink_m`: a village road that gives way to
+## another one it overlaps passes under it (LayoutRoads.SINK_M).
+static func sunk(sampler: Callable, zone: Dictionary) -> Callable:
+	var sink := float(zone.get("_sink_m", 0.0))
+	if sink <= 0.0:
+		return sampler
+	return func(d: Vector3) -> float:
+		return float(sampler.call(d)) - sink

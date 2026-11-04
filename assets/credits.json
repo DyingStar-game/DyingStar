@@ -941,6 +941,15 @@
 	],
 	"models": [
 		{
+			"asset": "administration.png",
+			"path": "res://assets/textures/map_markers/administration.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "antenna.png",
 			"path": "res://assets/textures/map_markers/antenna.png",
 			"author": "WarpZone",
@@ -970,6 +979,24 @@
 		{
 			"asset": "astronaut.png",
 			"path": "res://assets/textures/map_markers/astronaut.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "bank.png",
+			"path": "res://assets/textures/map_markers/bank.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "bar.png",
+			"path": "res://assets/textures/map_markers/bar.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
@@ -1085,8 +1112,35 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "cemetery.png",
+			"path": "res://assets/textures/map_markers/cemetery.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "charging_station.png",
 			"path": "res://assets/textures/map_markers/charging_station.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "checkpoint.png",
+			"path": "res://assets/textures/map_markers/checkpoint.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "cinema.png",
+			"path": "res://assets/textures/map_markers/cinema.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
@@ -1108,6 +1162,15 @@
 			"author": "BenLatouro",
 			"source": "Discord",
 			"id": "950703145783291924",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "courthouse.png",
+			"path": "res://assets/textures/map_markers/courthouse.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -1139,6 +1202,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "driving_school.png",
+			"path": "res://assets/textures/map_markers/driving_school.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "Dynamic_Bridge.glb",
 			"path": "res://assets/_universe/structures/industrial/vehicle_lift/dynamic_bridge/Dynamic_Bridge.glb",
 			"author": "The_Moye",
@@ -1159,6 +1231,15 @@
 		{
 			"asset": "factory.png",
 			"path": "res://assets/textures/map_markers/factory.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "fire_station.png",
+			"path": "res://assets/textures/map_markers/fire_station.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
@@ -1218,6 +1299,15 @@
 			"id": "",
 			"url": "https://sketchfab.com/3d-models/outdoor-floodlights-ea5d32f3dbc94d26a0ae1c73b1ae604c",
 			"license": "CC BY 4.0"
+		},
+		{
+			"asset": "furn_lamppost_outdoor_3.4m.glb",
+			"path": "res://assets/_universe/props/furniture/furn_lamppost_outdoor_3.4m.glb",
+			"author": "Gurvan",
+			"source": "Discord",
+			"id": "272757722536214538",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
 		},
 		{
 			"asset": "garage.png",
@@ -1580,6 +1670,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "motel.png",
+			"path": "res://assets/textures/map_markers/motel.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "motor.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/motor.png",
 			"author": "WarpZone",
@@ -1598,6 +1697,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "parking.png",
+			"path": "res://assets/textures/map_markers/parking.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "parts_dispenser.png",
 			"path": "res://assets/textures/map_markers/parts_dispenser.png",
 			"author": "WarpZone",
@@ -1612,6 +1720,15 @@
 			"author": "ddurieux",
 			"source": "Discord",
 			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "place_of_worship.png",
+			"path": "res://assets/textures/map_markers/place_of_worship.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -1643,8 +1760,26 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "police.png",
+			"path": "res://assets/textures/map_markers/police.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "power_plant.png",
 			"path": "res://assets/textures/map_markers/power_plant.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "prison.png",
+			"path": "res://assets/textures/map_markers/prison.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
@@ -1724,6 +1859,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "school.png",
+			"path": "res://assets/textures/map_markers/school.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "shop.png",
 			"path": "res://assets/textures/map_markers/shop.png",
 			"author": "WarpZone",
@@ -1738,6 +1882,15 @@
 			"author": "Irong",
 			"source": "Discord",
 			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "stadium.png",
+			"path": "res://assets/textures/map_markers/stadium.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},

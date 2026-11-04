@@ -3486,6 +3486,8 @@ func volcano_lake_level(v: VolcanoRelief.Volcano) -> float:
 ## Gates the fine server collision: a road is an 8 cm slab with its own
 ## collision (RoadRibbon), which only makes sense on the grid the mesh uses.
 func has_roads() -> bool:
+	if not _village_roads.is_empty():
+		return true
 	if _has_roads >= 0:
 		return _has_roads == 1
 	var pack = _ensure_modifier_pack()
@@ -4148,6 +4150,10 @@ func chunk_cache_ineligible(nside: int, ipix: int) -> bool:
 	if not villages.is_empty() and not crack_pois_near(HEALPix.pix2vec_nest(nside, ipix),
 			HEALPix.pixel_side_length(nside, radius), villages).is_empty():
 		return true
+	# Nor is a village's ground (VillageBed) or the roads drawn in its layout (VillageRoadBed): laid
+	# at run time from the village's pose, it reaches further than the crack exclusion may.
+	if not village_beds_for_chunk(nside, ipix).is_empty() or not village_roads_for_chunk(nside, ipix).is_empty():
+		return true
 	# A cave registered at run time (a networked cave) is no baked data either.
 	if stargrot_runtime_touches(nside, ipix):
 		return true
@@ -4276,8 +4282,11 @@ func bridge_height_sampler(ipix: int) -> Callable:
 ## chunk — callers that emit geometry must clip; callers that test a point
 ## (prop spawners) do not care.
 func get_roads_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
-	if hp_nside <= 0 or _ensure_modifier_pack() == null:
+	if hp_nside <= 0:
 		return []
+	var village := _village_road_pieces(hp_nside, hp_ipix)
+	if _ensure_modifier_pack() == null:
+		return village
 	var cap := modifier_max_nside_for(ModifierPackScript.KIND_ROAD)
 	var nside: int = clampi(hp_nside, 1, cap)
 	var ipix := hp_ipix
@@ -4285,7 +4294,157 @@ func get_roads_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
 	while cur > nside:
 		ipix = HEALPix.parent_pixel(ipix)
 		cur /= 2
-	return get_chunk_roads(nside, ipix)
+	var pack_roads := get_chunk_roads(nside, ipix)
+	return pack_roads if village.is_empty() else pack_roads + village
+
+
+# ── Village roads (VillageRoad, LayoutRoads) ─────────────────────────────
+
+## The roads drawn inside the village and city layouts, as road zones (LayoutRoads.to_zones), each
+## with its reach for the chunk filter: published whole (copy-on-write) for the mesh workers.
+var _village_roads: Array = []
+
+
+## Register (or replace) the roads of the village bed [param bed_uuid]: [param zones] as
+## LayoutRoads.to_zones gives them. Returns the finest-level pixels whose chunks are now stale ({}
+## when nothing changed).
+func register_village_roads(bed_uuid: String, zones: Array) -> Dictionary:
+	var old: Array = village_roads_of(bed_uuid)
+	if _same_roads(old, zones):
+		return {}
+	var next: Array = _village_roads.filter(func(z: Dictionary) -> bool: return str(z["bed"]) != bed_uuid)
+	for z: Dictionary in zones:
+		var r := z.duplicate()
+		var cl: PackedVector2Array = r["centerline"]
+		var c := Vector3.ZERO
+		for p: Vector2 in cl:
+			c += HEALPix.lonlat2vec(p.x, p.y)
+		r["_dir"] = c.normalized()
+		var reach := 0.0
+		for p: Vector2 in cl:
+			reach = maxf(reach, (r["_dir"] as Vector3).angle_to(HEALPix.lonlat2vec(p.x, p.y)) * radius)
+		r["_reach_m"] = reach + float(r["width"])
+		r["_bbox"] = VillageRoadBed.bbox_of(r, radius * PI / 180.0)
+		next.append(r)
+	_village_roads = next
+	var dirty := {}
+	var finest: int = 1 << maxi(max_quadtree_depth, 0)
+	for z: Dictionary in old + zones:
+		dirty.merge(_pixels_along(z["centerline"],
+				float(z["width"]) * 0.5 + VillageRoadBed.EDGE_M + VillageRoadBed.BAND_M, finest))
+	return dirty
+
+
+## The [param nside] pixels the band [param reach_m] metres wide each side of the line [param cl]
+## (lon/lat degrees) touches: the ground a village road moves reaches past its vertices' pixels. Each
+## segment is walked at most half a pixel (and at most [param reach_m]) at a time, and each sample
+## adds its own pixel and the eight points [param reach_m] around it — PadIndex.pixels_of's sampling.
+func _pixels_along(cl: PackedVector2Array, reach_m: float, nside: int) -> Dictionary:
+	var out := {}
+	var mpd := radius * PI / 180.0
+	var step := maxf(minf(HEALPix.pixel_side_length(nside, radius) * 0.5, reach_m), 1.0)
+	for i in cl.size():
+		var a := cl[i]
+		var b := cl[mini(i + 1, cl.size() - 1)]
+		var ls := maxf(cos(deg_to_rad(clampf(a.y, -89.5, 89.5))), 1e-6)
+		var seg := Vector2((b.x - a.x) * ls, b.y - a.y).length() * mpd
+		var n := maxi(1, ceili(seg / step))
+		for s in n:
+			var p := a.lerp(b, float(s) / float(n))
+			out[HEALPix.vec2pix_nest(nside, HEALPix.lonlat2vec(p.x, p.y))] = true
+			for k in 8:
+				var ang := TAU * float(k) / 8.0
+				var q := p + Vector2(cos(ang) * reach_m / (ls * mpd), sin(ang) * reach_m / mpd)
+				out[HEALPix.vec2pix_nest(nside, HEALPix.lonlat2vec(q.x, q.y))] = true
+	return out
+
+
+## The road zones registered for the village bed [param bed_uuid].
+func village_roads_of(bed_uuid: String) -> Array:
+	return _village_roads.filter(func(z: Dictionary) -> bool: return str(z["bed"]) == bed_uuid)
+
+
+## Is the village bed [param bed_uuid] registered (its plane fitted)?
+func has_village_bed(bed_uuid: String) -> bool:
+	return not _village_bed_of(bed_uuid).is_empty()
+
+
+## The whole village roads whose ground (VillageRoadBed) can move a vertex of the chunk
+## ([param nside], [param ipix]).
+func village_roads_for_chunk(nside: int, ipix: int) -> Array:
+	var roads: Array = _village_roads
+	if roads.is_empty():
+		return []
+	var out: Array = []
+	for z: Dictionary in roads:
+		if _near_chunk(z["_dir"], float(z["_reach_m"]) + VillageRoadBed.BAND_M, nside, ipix):
+			out.append(z)
+	return out
+
+
+## Could something centred on [param dir] (planet-local unit) and moving the ground up to
+## [param reach_m] metres from it reach the chunk ([param nside], [param ipix])? Measured from the
+## chunk's centre, with three quarters of its side as its half diagonal: the filter of the village
+## beds and roads, per chunk.
+func _near_chunk(dir: Vector3, reach_m: float, nside: int, ipix: int) -> bool:
+	return HEALPix.pix2vec_nest(nside, ipix).angle_to(dir) * radius \
+			<= reach_m + HEALPix.pixel_side_length(nside, radius) * 0.75
+
+
+## Are the road zones [param a] (registered: with their derived `_` fields) the zones [param b] (as
+## LayoutRoads.to_zones gives them), in the same order? Every field of [param b] is compared — the
+## centreline and the width, but also the feature id and the sink of a road that gives way — so a
+## change of any of them re-registers the roads.
+static func _same_roads(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		var za: Dictionary = a[i]
+		var zb: Dictionary = b[i]
+		for k in zb:
+			if not za.has(k) or za[k] != zb[k]:
+				return false
+	return true
+
+
+## The pieces of the village roads the chunk ([param nside], [param ipix]) draws: a segment belongs
+## to the pixel that holds its midpoint, so two neighbouring chunks never draw the same stretch and
+## their pieces meet end to end.
+func _village_road_pieces(nside: int, ipix: int) -> Array:
+	var roads: Array = _village_roads
+	if roads.is_empty():
+		return []
+	var out: Array = []
+	for z: Dictionary in roads:
+		if not _near_chunk(z["_dir"], float(z["_reach_m"]), nside, ipix):
+			continue
+		var cl: PackedVector2Array = z["centerline"]
+		var cum: PackedFloat64Array = z["_cum_lengths"]
+		var run_cl := PackedVector2Array()
+		var run_cum := PackedFloat64Array()
+		for i in cl.size() - 1:
+			var mid := (cl[i] + cl[i + 1]) * 0.5
+			if HEALPix.vec2pix_nest(nside, HEALPix.lonlat2vec(mid.x, mid.y)) == ipix:
+				if run_cl.is_empty():
+					run_cl.append(cl[i])
+					run_cum.append(cum[i])
+				run_cl.append(cl[i + 1])
+				run_cum.append(cum[i + 1])
+			elif not run_cl.is_empty():
+				out.append(_road_piece(z, run_cl, run_cum))
+				run_cl = PackedVector2Array()
+				run_cum = PackedFloat64Array()
+		if not run_cl.is_empty():
+			out.append(_road_piece(z, run_cl, run_cum))
+	return out
+
+
+## One road record (RoadTerrain's format) for the stretch [param cl] / [param cum] of the village
+## road [param zone]: what get_roads_for_chunk hands the chunk builders, flagged `village` so they lay
+## it on the village's ground (PlanetChunk.village_ground_sampler) and sink it by its `_sink_m`.
+static func _road_piece(zone: Dictionary, cl: PackedVector2Array, cum: PackedFloat64Array) -> Dictionary:
+	return {"road_type": zone["road_type"], "width": zone["width"], "centerline": cl, "_cum_lengths": cum,
+			"feature_id": zone["feature_id"], "village": true, "_sink_m": float(zone.get("_sink_m", 0.0))}
 
 
 const BASE_PIXEL_COUNT := 12
@@ -4886,18 +5045,26 @@ func carved_surface_dist(dir: Vector3) -> float:
 	var raw := crack_aware_surface_dist(dir)
 	var lines := has_profiled_lines()
 	var pads := has_pads()
-	if not lines and not pads:
+	var beds := has_village_beds()
+	if not lines and not pads and not beds:
 		return raw
 	var nside: int = 1 << max_quadtree_depth
 	var ipix := HEALPix.vec2pix_nest(nside, dir)
 	var lonlat := HEALPix.vec2lonlat(dir)
 	var h := raw - radius
-	# Same order as the chunk builders: the line first, then the pad on top of
-	# what it left — a building beside a road meets the road bed.
+	# Same order as the chunk builders (GradeBed.apply): the line first, then the
+	# village's ground, then the pad on top of what they left — a building beside
+	# a road meets the road bed.
 	if lines:
 		h = _carved_line_height(h, nside, ipix, lonlat)
+	if beds:
+		h = VillageBed.apply(h, lonlat, village_beds_for_chunk(nside, ipix), radius * PI / 180.0)
 	if pads:
 		h = PadBed.apply(h, lonlat, pads_for_chunk(nside, ipix), radius * PI / 180.0)
+	if beds and not _village_roads.is_empty():
+		h = VillageRoadBed.apply(h, lonlat, village_roads_for_chunk(nside, ipix),
+				village_beds_for_chunk(nside, ipix), radius * PI / 180.0,
+				pads_for_chunk(nside, ipix) if pads else [])
 	return radius + h
 
 
@@ -5893,10 +6060,169 @@ func _pad_index() -> PadIndex:
 ## arguments, that PlanetTerrain.surface_point_for_direction uses for the
 ## editor snap. Client and server feed it the same heights.pack and therefore
 ## agree to the bit — the pattern grade_height_sampler() established.
+##
+## A pad inside a village is measured on the village's common ground (VillageBed), not on the raw
+## relief: that is what puts the buildings of a village on one gentle plane. Inside a bed's footprint
+## the relief is not even read.
 func pad_sampler() -> Callable:
+	var raw := relief_sampler()
+	var beds: Array = _village_beds
+	if beds.is_empty():
+		return raw
+	var mpd := radius * PI / 180.0
+	return func(dir: Vector3) -> float:
+		var lonlat := HEALPix.vec2lonlat(dir)
+		var floor_h := VillageBed.floor_at(lonlat, beds, mpd)
+		if not is_nan(floor_h):
+			return floor_h
+		return VillageBed.apply(float(raw.call(dir)), lonlat, beds, mpd)
+
+
+## The raw relief a village bed is fitted to: [method pad_sampler] without the beds.
+func relief_sampler() -> Callable:
 	return func(dir: Vector3) -> float:
 		return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
 				CrackCarve.NONE)
+
+
+# ── Village beds (VillageBed) ────────────────────────────────────────────
+
+## The village beds of this body, published whole (copy-on-write, like the pad index): the mesh
+## workers read it while the main thread edits. A handful per planet, so a plain array.
+var _village_beds: Array = []
+## uuid → record of beds waiting for an elevation tile under their fitting grid.
+var _beds_starved: Dictionary = {}
+
+
+## Does this body carry any village bed? O(1): asked by the chunk builders (GradeBed.has_work) and
+## by carved_surface_dist on every call.
+func has_village_beds() -> bool:
+	return not _village_beds.is_empty()
+
+
+## The beds that can move a vertex of the chunk ([param nside], [param ipix]): every bed whose reach
+## comes within the chunk's half diagonal of its centre.
+func village_beds_for_chunk(nside: int, ipix: int) -> Array:
+	var beds: Array = _village_beds
+	if beds.is_empty():
+		return []
+	var out: Array = []
+	for rec: Dictionary in beds:
+		if _near_chunk(HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])), PadBed.reach_m(rec), nside, ipix):
+			out.append(rec)
+	return out
+
+
+## The registered (fitted) record of the village bed [param uuid], {} when there is none.
+func _village_bed_of(uuid: String) -> Dictionary:
+	for b: Dictionary in _village_beds:
+		if str(b["uuid"]) == uuid:
+			return b
+	return {}
+
+
+## Register or move the village bed [param rec_in] (VillageBed.record): its plane is fitted to the
+## relief, and every pad its ground reaches is measured again on it. Returns the finest-level pixels
+## whose chunks are now stale ({} when nothing changed, or while it waits for a tile).
+func register_village_bed(rec_in: Dictionary) -> Dictionary:
+	var rec := PadBed.quantise(rec_in)
+	var uuid := str(rec.get("uuid", ""))
+	if uuid.is_empty():
+		return {}
+	var old := _village_bed_of(uuid)
+	if not old.is_empty() and PadBed.same_geometry(old, rec) and not _beds_starved.has(uuid):
+		return {}
+	var dirs := VillageBed.fit_dirs(rec, radius * PI / 180.0)
+	if not _tiles_readable(dirs):
+		_beds_starved[uuid] = rec
+		return {}
+	_beds_starved.erase(uuid)
+	rec = VillageBed.fit(rec, relief_sampler(), radius * PI / 180.0)
+	var next: Array = _village_beds.filter(func(b: Dictionary) -> bool: return str(b["uuid"]) != uuid)
+	next.append(rec)
+	next.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a["uuid"]) < str(b["uuid"]))
+	_village_beds = next
+	var pads := _ensure_pads()
+	var dirty: Dictionary = pads.pixels_of(rec)
+	if not old.is_empty():
+		dirty.merge(pads.pixels_of(old))
+	# A village that moved: the pads its OLD ground reached were measured on it, and are measured again
+	# too (on the relief, or on another bed now).
+	dirty.merge(_remeasure_pads_on([rec] if old.is_empty() else [rec, old]))
+	return dirty
+
+
+## Diagnostic: how far the pads standing on the village bed [param uuid] are drawn from its plane.
+## One line for the plane, then the [param worst] pads: the level they are drawn at, the plane under
+## their centre, and their own measured altitude — a drawn level that differs from the measured one was
+## taken from a larger touching neighbour (PadLevels). Read-only, meant to be printed once, and only
+## when its own switch is on (PlanetTerrain._village_bed_report_on).
+func village_bed_report(uuid: String, worst: int = 8) -> String:
+	var bed := _village_bed_of(uuid)
+	if bed.is_empty():
+		return "[VillageBed] %s: no ground registered" % uuid
+	var mpd := radius * PI / 180.0
+	var rows: Array = []
+	if _pads != null:
+		for rec: Dictionary in _pads.all():
+			if PadBed.is_notch(rec):
+				continue
+			var c := Vector2(float(rec["lon"]), float(rec["lat"]))
+			if PadBed.sdf_m(bed, c, mpd) > 0.0:
+				continue  # its centre is off the village's footprint
+			var plane := VillageBed.clamped_plane(bed, c, mpd)
+			var drawn := float(rec["z"])
+			var own := float((_pad_alt.get(str(rec["uuid"]), {}) as Dictionary).get("z", NAN))
+			rows.append([absf(drawn - plane), rec, plane, drawn, own])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
+	var g := Vector2(float(bed["gx"]), float(bed["gy"]))
+	var out := "[VillageBed] %s: plane z0 %.1f m, slope %.2f deg (gx %.4f, gy %.4f), footprint %.0f x %.0f m, %d pads on it" \
+			% [uuid, float(bed["z0"]), rad_to_deg(atan(g.length())), g.x, g.y,
+			float(bed["hx"]) * 2.0, float(bed["hy"]) * 2.0, rows.size()]
+	for i in mini(worst, rows.size()):
+		var r: Array = rows[i]
+		var rec: Dictionary = r[1]
+		var borrowed := not is_nan(float(r[4])) and absf(float(r[3]) - float(r[4])) > 0.01
+		out += "\n  pad %s (%.0f x %.0f m): drawn at %.1f m, plane %.1f m (off by %+.1f m), measured %.1f m%s" % [
+			str(rec["uuid"]).left(8), float(rec["hx"]) * 2.0, float(rec["hy"]) * 2.0, float(r[3]), float(r[2]),
+			float(r[3]) - float(r[2]), float(r[4]), "  <- level of a larger neighbour" if borrowed else ""]
+	return out
+
+
+## Measure again every pad whose centre the ground of one of [param beds] reaches (VillageBed.reaches):
+## their altitude follows the beds now. They are queued as caught up, so their buildings come down
+## (or up) onto it. Each pad once, however many of [param beds] reach it.
+func _remeasure_pads_on(beds: Array) -> Dictionary:
+	var dirty := {}
+	if _pads == null:
+		return dirty
+	var mpd := radius * PI / 180.0
+	for rec: Dictionary in _pads.all():
+		if PadBed.is_notch(rec) or not VillageBed.reaches(beds, rec, mpd):
+			continue
+		var uuid := str(rec["uuid"])
+		_pad_mutex.lock()
+		_pad_alt.erase(uuid)
+		_pad_mutex.unlock()
+		dirty.merge(register_pad(rec))
+		_pads_caught_up.append(uuid)
+	return dirty
+
+
+## Is every elevation tile under [param dirs] readable? A direction that falls through to the flat
+## global map would put the ground at two different altitudes on the client and on the server.
+func _tiles_readable(dirs: PackedVector3Array) -> bool:
+	if chunk_heightmaps_dir == "":
+		return true
+	var seen := {}
+	for d in dirs:
+		var ipix := HEALPix.vec2pix_nest(export_nside, d)
+		if seen.has(ipix):
+			continue
+		seen[ipix] = true
+		if not _grade_tile_available(ipix):
+			return false
+	return true
 
 
 ## Register or move a pad. Returns the finest-level pixels whose chunks are now
@@ -5909,6 +6235,10 @@ func register_pad(rec_in: Dictionary) -> Dictionary:
 	var rec := PadBed.quantise(rec_in)
 	var settled: Dictionary = rec.get("settled", {})
 	rec.erase("settled")
+	# On a village's ground (VillageBed.reaches), what it persisted may have been measured before the
+	# village came: it is measured again instead.
+	if not settled.is_empty() and VillageBed.reaches(_village_beds, rec, radius * PI / 180.0):
+		settled = {}
 	var uuid := str(rec.get("uuid", ""))
 	if uuid.is_empty():
 		return {}
@@ -5989,7 +6319,7 @@ func unregister_pad(uuid: String) -> Dictionary:
 ## whose level moved for their TerrainPad to re-seat its building. Call with _pad_mutex held.
 func _settle_pad_levels(next: PadIndex, published: PadIndex, seeds: Array) -> Array[String]:
 	var changed := PadLevels.settle(next, published, seeds, _pad_alt,
-			1 << maxi(max_quadtree_depth, 0), radius * PI / 180.0)
+			1 << maxi(max_quadtree_depth, 0), radius * PI / 180.0, _village_beds)
 	for u: String in changed:
 		var pub: Dictionary = published.get_rec(u) if published != null else {}
 		var cur: Dictionary = next.get_rec(u)
@@ -6042,9 +6372,12 @@ func pad_pixels(rec: Dictionary) -> Dictionary:
 ## are now stale, so PlanetTerrain can rebuild them in one pass — the pad
 ## counterpart of retry_starved_grade_profiles().
 func retry_starved_pads() -> Dictionary:
-	if _pads_starved.is_empty():
-		return {}
 	var dirty := {}
+	# The village beds first: the pads under them are measured on them.
+	for uuid: String in _beds_starved.keys().duplicate():
+		dirty.merge(register_village_bed(_beds_starved[uuid]))
+	if _pads_starved.is_empty():
+		return dirty
 	for uuid: String in _pads_starved.keys().duplicate():
 		var rec: Dictionary = _pads_starved[uuid]
 		dirty.merge(register_pad(rec))
@@ -6062,7 +6395,7 @@ func take_caught_up_pads() -> Array[String]:
 
 ## Are any pads still waiting for their elevation tiles?
 func pads_incomplete() -> bool:
-	return not _pads_starved.is_empty()
+	return not _pads_starved.is_empty() or not _beds_starved.is_empty()
 
 
 ## {z, span} of [param rec], or {} when a tile under its footprint cannot be
@@ -6072,17 +6405,8 @@ func pads_incomplete() -> bool:
 func _pad_stats_if_readable(rec: Dictionary) -> Dictionary:
 	var m_per_deg := radius * PI / 180.0
 	var dirs := PadBed.sample_dirs(rec, m_per_deg)
-	if dirs.is_empty():
+	if dirs.is_empty() or not _tiles_readable(dirs):
 		return {}
-	if chunk_heightmaps_dir != "":
-		var seen := {}
-		for d in dirs:
-			var ipix := HEALPix.vec2pix_nest(export_nside, d)
-			if seen.has(ipix):
-				continue
-			seen[ipix] = true
-			if not _grade_tile_available(ipix):
-				return {}
 	return PadBed.quantise_stats(PadBed.pad_stats(rec, pad_sampler(), m_per_deg))
 
 
@@ -6179,6 +6503,8 @@ func _pad_cuts_of(rec: Dictionary) -> Dictionary:
 	var seen := {}
 	for ip: int in pix:
 		for r: Dictionary in get_roads_for_chunk(nside, int(ip)):
+			if bool(r.get("village", false)):
+				continue  # a village's own road runs beside its buildings, by design
 			var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
 			var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
 			if cl.size() < 2 or cum.size() != cl.size():

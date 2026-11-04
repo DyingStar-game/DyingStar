@@ -1,0 +1,50 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+
+[node name="MineAdministration" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 8
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(16, 1, 28)
+
+[node name="Blockout" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.3, 0)
+use_collision = true
+collision_mask = 0
+size = Vector3(16, 7, 28)
+material = ExtResource("3_placeholder_")
+
+[node name="DoorInset" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.2, -14)
+size = Vector3(2.4, 2.6, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 6.1, -14.05)
+script = ExtResource("5_neon_sign")
+branded = true
+brand = 2
+text_key = "%%SIGN_MINE_OFFICE"
+glow = 1.5
+letter_height = 0.76
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign"]
+script = ExtResource("6_photocell")

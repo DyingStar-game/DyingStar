@@ -1,0 +1,66 @@
+[gd_scene format=3 uid="uid://uoeedtve2rkg"]
+
+[ext_resource type="PackedScene" uid="uid://6lcy10bqcaki" path="res://assets/_universe/props/furniture/furn_lamppost_outdoor_3.4m.glb" id="1_model"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_propsync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_terrainpad"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="4_photocell"]
+[ext_resource type="Script" path="res://scenes/_universe/props/lighting/emissive_glow.gd" id="5_glow"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_base"]
+size = Vector3(0.8, 0.22, 0.9)
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_pole"]
+height = 1.6770992
+radius = 0.14
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_head"]
+size = Vector3(0.6505339789136997, 0.45, 0.25)
+
+[node name="LamppostOutdoor" type="StaticBody3D" unique_id=1001594071]
+
+[node name="PropSync" type="Node" parent="." unique_id=277963986]
+script = ExtResource("2_propsync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=613821291]
+script = ExtResource("3_terrainpad")
+apron_m = 2.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=275586584]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04, -0.55, 0)
+size = Vector3(1.2, 1, 1.3)
+
+[node name="Model" parent="." unique_id=811671402 instance=ExtResource("1_model")]
+
+[node name="CollisionBase" type="CollisionShape3D" parent="." unique_id=646267491]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.04, 0.11, 0)
+shape = SubResource("BoxShape3D_base")
+
+[node name="CollisionPole" type="CollisionShape3D" parent="." unique_id=1574043288]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.21963710205596465, 1.0504292994737625, 0.25592510030220494)
+shape = SubResource("CylinderShape3D_pole")
+
+[node name="CollisionHead" type="CollisionShape3D" parent="." unique_id=537420229]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.46572381556034087, 3.1210029604190908, 0)
+shape = SubResource("BoxShape3D_head")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="." unique_id=437754121]
+transform = Transform3D(0, -0.5822, 0.8131, 0, 0.8131, 0.5822, -1, 0, 0, -0.52, 2.95, 0)
+light_color = Color(0.8666667, 0.7921569, 0.69803923, 1)
+light_energy = 3.0
+spot_range = 18.0
+spot_angle = 55.0
+
+[node name="Photocell" type="Node3D" parent="SpotLight3D" unique_id=257805684 node_paths=PackedStringArray("targets")]
+script = ExtResource("4_photocell")
+targets = [NodePath(".."), NodePath("../../Glow")]
+
+[node name="CollisionPole2" type="CollisionShape3D" parent="." unique_id=1731843164]
+transform = Transform3D(0.9263825130224796, -0.3765839077365832, 0, 0.3765839077365832, 0.9263825130224796, 0, 0, 0, 1, -0.005100311213219966, 2.2962000909254408, -0.017206137651665787)
+shape = SubResource("CylinderShape3D_pole")
+
+[node name="Glow" type="Node" parent="."]
+script = ExtResource("5_glow")
+glass_materials = PackedStringArray("Material.014")

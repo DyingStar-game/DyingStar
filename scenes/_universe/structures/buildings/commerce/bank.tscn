@@ -1,0 +1,129 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="7_light_group"]
+[ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="8_led_panel_1x"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/bank.png" id="9_bank"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="10_map_marker"]
+
+[node name="Bank" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 8
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, -2)
+size = Vector3(34, 1, 28)
+
+[node name="Blockout" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.3, 0)
+use_collision = true
+collision_mask = 0
+size = Vector3(34, 9, 24)
+material = ExtResource("3_placeholder_")
+
+[node name="Hollow" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+operation = 2
+size = Vector3(33.4, 8.5, 23.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Doorway" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.55, -12)
+operation = 2
+size = Vector3(3, 3.5, 1)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 8.9, -16.05)
+script = ExtResource("5_neon_sign")
+branded = true
+brand = 0
+text_key = "%%SIGN_BANK"
+glow = 1.5
+letter_height = 2.4
+max_width = 13.6
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign"]
+script = ExtResource("6_photocell")
+
+[node name="Lights" type="Node3D" parent="."]
+script = ExtResource("7_light_group")
+
+[node name="Photocell" type="Node3D" parent="Lights"]
+script = ExtResource("6_photocell")
+
+[node name="LedPanel 01" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.5, 8.45, -6)
+
+[node name="LedPanel 02" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.5, 8.45, 6)
+
+[node name="LedPanel 03" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.5, 8.45, -6)
+
+[node name="LedPanel 04" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.5, 8.45, 6)
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("10_map_marker")
+icon = ExtResource("9_bank")
+label = "%%MAP_MARKER_BANK"
+importance = 3
+
+[node name="Column1" type="CSGCylinder3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 3.6, -14)
+use_collision = true
+collision_mask = 0
+radius = 0.6
+height = 7.6
+sides = 12
+material = ExtResource("3_placeholder_")
+
+[node name="Column2" type="CSGCylinder3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 3.6, -14)
+use_collision = true
+collision_mask = 0
+radius = 0.6
+height = 7.6
+sides = 12
+material = ExtResource("3_placeholder_")
+
+[node name="Column3" type="CSGCylinder3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 3.6, -14)
+use_collision = true
+collision_mask = 0
+radius = 0.6
+height = 7.6
+sides = 12
+material = ExtResource("3_placeholder_")
+
+[node name="Column4" type="CSGCylinder3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 3.6, -14)
+use_collision = true
+collision_mask = 0
+radius = 0.6
+height = 7.6
+sides = 12
+material = ExtResource("3_placeholder_")
+
+[node name="Portico" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7.9, -14)
+use_collision = true
+collision_mask = 0
+size = Vector3(16, 0.8, 4)
+material = ExtResource("3_placeholder_")
