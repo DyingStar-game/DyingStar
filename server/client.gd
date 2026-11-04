@@ -575,15 +575,17 @@ func _physics_process(_delta: float) -> void:
 	# remote bodies stutter (unknown_handle = frames for an object never entered). The dropped seq are
 	# split by cause, out of the transforms received: repeat = the server's repeat of a position
 	# already applied, late = overtaken on the wire, other = older than a transform of another event
-	# of the same channel (move and update_property share the channel's seq).
+	# of the same channel (move and update_property share the channel's seq). unseen = the part of
+	# other that lost a position: a move version never applied, counted once per version.
 	var stats: Dictionary = link.get_stats()
 	print(("[net] beat — idle loop %s | link status %d | rtt %.0f ms | sent %d | received %d"
-			+ " | datagrams %d transforms %d | dropped seq %d (repeat %d late %d other %d) epoch %d handle %d"
-			+ " event %d payload %d")
+			+ " | datagrams %d transforms %d | dropped seq %d (repeat %d late %d other %d unseen %d) epoch %d"
+			+ " handle %d event %d payload %d")
 			% ["on" if is_processing() else "OFF", link.get_status(), link.get_rtt_ms(), network_events_sent,
 			network_events_received, stats.get("datagrams_in", 0), stats.get("transforms_in", 0),
 			stats.get("dropped_stale_seq", 0), stats.get("dropped_stale_seq_repeat", 0),
 			stats.get("dropped_stale_seq_late", 0), stats.get("dropped_stale_seq_other_event", 0),
+			stats.get("dropped_stale_seq_move_unseen", 0),
 			stats.get("dropped_stale_epoch", 0), stats.get("dropped_unknown_handle", 0),
 			stats.get("dropped_unknown_event", 0), stats.get("dropped_bad_payload", 0)])
 
