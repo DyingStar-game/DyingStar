@@ -6,6 +6,22 @@ const Fixture := preload("res://test/unit/stargrot_fixture.gd")
 const CATALOG := "res://levels/stargrot/catalogs/tarsis_3_example.tres"
 
 
+## A CaveFitQueue whose fit lasts until the test says so, and which counts the fits running at once.
+class _GatedQueue extends CaveFitQueue:
+    signal release
+    var running := 0
+    var most := 0
+    var asked: Array[String] = []
+
+    func refit(_data: PlanetData, sites: Array[CavePlacement]) -> Dictionary:
+        running += 1
+        most = maxi(most, running)
+        asked.append(sites[0].placement_id)
+        await release
+        running -= 1
+        return {"sites": sites, "rejected": {}, "cancelled": false}
+
+
 func before_all() -> void:
     assert_true(CaveNetwork.warm(), "the native cave geometry is available")
 
@@ -149,6 +165,52 @@ func test_the_server_fits_a_cave_or_records_why_not() -> void:
     assert_true(porch._refused(porch.placement(), data), "not tried again on this relief")
     data.relief_signature = "re-exported"
     assert_false(porch._refused(porch.placement(), data), "a new relief tries again")
+
+
+func _waiting_cave(id: String) -> CaveSite:
+    var site := _unfitted("shaft")
+    site.placement_id = id
+    var cave := CaveSite.new()
+    cave.apply_prop_data(site.to_prop_data())
+    add_child(cave)
+    return cave
+
+
+## A cave put to sleep during its fit leaves a freed node in _current, and a freed node equals null: the next
+## cave asking used to start a second fit alongside the first (assert in CaveFitter._run_cpu; without asserts,
+## the two shared one worker task and the first one's result went to the second cave).
+func test_a_cave_freed_during_its_fit_does_not_start_a_second_fit() -> void:
+    var data := Fixture.data(_site(1))
+    var queue: _GatedQueue = add_child_autofree(_GatedQueue.new())
+    var asleep := _waiting_cave("asleep")
+    var next: CaveSite = autofree(_waiting_cave("next"))
+    queue.request(asleep, data)
+    asleep.free()
+    queue.request(next, data)
+    assert_eq(queue.running, 1, "one fit at a time")
+    queue.release.emit()
+    assert_eq(queue.asked, ["asleep", "next"] as Array[String], "the next cave waits its turn")
+    queue.release.emit()
+    assert_eq(queue.most, 1, "never two fits at once")
+    assert_eq(next.placement().placement_id, "next", "each cave gets its own fit")
+    assert_true(queue._current == null and queue._queue.is_empty(), "the queue is free again")
+
+
+## A cave put to sleep while waiting its turn is skipped, and the ones behind it still get their fit.
+func test_a_cave_freed_in_the_queue_is_skipped() -> void:
+    var data := Fixture.data(_site(1))
+    var queue: _GatedQueue = add_child_autofree(_GatedQueue.new())
+    var first: CaveSite = autofree(_waiting_cave("first"))
+    var asleep := _waiting_cave("asleep")
+    var last: CaveSite = autofree(_waiting_cave("last"))
+    queue.request(first, data)
+    queue.request(asleep, data)
+    queue.request(last, data)
+    asleep.free()
+    queue.release.emit()
+    assert_eq(queue.asked, ["first", "last"] as Array[String], "the freed cave is skipped")
+    queue.release.emit()
+    assert_true(queue._current == null and queue._queue.is_empty(), "the queue is free again")
 
 
 func test_a_cave_is_the_network_parent_of_what_is_placed_under_it() -> void:

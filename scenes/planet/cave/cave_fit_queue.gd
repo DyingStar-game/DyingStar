@@ -9,21 +9,27 @@ extends CaveFitter
 
 var _queue: Array[CaveSite] = []
 var _current: CaveSite = null
+## A fit is running. Not [member _current] == null: a cave put to sleep during its fit leaves a freed node there,
+## which equals null, and the next request would start a second fit on this one CaveFitter.
+var _draining := false
 
 
 func request(site: CaveSite, data: PlanetData) -> void:
     if site == _current or _queue.has(site):
         return
     _queue.append(site)
-    if _current == null:
+    if not _draining:
         _drain(data)
 
 
 func _drain(data: PlanetData) -> void:
+    _draining = true
     while not _queue.is_empty():
-        _current = _queue.pop_front()
-        if not is_instance_valid(_current) or not _current.is_inside_tree():
+        # Untyped until checked: a cave put to sleep in the queue cannot be assigned to a typed variable.
+        var next: Variant = _queue.pop_front()
+        if not is_instance_valid(next) or not (next as CaveSite).is_inside_tree():
             continue
+        _current = next
         var site := _current.placement()
         if site == null or not site.needs_fit(data):
             continue
@@ -41,3 +47,4 @@ func _drain(data: PlanetData) -> void:
             _current.fitted(report.sites[0])
             print("[CaveFit] grotte '%s' recalée en %d ms" % [site.placement_id, Time.get_ticks_msec() - started])
     _current = null
+    _draining = false
