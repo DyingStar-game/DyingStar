@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_propsync"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="3_terrainpad"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="4_photocell"]
+[ext_resource type="Script" path="res://scenes/_universe/props/lighting/emissive_glow.gd" id="5_glow"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_base"]
 size = Vector3(0.8, 0.22, 0.9)
@@ -52,9 +53,14 @@ light_energy = 3.0
 spot_range = 18.0
 spot_angle = 55.0
 
-[node name="Photocell" type="Node3D" parent="SpotLight3D" unique_id=257805684]
+[node name="Photocell" type="Node3D" parent="SpotLight3D" unique_id=257805684 node_paths=PackedStringArray("targets")]
 script = ExtResource("4_photocell")
+targets = [NodePath(".."), NodePath("../../Glow")]
 
 [node name="CollisionPole2" type="CollisionShape3D" parent="." unique_id=1731843164]
 transform = Transform3D(0.9263825130224796, -0.3765839077365832, 0, 0.3765839077365832, 0.9263825130224796, 0, 0, 0, 1, -0.005100311213219966, 2.2962000909254408, -0.017206137651665787)
 shape = SubResource("CylinderShape3D_pole")
+
+[node name="Glow" type="Node" parent="."]
+script = ExtResource("5_glow")
+glass_materials = PackedStringArray("Material.014")
