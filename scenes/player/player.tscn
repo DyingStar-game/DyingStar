@@ -34,11 +34,6 @@
 radius = 0.26542
 height = 1.8
 
-[sub_resource type="LabelSettings" id="LabelSettings_kcm5r"]
-font_size = 24
-outline_size = 2
-outline_color = Color(0, 0, 0, 1)
-
 [node name="Player" type="CharacterBody3D" unique_id=445984820 groups=["containable", "player"]]
 collision_layer = 2
 collision_mask = 15
@@ -141,7 +136,7 @@ unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
 
-[node name="InteractLabel" type="Label" parent="UserInterface/HUD" unique_id=2054616696]
+[node name="InteractLabel" type="RichTextLabel" parent="UserInterface/HUD" unique_id=2054616696]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -153,8 +148,15 @@ offset_top = -17.0
 offset_right = 119.0
 offset_bottom = 17.0
 grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/normal_font_size = 24
+bbcode_enabled = true
 text = "Interact"
-label_settings = SubResource("LabelSettings_kcm5r")
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
 vertical_alignment = 1
 
 [node name="Control" type="Control" parent="UserInterface/HUD" unique_id=1793293513]

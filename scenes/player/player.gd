@@ -551,7 +551,7 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 @onready var puppet: Node3D = $Puppet
 @onready var interact_ray: RayCast3D = $CameraPivot/Camera3D/InteractRay
 ## null on the dedicated server, which frees the whole UserInterface (see _drop_server_ui).
-@onready var interact_label: Label = get_node_or_null(^"UserInterface/HUD/InteractLabel")
+@onready var interact_label: RichTextLabel = get_node_or_null(^"UserInterface/HUD/InteractLabel")
 @onready var camera_pivot: Node3D = $CameraPivot
 ## The camera pivot's RESTING offset from the body, captured once from the scene.
 ##

@@ -29,7 +29,7 @@ const GROUND_ALPHA := 0.6
 const NO_LINE := &"no_line"
 const FADE_RATE := 8.0
 
-var _prompt: Label = null
+var _prompt: Control = null
 var _camera: Camera3D = null
 var _ray: RayCast3D = null
 var _anchor_node: Node3D = null  # what the line starts on
@@ -55,7 +55,7 @@ func _init() -> void:
 
 ## Draw [param prompt] in a frame, with a line from what [param ray] (cast from [param camera]) meets;
 ## not framed, as it is, on [param shade].
-func follow(prompt: Label, camera: Camera3D, ray: RayCast3D, shade: Control = null) -> void:
+func follow(prompt: Control, camera: Camera3D, ray: RayCast3D, shade: Control = null) -> void:
 	_prompt = prompt
 	_camera = camera
 	_ray = ray
