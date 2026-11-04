@@ -1,52 +1,66 @@
 {
 	"scenes/_universe/structures/urban/cities/ares_city_factory.tscn": {
 		"footprint": {
-			"cx": -4.0,
-			"cz": -33.95,
-			"hx": 160.7,
-			"hz": 108.08
+			"cx": 168.61,
+			"cz": 239.32,
+			"hx": 531.22,
+			"hz": 623.43
 		},
 		"snaps": [
 			{
 				"forward": [
+					0.95,
 					0.0,
-					0.0,
-					1.0
-				],
-				"kind": "railway",
-				"name": "RailwaySnapSouth",
-				"position": [
-					0.0,
-					0.0,
-					74.0
-				]
-			},
-			{
-				"forward": [
-					1.0,
-					0.0,
-					0.0
+					0.31
 				],
 				"kind": "road",
 				"name": "RoadSnapEast",
 				"position": [
-					157.0,
+					699.82,
 					0.0,
-					0.0
+					228.62
 				]
 			},
 			{
 				"forward": [
-					-1.0,
+					0.04,
 					0.0,
-					0.0
+					-1.0
+				],
+				"kind": "road",
+				"name": "RoadSnapNorth",
+				"position": [
+					14.6,
+					0.0,
+					-384.11
+				]
+			},
+			{
+				"forward": [
+					-0.93,
+					0.0,
+					0.37
+				],
+				"kind": "road",
+				"name": "RoadSnapSouthWest",
+				"position": [
+					-362.61,
+					0.0,
+					142.66
+				]
+			},
+			{
+				"forward": [
+					-0.95,
+					0.0,
+					-0.31
 				],
 				"kind": "road",
 				"name": "RoadSnapWest",
 				"position": [
-					-165.0,
+					-362.61,
 					0.0,
-					0.0
+					-118.46
 				]
 			}
 		]
