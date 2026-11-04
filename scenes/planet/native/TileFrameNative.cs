@@ -54,6 +54,7 @@ public partial class TileFrameNative : RefCounted
     // The corundum crack network (PlanetData._crack_carve), cracks mode as PlanetData.CRACKS_*.
     private const int CracksNone = 0;
     private const int CracksAuto = 1;
+    private const int CracksCarve = 2;
     private bool _cracksOn;
     private double _crackSpacing;
     private double _crackWidth;
@@ -86,6 +87,22 @@ public partial class TileFrameNative : RefCounted
     private double[] _zoneBox = Array.Empty<double>();
     /// <summary>PlanetChunk.CLIP_EDGE_TOL_DEG.</summary>
     private const double ClipEdgeTolDeg = 2.0e-7;
+    /// <summary>BiomeRelief.DETAIL_OCTAVE_W.</summary>
+    private const double ReliefDetailOctaveW = 0.25;
+
+    // The normal pass (Normals): what its probes add to the sampled heights.
+    private int[] _nRelief = Array.Empty<int>();
+    private float[] _nRoadWeight = Array.Empty<float>();
+    private double[] _nReliefMin = Array.Empty<double>();
+    private double[] _nReliefMax = Array.Empty<double>();
+    private double[] _nReliefWavelength = Array.Empty<double>();
+    private byte[] _nBand = Array.Empty<byte>();
+    private GradeCarveNative _nGrade;
+    private double _nGradeMPerDeg;
+    private int _nGradeMode;
+    private double _nGradeParam;
+    private bool _nGradeServed = true;
+    private byte[] _nServed = Array.Empty<byte>();
 
     public void Configure(double maxHeight, double heightOffset, double exaggeration, double radius)
     {
@@ -302,7 +319,7 @@ public partial class TileFrameNative : RefCounted
                     continue;
                 int a = _zoneStart[i];
                 int count = _zoneStart[i + 1] - a;
-                if (!PointInPolygon(lon, lat, a, count) && !OnClipEdge(lon, lat, a, count))
+                if (!PointInPolygon(_zoneVerts, lon, lat, a, count) && !OnClipEdge(_zoneVerts, lon, lat, a, count))
                     continue;
             }
             return _zoneCarves[i];
@@ -311,7 +328,7 @@ public partial class TileFrameNative : RefCounted
     }
 
     /// <summary>PlanetChunk._point_in_polygon_lonlat, same arithmetic in the same order.</summary>
-    private bool PointInPolygon(double lon, double lat, int a, int n)
+    private static bool PointInPolygon(double[] verts, double lon, double lat, int a, int n)
     {
         if (n < 3)
             return false;
@@ -319,10 +336,10 @@ public partial class TileFrameNative : RefCounted
         int j = n - 1;
         for (int i = 0; i < n; i++)
         {
-            double vix = _zoneVerts[2 * (a + i)];
-            double viy = _zoneVerts[2 * (a + i) + 1];
-            double vjx = _zoneVerts[2 * (a + j)];
-            double vjy = _zoneVerts[2 * (a + j) + 1];
+            double vix = verts[2 * (a + i)];
+            double viy = verts[2 * (a + i) + 1];
+            double vjx = verts[2 * (a + j)];
+            double vjy = verts[2 * (a + j) + 1];
             if ((viy > lat) != (vjy > lat) && lon < (vjx - vix) * (lat - viy) / (vjy - viy) + vix)
                 inside = !inside;
             j = i;
@@ -331,15 +348,15 @@ public partial class TileFrameNative : RefCounted
     }
 
     /// <summary>PlanetChunk._on_clip_edge: on an outline edge along a meridian or a parallel.</summary>
-    private bool OnClipEdge(double lon, double lat, int a, int n)
+    private static bool OnClipEdge(double[] verts, double lon, double lat, int a, int n)
     {
         int j = n - 1;
         for (int i = 0; i < n; i++)
         {
-            double ax = _zoneVerts[2 * (a + j)];
-            double ay = _zoneVerts[2 * (a + j) + 1];
-            double bx = _zoneVerts[2 * (a + i)];
-            double by = _zoneVerts[2 * (a + i) + 1];
+            double ax = verts[2 * (a + j)];
+            double ay = verts[2 * (a + j) + 1];
+            double bx = verts[2 * (a + i)];
+            double by = verts[2 * (a + i) + 1];
             j = i;
             if (Math.Abs(ax - bx) <= ClipEdgeTolDeg)
             {
@@ -439,6 +456,126 @@ public partial class TileFrameNative : RefCounted
                 SampleBoundary(d, ipix, nside, vtxSpacing, cracks));
         return new Vector4(Sample(a, ipix, nside, vtxSpacing, cracks), Sample(b, ipix, nside, vtxSpacing, cracks),
             Sample(c, ipix, nside, vtxSpacing, cracks), Sample(d, ipix, nside, vtxSpacing, cracks));
+    }
+
+    /// <summary>
+    /// The relief of PlanetChunk.generate_mesh's probes for the next Normals: per vertex its biome
+    /// (0 = none, k = entry k - 1 of the tables, one per relief biome of the chunk) and road weight.
+    /// </summary>
+    public void SetNormalRelief(int[] vertex, float[] roadWeight, double[] minM, double[] maxM, double[] wavelengthM)
+    {
+        _nRelief = vertex ?? Array.Empty<int>();
+        _nRoadWeight = roadWeight ?? Array.Empty<float>();
+        _nReliefMin = minM ?? Array.Empty<double>();
+        _nReliefMax = maxM ?? Array.Empty<double>();
+        _nReliefWavelength = wavelengthM ?? Array.Empty<double>();
+    }
+
+    /// <summary>
+    /// GradeBed.apply on the next Normals' probes of the vertices band marks: what GradeBed.native_args
+    /// gave. served = false: only GDScript can apply it (pads), and those vertices stay GDScript's.
+    /// </summary>
+    public void SetNormalGrade(byte[] band, GodotObject grade, double mPerDeg, int mode, double param, bool served)
+    {
+        _nBand = band ?? Array.Empty<byte>();
+        _nGrade = grade as GradeCarveNative;
+        _nGradeMPerDeg = mPerDeg;
+        _nGradeMode = mode;
+        _nGradeParam = param;
+        _nGradeServed = served;
+    }
+
+    /// <summary>
+    /// The analytical normal pass of PlanetChunk.generate_mesh over a whole chunk, in one call instead of
+    /// one Sample4 per vertex plus the tangent frame in GDScript. A vertex it cannot answer exactly (a
+    /// probe NaN, see Sample; a band vertex under pads) keeps its direction here and 0 in NormalsServed,
+    /// and the caller does that one the usual way, which registers what was missing.
+    /// </summary>
+    public Vector3[] Normals(Vector3[] dirs, float[] crackEdge, byte[] snapped, int res, long ipix, long nside,
+        double vtxSpacing, double epsRad, double crackSkipM, bool corundum)
+    {
+        var normals = new Vector3[dirs.Length];
+        _nServed = new byte[dirs.Length];
+        for (int yi = 0; yi <= res; yi++)
+        {
+            for (int xi = 0; xi <= res; xi++)
+            {
+                int idx = yi * (res + 1) + xi;
+                Vector3 dirC = dirs[idx];
+                normals[idx] = dirC;
+                bool inBand = _nBand.Length > 0 && _nBand[idx] == 1;
+                if (inBand && !_nGradeServed)
+                    continue;
+                Vector3 arbitrary = Math.Abs(dirC.Dot(Vector3.Up)) < 0.99 ? Vector3.Up : Vector3.Right;
+                Vector3 tanU = dirC.Cross(arbitrary).Normalized();
+                Vector3 tanV = dirC.Cross(tanU).Normalized();
+                Vector3 dirL = (dirC - tanU * epsRad).Normalized();
+                Vector3 dirR = (dirC + tanU * epsRad).Normalized();
+                Vector3 dirB = (dirC - tanV * epsRad).Normalized();
+                Vector3 dirT = (dirC + tanV * epsRad).Normalized();
+                bool rim = xi == 0 || xi == res || yi == 0 || yi == res;
+                int mode = corundum && crackEdge[idx] < crackSkipM && snapped[idx] == 0 ? CracksCarve : CracksNone;
+                Vector4 h = Sample4(dirL, dirR, dirB, dirT, ipix, nside, vtxSpacing, rim, mode);
+                if (double.IsNaN(h.X) || double.IsNaN(h.Y) || double.IsNaN(h.Z) || double.IsNaN(h.W))
+                    continue;
+                double hL = h.X, hR = h.Y, hB = h.Z, hT = h.W;
+                if (_nRelief.Length > 0 && _nRelief[idx] > 0)
+                {
+                    int k = _nRelief[idx] - 1;
+                    double w = _nRoadWeight[idx];
+                    hL += w * ReliefOffset(dirL, k, vtxSpacing);
+                    hR += w * ReliefOffset(dirR, k, vtxSpacing);
+                    hB += w * ReliefOffset(dirB, k, vtxSpacing);
+                    hT += w * ReliefOffset(dirT, k, vtxSpacing);
+                }
+                if (inBand && _nGrade != null)
+                {
+                    hL = GradeApply(hL, dirL);
+                    hR = GradeApply(hR, dirR);
+                    hB = GradeApply(hB, dirB);
+                    hT = GradeApply(hT, dirT);
+                }
+                Vector3 worldL = dirL * (_radius + hL);
+                Vector3 worldR = dirR * (_radius + hR);
+                Vector3 worldB = dirB * (_radius + hB);
+                Vector3 worldT = dirT * (_radius + hT);
+                Vector3 n = (worldR - worldL).Cross(worldT - worldB);
+                // HEALPix face winding varies between base pixels: flip a normal pointing inward.
+                if (n.Dot(dirC) < 0.0)
+                    n = -n;
+                if (n.LengthSquared() > 0.0)
+                    normals[idx] = n.Normalized();
+                _nServed[idx] = 1;
+            }
+        }
+        return normals;
+    }
+
+    /// <summary>Per vertex of the last Normals: 1 = its normal is final, 0 = the caller's to do.</summary>
+    public byte[] NormalsServed() => _nServed;
+
+    /// <summary>BiomeRelief.offset for relief biome k of SetNormalRelief, whose relief is known to exist.</summary>
+    private double ReliefOffset(Vector3 dir, int k, double vtxSpacing)
+    {
+        double wl = _nReliefWavelength[k];
+        if (vtxSpacing > 0.0 && vtxSpacing >= wl * 0.5)
+            return 0.0;
+        double s = _radius / wl;
+        double n = SurfaceNoiseCore.Vnoise(dir.X * s, dir.Y * s, dir.Z * s);
+        double wl2 = wl / 3.0;
+        if (vtxSpacing <= 0.0 || vtxSpacing < wl2 * 0.5)
+        {
+            double s2 = _radius / wl2;
+            n = (1.0 - ReliefDetailOctaveW) * n + ReliefDetailOctaveW * SurfaceNoiseCore.Vnoise(dir.X * s2, dir.Y * s2, dir.Z * s2);
+        }
+        return MountainNoiseCore.Lerp(_nReliefMin[k], _nReliefMax[k], MountainNoiseCore.Clamp(n, 0.0, 1.0));
+    }
+
+    /// <summary>GradeBed.apply without pads, at the probe's lon/lat (HEALPix.vec2lonlat).</summary>
+    private double GradeApply(double h, Vector3 dir)
+    {
+        MountainNoiseCore.ToLonLat(dir.X, dir.Y, dir.Z, out double lon, out double lat);
+        return _nGrade.Apply(h, new Vector2(lon, lat), _nGradeMPerDeg, _nGradeMode, _nGradeParam);
     }
 
     private double Base(Vector3 dir, long ipix, long ns)

@@ -251,6 +251,19 @@ static func apply(h: float, lonlat: Vector2, ctx: Dictionary) -> float:
 	return out
 
 
+## What TileFrameNative.Normals needs to apply [param ctx] to a probe as [method apply] does:
+## [native, mode, param, served]. served = false when only GDScript can (pads, or the pieces
+## without their C# twin): the vertices the context moved then stay on the GDScript path.
+static func native_args(ctx: Dictionary) -> Array:
+	var native: RefCounted = ctx.get("native", null)
+	var pieces: Array = ctx.get("pieces", [])
+	var pads: Array = ctx.get("pads", [])
+	var served: bool = pads.is_empty() and (native != null or pieces.is_empty())
+	if ctx.has("coarse_band_m"):
+		return [native, 1, float(ctx["coarse_band_m"]), served]
+	return [native, 0, float(ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M)), served]
+
+
 ## The coarse-LOD rule (see make_coarse_ctx): within hw + [param band_m] of
 ## the line, on ground / cutting runs, the terrain is clamped to the bed top.
 static func shaved_height(h: float, prof: Dictionary, along: float, lat_m: float,
