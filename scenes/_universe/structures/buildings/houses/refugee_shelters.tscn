@@ -1,0 +1,223 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/habitat_block.png" id="7_habitat_bloc"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="8_map_marker"]
+
+[node name="RefugeeShelters" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 8
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(42, 1, 30)
+
+[node name="Blockout" type="CSGCombiner3D" parent="."]
+use_collision = true
+collision_mask = 0
+
+[node name="Unit01" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 1.2, -8)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit01Door" type="CSGBox3D" parent="Blockout/Unit01"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit02" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 1.2, -8)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit02Door" type="CSGBox3D" parent="Blockout/Unit02"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit03" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -8)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit03Door" type="CSGBox3D" parent="Blockout/Unit03"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit04" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 1.2, -8)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit04Door" type="CSGBox3D" parent="Blockout/Unit04"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit05" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 1.2, -8)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit05Door" type="CSGBox3D" parent="Blockout/Unit05"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit06" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 1.2, 1)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit06Door" type="CSGBox3D" parent="Blockout/Unit06"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit07" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 1.2, 1)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit07Door" type="CSGBox3D" parent="Blockout/Unit07"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit08" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 1)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit08Door" type="CSGBox3D" parent="Blockout/Unit08"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit09" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 1.2, 1)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit09Door" type="CSGBox3D" parent="Blockout/Unit09"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit10" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 1.2, 1)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit10Door" type="CSGBox3D" parent="Blockout/Unit10"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit11" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 1.2, 10)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit11Door" type="CSGBox3D" parent="Blockout/Unit11"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit12" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 1.2, 10)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit12Door" type="CSGBox3D" parent="Blockout/Unit12"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit13" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 10)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit13Door" type="CSGBox3D" parent="Blockout/Unit13"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit14" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 1.2, 10)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit14Door" type="CSGBox3D" parent="Blockout/Unit14"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="Unit15" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 1.2, 10)
+size = Vector3(6, 2.8, 3)
+material = ExtResource("3_placeholder_")
+
+[node name="Unit15Door" type="CSGBox3D" parent="Blockout/Unit15"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, -1.5)
+operation = 2
+size = Vector3(1.2, 2.2, 0.4)
+material = ExtResource("4_placeholder_")
+
+[node name="SignBoard" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, -14.5)
+use_collision = true
+collision_mask = 0
+size = Vector3(14, 1.8, 0.3)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 2.4, -14.7)
+script = ExtResource("5_neon_sign")
+branded = true
+brand = 5
+text_key = "%%SIGN_REFUGEE_HOUSING"
+glow = 1.5
+letter_height = 0.6
+max_width = 11.9
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign"]
+script = ExtResource("6_photocell")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("8_map_marker")
+icon = ExtResource("7_habitat_bloc")
+label = "%%MAP_MARKER_REFUGEE_HOUSING"
+importance = 3

@@ -9,7 +9,7 @@
 [ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="7_light_group"]
 [ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="8_led_panel_1x"]
 [ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="9_map_marker"]
-[ext_resource type="Texture2D" path="res://assets/textures/map_markers/terminal.png" id="10_terminal"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/administration.png" id="10_administration"]
 
 [node name="TownHall" type="Node3D"]
 
@@ -76,7 +76,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.2, 8.65, 0)
 
 [node name="MapMarker" type="Node3D" parent="."]
 script = ExtResource("9_map_marker")
-icon = ExtResource("10_terminal")
+icon = ExtResource("10_administration")
 label = "%%MAP_MARKER_TOWN_HALL"
 importance = 2
 

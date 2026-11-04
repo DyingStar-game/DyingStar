@@ -1,0 +1,78 @@
+[gd_scene format=3 uid="uid://ojm3yn30gjet"]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="7_light_group"]
+[ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="8_led_panel_1x"]
+[ext_resource type="Texture2D" uid="uid://3ewwox8wxacd" path="res://assets/textures/map_markers/driving_school.png" id="9_driving_scho"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="10_map_marker"]
+
+[node name="DrivingSchool" type="Node3D" unique_id=1073128195]
+
+[node name="PropSync" type="Node" parent="." unique_id=1312935123]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=1884765670]
+script = ExtResource("2_terrain_pad")
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1285867598]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(24, 1, 14)
+
+[node name="Blockout" type="CSGBox3D" parent="." unique_id=800174926]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
+use_collision = true
+collision_mask = 0
+size = Vector3(24, 5, 14)
+material = ExtResource("3_placeholder_")
+
+[node name="Hollow" type="CSGBox3D" parent="Blockout" unique_id=635002534]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+operation = 2
+size = Vector3(23.4, 4.5, 13.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Doorway" type="CSGBox3D" parent="Blockout" unique_id=1614381118]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.8, -7)
+operation = 2
+size = Vector3(3, 3, 1)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=1162737328]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 4.2, -7.05)
+script = ExtResource("5_neon_sign")
+text_key = "%%SIGN_DRIVING_SCHOOL"
+branded = true
+brand = 6
+glow = 1.5
+letter_height = 1.83
+max_width = 10.1
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=260517973]
+script = ExtResource("6_photocell")
+
+[node name="Lights" type="Node3D" parent="." unique_id=1989016170]
+script = ExtResource("7_light_group")
+
+[node name="Photocell" type="Node3D" parent="Lights" unique_id=694739326]
+script = ExtResource("6_photocell")
+
+[node name="LedPanel 01" parent="Lights" unique_id=339227562 instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 4.45, 0)
+
+[node name="LedPanel 02" parent="Lights" unique_id=20403908 instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 4.45, 0)
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=566075252]
+script = ExtResource("10_map_marker")
+icon = ExtResource("9_driving_scho")
+label = "%%MAP_MARKER_DRIVING_SCHOOL"

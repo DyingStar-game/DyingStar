@@ -6,6 +6,8 @@
 [ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="mm_script"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/school.png" id="mm_icon"]
 
 [node name="School" type="Node3D"]
 
@@ -48,3 +50,9 @@ light_range = 8.0
 
 [node name="Photocell" type="Node3D" parent="NeonSign"]
 script = ExtResource("6_photocell")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("mm_script")
+icon = ExtResource("mm_icon")
+label = "%%MAP_MARKER_SCHOOL"
+importance = 3

@@ -1,0 +1,139 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="7_light_group"]
+[ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="8_led_panel_1x"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/truck.png" id="9_truck"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="10_map_marker"]
+
+[node name="LoadingBay" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 8
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(40, 1, 24)
+
+[node name="Blockout" type="CSGCombiner3D" parent="."]
+use_collision = true
+collision_mask = 0
+
+[node name="Roof" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 0)
+size = Vector3(40, 0.6, 24)
+material = ExtResource("3_placeholder_")
+
+[node name="Pillar1" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.5, 4.3, -11.5)
+radius = 0.4
+height = 9
+sides = 12
+material = ExtResource("4_placeholder_")
+
+[node name="Pillar2" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -19.5, 4.3, 11.5)
+radius = 0.4
+height = 9
+sides = 12
+material = ExtResource("4_placeholder_")
+
+[node name="Pillar3" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.3, -11.5)
+radius = 0.4
+height = 9
+sides = 12
+material = ExtResource("4_placeholder_")
+
+[node name="Pillar4" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.3, 11.5)
+radius = 0.4
+height = 9
+sides = 12
+material = ExtResource("4_placeholder_")
+
+[node name="Pillar5" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19.5, 4.3, -11.5)
+radius = 0.4
+height = 9
+sides = 12
+material = ExtResource("4_placeholder_")
+
+[node name="Pillar6" type="CSGCylinder3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19.5, 4.3, 11.5)
+radius = 0.4
+height = 9
+sides = 12
+material = ExtResource("4_placeholder_")
+
+[node name="Hopper" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 6.4, 0)
+size = Vector3(8, 4, 8)
+material = ExtResource("4_placeholder_")
+
+[node name="Cabin" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1.8, 6)
+size = Vector3(6, 4, 4)
+material = ExtResource("3_placeholder_")
+
+[node name="Fascia" type="CSGBox3D" parent="Blockout"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10.1, -12)
+size = Vector3(40, 1.6, 0.3)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 10.1, -12.2)
+script = ExtResource("5_neon_sign")
+branded = true
+brand = 2
+text_key = "%%SIGN_LOADING"
+glow = 1.5
+letter_height = 2.4
+max_width = 27.2
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign"]
+script = ExtResource("6_photocell")
+
+[node name="Lights" type="Node3D" parent="."]
+script = ExtResource("7_light_group")
+
+[node name="Photocell" type="Node3D" parent="Lights"]
+script = ExtResource("6_photocell")
+
+[node name="LedPanel 01" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.333, 8.65, -6)
+
+[node name="LedPanel 02" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.333, 8.65, 6)
+
+[node name="LedPanel 03" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.65, -6)
+
+[node name="LedPanel 04" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.65, 6)
+
+[node name="LedPanel 05" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.333, 8.65, -6)
+
+[node name="LedPanel 06" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.333, 8.65, 6)
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("10_map_marker")
+icon = ExtResource("9_truck")
+label = "%%MAP_MARKER_LOADING"
+importance = 3

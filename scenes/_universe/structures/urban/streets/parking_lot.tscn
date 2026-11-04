@@ -1,0 +1,311 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="3_placeholder_"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/parking.png" id="4_parking"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="5_map_marker"]
+
+[node name="ParkingLot" type="Node3D"]
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("2_terrain_pad")
+apron_m = 4
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(80, 1, 45)
+
+[node name="Markings" type="CSGCombiner3D" parent="."]
+
+[node name="Line001" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -38, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line002" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -35.2, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line003" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -32.4, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line004" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -29.6, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line005" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -26.8, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line006" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line007" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -21.2, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line008" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.4, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line009" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.6, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line010" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.8, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line011" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line012" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.2, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line013" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.4, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line014" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.6, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line015" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line016" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line017" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.8, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line018" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.6, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line019" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.4, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line020" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.2, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line021" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line022" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20.8, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line023" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 23.6, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line024" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26.4, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line025" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 29.2, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line026" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line027" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34.8, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line028" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.6, 0.01, -19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line029" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -38, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line030" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -35.2, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line031" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -32.4, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line032" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -29.6, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line033" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -26.8, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line034" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line035" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -21.2, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line036" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18.4, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line037" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.6, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line038" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.8, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line039" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line040" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.2, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line041" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.4, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line042" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.6, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line043" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line044" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line045" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.8, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line046" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.6, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line047" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12.4, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line048" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15.2, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line049" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line050" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20.8, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line051" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 23.6, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line052" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26.4, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line053" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 29.2, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line054" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line055" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34.8, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="Line056" type="CSGBox3D" parent="Markings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.6, 0.01, 19.5)
+size = Vector3(0.15, 0.02, 5)
+material = ExtResource("3_placeholder_")
+
+[node name="MapMarker" type="Node3D" parent="."]
+script = ExtResource("5_map_marker")
+icon = ExtResource("4_parking")
+label = "%%MAP_MARKER_PARKING"
+importance = 2

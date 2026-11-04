@@ -1,0 +1,84 @@
+[gd_scene format=3 uid="uid://qc35opqjocv2"]
+
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
+[ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
+[ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
+[ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="7_light_group"]
+[ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="8_led_panel_1x"]
+[ext_resource type="Texture2D" uid="uid://dtxptuw4dexqv" path="res://assets/textures/map_markers/bar.png" id="9_bar"]
+[ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="10_map_marker"]
+
+[node name="SmallBar" type="Node3D" unique_id=1839475132]
+
+[node name="PropSync" type="Node" parent="." unique_id=125413688]
+script = ExtResource("1_prop_sync")
+type_name = "simple_building"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"
+
+[node name="TerrainPad" type="Node3D" parent="." unique_id=376497816]
+script = ExtResource("2_terrain_pad")
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=765516735]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
+size = Vector3(28, 1, 22)
+
+[node name="Blockout" type="CSGBox3D" parent="." unique_id=2141437987]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.8, 0)
+use_collision = true
+collision_mask = 0
+size = Vector3(28, 6, 22)
+material = ExtResource("3_placeholder_")
+
+[node name="Hollow" type="CSGBox3D" parent="Blockout" unique_id=199568856]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+operation = 2
+size = Vector3(27.4, 5.5, 21.4)
+material = ExtResource("3_placeholder_")
+
+[node name="Doorway" type="CSGBox3D" parent="Blockout" unique_id=2078913830]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.3, -11)
+operation = 2
+size = Vector3(3, 3, 1)
+material = ExtResource("4_placeholder_")
+
+[node name="NeonSign" type="Node3D" parent="." unique_id=1119353257]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 4.4, -11.05)
+script = ExtResource("5_neon_sign")
+text_key = "%%SIGN_BAR"
+branded = true
+brand = 5
+glow = 1.5
+letter_height = 2.4
+max_width = 4.4
+light_energy = 0.5
+light_range = 8.0
+
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=738351402]
+script = ExtResource("6_photocell")
+
+[node name="Lights" type="Node3D" parent="." unique_id=319207260]
+script = ExtResource("7_light_group")
+
+[node name="Photocell" type="Node3D" parent="Lights" unique_id=1529890686]
+script = ExtResource("6_photocell")
+
+[node name="LedPanel 01" parent="Lights" unique_id=347578359 instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 5.45, -5.5)
+
+[node name="LedPanel 02" parent="Lights" unique_id=478700572 instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 5.45, 5.5)
+
+[node name="LedPanel 03" parent="Lights" unique_id=1478001116 instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 5.45, -5.5)
+
+[node name="LedPanel 04" parent="Lights" unique_id=440184208 instance=ExtResource("8_led_panel_1x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 5.45, 5.5)
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=1124591449]
+script = ExtResource("10_map_marker")
+icon = ExtResource("9_bar")
+label = "%%MAP_MARKER_BAR"
