@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/power/wind_turbine.tscn" id="2_wind_turbine"]
 [ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="3_map_marker"]
 [ext_resource type="Texture2D" path="res://assets/textures/map_markers/power_plant.png" id="4_power_plant"]
+[ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="9_terrain_pad"]
 
 [node name="WindFarm" type="Node3D"]
 
@@ -77,3 +78,12 @@ script = ExtResource("3_map_marker")
 icon = ExtResource("4_power_plant")
 label = "%%MAP_MARKER_WIND_FARM"
 importance = 4
+
+[node name="TerrainPad" type="Node3D" parent="."]
+script = ExtResource("9_terrain_pad")
+apron_m = 2.0
+metadata/_custom_type_script = "uid://custckqbhkkow"
+
+[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.55, 0)
+size = Vector3(122, 1, 70)
