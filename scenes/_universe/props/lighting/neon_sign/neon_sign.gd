@@ -48,6 +48,12 @@ extends Node3D
 	set(value):
 		letter_height = value
 		_apply()
+## The widest the text may run, in metres: the facade it hangs on. A translation that would run wider
+## is drawn with smaller letters, so the sign never overhangs its wall in any language. 0: no limit.
+@export_range(0.0, 200.0, 0.1, "suffix:m") var max_width: float = 0.0:
+	set(value):
+		max_width = value
+		_apply()
 ## Thickness of the tube (how far the letters stand off the wall), in metres.
 @export_range(0.0, 0.5, 0.005) var depth: float = 0.04:
 	set(value):
@@ -160,6 +166,28 @@ func shown_text() -> String:
 	return shown
 
 
+## Height of a capital letter as drawn, in metres: [member letter_height], or less when [member max_width]
+## would not hold the text [param shown] at that height.
+func drawn_letter_height(shown: String) -> float:
+	if max_width <= 0.0 or shown.is_empty():
+		return letter_height
+	var width := width_of(shown, letter_height)
+	return letter_height * minf(1.0, max_width / width) if width > 0.0 else letter_height
+
+
+## Width of the text as drawn, in metres.
+func text_width() -> float:
+	var shown := shown_text()
+	return width_of(shown, drawn_letter_height(shown))
+
+
+## Width of [param shown] with capitals [param height] high, in metres: in [member font], or in the
+## engine's fallback font when none is set, which is what the TextMesh then draws with.
+func width_of(shown: String, height: float) -> float:
+	var f: Font = font if font != null else ThemeDB.fallback_font
+	return f.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x * height / (FONT_SIZE * CAP_HEIGHT)
+
+
 ## The colour of the tube and of its light: the subsidiary's when [member branded], else [member color].
 func tube_colour() -> Color:
 	return AresBrand.colour(brand) if branded else color
@@ -172,7 +200,7 @@ func _apply() -> void:
 	mesh.text = shown_text()
 	mesh.font = font
 	mesh.font_size = FONT_SIZE
-	mesh.pixel_size = letter_height / (FONT_SIZE * CAP_HEIGHT)
+	mesh.pixel_size = drawn_letter_height(mesh.text) / (FONT_SIZE * CAP_HEIGHT)
 	mesh.depth = depth
 	var tube := _tube.material_override as StandardMaterial3D
 	# Switched off (by day), the tube keeps its colour: painted glass, without glow or light. Darkened, it

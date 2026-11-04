@@ -56,6 +56,28 @@ func test_the_sign_shows_the_translation_and_glows() -> void:
 	assert_eq(light.omni_attenuation, 2.0, "the falloff reaches the built light")
 
 
+## A sign given its facade's width never runs wider: a long text is drawn with smaller letters, a short
+## one keeps its letter height, and no width keeps the letters as set.
+func test_a_sign_shrinks_its_letters_to_its_max_width() -> void:
+	var sign := NeonSign.new()
+	sign.text_key = "A RATHER LONG SIGN FOR A SMALL SHOP"
+	sign.letter_height = 1.2
+	add_child_autofree(sign)
+	var natural := sign.text_width()
+	assert_gt(natural, 10.0, "wide at 1.2 m")
+	sign.max_width = 8.0
+	assert_almost_eq(sign.text_width(), 8.0, 0.01, "shrunk to its facade")
+	assert_lt(sign.drawn_letter_height(sign.shown_text()), 1.2)
+	var tube := _internal(sign, MeshInstance3D) as MeshInstance3D
+	assert_almost_eq((tube.mesh as TextMesh).pixel_size * NeonSign.FONT_SIZE * NeonSign.CAP_HEIGHT,
+			sign.drawn_letter_height(sign.shown_text()), 1e-6, "the tube is drawn at the shrunk height")
+	sign.max_width = natural + 5.0
+	assert_eq(sign.drawn_letter_height(sign.shown_text()), 1.2, "a text that fits keeps its height")
+	sign.font = null
+	sign.max_width = 8.0
+	assert_almost_eq(sign.text_width(), 8.0, 0.01, "the fallback font is held too")
+
+
 func test_switched_off_the_tube_keeps_its_colour_without_glow_or_light() -> void:
 	var sign := NeonSign.new()
 	add_child_autofree(sign)
