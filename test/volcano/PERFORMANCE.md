@@ -22,6 +22,30 @@ de sa texture sont consignes dans le JSON de mesure. Le viewport diagnostic
 contient le fond et un panache ; les couts du terrain, du reseau et des
 autres effets du jeu ne sont pas mesures par ce benchmark.
 
+## Pics CPU pendant une eruption (RTX 2060)
+
+Mesure du 4 novembre 2026, RTX 2060, 16 coeurs, rendu 1839 x 994, vsync coupee,
+editeur et jeu fermes, scene `volcano_view.tscn`. Meme eruption a date fixe
+(environ 1230 pierres en vol, 19 bouffees) pour l'ancien et le nouveau code,
+sur 25 s. Une seule execution par version. Ancien -> nouveau :
+
+| Vue | `_process` mediane | p99 | max | Images > 33 ms |
+|---|---:|---:|---:|---:|
+| Colonne | 3,54 -> 2,37 ms | 42,2 -> 16,2 ms | 66,2 -> 22,5 ms | 61 -> 6 |
+| Flanc | 2,90 -> 1,77 ms | 20,8 -> 9,1 ms | 37,8 -> 12,5 ms | 18 -> 18 |
+| 9 km | 2,74 -> 1,29 ms | 36,0 -> 13,6 ms | 106,9 -> 17,8 ms | 49 -> 4 |
+
+- `VolcanoPlumeModel` ne relit plus le calendrier d'une bouffee sans fumee : un
+  appel a `update` passe de 2,63 a 0,92 ms en jeu.
+- `VolcanoStoneField` limite a `MAX_READS_PER_FRAME` les lectures de relief par
+  image pour les nouvelles pierres. Une pierre hors budget nait plus tard, au
+  plus `MAX_BIRTH_LAG_S` apres sa date (0,35 s au pire mesure).
+
+Les resultats sont identiques au bit pres sur un banc headless (empreintes des
+bouffees et de 1000 vols) ; `test/unit/test_volcano_cpu_budget.gd` le verifie.
+Ces gains suppriment des a-coups : le temps d'image median reste fixe par le GPU
+(16 ms dans la colonne, dont environ 10 ms de fumee).
+
 ## Responsabilites et simplifications
 
 - `VolcanoRandom` fournit uniquement les fonctions aleatoires deterministes.

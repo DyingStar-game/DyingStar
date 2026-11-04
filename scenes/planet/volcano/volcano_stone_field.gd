@@ -45,6 +45,12 @@ const SHADER_DIR := "res://assets/_universe/environment/terrain/volcano/"
 const COARSE_CELL_M := 100.0
 const FINE_CELL_M := 4.0
 const MAX_HEIGHTS := 150000
+## Heights a frame may read from the planet for new stones (each costs 0.15 to 0.3 ms). A stone over budget
+## is born on a later frame, from the cells already read, so a single flight no longer makes a hitch.
+const MAX_READS_PER_FRAME := 8
+## A stone is never born later than this (s), whatever the reads cost: it would appear too far from the vent.
+const MAX_BIRTH_LAG_S := 1.0
+const NO_READ_LIMIT := 1 << 30
 static var _shared_meshes: Array[ArrayMesh] = []
 static var _shared_flying_mesh: ArrayMesh
 static var _shared_cracks: NoiseTexture3D
@@ -106,6 +112,7 @@ var _eye := Vector3.ZERO
 var _feet := Vector3.ZERO
 var _has_player := false
 var _heights := {}
+var _reads_left := NO_READ_LIMIT
 var _latest_landing := -INF
 var _latest_trail_end := -INF
 var _suspended := false
@@ -296,8 +303,15 @@ func update(t: float, eye: Vector3, feet: Vector3, has_player: bool) -> void:
 	_last_t = t
 	_feet = feet
 	_has_player = has_player
+	_reads_left = MAX_READS_PER_FRAME
 	while float(_next_c) * dt <= t:
-		_born(_next_c, t)
+		if t - float(_next_c) * dt > MAX_BIRTH_LAG_S:
+			_reads_left = NO_READ_LIMIT
+		elif _reads_left > MAX_READS_PER_FRAME:
+			# Caught up with the limit: the rest can wait, this frame has paid enough.
+			_reads_left = 0
+		if not _born(_next_c, t):
+			break
 		_next_c += 1
 	_promote_due(t, eye)
 	_instances.visible = t < _latest_landing
@@ -317,19 +331,21 @@ func _rebuild(t: float) -> void:
 	_next_c = floori(t / dt) + 1
 	if not rebuild_on_jump:
 		return
+	_reads_left = NO_READ_LIMIT
 	for c in range(_next_c - COUNT, _next_c):
 		_born(c, t)
 
 
-func _born(c: int, t: float) -> void:
+## False when the frame's height reads ran out: nothing changed, to call again on a later frame.
+func _born(c: int, t: float) -> bool:
 	var i := posmod(c, COUNT)
 	var birth := float(c) * (PERIOD / float(COUNT))
-	_token[i] += 1
 	# The volcano throws in bursts: stones only when it is strong, and each burst leans its own way.
 	var strength := model.eruption_activity(birth)
 	if strength <= 0.0 or VolcanoPlumeModel._hash(c, 101) >= smoothstep(0.55, 1.1, strength) * throw_rate:
+		_token[i] += 1
 		_clear_slot(i, birth)
-		return
+		return true
 	var r1 := VolcanoPlumeModel._hash(c, 102)
 	var r2 := VolcanoPlumeModel._hash(c, 103)
 	var r3 := VolcanoPlumeModel._hash(c, 104)
@@ -346,15 +362,22 @@ func _born(c: int, t: float) -> void:
 	var dir := Vector3(cos(ang) * tilt + lean.x, 1.0, sin(ang) * tilt + lean.y).normalized()
 	var v0 := dir * speed
 	var flight := _flight_time(v0)
+	if flight < 0.0:
+		return false
+	_token[i] += 1
 	_write(i, v0, birth, radius, flight, seed_v, 1.0)
 	_register(i, v0, birth, radius, flight, t)
+	return true
 
 
-## First time the arc from the vent reaches the ground. Long strides, then a short search: in the game
-## every sample reads the planet's height function.
+## First time the arc from the vent reaches the ground, or -1 when the frame's height reads ran out: the
+## cells read so far stay cached, and the same call goes further next time to the same result. Long strides,
+## then a short search: in the game every sample reads the planet's height function.
 func _flight_time(v0: Vector3) -> float:
 	var ft := 3.0
 	while ft < PERIOD - 10.0:
+		if _reads_left <= 0:
+			return -1.0
 		var p := _arc(v0, ft)
 		if p.y <= _ground(p.x, p.z, COARSE_CELL_M):
 			break
@@ -362,6 +385,8 @@ func _flight_time(v0: Vector3) -> float:
 	var lo := ft - 1.5
 	var hi := ft
 	for _k in 6:
+		if _reads_left <= 0:
+			return -1.0
 		var mid := 0.5 * (lo + hi)
 		var p := _arc(v0, mid)
 		if p.y <= _ground(p.x, p.z, COARSE_CELL_M):
@@ -743,5 +768,6 @@ func _height_at(ix: int, iz: int, cell: float) -> float:
 	if _heights.size() >= MAX_HEIGHTS:
 		_heights.clear()
 	var h: float = relief.call(float(ix) * cell, float(iz) * cell)
+	_reads_left -= 1
 	_heights[key] = h
 	return h

@@ -10,6 +10,7 @@ extends RefCounted
 const COUNT := 220
 ## Seconds a puff lives. COUNT puffs over LIFE: one born every LIFE / COUNT seconds.
 const LIFE := 600.0
+const NO_PUFF := -(1 << 62)
 
 var rise_speed := 110.0  # m/s at the vent
 var slowdown_m := 3500.0  # height over which the rise speed halves
@@ -26,7 +27,10 @@ var ash_shade := 0.5
 var appearance_seed := 0
 ## Seconds added to the clock in activity(): each volcano breathes on its own.
 var phase := 0.0
-var profile: VolcanoActivityProfile
+var profile: VolcanoActivityProfile:
+	set(value):
+		profile = value
+		_silent_id.fill(NO_PUFF)
 var volcano_seed := 0
 var volcano_key := ""
 var dormant := false
@@ -41,12 +45,19 @@ var b := PackedVector4Array()  # density, ash shade, noise seed, cloudiness
 var c := PackedVector4Array()  # sun transmittance, sky visibility, cos spin, sin spin
 var _next_light := 0
 var active_indices := PackedInt32Array()
+## Per slot, the puff seen without smoke and when: most slots, between two activities. A puff's smoke can
+## only fade as time goes on, so its schedule is not read again unless the clock jumps back.
+var _silent_id := PackedInt64Array()
+var _silent_at := PackedFloat64Array()
 
 
 func _init() -> void:
 	a.resize(COUNT)
 	b.resize(COUNT)
 	c.resize(COUNT)
+	_silent_id.resize(COUNT)
+	_silent_id.fill(NO_PUFF)
+	_silent_at.resize(COUNT)
 
 
 ## Independent dimensions make short/dark and tall/light plumes possible too.
@@ -110,6 +121,10 @@ func update(t: float, light_budget: int) -> void:
 		var birth := float(i) * dt + float(cycle) * lifetime_s
 		var age := t - birth
 		var id := i + cycle * COUNT
+		if _silent_id[i] == id and t >= _silent_at[i]:
+			continue
+		# Another puff or an earlier time, after a jump of the clock: b and c are no longer the silent ones.
+		_silent_id[i] = NO_PUFF
 		var emission: Vector2
 		if profile != null:
 			emission = profile.sample_smoke(birth, t, volcano_seed, volcano_key, dormant)
@@ -119,6 +134,8 @@ func update(t: float, light_budget: int) -> void:
 		if emission.y <= 0.0:
 			b[i] = Vector4.ZERO
 			c[i] = Vector4(1, 1, 0, 1)
+			_silent_id[i] = id
+			_silent_at[i] = t
 			continue
 		var strength := emission.x
 		var puff_id := id ^ appearance_seed
