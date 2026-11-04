@@ -9,23 +9,11 @@ extends RefCounted
 ## In the uuid of every layout area's record: how the village roads tell an area from a building.
 const UUID_TAG := "|pad|"
 
-static var _cache: Dictionary = {}
-
-
 ## [{name, box: Transform3D (the marker box in the layout's frame, scale included), size: Vector3 (the
-## box's own size), apron, h_offset}] of the layout [param scene_path] (res:// or not).
+## box's own size), apron, h_offset}] of the layout [param scene_path] (res:// or not), read once
+## with the rest of the layout (LayoutData).
 static func of(scene_path: String) -> Array:
-	var path := scene_path if scene_path.begins_with("res://") else "res://" + scene_path
-	if _cache.has(path):
-		return _cache[path]
-	var out: Array = []
-	var packed := load(path) as PackedScene if ResourceLoader.exists(path) else null
-	if packed != null:
-		var layout: Node = packed.instantiate()
-		out = of_layout(layout)
-		layout.free()
-	_cache[path] = out
-	return out
+	return LayoutData.of(scene_path)["pads"]
 
 
 ## The root pads of an instantiated [param layout] (not in the tree), as [method of] returns them.

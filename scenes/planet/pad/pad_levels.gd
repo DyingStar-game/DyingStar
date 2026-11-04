@@ -107,8 +107,8 @@ static func _touching_of(idx: PadIndex, u: String, finest: int, mpd: float, near
 
 ## [level, talus_m] pad [param u] is drawn at. The talus measured for its own
 ## altitude is widened by what the shared level adds, so the ground still meets
-## the relief at the promised slope. A pad whose centre stands on one of the
-## village [param beds] keeps its own level.
+## the relief at the promised slope. A pad whose centre the ground of one of the
+## village [param beds] reaches (VillageBed.reaches) keeps its own level.
 static func level(idx: PadIndex, u: String, own: Dictionary, memo: Dictionary,
 		finest: int, mpd: float, near: Dictionary = {}, beds: Array = []) -> Array:
 	if memo.has(u):
@@ -120,7 +120,7 @@ static func level(idx: PadIndex, u: String, own: Dictionary, memo: Dictionary,
 	# On a village's plane a pad keeps its own level, unless it stands in an area the layout levels
 	# on purpose (LayoutPads: the mine's yard), whose level it takes: the buildings of the yard stand
 	# on the yard, not buried under it.
-	var bed_only := on_bed(rec, beds, mpd)
+	var bed_only := VillageBed.reaches(beds, rec, mpd)
 	for t: String in _touching_of(idx, u, finest, mpd, near):
 		var c: Dictionary = idx.get_rec(t)
 		if bed_only and not str(c["uuid"]).contains(LayoutPads.UUID_TAG):
@@ -135,15 +135,3 @@ static func level(idx: PadIndex, u: String, own: Dictionary, memo: Dictionary,
 		z = float(up[0])
 	memo[u] = [z, talus]
 	return memo[u]
-
-
-## Does the centre of the pad [param rec] stand on the footprint of one of the village
-## [param beds] (VillageBed)?
-static func on_bed(rec: Dictionary, beds: Array, mpd: float) -> bool:
-	if beds.is_empty() or rec.is_empty():
-		return false
-	var c := Vector2(float(rec["lon"]), float(rec["lat"]))
-	for bed: Dictionary in beds:
-		if PadBed.sdf_m(bed, c, mpd) <= 0.0:
-			return true
-	return false

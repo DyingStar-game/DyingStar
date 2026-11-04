@@ -27,6 +27,7 @@ const COLOURS := {
 }
 ## The name the road export reads (QGIS road_type family).
 const KIND_NAMES := {Kind.ROAD: "road", Kind.PATH: "path", Kind.HIGHWAY: "highway", Kind.RAILWAY: "railway"}
+## Length of the editor's arrow along −Z (m): long enough to read the snap's direction from afar.
 const ARROW_M := 8.0
 
 var _arrow: MeshInstance3D = null
@@ -41,6 +42,8 @@ func kind_name() -> String:
 	return str(KIND_NAMES[kind])
 
 
+## Editor only: (re)draw the arrow in the colour of [member kind], an internal child never saved with
+## the layout. Called again whenever the kind changes.
 func _draw_arrow() -> void:
 	if not Engine.is_editor_hint() or not is_inside_tree():
 		return

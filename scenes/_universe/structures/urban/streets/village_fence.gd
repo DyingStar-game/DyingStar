@@ -36,6 +36,7 @@ extends LayoutLine
 		post_material = v
 		_line_changed()
 
+## Name of the preview child, found again and replaced on every redraw.
 const PREVIEW_NAME := "_FencePreview"
 
 
@@ -48,39 +49,51 @@ static func open_panels(posts: PackedVector2Array, roads: Array) -> Array:
 		var mid := (posts[k] + posts[k + 1]) * 0.5
 		var gap := false
 		for r: Dictionary in roads:
-			if LayoutRoads._dist_to_line(mid, r["points"]) <= float(r["width"]) * 0.5 + VillageRoadBed.EDGE_M:
+			if LayoutRoads.distance_to_line(mid, r["points"]) <= float(r["width"]) * 0.5 + VillageRoadBed.EDGE_M:
 				gap = true
 				break
 		open.append(gap)
 	return open
 
 
-## Draw the preview again: flat ground, the curve's own frame, the layout's roads for the gaps.
+## The fence changed: draw its preview again, its gaps read from the layout's roads.
 func _line_changed() -> void:
 	if not Engine.is_editor_hint() or not is_inside_tree():
 		return
+	var root := get_tree().edited_scene_root
+	if root != null:
+		draw_preview(root, LayoutRoads.of_layout(root))
+
+
+## Draw this fence's preview from [param roads] (LayoutRoads.of_layout of [param root]): flat ground
+## (y = 0 of [param root]), in this node's frame, a gap where a road crosses. Called by VillageRoad too,
+## so the gaps follow the roads. Works outside the tree.
+func draw_preview(root: Node, roads: Array) -> void:
 	var old := get_node_or_null(PREVIEW_NAME)
 	if old != null:
 		old.free()
-	var root := get_tree().edited_scene_root
-	if root == null or curve == null or curve.point_count < 2:
+	var geo := preview_geometry(root, roads)
+	if geo.is_empty():
 		return
-	var posts := polyline_in(root, post_spacing_m)
-	var own := polyline_in(self, post_spacing_m)
-	var feet := PackedVector3Array()
-	var ups := PackedVector3Array()
-	for p: Vector2 in own:
-		feet.append(Vector3(p.x, 0.0, p.y))
-		ups.append(Vector3.UP)
-	var geo := LayoutFences.build(feet, ups, open_panels(posts, LayoutRoads.of_layout(root)), height_m)
-	var mesh := ArrayMesh.new()
-	if not (geo["panels"] as Array).is_empty():
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, geo["panels"])
-		mesh.surface_set_material(mesh.get_surface_count() - 1, LayoutFences.on_panel_uv(panel_material))
-	if not (geo["posts"] as Array).is_empty():
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, geo["posts"])
-		mesh.surface_set_material(mesh.get_surface_count() - 1, post_material)
 	var mi := MeshInstance3D.new()
 	mi.name = PREVIEW_NAME
-	mi.mesh = mesh
+	mi.mesh = LayoutFences.mesh_of(geo, LayoutFences.on_panel_uv(panel_material), post_material)
 	add_child(mi)  # no owner: never saved with the scene
+
+
+## The preview's geometry (LayoutFences.build), in this node's frame: the posts are resampled ONCE,
+## in [param root]'s frame as the game reads them, then moved into this node's frame, so the gaps
+## (computed on the same posts) fall on the right panels under a scaled or tilted parent. {} under two
+## points.
+func preview_geometry(root: Node, roads: Array) -> Dictionary:
+	var posts := polyline_in(root, post_spacing_m)
+	if posts.size() < 2:
+		return {}
+	var to_self := frame_in(self, root).affine_inverse()
+	var up := (to_self.basis * Vector3.UP).normalized()
+	var feet := PackedVector3Array()
+	var ups := PackedVector3Array()
+	for p: Vector2 in posts:
+		feet.append(to_self * Vector3(p.x, 0.0, p.y))
+		ups.append(up)
+	return LayoutFences.build(feet, ups, open_panels(posts, roads), height_m)

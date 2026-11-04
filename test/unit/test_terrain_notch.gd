@@ -48,8 +48,9 @@ func test_moving_the_floor_is_a_change_of_geometry() -> void:
 	assert_true(PadBed.same_geometry(_notch, PadBed.quantise(_notch)))
 
 
+## A notch has no apron and no talus: it reaches its box's corner and no further.
 func test_reach_is_the_box_alone() -> void:
-	assert_almost_eq(PadBed.reach_m(_notch), 100.0 + PadSettings.REACH_MARGIN_M, 1e-6)
+	assert_almost_eq(PadBed.reach_m(_notch), Vector2(12.0, 100.0).length() + PadSettings.REACH_MARGIN_M, 1e-6)
 
 
 # ── The cut ──────────────────────────────────────────────────────────────

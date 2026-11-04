@@ -49,10 +49,6 @@ static func record(uuid: String, lon: float, lat: float, yaw: float, hx: float, 
 	return rec
 
 
-static func is_village(rec: Dictionary) -> bool:
-	return str(rec.get("kind", "")) == "village"
-
-
 ## The directions [method fit] samples: a GRID_N × GRID_N grid over the footprint.
 static func fit_dirs(rec: Dictionary, m_per_deg: float) -> PackedVector3Array:
 	return PadBed.grid_dirs(rec, float(rec["hx"]), float(rec["hy"]), GRID_N, m_per_deg)
@@ -120,14 +116,13 @@ static func apply(h: float, lonlat: Vector2, beds: Array, m_per_deg: float) -> f
 		return h
 	var rec: Dictionary = q["rec"]
 	var d: float = q["d"]
-	var p := _clamped_plane(rec, lonlat, m_per_deg)
+	var p := clamped_plane(rec, lonlat, m_per_deg)
 	if d <= 0.0:
 		return p
 	var band := clampf(PadBed.talus_width(absf(p - h)), BAND_M, PadBed.talus_cap(rec))
 	if d >= band:
 		return h
-	var t := d / band
-	return lerpf(p, h, t * t * (3.0 - 2.0 * t))
+	return lerpf(p, h, smoothstep(0.0, 1.0, d / band))
 
 
 ## The plane's height when [param lonlat] lies inside a bed's footprint, NAN
@@ -138,13 +133,32 @@ static func floor_at(lonlat: Vector2, beds: Array, m_per_deg: float) -> float:
 	var q := PadBed.nearest(beds, lonlat, m_per_deg)
 	if not q["hit"] or float(q["d"]) > 0.0:
 		return NAN
-	return _clamped_plane(q["rec"], lonlat, m_per_deg)
+	return clamped_plane(q["rec"], lonlat, m_per_deg)
 
 
-## The plane at the footprint point nearest [param lonlat]: outside the
-## footprint the plane is never extrapolated, it is held at its edge.
-static func _clamped_plane(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
+## The plane of the bed [param rec] at the footprint point nearest [param lonlat]: outside the
+## footprint the plane is never extrapolated, it is held at its edge — the height the band around
+## the bed starts from ([method apply]), and what a pad standing there is compared with
+## (PlanetData.village_bed_report).
+static func clamped_plane(rec: Dictionary, lonlat: Vector2, m_per_deg: float) -> float:
 	var p := PadBed.local_m(rec, lonlat, m_per_deg)
 	var hx: float = float(rec["hx"])
 	var hy: float = float(rec["hy"])
 	return plane_at(rec, Vector2(clampf(p.x, -hx, hx), clampf(p.y, -hy, hy)))
+
+
+## Does the ground of one of the village [param beds] reach the centre of the pad [param rec]: is
+## its centre on a footprint, or in the band around it (up to the bed's talus cap)? The ONE test for
+## "this pad stands on a village": PlanetData re-measures such a pad when a bed comes or moves (its
+## altitude is read on the bed's ground, band included: PlanetData.pad_sampler), and PadLevels lets it
+## keep its own level. Up to the band and not the footprint alone, because a pad in the band is
+## measured on the blended ground too: what it persisted before the bed is stale, and a level borrowed
+## there from a neighbour off the village would cut into the band's slope as on the plane.
+static func reaches(beds: Array, rec: Dictionary, m_per_deg: float) -> bool:
+	if beds.is_empty() or rec.is_empty():
+		return false
+	var c := Vector2(float(rec["lon"]), float(rec["lat"]))
+	for bed: Dictionary in beds:
+		if PadBed.sdf_m(bed, c, m_per_deg) <= PadBed.talus_cap(bed):
+			return true
+	return false

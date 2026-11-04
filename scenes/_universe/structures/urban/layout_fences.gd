@@ -1,9 +1,10 @@
 class_name LayoutFences
 extends RefCounted
 ## The fences drawn inside a village or city layout (VillageFence), read from the scene without adding
-## it to the tree and remembered per scene, as LayoutRoads reads the roads; and the pure geometry of
-## one fence (panels between posts, the posts, the collision faces), which PlanetTerrain lays on the
-## village's ground on the server and on every client alike.
+## it to the tree and remembered per scene (LayoutData), as LayoutRoads reads the roads; the pure
+## geometry of one fence (panels between posts, the posts, the collision faces); and the node that
+## carries a village's fences once PlanetTerrain has sampled their feet on the village's ground — the
+## same on the server and on every client.
 
 ## Half the width of a post's square section (m).
 const POST_HALF_M := 0.05
@@ -13,23 +14,10 @@ const TILE_M := 1.0
 ## Thickness of a panel's collision box (m): thin, but a volume — a single face let bodies through.
 const PANEL_THICKNESS_M := 0.1
 
-static var _cache: Dictionary = {}
-
-
 ## [{points: PackedVector2Array (x, z in the layout, one per post), height, panel_material,
 ## post_material}] of the layout [param scene_path] (res:// or not); [] when it draws no fence.
 static func of(scene_path: String) -> Array:
-	var path := scene_path if scene_path.begins_with("res://") else "res://" + scene_path
-	if _cache.has(path):
-		return _cache[path]
-	var out: Array = []
-	var packed := load(path) as PackedScene if ResourceLoader.exists(path) else null
-	if packed != null:
-		var layout: Node = packed.instantiate()
-		out = of_layout(layout)
-		layout.free()
-	_cache[path] = out
-	return out
+	return LayoutData.of(scene_path)["fences"]
 
 
 ## The fences of an instantiated [param layout] (not in the tree), as [method of] returns them.
@@ -44,6 +32,7 @@ static func of_layout(layout: Node) -> Array:
 	return out
 
 
+## Material → its non-triplanar copy ([method on_panel_uv]), made once per material.
 static var _panel_uv_copies: Dictionary = {}
 
 
@@ -142,6 +131,58 @@ static func build(feet: PackedVector3Array, ups: PackedVector3Array, open: Array
 			"boxes": boxes}
 
 
+## The panels (or posts) of [param geo] ([method build]) as one ArrayMesh, each part with its
+## material: [param panel_material] (already mapped on the panels' UVs, [method on_panel_uv]) and
+## [param post_material]. A part with nothing to draw adds no surface.
+static func mesh_of(geo: Dictionary, panel_material: Material, post_material: Material) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	if not (geo["panels"] as Array).is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, geo["panels"])
+		mesh.surface_set_material(mesh.get_surface_count() - 1, panel_material)
+	if not (geo["posts"] as Array).is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, geo["posts"])
+		mesh.surface_set_material(mesh.get_surface_count() - 1, post_material)
+	return mesh
+
+
+## The node carrying the fences [param laid], placed at [param origin]: one MeshInstance3D a fence and
+## one StaticBody3D with a box a panel (it collides, it does not detect: mask 0). [param laid] is
+## [{fence: an entry of [method of], feet: PackedVector3Array (the posts' feet, in the frame
+## [param origin] is given in), ups: PackedVector3Array (their local up), open: Array (bool a panel,
+## see [method build])}]: the caller samples the ground, this builds what stands on it.
+static func build_node(node_name: String, origin: Vector3, laid: Array) -> Node3D:
+	var node := Node3D.new()
+	node.name = node_name
+	node.position = origin
+	var body := StaticBody3D.new()
+	body.collision_mask = 0
+	for entry: Dictionary in laid:
+		var f: Dictionary = entry["fence"]
+		var local := PackedVector3Array()
+		for foot: Vector3 in (entry["feet"] as PackedVector3Array):
+			local.append(foot - origin)
+		var geo := build(local, entry["ups"], entry["open"], float(f["height"]))
+		var mesh := mesh_of(geo, f["panel_material"], f["post_material"])
+		if mesh.get_surface_count() > 0:
+			var mi := MeshInstance3D.new()
+			mi.mesh = mesh
+			node.add_child(mi)
+		for box: Array in geo["boxes"]:
+			var shape := BoxShape3D.new()
+			shape.size = box[1]
+			var cs := CollisionShape3D.new()
+			cs.shape = shape
+			cs.transform = box[0]
+			body.add_child(cs)
+	if body.get_child_count() > 0:
+		node.add_child(body)
+	else:
+		body.free()
+	return node
+
+
+## One surface's arrays (Mesh.ARRAY_MAX) from its vertices, normals, UVs (left out when empty),
+## indices and tangents; [] when it has no vertex.
 static func _arrays(v: PackedVector3Array, n: PackedVector3Array, uv: PackedVector2Array, idx: PackedInt32Array,
 		tangents: PackedFloat32Array) -> Array:
 	if v.is_empty():

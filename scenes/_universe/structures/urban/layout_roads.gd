@@ -2,7 +2,7 @@ class_name LayoutRoads
 extends RefCounted
 ## The roads drawn inside a village or city layout (VillageRoad), and the road zones they become on
 ## the planet. Read from the scene without adding it to the tree, as LayoutFootprint reads it, and
-## remembered per scene: a layout does not change while the game runs.
+## remembered per scene (LayoutData): a layout does not change while the game runs.
 ##
 ## A layout's roads are laid out in the frame of the village's common ground (VillageBed): the bed
 ## record is the one both the server and every client fit to the bit, so a road placed through it
@@ -12,28 +12,21 @@ extends RefCounted
 ## The feature ids of the village roads are below this: no QGIS feature, bridge or pad cut uses them.
 const FEATURE_ID_BASE := -1000000
 
-static var _cache: Dictionary = {}
-
-
 ## [{road_type, width, points: PackedVector2Array (x, z in the layout)}] of the layout
 ## [param scene_path] (res:// or not); [] when it cannot be read or draws no road.
 static func of(scene_path: String) -> Array:
-	var path := scene_path if scene_path.begins_with("res://") else "res://" + scene_path
-	if _cache.has(path):
-		return _cache[path]
-	var out: Array = []
-	var packed := load(path) as PackedScene if ResourceLoader.exists(path) else null
-	if packed != null:
-		var layout: Node = packed.instantiate()
-		out = of_layout(layout)
-		layout.free()
-	_cache[path] = out
-	return out
+	return LayoutData.of(scene_path)["roads"]
 
 
 ## The roads of an instantiated [param layout] (not in the tree), as [method of] returns them, each
 ## with its visible `runs` ([method visible_runs]).
 static func of_layout(layout: Node) -> Array:
+	return of_layout_data(lines_of(layout))
+
+
+## The roads of an instantiated [param layout] as drawn ({road_type, width, points, path}), without
+## the junction cuts of [method of_layout]: what LayoutFootprint grows by.
+static func lines_of(layout: Node) -> Array:
 	var out: Array = []
 	for n: Node in layout.find_children("*", "VillageRoad", true, false):
 		var road := n as VillageRoad
@@ -41,7 +34,7 @@ static func of_layout(layout: Node) -> Array:
 		if pts.size() >= 2:
 			out.append({"road_type": road.kind_name(), "width": road.width_m, "points": pts,
 					"path": str(layout.get_path_to(road))})
-	return of_layout_data(out)
+	return out
 
 
 ## [param roads] ({road_type, width, points}) with each one's visible `runs` and whether it
@@ -192,20 +185,22 @@ static func _edge(p0: Vector2, p1: Vector2, p0_in: bool, dir: Vector2, hw: float
 ## Is the layout point [param p] on the ribbon of one of [param roads]?
 static func _covered(p: Vector2, roads: Array) -> bool:
 	for r: Dictionary in roads:
-		if _dist_to_line(p, r["points"]) < float(r["width"]) * 0.5:
+		if distance_to_line(p, r["points"]) < float(r["width"]) * 0.5:
 			return true
 	return false
 
 
 ## Does an end of [param line] lie on [param other]?
 static func _ends_on(line: PackedVector2Array, other: PackedVector2Array) -> bool:
-	return _dist_to_line(line[0], other) < BRANCH_M or _dist_to_line(line[line.size() - 1], other) < BRANCH_M
+	return distance_to_line(line[0], other) < BRANCH_M or distance_to_line(line[line.size() - 1], other) < BRANCH_M
 
 
-static func _dist_to_line(p: Vector2, line: PackedVector2Array) -> float:
+## How far the layout point [param p] lies from the polyline [param pts] (m, layout x/z): the one
+## distance the roads are cut, branched and crossed by (a fence opens where a road crosses it).
+static func distance_to_line(p: Vector2, pts: PackedVector2Array) -> float:
 	var best := INF
-	for k in line.size() - 1:
-		best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, line[k], line[k + 1])))
+	for k in pts.size() - 1:
+		best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, pts[k], pts[k + 1])))
 	return best
 
 

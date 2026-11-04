@@ -40,7 +40,7 @@ static func of(path: String) -> Dictionary:
 	var fp := LayoutFootprint.of_layout(layout)
 	var snaps: Array = []
 	for snap: Node in layout.find_children("*", "RoadSnap", true, false):
-		var xf := _to(snap, layout)
+		var xf := LayoutLine.frame_in(snap, layout)
 		var fwd := -xf.basis.z.normalized()
 		snaps.append({"name": str(layout.get_path_to(snap)), "kind": (snap as RoadSnap).kind_name(),
 				"position": _round3(xf.origin), "forward": _round3(fwd)})
@@ -58,15 +58,6 @@ static func to_json() -> String:
 	return JSON.stringify(all(), "\t", true) + "\n"
 
 
+## [param v] as a JSON array, to the centimetre: the file stays stable across tiny float drifts.
 static func _round3(v: Vector3) -> Array:
 	return [snappedf(v.x, 0.01), snappedf(v.y, 0.01), snappedf(v.z, 0.01)]
-
-
-static func _to(node: Node, root: Node) -> Transform3D:
-	var xf := Transform3D.IDENTITY
-	var n: Node = node
-	while n != null and n != root:
-		if n is Node3D:
-			xf = (n as Node3D).transform * xf
-		n = n.get_parent()
-	return xf

@@ -35,8 +35,7 @@ static func apply(h: float, lonlat: Vector2, roads: Array, beds: Array, m_per_de
 		floor_h = PadBed.apply(floor_h, lonlat, areas, m_per_deg)
 	if d <= 0.0:
 		return floor_h
-	var t := d / BAND_M
-	return lerpf(floor_h, h, t * t * (3.0 - 2.0 * t))
+	return lerpf(floor_h, h, smoothstep(0.0, 1.0, d / BAND_M))
 
 
 ## The layout areas (LayoutPads) among [param pads]: their uuid says so.
@@ -47,15 +46,8 @@ static func areas_of(pads: Array) -> Array:
 ## How far past the kerb of the nearest road of [param roads] [param lonlat] lies (m): <= 0 on the
 ## road's ground, INF out of every road's band.
 static func distance_out_m(lonlat: Vector2, roads: Array, m_per_deg: float) -> float:
-	return float(nearest(lonlat, roads, m_per_deg)["d"])
-
-
-## {d: how far past the kerb of the nearest road [param lonlat] lies (m, INF out of every band),
-## at: the point of that road's centreline nearest to it (lon/lat degrees)}.
-static func nearest(lonlat: Vector2, roads: Array, m_per_deg: float) -> Dictionary:
 	var lat_scale := cos(deg_to_rad(lonlat.y))
 	var best := INF
-	var at := lonlat
 	for z: Dictionary in roads:
 		if not (z["_bbox"] as Rect2).has_point(lonlat):
 			continue
@@ -65,11 +57,8 @@ static func nearest(lonlat: Vector2, roads: Array, m_per_deg: float) -> Dictiona
 			var c := _closest_on_segment(lonlat, cl[i], cl[i + 1], lat_scale)
 			var dx := (lonlat.x - c.x) * lat_scale
 			var dy := lonlat.y - c.y
-			var d := sqrt(dx * dx + dy * dy) * m_per_deg - hw
-			if d < best:
-				best = d
-				at = c
-	return {"d": best, "at": at}
+			best = minf(best, sqrt(dx * dx + dy * dy) * m_per_deg - hw)
+	return best
 
 
 ## The point of the segment [param a]–[param b] (lon/lat degrees) nearest [param p], measured with

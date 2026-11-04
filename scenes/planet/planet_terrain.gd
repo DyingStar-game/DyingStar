@@ -799,6 +799,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		if BuildInfo.build_id() != "":
 			_cache_version += "_b" + BuildInfo.build_id()
 		_cache_version += data.stargrot_signature()
+		# The pads and the village grounds are baked into a chunk's geometry (GradeBed.apply): every
+		# constant and rule they are drawn with (PadSettings.signature, LEVEL_RULE included) re-keys the
+		# cache. Not in relief_signature: the persisted pad measures carry their own rule (talus_rule).
+		_cache_version += "_pd" + PadSettings.signature()
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
@@ -2670,7 +2674,9 @@ func set_poi_zone(uuid: String, poi_name: String, local_pos: Vector3, radius_m: 
 
 
 ## The common ground of the village [param uuid] (VillageBed): its [param layout]'s footprint
-## (LayoutFootprint), laid at [param local_pos] with the heading of [param basis] (planet frame).
+## (LayoutFootprint), laid at [param local_pos] with the heading of [param basis] (planet frame), then
+## what the layout draws on it — its roads, its levelled areas, its fences. Orchestration only: the
+## layout is read once (LayoutData), the ground is PlanetData's, the fences LayoutFences'.
 ## Registering the same ground again changes nothing.
 func _register_village_bed(uuid: String, local_pos: Vector3, basis: Basis, layout: String) -> void:
 	if planet_data == null:
@@ -2678,11 +2684,35 @@ func _register_village_bed(uuid: String, local_pos: Vector3, basis: Basis, layou
 		# data: dropped here, their ground and fences were never laid, and on the server the player
 		# walked through fences only the client drew. Kept until initialize() replays them.
 		_pending_village_beds[uuid] = [local_pos, basis, layout]
-		print("[VillageBed] village:%s : sol en attente (le terrain n'a pas encore ses données)" % uuid)
+		print("[VillageBed] village:%s: ground on hold (the terrain has no data yet)" % uuid)
 		return
-	var fp := LayoutFootprint.of(layout)
+	var parts := LayoutData.of(layout)
+	var fp: Dictionary = parts["footprint"]
 	if fp.is_empty():
 		return
+	var bed := _village_bed_record(uuid, local_pos, basis, fp)
+	if bed.is_empty():
+		return
+	var bed_uuid := str(bed["uuid"])
+	var centre: Vector2 = fp["centre"]
+	var mpd := planet_data.radius * PI / 180.0
+	_pads_changed(planet_data.register_village_bed(bed), {}, "a village's ground")
+	_announce_caught_up_pads()
+	_schedule_village_bed_report(bed_uuid)
+	# The roads drawn inside the layout (VillageRoad), laid on the same bed: painted on its plane.
+	var roads := LayoutRoads.to_zones(parts["roads"], bed, centre, mpd)
+	_pads_changed(planet_data.register_village_roads(bed_uuid, roads), {}, "a village's roads")
+	# The areas the layout levels on their own (a TerrainPad under its root: the mine's yard).
+	for pad_rec: Dictionary in LayoutPads.to_records(parts["pads"], bed, centre, mpd):
+		register_terrain_pad(pad_rec)
+	# The fences drawn in the layout (VillageFence), built on the ground just laid.
+	_lay_village_fences(bed, centre, parts["fences"])
+
+
+## The village bed record (VillageBed.record) of the village [param uuid] whose layout footprint is
+## [param fp] (LayoutFootprint), laid at [param local_pos] with the heading of [param basis] (planet
+## frame); {} when TerrainPad refuses the box.
+func _village_bed_record(uuid: String, local_pos: Vector3, basis: Basis, fp: Dictionary) -> Dictionary:
 	var centre: Vector2 = fp["centre"]
 	var half: Vector2 = fp["half"]
 	var planet := get_parent() as Node3D
@@ -2692,30 +2722,24 @@ func _register_village_bed(uuid: String, local_pos: Vector3, basis: Basis, layou
 	var rec := TerrainPad.record_from(planet_data, rel, Vector3(half.x * 2.0, 1.0, half.y * 2.0),
 			Transform3D(Basis.IDENTITY, Vector3(centre.x, 0.0, centre.y)), 0.0, 0.0, "village:" + uuid)
 	if rec.has("_refusal"):
-		return
-	var bed := VillageBed.record(str(rec["uuid"]), float(rec["lon"]), float(rec["lat"]),
+		return {}
+	return VillageBed.record(str(rec["uuid"]), float(rec["lon"]), float(rec["lat"]),
 			float(rec["yaw"]), float(rec["hx"]), float(rec["hy"]))
-	_pads_changed(planet_data.register_village_bed(bed), {}, "du sol d'un village")
-	_announce_caught_up_pads()
-	_schedule_village_bed_report(str(bed["uuid"]))
-	# The roads drawn inside the layout (VillageRoad), laid on the same bed: painted on its plane.
-	var roads := LayoutRoads.to_zones(LayoutRoads.of(layout), bed, centre, planet_data.radius * PI / 180.0)
-	_pads_changed(planet_data.register_village_roads(str(bed["uuid"]), roads), {}, "des routes d'un village")
-	# The areas the layout levels on their own (a TerrainPad under its root: the mine's yard).
-	for pad_rec: Dictionary in LayoutPads.to_records(LayoutPads.of(layout), bed, centre,
-			planet_data.radius * PI / 180.0):
-		register_terrain_pad(pad_rec)
-	# The fences drawn in the layout (VillageFence), built on the ground just laid.
-	var fences := LayoutFences.of(layout)
-	if not fences.is_empty():
-		var bed_uuid := str(bed["uuid"])
-		var old: Dictionary = _village_fences.get(bed_uuid, {})
-		if is_instance_valid(old.get("node", null)) and PadBed.same_geometry(old["bed"], bed):
-			return  # the same village registered again: its fences stand already
-		if is_instance_valid(old.get("node", null)):
-			(old["node"] as Node).queue_free()
-		_village_fences[bed_uuid] = {"bed": bed, "centre": centre, "fences": fences, "pixels": {}}
-		_build_village_fences(bed_uuid)
+
+
+## Build the [param fences] (LayoutFences.of) of the village bed [param bed], whose centre is the
+## layout point [param centre], unless they already stand on that same bed.
+func _lay_village_fences(bed: Dictionary, centre: Vector2, fences: Array) -> void:
+	if fences.is_empty():
+		return
+	var bed_uuid := str(bed["uuid"])
+	var old: Dictionary = _village_fences.get(bed_uuid, {})
+	if is_instance_valid(old.get("node", null)) and PadBed.same_geometry(old["bed"], bed):
+		return  # the same village registered again: its fences stand already
+	if is_instance_valid(old.get("node", null)):
+		(old["node"] as Node).queue_free()
+	_village_fences[bed_uuid] = {"bed": bed, "centre": centre, "fences": fences, "pixels": {}}
+	_build_village_fences(bed_uuid)
 
 
 ## uuid → [local_pos, basis, layout] of the village beds that came before this terrain's data.
@@ -2728,7 +2752,7 @@ func _replay_pending_village_beds() -> void:
 	_pending_village_beds = {}
 	for uuid: String in pending:
 		var p: Array = pending[uuid]
-		print("[VillageBed] village:%s : sol rejoué après l'arrivée des données du terrain" % uuid)
+		print("[VillageBed] village:%s: ground replayed now the terrain has its data" % uuid)
 		_register_village_bed(uuid, p[0], p[1], p[2])
 
 
@@ -2736,14 +2760,16 @@ func _replay_pending_village_beds() -> void:
 const FENCE_REBUILD_DELAY_S := 1.0
 ## bed uuid → {bed, centre, fences (LayoutFences.of), pixels: the finest pixels its posts stand on, node}.
 var _village_fences: Dictionary = {}
+## bed uuid → true for the villages whose fences wait for the next rebuild (_fences_ground_moved).
 var _fences_stale: Dictionary = {}
+## The pending rebuild of the stale fences, pushed back while the ground keeps moving.
 var _fence_timer: SceneTreeTimer
 
 
 ## Build (again) the fences of the village bed [param bed_uuid] on the ground as it stands: posts on
 ## carved_surface_dist (relief, village bed, pads, roads), panels left open where a village road
-## crosses (VillageRoadBed.distance_out_m). One node under this terrain, in its frame, with its
-## collision.
+## crosses (VillageRoadBed.distance_out_m). The terrain samples the ground; LayoutFences.build_node
+## builds the node (meshes and collision), added under this terrain, in its frame.
 func _build_village_fences(bed_uuid: String) -> void:
 	var job: Dictionary = _village_fences.get(bed_uuid, {})
 	if job.is_empty() or planet_data == null:
@@ -2766,7 +2792,7 @@ func _build_village_fences(bed_uuid: String) -> void:
 	if not planet_data.has_village_bed(bed_uuid):
 		return  # its plane waits for a tile: built again on the next change of ground (_fences_ground_moved)
 	var roads := planet_data.village_roads_of(bed_uuid)
-	var feet_all: Array = []
+	var laid: Array = []
 	var origin := Vector3.INF
 	for f: Dictionary in job["fences"]:
 		var feet := PackedVector3Array()
@@ -2785,45 +2811,13 @@ func _build_village_fences(bed_uuid: String) -> void:
 		for k in lonlats.size() - 1:
 			var mid := (lonlats[k] + lonlats[k + 1]) * 0.5
 			open.append(not roads.is_empty() and VillageRoadBed.distance_out_m(mid, roads, mpd) <= 0.0)
-		feet_all.append([f, feet, ups, open])
+		laid.append({"fence": f, "feet": feet, "ups": ups, "open": open})
 	if origin == Vector3.INF:
 		return
-	var node := Node3D.new()
-	node.name = "VillageFences_%s" % bed_uuid.replace(":", "_")
-	node.position = origin
-	var body := StaticBody3D.new()
-	body.collision_mask = 0
-	for entry: Array in feet_all:
-		var f: Dictionary = entry[0]
-		var local := PackedVector3Array()
-		for foot: Vector3 in (entry[1] as PackedVector3Array):
-			local.append(foot - origin)
-		var geo := LayoutFences.build(local, entry[2], entry[3], float(f["height"]))
-		var mesh := ArrayMesh.new()
-		if not (geo["panels"] as Array).is_empty():
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, geo["panels"])
-			mesh.surface_set_material(mesh.get_surface_count() - 1, f["panel_material"])
-		if not (geo["posts"] as Array).is_empty():
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, geo["posts"])
-			mesh.surface_set_material(mesh.get_surface_count() - 1, f["post_material"])
-		if mesh.get_surface_count() > 0:
-			var mi := MeshInstance3D.new()
-			mi.mesh = mesh
-			node.add_child(mi)
-		for box: Array in geo["boxes"]:
-			var shape := BoxShape3D.new()
-			shape.size = box[1]
-			var cs := CollisionShape3D.new()
-			cs.shape = shape
-			cs.transform = box[0]
-			body.add_child(cs)
-	if body.get_child_count() > 0:
-		node.add_child(body)
-	else:
-		body.free()
+	var node := LayoutFences.build_node("VillageFences_%s" % bed_uuid.replace(":", "_"), origin, laid)
 	add_child(node)
 	job["node"] = node
-	print("[VillageFence] %s : %d barrière(s) posée(s) sur le sol" % [bed_uuid, feet_all.size()])
+	print("[VillageFence] %s: %d fence(s) laid on the ground" % [bed_uuid, laid.size()])
 
 
 ## The ground under some fences moved ([param dirty]: finest pixels): build them again once it has
@@ -2856,18 +2850,46 @@ func _fences_ground_moved(dirty: Dictionary) -> void:
 ## Seconds after a village's ground is registered before its report is printed: time for its
 ## buildings to register their pads.
 const VILLAGE_BED_REPORT_DELAY_S := 120.0
+## bed uuid → true once its report is scheduled: one report a village a run.
 var _village_bed_reports: Dictionary = {}
+## The report's own switch, read at its first use (_village_bed_report_on): -1 not read yet, 0 off, 1 on.
+var _village_bed_report_switch: int = -1
+
+
+## Is the [VillageBed] diagnostic report on? Off by default (~120 lines a start): its own switch,
+## `[debug] village_bed_report=true` in server.ini on the server, `village_bed_report=true` in
+## client.ini on a client (any section, ClientConfig), or DS_VILLAGE_BED_REPORT=1 in the environment
+## on either (DS_VILLAGE_BED_REPORT=0 keeps it off). Never tied to DS_PERF: a heavy diagnostic has
+## its own switch. Read at first use, not in a static initialiser: the settings may not be ready then.
+func _village_bed_report_on() -> bool:
+	if _village_bed_report_switch < 0:
+		var env := SettingsManager.env_flag(OS.get_environment("DS_VILLAGE_BED_REPORT"))
+		var on: bool
+		if env >= 0:
+			on = env == 1
+		elif is_server:
+			on = SettingsManager._server_ini_flag("debug", "village_bed_report")
+		else:
+			on = ClientConfig.get_bool("village_bed_report", false)
+		_village_bed_report_switch = 1 if on else 0
+	return _village_bed_report_switch == 1
 
 
 ## Print once, a while after its registration, how the pads of the village bed [param bed_uuid] sit on
 ## its plane (PlanetData.village_bed_report) — the server and the clients both print it, to compare.
+## Only when its switch is on ([method _village_bed_report_on]).
 func _schedule_village_bed_report(bed_uuid: String) -> void:
-	if _village_bed_reports.has(bed_uuid) or not is_inside_tree():
+	if _village_bed_reports.has(bed_uuid) or not is_inside_tree() or not _village_bed_report_on():
 		return
 	_village_bed_reports[bed_uuid] = true
-	get_tree().create_timer(VILLAGE_BED_REPORT_DELAY_S).timeout.connect(func() -> void:
-		if is_instance_valid(self) and planet_data != null:
-			print(planet_data.village_bed_report(bed_uuid)))
+	get_tree().create_timer(VILLAGE_BED_REPORT_DELAY_S).timeout.connect(_print_village_bed_report.bind(bed_uuid))
+
+
+## The delayed half of [method _schedule_village_bed_report]: a method of this terrain, so a terrain
+## freed before the timer fires is simply not called.
+func _print_village_bed_report(bed_uuid: String) -> void:
+	if planet_data != null:
+		print(planet_data.village_bed_report(bed_uuid))
 
 
 ## Forget the POI zone [param uuid] (its village was deleted): the cracks come back under it.
@@ -2922,7 +2944,7 @@ func _poi_zones_changed(changed: Array) -> void:
 				var a := TAU * float(k) / float(steps)
 				var d := (centre + (east * cos(a) + north * sin(a)) * rr).normalized()
 				tiles[HEALPix.vec2pix_nest(nside, d)] = true
-	_rebuild_chunks_on_tiles(tiles, nside, "d'une zone de POI")
+	_rebuild_chunks_on_tiles(tiles, nside, "a POI zone")
 	_invalidate_nav_over(tiles, nside)
 
 
@@ -4923,7 +4945,7 @@ func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary,
 ## the tasks in flight on either side (their result is dropped, then
 ## queued again). Idempotent for anything not on the tiles.
 func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
-		why: String = "d'une ligne profilée née en rattrapage", skip: Dictionary = {}) -> void:
+		why: String = "a profiled line born late", skip: Dictionary = {}) -> void:
 	if tiles.is_empty():
 		return
 	var n := 0
@@ -4968,7 +4990,7 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 				n += 1
 		# Tasks already running were stamped with the old generation and are
 		# dropped at assembly; the backlog is stamped when it is submitted.
-	print("[PlanetTerrain] %d chunk(s) de '%s' refait(s) sur les %d tuile(s) %s %s — grille la plus fine : n%d"
+	print("[PlanetTerrain] %d chunk(s) of '%s' rebuilt on the %d tile(s) of %s %s — finest grid: n%d"
 			% [n, planet_data.planet_name, tiles.size(), why, str(by_nside),
 			1 << planet_data.max_quadtree_depth])
 
@@ -5066,7 +5088,7 @@ func register_cave_site(placement: CavePlacement) -> void:
 	_runtime_cave_pixels[id] = CavePlanetRegistry.site_tiles(planet_data, placement, 1 << planet_data.max_quadtree_depth)
 	dirty = dirty.merged(_runtime_cave_pixels[id])
 	_publish_runtime_cave_pixels()
-	_pads_changed(dirty, {}, "d'une grotte")
+	_pads_changed(dirty, {}, "a cave")
 
 
 ## Drop a cave registered at run time: the ground it opened closes again.
@@ -5077,7 +5099,7 @@ func unregister_cave_site(id: String) -> void:
 	var dirty: Dictionary = _runtime_cave_pixels.get(id, {})
 	_runtime_cave_pixels.erase(id)
 	_publish_runtime_cave_pixels()
-	_pads_changed(dirty, {}, "d'une grotte")
+	_pads_changed(dirty, {}, "a cave")
 
 
 ## The network of a cave registered at run time could not be built (CavePlanetRegistry.site_failed): drop it.
@@ -5195,7 +5217,7 @@ func _flush_late_pads() -> void:
 
 ## [param skip]: server chunk tasks already built with these pads — nothing to redo for them.
 ## Also the path of a cave registered at run time ([param why]): same pixels, same stale-result guard.
-func _pads_changed(dirty: Dictionary, skip: Dictionary = {}, why: String = "d'un pad de bâtiment") -> void:
+func _pads_changed(dirty: Dictionary, skip: Dictionary = {}, why: String = "a building pad") -> void:
 	if dirty.is_empty() or planet_data == null:
 		return
 	_pad_dirty_pixels.merge(dirty)

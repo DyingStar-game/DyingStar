@@ -122,17 +122,20 @@ static func quantise_stats(stats: Dictionary) -> Dictionary:
 
 ## What a building persists about one of its pads once the server has measured
 ## it (the building's terrain_settled field): the geometry the measure was
-## taken for, and the measure.
+## taken for, the rule it was taken under (PadSettings.talus_rule), and the measure.
 static func settled_entry(rec: Dictionary, stats: Dictionary) -> Dictionary:
 	var q := quantise(rec)
 	var out := quantise_stats(stats)
 	for k in ["lon", "lat", "yaw", "hx", "hy", "apron_m", "z_off"]:
 		out[k] = float(q[k])
+	out["rule"] = PadSettings.talus_rule()
 	return out
 
 
 ## The persisted stats of [param entry] if it was measured for the geometry of
-## [param rec], else {} — the building moved, or its footprint changed, since.
+## [param rec], else {} — the building moved, or its footprint changed, since,
+## or the talus rule did (PadSettings.talus_rule: the talus width is part of the
+## measure, and a width measured for the straight ramp is too narrow for the S curve).
 ## Both sides are re-quantised: [param entry] came back through JSON.
 ##
 ## Within ONE quantum, not exactly: the building's pose itself is persisted
@@ -142,6 +145,8 @@ static func settled_entry(rec: Dictionary, stats: Dictionary) -> Dictionary:
 ## anything that moves the median the platform sits at.
 static func settled_stats(rec: Dictionary, entry: Dictionary) -> Dictionary:
 	if entry.is_empty() or not (entry.has("z") and entry.has("talus_m") and entry.has("span")):
+		return {}
+	if str(entry.get("rule", "")) != PadSettings.talus_rule():
 		return {}
 	var a := quantise(rec)
 	var b := quantise(entry)
@@ -203,8 +208,13 @@ static func same_geometry(a: Dictionary, b: Dictionary) -> bool:
 ## and by GradeRefine to size the refinement band. It is an upper bound by
 ## construction (the talus is capped), never an estimate — see
 ## PadSettings.TALUS_MAX_M for why a bound and not a measurement.
+##
+## Measured from the half-diagonal, not the longer half side: a point d metres
+## off the footprint lies up to |(hx, hy)| + d from its centre, past a corner.
+## With the longer half side, the corner chunks of a 300 m village bed were
+## never handed its ground.
 static func reach_m(rec: Dictionary) -> float:
-	return maxf(float(rec.get("hx", 0.0)), float(rec.get("hy", 0.0))) \
+	return Vector2(float(rec.get("hx", 0.0)), float(rec.get("hy", 0.0))).length() \
 			+ float(rec.get("apron_m", PadSettings.APRON_M)) \
 			+ talus_cap(rec) + PadSettings.REACH_MARGIN_M
 
@@ -443,7 +453,7 @@ static func nearest(pads: Array, lonlat: Vector2, m_per_deg: float) -> Dictionar
 ## Flat over the footprint and its apron — the ground that MUST be level —
 ## then a talus whose WIDTH is derived from the height it has to absorb
 ## ([method talus_width]), so the ramp is walkable and drivable whatever the
-## dénivelé. The talus is an S curve (smoothstep): it leaves the apron and meets
+## height difference. The talus is an S curve (smoothstep): it leaves the apron and meets
 ## the relief level, with no crease at either edge, and its steepest point is
 ## PadSettings.TALUS_SLOPE because the width is spread to allow for it.
 static func height_at(h: float, rec: Dictionary, d: float) -> float:
@@ -454,8 +464,7 @@ static func height_at(h: float, rec: Dictionary, d: float) -> float:
 	var talus := minf(talus_width(absf(h - z)), talus_cap(rec))
 	if talus <= 1e-6 or d >= apron + talus:
 		return h
-	var t := (d - apron) / talus
-	return lerpf(z, h, t * t * (3.0 - 2.0 * t))
+	return lerpf(z, h, smoothstep(0.0, 1.0, (d - apron) / talus))
 
 
 ## The width of a talus that absorbs [param dh] metres of height with its

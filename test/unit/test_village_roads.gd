@@ -56,6 +56,38 @@ func test_an_end_meets_another_road_anywhere_along_it() -> void:
 	root.free()
 
 
+## Only X and Z count: a road drawn rising (its points at different heights) still offers the point
+## straight beside the end, not the one a 3-D search finds along its slope (10 m away here).
+func test_the_nearest_point_is_searched_in_x_and_z_only() -> void:
+	var root := Node3D.new()
+	var ramp := _road([Vector3(0.0, 0.0, -20.0), Vector3(0.0, 40.0, 20.0)])
+	root.add_child(ramp)
+	var alley := _road([Vector3(3.0, 0.0, 0.0), Vector3(60.0, 0.0, 0.0)], VillageRoad.Kind.PATH)
+	root.add_child(alley)
+	assert_eq(alley.snap_ends(root), 1, "the ramp passes 3 m away in X and Z")
+	assert_almost_eq(alley.curve.get_point_position(0), Vector3(0.0, 0.0, 0.0), Vector3.ONE * 0.01,
+			"beside the end, at the end's own height")
+	root.free()
+
+
+## A road changed in the editor redraws the fences too, from the same roads: the fence it crosses
+## shows its gap at once.
+func test_redrawing_the_roads_redraws_the_fences() -> void:
+	var root := Node3D.new()
+	var fence := VillageFence.new()
+	fence.curve = Curve3D.new()
+	fence.curve.add_point(Vector3(0.0, 0.0, 0.0))
+	fence.curve.add_point(Vector3(30.0, 0.0, 0.0))
+	root.add_child(fence)
+	var whole := (fence.preview_geometry(root, LayoutRoads.of_layout(root))["boxes"] as Array).size()
+	root.add_child(_road([Vector3(15.0, 0.0, -40.0), Vector3(15.0, 0.0, 40.0)]))
+	VillageRoad.redraw_previews(root)
+	assert_not_null(fence.get_node_or_null(VillageFence.PREVIEW_NAME), "the fence is drawn again")
+	var opened := (fence.preview_geometry(root, LayoutRoads.of_layout(root))["boxes"] as Array).size()
+	assert_lt(opened, whole, "with a gap where the road crosses")
+	root.free()
+
+
 func test_the_polyline_is_in_the_layout_frame() -> void:
 	var root := Node3D.new()
 	var road := _road([Vector3(0.0, 5.0, 0.0), Vector3(40.0, 5.0, 0.0)])

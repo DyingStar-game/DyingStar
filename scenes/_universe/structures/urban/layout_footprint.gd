@@ -7,29 +7,18 @@ extends RefCounted
 ## and the road export that keeps the QGIS roads out of the village (tools/planettech/layout_snaps_export).
 ##
 ## Read from the scene without adding it to the tree, the way poi_villages.gd reads a layout, and
-## remembered per scene: a layout does not change while the game runs.
+## remembered per scene (LayoutData): a layout does not change while the game runs.
 
 ## Room left around the outermost buildings (m): their aprons, and a little street.
 const MARGIN_M := 10.0
+## The layout reader whose spawn rules decide which items count (is_spawnable, layout_children).
 const PoiVillagesScript := preload("res://scenes/_universe/structures/urban/poi_villages.gd")
-
-static var _cache: Dictionary = {}
 
 
 ## {centre: Vector2 (x, z), half: Vector2 (x, z)} of the layout [param scene_path] (res:// or not),
 ## {} when the scene cannot be read or spawns nothing.
 static func of(scene_path: String) -> Dictionary:
-	var path := scene_path if scene_path.begins_with("res://") else "res://" + scene_path
-	if _cache.has(path):
-		return _cache[path]
-	var out := {}
-	var packed := load(path) as PackedScene if ResourceLoader.exists(path) else null
-	if packed != null:
-		var layout: Node = packed.instantiate()
-		out = of_layout(layout)
-		layout.free()
-	_cache[path] = out
-	return out
+	return LayoutData.of(scene_path)["footprint"]
 
 
 ## The footprint of an instantiated [param layout] (not in the tree), as [method of] returns it.
@@ -59,8 +48,9 @@ static func of_layout(layout: Node) -> Dictionary:
 		hi += Vector2.ONE * MARGIN_M
 	# The roads drawn inside the layout (VillageRoad) stand on the village's ground too, up to their
 	# very ends and no further: a road that ends on a RoadSnap ends on the footprint's edge.
-	# So do its fences (VillageFence): the village's ground runs up to them.
-	var lines: Array = LayoutRoads.of_layout(layout) + LayoutFences.of_layout(layout)
+	# So do its fences (VillageFence): the village's ground runs up to them. Their drawn points only
+	# (LayoutLine.polyline_in, as their readers take them), not the roads' junction cuts.
+	var lines: Array = LayoutRoads.lines_of(layout) + LayoutFences.of_layout(layout)
 	for line: Dictionary in lines:
 		for p: Vector2 in line["points"]:
 			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
@@ -76,7 +66,7 @@ static func of_layout(layout: Node) -> Dictionary:
 ## (a heap, a field of masts).
 static func _ground_corners(item: Node, layout: Node) -> Array[Vector3]:
 	var out: Array[Vector3] = []
-	var to_layout := _to(item, layout)
+	var to_layout := LayoutLine.frame_in(item, layout)
 	for pad: Node in item.find_children("*", "TerrainPad", true, false):
 		var t: Dictionary = (pad as TerrainPad).template_relative_to(item)
 		if t.is_empty():
@@ -96,14 +86,3 @@ static func _ground_corners(item: Node, layout: Node) -> Array[Vector3]:
 	if out.is_empty():
 		out.append(to_layout.origin)
 	return out
-
-
-## [param node]'s transform in [param root]'s frame.
-static func _to(node: Node, root: Node) -> Transform3D:
-	var xf := Transform3D.IDENTITY
-	var n: Node = node
-	while n != null and n != root:
-		if n is Node3D:
-			xf = (n as Node3D).transform * xf
-		n = n.get_parent()
-	return xf
