@@ -372,20 +372,20 @@ def run_export():
         if _attr(feat, "width") is None:
             defaulted_width += 1
 
+        hw_m = _half_width_m(props)
         pieces = []
         for part in parts:
             line = [[float(pt.x()), float(pt.y())] for pt in part]
             pieces.extend(village_snaps.reroute(line, props.get("road_type"), villages, m_per_deg))
         for centerline in pieces:
-            hw_m = _half_width_m(props)
-            part = [QgsPointXY(x, y) for x, y in centerline]
+            part_pts = [QgsPointXY(x, y) for x, y in centerline]
 
             road = dict(props)
             road["centerline"] = centerline
             road["width"] = hw_m * 2.0
             roads.append(road)
 
-            part_geom = QgsGeometry.fromPolylineXY(part)
+            part_geom = QgsGeometry.fromPolylineXY(part_pts)
             buffered = part_geom.buffer(
                 (hw_m * DETECTION_MULTIPLIER) / m_per_deg, BUFFER_SEGMENTS)
             polygons = _polygons_of(buffered) if not buffered.isEmpty() else []

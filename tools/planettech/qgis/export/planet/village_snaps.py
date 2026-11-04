@@ -15,6 +15,8 @@ Pure Python (no QGIS), so it is unit-tested on its own (test_village_snaps.py). 
 Frames are the game's: the planet's Y is the polar axis, a direction at (lon, lat) is
 (cos lat cos lon, sin lat, −cos lat sin lon) (HEALPix.lonlat2vec), a village stands with +Y up the
 radial and its heading kept (poi_villages.gd _stand_on_ground), the rotation is Godot's YXZ Euler.
+Those are re-implemented here, and so are RoadSnap's kind names: test_village_snaps.GoldenTest holds
+them to what the game computes (village_snaps_golden.json, tools/planettech/village_snaps_golden.tscn).
 """
 
 import json
@@ -230,12 +232,16 @@ def reroute(centerline, road_type, villages, m_per_deg):
         return [centerline]
     pieces, run = [], []
     prev_in = None  # the village the previous point stood in
+    # A line going straight from one footprint into a touching one (v and prev_in both set, and
+    # different) is simply dropped there: what runs between two villages that touch is inside one or
+    # the other, so the road ends at the first village's snap and starts again from the last one's.
     for i, p in enumerate(dense):
         v = _village_at(near, p)
         if v is None:
             if prev_in is not None:  # leaving a village: start from its snap
-                run = _lead_in(prev_in, kind, _edge(p, dense[i - 1], prev_in), m_per_deg)[::-1]
-                run.append(_edge(p, dense[i - 1], prev_in))
+                edge = _edge(p, dense[i - 1], prev_in)
+                run = _lead_in(prev_in, kind, edge, m_per_deg)[::-1]
+                run.append(edge)
             run.append(p)
         elif prev_in is None and run:  # entering a village: end at its snap
             edge = _edge(dense[i - 1], p, v)

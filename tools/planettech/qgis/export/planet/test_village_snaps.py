@@ -1,8 +1,12 @@
 """Unit tests of village_snaps.py: the roads are cut out of the villages and led to their snaps.
 
     python -m unittest tools/planettech/qgis/export/planet/test_village_snaps.py
+
+GoldenTest checks the Python frames against the game's own (village_snaps_golden.json, written by
+tools/planettech/village_snaps_golden.tscn); it is skipped while that fixture is missing.
 """
 
+import json
 import math
 import os
 import sys
@@ -13,6 +17,10 @@ import village_snaps as vs  # noqa: E402
 
 RADIUS = 6356000.0
 MPD = RADIUS * math.pi / 180.0
+GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "village_snaps_golden.json")
+# How far the Python may put a layout point from where the game puts it (m). Both compute the same
+# frame in double precision: anything above a millimetre is a formula that drifted, not rounding.
+GOLDEN_TOLERANCE_M = 0.001
 # A village on the equator at lon 0, heading north-up (no rotation): its frame's +X points along
 # (0, 0, −1)·… — the test reads positions back through the village itself, so the frame's exact
 # orientation never needs to be written here.
@@ -111,12 +119,65 @@ class RerouteTest(unittest.TestCase):
         self.assertEqual(len(pieces), 1)
         self.assertTrue(_close(pieces[0][0], v.lonlat_at(100.0, 0.0)))
 
+    def test_a_road_through_two_touching_villages_skips_the_seam(self):
+        a = _village()
+        # The second village stands right east of the first: their footprints share the x = 100 edge.
+        b = vs.Village("M0004", vs.vec_of(*a.lonlat_at(200.0, 0.0)), (0.0, 0.0, 0.0), LAYOUT, RADIUS)
+        line = _line(a, [(-400.0, 10.0), (600.0, 10.0)])
+        pieces = vs.reroute(line, "road", [a, b], MPD)
+        self.assertEqual(len(pieces), 2, "in before the first, out after the second, nothing between")
+        west, east = sorted(pieces, key=lambda p: a.local(p[0])[0])
+        self.assertTrue(_close(west[-1], a.lonlat_at(-100.0, 0.0)), "the west piece ends on the first's west snap")
+        self.assertTrue(_close(east[0], b.lonlat_at(100.0, 0.0)), "the east piece starts on the second's east snap")
+
 
 class EulerTest(unittest.TestCase):
     def test_yaw_only(self):
         z = vs.basis_z_from_euler(0.0, math.pi / 2.0, 0.0)  # +Z turned 90° about Y → +X
         for a, b in zip(z, (1.0, 0.0, 0.0)):
             self.assertAlmostEqual(a, b, places=9)
+
+
+@unittest.skipUnless(os.path.exists(GOLDEN),
+                     "no village_snaps_golden.json: run "
+                     "godot --headless --path . res://tools/planettech/village_snaps_golden.tscn")
+class GoldenTest(unittest.TestCase):
+    """The Python agrees with the game: HEALPix.lonlat2vec, Basis.from_euler (YXZ), the frame
+    PoiVillages._stand_on_ground stands a village in, and the RoadSnap kind names."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(GOLDEN, encoding="utf-8") as f:
+            cls.golden = json.load(f)
+
+    def test_lonlat2vec(self):
+        for g in self.golden["lonlat2vec"]:
+            for a, b in zip(vs.vec_of(g["lon"], g["lat"]), g["vec"]):
+                self.assertAlmostEqual(a, b, places=12, msg="lon %s lat %s" % (g["lon"], g["lat"]))
+
+    def test_euler_z(self):
+        for v in self.golden["villages"]:
+            for a, b in zip(vs.basis_z_from_euler(*v["rotation"]), v["euler_z"]):
+                self.assertAlmostEqual(a, b, places=12, msg=v["name"])
+
+    def test_layout_points_land_where_the_game_puts_them(self):
+        mpd = self.golden["radius_m"] * math.pi / 180.0
+        layout = {"footprint": {"cx": 0.0, "cz": 0.0, "hx": 1.0, "hz": 1.0}, "snaps": []}
+        for g in self.golden["villages"]:
+            v = vs.Village(g["name"], tuple(g["position"]), tuple(g["rotation"]), layout, self.golden["radius_m"])
+            for p in g["points"]:
+                where = "%s (%s, %s)" % (g["name"], p["x"], p["z"])
+                self.assertLessEqual(vs._m_between(v.lonlat_at(p["x"], p["z"]), p["lonlat"], mpd),
+                                     GOLDEN_TOLERANCE_M, where)
+                x, z = v.local(p["lonlat"])
+                self.assertAlmostEqual(x, p["x"], delta=GOLDEN_TOLERANCE_M, msg=where)
+                self.assertAlmostEqual(z, p["z"], delta=GOLDEN_TOLERANCE_M, msg=where)
+
+    def test_kind_names(self):
+        self.assertEqual(set(vs.KIND_OF_ROAD_TYPE.values()), set(self.golden["snap_kinds"]),
+                         "every snap kind the game has, and no other")
+        for k in self.golden["village_road_kinds"]:
+            self.assertEqual(vs.KIND_OF_ROAD_TYPE.get(k), k, "a VillageRoad's road_type joins its own snaps")
 
 
 if __name__ == "__main__":
