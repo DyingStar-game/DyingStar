@@ -5,20 +5,35 @@ extends Resource
 const DIRECTORY := "res://scenes/planet/volcano/profiles/"
 static var _profiles: Dictionary = {}
 
+## Random activities on the volcanoes that are not dormant. Off: only idle smoke and dated events remain.
 @export var random_enabled := true
+## Mean time (s) between two starts of activity on one volcano: lower = more frequent.
 @export_range(10.0, 604800.0) var interval_s := 600.0
+## Shift of each start, as a share (0..0.4) of the interval, either way: higher = less regular.
 @export_range(0.0, 0.4) var interval_jitter := 0.25
+## Length (s) of a random activity, ramps included. Must fit in the shortest possible interval.
 @export_range(1.0, 86400.0) var duration_s := 90.0
+## Weakest strength (0..4) drawn for an activity: raises the smallest plumes and eruptions.
 @export_range(0.0, 4.0) var strength_min := 0.8
+## Strongest strength (0..4) drawn for an activity: raises the largest plumes and eruptions.
 @export_range(0.0, 4.0) var strength_max := 1.6
+## Smoke strength (0..1) between activities: 0 = nothing leaves the vent, higher = a volcano that always smokes.
 @export_range(0.0, 1.0) var idle_strength := 0.0
+## Chance (0..1) that an activity throws stones; the others are smoke alone. Higher = more eruptions.
 @export_range(0.0, 1.0) var eruption_chance := 0.55
+## Rise of the emission (s) at the start of an activity: higher = a plume that builds up more slowly.
 @export_range(1.0, 3600.0) var ramp_up_s := 45.0
+## Fall of the emission (s) at the end of an activity: higher = a gentler stop.
 @export_range(1.0, 3600.0) var ramp_down_s := 30.0
+## Time (s) the smoke already emitted takes to fade once an activity ends: higher = it hangs in the air longer.
 @export_range(1.0, 3600.0) var dissipation_s := 120.0
+## Seed of the random activities: another value gives another sequence, the same one on every client.
 @export var seed := 1
+## Multiplier (0..5) of the weather's wind on the smoke: higher = plumes bent further, 0 = straight up.
 @export_range(0.0, 5.0) var wind_multiplier := 1.6
+## How much (0..1) plumes differ in height, length, width and shade: 0 = all alike, 1 = full variety.
 @export_range(0.0, 1.0) var appearance_variation := 1.0
+## Dated events of this planet, on top of the random activities: the strongest one wins.
 @export var events: Array[VolcanoEvent] = []
 
 
