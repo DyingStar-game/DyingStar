@@ -209,6 +209,17 @@ static func reach_m(rec: Dictionary) -> float:
 			+ talus_cap(rec) + PadSettings.REACH_MARGIN_M
 
 
+## How far from the pad CENTRE, on the tangent plane of [method sdf_m], [method apply] or [method shaved]
+## with [param band_m] can move a vertex: past this they give the height back untouched, bit for bit. Not
+## [method reach_m], whose largest half-side misses a footprint's corners: the half-diagonal here, for the
+## native vertex loop, which leaves everything inside to GDScript.
+static func apply_reach_m(rec: Dictionary, band_m: float = 0.0) -> float:
+	var hx := float(rec.get("hx", 0.0))
+	var hy := float(rec.get("hy", 0.0))
+	return sqrt(hx * hx + hy * hy) + float(rec.get("apron_m", PadSettings.APRON_M)) \
+			+ maxf(talus_cap(rec), band_m) + PadSettings.REACH_MARGIN_M + 1.0
+
+
 ## How wide this pad's talus may grow. Measured at registration from the
 ## relief around the pad ([method pad_stats]) and stored in the record, not
 ## taken as the blanket PadSettings.TALUS_MAX_M — and that is a performance

@@ -319,7 +319,7 @@ public partial class TileFrameNative : RefCounted
                     continue;
                 int a = _zoneStart[i];
                 int count = _zoneStart[i + 1] - a;
-                if (!PointInPolygon(lon, lat, a, count) && !OnClipEdge(lon, lat, a, count))
+                if (!PointInPolygon(_zoneVerts, lon, lat, a, count) && !OnClipEdge(_zoneVerts, lon, lat, a, count))
                     continue;
             }
             return _zoneCarves[i];
@@ -328,7 +328,7 @@ public partial class TileFrameNative : RefCounted
     }
 
     /// <summary>PlanetChunk._point_in_polygon_lonlat, same arithmetic in the same order.</summary>
-    private bool PointInPolygon(double lon, double lat, int a, int n)
+    private static bool PointInPolygon(double[] verts, double lon, double lat, int a, int n)
     {
         if (n < 3)
             return false;
@@ -336,10 +336,10 @@ public partial class TileFrameNative : RefCounted
         int j = n - 1;
         for (int i = 0; i < n; i++)
         {
-            double vix = _zoneVerts[2 * (a + i)];
-            double viy = _zoneVerts[2 * (a + i) + 1];
-            double vjx = _zoneVerts[2 * (a + j)];
-            double vjy = _zoneVerts[2 * (a + j) + 1];
+            double vix = verts[2 * (a + i)];
+            double viy = verts[2 * (a + i) + 1];
+            double vjx = verts[2 * (a + j)];
+            double vjy = verts[2 * (a + j) + 1];
             if ((viy > lat) != (vjy > lat) && lon < (vjx - vix) * (lat - viy) / (vjy - viy) + vix)
                 inside = !inside;
             j = i;
@@ -348,15 +348,15 @@ public partial class TileFrameNative : RefCounted
     }
 
     /// <summary>PlanetChunk._on_clip_edge: on an outline edge along a meridian or a parallel.</summary>
-    private bool OnClipEdge(double lon, double lat, int a, int n)
+    private static bool OnClipEdge(double[] verts, double lon, double lat, int a, int n)
     {
         int j = n - 1;
         for (int i = 0; i < n; i++)
         {
-            double ax = _zoneVerts[2 * (a + j)];
-            double ay = _zoneVerts[2 * (a + j) + 1];
-            double bx = _zoneVerts[2 * (a + i)];
-            double by = _zoneVerts[2 * (a + i) + 1];
+            double ax = verts[2 * (a + j)];
+            double ay = verts[2 * (a + j) + 1];
+            double bx = verts[2 * (a + i)];
+            double by = verts[2 * (a + i) + 1];
             j = i;
             if (Math.Abs(ax - bx) <= ClipEdgeTolDeg)
             {
