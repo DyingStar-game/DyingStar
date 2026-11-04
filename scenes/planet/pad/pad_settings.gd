@@ -124,10 +124,21 @@ const CARVE_MAX_VTX_SPACING_M := GradeSettings.CARVE_MAX_VTX_SPACING_M
 const REFINE_K := GradeSettings.REFINE_K
 
 
+## Version of the rule that sets a pad's drawn level (PadLevels): bumped when the rule
+## changes, so the cached chunks drawn with the old levels are baked again.
+## 2: a pad on a village bed keeps its own level (2026-11-03).
+## 3: a village road takes its own width back from the pads (VillageRoadBed, 2026-11-03).
+## 4: under a village road, the layout's own areas (LayoutPads) are kept (2026-11-04).
+## 5: on a village bed, a pad takes the level of a layout area it touches (2026-11-04).
+## 6: a village road is level across, at its centreline's ground (pads included) (2026-11-04).
+## 7: back to rule 5 under the village roads (the plane + the layout areas) (2026-11-04).
+const LEVEL_RULE := 7
+
+
 ## Cache-key fragment covering every constant that changes baked geometry.
 ## Folded into PlanetTerrain's _cache_version, so tweaking a number above
 ## re-bakes the meshes and the shapes instead of serving a stale pad.
 static func signature() -> String:
-	return "%.1f_%.3f_%.0f_%.1f_%d_%.0e_%.0e_%.2f_%.2f" % [
+	return "%.1f_%.3f_%.0f_%.1f_%d_%.0e_%.0e_%.2f_%.2f_L%d" % [
 		APRON_M, TALUS_SLOPE, TALUS_MAX_M, REACH_MARGIN_M,
-		SAMPLE_N, Q_DEG, Q_RAD, Q_M, ROAD_CUT_MARGIN_M]
+		SAMPLE_N, Q_DEG, Q_RAD, Q_M, ROAD_CUT_MARGIN_M, LEVEL_RULE]

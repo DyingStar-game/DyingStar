@@ -1,7 +1,8 @@
 class_name LayoutFootprint
 extends RefCounted
 ## The ground a village or city layout covers, in the layout's own frame: the rectangle around the
-## levelled ground of every networked item it spawns (their TerrainPad boxes), plus MARGIN_M. One
+## levelled ground of every networked item it spawns (their TerrainPad boxes) and of the roads and fences drawn
+## in it (VillageRoad, VillageFence), plus MARGIN_M. One
 ## answer for every reader — the village's common ground (VillageBed, through PlanetTerrain.set_poi_zone)
 ## and the road export that keeps the QGIS roads out of the village (tools/planettech/layout_snaps_export).
 ##
@@ -44,10 +45,28 @@ static func of_layout(layout: Node) -> Dictionary:
 			for corner: Vector3 in _ground_corners(it, layout):
 				lo = Vector2(minf(lo.x, corner.x), minf(lo.y, corner.z))
 				hi = Vector2(maxf(hi.x, corner.x), maxf(hi.y, corner.z))
+	# The areas the layout levels on their own (a TerrainPad under its root, LayoutPads).
+	for pad: Dictionary in LayoutPads.of_layout(layout):
+		var box: Transform3D = pad["box"]
+		var size: Vector3 = pad["size"]
+		for sx: float in [-0.5, 0.5]:
+			for sz: float in [-0.5, 0.5]:
+				var corner := box * Vector3(size.x * sx, 0.0, size.z * sz)
+				lo = Vector2(minf(lo.x, corner.x), minf(lo.y, corner.z))
+				hi = Vector2(maxf(hi.x, corner.x), maxf(hi.y, corner.z))
+	if lo.x <= hi.x:
+		lo -= Vector2.ONE * MARGIN_M
+		hi += Vector2.ONE * MARGIN_M
+	# The roads drawn inside the layout (VillageRoad) stand on the village's ground too, up to their
+	# very ends and no further: a road that ends on a RoadSnap ends on the footprint's edge.
+	# So do its fences (VillageFence): the village's ground runs up to them.
+	var lines: Array = LayoutRoads.of_layout(layout) + LayoutFences.of_layout(layout)
+	for line: Dictionary in lines:
+		for p: Vector2 in line["points"]:
+			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
 	if lo.x > hi.x:
 		return {}
-	lo -= Vector2.ONE * MARGIN_M
-	hi += Vector2.ONE * MARGIN_M
 	return {"centre": ((lo + hi) * 0.5).snappedf(PadSettings.Q_M),
 			"half": ((hi - lo) * 0.5).snappedf(PadSettings.Q_M)}
 

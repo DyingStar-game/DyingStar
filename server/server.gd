@@ -2720,6 +2720,10 @@ func create_generic_object(event: Dictionary) -> void:
 		if prop_registry.has(uuid):
 			prop_registry.merge_data(uuid, data.get("object_data", {}))
 			_stream_moved[uuid] = true  # an adopted hand-over may have moved it
+		# A start village built during the warm-up comes back here: its zone (its common ground, its
+		# roads and fences) was never registered, and the player walked through fences only the client
+		# drew. Registering the same zone again changes nothing.
+		_stream_register_poi_zone(uuid)
 		return
 	prop_registry.upsert(event)
 	_stream_place(uuid)

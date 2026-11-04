@@ -167,10 +167,12 @@ static func _gather_ctx(data: PlanetData, hp_nside: int, hp_ipix: int) -> Dictio
 			pieces.append(r)
 	var pads: Array = data.pads_for_chunk(hp_nside, hp_ipix) if data.has_pads() else []
 	var villages: Array = data.village_beds_for_chunk(hp_nside, hp_ipix) if data.has_village_beds() else []
+	var village_roads: Array = data.village_roads_for_chunk(hp_nside, hp_ipix) if not villages.is_empty() else []
 	if pieces.is_empty() and pads.is_empty() and villages.is_empty():
 		return {}
 	profiles = slice_profiles(pieces, profiles)
 	return {"pieces": pieces, "profiles": profiles, "pads": pads, "villages": villages,
+			"village_roads": village_roads,
 			"m_per_deg": data.radius * PI / 180.0, "native": make_native(pieces, profiles)}
 
 
@@ -257,6 +259,10 @@ static func apply(h: float, lonlat: Vector2, ctx: Dictionary) -> float:
 			out = PadBed.shaved(out, lonlat, pads, mpd, float(ctx["coarse_band_m"]))
 		else:
 			out = PadBed.apply(out, lonlat, pads, mpd)
+	# The roads drawn in a village take their own width back from the pads (VillageRoadBed).
+	var village_roads: Array = ctx.get("village_roads", [])
+	if not village_roads.is_empty():
+		out = VillageRoadBed.apply(out, lonlat, village_roads, villages, mpd, pads)
 	return out
 
 

@@ -41,16 +41,14 @@ const PLACEHOLDERS := [
 ]
 ## Placeholders with no name to show.
 const NO_SIGN := ["urban/streets/avenue_segment_12x40.tscn", "urban/walls/wall_segment_20m.tscn"]
-## Placed without levelled ground: a heap, a field of masts, posts sunk in the soil.
-const NO_PAD := ["industrial/mines/spoil_heap.tscn", "industrial/power/wind_farm.tscn",
-		"urban/streets/bollard_row_6m.tscn"]
 const MACHINE := S + "industrial/refinery/ore_processor_machine.tscn"
-const AVENUE := S + "urban/streets/avenue_segment_12x40.tscn"
 const BOLLARDS := S + "urban/streets/bollard_row_6m.tscn"
 const WALL := S + "urban/walls/wall_segment_20m.tscn"
 ## A wall segment: its length along its X, and its thickness with a margin.
 const WALL_HALF := Vector2(10.0, 0.5)
 const AVENUE_HALF_WIDTH_M := 6.0
+## The avenue runs along this z of the layout (a VillageRoad painted on the ground).
+const AVENUE_Z := -28.0
 ## The farthest a building stands from the village origin (m): the sketch is about 560 m across.
 const MAX_REACH_M := 320.0
 
@@ -87,19 +85,17 @@ func test_the_village_keeps_to_its_area() -> void:
 
 
 func test_one_straight_avenue_runs_through() -> void:
-	var xs: Array = []
-	var z := NAN
-	for item: Array in _items:
-		if item[0] == AVENUE:
-			var at: Vector3 = (item[1] as Transform3D).origin
-			if is_nan(z):
-				z = at.z
-			assert_almost_eq(at.z, z, 0.01, "on one line")
-			xs.append(at.x)
-	assert_gte(xs.size(), 10, "the whole length of the village")
-	xs.sort()
-	for i in range(1, xs.size()):
-		assert_almost_eq(xs[i] - xs[i - 1], 40.0, 0.01, "end to end, 40 m segments")
+	var roads := LayoutRoads.of(LAYOUT).filter(func(r: Dictionary) -> bool: return r["road_type"] == "road")
+	assert_eq(roads.size(), 1, "one road for vehicles drawn in the layout: the avenue (the alleys are paths)")
+	if roads.is_empty():
+		return
+	var pts: PackedVector2Array = roads[0]["points"]
+	for p: Vector2 in pts:
+		assert_almost_eq(p.y, AVENUE_Z, 0.01, "on one line")
+	assert_gt(absf(pts[pts.size() - 1].x - pts[0].x), 500.0, "the whole length of the village")
+	assert_eq(float(roads[0]["width"]), AVENUE_HALF_WIDTH_M * 2.0, "12 m wide")
+	assert_eq(str(roads[0]["road_type"]), "road", "for vehicles")
+	KnownEngineErrors.forgive_floor_material(self)  # the layout's buildings load the floor material
 
 
 func test_pedestrian_alleys_are_closed_by_bollards() -> void:
@@ -109,12 +105,18 @@ func test_pedestrian_alleys_are_closed_by_bollards() -> void:
 ## The mine is walled in (north, east, south; the cliff of its entrance to the west), and the avenue
 ## goes through the wall at the guard post: the gate the vehicles take.
 func test_the_mine_is_walled_and_the_avenue_goes_through_its_gate() -> void:
-	var avenue_z := NAN
-	for item: Array in _items:
-		if item[0] == AVENUE:
-			avenue_z = (item[1] as Transform3D).origin.z
+	var avenue_z := AVENUE_Z
 	var walls := _items.filter(func(it: Array) -> bool: return it[0] == WALL)
-	assert_gte(walls.size(), 15, "three sides of the mine")
+	var fences := LayoutFences.of(LAYOUT)
+	assert_gte(walls.size() + fences.size(), 6, "the mine is closed by walls or fences")
+	var avenue: PackedVector2Array = PackedVector2Array([Vector2(-1000.0, AVENUE_Z), Vector2(1000.0, AVENUE_Z)])
+	for f: Dictionary in fences:
+		var open := VillageFence.open_panels(f["points"], [{"points": avenue, "width": AVENUE_HALF_WIDTH_M * 2.0}])
+		var pts: PackedVector2Array = f["points"]
+		for k in open.size():
+			var mid := (pts[k] + pts[k + 1]) * 0.5
+			if absf(mid.y - AVENUE_Z) < AVENUE_HALF_WIDTH_M:
+				assert_true(open[k], "a fence across the avenue opens for it")
 	for item: Array in walls:
 		var xf: Transform3D = item[1]
 		var half := Vector2(absf(xf.basis.x.x) * WALL_HALF.x + absf(xf.basis.z.x) * WALL_HALF.y,
@@ -142,9 +144,9 @@ func test_the_placeholders_are_networked_and_named() -> void:
 
 
 func test_the_ground_is_levelled_under_each_building() -> void:
-	for scene: String in PLACEHOLDERS:
-		if scene in NO_PAD:
-			continue
+	# Every fixed object levels its ground: the heap, the wind farm and the bollards too.
+	for scene: String in PLACEHOLDERS + ["industrial/mines/spoil_heap.tscn",
+			"industrial/power/wind_farm.tscn", "urban/streets/bollard_row_6m.tscn"]:
 		var root: Node3D = load(S + scene).instantiate()
 		var ground := root.get_node_or_null("TerrainPad/Ground") as CSGBox3D
 		assert_not_null(ground, "%s: a TerrainPad with its Ground box" % scene.get_file())
