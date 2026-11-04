@@ -16,7 +16,7 @@ const LAYOUTS := [
 func test_every_fixed_item_of_a_layout_has_a_terrain_pad() -> void:
 	var seen := {}
 	for layout: String in LAYOUTS:
-		for scene: String in _root_item_scenes(layout):
+		for scene: String in LayoutFile.root_scenes(layout):
 			if seen.has(scene):
 				continue
 			seen[scene] = true
@@ -35,17 +35,3 @@ func test_every_fixed_item_of_a_layout_has_a_terrain_pad() -> void:
 	assert_gt(seen.size(), 10, "the layouts were read")
 	KnownEngineErrors.forgive_floor_material(self)  # the layouts' buildings load the floor material
 
-
-## The scenes instanced straight under the layout's root.
-func _root_item_scenes(layout: String) -> Array[String]:
-	var text := FileAccess.get_file_as_string(layout).replace("\r\n", "\n")
-	var paths := {}
-	for ext in RegEx.create_from_string("\\[ext_resource [^\\]]*path=\"([^\"]+)\" id=\"([^\"]+)\"\\]").search_all(text):
-		paths[ext.get_string(2)] = ext.get_string(1)
-	var out: Array[String] = []
-	var node := RegEx.create_from_string("\\[node name=\"[^\"]+\" parent=\"\\.\"[^\\]]*instance=ExtResource\\(\"([^\"]+)\"\\)\\]")
-	for m in node.search_all(text):
-		var p: String = paths.get(m.get_string(1), "")
-		if p != "" and not out.has(p):
-			out.append(p)
-	return out

@@ -8,7 +8,6 @@ extends GutTest
 
 const LAYOUT := "res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn"
 const S := "res://scenes/_universe/structures/"
-const LOCALISATION := "res://tools/localization/localisation.csv"
 ## Every building of the sketch, by its scene.
 const BUILDINGS := [
 	"industrial/mines/mine_portal.tscn", "industrial/mines/spoil_heap.tscn", "industrial/mines/crusher.tscn",
@@ -56,14 +55,8 @@ var _items: Array = []  # [scene path, Transform3D, name] of every direct child 
 
 
 func before_all() -> void:
-	var text := FileAccess.get_file_as_string(LAYOUT).replace("\r\n", "\n")
-	var paths := {}
-	for ext in RegEx.create_from_string("\\[ext_resource [^\\]]*path=\"([^\"]+)\" id=\"([^\"]+)\"\\]").search_all(text):
-		paths[ext.get_string(2)] = ext.get_string(1)
-	var node := RegEx.create_from_string("\\[node name=\"([^\"]+)\" parent=\"\\.\"[^\\]]*instance=ExtResource\\(\"([^\"]+)\"\\)\\]" \
-			+ "\\ntransform = (Transform3D\\([^)]*\\))")
-	for m in node.search_all(text):
-		_items.append([paths.get(m.get_string(2), ""), str_to_var(m.get_string(3)), m.get_string(1)])
+	for it: Dictionary in LayoutFile.items(LAYOUT, false):
+		_items.append([it["scene"], it["xform"], it["key"]])
 
 
 func test_every_building_of_the_sketch_stands_in_the_village() -> void:
@@ -128,7 +121,7 @@ func test_the_mine_is_walled_and_the_avenue_goes_through_its_gate() -> void:
 
 
 func test_the_placeholders_are_networked_and_named() -> void:
-	var keys := FileAccess.get_file_as_string(LOCALISATION)
+	var table := LayoutFile.translations()
 	for scene: String in PLACEHOLDERS:
 		var root: Node3D = load(S + scene).instantiate()
 		var sync := PropSync.of(root)
@@ -139,7 +132,10 @@ func test_the_placeholders_are_networked_and_named() -> void:
 		if scene not in NO_SIGN:
 			assert_not_null(sign, "%s: its name in neon" % scene.get_file())
 		if sign != null:
-			assert_true(keys.contains("\n" + sign.text_key + ","), "%s: %s translated" % [scene.get_file(), sign.text_key])
+			assert_true(table.has(sign.text_key), "%s: %s translated" % [scene.get_file(), sign.text_key])
+			if table.has(sign.text_key):
+				assert_ne(str(table[sign.text_key]["en"]), "", "%s in English" % sign.text_key)
+				assert_ne(str(table[sign.text_key]["fr"]), "", "%s in French" % sign.text_key)
 		root.free()
 
 
