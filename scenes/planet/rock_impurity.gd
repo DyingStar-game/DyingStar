@@ -96,6 +96,13 @@ const DUST_MIX := 0.6
 ## {"pair": bool, "elements": PackedStringArray, "weights": PackedFloat64Array}.
 static var _rules: Dictionary = {}
 static var _rules_mutex := Mutex.new()
+## Tests flip this to exercise the GDScript path on a chunk.
+static var use_native := true
+## The catalogue in C# (RockImpurityNative) and each rock's id there. Same contract as _rules: built by
+## warm() on the main thread, never written while chunk tasks run. null (no assembly, warm() not run yet):
+## tint_chunk declines and the chunk tints vertex by vertex.
+static var _native: RefCounted = null
+static var _native_ids: Dictionary = {}
 
 
 # ── Provenance ──────────────────────────────────────────────────────
@@ -196,7 +203,27 @@ static func warm() -> void:
 		for slug in RockCatalogue.slugs():
 			built[slug] = _build_rule(RockCatalogue.get_rock(str(slug)))
 		_rules = built
+	if _native == null:
+		_build_native()
 	_rules_mutex.unlock()
+
+
+static func _build_native() -> void:
+	var script: Script = NativeScript.load_usable("res://scenes/planet/native/RockImpurityNative.cs",
+			["AddRock", "TintChunk"])
+	if script == null:
+		return
+	var made: RefCounted = script.new()
+	var ids: Dictionary = {}
+	for slug in RockCatalogue.slugs():
+		var rule := rule_of(str(slug))
+		var kinds := PackedInt32Array()
+		for element: String in (rule["elements"] as PackedStringArray):
+			kinds.append((1 if FLUID_MOBILE.has(element) else 0) + (2 if SOURCE_BOUND.has(element) else 0))
+		ids[str(slug)] = made.AddRock(PackedColorArray(RockCatalogue.colors_of(str(slug))),
+				PackedColorArray(RockCatalogue.core_colors_of(str(slug))), kinds, rule["weights"], rule["pair"])
+	_native_ids = ids
+	_native = made
 
 
 static func _build_rule(rock: Dictionary) -> Dictionary:
@@ -224,6 +251,8 @@ static func _build_rule(rock: Dictionary) -> Dictionary:
 static func reset() -> void:
 	_rules_mutex.lock()
 	_rules.clear()
+	_native = null
+	_native_ids = {}
 	_rules_mutex.unlock()
 
 
@@ -306,6 +335,25 @@ static func tint(slug: String, dir: Vector3, radius: float, height_m: float,
 	if dust > 0.0:
 		col = col.lerp(light.lerp(DUST_TONE, DUST_MIX), dust)
 	return col
+
+
+## [method tint] over a whole chunk in one call to the C# twin: slots[i] = 0 keeps colors[i], else
+## slugs[slots[i] - 1] is the vertex's rock. Empty when the twin cannot answer (no assembly, a rock out of
+## the catalogue): the caller tints vertex by vertex. Equal to [method tint] bit for bit on Linux
+## (test_rock_impurity_native.gd), so nothing cached depends on which of the two ran.
+static func tint_chunk(slugs: Array[String], slots: PackedByteArray, dirs: PackedVector3Array,
+		normals: PackedVector3Array, radius: float, heights: PackedFloat32Array, core: PackedFloat32Array,
+		carve: PackedFloat32Array, colors: PackedColorArray, wall: PackedFloat32Array) -> PackedColorArray:
+	if not use_native or _native == null:
+		return PackedColorArray()
+	var rocks := PackedInt32Array()
+	for slug: String in slugs:
+		var id: Variant = _native_ids.get(slug)
+		if id == null:
+			return PackedColorArray()
+		rocks.append(int(id))
+	return _native.TintChunk(rocks, slots, dirs, normals, radius, heights, core, carve, colors, wall,
+			RockCatalogue.BLOTCH_M, RockCatalogue.STREAK_M)
 
 
 ## Share of dust cover on a surface of [param slope] inside a massif of

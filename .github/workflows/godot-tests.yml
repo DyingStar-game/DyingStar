@@ -15,7 +15,7 @@ env:
   GODOT_VERSION: 4.7
   # The C# twins against their GDScript reference, bit for bit. Data-free: what needs tarsis_3's tile
   # cache goes pending, and test_the_whole_sphere_samples_identically_without_data covers every face.
-  NATIVE_TESTS: res://test/unit/test_tile_frame_native.gd,res://test/unit/test_crack_voronoi_native.gd,res://test/unit/test_native_script.gd
+  NATIVE_TESTS: res://test/unit/test_tile_frame_native.gd,res://test/unit/test_crack_voronoi_native.gd,res://test/unit/test_native_script.gd,res://test/unit/test_rock_impurity_native.gd,res://test/unit/test_chunk_native_normals.gd
 
 jobs:
   execute-gut:

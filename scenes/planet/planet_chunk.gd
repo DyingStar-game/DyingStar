@@ -12,6 +12,8 @@ class_name PlanetChunk
 ## wall leaned down to the moved foot. They never cross: each stops on its
 ## own side.
 const RIM_SNAP_PITCHES := 1.6
+## Tests flip this to exercise the GDScript normal pass on a frame that has its C# half.
+static var use_native_normals := true
 ## Static helpers for generating terrain-chunk meshes & collision shapes.
 ##
 ## Each chunk covers a rectangular patch on one cube-sphere face.
@@ -1129,9 +1131,33 @@ static func generate_mesh(
 		var _t_sm := 0
 		var _t_ck := 0
 		var _t_sub := 0
+		# The whole pass in ONE call to the frame's C# half (TileFrameNative.Normals): the same values as
+		# the loop below, which then only does the vertices it could not answer. Not under the profiling
+		# rig, which counts in the GDScript path.
+		var _n_served := PackedByteArray()
+		if use_native_normals and not _pf and _frame != null and _frame.native_ok:
+			if has_relief_overlap:
+				var _rl_min := PackedFloat64Array()
+				var _rl_max := PackedFloat64Array()
+				var _rl_wl := PackedFloat64Array()
+				for _rl_bd: BiomeDefinition in _relief_bds:
+					_rl_min.append(_rl_bd.relief_min_m)
+					_rl_max.append(_rl_bd.relief_max_m)
+					_rl_wl.append(_rl_bd.relief_wavelength_m)
+				_frame.native.SetNormalRelief(relief_vertex, relief_road_w, _rl_min, _rl_max, _rl_wl)
+			var _rw_native_ctx: Dictionary = _rw_ctx if not _rw_ctx.is_empty() else _rw_shave
+			if not _rw_native_ctx.is_empty():
+				var _rw_args: Array = GradeBed.native_args(_rw_native_ctx)
+				_frame.native.SetNormalGrade(_rw_band, _rw_args[0], float(_rw_native_ctx["m_per_deg"]), _rw_args[1],
+						_rw_args[2], _rw_args[3])
+			normals = _frame.native.Normals(_vdirs, _crack_edge, _snapped, res, _export_ipix, _sample_nside,
+					_crack_vtx_spacing, _eps_rad, _crack_skip_m, data.corundum_default_biome)
+			_n_served = _frame.native.NormalsServed()
 		for yi in res + 1:
 			for xi in res + 1:
 				var idx := yi * (res + 1) + xi
+				if not _n_served.is_empty() and _n_served[idx] == 1:
+					continue
 				var dir_c: Vector3 = _vdirs[idx]
 				# Build tangent frame on sphere at this vertex.
 				var up := dir_c
@@ -1296,17 +1322,22 @@ static func generate_mesh(
 	# (mountain core + carve depth + strata), paled by dust on the flats of a
 	# massif. Pure per vertex, so the cache bakes it and every client agrees.
 	if not _imp_slugs.is_empty():
-		for yi in res + 1:
-			for xi in res + 1:
-				var idx := yi * (res + 1) + xi
-				var slot := _imp_slot[idx]
-				if slot == 0:
-					continue
-				var vdir: Vector3 = _vdirs[idx]
-				var slope := 1.0 - normals[idx].dot(vdir)
-				colors[idx] = RockImpurity.tint(_imp_slugs[slot - 1], vdir, data.radius,
-						_chunk_heights[idx], _imp_core[idx], _imp_carve[idx], slope, colors[idx],
-						_imp_wall[idx])
+		var _tinted := RockImpurity.tint_chunk(_imp_slugs, _imp_slot, _vdirs, normals, data.radius, _chunk_heights,
+				_imp_core, _imp_carve, colors, _imp_wall)
+		if not _tinted.is_empty():
+			colors = _tinted
+		else:
+			for yi in res + 1:
+				for xi in res + 1:
+					var idx := yi * (res + 1) + xi
+					var slot := _imp_slot[idx]
+					if slot == 0:
+						continue
+					var vdir: Vector3 = _vdirs[idx]
+					var slope := 1.0 - normals[idx].dot(vdir)
+					colors[idx] = RockImpurity.tint(_imp_slugs[slot - 1], vdir, data.radius,
+							_chunk_heights[idx], _imp_core[idx], _imp_carve[idx], slope, colors[idx],
+							_imp_wall[idx])
 	# --- fumarole deposits ----------------------------------------------------
 	# The gas deposits of a fumarole field over whatever rock is there (the
 	# field is not a biome: the rock keeps its own colour underneath).
