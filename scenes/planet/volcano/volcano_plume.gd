@@ -171,6 +171,7 @@ func _process(delta: float) -> void:
 	var viewport := get_viewport()
 	var cam: Camera3D = viewport.get_camera_3d() if viewport != null else null
 	if cam == null:
+		stones.suspend()
 		return
 	var eye := to_local(cam.global_position)
 	_dist = eye.length()
@@ -182,6 +183,8 @@ func _process(delta: float) -> void:
 	if not drawn:
 		_box.hide()
 	stones.visible = drawn and _dist < STONES_VIEW_M
+	if not stones.visible:
+		stones.suspend()
 	if not drawn:
 		_model_elapsed = 1.0
 		return

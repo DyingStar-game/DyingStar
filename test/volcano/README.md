@@ -54,6 +54,33 @@ La feature repose sur `scenes/planet/volcano/volcano_features.gd`,
 `assets/_universe/environment/terrain/volcano/`. Elle ne requiert aucune
 modification de la scène Tarsis III ou de ses volcans exportés.
 
+## Suppression des pierres et limites
+
+Les pierres lointaines utilisent un pool fixe de **4 000 slots** par volcan,
+sans créer un nœud par projection. Leur instance disparaît à l'atterrissage ;
+la traînée peut se dissiper pendant **7 s** supplémentaires. Le slot est alors
+effacé pour empêcher un ancien vol de réapparaître au prochain cycle de shader.
+
+Près de la caméra, au plus **160 rochers**, fragments et rochers en cours de
+disparition compris, sont simulés par volcan. Un rocher au repos est retiré
+après **240 s**. Même s'il roule sans s'arrêter, sa durée de vie totale est
+limitée à **300 s**, puis un fondu de **3 s** le supprime. Au-delà de **750 m**
+de la caméra, il entre aussi dans ce fondu. Les fragments commencent leur
+simulation au tick suivant pour éviter une cascade de calculs dans une image.
+
+Les poussières d'impact sont limitées à **10 effets simultanés** par volcan.
+Quand un champ de pierres sort de son budget de distance/visibilité, ses
+rochers, poussières, vols en attente et cache de terrain sont libérés et sa
+simulation physique s'arrête. Les sauts d'horloge vident les anciens objets et
+slots ; le déchargement du volcan détruit aussi ses lots de rendu.
+
+Le test headless couvre saturation, éviction, vieillissement, distance,
+poussières, horloge et déchargement. Pour vérifier avec le rendu 3D :
+
+```text
+godot --path . res://test/volcano/test_plume_closeup.tscn -- --volcano-view --stone-cleanup
+```
+
 ## Regression des decoupes de fumee
 
 Lancer `res://test/volcano/test_plume_closeup.tscn` avec `--volcano-view`

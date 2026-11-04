@@ -38,6 +38,10 @@ func _ready() -> void:
 	volume.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(volume)
 	await get_tree().create_timer(1.0).timeout
+	if "--stone-cleanup" in OS.get_cmdline_user_args():
+		var ok := await _test_stone_cleanup()
+		get_tree().quit(0 if ok else 1)
+		return
 	if "--benchmark" in OS.get_cmdline_user_args():
 		await preload("res://test/volcano/volcano_benchmark.gd").run(_model, _material, _camera)
 		get_tree().quit()
@@ -130,3 +134,45 @@ func _capture_lifecycle() -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("user://plume_lifecycle_%s.png" % stage)
 		print("VOLCANO LIFECYCLE RENDER %s: %s" % [stage, _model.state_label(when)])
+
+
+func _test_stone_cleanup() -> bool:
+	_material.set_shader_parameter("puff_count", 0)
+	_model.profile = VolcanoActivityProfile.new()
+	_model.profile.random_enabled = false
+	_camera.position = Vector3(0, 4, 18)
+	_camera.look_at(Vector3(0, 4, 0))
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = Vector3(-45, -25, 0)
+	add_child(light)
+	var field := VolcanoStoneField.new(_model, func(_x: float, _z: float) -> float: return 0.0)
+	field.rebuild_on_jump = false
+	add_child(field)
+	field.update(1000, _camera.position, Vector3.ZERO, false)
+	var velocity := Vector3(1, 16, 0)
+	field._write(0, velocity, 1000, 1.0, 3.2, 0.5, 1.0)
+	field._register(0, velocity, 1000, 1.0, 3.2, 1000)
+	var start := Time.get_ticks_msec()
+	var captured := false
+	while Time.get_ticks_msec() - start < 4000:
+		var elapsed := float(Time.get_ticks_msec() - start) / 1000.0
+		field.update(1000 + elapsed, _camera.position, Vector3.ZERO, false)
+		if elapsed > 0.3 and not captured:
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png("user://volcano_stone_cleanup.png")
+			captured = true
+		await get_tree().process_frame
+	var promoted := field.promoted_total > 0
+	field.suspend()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var ok := promoted and field.props_alive() == 0 and field._dust_nodes.is_empty()
+	ok = ok and field.get_child_count() == 2 and not field.is_physics_processing()
+	print(
+		(
+			"VOLCANO STONE RENDER CLEANUP: %s (flight, promotion, impact, suspension, no remaining transient nodes)"
+			% ("PASS" if ok else "FAIL")
+		)
+	)
+	field.free()
+	return ok

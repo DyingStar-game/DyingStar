@@ -42,6 +42,13 @@ autres effets du jeu ne sont pas mesures par ce benchmark.
   Les lots vides ne sont pas dessines ; les slots deja vides ne reecrivent pas
   leur texture. La recherche du sol sous le joueur est evitee sans rocher vivant.
 
+Les protections de despawn sont détaillees dans le README : pool de 160 rochers
+incluant le fondu, plafond de durée de vie même en mouvement, retrait à distance,
+suppression des objets et arrêt de la physique des champs hors budget. Les
+slots expirés sont effacés et les poussières sont bornées ; un test de surcharge
+et un test 3D de nettoyage vérifient ces limites. Les mesures ci-dessus ont été
+prises avant ce renforcement du despawn ; elles ne quantifient pas son gain.
+
 Le shader garde toutes les bouffees utiles avec des masques de bits : le
 correctif des decoupes n'est pas remplace par une nouvelle limite arbitraire.
 L'occlusion generale vient du modele ; une sonde locale conserve le relief

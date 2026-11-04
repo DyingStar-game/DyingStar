@@ -23,10 +23,10 @@ varying vec3 v_q;
 void vertex() {
 	vec4 a = texelFetch(stone_tex, ivec2(INSTANCE_ID, 0), 0);
 	vec4 b = texelFetch(stone_tex, ivec2(INSTANCE_ID, 1), 0);
-	if (b.w < 0.5 || b.w > 1.5) {
+	float age = mod(t_mod - a.w, period);
+	if (b.w < 0.5 || b.w > 1.5 || age >= b.y) {
 		VERTEX = vec3(0.0, -1e7, 0.0);
 	} else {
-		float age = mod(t_mod - a.w, period);
 		float t = min(age, b.y);
 		vec3 pos = a.xyz * t + vec3(0.0, -0.5 * gravity * t * t, 0.0);
 		vec3 vel = age < b.y ? a.xyz + vec3(0.0, -gravity * t, 0.0) : vec3(0.0);

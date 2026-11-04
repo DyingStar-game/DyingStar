@@ -23,6 +23,11 @@ const PROMOTE_MIN_RADIUS_M := 0.2
 const MAX_ROCKS := 160
 ## A resting rock stays this long (s), then sinks away. Sooner when the pool is full.
 const ROCK_LIFE_S := 240.0
+## Hard deadline even for rocks that never stop rolling; includes the ballistic flight.
+const MAX_ROCK_AGE_S := 300.0
+const DESPAWN_RADIUS_M := 750.0
+const RETIRE_S := 3.0
+const TRAIL_LIFE_S := 7.0
 ## Rest: slower than this (m/s) just after a bounce.
 const REST_SPEED := 0.7
 const BOUNCE := 0.3
@@ -63,6 +68,7 @@ class Rock:
 	var hit_player := false
 	var rest_at := 0.0
 	var heat_at := -INF
+	var retire_at := -INF
 
 
 var model: VolcanoPlumeModel
@@ -95,11 +101,15 @@ var _next_bucket := 0
 var _rocks: Array[Rock] = []
 var _rock_meshes: Array[ArrayMesh] = []
 var _dust_mat: StandardMaterial3D
-var _dust_alive := 0
+var _dust_nodes: Array[CPUParticles3D] = []
+var _eye := Vector3.ZERO
 var _feet := Vector3.ZERO
 var _has_player := false
 var _heights := {}
 var _latest_landing := -INF
+var _latest_trail_end := -INF
+var _suspended := false
+var _stepping := false
 var _instances: MultiMeshInstance3D
 var _trails: MultiMeshInstance3D
 
@@ -142,7 +152,9 @@ func _init(plume: VolcanoPlumeModel, relief_height: Callable) -> void:
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
 	_instances = mmi
+	_instances.hide()
 	_build_trails()
+	_trails.hide()
 	_dust_mat = StandardMaterial3D.new()
 	_dust_mat.albedo_color = Color(0.3, 0.28, 0.26, 0.5)
 	_dust_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -158,6 +170,46 @@ func _init(plume: VolcanoPlumeModel, relief_height: Callable) -> void:
 	ramp.set_color(1, Color(1, 1, 1, 0))
 	blob.gradient = ramp
 	_dust_mat.albedo_texture = blob
+	set_physics_process(false)
+
+
+## Called when distance/visibility budgets stop updating this field. Hidden rocks must not
+## continue physics against stale camera/time data or retain their terrain cache forever.
+func suspend() -> void:
+	if _suspended:
+		return
+	_suspended = true
+	_reset_transients()
+	_heights.clear()
+	_last_t = -INF
+
+
+func _reset_transients() -> void:
+	for rock in _rocks:
+		_remove_node(rock.node)
+	_rocks.clear()
+	for puff in _dust_nodes:
+		_remove_node(puff)
+	_dust_nodes.clear()
+	_buckets.clear()
+	_land_t.fill(-1.0)
+	_radius.fill(0.0)
+	_img.fill(Color.TRANSPARENT)
+	_tex.update(_img)
+	_dirty = false
+	flying = 0
+	_flying_at = -INF
+	_latest_landing = -INF
+	_latest_trail_end = -INF
+	_has_player = false
+	_instances.hide()
+	_trails.hide()
+	set_physics_process(false)
+
+
+static func _remove_node(node: Node3D) -> void:
+	node.hide()
+	node.queue_free()
 
 
 static func _make_crack_texture() -> NoiseTexture3D:
@@ -232,22 +284,25 @@ static func stone_radius(u: float, v: float) -> float:
 
 ## [param eye]: the camera, for promotions. [param feet]: the player's, when there is one on the ground.
 func update(t: float, eye: Vector3, feet: Vector3, has_player: bool) -> void:
+	_suspended = false
+	_eye = eye
 	mat.set_shader_parameter("t_mod", fmod(t, PERIOD))
 	trail_mat.set_shader_parameter("t_mod", fmod(t, PERIOD))
 	trail_mat.set_shader_parameter("cam_local", eye)
 	mat.set_shader_parameter("cam_local", eye)
-	_feet = feet
-	_has_player = has_player
 	var dt := PERIOD / float(COUNT)
 	if absf(t - _last_t) > 5.0:
 		_rebuild(t)
 	_last_t = t
+	_feet = feet
+	_has_player = has_player
 	while float(_next_c) * dt <= t:
 		_born(_next_c, t)
 		_next_c += 1
 	_promote_due(t, eye)
 	_instances.visible = t < _latest_landing
-	_trails.visible = _instances.visible
+	_trails.visible = t < _latest_trail_end
+	set_physics_process(not _rocks.is_empty())
 	if _dirty:
 		_tex.update(_img)
 		_dirty = false
@@ -255,12 +310,11 @@ func update(t: float, eye: Vector3, feet: Vector3, has_player: bool) -> void:
 
 ## A jump in time: every slot is what it would have been by now.
 func _rebuild(t: float) -> void:
+	_reset_transients()
 	var dt := PERIOD / float(COUNT)
 	_buckets.clear()
 	_next_bucket = floori(t / BUCKET_S)
 	_next_c = floori(t / dt) + 1
-	flying = 0
-	_latest_landing = -INF
 	if not rebuild_on_jump:
 		return
 	for c in range(_next_c - COUNT, _next_c):
@@ -274,10 +328,7 @@ func _born(c: int, t: float) -> void:
 	# The volcano throws in bursts: stones only when it is strong, and each burst leans its own way.
 	var strength := model.eruption_activity(birth)
 	if strength <= 0.0 or VolcanoPlumeModel._hash(c, 101) >= smoothstep(0.55, 1.1, strength) * throw_rate:
-		if _radius[i] > 0.0:
-			_write(i, Vector3.ZERO, birth, 0.0, 0.0, 0.0, 0.0)
-			_radius[i] = 0.0
-		_land_t[i] = -1.0
+		_clear_slot(i, birth)
 		return
 	var r1 := VolcanoPlumeModel._hash(c, 102)
 	var r2 := VolcanoPlumeModel._hash(c, 103)
@@ -336,11 +387,29 @@ func _register(i: int, v0: Vector3, birth: float, radius: float, flight: float, 
 	_radius[i] = radius
 	_land_t[i] = birth + flight
 	_latest_landing = maxf(_latest_landing, _land_t[i])
+	_latest_trail_end = maxf(_latest_trail_end, _land_t[i] + TRAIL_LIFE_S)
 	if _land_t[i] > t:
 		var key := floori((_land_t[i] - PROMOTE_LEAD_S) / BUCKET_S)
-		if not _buckets.has(key):
-			_buckets[key] = []
-		(_buckets[key] as Array).append([i, _token[i]])
+		_schedule_slot_event(key, [i, _token[i]])
+	if _land_t[i] + TRAIL_LIFE_S > t:
+		# Clear before the shader's modulo clock can repeat an old flight. Birth is the
+		# flight identity: promotion changes its token but must not cancel its expiration.
+		var expiry := ceili((_land_t[i] + TRAIL_LIFE_S) / BUCKET_S)
+		_schedule_slot_event(expiry, [i, birth, true])
+
+
+func _schedule_slot_event(key: int, event: Array) -> void:
+	key = maxi(key, _next_bucket)
+	if not _buckets.has(key):
+		_buckets[key] = []
+	(_buckets[key] as Array).append(event)
+
+
+func _clear_slot(i: int, t: float) -> void:
+	if _radius[i] > 0.0:
+		_write(i, Vector3.ZERO, t, 0.0, 0.0, 0.0, 0.0)
+		_radius[i] = 0.0
+	_land_t[i] = -1.0
 
 
 ## Test volley: [param n] stones aimed around [param target], landing in a few seconds.
@@ -373,6 +442,10 @@ func _promote_due(t: float, eye: Vector3) -> void:
 		_next_bucket += 1
 		for entry: Array in due:
 			var i: int = entry[0]
+			if entry.size() == 3:
+				if entry[1] == _birth[i]:
+					_clear_slot(i, t)
+				continue
 			if entry[1] != _token[i] or t >= _land_t[i] - 0.05 or _radius[i] < PROMOTE_MIN_RADIUS_M:
 				continue
 			var age := t - _birth[i]
@@ -393,7 +466,7 @@ func _promote(i: int, t: float, p: Vector3, v: Vector3, age: float) -> void:
 
 
 func _spawn_rock(born: float, p: Vector3, v: Vector3, r: float, variety: int) -> void:
-	if _rocks.size() >= MAX_ROCKS and not _evict_one():
+	if _rocks.size() >= MAX_ROCKS and (_stepping or not _evict_one()):
 		return
 	var rock := Rock.new()
 	rock.p = p
@@ -420,6 +493,7 @@ func _spawn_rock(born: float, p: Vector3, v: Vector3, r: float, variety: int) ->
 	rock.node = node
 	_place(rock)
 	_rocks.append(rock)
+	set_physics_process(true)
 
 
 func _place(rock: Rock) -> void:
@@ -429,21 +503,38 @@ func _place(rock: Rock) -> void:
 ## The oldest resting rock leaves to make room: never one still in the air.
 func _evict_one() -> bool:
 	for k in _rocks.size():
-		if _rocks[k].asleep:
-			_rocks[k].node.queue_free()
+		if _rocks[k].asleep or _rocks[k].retire_at != -INF:
+			_remove_node(_rocks[k].node)
 			_rocks.remove_at(k)
 			return true
 	return false
 
 
 func _physics_process(delta: float) -> void:
+	_stepping = true
 	var k := 0
-	while k < _rocks.size():
+	# New shards start next tick; one impact cannot recursively spend the whole frame.
+	var existing := _rocks.size()
+	while k < existing:
 		var rock := _rocks[k]
+		if rock.retire_at != -INF:
+			var progress := clampf((_last_t - rock.retire_at) / RETIRE_S, 0.0, 1.0)
+			if progress >= 1.0:
+				_remove_node(rock.node)
+				_rocks.remove_at(k)
+				existing -= 1
+				continue
+			rock.node.scale = Vector3.ONE * rock.r * (1.0 - smoothstep(0.0, 1.0, progress))
+			k += 1
+			continue
+		if _last_t - rock.born >= MAX_ROCK_AGE_S or rock.p.distance_squared_to(_eye) > DESPAWN_RADIUS_M * DESPAWN_RADIUS_M:
+			_retire(rock)
+			k += 1
+			continue
 		if rock.asleep:
 			if _last_t - rock.rest_at > ROCK_LIFE_S:
 				_retire(rock)
-				_rocks.remove_at(k)
+				k += 1
 				continue
 		else:
 			_step(rock, delta)
@@ -451,6 +542,9 @@ func _physics_process(delta: float) -> void:
 			rock.heat_at = _last_t
 			rock.node.set_instance_shader_parameter(&"heat", clampf(1.0 - (_last_t - rock.born) / COOL_S, 0.0, 1.0))
 		k += 1
+	_stepping = false
+	if _rocks.is_empty():
+		set_physics_process(false)
 
 
 func _step(rock: Rock, delta: float) -> void:
@@ -499,7 +593,7 @@ func _step(rock: Rock, delta: float) -> void:
 
 
 func _impact(rock: Rock, impact: float) -> void:
-	if _dust_alive < MAX_DUST:
+	if _dust_nodes.size() < MAX_DUST:
 		_dust(rock.p, rock.r, impact)
 	# A block breaks on landing: the chaos of a few small hot shards.
 	if rock.r > 0.6 and impact > 15.0:
@@ -511,8 +605,10 @@ func _impact(rock: Rock, impact: float) -> void:
 
 
 func _dust(at: Vector3, r: float, impact: float) -> void:
-	_dust_alive += 1
+	if _dust_nodes.size() >= MAX_DUST:
+		return
 	var puff := CPUParticles3D.new()
+	_dust_nodes.append(puff)
 	puff.one_shot = true
 	puff.explosiveness = 0.9
 	puff.amount = 8 + mini(int(r * 8.0), 22)
@@ -539,16 +635,15 @@ func _dust(at: Vector3, r: float, impact: float) -> void:
 	puff.emitting = true
 	puff.finished.connect(
 		func() -> void:
-			_dust_alive -= 1
+			_dust_nodes.erase(puff)
 			puff.queue_free()
 	)
 
 
 func _retire(rock: Rock) -> void:
-	var node := rock.node
-	var tween := node.create_tween()
-	tween.tween_property(node, "scale", node.scale * 0.01, 3.0)
-	tween.tween_callback(node.queue_free)
+	# Keep the fading node in the same capped pool: no untracked Tween/node backlog.
+	if rock.retire_at == -INF:
+		rock.retire_at = _last_t
 
 
 func props_alive() -> int:
@@ -607,6 +702,7 @@ func _build_trails() -> void:
 	trail_mat.set_shader_parameter("period", PERIOD)
 	trail_mat.set_shader_parameter("gravity", GRAVITY)
 	trail_mat.set_shader_parameter("stride", TRAIL_STRIDE)
+	trail_mat.set_shader_parameter("trail_s", TRAIL_LIFE_S)
 	trail_mat.set_shader_parameter("wind", Vector3(model.wind.x, 0.0, model.wind.y) * 0.25)
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D

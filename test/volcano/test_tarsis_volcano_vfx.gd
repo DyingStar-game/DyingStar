@@ -16,6 +16,7 @@ func _ready() -> void:
 	_test_appearance()
 	_test_lifecycle()
 	_test_shared_rocks()
+	await _test_rock_cleanup()
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest()
 	data.ensure_queries_loaded()
@@ -194,6 +195,84 @@ func _test_shared_rocks() -> void:
 	first.free()
 	second.free()
 	print("VOLCANO RESOURCES: shared immutable meshes, isolated materials/profiles and no idle terrain queries checked")
+
+
+func _test_rock_cleanup() -> void:
+	var model := VolcanoPlumeModel.new()
+	model.profile = VolcanoActivityProfile.new()
+	model.profile.random_enabled = false
+	var queries := [0]
+	var ground := func(_x: float, _z: float) -> float:
+		queries[0] += 1
+		return 0.0
+	var field := VolcanoStoneField.new(model, ground)
+	field.rebuild_on_jump = false
+	add_child(field)
+	field.update(1000.0, Vector3.ZERO, Vector3.ZERO, false)
+	# Oversubscribe the pool; airborne rocks cannot evict one another.
+	for i in VolcanoStoneField.MAX_ROCKS + 30:
+		field._spawn_rock(1000.0, Vector3(0, 10, 0), Vector3.ZERO, 1.0, i)
+	check(field.props_alive() == VolcanoStoneField.MAX_ROCKS, "promoted rock count remains capped under spawn pressure")
+	field._rocks[0].asleep = true
+	field._rocks[0].rest_at = 1000.0
+	field._spawn_rock(1000.0, Vector3(0, 10, 0), Vector3.ZERO, 1.0, 1000)
+	check(field.props_alive() == VolcanoStoneField.MAX_ROCKS, "evicting an old resting rock does not grow the pool")
+	field._last_t = 1301.0
+	field._physics_process(0.016)
+	check(field.props_alive() == VolcanoStoneField.MAX_ROCKS, "fading rocks still occupy the capped pool")
+	check(queries[0] == 0, "absolute age expires moving rocks before any further terrain query")
+	field._last_t += VolcanoStoneField.RETIRE_S + 0.1
+	field._physics_process(0.016)
+	check(field.props_alive() == 0 and not field.is_physics_processing(), "all never-resting rocks eventually despawn and stop physics")
+	await get_tree().process_frame
+	check(field.get_child_count() == 2, "retirement leaves only the two fixed rendering batches, with no tween backlog")
+	field._last_t = 2000.0
+	field._spawn_rock(2000.0, Vector3(2000, 10, 0), Vector3.ZERO, 1.0, 0)
+	field._physics_process(0.016)
+	check(field._rocks[0].retire_at == 2000.0, "rocks far from the camera enter retirement")
+	field.suspend()
+	await get_tree().process_frame
+	check(field.props_alive() == 0 and not field.is_physics_processing(), "hidden fields remove their rocks and stop physics")
+	field.update(3000.0, Vector3.ZERO, Vector3.ZERO, false)
+	for i in VolcanoStoneField.MAX_DUST + 5:
+		field._dust(Vector3.ZERO, 1.0, 20.0)
+	check(field._dust_nodes.size() == VolcanoStoneField.MAX_DUST, "dust effects are independently capped")
+	field._dust_nodes[0].finished.emit()
+	check(field._dust_nodes.size() == VolcanoStoneField.MAX_DUST - 1, "finished dust releases its slot")
+	field._heights[Vector3i.ZERO] = 0.0
+	field.suspend()
+	await get_tree().process_frame
+	check(field._dust_nodes.is_empty() and field._heights.is_empty(), "suspension releases dust and cached terrain heights")
+	check(field.get_child_count() == 2, "suspension leaves no rock or dust children behind")
+	# An ordinary flight ends before its ribbon; neither is allowed to repeat after a time jump.
+	field.update(4000.0, Vector3.ZERO, Vector3.ZERO, false)
+	field._write(0, Vector3(100, 40, 0), 4000.0, 1.0, 8.0, 0.5, 1.0)
+	field._register(0, Vector3(100, 40, 0), 4000.0, 1.0, 8.0, 4000.0)
+	for i in range(1, 82):
+		field.update(4000.0 + float(i) * 0.1, Vector3.ZERO, Vector3.ZERO, false)
+	check(not field._instances.visible and field._trails.visible, "trail can fade after the final flying stone has landed")
+	for i in range(82, 152):
+		field.update(4000.0 + float(i) * 0.1, Vector3.ZERO, Vector3.ZERO, false)
+	check(not field._trails.visible, "last trail batch stops after its bounded lifetime")
+	check(field._img.get_pixel(0, 1).a == 0.0, "expired GPU rows are cleared instead of replaying on the modulo clock")
+	field._token[2] += 1
+	field._write(2, Vector3.UP * 12, 4015.2, 1.0, 1.2, 0.5, 1.0)
+	field._register(2, Vector3.UP * 12, 4015.2, 1.0, 1.2, 4015.2)
+	field._promote_due(4015.5, Vector3.ZERO)
+	check(field.promoted_total > 0, "short flights promote in the next bucket instead of leaking past-due events")
+	field._token[2] += 1
+	field._write(2, Vector3.UP * 20, 4016.0, 1.0, 20.0, 0.5, 1.0)
+	field._register(2, Vector3.UP * 20, 4016.0, 1.0, 20.0, 4016.0)
+	field._promote_due(4024.0, Vector3.ZERO)
+	check(field._img.get_pixel(2, 1).a > 0.0, "old expiration events cannot delete a replacement flight")
+	field._write(1, Vector3.UP, 4015.0, 1.0, 8.0, 0.5, 1.0)
+	field._register(1, Vector3.UP, 4015.0, 1.0, 8.0, 4015.0)
+	field.update(5000.0, Vector3.ZERO, Vector3.ZERO, false)
+	check(field._img.get_pixel(1, 1).a == 0.0 and field._buckets.is_empty(), "time jumps clear GPU slots and pending promotions")
+	var instances := field._instances
+	field.free()
+	check(not is_instance_valid(instances), "unloading the field frees its rendering batches too")
+	print("VOLCANO CLEANUP: bounded pools, hard lifetime, distance retirement, dust, suspension and time jumps checked")
 
 
 func _test_lifecycle() -> void:
