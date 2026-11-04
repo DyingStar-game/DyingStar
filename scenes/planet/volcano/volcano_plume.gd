@@ -76,8 +76,9 @@ static func create(planet_data: PlanetData, v: VolcanoRelief.Volcano, centre: Ve
 	plume.model.slowdown_m *= scale_h
 	plume.model.rise_speed *= sqrt(scale_h)
 	plume.model.phase = float(v.seed) * 97.0
-	plume.model.volcano_seed = v.seed
 	plume.model.volcano_key = VolcanoFeatures.key_of(v)
+	# The export gives no seed (all 0): the key, the same on every client, gives each volcano its own schedule.
+	plume.model.volcano_seed = v.seed ^ int(plume.model.volcano_key.hash())
 	plume.model.dormant = v.activity == "dormant"
 	return plume
 

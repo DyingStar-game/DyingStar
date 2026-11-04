@@ -27,6 +27,7 @@ func _ready() -> void:
 	var heights: Array[float] = []
 	var brightness: Array[float] = []
 	var lifetimes: Array[float] = []
+	var schedules := {}
 	for ipix in 12:
 		for v: VolcanoRelief.Volcano in data.get_chunk_volcanoes(1, ipix):
 			var key := VolcanoFeatures.key_of(v)
@@ -47,12 +48,14 @@ func _ready() -> void:
 						heights.append(plume.model.ceiling_m)
 						brightness.append(plume.model.ash_brightness)
 						lifetimes.append(plume.model.lifetime_s)
+						schedules[_schedule_of(plume.model)] = true
 						check(plume.volcano == v and plume.data == data, key + ": plume uses actual planet and volcano")
 						check(plume.basis.y.is_equal_approx(v.c.normalized()), key + ": plume follows spherical up")
 			if root != null:
 				check((root.get_node_or_null("LavaLake") != null) == (v.lake and v.rc > 0.0), key + ": lake preserved")
 				root.free()
 	check(smoking > 0, "Tarsis III manifest contains non-dormant volcanoes")
+	check(schedules.size() == smoking, "each volcano has its own schedule: %d for %d volcanoes" % [schedules.size(), smoking])
 	if not heights.is_empty():
 		print(
 			(
@@ -64,6 +67,15 @@ func _ready() -> void:
 		check(load(VolcanoPlume.SHADER_DIR + shader) is Shader, shader + ": shader resource loads")
 	print("VOLCANO TARSIS III: %d existing volcanoes, %d with plume, %d dormant, %d failures" % [seen.size(), smoking, dormant, failures])
 	get_tree().quit(0 if failures == 0 else 1)
+
+
+## The minutes of a fixed half day when this volcano is active.
+func _schedule_of(model: VolcanoPlumeModel) -> String:
+	var minutes := PackedStringArray()
+	for minute in 720:
+		if model.activity(1800000000.0 + float(minute) * 60.0) > 0.001:
+			minutes.append(str(minute))
+	return ",".join(minutes)
 
 
 func _test_activity_and_wind() -> void:
