@@ -14,7 +14,6 @@ class_name VolcanoFeatures
 ## the glow shows through its cracks when the volcano is active.
 
 const LAKE_SHADER := "res://assets/_universe/environment/terrain/lava_surface.gdshader"
-const SMOKE_SHADER := "res://assets/_universe/environment/terrain/fumarole_smoke.gdshader"
 ## Rings and sectors of the lake disc (it follows the sphere's curvature).
 const LAKE_RINGS := 10
 const LAKE_SECTORS := 64
@@ -23,7 +22,6 @@ const CRUST_DARKEN := 0.6
 ## The lake never rises closer than this share of the crater depth to the rim.
 const MAX_FILL_FRAC := 0.9
 
-static var _smoke_shader: Shader = null
 static var _lake_shader: Shader = null
 
 
@@ -33,14 +31,15 @@ static func key_of(v: VolcanoRelief.Volcano) -> String:
 
 
 ## Does [param v] need a node at all?
-static func wants_node(v: VolcanoRelief.Volcano) -> bool:
-	return v.lake or v.activity != "dormant"
+static func wants_node(v: VolcanoRelief.Volcano, profile: VolcanoActivityProfile = null) -> bool:
+	return v.lake or v.activity != "dormant" or (profile != null and profile.has_events(key_of(v)))
 
 
 ## The lake + plume of [param v], positioned in the planet's frame (the parent
 ## is PlanetTerrain's chunk node, centred on the planet). Null when it needs none.
 static func build(data: PlanetData, v: VolcanoRelief.Volcano) -> Node3D:
-	if not wants_node(v):
+	var profile := VolcanoActivityProfile.for_planet(data.planet_name)
+	if not wants_node(v, profile):
 		return null
 	var root := Node3D.new()
 	root.name = "Volcano_%s" % (v.name if v.name != "" else str(v.seed))
@@ -54,8 +53,8 @@ static func build(data: PlanetData, v: VolcanoRelief.Volcano) -> Node3D:
 	root.position = centre
 	if v.lake and v.rc > 0.0:
 		root.add_child(_lake(data, v, level, centre, crust))
-	if v.activity != "dormant":
-		root.add_child(_plume(v, crust))
+	if v.activity != "dormant" or profile.has_events(key_of(v)):
+		root.add_child(VolcanoPlume.create(data, v, centre))
 		if v.activity == "active" and v.lake:
 			var light := OmniLight3D.new()
 			light.name = "LakeGlow"
@@ -71,8 +70,7 @@ static func build(data: PlanetData, v: VolcanoRelief.Volcano) -> Node3D:
 ## A disc of radius rc on the sphere of radius (planet radius + level),
 ## vertices relative to [param centre]; NORMAL = the sphere direction, which
 ## is what lava_surface.gdshader reads.
-static func _lake(data: PlanetData, v: VolcanoRelief.Volcano, level: float, centre: Vector3,
-		crust: Color) -> MeshInstance3D:
+static func _lake(data: PlanetData, v: VolcanoRelief.Volcano, level: float, centre: Vector3, crust: Color) -> MeshInstance3D:
 	var up := v.c.normalized()
 	var ref := Vector3.UP if absf(up.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
 	var ex := up.cross(ref).normalized()
@@ -124,57 +122,3 @@ static func _lake(data: PlanetData, v: VolcanoRelief.Volcano, level: float, cent
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
-
-
-## The summit plume: one particle column, sized on the crater.
-static func _plume(v: VolcanoRelief.Volcano, crust: Color) -> GPUParticles3D:
-	var up := v.c.normalized()
-	var mouth := maxf(v.rc, 30.0)
-	var rise := clampf(v.h * 0.6, 150.0, 3000.0)
-	var p := GPUParticles3D.new()
-	p.name = "Plume"
-	p.amount = 96
-	p.lifetime = 14.0
-	p.preprocess = 10.0
-	p.randomness = 0.4
-	p.fixed_fps = 30
-	p.local_coords = true
-	var extent := maxf(mouth, rise) * 2.0
-	p.visibility_aabb = AABB(Vector3.ONE * -extent, Vector3.ONE * extent * 2.0)
-	# Emitted from the lake / crater floor (the root's position), rising along the local up.
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	pm.emission_sphere_radius = mouth * 0.4
-	pm.direction = up
-	pm.spread = 12.0
-	pm.initial_velocity_min = rise / p.lifetime * 0.8
-	pm.initial_velocity_max = rise / p.lifetime * 1.3
-	pm.gravity = Vector3.ZERO
-	pm.damping_min = 0.0
-	pm.damping_max = 0.2
-	pm.scale_min = 0.6
-	pm.scale_max = 1.4
-	var sc := CurveTexture.new()
-	var curve := Curve.new()
-	curve.add_point(Vector2(0.0, 0.3))
-	curve.add_point(Vector2(0.5, 0.8))
-	curve.add_point(Vector2(1.0, 1.4))
-	sc.curve = curve
-	pm.scale_curve = sc
-	p.process_material = pm
-	var quad := QuadMesh.new()
-	var puff := clampf(mouth * 0.8, 20.0, 600.0)
-	quad.size = Vector2(puff, puff)
-	if _smoke_shader == null:
-		_smoke_shader = load(SMOKE_SHADER) as Shader
-	var mat := ShaderMaterial.new()
-	mat.shader = _smoke_shader
-	var ash := crust.lerp(Color(0.45, 0.43, 0.40), 0.7)
-	mat.set_shader_parameter("color_hot", Color(0.75, 0.55, 0.40, 0.6) if v.activity == "active"
-			else Color(0.92, 0.92, 0.90, 0.5))
-	mat.set_shader_parameter("color_warm", Color(ash.r, ash.g, ash.b, 0.45))
-	mat.set_shader_parameter("color_cool", Color(ash.r, ash.g, ash.b, 0.2))
-	quad.material = mat
-	p.draw_pass_1 = quad
-	p.emitting = true
-	return p

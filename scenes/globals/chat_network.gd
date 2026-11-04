@@ -195,7 +195,7 @@ func _ready() -> void:
 ## Connect to the broker if not already connecting/connected. Safe to call many
 ## times. No-op on the headless dedicated server (chat is a client feature).
 func ensure_connected() -> void:
-	if Globals.is_stargrot_explorer():
+	if Globals.is_offline_planet_tool():
 		return
 	if OS.has_feature("dedicated_server"):
 		return
