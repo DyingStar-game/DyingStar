@@ -1755,6 +1755,12 @@ func refresh_stargrot_sites(placements: Array[CavePlacement]) -> void:
 ## may need main-thread deferred work as well as RenderingServer synchronization.
 func quiesce_stargrot() -> void:
 	assert(Globals.is_stargrot_explorer())
+	await quiesce_offline()
+
+
+## Standalone planet tests also need to drain native workers before closing their world.
+func quiesce_offline() -> void:
+	assert(Globals.is_offline_planet_tool())
 	set_process(false)
 	set_physics_process(false)
 	var pending: Array[int] = []
@@ -5545,7 +5551,7 @@ func _acquire_volcano_nodes(info: Dictionary) -> void:
 	var keys: Array = []
 	for v in planet_data.volcanoes_owned_by(int(info.get("nside", 0)), int(info.get("ipix", -1))):
 		var vol: VolcanoRelief.Volcano = v
-		if not VolcanoFeatures.wants_node(vol):
+		if not VolcanoFeatures.wants_node(vol, VolcanoActivityProfile.for_planet(planet_data.planet_name)):
 			continue
 		var vkey := VolcanoFeatures.key_of(vol)
 		var entry: Dictionary = _volcano_nodes.get(vkey, {})
@@ -5560,6 +5566,16 @@ func _acquire_volcano_nodes(info: Dictionary) -> void:
 		keys.append(vkey)
 	if not keys.is_empty():
 		info["volcano_keys"] = keys
+
+
+## Rebuild only VFX after an offline profile edit; terrain geometry is unchanged.
+func refresh_volcano_features() -> void:
+	assert(Globals.is_offline_planet_tool())
+	for key: String in _active_chunks:
+		_release_volcano_nodes(key, _active_chunks[key])
+		_active_chunks[key].erase("volcano_keys")
+	for info: Dictionary in _active_chunks.values():
+		_acquire_volcano_nodes(info)
 
 
 func _release_volcano_nodes(key: String, info: Dictionary) -> void:

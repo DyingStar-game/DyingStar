@@ -77,6 +77,10 @@ jobs:
         run: |
           "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest="$NATIVE_TESTS" -gexit
 
+      - name: Volcano activity, lifecycle and Tarsis III integration
+        run: |
+          "$GODOT" --headless --path . res://test/volcano/test_tarsis_volcano_vfx.tscn -- --volcano-view
+
       # The whole suite still carries known failures (test_collision_shape, a few road tests): it
       # reports, it does not block, until they are fixed. The C# twins above do block.
       - name: Whole GUT suite

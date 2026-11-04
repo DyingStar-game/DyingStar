@@ -69,7 +69,7 @@ func _enter_tree() -> void:
 
 
 func _ready():
-	if Globals.is_stargrot_explorer():
+	if Globals.is_offline_planet_tool():
 		return
 	if OS.has_feature("editor"):
 		var current := get_tree().current_scene
