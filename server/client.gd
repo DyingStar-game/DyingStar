@@ -736,10 +736,12 @@ func _resolve_my_pending_frame() -> void:
 	var player = players_list.get(my_player_uuid)
 	if not is_instance_valid(player):
 		return
-	var local_pos: Vector3 = my_pending_frame["position"]
+	var has_position: bool = my_pending_frame.has("position")
+	var local_pos: Vector3 = my_pending_frame.get("position", Vector3.ZERO)
 	my_pending_frame = {}
 	_apply_my_frame(player, parent, local_pos)
-	player.net_set_local_target(local_pos)
+	if has_position:
+		player.net_set_local_target(local_pos)
 
 
 func _search_parent_node(parent_id: String) -> Node:
@@ -1670,11 +1672,18 @@ func player_update(message: Dictionary) -> void:
 				if not is_instance_valid(player):
 					players_list.erase(uuid)
 					return
-				var ppos := Vector3(
-					message["data"]["position"]["x"],
-					message["data"]["position"]["y"],
-					message["data"]["position"]["z"]
-				)
+				# A parent_id is reliable, a position is not: a new parent whose first position took too
+				# long comes alone (godot_net's HOLD_TIMEOUT). It is applied all the same, the body keeps
+				# its place in the world and the next move sets its position in the new frame. Dropped,
+				# that next move would be read in the old frame, for good: the parent is declared once.
+				var has_position: bool = message["data"].has("position")
+				var ppos := Vector3.ZERO
+				if has_position:
+					ppos = Vector3(
+						message["data"]["position"]["x"],
+						message["data"]["position"]["y"],
+						message["data"]["position"]["z"]
+					)
 				if uuid == my_player_uuid:
 					if message["data"].has("parent_id"):
 						my_pending_frame = {}
@@ -1685,22 +1694,19 @@ func player_update(message: Dictionary) -> void:
 							# server only re-declares on change, so the declaration is kept and replayed
 							# the moment that object is created — see _resolve_my_pending_frame. Until
 							# then we stay put: this position is measured in a frame we do not have.
-							my_pending_frame = {"parent_id": str(message["data"]["parent_id"]), "position": ppos}
+							my_pending_frame = {"parent_id": str(message["data"]["parent_id"])}
+							if has_position:
+								my_pending_frame["position"] = ppos
 							push_warning("[client] my player: parent_id %s not here yet, waiting for it"
 									% message["data"]["parent_id"])
 						else:
 							_apply_my_frame(player, parent, ppos)
-					elif not my_pending_frame.is_empty():
+					elif not my_pending_frame.is_empty() and has_position:
 						my_pending_frame["position"] = ppos  # still measured in the frame we are waiting for
-					if my_pending_frame.is_empty():
+					if my_pending_frame.is_empty() and has_position:
 						player.net_set_local_target(ppos, _move_clocks(message["data"]))
 				else:
 					# Remote player: smooth it (entity interpolation) instead of teleporting at 30 Hz.
-					var prot := Vector3(
-						message["data"]["rotation"]["x"],
-						message["data"]["rotation"]["y"],
-						message["data"]["rotation"]["z"]
-					)
 					if message["data"].has("parent_id"):
 						var parent = _frame_node(message["data"]["parent_id"])
 						if parent == null:
@@ -1710,7 +1716,13 @@ func player_update(message: Dictionary) -> void:
 							player.reparent(parent)
 							player.reset_physics_interpolation()
 							player.net_reset_interp()
-					player.net_set_target(ppos, prot)
+					if has_position:
+						var prot := Vector3(
+							message["data"]["rotation"]["x"],
+							message["data"]["rotation"]["y"],
+							message["data"]["rotation"]["z"]
+						)
+						player.net_set_target(ppos, prot)
 		else:
 			print("Update Player but not found...")
 			if uuid == my_player_uuid:
