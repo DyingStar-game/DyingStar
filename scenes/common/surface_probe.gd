@@ -244,27 +244,57 @@ static func family_of_biome(biome) -> StringName:
 ## those wins over a bigger one enclosing it (a floor slab inside a room-sized shell). Only if none
 ## contains it do we fall back to the nearest.
 static func _material_of(node: Node, point: Vector3) -> Material:
-	var best: MeshInstance3D = null
+	var best: GeometryInstance3D = null
 	var best_volume: float = INF
-	var nearest: MeshInstance3D = null
+	var nearest: GeometryInstance3D = null
 	var nearest_d: float = INF
 	for m in _meshes_near(node):
-		var mesh: MeshInstance3D = m as MeshInstance3D
-		if mesh.get_active_material(0) == null:
+		var shape: GeometryInstance3D = m as GeometryInstance3D
+		if _surface_material(shape) == null:
 			continue  # no material to read: not a candidate at all
-		var box: AABB = mesh.global_transform * mesh.get_aabb()
+		var box: AABB = shape.global_transform * _local_aabb(shape)
 		if box.has_point(point):
 			var volume: float = box.size.x * box.size.y * box.size.z
 			if volume < best_volume:
 				best_volume = volume
-				best = mesh
+				best = shape
 		else:
 			var d: float = box.get_center().distance_to(point)
 			if d < nearest_d:
 				nearest_d = d
-				nearest = mesh
-	var chosen: MeshInstance3D = best if best != null else nearest
-	return chosen.get_active_material(0) if chosen != null else null
+				nearest = shape
+	var chosen: GeometryInstance3D = best if best != null else nearest
+	return _surface_material(chosen) if chosen != null else null
+
+
+## The material a candidate surface shows: a mesh's active material, or a CSG shape's own material.
+## A material_override wins on both, as it does on screen.
+static func _surface_material(shape: GeometryInstance3D) -> Material:
+	if shape == null:
+		return null
+	if shape.material_override != null:
+		return shape.material_override
+	if shape is MeshInstance3D:
+		return (shape as MeshInstance3D).get_active_material(0)
+	if shape is CSGShape3D:
+		return shape.get("material") as Material
+	return null
+
+
+## The bounds of a candidate in its own frame. A CSG shape inside a combiner draws nothing by
+## itself, so its bounds are taken from its own parameters where they are plain (box, cylinder,
+## sphere), and from the engine otherwise.
+static func _local_aabb(shape: GeometryInstance3D) -> AABB:
+	if shape is CSGBox3D:
+		var s: Vector3 = (shape as CSGBox3D).size
+		return AABB(-s * 0.5, s)
+	if shape is CSGCylinder3D:
+		var c := shape as CSGCylinder3D
+		return AABB(Vector3(-c.radius, -c.height * 0.5, -c.radius), Vector3(c.radius * 2.0, c.height, c.radius * 2.0))
+	if shape is CSGSphere3D:
+		var r: float = (shape as CSGSphere3D).radius
+		return AABB(-Vector3.ONE * r, Vector3.ONE * r * 2.0)
+	return shape.get_aabb()
 
 
 ## Family stated by a material's own id — `mat_<family>_<name>`.
@@ -330,8 +360,22 @@ static func _meshes_near(node: Node) -> Array:
 	# the model side by side. Never above it: past the instance we describe the neighbours.
 	if out.is_empty() and node.owner != null and node.owner != node:
 		_collect_meshes(node.owner, node, out)
+	# A CSG blockout (the village MVP placeholders): the collider IS the CSG shape that carries
+	# use_collision, and its surfaces are the CSG primitives under it — no MeshInstance3D at all.
+	if out.is_empty() and node is CSGShape3D:
+		_collect_csg_shapes(node, out)
 	_mesh_cache[key] = out
 	return out
+
+
+## The CSG shapes of the blockout [param root] (itself included) that add matter: a subtracted shape
+## carves a hole, it is not a surface one stands on.
+static func _collect_csg_shapes(root: Node, out: Array) -> void:
+	var shapes: Array[Node] = [root]
+	shapes.append_array(root.find_children("*", "CSGShape3D", true, false))
+	for s: Node in shapes:
+		if (s as CSGShape3D).operation != CSGShape3D.OPERATION_SUBTRACTION and not out.has(s):
+			out.append(s)
 
 
 ## Gather the meshes under `root` that still belong to `body` — anything under a DIFFERENT physics

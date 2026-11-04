@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://cvsvr52nn75xd" path="res://scenes/common/terrain_blend.gd" id="tblend_ds"]
 [ext_resource type="Script" path="res://scenes/common/map_marker.gd" id="mm_script"]
 [ext_resource type="Texture2D" path="res://assets/textures/map_markers/beacon.png" id="mm_icon"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="mat_grey"]
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(2.8, 1.44)
@@ -45,6 +46,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
 use_collision = true
 collision_mask = 0
 size = Vector3(8, 5, 12)
+material = ExtResource("mat_grey")
 
 [node name="Hollow" type="CSGBox3D" parent="Blockout" unique_id=977835533]
 operation = 2

@@ -6,6 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://b5kus08l4dkg7" path="res://assets/_universe/_shared/materials/floor/concrete_floor_001_heightmap.png" id="4"]
 
 [resource]
+resource_name = "mat_concrete_floor_001"
 albedo_texture = ExtResource("1")
 orm_texture = ExtResource("2")
 normal_enabled = true
