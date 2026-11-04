@@ -756,6 +756,8 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# was laid inside it, under the bridge (tarsis_3, 39.519 W 24.738 N).
 		# v67 → v68: tarsis_3 re-exported from QGIS (roads, biomes, mountains) and its
 		# grade profiles re-baked: meshes built on the old relief must not be served.
+		# v68 → v69: tarsis_3 roads re-exported from QGIS — the road part has no
+		# fingerprint in the key, meshes built on the old roads must not be served.
 		# The chunk skirt build switch (Globals.ENABLED_DEV_TOOLS) is baked
 		# geometry too: a mesh cached with skirts must not be served without.
 		var _sk := "_sk%d" % int(Globals.is_dev_tool_enabled(&"build_chunk_skirts"))
@@ -764,13 +766,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v68%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v69%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
 		# The same key without the parts that only change how the ground looks (skirts, rock tints):
 		# what a building's persisted pad altitude (terrain_settled) is checked against.
-		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v68%s%s%s%s%s%s" % [
+		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v69%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
 			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt]).md5_text().substr(0, 16)
