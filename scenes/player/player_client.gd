@@ -7,6 +7,8 @@ const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## before the editor has registered a new class_name must still compile the player.
 const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
 const PROMPT_LEADER := preload("res://ui/hud/prompt_leader.gd")
+## Height of the mouse button's picture in a prompt (px): a little taller than its 24 px text.
+const PROMPT_ICON_PX := 30
 ## The DataPad worn on the wrist, and the owner's gesture into it -- preloaded for the same reason.
 const WRIST_DATAPAD_SCENE := preload("res://scenes/_universe/props/datapad/wrist_datapad.tscn")
 const WRIST_DATAPAD := preload("res://scenes/player/wrist_datapad_controller.gd")
@@ -130,7 +132,7 @@ var _walk_speed_target: float = 0.0  # mouse-wheel walk speed; seeded from playe
 ## switch (Globals.ENABLED_DEV_TOOLS). Trusted only while the server floats the body (see _in_god_mode).
 var _god_mode: bool = false
 var _god_mode_speed: float = 0.0  # the speed the wheel chose; seeded from player.god_mode_speed in setup()
-var _god_mode_label: Label = null  # top of the HUD while in god mode: its speed
+var _god_mode_label: RichTextLabel = null  # top of the HUD while in god mode: its speed
 ## The ray of our own sight check (SightLine, the server's): no prompt for what stands behind a wall.
 var _sight_ray: RayCast3D = null
 ## The server says we lie on a bed we have not found yet (woken up at home: its interior comes later).
@@ -645,8 +647,8 @@ func _process(_delta: float) -> void:
 			player.interact_label.text = tr("%%HUD_SEAT_TAKEN")
 		elif player._owner_carrying:
 			# Before the door check on purpose: hands full, the seat is refused whatever the door.
-			player.interact_label.text = (tr("%%HUD_HANDS_FULL")
-					% ("[%s]" % InputLabel.for_action(&"action")))
+			player.interact_label.text = (InputLabel.escape(tr("%%HUD_HANDS_FULL"))
+					% InputLabel.rich_for_action(&"action", PROMPT_ICON_PX))
 		elif _seat_door_open(aimed_seat):
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_SEAT_DRIVER"
 					if aimed_seat.is_driver_seat() else "%%HUD_SEAT_PASSENGER"))
@@ -922,13 +924,18 @@ func _in_god_mode() -> bool:
 ## hidden meanwhile: flying is looking, and arms and a torch in front of the lens only get in the way.
 ## On this client only — the others see the avatar as before.
 func _build_god_mode_label() -> void:
-	_god_mode_label = Label.new()
+	_god_mode_label = RichTextLabel.new()
 	_god_mode_label.name = "GodModeSpeed"
+	_god_mode_label.bbcode_enabled = true
+	_god_mode_label.fit_content = true
+	_god_mode_label.scroll_active = false
+	_god_mode_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_god_mode_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_god_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_god_mode_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	_god_mode_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_god_mode_label.position.y = 24.0
-	_god_mode_label.add_theme_font_size_override("font_size", 22)
+	_god_mode_label.add_theme_font_size_override("normal_font_size", 22)
 	_god_mode_label.add_theme_constant_override("outline_size", 6)
 	_god_mode_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.8))
 	_god_mode_label.visible = false
@@ -946,7 +953,7 @@ func _update_god_mode_label() -> void:
 		player.puppet.visible = not hidden
 	_god_mode_label.visible = flying
 	if _god_mode_label.visible:
-		_god_mode_label.text = (tr("%%HUD_GOD_MODE_SPEED") % GOD_MODE.speed_text(_god_mode_speed)
+		_god_mode_label.text = (InputLabel.escape(tr("%%HUD_GOD_MODE_SPEED") % GOD_MODE.speed_text(_god_mode_speed))
 				+ "\n" + _prompt(&"god_mode_land", tr("%%HUD_GOD_MODE_LAND")))
 
 
@@ -1538,12 +1545,14 @@ func _update_cab_screen(vehicle: Node) -> void:
 
 
 ## Prompt for a door handle under the crosshair: close it if open, else open it.
-## "[E] Carry" — with the key read from the InputMap, so a rebind is reflected instead of the HUD
-## insisting on a key that no longer does anything. The bracket layout is presentation, not
-## language, so it stays here rather than inside every translated string.
+## "[E] Carry", or the picture of the mouse button before "Carry" — with the key read from the
+## InputMap, so a rebind is reflected instead of the HUD insisting on a key that no longer does
+## anything. For a RichTextLabel (the prompt, the god mode line): the text is escaped, the key comes
+## from InputLabel.rich_for_action. The layout is presentation, not language, so it stays here rather
+## than inside every translated string.
 func _prompt(action: StringName, text: String) -> String:
-	var key : String = InputLabel.for_action(action)
-	return "[%s] %s" % [key, text] if key != "" else text
+	var key : String = InputLabel.rich_for_action(action, PROMPT_ICON_PX)
+	return "%s %s" % [key, InputLabel.escape(text)] if key != "" else InputLabel.escape(text)
 
 
 func _door_prompt(handle: VehicleDoorHandle) -> String:

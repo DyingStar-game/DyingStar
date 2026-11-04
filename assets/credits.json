@@ -1688,6 +1688,69 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "mouse_back.png",
+			"path": "res://assets/textures/input/mouse/mouse_back.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mouse_forward.png",
+			"path": "res://assets/textures/input/mouse/mouse_forward.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mouse_left.png",
+			"path": "res://assets/textures/input/mouse/mouse_left.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mouse_middle.png",
+			"path": "res://assets/textures/input/mouse/mouse_middle.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mouse_right.png",
+			"path": "res://assets/textures/input/mouse/mouse_right.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mouse_wheel_down.png",
+			"path": "res://assets/textures/input/mouse/mouse_wheel_down.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mouse_wheel_up.png",
+			"path": "res://assets/textures/input/mouse/mouse_wheel_up.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "outdoor_lamppost_2.2m_001.blend",
 			"path": "res://assets_blender/_universe/props/furniture/outdoor_lamppost_2.2m_001.blend",
 			"author": "ddurieux",

@@ -24,6 +24,17 @@ const MOUSE_BUTTONS : Dictionary = {
 	MOUSE_BUTTON_LEFT: "%%MOUSE_LEFT", MOUSE_BUTTON_RIGHT: "%%MOUSE_RIGHT", MOUSE_BUTTON_MIDDLE: "%%MOUSE_MIDDLE",
 	MOUSE_BUTTON_WHEEL_UP: "%%MOUSE_WHEEL_UP", MOUSE_BUTTON_WHEEL_DOWN: "%%MOUSE_WHEEL_DOWN",
 }
+## The mouse buttons a prompt shows as a picture of the mouse rather than as a word, by MouseButton
+## index: read at a glance and in any language. A button pressed with a modifier keeps its words.
+const MOUSE_ICONS : Dictionary = {
+	MOUSE_BUTTON_LEFT: "res://assets/textures/input/mouse/mouse_left.png",
+	MOUSE_BUTTON_RIGHT: "res://assets/textures/input/mouse/mouse_right.png",
+	MOUSE_BUTTON_MIDDLE: "res://assets/textures/input/mouse/mouse_middle.png",
+	MOUSE_BUTTON_WHEEL_UP: "res://assets/textures/input/mouse/mouse_wheel_up.png",
+	MOUSE_BUTTON_WHEEL_DOWN: "res://assets/textures/input/mouse/mouse_wheel_down.png",
+	MOUSE_BUTTON_XBUTTON1: "res://assets/textures/input/mouse/mouse_back.png",
+	MOUSE_BUTTON_XBUTTON2: "res://assets/textures/input/mouse/mouse_forward.png",
+}
 ## The two sticks and the two triggers, per family: [left stick, right stick, left trigger, right].
 const PAD_AXES : Dictionary = {
 	InputDevice.Family.XBOX: ["LS", "RS", "LT", "RT"],
@@ -37,12 +48,48 @@ const PAD_AXES : Dictionary = {
 ## when theirs has no binding for it. Empty when the action has no binding at all, so a caller can
 ## leave the brackets out rather than show "[]".
 static func for_action(action: StringName) -> String:
-	if not InputMap.has_action(action):
+	var event := _first_event(action)
+	return for_event(event) if event != null else ""
+
+
+## The key an action is bound to, for a RichTextLabel ([member RichTextLabel.bbcode_enabled]): the
+## picture of the mouse button, [param icon_px] high, when it is a bare mouse button; else its name
+## in brackets ("[E]"), the brackets escaped. Empty when the action has no binding, like
+## [method for_action].
+static func rich_for_action(action: StringName, icon_px: int) -> String:
+	var event := _first_event(action)
+	if event == null:
 		return ""
+	var icon := icon_for_event(event)
+	if icon != null:
+		return "[img height=%d]%s[/img]" % [icon_px, icon.resource_path]
+	return "[lb]%s]" % escape(for_event(event))
+
+
+## [param text] shown as it is by a RichTextLabel: its opening brackets escaped, so no word of a
+## translation or of a key name ("[B]") is read as a tag.
+static func escape(text: String) -> String:
+	return text.replace("[", "[lb]")
+
+
+## The picture of [param event]'s mouse button (MOUSE_ICONS), or null: not a mouse button, a button
+## with no picture, or one pressed with a modifier ("Alt + wheel" keeps its words).
+static func icon_for_event(event: InputEvent) -> Texture2D:
+	var button := event as InputEventMouseButton
+	if button == null or _modifiers(button) != "" or not MOUSE_ICONS.has(button.button_index):
+		return null
+	return load(str(MOUSE_ICONS[button.button_index])) as Texture2D
+
+
+## The first binding of [param action] on the device in hand, else on the other one; null when it has
+## none. What [method for_action] and [method rich_for_action] both name.
+static func _first_event(action: StringName) -> InputEvent:
+	if not InputMap.has_action(action):
+		return null
 	var events : Array[InputEvent] = InputDevice.bindings(action, InputDevice.last)
 	if events.is_empty():
 		events = InputMap.action_get_events(action)
-	return for_event(events[0]) if not events.is_empty() else ""
+	return events[0] if not events.is_empty() else null
 
 
 static func for_event(event: InputEvent) -> String:
