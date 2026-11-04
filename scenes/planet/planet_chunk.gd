@@ -14,6 +14,11 @@ class_name PlanetChunk
 const RIM_SNAP_PITCHES := 1.6
 ## Tests flip this to exercise the GDScript normal pass on a frame that has its C# half.
 static var use_native_normals := true
+## Tests flip this to exercise the GDScript vertex loop on a frame that has its C# half.
+static var use_native_verts := true
+## A chunk reads nine tiles at most, a pruned one its ancestor too: the C# vertex loop asks GDScript to
+## register what it misses at most this many times, then leaves the vertices it cannot answer to GDScript.
+const NATIVE_VERTS_TILE_ASKS := 24
 ## Static helpers for generating terrain-chunk meshes & collision shapes.
 ##
 ## Each chunk covers a rectangular patch on one cube-sphere face.
@@ -93,6 +98,162 @@ static func prepare_linear_zone(zone: Dictionary, radius: float) -> void:
 ## [param u_min] / [param u_max] — horizontal bounds on the face (−1 … 1)
 ## [param v_min] / [param v_max] — vertical bounds on the face (−1 … 1)
 ## [param resolution] — number of quads per edge (vertex count = res + 1)
+## Hands the frame's C# half what the vertex loop decides once per populate zone, and the chunk's roads,
+## LOD stitch, cuttings and pads. False when it cannot serve a single vertex of this chunk. Fills
+## [param slugs] with the rocks its slots index, in the order of [member _imp_slugs].
+static func _native_verts_setup(data: PlanetData, frame: PlanetData.TileFrame, zones: Array,
+		corundum_bd: BiomeDefinition, surface_mat_index: Dictionary, relief_index: Dictionary, relief_bds: Array,
+		relief_roads: Array, spacing: float, st_edge: Dictionary, st_blend: Dictionary, vert_count: int,
+		grade_ctx: Dictionary, slugs: Array[String]) -> bool:
+	var pads: Array = grade_ctx.get("pads", [])
+	var grade_args: Array = GradeBed.native_args(_without_pads(grade_ctx))
+	if not grade_ctx.is_empty() and not grade_args[3]:
+		return false  # Cuttings without their C# twin: every vertex would ask GDScript.
+	var full := PackedInt32Array()
+	var starts := PackedInt32Array([0])
+	var outline := PackedFloat64Array()
+	var entries: Array[Dictionary] = []
+	for zone: Dictionary in zones:
+		var coverage: String = zone.get("coverage", "")
+		var vertices: Array = zone.get("vertices", [])
+		if coverage == "point" or (coverage != "full" and vertices.size() < 3):
+			continue  # _dir_in_populate_zone can never hold them.
+		full.append(1 if coverage == "full" else 0)
+		if coverage != "full":
+			for v in vertices:
+				outline.append(float(v[0]))
+				outline.append(float(v[1]))
+		starts.append(outline.size() / 2)
+		entries.append(zone)
+	entries.append({})
+	var serve := PackedInt32Array()
+	var crack := PackedInt32Array()
+	var slot := PackedInt32Array()
+	var relief := PackedInt32Array()
+	var over := PackedInt32Array()
+	var color := PackedColorArray()
+	var detail := PackedVector2Array()
+	var color_from_dir := PackedInt32Array()
+	var any := false
+	var any_relief := false
+	for zone: Dictionary in entries:
+		var bd: BiomeDefinition = data.get_biome_by_type(zone.get("biome_type", "")) if not zone.is_empty() else null
+		var row := _native_verts_zone(data, zone, bd, corundum_bd, slugs)
+		serve.append(1 if row["serve"] else 0)
+		any = any or row["serve"]
+		crack.append(1 if data.cracks_apply_to_zone(zone) else 0)
+		slot.append(row["slot"])
+		color.append(row["color"])
+		color_from_dir.append(1 if row["from_dir"] else 0)
+		var k := 0
+		if bd != null and BiomeRelief.visible_at(bd, spacing):
+			k = int(relief_index.get(bd.biome_type, 0))
+			any_relief = any_relief or k > 0
+		relief.append(k)
+		var override_k := 0
+		if bd != null and bd.terrain_material_override and not bd.is_liquid:
+			override_k = int(surface_mat_index.get(bd.terrain_material_override.resource_path, 0))
+		over.append(override_k)
+		var detail_bd: BiomeDefinition = corundum_bd if data.corundum_applies_to_zone(zone) and corundum_bd else bd
+		var layer := data.get_detail_layer(detail_bd)
+		detail.append(Vector2(float(layer), data.get_detail_scale_for_layer(layer)))
+	if not any:
+		return false
+	var native = frame.native
+	native.SetVertZones(full, starts, outline, serve, crack, slot, relief, over, color, detail, color_from_dir)
+	var points := PackedFloat64Array()
+	var road_starts := PackedInt32Array([0])
+	var half_widths := PackedFloat64Array()
+	if any_relief:
+		for road: Dictionary in relief_roads:
+			for p: Vector2 in (road.get("centerline", PackedVector2Array()) as PackedVector2Array):
+				points.append(p.x)
+				points.append(p.y)
+			road_starts.append(points.size() / 2)
+			half_widths.append(RoadTerrain.get_half_width_m(road))
+		var rl_min := PackedFloat64Array()
+		var rl_max := PackedFloat64Array()
+		var rl_wl := PackedFloat64Array()
+		for rl_bd: BiomeDefinition in relief_bds:
+			rl_min.append(rl_bd.relief_min_m)
+			rl_max.append(rl_bd.relief_max_m)
+			rl_wl.append(rl_bd.relief_wavelength_m)
+		native.SetNormalRelief(PackedInt32Array(), PackedFloat32Array(), rl_min, rl_max, rl_wl)
+	native.SetVertRoads(points, road_starts, half_widths, data.radius * PI / 180.0)
+	if not st_edge.is_empty() or not st_blend.is_empty():
+		var edge := PackedFloat64Array()
+		var weight := PackedFloat64Array()
+		var height := PackedFloat64Array()
+		edge.resize(vert_count)
+		edge.fill(NAN)
+		weight.resize(vert_count)
+		weight.fill(NAN)
+		height.resize(vert_count)
+		for i: int in st_edge:
+			edge[i] = st_edge[i]
+		for i: int in st_blend:
+			var b: Vector2 = st_blend[i]
+			weight[i] = b.x
+			height[i] = b.y
+		native.SetVertStitch(edge, weight, height)
+	if not grade_ctx.is_empty():
+		native.SetVertGrade(grade_args[0], float(grade_ctx["m_per_deg"]), grade_args[1], grade_args[2])
+	if not pads.is_empty():
+		var reach := PackedFloat64Array()
+		var band: float = float(grade_ctx.get("coarse_band_m", 0.0))
+		for rec: Dictionary in pads:
+			reach.append(float(rec["lon"]))
+			reach.append(float(rec["lat"]))
+			reach.append(PadBed.apply_reach_m(rec, band))
+		native.SetVertPads(reach)
+	return true
+
+
+## [param ctx] as GradeBed.native_args would see it without its pads, which the C# leaves to GDScript by reach.
+static func _without_pads(ctx: Dictionary) -> Dictionary:
+	var out := ctx.duplicate()
+	out.erase("pads")
+	return out
+
+
+## What the vertex loop gives every vertex of [param zone] ({} = none): can the C# do them at all, the rock's
+## slot in [param slugs], the colour before the impurity pass, or that the colour depends on the direction.
+## Same order of tests as the loop's.
+static func _native_verts_zone(data: PlanetData, zone: Dictionary, bd: BiomeDefinition, corundum_bd: BiomeDefinition,
+		slugs: Array[String]) -> Dictionary:
+	var hex: String = zone.get("color_hex", "")
+	var serve := true
+	var from_dir := false
+	if bd != null and ((bd.is_liquid and data.has_ocean) or bd.has_shallow_water
+			or SpatialLunarGroundTerrain.matches_zone(bd) or MeadowSteppeMeadowTerrain.matches_zone(bd)
+			or ForestTemperateForestTerrain.matches_zone(bd) or RockyLandformCliffTerrain.matches_zone(bd)
+			or CaveTerrain.is_cave_biome(bd) or VolcanicGeothermalIceGeyserTerrain.matches_zone(bd)
+			or VolcanicGeothermalMineralThermalSourceTerrain.matches_zone(bd)):
+		serve = false
+	var rock := ""
+	var col := Color(0.45, 0.35, 0.25)
+	if data.corundum_applies_to_zone(zone) and corundum_bd:
+		rock = data.corundum_default_rock
+		col = corundum_bd.color
+	elif zone.has("rock_type") and RockCatalogue.has(str(zone["rock_type"])):
+		rock = str(zone["rock_type"])
+		col = bd.color if bd else (Color(hex) if not hex.is_empty() else col)
+	elif bd:
+		col = bd.color
+	elif not hex.is_empty():
+		col = Color(hex)
+	else:
+		from_dir = true  # data.sample_biome_at(dir): set by GDScript after the pass.
+	var index := 0
+	if not rock.is_empty():
+		var at := slugs.find(rock)
+		if at < 0:
+			at = slugs.size()
+			slugs.append(rock)
+		index = at + 1
+	return {"serve": serve, "slot": index, "color": col, "from_dir": from_dir}
+
+
 static func generate_mesh(
 		data: PlanetData,
 		face: int,
@@ -592,9 +753,81 @@ static func generate_mesh(
 		prof["prepare"] = _now - _t_phase
 		_t_phase = _now
 	# --- vertices -----------------------------------------------------------
+	# The whole loop in the frame's C# half (TileFrameNative.Verts.cs): the same values as the loop below,
+	# which then only does the vertices left to it. Not under the profiling rig, which counts in the
+	# GDScript path; not where a feature reaches every vertex (a river, a canyon, a crater).
+	var _v_state := PackedByteArray()
+	if use_native_verts and not _pf and hp_mode and _frame != null and _frame.native_ok \
+			and not has_river_overlap and not has_dry_river_bed_overlap and not has_linear_overlap \
+			and recipe_craters.is_empty():
+		var _rw_native: Dictionary = _rw_ctx if not _rw_ctx.is_empty() else _rw_shave
+		var _v_slugs: Array[String] = []
+		if _native_verts_setup(data, _frame, _pz_zones, _corundum_bd, _surface_mat_index, _relief_index, _relief_bds,
+				_relief_roads, _crack_vtx_spacing, _st_edge, _st_blend, vert_count, _rw_native, _v_slugs):
+			var _nv = _frame.native
+			var _flat := PackedVector3Array()
+			for _row: PackedVector3Array in grid_dirs:
+				_flat.append_array(_row)
+			_nv.VertsBegin(_flat, res, _export_ipix, _sample_nside, _crack_vtx_spacing,
+					_crack_vtx_spacing * RIM_SNAP_PITCHES, ArideDesertCorundumPlateauTerrain.CRACK_FOOT_INSET_M,
+					_crack_masked, cc_f32)
+			var _v_asks := 0
+			var _v_last := -1
+			var _v_at: int = _nv.VertsRun(true)
+			while _v_at >= 0:
+				if _v_at == _v_last or _v_asks >= NATIVE_VERTS_TILE_ASKS:
+					_v_at = _nv.VertsRun(false)
+					break
+				_v_last = _v_at
+				_v_asks += 1
+				# Through GDScript, which registers what was missing; the height itself is the C#'s to redo.
+				var _v_xi: int = _v_at % (res + 1)
+				@warning_ignore("integer_division")
+				var _v_yi: int = _v_at / (res + 1)
+				if _v_xi == 0 or _v_xi == res or _v_yi == 0 or _v_yi == res:
+					data.sample_height_boundary(_nv.VertsDir(_v_at), _export_ipix, -1, Vector2i(-1, -1), null,
+							_sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
+				else:
+					data.sample_height_for_direction(_nv.VertsDir(_v_at), _export_ipix, -1, Vector2i(-1, -1), null,
+							_sample_nside, _frame, _crack_vtx_spacing, CrackCarve.NONE)
+				_v_at = _nv.VertsRun(true)
+			var _v: Array = _nv.VertsResult()
+			_v_state = _v[0]
+			vertices = _v[1]
+			_vdirs = _v[2]
+			normals = _vdirs.duplicate()
+			uvs = _v[3]
+			uv2s = _v[4]
+			colors = _v[5]
+			_chunk_heights = _v[6]
+			_crack_edge = _v[7]
+			_imp_core = _v[8]
+			_imp_carve = _v[9]
+			_imp_wall = _v[10]
+			_carved = _v[12]
+			_snapped = _v[13]
+			_imp_slot = _v[15]
+			_imp_slugs = _v_slugs
+			if has_relief_overlap:
+				relief_vertex = _v[16]
+				relief_road_w = _v[11]
+			if has_surface_override_overlap:
+				surface_override_vertex = _v[17]
+			if not _rw_native.is_empty():
+				_rw_band = _v[14]
+			if not _rw_ctx.is_empty():
+				_rw_h = _v[18]
+			prof["verts_served"] = _v_state.count(1)
+			var _v_from_dir: PackedByteArray = _v[19]
+			if _v_from_dir.has(1):
+				for _i: int in vert_count:
+					if _v_from_dir[_i] == 1:
+						colors[_i] = data.sample_biome_at(_vdirs[_i])
 	for yi in res + 1:
 		for xi in res + 1:
 			var idx := yi * (res + 1) + xi
+			if not _v_state.is_empty() and _v_state[idx] == 1:
+				continue
 			var dir: Vector3
 			var height: float
 			var _is_border := xi == 0 or xi == res or yi == 0 or yi == res

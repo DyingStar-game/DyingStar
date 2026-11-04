@@ -1181,7 +1181,8 @@ class TileFrame:
 			_native_script = NativeScript.load_usable("res://scenes/planet/native/TileFrameNative.cs",
 					["Configure", "SetMountains", "SetCracks", "SetCrackFrame", "SetCrackZones", "AddTile",
 					"Redirect", "Sample", "SampleBoundary", "Sample4", "SetNormalRelief", "SetNormalGrade", "Normals",
-					"NormalsServed"])
+					"NormalsServed", "SetVertZones", "SetVertRoads", "SetVertStitch", "SetVertGrade", "SetVertPads",
+					"VertsBegin", "VertsRun", "VertsDir", "VertsResult"])
 		return _native_script != null
 
 	## Tout ce qui ne dépend que de la tuile, calculé au premier accès.
