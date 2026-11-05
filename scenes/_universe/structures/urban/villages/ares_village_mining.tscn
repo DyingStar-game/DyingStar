@@ -5,7 +5,6 @@
 [ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="4_hnyaj"]
 [ext_resource type="PackedScene" uid="uid://dyoytajqysjhf" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="5_tele"]
 [ext_resource type="PackedScene" uid="uid://d2s14o4v7mrcl" path="res://scenes/_universe/props/containers/crate_container.tscn" id="6_hnyaj"]
-[ext_resource type="PackedScene" uid="uid://c7jjgmfdmsu85" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_2.2m.tscn" id="7_ha2q5"]
 [ext_resource type="PackedScene" uid="uid://uoeedtve2rkg" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_3.4m.tscn" id="8_80d3s"]
 [ext_resource type="PackedScene" uid="uid://cgf76q1irwpt6" path="res://scenes/_universe/structures/dispenser/food_dispenser.tscn" id="14_wgxie"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="43_rdprs"]
@@ -68,7 +67,7 @@ point_count = 2
 
 [sub_resource type="Curve3D" id="Curve3D_FenceNorth"]
 _data = {
-"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -234.3, 0, -79, 0, 0, 0, 0, 0, 0, -85.50001017150888, 0, -78.99847304916709),
+"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -228.3, 0, -78.97646490461351, 0, 0, 0, 0, 0, 0, -85.50001017150888, 0, -78.99847304916709),
 "tilts": PackedFloat64Array(0, 0)
 }
 point_count = 2
@@ -89,10 +88,10 @@ point_count = 2
 
 [sub_resource type="Curve3D" id="Curve3D_FenceWestNorth"]
 _data = {
-"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -228.3, 0, -79, 0, 0, 0, 0, 0, 0, -228.3, 0, -39.7, 0, 0, 0, 0, 0, 0, -222.76940918635592, -0.19194848841289056, -39.584672374418005),
-"tilts": PackedFloat64Array(0, 0, 0)
+"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -228.2999963728025, 0, -78.97646490517252, 0, 0, 0, 0, 0, 0, -228.3, 0, -39.7),
+"tilts": PackedFloat64Array(0, 0)
 }
-point_count = 3
+point_count = 2
 
 [sub_resource type="Curve3D" id="Curve3D_FenceWestSouth"]
 _data = {
@@ -214,12 +213,6 @@ transform = Transform3D(0.343632, 0, -0.939104, 0, 1, 0, 0.939104, 0, 0.343632, 
 
 [node name="CrateContainer6" parent="." unique_id=129537979 instance=ExtResource("6_hnyaj")]
 transform = Transform3D(0.665977, 0, -0.745972, 0, 1, 0, 0.745972, 0, 0.665977, -120.033033, 1.49486, -16.95912529147072)
-
-[node name="OutdoorLamppost2_2001" parent="." unique_id=1239394709 instance=ExtResource("7_ha2q5")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -79, 0, -12.106862553800944)
-
-[node name="OutdoorLamppost2_2002" parent="." unique_id=212726338 instance=ExtResource("7_ha2q5")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -121, 0, -12.106862553800944)
 
 [node name="LamppostOutdoor" parent="." unique_id=714726914 instance=ExtResource("8_80d3s")]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -170, 0, -36)
@@ -390,7 +383,7 @@ transform = Transform3D(-0.7071067811865475, 0, -0.7071067811865476, 0, 1, 0, 0.
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 90, 0, -20)
 
 [node name="LamppostOutdoor20" parent="." unique_id=1623022038 instance=ExtResource("8_80d3s")]
-transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 130, 0, -20)
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 128, 0, -20)
 
 [node name="LamppostOutdoor21" parent="." unique_id=982106914 instance=ExtResource("8_80d3s")]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 170, 0, -20)
