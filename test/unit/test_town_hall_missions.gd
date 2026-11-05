@@ -35,7 +35,10 @@ func test_the_town_hall_has_a_board_and_four_kiosks_on_one_feed() -> void:
 			"many ads across")
 	for kiosk: Node3D in kiosks:
 		assert_true(absf(kiosk.position.z) < 10.7 and absf(kiosk.position.x) < 23.7, "inside the walls")
-		assert_gt(absf(kiosk.position.x), 2.5, "clear of the doorway")
+		# to the right of the board, seen from the hall (facing +Z, the right is -X), facing the hall
+		assert_lt(kiosk.position.x, -8.3, "beside the board, not in front of it")
+		assert_gt(kiosk.position.z, 8.0, "along the back wall")
+		assert_lt(kiosk.global_basis.z.z, -0.9, "its screen turned to the hall")
 
 
 func _many(count: int) -> Array:
