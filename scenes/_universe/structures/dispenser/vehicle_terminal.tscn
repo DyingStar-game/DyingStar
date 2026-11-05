@@ -188,19 +188,19 @@ size = Vector3(0.02, 0.008, 0.4)
 material = SubResource("Mat_accent")
 
 [node name="LogoFront" type="Sprite3D" parent="." unique_id=1771525909 groups=["brand_logo"]]
-transform = Transform3D(0.5883270374457983, 0, 0, 0, 0.714439641922563, 0, 0, 0, 0.5883270374457983, 0, 0.72, 0.152)
+transform = Transform3D(0.5883270374457983, 0, 0, 0, 0.5883270374457983, 0, 0, 0, 0.5883270374457983, 0, 0.72, 0.152)
 pixel_size = 0.0011
 alpha_cut = 2
 texture = ExtResource("5_logo")
 
 [node name="LogoSideL" type="Sprite3D" parent="." unique_id=354299465 groups=["brand_logo"]]
-transform = Transform3D(0, 0, -1, 0, 0.6610764535894491, 0, 0.6610764535894491, 0, 0, -0.247, 0.55, -0.06)
+transform = Transform3D(0, 0, -0.6610764535894491, 0, 0.6610764535894491, 0, 0.6610764535894491, 0, 0, -0.247, 0.55, -0.06)
 pixel_size = 0.0011
 alpha_cut = 2
 texture = ExtResource("5_logo")
 
 [node name="LogoSideR" type="Sprite3D" parent="." unique_id=1286997123 groups=["brand_logo"]]
-transform = Transform3D(0, 0, 1, 0, 1.338923546410551, 0, -0.6610764535894491, 0, 0, 0.247, 0.55, -0.06)
+transform = Transform3D(0, 0, 0.6610764535894491, 0, 0.6610764535894491, 0, -0.6610764535894491, 0, 0, 0.247, 0.55, -0.06)
 pixel_size = 0.0011
 alpha_cut = 2
 texture = ExtResource("5_logo")
