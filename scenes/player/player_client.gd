@@ -1087,6 +1087,11 @@ func _input(event: InputEvent) -> void:
 	if _cab != null and _cab.input(event):
 		get_viewport().set_input_as_handled()
 		return
+	# The wheel over a screen scrolls the screen (its lists, its pages), and not the walk speed.
+	if _is_wheel(event) and is_instance_valid(_pointed_gui):
+		_pointed_gui.push_at(event as InputEventMouseButton, _pointed_at)
+		get_viewport().set_input_as_handled()
+		return
 	if not event.is_action(&"perforate"):
 		return
 	var typing: bool = _screen_typing()
@@ -1100,6 +1105,12 @@ func _input(event: InputEvent) -> void:
 			_screen_tap(_pointed_at)
 	if typing or is_instance_valid(_pointed_gui):
 		get_viewport().set_input_as_handled()
+
+
+## Whether [param event] is a turn of the mouse wheel (up, down, or tilted sideways).
+static func _is_wheel(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and (event as InputEventMouseButton).button_index in [
+		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]
 
 
 ## The arm taps the screen clicked at [param at] (world): the gesture plays here at once and the server
