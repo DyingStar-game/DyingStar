@@ -117,6 +117,8 @@ var _close_armed: bool = false
 ## The tablet was opened straight on NAVIGATION (F2, the chart's key): Escape then closes it, back to the
 ## game, instead of leaving the chart for the tablet's home (2026-10-11). Cleared as soon as the tab is left.
 var _opened_for_navigation: bool = false
+## Where the next open() lands instead of home (open_next), once.
+var _next_open: Callable = Callable()
 
 
 ## One tab of the bottom bar: a wide tile carrying the active app's amber corner mark, the mockup's
@@ -182,6 +184,25 @@ func open() -> void:
 	_opened_for_navigation = false
 	show()
 	_go_home()
+	if _next_open.is_valid():
+		var then: Callable = _next_open
+		_next_open = Callable()
+		then.call()
+
+
+## The next open() lands on [param then] (an app, a mission) instead of staying home, once. What a
+## kiosk sets up: the mission just taken there is what the player opens the tablet to see.
+func open_next(then: Callable) -> void:
+	_next_open = then
+
+
+## Open "My missions" on mission [param mission_id], its contract on show.
+func open_mission(mission_id: String) -> void:
+	_next_open = Callable()  # seen: the next open() goes home again
+	open_app("missions")
+	var panel: Variant = _panels.get("missions")
+	if panel != null and panel.has_method("focus_mission"):
+		panel.focus_mission(mission_id)
 
 
 ## Open on the NAVIGATION tab: the F2 of the chart, which lives there. Already on it, nothing moves

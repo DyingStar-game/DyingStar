@@ -19,6 +19,9 @@ extends Node
 ## missions, economy, market, reports, pois. The terminal refreshes the matching section when it is
 ## the one on screen.
 signal changed(area: String)
+## The player took mission [param mission_id] ([param title], "" when the caller did not say).
+## Whoever shows the player's missions can point at it (the wrist DataPad, after a kiosk).
+signal mission_accepted(mission_id: String, title: String)
 
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
 
@@ -524,9 +527,11 @@ func mission_create(body: Dictionary) -> Dictionary:
 func mission_get(mission_id: String) -> Dictionary:
 	return await _http_get(SERVICE_MISSION, "/api/missions/%s" % mission_id)
 
-func mission_accept(mission_id: String) -> Dictionary:
+func mission_accept(mission_id: String, title: String = "") -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/%s/accept" % mission_id)
-	if _ok(r): changed.emit("missions")
+	if _ok(r):
+		changed.emit("missions")
+		mission_accepted.emit(mission_id, title)
 	return r
 
 func mission_abandon(mission_id: String) -> Dictionary:

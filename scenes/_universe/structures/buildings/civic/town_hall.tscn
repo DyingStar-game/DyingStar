@@ -10,6 +10,9 @@
 [ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="8_led_panel_1x"]
 [ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="9_map_marker"]
 [ext_resource type="Texture2D" path="res://assets/textures/map_markers/administration.png" id="10_administration"]
+[ext_resource type="Script" path="res://ui/missions/mission_feed.gd" id="11_mission_feed"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/missions/mission_board.tscn" id="12_mission_board"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/missions/mission_kiosk.tscn" id="13_mission_kiosk"]
 
 [node name="TownHall" type="Node3D"]
 
@@ -90,14 +93,20 @@ material = ExtResource("4_placeholder_")
 [node name="NpcCounterSpot" type="Marker3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 7)
 
-[node name="MissionScreenSpot1" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 1.7, -10.65)
+[node name="MissionFeed" type="Node" parent="."]
+script = ExtResource("11_mission_feed")
 
-[node name="MissionScreenSpot2" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 1.7, -10.65)
+[node name="MissionBoard" parent="." instance=ExtResource("12_mission_board")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 4.45, 10.6)
 
-[node name="MissionScreenSpot3" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 1.7, -10.65)
+[node name="MissionKiosk1" parent="." instance=ExtResource("13_mission_kiosk")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0, -10)
 
-[node name="MissionScreenSpot4" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 1.7, -10.65)
+[node name="MissionKiosk2" parent="." instance=ExtResource("13_mission_kiosk")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0, -10)
+
+[node name="MissionKiosk3" parent="." instance=ExtResource("13_mission_kiosk")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0, -10)
+
+[node name="MissionKiosk4" parent="." instance=ExtResource("13_mission_kiosk")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0, -10)

@@ -362,6 +362,7 @@ func setup() -> void:
 	_notifications.pushed.connect(_on_notification_pushed)
 	_watch_debug_notification()
 	ChatNetwork.notification_received.connect(_on_notification)
+	PlayerServices.mission_accepted.connect(_on_mission_accepted)
 	_places = PlaceWatcher.new()
 	_places.name = "PlaceWatcher"
 	add_child(_places)
@@ -2697,6 +2698,18 @@ func _watch_debug_notification() -> void:
 	SettingsManager.debug.watch(&"notification_debug", follow)
 	if SettingsManager.debug.is_on(&"notification_debug"):
 		follow.call(true)
+
+
+## A mission was taken somewhere else than on the tablet (a kiosk): a line says so, the wrist blinks,
+## and the tablet opens on it — from the line, or the next time it is opened. Taken on the tablet, the
+## player is already looking at it.
+func _on_mission_accepted(mission_id: String, title: String) -> void:
+	if _services == null or _notifications == null or _services.is_open():
+		return
+	var show_it: Callable = _services.open_mission.bind(mission_id)
+	_services.open_next(show_it)
+	var text: String = tr("%%MISSION_ACCEPTED_TOAST") % (title if title != "" else tr("%%SVC_LBL_UNKNOWN_MISSION"))
+	_notifications.push(text, func() -> void: _wrist.open_with(show_it))
 
 
 ## Open what the notification is about, so the toast is a shortcut and not a dead end. The id is

@@ -50,6 +50,8 @@ var _accent: Color = Color.WHITE
 ## The button's word and the full hatch's message (translation keys), set by the machine before setup.
 var dispense_key: String = "%%DISPENSER_DISPENSE"
 var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
+## The items on offer (setup), to start over from the first when the screen falls asleep.
+var _items: Array[Resource] = []
 
 
 ## Build the screen for [param subsidiary] (AresBrand), under [param title_key], offering [param items]
@@ -57,6 +59,12 @@ var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
 func setup(subsidiary: AresBrand.Subsidiary, title_key: String, items: Array[Resource]) -> void:
 	_accent = AresBrand.colour(subsidiary)
 	_build(subsidiary, title_key)
+	_items = items
+	# Every dispenser sleeps behind its brand until pressed (ScreenAttract), and the next one to wake
+	# it finds it as new: the first item chosen, no refusal on show.
+	var attract := ScreenAttract.new().setup(subsidiary, title_key)
+	attract.slept.connect(_start_over)
+	add_child(attract)
 	show_items(items)
 
 
@@ -75,6 +83,13 @@ func _process(_delta: float) -> void:
 	if _refusal_key != "" and now > _refusal_until_ms:
 		_refusal_key = ""
 		_show_status()
+
+
+## Back to the first item, no refusal on show: the screen fell asleep. A delivery under way and a
+## full hatch stay what they are — the machine's state, not the screen's.
+func _start_over() -> void:
+	_refusal_key = ""
+	show_items(_items)
 
 
 ## The server said no ([param reason_key], a translation key): on the status line for a while, and
@@ -243,31 +258,11 @@ func _item_row(item: Resource) -> Button:
 
 ## Flat [param fill] background (lighter when hovered), [param ink] text at [param font_size].
 static func _style_button(button: Button, fill: Color, ink: Color, font_size: int) -> void:
-	for state: String in ["normal", "hover", "pressed", "disabled", "focus"]:
-		var box := StyleBoxFlat.new()
-		box.bg_color = fill.lightened(0.15) if state == "hover" and fill.a > 0.0 \
-				else (Color(1, 1, 1, 0.06) if state == "hover" else fill)
-		if state == "disabled":
-			box.bg_color = Color(fill, fill.a * 0.35)
-		box.content_margin_left = 20
-		box.content_margin_right = 20
-		button.add_theme_stylebox_override(state, box)
-	button.add_theme_font_size_override("font_size", font_size)
-	for key: String in ["font_color", "font_hover_color", "font_pressed_color"]:
-		button.add_theme_color_override(key, ink)
-	button.add_theme_color_override("font_disabled_color", Color(ink, 0.4))
-	if AresBrand.font() != null:
-		button.add_theme_font_override("font", AresBrand.font())
+	AresBrand.style_button(button, fill, ink, font_size)
 
 
 static func _label(text: String, font_size: int, colour: Color) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", colour)
-	if AresBrand.font() != null:
-		label.add_theme_font_override("font", AresBrand.font())
-	return label
+	return AresBrand.screen_label(text, font_size, colour)
 
 
 ## A ring that fills as a delivery goes on, the whole seconds left in its middle.

@@ -224,20 +224,7 @@ static func batch_offset(i: int, count: int, spacing: float) -> float:
 ## CLIENT: the subsidiary's colours on the machine — its accent pieces (group "brand_accent") — and
 ## its logo in place of every "brand_logo" placeholder, at that placeholder's height.
 func _wear_brand() -> void:
-	var accent := StandardMaterial3D.new()
-	accent.albedo_color = AresBrand.colour(brand)
-	accent.metallic = 0.2
-	accent.roughness = 0.45
-	for node: Node in find_children("*", "CSGShape3D", true, false):
-		if node.is_in_group(&"brand_accent"):
-			(node as CSGShape3D).material = accent
-	for node: Node in find_children("*", "Sprite3D", true, false):
-		var placeholder := node as Sprite3D
-		if not placeholder.is_in_group(&"brand_logo") or placeholder.texture == null:
-			continue
-		var height: float = placeholder.texture.get_height() * placeholder.pixel_size
-		placeholder.add_child(AresBrand.logo_3d(brand, height))
-		placeholder.texture = null
+	AresBrand.wear(self, brand)
 
 
 ## CLIENT: an announced delivery (ScreenTarget contract): the countdown on the screen and the fan,

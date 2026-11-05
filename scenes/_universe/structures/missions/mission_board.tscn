@@ -1,0 +1,40 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/missions/mission_board.gd" id="1_board"]
+
+[sub_resource type="QuadMesh" id="Quad_screen"]
+size = Vector2(16, 7)
+
+[sub_resource type="StandardMaterial3D" id="Mat_frame"]
+albedo_color = Color(0.07, 0.075, 0.085, 1)
+metallic = 0.4
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_light"]
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 1.5
+
+[node name="MissionBoard" type="Node3D"]
+script = ExtResource("1_board")
+
+[node name="Frame" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.1)
+size = Vector3(16.3, 7.3, 0.18)
+material = SubResource("Mat_frame")
+
+[node name="TopLight" type="CSGBox3D" parent="Frame"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.62, 0.09)
+size = Vector3(16.1, 0.02, 0.012)
+material = SubResource("Mat_light")
+
+[node name="Screen" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.001)
+cast_shadow = 0
+mesh = SubResource("Quad_screen")
+
+[node name="SubViewport" type="SubViewport" parent="."]
+disable_3d = true
+handle_input_locally = false
+gui_disable_input = true
+size = Vector2i(3200, 1400)
