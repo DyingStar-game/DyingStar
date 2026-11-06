@@ -4,8 +4,9 @@ extends StaticBody3D
 ## A mission kiosk: the stand of the vehicle terminal, dressed in [member brand]'s colours
 ## (AresBrand.wear), whose screen (MissionKioskUI) lists the missions on offer here, sorted and
 ## filtered, and takes one. It shares its building's MissionFeed with the mission board
-## (MissionFeed.near). Pointed at with the crosshair like any screen (Gui3D); nothing goes through the
-## game server: the player takes a mission from the mission service, which decides. The dedicated
+## (MissionFeed.near). Pointed at with the crosshair like any screen (Gui3D). Taking a mission goes
+## straight to the mission service, which decides. Turning one in goes through the game server
+## (MissionTurnIn): it knows the kiosk stands in the village the mission delivers to. The dedicated
 ## server keeps the stand (its collision) and drops the screen.
 
 ## The ARES subsidiary running the kiosk: its colours, its logo.
@@ -21,10 +22,24 @@ func _ready() -> void:
 	_ui.setup(brand, MissionFeed.near(self))
 
 
-## SERVER: the ScreenTarget contract, which makes this kiosk a screen the crosshair points at. Nothing
-## is ever sent here: a mission is taken from the mission service, not from the game server.
-func update_screen(_data: Dictionary) -> void:
-	pass
+## SERVER: who is using the screen (ScreenTarget contract), just before update_screen.
+var _actor: Node = null
+
+
+func set_screen_actor(player: Player) -> void:
+	_actor = player
+
+
+## SERVER: the ScreenTarget contract. The one action sent here is the turn-in of a finished mission.
+func update_screen(data: Dictionary) -> void:
+	if str(data.get("state", "")) == "turn_in" and _actor != null:
+		MissionTurnIn.turn_in(self, _actor, str(data.get("mission_id", "")))
+
+
+## CLIENT: what the server announced about this screen (ScreenTarget.receive): a turn-in's outcome.
+func screen_event(event: Dictionary) -> void:
+	if _ui != null and str(event.get("state", "")) == "turn_in_result":
+		_ui.turn_in_result(event)
 
 
 ## CLIENT: a search field of the screen has the keyboard: the player's keys type, they do not walk.

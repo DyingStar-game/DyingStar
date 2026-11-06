@@ -544,12 +544,6 @@ func mission_complete(mission_id: String) -> Dictionary:
 	if _ok(r): changed.emit("missions")
 	return r
 
-func mission_progress(mission_id: String, objective_id: String, quantity: int) -> Dictionary:
-	var r: Dictionary = await _http_post(SERVICE_MISSION,
-			"/api/missions/%s/objectives/%s/progress" % [mission_id, objective_id], {"quantity": quantity})
-	if _ok(r): changed.emit("missions")
-	return r
-
 ## Confirm an issuer-verified objective (`manual` kind) — mission creator only.
 func mission_confirm(mission_id: String, objective_id: String) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_MISSION,
