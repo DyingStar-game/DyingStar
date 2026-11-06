@@ -105,7 +105,8 @@ static func _native_verts_setup(data: PlanetData, frame: PlanetData.TileFrame, z
 		corundum_bd: BiomeDefinition, surface_mat_index: Dictionary, relief_index: Dictionary, relief_bds: Array,
 		relief_roads: Array, spacing: float, st_edge: Dictionary, st_blend: Dictionary, vert_count: int,
 		grade_ctx: Dictionary, slugs: Array[String]) -> bool:
-	var pads: Array = grade_ctx.get("pads", [])
+	# What the C# leaves to GDScript by reach: the pads, and the ground of a village.
+	var by_reach: Array = grade_ctx.get("pads", []) + grade_ctx.get("villages", [])
 	var grade_args: Array = GradeBed.native_args(_without_pads(grade_ctx))
 	if not grade_ctx.is_empty() and not grade_args[3]:
 		return false  # Cuttings without their C# twin: every vertex would ask GDScript.
@@ -198,10 +199,10 @@ static func _native_verts_setup(data: PlanetData, frame: PlanetData.TileFrame, z
 		native.SetVertStitch(edge, weight, height)
 	if not grade_ctx.is_empty():
 		native.SetVertGrade(grade_args[0], float(grade_ctx["m_per_deg"]), grade_args[1], grade_args[2])
-	if not pads.is_empty():
+	if not by_reach.is_empty():
 		var reach := PackedFloat64Array()
 		var band: float = float(grade_ctx.get("coarse_band_m", 0.0))
-		for rec: Dictionary in pads:
+		for rec: Dictionary in by_reach:
 			reach.append(float(rec["lon"]))
 			reach.append(float(rec["lat"]))
 			reach.append(PadBed.apply_reach_m(rec, band))
@@ -209,10 +210,12 @@ static func _native_verts_setup(data: PlanetData, frame: PlanetData.TileFrame, z
 	return true
 
 
-## [param ctx] as GradeBed.native_args would see it without its pads, which the C# leaves to GDScript by reach.
+## [param ctx] as GradeBed.native_args would see it without its pads and village beds, which the C# leaves to
+## GDScript by reach.
 static func _without_pads(ctx: Dictionary) -> Dictionary:
 	var out := ctx.duplicate()
 	out.erase("pads")
+	out.erase("villages")
 	return out
 
 

@@ -268,6 +268,7 @@ func test_a_band_vertex_under_pads_goes_back_to_gdscript() -> void:
 		band[i] = 1
 	var args: Array = GradeBed.native_args({"pads": [{}], "m_per_deg": 1.0})
 	assert_false(args[3], "pads: only GDScript can apply them")
+	assert_false(GradeBed.native_args({"villages": [{}], "m_per_deg": 1.0})[3], "a village's ground neither")
 	assert_false(GradeBed.native_args({"pieces": [{}], "m_per_deg": 1.0})[3], "pieces with no twin neither")
 	assert_true(GradeBed.native_args({"m_per_deg": 1.0})[3], "a context of neither carves nothing: served")
 	frame.native.SetNormalGrade(band, args[0], 1.0, args[1], args[2], args[3])

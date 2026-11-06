@@ -927,9 +927,11 @@ func _refresh_active_body_pins() -> void:
 		if planet.planet_terrain == null:
 			continue
 		var keys := PackedStringArray()
+		var ranks := PackedInt32Array()
 		for k in pins_by_planet[puuid].keys():
 			keys.append(k as String)
-		planet.planet_terrain.set_pinned_chunks(keys)
+			ranks.append(pins_by_planet[puuid][k])
+		planet.planet_terrain.set_pinned_chunks(keys, ranks)
 	if _perf_report:
 		_perf_pins_apply_usec += Time.get_ticks_usec() - _tpa
 
@@ -1348,14 +1350,16 @@ func _pin_pos_to_planet_chunk(best_planet: Planet, body_pos: Vector3, pins_by_pl
 	var nside: int = pd.collision_detail_nside()
 	var ipix: int = HEALPix.vec2pix_nest(nside, dir)
 	var planet_pins: Dictionary = pins_by_planet[best_uuid]
-	for key in _pin_keys_for_tile(nside, ipix, nside > pd.export_nside):
-		planet_pins[key] = true
+	var keys := _pin_keys_for_tile(nside, ipix, nside > pd.export_nside)
+	for rank in keys.size():
+		if int(planet_pins.get(keys[rank], rank)) >= rank:
+			planet_pins[keys[rank]] = rank
 
 
 ## The chunk keys pinned by a body standing on HEALPix tile (nside, ipix): the tile itself, plus 2
 ## neighbour rings at the fine collision nside (crack planets — each chunk is small, sub-km, so the
 ## rings give a walkable margin that streams as the body moves; a coarse export chunk is ~100 km and
-## covers the body on its own). The ring is a pure function of the tile, so it is CACHED: the BFS
+## covers the body on its own), nearest first. The ring is a pure function of the tile, so it is CACHED: the BFS
 ## costs ~9 GDScript HEALPix neighbour lookups (~0.6 ms), and it used to run for each of 48 players
 ## on every sweep — 28 ms per sweep, a quarter of the server's CPU, for tiles that never change.
 var _pin_ring_cache: Dictionary = {}

@@ -56,6 +56,12 @@ const MAX_ASSEMBLE_PER_FRAME := 8
 const ASSEMBLE_BUDGET_MS := 6.0
 ## Maximum concurrent server collision-chunk loading tasks (heightmap or shape phase).
 const MAX_SERVER_CHUNK_TASKS := 4
+## How long a frame may spend attaching finished collision chunks (us). At least one is attached.
+const SERVER_ASSEMBLE_BUDGET_US := 8000
+## The rendered frame that budget is for, when it ends, and whether a chunk was attached in it already.
+var _server_assemble_frame: int = -1
+var _server_assemble_end_us: int = 0
+var _server_assemble_spent: bool = false
 ## Ring-buffer size for camera history (look-ahead prefetch).
 const CAM_HISTORY_SIZE := 10
 ## Fast flight: [speed m/s, terrain mult]. From each speed on, the LOD distances beyond
@@ -277,7 +283,8 @@ var _server_collision_chunks: Dictionary = {}
 var _server_collision_loaded: bool = false
 
 ## Pinned chunks that must never be evicted while pinned (e.g. an active
-## RigidBody3D resting on them).  key → true.  Pinned chunks are loaded
+## RigidBody3D resting on them).  key → rank (0 = under a body, the higher
+## the farther from one: the build order).  Pinned chunks are loaded
 ## on the next set_resident_chunks() / set_pinned_chunks() and outlive
 ## the zone-driven desired set until the pin is released.
 var _pinned_chunks: Dictionary = {}
@@ -287,6 +294,9 @@ var _pinned_chunks: Dictionary = {}
 var _last_desired_keys: PackedStringArray = PackedStringArray()
 ## zone ∪ pins as of the last _apply_residency, BEFORE the coarse chunks under fine pins are dropped:
 ## the items on a coarse tile are still wanted when finer collision replaces its ground.
+## The ground a chunk being rebuilt still stands on until its replacement is assembled: key -> {body,
+## features}. A rebuild has to leave no hole: whatever drives there would fall into the safety net.
+var _server_stale_chunks: Dictionary = {}
 var _residency_keys: Dictionary = {}
 
 ## ── Async recipe generation ──────────────────────────────────────
@@ -1029,26 +1039,22 @@ func has_collision_under(world_pos: Vector3) -> bool:
 	if not _server_collision_loaded:
 		return false
 	var key: String = collision_chunk_key(world_pos)
-	return key != "" and _server_collision_chunks.has(key)
+	return key != "" and (_server_collision_chunks.has(key) or _server_stale_chunks.has(key))
 
 
 ## Replace the pinned-chunk set and re-apply residency.  Pinned chunks
 ## are forcibly resident regardless of the zone's desired set, and are
 ## NEVER evicted by set_resident_chunks().  Use this for active-body
-## pinning (RigidBody3D on a chunk → pin until it sleeps).
-func set_pinned_chunks(pin_keys: PackedStringArray) -> void:
-	if not _server_collision_loaded:
-		# Without a loaded root we can't materialise anything; just remember
-		# the pin set so it gets applied after init.
-		_pinned_chunks.clear()
-		for k in pin_keys:
-			_pinned_chunks[k as String] = true
-		return
-
+## pinning (RigidBody3D on a chunk → pin until it sleeps).  [param ranks] are
+## the keys' places in the build order (see _next_queued_chunk), 0 without them.
+func set_pinned_chunks(pin_keys: PackedStringArray, ranks := PackedInt32Array()) -> void:
 	_pinned_chunks.clear()
-	for k in pin_keys:
-		_pinned_chunks[k as String] = true
-	_apply_residency()
+	for i in pin_keys.size():
+		_pinned_chunks[pin_keys[i]] = ranks[i] if i < ranks.size() else 0
+	# Without a loaded root we can't materialise anything; the pin set is
+	# applied after init.
+	if _server_collision_loaded:
+		_apply_residency()
 
 
 ## Compute the effective resident set as (desired ∪ pinned) and load /
@@ -1099,6 +1105,10 @@ func _apply_residency() -> void:
 
 	# Load missing chunks (not resident and not already loading / queued).
 	var missing: Array = []
+	for k: String in _server_stale_chunks.keys():
+		if not effective.has(k):
+			_drop_stale_chunk(k)
+
 	for k in effective.keys():
 		var key := k as String
 		if not _server_collision_chunks.has(key) and not _server_chunk_tasks.has(key):
@@ -1219,6 +1229,7 @@ func _unload_chunk(key: String) -> void:
 		_server_feature_nodes.erase(key)
 	if _server_chunk_tasks.has(key):
 		_server_chunk_tasks[key]["evicted"] = true
+	_drop_stale_chunk(key)
 
 
 # ------------------------------------------------------------------
@@ -1235,6 +1246,28 @@ func _server_drain_chunk_queue() -> void:
 	# une fois par passage.
 	# Deux fois les créneaux de tâche, comme le backlog du client : de quoi remplacer ce
 	# qui vient de finir sans réexaminer une zone de plusieurs centaines de chunks à
+## The resident chunk [param key] is to be rebuilt: the residency sees it missing and loads it again,
+## but its body and features stand until _server_assemble_chunk has the new ones.
+func _keep_chunk_until_rebuilt(key: String) -> void:
+	_release_bridges(key)
+	_server_stale_chunks[key] = {"body": _server_collision_chunks[key],
+			"features": _server_feature_nodes.get(key, [])}
+	_server_collision_chunks.erase(key)
+	_server_feature_nodes.erase(key)
+
+
+## Free what [param key] was still standing on, if anything.
+func _drop_stale_chunk(key: String) -> void:
+	var stale: Dictionary = _server_stale_chunks.get(key, {})
+	if stale.is_empty():
+		return
+	_server_stale_chunks.erase(key)
+	(stale["body"] as Node).queue_free()
+	for n in stale["features"]:
+		if is_instance_valid(n):
+			(n as Node).queue_free()
+
+
 	# chaque tick. La passe de prefetch ci-dessus a déjà demandé toutes les tuiles, donc
 	# les différés ne le restent pas longtemps.
 	var budget: int = mini(_server_chunk_queue.size(), MAX_SERVER_CHUNK_TASKS * 2)
@@ -1242,8 +1275,7 @@ func _server_drain_chunk_queue() -> void:
 	while budget > 0 and _server_chunk_tasks.size() < MAX_SERVER_CHUNK_TASKS \
 			and not _server_chunk_queue.is_empty():
 		budget -= 1
-		var entry: Dictionary = _server_chunk_queue[0]
-		_server_chunk_queue.remove_at(0)
+		var entry: Dictionary = _server_chunk_queue.pop_at(_next_queued_chunk())
 		var key: String = entry["key"]
 		if _server_collision_chunks.has(key) or _server_chunk_tasks.has(key):
 			continue  # Loaded or started since it was queued.
@@ -1266,6 +1298,20 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
 	# rebuilt — on the server an unload and a reload, the ground gone from under whatever stands on it,
 	# and a truck parked there left sunk 3 m under the platform when the pad came back.
 	_catch_up_starved_pads_now()
+## Where in _server_chunk_queue the next chunk to build is: the nearest to a body on the ground (lowest
+## pin rank), the oldest among equals. In plain order of arrival, the chunk under a truck waited behind a
+## city's others, and a city's can take seconds each.
+func _next_queued_chunk() -> int:
+	var best := 0
+	var best_rank := INF
+	for i in _server_chunk_queue.size():
+		var rank := float(_pinned_chunks.get(_server_chunk_queue[i]["key"], INF))
+		if rank < best_rank:
+			best = i
+			best_rank = rank
+	return best
+
+
 
 	# Try the disk-cached collision shape (cheap main-thread I/O).
 	var cached_shape: ConcavePolygonShape3D = null
@@ -1406,7 +1452,17 @@ func _server_poll_chunk_tasks() -> void:
 		var phase: int = entry["phase"]
 		var ipix: int = entry["ipix"]
 		var col_res: int = entry["col_res"]
+	# Over one rendered frame, whatever its catch-up physics steps: a big chunk's body costs ~50 ms to add,
+	# and several in one frame added up.
+	var frame := Engine.get_process_frames()
+	if frame != _server_assemble_frame:
+		_server_assemble_frame = frame
+		_server_assemble_end_us = Time.get_ticks_usec() + SERVER_ASSEMBLE_BUDGET_US
+		_server_assemble_spent = false
 		var nside := _parse_nside_from_key(key)
+		if _server_assemble_spent and Time.get_ticks_usec() >= _server_assemble_end_us:
+			break
+		_server_assemble_spent = true
 		if nside <= 0:
 			nside = planet_data.export_nside
 
@@ -1544,6 +1600,7 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 				% [key, _climbs] + " — its surface may differ from the clients' by the parent/child gap")
 	if PropNet.prof_on:
 		PropNet.prof_chunk_loads += 1  # TEMPORARY (étape 0d): measure the churn under the player
+	_drop_stale_chunk(key)
 	var faces: PackedVector3Array = shape.get_faces()
 	if faces.size() > 0:
 		var col_origin := _chunk_collision_origin(nside, ipix)

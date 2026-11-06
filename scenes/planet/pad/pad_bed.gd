@@ -230,6 +230,77 @@ static func apply_reach_m(rec: Dictionary, band_m: float = 0.0) -> float:
 			+ maxf(talus_cap(rec), band_m) + PadSettings.REACH_MARGIN_M + 1.0
 
 
+## The pads of [param pads] that can move the ground at [param lonlat] ([method apply_reach_m]), in the
+## same order: [method apply] gives the same bits with them as with all of [param pads], and a city's
+## 170 pads cost a sample 1.6 ms (2026-11-05).
+static func reaching(pads: Array, lonlat: Vector2, m_per_deg: float) -> Array:
+	var out: Array = []
+	for rec: Dictionary in pads:
+		var reach := apply_reach_m(rec)
+		if _tangent_m(rec, lonlat, m_per_deg).length_squared() <= reach * reach:
+			out.append(rec)
+	return out
+
+
+## Side of a cell of [method cells_of] (m, north-south; narrower east-west by cos(latitude)). Roughly a
+## refined sub-cell's reach: small enough that a cell holds the few pads standing there, large enough that
+## a building is not listed in hundreds of cells.
+const CELL_M := 32.0
+
+
+## [param pads] indexed by [method cell_of]: cell -> the pads that can move the ground somewhere in it
+## ([method apply_reach_m]), in the order of [param pads]. [method apply] gives the same bits with a cell's
+## list as with all of [param pads]; a village chunk samples 70 000 sub-vertices over 169 pads, and this took
+## one of them from 1 340 us to 140 (2026-11-06).
+static func cells_of(pads: Array, m_per_deg: float) -> Dictionary:
+	var cells := {}
+	for rec: Dictionary in pads:
+		var reach := apply_reach_m(rec)
+		var lon0 := float(rec["lon"])
+		var lat0 := float(rec["lat"])
+		var dlon := reach / (maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6) * m_per_deg)
+		var dlat := reach / m_per_deg
+		var lo := cell_of(Vector2(lon0 - dlon, lat0 - dlat), m_per_deg)
+		var hi := cell_of(Vector2(lon0 + dlon, lat0 + dlat), m_per_deg)
+		_add_to_cells(cells, rec, lo, hi)
+		# Across the longitude wrap: a point's longitude is never wrapped towards the pad.
+		var wrap_x := roundi(360.0 * m_per_deg / CELL_M)
+		if lon0 - dlon < -180.0:
+			_add_to_cells(cells, rec, lo + Vector2i(wrap_x, 0), hi + Vector2i(wrap_x, 0))
+		if lon0 + dlon > 180.0:
+			_add_to_cells(cells, rec, lo - Vector2i(wrap_x, 0), hi - Vector2i(wrap_x, 0))
+	return cells
+
+
+static func _add_to_cells(cells: Dictionary, rec: Dictionary, lo: Vector2i, hi: Vector2i) -> void:
+	for y in range(lo.y, hi.y + 1):
+		for x in range(lo.x, hi.x + 1):
+			(cells.get_or_add(Vector2i(x, y), []) as Array).append(rec)
+
+
+## The cell of [method cells_of] holding [param lonlat].
+static func cell_of(lonlat: Vector2, m_per_deg: float) -> Vector2i:
+	return Vector2i(floori(lonlat.x * m_per_deg / CELL_M), floori(lonlat.y * m_per_deg / CELL_M))
+
+
+## The indices of [param points] (lon, lat) where [param rec] can move the ground ([method apply_reach_m]).
+static func points_reached(rec: Dictionary, points: PackedVector2Array, m_per_deg: float) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var reach := apply_reach_m(rec)
+	var reach2 := reach * reach
+	var lon0 := float(rec["lon"])
+	var lat0 := float(rec["lat"])
+	var east := maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6) * m_per_deg
+	for k in points.size():
+		var dy := (points[k].y - lat0) * m_per_deg
+		if dy * dy > reach2:
+			continue
+		var dx := wrapf(points[k].x - lon0, -180.0, 180.0) * east
+		if dx * dx + dy * dy <= reach2:
+			out.append(k)
+	return out
+
+
 ## How wide this pad's talus may grow. Measured at registration from the
 ## relief around the pad ([method pad_stats]) and stored in the record, not
 ## taken as the blanket PadSettings.TALUS_MAX_M — and that is a performance

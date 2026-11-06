@@ -82,7 +82,10 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	var mpd: float = float(rw_ctx["m_per_deg"])
 	var pieces: Array = rw_ctx.get("pieces", [])
 	var profiles: Dictionary = rw_ctx.get("profiles", {})
-	var pads: Array = rw_ctx.get("pads", [])
+	# A pad standing on its village's plane adds nothing a plane needs a sub-grid for
+	# (VillageBed.FLAT_TOLERANCE_M). A pure function of records both chunks of a border hold.
+	var pads: Array = rw_ctx.get("refine_pads", rw_ctx.get("pads", []))
+	var villages: Array = rw_ctx.get("villages", [])
 	# CaveRefine.zones of this chunk: a cave opening refines like a pad.
 	var caves: Array = rw_ctx.get("caves", [])
 
@@ -99,14 +102,16 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 	# interior sub-vertices are carved by the rule, so they lay the floor.
 	var near_track := PackedByteArray()
 	near_track.resize(n_coarse)
-	# Corners carved only by a LAVA channel's wall, away from its crust: a
-	# channel cut through a rise has walls hundreds of metres wide (a 200 m
-	# breach reached 170 m out on each side) and refining every cell of them
-	# cost 1.8 s a chunk. A wall that far from the crust is plain rock, drawn
-	# well enough by the coarse grid; only the crust's meeting line with its
+	# Corners the rules moved, but which the coarse grid draws well enough.
+	# A LAVA channel's wall, away from its crust: a channel cut through a rise
+	# has walls hundreds of metres wide (a 200 m breach reached 170 m out on
+	# each side) and refining every cell of them cost 1.8 s a chunk. A wall that
+	# far from the crust is plain rock; only the crust's meeting line with its
 	# banks needs the sub-grid (near_track). Roads and railways are unchanged.
-	var far_wall := PackedByteArray()
-	far_wall.resize(n_coarse)
+	# A VILLAGE's plane: the whole footprint of a city is moved, by centimetres
+	# on a plane the coarse triangles follow exactly (VillageBed.on_plane).
+	var plain_move := PackedByteArray()
+	plain_move.resize(n_coarse)
 	var floor_margin: float = float(rw_ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M))
 	var has_portal := false
 	var reach := GradeSettings.PORTAL_REFINE_M + GradeSettings.PORTAL_HOOD_M
@@ -114,6 +119,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 		for xi in res + 1:
 			var idx := yi * (res + 1) + xi
 			var ll := HEALPix.vec2lonlat(grid_dirs[yi][xi])
+			if band[idx] == 1 and VillageBed.on_plane(grid_h[idx], ll, villages, mpd):
+				plain_move[idx] = 1
 			# A pad reaches this corner: its cell must be refined, whether or not a
 			# line does too. Decided from the pad records alone, which both chunks
 			# sharing a border hold identically.
@@ -134,7 +141,7 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			if _near_track(q, prof, floor_margin, pitch):
 				near_track[idx] = 1
 			elif prof.has("bed_sink_m") and near_track[idx] == 0:
-				far_wall[idx] = 1
+				plain_move[idx] = 1
 			var lat_reach: float = GradeTunnel.bore_half_width(float(prof["hw_m"])) \
 					+ GradeSettings.TUNNEL_WALL_M + GradeSettings.PORTAL_COLLAR_M \
 					+ pitch
@@ -165,8 +172,8 @@ static func build(data: PlanetData, hp_nside: int, hp_ipix: int, res: int,
 			var c10 := c00 + 1
 			var c01 := c00 + res + 1
 			var c11 := c01 + 1
-			if (band[c00] == 1 and far_wall[c00] == 0) or (band[c10] == 1 and far_wall[c10] == 0) \
-					or (band[c01] == 1 and far_wall[c01] == 0) or (band[c11] == 1 and far_wall[c11] == 0) \
+			if (band[c00] == 1 and plain_move[c00] == 0) or (band[c10] == 1 and plain_move[c10] == 0) \
+					or (band[c01] == 1 and plain_move[c01] == 0) or (band[c11] == 1 and plain_move[c11] == 0) \
 					or near_track[c00] == 1 or near_track[c10] == 1 \
 					or near_track[c01] == 1 or near_track[c11] == 1 \
 					or near_portal[c00] == 1 or near_portal[c10] == 1 \
