@@ -112,8 +112,6 @@ const ADMIN_ENTRIES := {
 ## Test crates of the ore chain: one crate of TEST_MINERAL at TEST_PURITY, as the Crusher packs it.
 const TEST_MINERAL := "gold"
 const TEST_PURITY := 0.3
-## The hauling box's fill (m3): its collision box, as OreProcessor.crate_volume() reads it.
-const TEST_CRATE_M3 := 0.3953384826854745 * 0.4112716205195284 * 0.4039184679659229
 ## Host rock density of the test crate's barren part (kg/m3, granite).
 const TEST_GANGUE_KG_M3 := 2700.0
 
@@ -124,8 +122,9 @@ static func test_crate(entry: Dictionary, miner_id: String, miner_name: String =
 	var kind := str(entry.get("crate", ""))
 	if kind == "":
 		return {}
-	var gangue_m3 := TEST_CRATE_M3 * (1.0 - TEST_PURITY)
-	var crushed := CrateContent.crushed(TEST_MINERAL, TEST_CRATE_M3 * TEST_PURITY, gangue_m3,
+	var crate_m3 := CrateContent.crate_volume()
+	var gangue_m3 := crate_m3 * (1.0 - TEST_PURITY)
+	var crushed := CrateContent.crushed(TEST_MINERAL, crate_m3 * TEST_PURITY, gangue_m3,
 		gangue_m3 * TEST_GANGUE_KG_M3, miner_id, miner_name)
 	return CrateContent.refined(crushed) if kind == CrateContent.KIND_INGOT else crushed
 

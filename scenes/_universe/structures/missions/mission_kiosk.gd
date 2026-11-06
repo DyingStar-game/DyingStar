@@ -13,6 +13,8 @@ extends StaticBody3D
 @export var brand: AresBrand.Subsidiary = AresBrand.Subsidiary.CORP
 
 @onready var _ui: MissionKioskUI = %MissionKioskUI
+## SERVER: who is using the screen (ScreenTarget contract), just before update_screen.
+var _actor: Node = null
 
 
 func _ready() -> void:
@@ -22,10 +24,7 @@ func _ready() -> void:
 	_ui.setup(brand, MissionFeed.near(self))
 
 
-## SERVER: who is using the screen (ScreenTarget contract), just before update_screen.
-var _actor: Node = null
-
-
+## SERVER, ScreenTarget contract: the player whose action comes next.
 func set_screen_actor(player: Player) -> void:
 	_actor = player
 

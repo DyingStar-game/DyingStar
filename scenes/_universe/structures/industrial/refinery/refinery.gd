@@ -5,12 +5,19 @@ extends OreProcessor
 ## the same ore, the barren rock gone, so a lighter crate. Owner and miner are kept. It
 ## refines on its own once the crate is in: SEND feeds it, no EXTRACT press.
 
-## The crushed crate being refined (its content), {} when the machine is empty. Server only.
-var _pending: Dictionary = {}
-## Why the belt is refused, for the screen: BLOCKED_NOT_CRUSHED or BLOCKED_TOO_MANY. Server only.
-var _blocked_reason := ""
+## Why the belt is refused, for the screen.
 const BLOCKED_NOT_CRUSHED := "not_crushed"
 const BLOCKED_TOO_MANY := "too_many"
+## The network type of a hauling crate (its PropSync): what tells a crate from anything else.
+const CRATE_TYPE := "crate_container"
+## The belt counter's big number, sized for a mass ("34 kg") rather than the Crusher's two-digit purity.
+const COUNT_FONT_PX := 140
+
+## The crushed crate being refined (its content), {} when the machine is empty. Server only.
+var _pending: Dictionary = {}
+## Why the belt is refused (BLOCKED_NOT_CRUSHED or BLOCKED_TOO_MANY), for the screen. Server only.
+var _blocked_reason := ""
+var _count_resized := false
 
 
 func _accepts(body: Node) -> bool:
@@ -21,7 +28,7 @@ func _accepts(body: Node) -> bool:
 func _belt_blocked(bodies: Array) -> bool:
 	var crates := 0
 	for body: Node in bodies:
-		if crate_content_of(body) == null_content():
+		if not is_crate(body):
 			continue  # not a crate (a rock, a player's foot...) — the belt ignores it
 		crates += 1
 		if not _accepts(body):
@@ -38,8 +45,13 @@ func _consume(crate: Node) -> void:
 	var holder := CrateContent.holder_of(_pending)
 	var units := int(_pending.get("units", 0))
 	if holder != "" and units > 0:
-		MissionHeartbeat.drop_carried(holder, CrateContent.good_type(_pending), units,
-			WarehouseDelivery.warehouse(uuid))
+		MissionHeartbeat.drop_carried(holder, CrateContent.good_type(_pending), units, consumed_holder(uuid))
+
+
+## Where the ore a refinery consumes goes: a `system` holder of its own, the record of what it took
+## in — no warehouse anybody draws on.
+static func consumed_holder(refinery_uuid: String) -> Dictionary:
+	return {"holderType": "system", "holderId": refinery_uuid}
 
 
 func _can_pack() -> bool:
@@ -78,12 +90,6 @@ func _extra_state() -> Dictionary:
 		"blocked_reason": _blocked_reason}
 
 
-## The belt counter's big number, sized for a mass ("34 kg") rather than the Crusher's two-digit purity.
-const COUNT_FONT_PX := 140
-
-var _count_resized := false
-
-
 func _client_ui() -> void:
 	if not _count_resized:
 		_count_resized = true
@@ -109,11 +115,13 @@ func _client_ui() -> void:
 			_show_screen(true, "%%HUD_REFINERY_PLACE", false, [ICON_CRATE, ICON_ORE])
 
 
-## The `content` of a hauling crate, or null_content() for anything else.
+## Whether [param body] is a hauling crate, empty or not.
+static func is_crate(body: Node) -> bool:
+	var sync := PropSync.of(body) if body != null else null
+	return sync != null and sync.type_name == CRATE_TYPE
+
+
+## The `content` of a hauling crate, {} for an empty one and for anything else.
 static func crate_content_of(body: Node) -> Dictionary:
 	var c: Variant = body.get("content") if body != null else null
-	return c if c is Dictionary else null_content()
-
-
-static func null_content() -> Dictionary:
-	return {}
+	return c if c is Dictionary else {}

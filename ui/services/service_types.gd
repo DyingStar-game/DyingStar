@@ -636,6 +636,18 @@ static func zone_line(zone: Variant) -> String:
 	return zone_kind_label(kind)
 
 
+## The rows of a mission service listing {missions: [{assignment, mission}]} ([param data], the
+## answer's `data`): the dictionaries only, [] for anything else.
+static func mission_rows(data: Variant) -> Array:
+	var rows: Variant = data.get("missions") if data is Dictionary else null
+	return (rows as Array).filter(func(r: Variant) -> bool: return r is Dictionary) if rows is Array else []
+
+
+## Whether [param assignment] (a mission service assignment) is an active one.
+static func is_active_assignment(assignment: Variant) -> bool:
+	return assignment is Dictionary and str(assignment.get("status", "")) == "active"
+
+
 ## The participants of a mission (GET /api/missions/:id `participants`: [{playerId, name}]) as one
 ## line of names; a player whose name is unknown shows the start of their id. "" when there are none.
 static func participants_text(participants: Variant) -> String:

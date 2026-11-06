@@ -212,18 +212,24 @@ func credit_mined(player_id: String, good_type: String, units: int) -> void:
 ## Goods leave the player entirely and land on [param destination] — a `Holder`, e.g.
 ## `{"holderType": "warehouse", "holderId": <cargo depot uuid>}` (see WarehouseDelivery). Mandatory on a
 ## negative delta: the service answers 422 DESTINATION_REQUIRED rather than voiding the goods.
+## True when the inventory accepted it (the caller may wait for that: WarehouseDelivery does).
 func drop_carried(player_id: String, good_type: String, units: int, destination: Dictionary,
-		move_key: String = "") -> void:
-	if await _carried_delta(player_id, good_type, -units, {"to": destination}):
-		_report_goods_move(player_id, good_type, units, "drop", destination, move_key)
+		move_key: String = "") -> bool:
+	if not await _carried_delta(player_id, good_type, -units, {"to": destination}):
+		return false
+	_report_goods_move(player_id, good_type, units, "drop", destination, move_key)
+	return true
 
 
 ## Goods move from a stock the player has access to into their hands. The service re-reads
 ## [param source]'s AVAILABLE stock, so it is the authority on whether the load was affordable.
+## True when it accepted the load.
 func load_carried(player_id: String, good_type: String, units: int, source: Dictionary,
-		move_key: String = "") -> void:
-	if await _carried_delta(player_id, good_type, units, {"from": source}):
-		_report_goods_move(player_id, good_type, units, "load", source, move_key)
+		move_key: String = "") -> bool:
+	if not await _carried_delta(player_id, good_type, units, {"from": source}):
+		return false
+	_report_goods_move(player_id, good_type, units, "load", source, move_key)
+	return true
 
 
 ## Tell the mission service that goods really moved between [param player_id] and a warehouse — a
@@ -245,22 +251,22 @@ func _report_goods_move(player_id: String, good_type: String, units: int, direct
 ## One call to the mission service's internal API ([param path] under /api/internal) under the game
 ## server's service identity: {ok, data | error}. For the turn-in at a kiosk and the goods moves.
 func mission_internal(method: HTTPClient.Method, path: String, body: Variant) -> Dictionary:
-	if not _is_active():
-		return {"ok": false, "error": "NOT_CONFIGURED"}
-	var headers: PackedStringArray = await ServiceAuth.authorization_header()
-	if headers.is_empty():
-		return {"ok": false, "error": "NO_SERVICE_TOKEN"}
-	return await _client.request(method, "%s/api/internal%s" % [_url, path], headers, body)
+	return await _internal(_is_active(), _url, method, path, body)
 
 
 ## The same, for the inventory service's internal API (the warehouse behind a POI, at a turn-in).
 func inventory_internal(method: HTTPClient.Method, path: String, body: Variant) -> Dictionary:
-	if not _carried_is_active():
+	return await _internal(_carried_is_active(), _inventory_url, method, path, body)
+
+
+func _internal(active: bool, base_url: String, method: HTTPClient.Method, path: String,
+		body: Variant) -> Dictionary:
+	if not active:
 		return {"ok": false, "error": "NOT_CONFIGURED"}
 	var headers: PackedStringArray = await ServiceAuth.authorization_header()
 	if headers.is_empty():
 		return {"ok": false, "error": "NO_SERVICE_TOKEN"}
-	return await _client.request(method, "%s/api/internal%s" % [_inventory_url, path], headers, body)
+	return await _client.request(method, "%s/api/internal%s" % [base_url, path], headers, body)
 
 
 ## One `POST .../stacks/{goodType}/carried`. [param counterparty] is empty for a mining credit, and

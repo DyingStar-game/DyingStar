@@ -34,6 +34,8 @@ const PICTO_PX := 150
 ## screen counts it down on a ring, the machine sounds run meanwhile.
 const PROCESS_S := 10.0
 const RING_PX := 220
+## How often the server runs a machine's logic (s): belts, collection, replication (see _process).
+const SERVER_TICK_S := 0.2
 
 ## Designer-placed machine: tick it on the instance dropped in a world scene. On the server it spawns
 ## the REAL networked machine at the same spot (deterministic uuid) and frees itself.
@@ -79,14 +81,14 @@ var active_player: Player
 
 # Throttle: only replicate when the state actually changes.
 var _last_sent: Dictionary = {}
-# Cached fillable volume of one crate (crate_container), read from its scene.
-var _crate_volume := -1.0
 # The messages' pictograms on the splash screen (client): one or two side by side.
 var _pictos: HBoxContainer = null
 # The countdown ring while the machine works (client).
 var _ring: ItemDispenserUI.DeliveryRing = null
 # SERVER: when the work in progress ends (Time.get_ticks_msec()).
 var _process_end_ms := 0
+# SERVER: time left before the next _server_tick.
+var _server_wait_s := 0.0
 # The looping sounds (client): belts, machine at work, its rattling stones.
 var _belt_player: AudioStreamPlayer3D = null
 var _process_player: AudioStreamPlayer3D = null
@@ -245,11 +247,17 @@ func _on_belt_exited(body: Node3D) -> void:
 	_collect(body)
 
 
-func _process(_delta: float) -> void:
-	if GameOrchestrator.is_server():
-		_server_tick()
-	else:
+## Server: the machine's logic runs SERVER_TICK_S apart, not every frame — three area queries and a
+## replication check per machine per frame bought nothing (the state replicates on change only).
+## Client: the screen and the belts' look follow the replicated state every frame.
+func _process(delta: float) -> void:
+	if not GameOrchestrator.is_server():
 		_client_tick()
+		return
+	_server_wait_s -= delta
+	if _server_wait_s <= 0.0:
+		_server_wait_s = SERVER_TICK_S
+		_server_tick()
 
 
 func _server_tick() -> void:
@@ -335,15 +343,18 @@ func _push_belt(bodies: Array, desired_velocity: Vector3) -> void:
 			rb.apply_central_force((desired_velocity - rb.linear_velocity) * rb.mass * 10.0)
 
 
+## The bodies of [param bodies] this machine takes (see _accepts).
 func filter_accepted(bodies: Array) -> Array:
 	return bodies.filter(func(b: Node) -> bool: return _accepts(b))
 
 
+## SERVER: the output belt is empty again: the machine goes back to idle.
 func _on_box_exited(_body: Node3D) -> void:
 	if state == "extract" and box_detector.get_overlapping_bodies().is_empty():
 		state = "idle"
 
 
+## SERVER: take [param body] in (see _consume) and remove it from the world.
 func _collect(body: Node) -> void:
 	if body.is_queued_for_deletion():
 		return
@@ -351,18 +362,9 @@ func _collect(body: Node) -> void:
 	body.queue_free()
 
 
-## Fillable volume of one crate (m3), read once from the crate_container scene.
+## Fillable volume of one crate (m3) — see CrateContent.crate_volume.
 func crate_volume() -> float:
-	if _crate_volume < 0.0:
-		var c: Node = CRATE_SCENE.instantiate()
-		var cs: CollisionShape3D = c.get_node_or_null("CollisionShape3D")
-		if cs != null and cs.shape is BoxShape3D:
-			var s: Vector3 = (cs.shape as BoxShape3D).size
-			_crate_volume = s.x * s.y * s.z
-		else:
-			_crate_volume = 1.0
-		c.free()
-	return _crate_volume
+	return CrateContent.crate_volume()
 
 
 # ── Replication ───────────────────────────────────────────────────────────────────────────────────
@@ -389,20 +391,27 @@ func apply_prop_data(_data: Dictionary) -> void:
 
 # ── Output ────────────────────────────────────────────────────────────────────────────────────────
 
+## SERVER: work PROCESS_S on one crate's worth, then spit the crate out on the output belt and credit
+## its goods. The stock is taken AFTER the work: a machine streamed out meanwhile loses nothing.
 func handle_extract() -> void:
-	# Who is extracting, captured BEFORE the belt await below: active_player is whoever stands at the
-	# screen in two and a half seconds' time, which is not the player being credited.
+	# Who is extracting, captured BEFORE the awaits below: active_player is whoever stands at the
+	# screen when they end, which is not the player being credited.
 	var miner_id: String = active_player.client_uuid if active_player != null else ""
 	# The player node is named after the login Horizon read from the token (preferred_username).
 	var miner_name: String = str(active_player.name) if active_player != null else ""
-	var content := _next_crate(miner_id, miner_name)
-	if content.is_empty():
+	if not _can_pack():
 		state = "idle"
 		return
 	# The machine works on it first: the screen counts PROCESS_S down, then the crate comes out.
 	state = "processing"
 	_process_end_ms = Time.get_ticks_msec() + int(PROCESS_S * 1000.0)
 	await get_tree().create_timer(PROCESS_S).timeout
+	if not is_inside_tree():
+		return
+	var content := _next_crate(miner_id, miner_name)
+	if content.is_empty():
+		state = "idle"
+		return
 	state = "extract"
 	# Spawn the crate both in Horizon (other clients) and locally on this game server (so it has a
 	# physics body that falls onto the belt and replicates). See NetworkOrchestrator.spawn_prop_authoritative.
@@ -449,6 +458,8 @@ func _on_rock_depot_ui_action_triggered(type: String) -> void:
 	ScreenTarget.send(self, {"state": type})
 
 
+## SERVER, 3D-screen contract (ScreenTarget): a validated button press — SEND starts the input belt,
+## EXTRACT the work on a crate.
 func update_screen(data: Dictionary) -> void:
 	var target_state: String = data["state"]
 	if state == "idle" and target_state == "collect":

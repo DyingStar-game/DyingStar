@@ -334,12 +334,9 @@ func _load_mine() -> void:
 	if not _mine:
 		return
 	var missions: Array = []
-	var data: Variant = result.get("data")
-	var items: Variant = data.get("missions") if data is Dictionary else data  # {missions: [{assignment, mission}]}
-	if items is Array:
-		for row: Variant in items:
-			if row is Dictionary and row.get("mission") is Dictionary:
-				missions.append(row["mission"])
+	for row: Dictionary in ServiceTypes.mission_rows(result.get("data")):
+		if row.get("mission") is Dictionary:
+			missions.append(row["mission"])
 	_fill_grid(missions)
 
 

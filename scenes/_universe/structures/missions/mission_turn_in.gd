@@ -19,16 +19,17 @@ const DEPOTS_GROUP := &"cargo_depots"
 
 ## Turn [param mission_id] in for [param player] at [param kiosk]; the screen hears the outcome.
 static func turn_in(kiosk: Node3D, player: Node, mission_id: String) -> void:
-	var error := await _turn_in(kiosk, player, mission_id)
-	print("[TurnIn] %s for %s at %s: %s" % [mission_id, player.get("client_uuid"), kiosk.name,
-		"ok" if error == "" else error])
-	ScreenTarget.announce(kiosk, player, {"state": "turn_in_result", "mission_id": mission_id,
-		"ok": error == "", "error": error})
+	var player_id := str(player.get("client_uuid"))
+	var error := await _turn_in(kiosk, player_id, mission_id)
+	print("[TurnIn] %s for %s: %s" % [mission_id, player_id, "ok" if error == "" else error])
+	# The services answered seconds later: the player may have left, the kiosk streamed out.
+	if is_instance_valid(kiosk) and is_instance_valid(player):
+		ScreenTarget.announce(kiosk, player, {"state": "turn_in_result", "mission_id": mission_id,
+			"ok": error == "", "error": error})
 
 
 ## "" when the mission was completed, else why not.
-static func _turn_in(kiosk: Node3D, player: Node, mission_id: String) -> String:
-	var player_id := str(player.get("client_uuid"))
+static func _turn_in(kiosk: Node3D, player_id: String, mission_id: String) -> String:
 	if mission_id == "" or player_id == "":
 		return "INVALID"
 	var detail := await MissionHeartbeat.mission_internal(HTTPClient.METHOD_GET, "/missions/%s" % mission_id.uri_encode(), null)
@@ -40,7 +41,7 @@ static func _turn_in(kiosk: Node3D, player: Node, mission_id: String) -> String:
 	var poi_id := delivery_poi(data.get("objectives", []))
 	if poi_id != "":
 		var depot_uuid := await _warehouse_of_poi(poi_id)
-		if not _depot_near(kiosk, depot_uuid):
+		if not is_instance_valid(kiosk) or not _depot_near(kiosk, depot_uuid):
 			return "WRONG_TOWN_HALL"
 	var done := await MissionHeartbeat.mission_internal(HTTPClient.METHOD_POST,
 			"/missions/%s/complete" % mission_id.uri_encode(), {"playerId": player_id})
@@ -52,7 +53,7 @@ static func holds_assignment(assignments: Variant, player_id: String) -> bool:
 	if not (assignments is Array):
 		return false
 	for a: Variant in assignments:
-		if a is Dictionary and str(a.get("playerId", "")) == player_id and str(a.get("status", "")) == "active":
+		if ServiceTypes.is_active_assignment(a) and str(a.get("playerId", "")) == player_id:
 			return true
 	return false
 

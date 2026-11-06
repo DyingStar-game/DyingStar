@@ -90,10 +90,10 @@ var _browse: ItemList
 var _page_browse: ServicePage
 var _mine: ItemList
 var _page_mine: ServicePage
-## The "My missions" segment's contract box, and the mission it is to show once the list has it
-## (focus_mission), "" when none.
 ## Invitations to join a mission somebody else took (My missions, over the list).
 var _invites_box: VBoxContainer
+## The "My missions" segment's contract box, and the mission it is to show once the list has it
+## (focus_mission), "" when none.
 var _mine_contract: VBoxContainer
 var _focus_id: String = ""
 var _created_status: OptionButton

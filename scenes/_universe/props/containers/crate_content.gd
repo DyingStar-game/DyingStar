@@ -24,6 +24,23 @@ const KIND_INGOT := "ingot"
 const INGOT_GOOD_PREFIX := "ingot."
 ## The owner shown when no player is known (a crate packed with nobody at the screen).
 const OWNER_ARES := "ARES CORP."
+## The hauling crate: its collision box is the volume one crate holds (crate_volume).
+const CRATE_SCENE_PATH := "res://scenes/_universe/props/containers/hauling_box.tscn"
+
+static var _crate_m3 := -1.0
+
+
+## The fillable volume of one hauling crate (m3): its collision box, read from the scene once.
+static func crate_volume() -> float:
+	if _crate_m3 < 0.0:
+		var crate: Node = (load(CRATE_SCENE_PATH) as PackedScene).instantiate()
+		var cs := crate.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		_crate_m3 = 1.0
+		if cs != null and cs.shape is BoxShape3D:
+			var s: Vector3 = (cs.shape as BoxShape3D).size
+			_crate_m3 = s.x * s.y * s.z
+		crate.free()
+	return _crate_m3
 
 
 ## A crate of crushed ore: [param ore_m3] of [param mineral] mixed with [param gangue_m3] of barren rock
@@ -86,9 +103,11 @@ static func holder_of(content: Dictionary) -> String:
 	return carrier if carrier != "" else str(content.get("miner_id", ""))
 
 
+## Whether [param content] is a crate of crushed ore (the Crusher's).
 static func is_crushed(content: Dictionary) -> bool:
 	return str(content.get("kind", "")) == KIND_CRUSHED
 
+## Whether [param content] is a crate of ingots (the Refinery's).
 static func is_ingot(content: Dictionary) -> bool:
 	return str(content.get("kind", "")) == KIND_INGOT
 

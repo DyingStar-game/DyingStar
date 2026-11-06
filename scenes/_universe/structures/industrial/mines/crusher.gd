@@ -40,6 +40,7 @@ func _log_refusal(rock: Node) -> void:
 		rock.real_mass() if rock.has_method("real_mass") else -1.0])
 
 
+## Whether [param body] is a rock piece the Crusher takes: cut down to carrying size, with ore in it.
 static func is_crushable(body: Node) -> bool:
 	if not body.is_in_group("miningrock"):
 		return false
