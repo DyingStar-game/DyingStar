@@ -427,7 +427,7 @@ func _seed_zone_contents() -> void:
 		pnj_box_temp_zones = zones
 		_send_pnj_box_temp_zones()
 
-	var counter := get_node_or_null("ReceptionDesk/PNJBoxDepositPlayer") as Area3D
+	var counter := get_node_or_null("Reception Desk/PNJBoxDepositPlayer") as Area3D
 	if counter != null:
 		var on_counter: Array = []
 		for body in counter.get_overlapping_bodies():

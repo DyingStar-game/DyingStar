@@ -819,6 +819,8 @@ func server_action_received(data: Dictionary) -> void:
 					# If it's secured in a vehicle bed or stored on a shelf, take it out of there first: the
 					# carrier frees the load / the slot (retrieval).
 					var prev_parent = parent_node.get_parent()
+					if prev_parent is Shelf:
+						WarehouseDelivery.on_taken(parent_node, prev_parent, player)  # out of the depot's stock
 					if prev_parent.has_method("release_cargo"):
 						prev_parent.release_cargo(parent_node)
 					# A part taken back out of a bay frees it, the same way a crate frees a shelf slot.
@@ -3075,6 +3077,7 @@ func _server_drop_carried_item() -> void:
 		# freezes it once it has settled on its tier (see Shelf). No free slot left: an ordinary drop.
 		var shelf = place["shelf"] if place["shelf"] != null else _shelf_for_drop(place["position"])
 		if shelf != null and shelf.store_at_nearest_slot(item):
+			WarehouseDelivery.on_stored(item, shelf)  # into the depot's stock, once
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return

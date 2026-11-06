@@ -210,7 +210,7 @@ func credit_mined(player_id: String, good_type: String, units: int) -> void:
 
 
 ## Goods leave the player entirely and land on [param destination] — a `Holder`, e.g.
-## `{"holderType": "warehouse", "holderId": <uuid POI>}` for a delivery zone. Mandatory on a
+## `{"holderType": "warehouse", "holderId": <cargo depot uuid>}` (see WarehouseDelivery). Mandatory on a
 ## negative delta: the service answers 422 DESTINATION_REQUIRED rather than voiding the goods.
 func drop_carried(player_id: String, good_type: String, units: int, destination: Dictionary) -> void:
 	_carried_delta(player_id, good_type, -units, {"to": destination})
