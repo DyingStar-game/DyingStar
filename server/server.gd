@@ -2867,6 +2867,9 @@ static func _stream_vec(v: Variant) -> Vector3:
 func _stream_adopt_waiting(uuid: String) -> void:
 	for child in prop_registry.take_waiting(uuid):
 		_stream_place(child)
+		# A village that came before its planet: left out here, it had neither ground nor fences on this
+		# server until it woke, and how many depended on the order of the messages (15 to 118 of 118).
+		_stream_register_poi_zone(child)
 		var ce: Dictionary = prop_registry.get_entry(child)
 		if not ce.is_empty() and _stream_should_live(ce):
 			_stream_enqueue(child)
