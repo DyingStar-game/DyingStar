@@ -92,6 +92,8 @@ var _mine: ItemList
 var _page_mine: ServicePage
 ## The "My missions" segment's contract box, and the mission it is to show once the list has it
 ## (focus_mission), "" when none.
+## Invitations to join a mission somebody else took (My missions, over the list).
+var _invites_box: VBoxContainer
 var _mine_contract: VBoxContainer
 var _focus_id: String = ""
 var _created_status: OptionButton
@@ -359,6 +361,10 @@ func _build_mine_page(page: VBoxContainer) -> void:
 	_page_mine = ServicePage.new()
 	_page_mine.rows_key = "missions"
 	_page_mine.load_requested.connect(_load_mine)
+	# Invitations to join a mission somebody else took, over the list: Join / Decline.
+	_invites_box = VBoxContainer.new()
+	_invites_box.add_theme_constant_override("separation", 6)
+	left.add_child(_invites_box)
 	_mine = _paged_list(left, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine, 320.0)
 	_mine.item_selected.connect(func(_i: int) -> void: _open_mine(contract))
 	_mine_contract = contract
@@ -583,6 +589,45 @@ func _load_mine() -> void:
 	var result: Dictionary = await PlayerServices.my_missions("active", _page_mine.limit, at)
 	if _land(_page_mine, at, result):
 		_apply_mine(_page_mine, result)
+	await _load_invitations()
+
+
+## The invitations to join a mission a friend or my group took: one line each, Join / Decline.
+func _load_invitations() -> void:
+	var result: Dictionary = await PlayerServices.mission_invitations()
+	_clear_children(_invites_box)
+	var data: Variant = result.get("data")
+	var rows: Variant = data.get("invitations") if data is Dictionary else null
+	if not (rows is Array) or (rows as Array).is_empty():
+		return
+	_invites_box.add_child(_label(tr("%%SVC_LBL_MISSION_INVITATIONS"), ServiceStyle.ACCENT))
+	for row: Variant in rows:
+		if not (row is Dictionary):
+			continue
+		var invitation: Dictionary = row.get("invitation") if row.get("invitation") is Dictionary else {}
+		var mission: Dictionary = row.get("mission") if row.get("mission") is Dictionary else {}
+		var id := str(invitation.get("id", ""))
+		var line := _row()
+		line.add_child(_label(ServiceTypes.dash(mission.get("title")), ServiceStyle.TEXT))
+		_action_button(line, tr("%%SVC_ACT_JOIN"), func() -> void: _answer_invitation(id, true))
+		_action_button(line, tr("%%SVC_ACT_DECLINE"), func() -> void: _answer_invitation(id, false))
+		_invites_box.add_child(line)
+
+
+func _answer_invitation(invitation_id: String, join: bool) -> void:
+	var result: Dictionary
+	if join:
+		result = await PlayerServices.mission_join(invitation_id)
+	else:
+		result = await PlayerServices.mission_decline(invitation_id)
+	if _report(result, tr("%%SVC_MSG_MISSION_JOINED") if join else tr("%%SVC_MSG_INVITATION_DECLINED")):
+		await _load_mine()
+
+
+static func _clear_children(box: Node) -> void:
+	for child: Node in box.get_children():
+		box.remove_child(child)
+		child.queue_free()
 
 
 ## Shared loader for the two mission-dict lists (browse + created).
@@ -870,6 +915,10 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	if not assignment.is_empty():
 		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ASSIGNMENT") %
 				ServiceTypes.assignment_line(assignment), ServiceStyle.TEXT))
+	# Who takes part (a shared mission): shown to its participants only.
+	var participants := ServiceTypes.participants_text(data.get("participants"))
+	if participants != "":
+		meta.add_child(_label(tr("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, ServiceStyle.TEXT))
 	doc.add_child(meta)
 
 	# Description.
@@ -1123,6 +1172,19 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 			_action_button(lifecycle, tr("%%SVC_ACT_COMPLETE"),
 					func() -> void: _complete(mission_id, contract))
 		actions.add_child(lifecycle)
+		# Share the mission I took: my group may join it, or one player I pick. Their crates then
+		# count for it too, the reward is split equally, and any of us turns it in.
+		var share := _row()
+		share.add_child(_label(tr("%%SVC_LBL_SHARE_TAKEN"), DIM))
+		_action_button(share, tr("%%SVC_ACT_SHARE_GROUP"),
+				func() -> void: _invite_group(mission_id, contract))
+		var picker := ServiceTargetPicker.new()
+		picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+		adopt_field(picker.search_field())
+		share.add_child(picker)
+		_action_button(share, tr("%%SVC_ACT_INVITE"),
+				func() -> void: _invite_player(mission_id, contract, picker))
+		actions.add_child(share)
 
 	# The share line is the CREATOR's business: handing a contract to a group is a decision about
 	# who may take it, and that is not the taker's to make. It also names the group rather than
@@ -1216,6 +1278,31 @@ func _share(mission_id: String, contract: VBoxContainer) -> void:
 	var result: Dictionary = await PlayerServices.mission_share(mission_id,
 			str((group as Dictionary).get("id", "")))
 	if _report(result, tr("%%SVC_MSG_MISSION_SHARED")):
+		await _open_contract(contract, mission_id)
+
+
+## Share the mission I took with my group: each member may join it.
+func _invite_group(mission_id: String, contract: VBoxContainer) -> void:
+	var mine: Dictionary = await PlayerServices.my_group()
+	var group: Variant = mine.get("data")
+	if not (group is Dictionary):
+		_say(tr("%%SVC_MSG_NO_GROUP"), WARN)
+		return
+	var target := {"groupId": str((group as Dictionary).get("id", ""))}
+	if _report(await PlayerServices.mission_invite(mission_id, target), tr("%%SVC_MSG_MISSION_INVITED")):
+		await _open_contract(contract, mission_id)
+
+
+## Share the mission I took with the player picked.
+func _invite_player(mission_id: String, contract: VBoxContainer, picker: ServiceTargetPicker) -> void:
+	release_fields()
+	var player_id := picker.picked_id()
+	if player_id == "":
+		_say(tr("%%SVC_MSG_PICK_PLAYER"), WARN)
+		return
+	var target := {"playerId": player_id}
+	if _report(await PlayerServices.mission_invite(mission_id, target), tr("%%SVC_MSG_MISSION_INVITED")):
+		picker.clear_pick()
 		await _open_contract(contract, mission_id)
 
 

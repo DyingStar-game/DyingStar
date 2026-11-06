@@ -187,6 +187,9 @@ func _open_sheet(mission: Dictionary) -> void:
 		var full: Dictionary = data.get("mission") if data.get("mission") is Dictionary else mission
 		var objectives: Array = data.get("objectives") if data.get("objectives") is Array else []
 		_fill_sheet(full, objectives)
+		var participants := ServiceTypes.participants_text(data.get("participants"))
+		if participants != "":
+			_sheet.add_child(_text(TranslationServer.translate("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, DIM))
 		var assignment: Variant = data.get("assignment")
 		if assignment is Dictionary:
 			_accept.visible = false  # already the player's

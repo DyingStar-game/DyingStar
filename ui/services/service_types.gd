@@ -636,6 +636,19 @@ static func zone_line(zone: Variant) -> String:
 	return zone_kind_label(kind)
 
 
+## The participants of a mission (GET /api/missions/:id `participants`: [{playerId, name}]) as one
+## line of names; a player whose name is unknown shows the start of their id. "" when there are none.
+static func participants_text(participants: Variant) -> String:
+	if not (participants is Array):
+		return ""
+	var names: PackedStringArray = []
+	for p: Variant in participants:
+		if p is Dictionary:
+			var name: Variant = p.get("name")
+			names.append(str(name) if name != null and str(name) != "" else str(p.get("playerId", "")).left(8))
+	return ", ".join(names)
+
+
 ## The mission's zone list as a single line: every zone, or the "global" label when the list is
 ## empty — which is exactly the service's "available everywhere" case.
 static func zones_text(zones: Variant) -> String:

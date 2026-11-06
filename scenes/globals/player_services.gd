@@ -544,6 +544,27 @@ func mission_complete(mission_id: String) -> Dictionary:
 	if _ok(r): changed.emit("missions")
 	return r
 
+## Share a mission I took with one player ({"playerId": id}) or my group ({"groupId": id}): the
+## invitees may join it (shared progress, reward split equally).
+func mission_invite(mission_id: String, target: Dictionary) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/%s/invite" % mission_id, target)
+	if _ok(r): changed.emit("missions")
+	return r
+
+## The invitations I may answer (mine, my group's): {invitations: [{invitation, mission}]}.
+func mission_invitations() -> Dictionary:
+	return await _http_get(SERVICE_MISSION, "/api/me/mission-invitations")
+
+func mission_join(invitation_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/invitations/%s/join" % invitation_id)
+	if _ok(r): changed.emit("missions")
+	return r
+
+func mission_decline(invitation_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/invitations/%s/decline" % invitation_id)
+	if _ok(r): changed.emit("missions")
+	return r
+
 ## Confirm an issuer-verified objective (`manual` kind) — mission creator only.
 func mission_confirm(mission_id: String, objective_id: String) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_MISSION,

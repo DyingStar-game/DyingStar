@@ -42,3 +42,8 @@ func test_the_sheet_shows_each_objective_progress() -> void:
 	assert_eq(MissionKioskUI.progress_suffix(_objective(0, "warehouse", "a")), "", "nothing counted yet")
 	assert_string_contains(MissionKioskUI.progress_suffix(_objective(0, "warehouse", "a", "completed")), "—")
 
+
+func test_the_participants_read_as_names() -> void:
+	var participants := [{"playerId": "4aa97da7-6ae4", "name": "player-kira"}, {"playerId": "b91c2854-3ae4", "name": null}]
+	assert_eq(ServiceTypes.participants_text(participants), "player-kira, b91c2854")
+	assert_eq(ServiceTypes.participants_text(null), "")
