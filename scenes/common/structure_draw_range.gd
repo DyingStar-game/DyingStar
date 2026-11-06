@@ -17,6 +17,12 @@ const OPTION : String = "structures_distance"
 ## the road leading to it. Before this option buildings had no limit; at 15 km they cover a few
 ## pixels, so the default look does not change.
 const FAR_M : float = RoadTerrain.FAR_VISIBILITY_M
+## A part of a building is drawn up to this many metres per metre of its longest side: about 7 pixels
+## at 1080p where it goes. A factory city draws 2 700 parts, nearly all with a shadow; this leaves about
+## half of them from anywhere in it (2026-11-06). Lower = fewer draws, parts leaving sooner.
+const PART_M_PER_M : float = 100.0
+## ...and never less than this (m), for what is seen from across a street.
+const PART_MIN_M : float = 60.0
 
 
 static func attach_to(root: Node) -> void:
@@ -59,7 +65,35 @@ static func _track(mesh: GeometryInstance3D) -> void:
 	# landings, railings): its begin is the hand-off from the level before, whose end is authored and
 	# never scaled. Only its far cap follows the option — scaling the begin too left the whole lift
 	# undrawn between the two at x1.5 (rails missing from 50 to 75 m).
-	DrawRange.track(mesh, OPTION, mesh.visibility_range_begin, FAR_M, false)
+	DrawRange.track(mesh, OPTION, mesh.visibility_range_begin, part_end_m(mesh), false)
+
+
+## How far the part [param mesh] is drawn (m), from its size. FAR_M when that size cannot be told yet (a
+## CSG builds its mesh later) or when it hands off from another level of detail.
+static func part_end_m(mesh: GeometryInstance3D) -> float:
+	if mesh.visibility_range_begin > 0.0:
+		return FAR_M
+	var side := part_side_m(mesh)
+	return FAR_M if side <= 0.0 else clampf(side * PART_M_PER_M, PART_MIN_M, FAR_M)
+
+
+## The longest side of [param mesh] (m, with its own scale), 0 when it cannot be told.
+static func part_side_m(mesh: GeometryInstance3D) -> float:
+	var size := Vector3.ZERO
+	if mesh is CSGBox3D:
+		size = (mesh as CSGBox3D).size
+	elif mesh is CSGCylinder3D:
+		var c := mesh as CSGCylinder3D
+		size = Vector3(c.radius * 2.0, c.height, c.radius * 2.0)
+	elif mesh is CSGSphere3D:
+		size = Vector3.ONE * (mesh as CSGSphere3D).radius * 2.0
+	elif mesh is MeshInstance3D and (mesh as MeshInstance3D).mesh != null:
+		size = (mesh as MeshInstance3D).mesh.get_aabb().size
+	return _longest(size * mesh.transform.basis.get_scale().abs())
+
+
+static func _longest(v: Vector3) -> float:
+	return maxf(v.x, maxf(v.y, v.z))
 
 
 ## Vehicles, loose props and players in a building keep their own rules. A player walks into one (a
