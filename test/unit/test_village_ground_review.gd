@@ -104,6 +104,18 @@ func test_a_chunk_a_village_road_reaches_is_not_cached() -> void:
 	assert_true(data.chunk_cache_ineligible(FINEST, near_ip), "under the road: never cached")
 
 
+func test_a_fence_post_stands_on_the_same_road_with_and_without_the_memo() -> void:
+	var data := _data()
+	var cl := PackedVector2Array([_at(0.0, 0.0), _at(40.0, 0.0)])
+	data.register_village_bed(VillageBed.record("village:r", cl[0].x, cl[0].y, 0.0, 100.0, 100.0))
+	data.register_village_roads("village:r", [_zone(cl, 0.5)])
+	var memo := {}
+	for t: float in [0.0, 5.0, 20.0, 39.0, 60.0]:
+		var ll := _at(t, 0.0)
+		var dir := HEALPix.lonlat2vec(ll.x, ll.y)
+		assert_eq(data.carved_surface_dist(dir, memo), data.carved_surface_dist(dir), "%d m along" % t)
+
+
 # ── 14. Re-registering a village's roads ─────────────────────────────────
 
 ## A village road zone (LayoutRoads.to_zones' format) of the bed "village:r" along [param cl].

@@ -2651,6 +2651,9 @@ var _stream_dormant_ms: int = int(SettingsManager._server_ini_number("streaming"
 var _stream_budget_usec: int = int(SettingsManager._server_ini_number("streaming", "materialize_budget_ms", 4.0) * 1000.0)
 ## uuids waiting for a node, in creation order; _stream_queued is the same set for lookups.
 var _stream_queue: Array = []
+## How many villages are spawning their layout: nothing is built from the queue until they are done
+## (PoiVillages._hold_stream).
+var stream_holds: int = 0
 var _stream_queued: Dictionary = {}
 var _stream_sort_dirty: bool = false
 var _stream_sort_last_ms: int = 0
@@ -3095,7 +3098,7 @@ func _stream_connect_planet(planet: Planet) -> void:
 
 ## Per frame: build queued nodes within the budget.
 func _stream_drain() -> void:
-	if _stream_queue.is_empty():
+	if _stream_queue.is_empty() or stream_holds > 0:
 		return
 	var t0: int = Time.get_ticks_usec()
 	if _stream_sort_dirty and _stream_queue.size() > 1 \

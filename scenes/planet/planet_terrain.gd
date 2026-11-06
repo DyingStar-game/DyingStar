@@ -243,6 +243,20 @@ var _pad_dirty_pixels: Dictionary = {}
 ## registers a pad, and a shared counter made each of those registrations drop
 ## every mesh in flight along the whole railway (hundreds of tiles) as well.
 var _pad_generation: int = 0
+## CLIENT: how often the chunks under newly registered pads are rebuilt (ms). A city's buildings enter
+## GORC range one after the other: rebuilt per pad, the same chunks were thrown away and built again
+## over and over. A pad on its own still goes at once; a burst waits for the next period, together.
+const PAD_REBUILD_INTERVAL_MS := 1000
+## CLIENT: the finest-level pixels waiting for that period, and why (the rebuild's log line).
+var _pad_rebuild_pending: Dictionary = {}
+var _pad_rebuild_why: String = ""
+## CLIENT: not before this time (Time.get_ticks_msec), the next rebuild under pads.
+var _next_pad_rebuild_ms: int = 0
+## Between begin_terrain_pad_batch and end_terrain_pad_batch: where the pads registered meanwhile go.
+var _pad_batch_open: bool = false
+var _pad_batch: Array = []
+## The pixels the shares of a layout's pads made stale, until they are all registered.
+var _pad_shares_dirty: Dictionary = {}
 
 ## Grace period before an unreferenced bridge is actually freed.
 ##
@@ -279,6 +293,9 @@ var _initialized: bool = false
 ## Server fixed-collision mode: all export-nside chunks loaded at startup.
 ## Maps chunk_key → per-chunk StaticBody3D (see _make_chunk_collision_body).
 var _server_collision_chunks: Dictionary = {}
+## The ground a chunk being rebuilt still stands on until its replacement is assembled: key -> {body,
+## features}. A rebuild has to leave no hole: whatever drives there would fall into the safety net.
+var _server_stale_chunks: Dictionary = {}
 ## True once _server_load_prebaked_collision() has finished.
 var _server_collision_loaded: bool = false
 
@@ -294,9 +311,6 @@ var _pinned_chunks: Dictionary = {}
 var _last_desired_keys: PackedStringArray = PackedStringArray()
 ## zone ∪ pins as of the last _apply_residency, BEFORE the coarse chunks under fine pins are dropped:
 ## the items on a coarse tile are still wanted when finer collision replaces its ground.
-## The ground a chunk being rebuilt still stands on until its replacement is assembled: key -> {body,
-## features}. A rebuild has to leave no hole: whatever drives there would fall into the safety net.
-var _server_stale_chunks: Dictionary = {}
 var _residency_keys: Dictionary = {}
 
 ## ── Async recipe generation ──────────────────────────────────────
@@ -1091,6 +1105,10 @@ func _apply_residency() -> void:
 		if not effective.has(k):
 			_unload_chunk(k as String)
 
+	for k: String in _server_stale_chunks.keys():
+		if not effective.has(k):
+			_drop_stale_chunk(k)
+
 	# Mark in-flight tasks for evicted chunks so the poll discards their result.
 	for k in _server_chunk_tasks.keys():
 		if not effective.has(k as String):
@@ -1105,10 +1123,6 @@ func _apply_residency() -> void:
 
 	# Load missing chunks (not resident and not already loading / queued).
 	var missing: Array = []
-	for k: String in _server_stale_chunks.keys():
-		if not effective.has(k):
-			_drop_stale_chunk(k)
-
 	for k in effective.keys():
 		var key := k as String
 		if not _server_collision_chunks.has(key) and not _server_chunk_tasks.has(key):
@@ -1215,6 +1229,7 @@ func _load_chunk(key: String) -> void:
 ## Also marks any in-flight async loading task as evicted so its result is
 ## discarded when the task completes.
 func _unload_chunk(key: String) -> void:
+	_drop_stale_chunk(key)
 	if _server_collision_chunks.has(key):
 		var body: Node = _server_collision_chunks[key]
 		if PropNet.prof_on:
@@ -1229,23 +1244,8 @@ func _unload_chunk(key: String) -> void:
 		_server_feature_nodes.erase(key)
 	if _server_chunk_tasks.has(key):
 		_server_chunk_tasks[key]["evicted"] = true
-	_drop_stale_chunk(key)
 
 
-# ------------------------------------------------------------------
-# Async server collision loading
-# ------------------------------------------------------------------
-
-## Promote entries from _server_chunk_queue into active tasks up to
-## MAX_SERVER_CHUNK_TASKS.  Called after every task completion and after
-## every _load_chunk() enqueue so the pipeline self-drains each frame.
-func _server_drain_chunk_queue() -> void:
-	# Un chunk différé retourne en fin de file. Sans borne, le drain le ressortirait
-	# aussitôt et tournerait sur la file entière à chaque appel — c'est ce motif exact
-	# qui avait fait tomber le CLIENT à 0,2 FPS. Chaque entrée est donc examinée au plus
-	# une fois par passage.
-	# Deux fois les créneaux de tâche, comme le backlog du client : de quoi remplacer ce
-	# qui vient de finir sans réexaminer une zone de plusieurs centaines de chunks à
 ## The resident chunk [param key] is to be rebuilt: the residency sees it missing and loads it again,
 ## but its body and features stand until _server_assemble_chunk has the new ones.
 func _keep_chunk_until_rebuilt(key: String) -> void:
@@ -1268,6 +1268,20 @@ func _drop_stale_chunk(key: String) -> void:
 			(n as Node).queue_free()
 
 
+# ------------------------------------------------------------------
+# Async server collision loading
+# ------------------------------------------------------------------
+
+## Promote entries from _server_chunk_queue into active tasks up to
+## MAX_SERVER_CHUNK_TASKS.  Called after every task completion and after
+## every _load_chunk() enqueue so the pipeline self-drains each frame.
+func _server_drain_chunk_queue() -> void:
+	# Un chunk différé retourne en fin de file. Sans borne, le drain le ressortirait
+	# aussitôt et tournerait sur la file entière à chaque appel — c'est ce motif exact
+	# qui avait fait tomber le CLIENT à 0,2 FPS. Chaque entrée est donc examinée au plus
+	# une fois par passage.
+	# Deux fois les créneaux de tâche, comme le backlog du client : de quoi remplacer ce
+	# qui vient de finir sans réexaminer une zone de plusieurs centaines de chunks à
 	# chaque tick. La passe de prefetch ci-dessus a déjà demandé toutes les tuiles, donc
 	# les différés ne le restent pas longtemps.
 	var budget: int = mini(_server_chunk_queue.size(), MAX_SERVER_CHUNK_TASKS * 2)
@@ -1284,20 +1298,6 @@ func _drop_stale_chunk(key: String) -> void:
 	_server_chunk_queue.append_array(deferred)
 
 
-## Begin async loading for one chunk.  Loads the collision shape from the disk
-## cache (fast), pre-loads recipe data on the main thread (~0.5 ms), then
-## submits generate_heightmap to a worker thread (phase 0).  When that
-## completes, _server_poll_chunk_tasks() stores the image and submits
-## generate_collision_shape_healpix (phase 1).
-## Rend false quand le chunk est DIFFÉRÉ faute de tuiles : l'appelant le remet en file.
-func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
-	if stargrot_registry != null and not stargrot_registry.ready_for_chunk(key):
-		return false
-	# A pad waiting for its elevation tiles is waiting for the SAME tiles this chunk needs: if it only
-	# came in at the next throttled poll (_poll_starved_pads), the chunk would be built bare and then
-	# rebuilt — on the server an unload and a reload, the ground gone from under whatever stands on it,
-	# and a truck parked there left sunk 3 m under the platform when the pad came back.
-	_catch_up_starved_pads_now()
 ## Where in _server_chunk_queue the next chunk to build is: the nearest to a body on the ground (lowest
 ## pin rank), the oldest among equals. In plain order of arrival, the chunk under a truck waited behind a
 ## city's others, and a city's can take seconds each.
@@ -1312,6 +1312,20 @@ func _next_queued_chunk() -> int:
 	return best
 
 
+## Begin async loading for one chunk.  Loads the collision shape from the disk
+## cache (fast), pre-loads recipe data on the main thread (~0.5 ms), then
+## submits generate_heightmap to a worker thread (phase 0).  When that
+## completes, _server_poll_chunk_tasks() stores the image and submits
+## generate_collision_shape_healpix (phase 1).
+## Rend false quand le chunk est DIFFÉRÉ faute de tuiles : l'appelant le remet en file.
+func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
+	if stargrot_registry != null and not stargrot_registry.ready_for_chunk(key):
+		return false
+	# A pad waiting for its elevation tiles is waiting for the SAME tiles this chunk needs: if it only
+	# came in at the next throttled poll (_poll_starved_pads), the chunk would be built bare and then
+	# rebuilt — on the server an unload and a reload, the ground gone from under whatever stands on it,
+	# and a truck parked there left sunk 3 m under the platform when the pad came back.
+	_catch_up_starved_pads_now()
 
 	# Try the disk-cached collision shape (cheap main-thread I/O).
 	var cached_shape: ConcavePolygonShape3D = null
@@ -1438,7 +1452,17 @@ func _server_poll_chunk_tasks() -> void:
 		if tid >= 0 and WorkerThreadPool.is_task_completed(tid):
 			completed_keys.append(key)
 
+	# Over one rendered frame, whatever its catch-up physics steps: a big chunk's body costs ~50 ms to add,
+	# and several in one frame added up.
+	var frame := Engine.get_process_frames()
+	if frame != _server_assemble_frame:
+		_server_assemble_frame = frame
+		_server_assemble_end_us = Time.get_ticks_usec() + SERVER_ASSEMBLE_BUDGET_US
+		_server_assemble_spent = false
 	for key in completed_keys:
+		if _server_assemble_spent and Time.get_ticks_usec() >= _server_assemble_end_us:
+			break
+		_server_assemble_spent = true
 		var entry: Dictionary = _server_chunk_tasks[key]
 		WorkerThreadPool.wait_for_task_completion(entry["task_id"])
 		_server_chunk_tasks.erase(key)
@@ -1452,17 +1476,7 @@ func _server_poll_chunk_tasks() -> void:
 		var phase: int = entry["phase"]
 		var ipix: int = entry["ipix"]
 		var col_res: int = entry["col_res"]
-	# Over one rendered frame, whatever its catch-up physics steps: a big chunk's body costs ~50 ms to add,
-	# and several in one frame added up.
-	var frame := Engine.get_process_frames()
-	if frame != _server_assemble_frame:
-		_server_assemble_frame = frame
-		_server_assemble_end_us = Time.get_ticks_usec() + SERVER_ASSEMBLE_BUDGET_US
-		_server_assemble_spent = false
 		var nside := _parse_nside_from_key(key)
-		if _server_assemble_spent and Time.get_ticks_usec() >= _server_assemble_end_us:
-			break
-		_server_assemble_spent = true
 		if nside <= 0:
 			nside = planet_data.export_nside
 
@@ -1586,6 +1600,7 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 		shape: ConcavePolygonShape3D) -> void:
 	if _server_collision_chunks.has(key):
 		return  # Race guard: assembled by another path.
+	_drop_stale_chunk(key)
 	var body := _make_chunk_collision_body(key, nside, ipix, shape)
 	add_child(body)
 	_server_collision_chunks[key] = body
@@ -1600,7 +1615,6 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 				% [key, _climbs] + " — its surface may differ from the clients' by the parent/child gap")
 	if PropNet.prof_on:
 		PropNet.prof_chunk_loads += 1  # TEMPORARY (étape 0d): measure the churn under the player
-	_drop_stale_chunk(key)
 	var faces: PackedVector3Array = shape.get_faces()
 	if faces.size() > 0:
 		var col_origin := _chunk_collision_origin(nside, ipix)
@@ -1787,6 +1801,8 @@ func refresh_stargrot_sites(placements: Array[CavePlacement]) -> void:
 	_clear_all_chunks()
 	for key in _server_collision_chunks.keys():
 		_unload_chunk(key)
+	for key: String in _server_stale_chunks.keys():
+		_drop_stale_chunk(key)
 	if stargrot_registry != null:
 		stargrot_registry.retire()
 		stargrot_registry.queue_free()
@@ -1901,6 +1917,8 @@ func _physics_process(_delta: float) -> void:
 	_poll_starved_grade_profiles()
 	# So does a pad whose elevation tiles have only just arrived.
 	_poll_starved_pads()
+	_flush_pad_rebuild()
+	_step_fence_sampling()
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:
@@ -2799,8 +2817,9 @@ func _lay_village_fences(bed: Dictionary, centre: Vector2, fences: Array) -> voi
 		return
 	var bed_uuid := str(bed["uuid"])
 	var old: Dictionary = _village_fences.get(bed_uuid, {})
-	if is_instance_valid(old.get("node", null)) and PadBed.same_geometry(old["bed"], bed):
-		return  # the same village registered again: its fences stand already
+	if PadBed.same_geometry(old.get("bed", {}), bed) \
+			and (is_instance_valid(old.get("node", null)) or _fences_sampling.has(bed_uuid)):
+		return  # the same village registered again: its fences stand already, or are being laid
 	if is_instance_valid(old.get("node", null)):
 		(old["node"] as Node).queue_free()
 	_village_fences[bed_uuid] = {"bed": bed, "centre": centre, "fences": fences, "pixels": {}}
@@ -2822,10 +2841,28 @@ func _replay_pending_village_beds() -> void:
 
 
 ## Seconds of quiet ground before the fences standing on it are built again.
-const FENCE_REBUILD_DELAY_S := 1.0
+const FENCE_REBUILD_DELAY_S := 3.0
+## How long a frame may spend sampling the ground under fences (us). Raising it lays them faster and
+## costs every frame that much more until they are done; a city's 1 029 posts take ~0.5 s of it.
+const FENCE_SAMPLE_BUDGET_US := 3000
+## SERVER: how often (ms) the villages waiting for their fences are checked against the pinned chunks.
+const FENCE_PIN_SCAN_MS := 250
+## SERVER: how often (ms) the state of the fences near the bodies is logged ([VillageFence] state).
+const FENCE_REPORT_MS := 15000
+## bed uuid -> the fences being sampled (_new_fence_sampling), oldest first.
+var _fences_sampling: Dictionary = {}
+## The rendered frame the sampling last had its share in.
+var _fence_sample_frame: int = -1
+## The village whose fences are being sampled (_fence_village_to_sample), and the next look for another.
+var _fence_wanted: String = ""
+var _fence_next_scan_ms: int = 0
+var _fence_next_report_ms: int = 0
+## SERVER: the villages awake (want_village_fences), by bed uuid: their fences go before any other.
+var _fences_awake: Dictionary = {}
 ## bed uuid → {bed, centre, fences (LayoutFences.of), pixels: the finest pixels its posts stand on, node}.
 var _village_fences: Dictionary = {}
-## bed uuid → true for the villages whose fences wait for the next rebuild (_fences_ground_moved).
+## bed uuid → {full: all its posts are to sample again, pads: else the records of the pads that moved
+## near them} for the villages whose fences wait for the next rebuild (_fences_ground_moved).
 var _fences_stale: Dictionary = {}
 ## The pending rebuild of the stale fences, pushed back while the ground keeps moving.
 var _fence_timer: SceneTreeTimer
@@ -2833,32 +2870,35 @@ var _fence_timer: SceneTreeTimer
 
 ## Build (again) the fences of the village bed [param bed_uuid] on the ground as it stands: posts on
 ## carved_surface_dist (relief, village bed, pads, roads), panels left open where a village road
-## crosses (VillageRoadBed.distance_out_m). The terrain samples the ground; LayoutFences.build_node
-## builds the node (meshes and collision), added under this terrain, in its frame.
+## crosses (VillageRoadBed.distance_out_m). The terrain samples the ground, a share each frame
+## (_step_fence_sampling); LayoutFences.build_node then builds the node (meshes and collision), added
+## under this terrain, in its frame. The old node stands until then.
 func _build_village_fences(bed_uuid: String) -> void:
 	var job: Dictionary = _village_fences.get(bed_uuid, {})
+	_fences_sampling.erase(bed_uuid)
 	if job.is_empty() or planet_data == null:
 		return
-	var old: Node = job.get("node", null)
-	if is_instance_valid(old):
-		old.queue_free()
-	job.erase("node")
 	var mpd := planet_data.radius * PI / 180.0
 	var bed: Dictionary = job["bed"]
 	var centre: Vector2 = job["centre"]
 	var finest: int = 1 << maxi(planet_data.max_quadtree_depth, 0)
 	# The pixels first: a fence that waits for its ground is found again when that ground comes.
 	var pixels := {}
+	var pins := {}
+	var pin_nside: int = planet_data.collision_detail_nside()
 	for f: Dictionary in job["fences"]:
 		for p_layout: Vector2 in (f["points"] as PackedVector2Array):
 			var p0 := p_layout - centre
-			pixels[HEALPix.vec2pix_nest(finest, PadBed.dir_at(bed, p0.x, -p0.y, mpd))] = true
+			var post_dir := PadBed.dir_at(bed, p0.x, -p0.y, mpd)
+			pixels[HEALPix.vec2pix_nest(finest, post_dir)] = true
+			pins["hp_n%d_p%d" % [pin_nside, HEALPix.vec2pix_nest(pin_nside, post_dir)]] = true
 	job["pixels"] = pixels
+	job["pins"] = pins
 	if not planet_data.has_village_bed(bed_uuid):
 		return  # its plane waits for a tile: built again on the next change of ground (_fences_ground_moved)
 	var roads := planet_data.village_roads_of(bed_uuid)
 	var laid: Array = []
-	var origin := Vector3.INF
+	var sampling := _new_fence_sampling(laid, true)
 	for f: Dictionary in job["fences"]:
 		var feet := PackedVector3Array()
 		var ups := PackedVector3Array()
@@ -2866,50 +2906,235 @@ func _build_village_fences(bed_uuid: String) -> void:
 		for p_layout: Vector2 in (f["points"] as PackedVector2Array):
 			var p := p_layout - centre
 			var d := PadBed.dir_at(bed, p.x, -p.y, mpd)
-			var foot := d * planet_data.carved_surface_dist(d)
-			if origin == Vector3.INF:
-				origin = foot
-			feet.append(foot)
+			_queue_fence_post(sampling, laid.size(), feet.size())
+			feet.append(d)
 			ups.append(d)
 			lonlats.append(HEALPix.vec2lonlat(d))
 		var open: Array = []
 		for k in lonlats.size() - 1:
 			var mid := (lonlats[k] + lonlats[k + 1]) * 0.5
 			open.append(not roads.is_empty() and VillageRoadBed.distance_out_m(mid, roads, mpd) <= 0.0)
-		laid.append({"fence": f, "feet": feet, "ups": ups, "open": open})
-	if origin == Vector3.INF:
+		laid.append({"fence": f, "feet": feet, "ups": ups, "lonlats": lonlats, "open": open})
+	if not (sampling["todo"] as Array).is_empty():
+		_fences_sampling[bed_uuid] = sampling
+
+
+## What _step_fence_sampling works on for one village: the pads still to look at and the posts still to
+## sample (Vector2i(entry, post), queued once) in the fences [param laid]. [param full]: they are all new.
+func _new_fence_sampling(laid: Array, full: bool) -> Dictionary:
+	return {"laid": laid, "full": full, "pads": [], "pad_at": 0, "todo": [], "at": 0, "queued": {}, "sampled": 0,
+			"memo": {}}
+
+
+func _queue_fence_post(sampling: Dictionary, entry: int, post: int) -> void:
+	var key := Vector2i(entry, post)
+	if not (sampling["queued"] as Dictionary).has(key):
+		sampling["queued"][key] = true
+		(sampling["todo"] as Array).append(key)
+
+
+## A share of the fences' sampling: FENCE_SAMPLE_BUDGET_US at most, once a rendered frame, of the village
+## _fence_village_to_sample gives, or all of it with [param whole]. All of it in one frame froze the server
+## and the client up to 3 s for a city.
+func _step_fence_sampling(whole: bool = false) -> void:
+	_report_fences()
+	if _fences_sampling.is_empty():
 		return
-	var node := LayoutFences.build_node("VillageFences_%s" % bed_uuid.replace(":", "_"), origin, laid)
+	if not whole and _fence_sample_frame == Engine.get_process_frames():
+		return
+	_fence_sample_frame = Engine.get_process_frames()
+	var villages: Array = _fences_sampling.keys() if whole else [_fence_village_to_sample()]
+	if villages[0] == "":
+		return
+	var end := Time.get_ticks_usec() + FENCE_SAMPLE_BUDGET_US
+	var mpd := planet_data.radius * PI / 180.0
+	for uuid: String in villages:
+		var s: Dictionary = _fences_sampling[uuid]
+		var pads: Array = s["pads"]
+		var laid: Array = s["laid"]
+		var todo: Array = s["todo"]
+		while int(s["pad_at"]) < pads.size():
+			for entry in laid.size():
+				for k: int in PadBed.points_reached(pads[s["pad_at"]], laid[entry]["lonlats"], mpd):
+					_queue_fence_post(s, entry, k)
+			s["pad_at"] = int(s["pad_at"]) + 1
+			if not whole and Time.get_ticks_usec() >= end:
+				return
+		while int(s["at"]) < todo.size():
+			var key: Vector2i = todo[s["at"]]
+			s["at"] = int(s["at"]) + 1
+			(s["queued"] as Dictionary).erase(key)
+			var up: Vector3 = (laid[key.x]["ups"] as PackedVector3Array)[key.y]
+			var feet: PackedVector3Array = laid[key.x]["feet"]
+			feet[key.y] = up * planet_data.carved_surface_dist(up, s["memo"])
+			s["sampled"] = int(s["sampled"]) + 1
+			if not whole and Time.get_ticks_usec() >= end:
+				return
+		_fences_sampling.erase(uuid)
+		_fence_sampling_done(uuid, s)
+		if not whole:
+			return  # a node was built: enough for this frame
+
+
+## SERVER: the village [param uuid] is awake, so a body is around: its fences go first.
+func want_village_fences(uuid: String) -> void:
+	_fences_awake["village:" + uuid] = true
+
+
+## SERVER: where the fences near the bodies stand, in the log. They are only seen by walking into them, so
+## this line is what tells a fence not laid from a fence that does not stop anything.
+func _report_fences() -> void:
+	if not is_server or _village_fences.is_empty() or _pinned_chunks.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	if now < _fence_next_report_ms:
+		return
+	_fence_next_report_ms = now + FENCE_REPORT_MS
+	print("[VillageFence] state: %s" % fence_state_report())
+
+
+## One line: all the villages, then those with a post on a pinned chunk.
+func fence_state_report() -> String:
+	var laid := 0
+	var near: PackedStringArray = []
+	for uuid: String in _village_fences:
+		var job: Dictionary = _village_fences[uuid]
+		laid += 1 if is_instance_valid(job.get("node", null)) else 0
+		for key: String in (job.get("pins", {}) as Dictionary):
+			if _pinned_chunks.has(key):
+				near.append(_fence_state_of(uuid))
+				break
+	var awake: PackedStringArray = []
+	for uuid: String in _fences_awake:
+		awake.append(_fence_state_of(uuid))
+	return "%d village(s), %d laid, %d sampling, %d stale (timer %.1f s), wanted '%s', %d pinned chunk(s), near: %s, awake: %s" % [
+			_village_fences.size(), laid, _fences_sampling.size(), _fences_stale.size(),
+			_fence_timer.time_left if _fence_timer != null else -1.0, _fence_wanted.trim_prefix("village:").left(8),
+			_pinned_chunks.size(), ", ".join(near) if not near.is_empty() else "none",
+			", ".join(awake) if not awake.is_empty() else "none"]
+
+
+func _fence_state_of(uuid: String) -> String:
+	var job: Dictionary = _village_fences.get(uuid, {})
+	var s: Dictionary = _fences_sampling.get(uuid, {})
+	return "%s(job=%s bed=%s node=%s post %s/%s)" % [uuid.trim_prefix("village:").left(8), not job.is_empty(),
+			planet_data.has_village_bed(uuid), is_instance_valid(job.get("node", null)), s.get("at", "-"),
+			(s.get("todo", []) as Array).size()]
+
+
+## The village whose fences get this frame's share, "" for none. The one already started; else on a client
+## the oldest, a client knowing only the villages around it. A server knows the planet's: all its fences
+## are 50 000 posts, 15 minutes of shares in which a city waited behind villages nobody visits and the
+## player drove through its fences (2026-11-06). So only those of a village awake, then where a body has
+## its ground pinned: nothing can touch a fence anywhere else.
+func _fence_village_to_sample() -> String:
+	if _fences_sampling.has(_fence_wanted):
+		return _fence_wanted
+	_fence_wanted = ""
+	if not is_server:
+		_fence_wanted = _fences_sampling.keys()[0]
+		return _fence_wanted
+	for uuid: String in _fences_awake:
+		if _fences_sampling.has(uuid):
+			_fence_wanted = uuid
+			return uuid
+	var now := Time.get_ticks_msec()
+	if now < _fence_next_scan_ms or _pinned_chunks.is_empty():
+		return ""
+	_fence_next_scan_ms = now + FENCE_PIN_SCAN_MS
+	for uuid: String in _fences_sampling:
+		var pins: Dictionary = (_village_fences.get(uuid, {}) as Dictionary).get("pins", {})
+		for key: String in pins:
+			if _pinned_chunks.has(key):
+				_fence_wanted = uuid
+				return uuid
+	return ""
+
+
+## The posts of [param s] stand on the ground: the node of its fences replaces the one standing, if any
+## post was sampled at all.
+func _fence_sampling_done(bed_uuid: String, s: Dictionary) -> void:
+	var job: Dictionary = _village_fences.get(bed_uuid, {})
+	if job.is_empty() or int(s["sampled"]) == 0:
+		return
+	job["laid"] = s["laid"]
+	if bool(s["full"]):
+		job["origin"] = (s["laid"][0]["feet"] as PackedVector3Array)[0]
+	var old: Node = job.get("node", null)
+	if is_instance_valid(old):
+		old.queue_free()
+	_place_village_fences(bed_uuid, job)
+
+
+## The node of the fences as [param job] last laid them.
+func _place_village_fences(bed_uuid: String, job: Dictionary) -> void:
+	var node := LayoutFences.build_node("VillageFences_%s" % bed_uuid.replace(":", "_"), job["origin"], job["laid"],
+			not is_server)
 	add_child(node)
 	job["node"] = node
-	print("[VillageFence] %s: %d fence(s) laid on the ground" % [bed_uuid, laid.size()])
+	print("[VillageFence] %s: %d fence(s) laid on the ground" % [bed_uuid, (job["laid"] as Array).size()])
+
+
+## The pads [param pads] moved: sample again only the posts they can reach, and build the node again
+## only if there is one. A city's 1 029 posts, sampled again for each of its pads anywhere in the same
+## 800 m pixels, froze the client 3 s at a time, 15 times on the way in (F0001, 2026-11-05).
+func _fences_pads_moved(bed_uuid: String, pads: Array) -> void:
+	var job: Dictionary = _village_fences.get(bed_uuid, {})
+	if job.is_empty() or planet_data == null:
+		return
+	var sampling: Dictionary = _fences_sampling.get(bed_uuid, {})
+	if sampling.is_empty():
+		if not is_instance_valid(job.get("node", null)) or not job.has("laid"):
+			_build_village_fences(bed_uuid)
+			return
+		sampling = _new_fence_sampling(job["laid"], false)
+		_fences_sampling[bed_uuid] = sampling
+	(sampling["pads"] as Array).append_array(pads)
+	(sampling["memo"] as Dictionary).clear()
 
 
 ## The ground under some fences moved ([param dirty]: finest pixels): build them again once it has
-## been quiet for FENCE_REBUILD_DELAY_S — a village's pads arrive by the dozen.
-func _fences_ground_moved(dirty: Dictionary) -> void:
+## been quiet for FENCE_REBUILD_DELAY_S — a village's pads arrive by the dozen. [param pads]: the
+## records of the pads that moved, when only pads did; empty, the ground moved in another way and
+## all the posts in these pixels are sampled again.
+func _fences_ground_moved(dirty: Dictionary, pads: Array = []) -> void:
 	if _village_fences.is_empty() or not is_inside_tree():
 		return
 	for uuid: String in _village_fences:
-		if not is_instance_valid((_village_fences[uuid] as Dictionary).get("node", null)):
-			_fences_stale[uuid] = true  # not built yet (its ground was missing): try again
-			continue
-		var px: Dictionary = (_village_fences[uuid] as Dictionary)["pixels"]
-		for ip: int in dirty:
-			if px.has(ip):
-				_fences_stale[uuid] = true
-				break
+		var job: Dictionary = _village_fences[uuid]
+		# Not built yet (its ground was missing): try again.
+		var full: bool = not is_instance_valid(job.get("node", null)) and not _fences_sampling.has(uuid)
+		if not full:
+			var px: Dictionary = job["pixels"]
+			var hit := false
+			for ip: int in dirty:
+				if px.has(ip):
+					hit = true
+					break
+			if not hit:
+				continue
+			full = pads.is_empty()
+		var stale: Dictionary = _fences_stale.get_or_add(uuid, {"full": false, "pads": []})
+		stale["full"] = bool(stale["full"]) or full
+		if not full:
+			(stale["pads"] as Array).append_array(pads)
 	if _fences_stale.is_empty():
 		return
 	if _fence_timer != null and _fence_timer.time_left > 0.0:
 		_fence_timer.time_left = FENCE_REBUILD_DELAY_S
 		return
 	_fence_timer = get_tree().create_timer(FENCE_REBUILD_DELAY_S)
-	_fence_timer.timeout.connect(func() -> void:
-		var stale := _fences_stale.keys()
-		_fences_stale.clear()
-		for uuid: String in stale:
-			_build_village_fences(uuid))
+	_fence_timer.timeout.connect(_rebuild_stale_fences)
+
+
+func _rebuild_stale_fences() -> void:
+	var stale := _fences_stale
+	_fences_stale = {}
+	for uuid: String in stale:
+		if bool(stale[uuid]["full"]):
+			_build_village_fences(uuid)
+		else:
+			_fences_pads_moved(uuid, stale[uuid]["pads"])
 
 
 ## Seconds after a village's ground is registered before its report is printed: time for its
@@ -5006,7 +5231,7 @@ func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary,
 
 ## Throw away and rebuild every resident chunk standing on [param tiles]:
 ## the client's visual chunks (removed; _update_terrain queues them again),
-## the server's collision chunks (unloaded; the residency reloads them) and
+## the server's collision chunks (kept until the residency has reloaded them) and
 ## the tasks in flight on either side (their result is dropped, then
 ## queued again). Idempotent for anything not on the tiles.
 func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
@@ -5028,7 +5253,7 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 			if _chunk_touches_tiles(_parse_nside_from_key(key), _parse_ipix_from_key(key),
 					tiles, tiles_nside):
 				by_nside[_parse_nside_from_key(key)] = int(by_nside.get(_parse_nside_from_key(key), 0)) + 1
-				_unload_chunk(key)
+				_keep_chunk_until_rebuilt(key)
 				n += 1
 		for key: String in _server_chunk_tasks.keys():
 			if skip.has(key):
@@ -5038,7 +5263,8 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 				_server_chunk_tasks[key]["evicted"] = true
 				_server_chunk_tasks[key]["reload"] = true
 				n += 1
-		_apply_residency()
+		if n > 0:
+			_apply_residency()
 	else:
 		# Rebuilt as a SWAP, not removed: removing took the mesh, the
 		# vegetation, the rails and the collision off screen at once, and the
@@ -5055,6 +5281,8 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 				n += 1
 		# Tasks already running were stamped with the old generation and are
 		# dropped at assembly; the backlog is stamped when it is submitted.
+	if n == 0:
+		return
 	print("[PlanetTerrain] %d chunk(s) of '%s' rebuilt on the %d tile(s) of %s %s — finest grid: n%d"
 			% [n, planet_data.planet_name, tiles.size(), why, str(by_nside),
 			1 << planet_data.max_quadtree_depth])
@@ -5094,8 +5322,38 @@ func _requeue_as_swap(info: Dictionary) -> void:
 func register_terrain_pad(rec: Dictionary) -> void:
 	if planet_data == null:
 		return
+	if _pad_batch_open:
+		_pad_batch.append(planet_data.pad_with_measure(rec))
+		return
 	_pads_changed(planet_data.register_pad(rec))
 	# Touching pads it pulled onto its level (or released): their buildings must sit on it.
+	_announce_caught_up_pads()
+
+
+## Until [method end_terrain_pad_batch], add the pads registered to [param recs], measured, instead of
+## registering them: [method register_terrain_pad_batch] does, for all of them in one pass. Closed again
+## before the caller's frame ends, so that nothing else ever finds its pad held.
+func begin_terrain_pad_batch(recs: Array) -> void:
+	_pad_batch_open = true
+	_pad_batch = recs
+
+
+func end_terrain_pad_batch() -> void:
+	_pad_batch_open = false
+	_pad_batch = []
+
+
+## Register in one pass a share of the pads held by a batch (PlanetData.register_pads). The chunks they
+## make stale wait for [method terrain_pad_shares_done], so that a whole layout rebuilds them once.
+func register_terrain_pads_share(recs: Array) -> void:
+	if planet_data != null:
+		_pad_shares_dirty.merge(planet_data.register_pads(recs))
+
+
+func terrain_pad_shares_done() -> void:
+	var dirty := _pad_shares_dirty
+	_pad_shares_dirty = {}
+	_pads_changed(dirty)
 	_announce_caught_up_pads()
 
 
@@ -5285,8 +5543,30 @@ func _flush_late_pads() -> void:
 func _pads_changed(dirty: Dictionary, skip: Dictionary = {}, why: String = "a building pad") -> void:
 	if dirty.is_empty() or planet_data == null:
 		return
+	var moved := planet_data.take_moved_pads()
+	_fences_ground_moved(dirty, moved if why == "a building pad" else [])
+	# The chunks built in the meantime already read the new pads: only the ones standing go stale for
+	# a moment, and the server's collision never waits. Nor does the editor, which has no burst.
+	if not is_server and _initialized and not Engine.is_editor_hint():
+		_pad_rebuild_pending.merge(dirty)
+		_pad_rebuild_why = why
+		_flush_pad_rebuild()
+		return
+	_rebuild_under_pads(dirty, skip, why)
+
+
+## CLIENT: rebuild the chunks under the pads pending, unless the last rebuild is too recent.
+func _flush_pad_rebuild() -> void:
+	if _pad_rebuild_pending.is_empty() or Time.get_ticks_msec() < _next_pad_rebuild_ms:
+		return
+	_next_pad_rebuild_ms = Time.get_ticks_msec() + PAD_REBUILD_INTERVAL_MS
+	var dirty := _pad_rebuild_pending
+	_pad_rebuild_pending = {}
+	_rebuild_under_pads(dirty, {}, _pad_rebuild_why)
+
+
+func _rebuild_under_pads(dirty: Dictionary, skip: Dictionary, why: String) -> void:
 	_pad_dirty_pixels.merge(dirty)
-	_fences_ground_moved(dirty)
 	# Tasks already in flight were started on the old ground; stamping a new
 	# generation is what drops their result instead of drawing it.
 	_pad_generation += 1
