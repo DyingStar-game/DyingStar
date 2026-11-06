@@ -648,6 +648,22 @@ static func is_active_assignment(assignment: Variant) -> bool:
 	return assignment is Dictionary and str(assignment.get("status", "")) == "active"
 
 
+## The first step of a transport measured on the warehouses: the goods must first be taken off a
+## shelf of the source warehouse, or the delivery counts nothing. "" for any other objective; else
+## that step, done or still to do, naming the source village (`locationFrom.village`).
+static func transport_step_text(objective: Variant) -> String:
+	if not (objective is Dictionary) or str(objective.get("type", "")) != "transport":
+		return ""
+	var params: Variant = objective.get("params")
+	if not (params is Dictionary) or str(params.get("via", "")) != "warehouse":
+		return ""
+	var source: Variant = objective.get("locationFrom")
+	var village := str(source.get("village", "")) if source is Dictionary else ""
+	var state: Variant = objective.get("state")
+	var loaded: bool = state is Dictionary and state.get("loadedAt") != null
+	return TranslationServer.translate("%%MISSION_STEP_LOADED" if loaded else "%%MISSION_STEP_LOAD") % village
+
+
 ## The participants of a mission (GET /api/missions/:id `participants`: [{playerId, name}]) as one
 ## line of names; a player whose name is unknown shows the start of their id. "" when there are none.
 static func participants_text(participants: Variant) -> String:

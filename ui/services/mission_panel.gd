@@ -1078,6 +1078,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 
 	var footer := _row(10)
 	footer.add_child(_label(_objective_progress(objective), DIM))
+	var step := ServiceTypes.transport_step_text(objective)
+	if step != "":
+		box.add_child(_label(step, ServiceStyle.ACCENT))
 	var entry := _kind_entry("objectiveKinds", str(objective.get("type", "")))
 	var evaluation := str(entry.get("evaluation", ""))
 	if evaluation != "":

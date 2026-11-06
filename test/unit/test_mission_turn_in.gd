@@ -43,7 +43,22 @@ func test_the_sheet_shows_each_objective_progress() -> void:
 	assert_string_contains(MissionKioskUI.progress_suffix(_objective(0, "warehouse", "a", "completed")), "—")
 
 
+func test_a_mission_notification_lights_the_missions_tab() -> void:
+	assert_eq(PlayerClient.app_of_notification("mission.ready"), "missions")
+	assert_eq(PlayerClient.app_of_notification("friend_request_received"), "social")
+	assert_eq(PlayerClient.app_of_notification(""), "", "nothing to light")
+
+
 func test_the_participants_read_as_names() -> void:
 	var participants := [{"playerId": "4aa97da7-6ae4", "name": "player-kira"}, {"playerId": "b91c2854-3ae4", "name": null}]
 	assert_eq(ServiceTypes.participants_text(participants), "player-kira, b91c2854")
 	assert_eq(ServiceTypes.participants_text(null), "")
+
+
+func test_a_warehouse_transport_says_where_to_load_first() -> void:
+	var objective := {"type": "transport", "params": {"via": "warehouse"}, "locationFrom": {"village": "M0001"}}
+	assert_string_contains(ServiceTypes.transport_step_text(objective), "M0001")
+	var before := ServiceTypes.transport_step_text(objective)
+	objective["state"] = {"loadedAt": "2026-11-06T20:00:00Z"}
+	assert_ne(ServiceTypes.transport_step_text(objective), before, "once loaded, it says so")
+	assert_eq(ServiceTypes.transport_step_text({"type": "deliver_material", "params": {"via": "warehouse"}}), "")
