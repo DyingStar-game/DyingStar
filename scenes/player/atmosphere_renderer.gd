@@ -367,7 +367,13 @@ func _build_aerial_quad() -> void:
 	player.camera.add_child(_aerial_quad)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	var perf: int = ClientPerf.scope_begin()
+	_update_atmosphere(delta)
+	ClientPerf.scope_end("atmosphere", perf)
+
+
+func _update_atmosphere(_delta: float) -> void:
 	if not is_instance_valid(player) or player.camera == null or not is_instance_valid(sun):
 		return
 	if _sky_material == null:
@@ -493,10 +499,12 @@ func _update_wind_dust(delta: float) -> void:
 	var body: Planet = current_body()
 	if body == null:
 		return
+	var perf: int = ClientPerf.scope_begin()
 	var t0: int = Time.get_ticks_usec()
 	_weather_sky.update(self, body, player.global_position)
 	var t1: int = Time.get_ticks_usec()
 	_weather_sky.animate_dust(self, body, player.camera, delta)
+	ClientPerf.scope_end("dust", perf)
 	if _dust_cost != null:
 		_probe_dust_cost(t1 - t0, Time.get_ticks_usec() - t1, delta)
 
