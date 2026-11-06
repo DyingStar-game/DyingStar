@@ -15,10 +15,10 @@ extends RefCounted
 ## the real ground (PlanetData.crack_aware_surface_dist: relief and canyons) over that tangent plane.
 ## Everything the shader gets is relative to the anchor, so no astronomic coordinate reaches float32.
 ##
-## The ground query reads the streamed terrain tiles and is the dearest thing a client asks, so the
-## grid is built a few rows at a time within BUDGET_MS a frame, never on a worker (the tile caches are
-## not thread safe). The grid in use stays on screen until the next one is complete, then both swap
-## at once: texture and frame together.
+## The ground query reads the streamed terrain tiles and is the dearest thing a client asks (~200 us on
+## tarsis_3), so the grid is built a few cells at a time within BUDGET_MS a frame, never on a worker (the
+## tile caches are not thread safe). The grid in use stays on screen until the next one is complete, then
+## both swap at once: texture and frame together.
 ##
 ## Moving on, the grid SLIDES: the next one is the same plane shifted by whole colour cells, so every
 ## cell the two share is copied (Image.blit_rect) and only the new strips are asked. Rebuilt whole, the
@@ -33,8 +33,13 @@ const SIZE: int = 128
 const CELL_M: float = 16.0
 ## How far (m, along the ground) the camera goes from the anchor before a new grid is started.
 const REBUILD_M: float = 120.0
-## Time spent building per frame, ms.
+## Time spent building per frame, ms. Looked at after each cell: looked at after each row, a row of new
+## cells took 25-38 ms in one frame, for a few frames in a row each time the near grid slid north or south
+## (the [CPerf%] prio+ of 40-68 ms, 2026-11-06).
 const BUDGET_MS: float = 1.5
+## At least this for a grid with nothing to copy (ms a frame): 16384 cells, ~3.2 s of queries, which the
+## usual budget would stretch over a minute with the layer lying on a flat plane meanwhile.
+const WHOLE_BUILD_BUDGET_MS: float = 4.0
 ## The ground's colour is kept on every COLOUR_STEP-th cell each way (COLOUR_SIZE a side): the dust a
 ## wind lifts is the colour of the ground it lifted it from, so the haze over a far pink range is pink
 ## while the plain underfoot is yellow (one colour for the whole layer painted the far range in the
@@ -86,6 +91,8 @@ var _keep_i1: int = 0
 var _keep_j0: int = 0
 var _keep_j1: int = 0
 var _row: int = -1  # the row being built; -1 = no build running
+var _col: int = 0  # the next cell of that row
+var _whole_build: bool = false  # nothing copied from the current grid: every cell is asked
 var _build_us: int = 0
 var _colour_us: int = 0
 var _cells: int = 0
@@ -108,10 +115,13 @@ func update(ground_point: Vector3, ground_radius: Callable, budget_ms: float = B
 		_start(ground_point, colour.is_valid())
 	if _row < 0:
 		return false
-	var deadline: int = Time.get_ticks_usec() + int(budget_ms * 1000.0)
+	# A budget of 0 stays one cell: what a caller asks to step through a build.
+	var budget: float = maxf(budget_ms, WHOLE_BUILD_BUDGET_MS) if _whole_build and budget_ms > 0.0 else budget_ms
+	var deadline: int = Time.get_ticks_usec() + int(budget * 1000.0)
 	while _row < SIZE:
-		_build_row(_row, ground_radius, colour)
-		_row += 1
+		if _build_row(_row, ground_radius, colour, deadline):
+			_row += 1
+			_col = 0
 		if Time.get_ticks_usec() >= deadline:
 			break
 	if _row < SIZE:
@@ -220,21 +230,26 @@ func _start(ground_point: Vector3, with_colour: bool) -> void:
 		_next_north = f[1]
 		_next_up = f[2]
 		_next_origin = ground_point
+	_whole_build = _keep_i1 <= _keep_i0 or _keep_j1 <= _keep_j0
 	_row = 0
+	_col = 0
 	_build_us = 0
 	_colour_us = 0
 	_cells = 0
 
 
-## Ask row [param j]'s cells the current grid did not already have.
-func _build_row(j: int, ground_radius: Callable, colour: Callable) -> void:
+## Ask row [param j]'s cells the current grid did not already have, from _col on, until [param deadline]
+## (usec; at least one cell). Returns true once the row is finished.
+func _build_row(j: int, ground_radius: Callable, colour: Callable, deadline: int) -> bool:
 	var kept: bool = j >= _keep_j0 and j < _keep_j1
 	var half_step: int = COLOUR_STEP / 2
 	var colour_row: bool = colour.is_valid() and j % COLOUR_STEP == half_step
 	var t0: int = Time.get_ticks_usec()
 	var colour_us: int = 0
-	for i in SIZE:
+	var i: int = _col
+	while i < SIZE:
 		if kept and i >= _keep_i0 and i < _keep_i1:
+			i = _keep_i1
 			continue
 		var p: Vector3 = cell_point(_next_anchor, _next_east, _next_north, i, j, cell_m)
 		var dir: Vector3 = p.normalized()
@@ -245,11 +260,16 @@ func _build_row(j: int, ground_radius: Callable, colour: Callable) -> void:
 			var c0: int = Time.get_ticks_usec()
 			_next_colours.set_pixel(i / COLOUR_STEP, j / COLOUR_STEP, colour.call(dir, r))
 			colour_us += Time.get_ticks_usec() - c0
+		i += 1
+		if Time.get_ticks_usec() >= deadline:
+			break
+	_col = i
 	var spent: int = Time.get_ticks_usec() - t0
 	_build_us += spent - colour_us
 	_colour_us += colour_us
 	spent_ground_us += spent - colour_us
 	spent_colour_us += colour_us
+	return i >= SIZE
 
 
 func _swap() -> void:

@@ -4285,8 +4285,14 @@ func get_roads_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
 	if hp_nside <= 0:
 		return []
 	var village := _village_road_pieces(hp_nside, hp_ipix)
+	var pack_roads := _pack_roads_for_chunk(hp_nside, hp_ipix)
+	return pack_roads if village.is_empty() else pack_roads + village
+
+
+## The roads of the pack under the chunk, without the villages' own.
+func _pack_roads_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
 	if _ensure_modifier_pack() == null:
-		return village
+		return []
 	var cap := modifier_max_nside_for(ModifierPackScript.KIND_ROAD)
 	var nside: int = clampi(hp_nside, 1, cap)
 	var ipix := hp_ipix
@@ -4294,8 +4300,7 @@ func get_roads_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
 	while cur > nside:
 		ipix = HEALPix.parent_pixel(ipix)
 		cur /= 2
-	var pack_roads := get_chunk_roads(nside, ipix)
-	return pack_roads if village.is_empty() else pack_roads + village
+	return get_chunk_roads(nside, ipix)
 
 
 # ── Village roads (VillageRoad, LayoutRoads) ─────────────────────────────
@@ -5040,8 +5045,10 @@ func crack_aware_surface_dist(dir: Vector3, nside: int = -1, vtx_spacing_m: floa
 ## same reason: the platform is real ground the body stands on, and a player
 ## walking onto a pad cut two metres into a slope is "under the relief" to
 ## every test that only knows the raw heightmap.
+## [param memo]: a Dictionary to keep what this reads per chunk in, for many samples in a row on a ground
+## that does not change meanwhile (a fence's posts: ~1.5 ms each without it).
 var _carve_pieces_cache: Dictionary = {}
-func carved_surface_dist(dir: Vector3) -> float:
+func carved_surface_dist(dir: Vector3, memo: Variant = null) -> float:
 	var raw := crack_aware_surface_dist(dir)
 	var lines := has_profiled_lines()
 	var pads := has_pads()
@@ -5057,14 +5064,29 @@ func carved_surface_dist(dir: Vector3) -> float:
 	# a road meets the road bed.
 	if lines:
 		h = _carved_line_height(h, nside, ipix, lonlat)
+	var mpd := radius * PI / 180.0
+	var chunk_beds: Array
+	var chunk_roads: Array = []
+	var near: Array = []
+	if memo == null:
+		chunk_beds = village_beds_for_chunk(nside, ipix) if beds else []
+		chunk_roads = village_roads_for_chunk(nside, ipix) if beds else []
+		near = PadBed.reaching(pads_for_chunk(nside, ipix), lonlat, mpd) if pads else []
+	else:
+		var known: Dictionary = (memo as Dictionary).get_or_add(ipix, {})
+		if known.is_empty():
+			known["beds"] = village_beds_for_chunk(nside, ipix) if beds else []
+			known["roads"] = village_roads_for_chunk(nside, ipix) if beds else []
+			known["cells"] = PadBed.cells_of(pads_for_chunk(nside, ipix) if pads else [], mpd)
+		chunk_beds = known["beds"]
+		chunk_roads = known["roads"]
+		near = (known["cells"] as Dictionary).get(PadBed.cell_of(lonlat, mpd), [])
 	if beds:
-		h = VillageBed.apply(h, lonlat, village_beds_for_chunk(nside, ipix), radius * PI / 180.0)
+		h = VillageBed.apply(h, lonlat, chunk_beds, mpd)
 	if pads:
-		h = PadBed.apply(h, lonlat, pads_for_chunk(nside, ipix), radius * PI / 180.0)
+		h = PadBed.apply(h, lonlat, near, mpd)
 	if beds and not _village_roads.is_empty():
-		h = VillageRoadBed.apply(h, lonlat, village_roads_for_chunk(nside, ipix),
-				village_beds_for_chunk(nside, ipix), radius * PI / 180.0,
-				pads_for_chunk(nside, ipix) if pads else [])
+		h = VillageRoadBed.apply(h, lonlat, chunk_roads, chunk_beds, mpd, near)
 	return radius + h
 
 
@@ -5995,6 +6017,8 @@ var _pad_road_excl: Dictionary = {}
 ## rebuilding every pad's cuts on every change was quadratic, ~20 ms a pad, and a cold boot that
 ## measures fifty pads one by one spent 35 s of main thread in it (2026-10-02).
 var _pad_road_cuts: Dictionary = {}
+## See take_moved_pads. Main thread only.
+var _moved_pads: Array = []
 var _pad_mutex: Mutex = Mutex.new()
 
 
@@ -6063,13 +6087,13 @@ func _pad_index() -> PadIndex:
 ##
 ## A pad inside a village is measured on the village's common ground (VillageBed), not on the raw
 ## relief: that is what puts the buildings of a village on one gentle plane. Inside a bed's footprint
-## the relief is not even read.
-func pad_sampler() -> Callable:
+## the relief is not even read. With [param rec], for reading around that pad only.
+func pad_sampler(rec: Dictionary = {}) -> Callable:
 	var raw := relief_sampler()
-	var beds: Array = _village_beds
+	var mpd := radius * PI / 180.0
+	var beds: Array = _village_beds if rec.is_empty() else VillageBed.near_pad(_village_beds, rec, mpd)
 	if beds.is_empty():
 		return raw
-	var mpd := radius * PI / 180.0
 	return func(dir: Vector3) -> float:
 		var lonlat := HEALPix.vec2lonlat(dir)
 		var floor_h := VillageBed.floor_at(lonlat, beds, mpd)
@@ -6232,67 +6256,129 @@ func _tiles_readable(dirs: PackedVector3Array) -> bool:
 ## persisted (see pad_settled_stats). They are taken as they are — no relief
 ## sample, and no wait for an elevation tile either.
 func register_pad(rec_in: Dictionary) -> Dictionary:
-	var rec := PadBed.quantise(rec_in)
-	var settled: Dictionary = rec.get("settled", {})
-	rec.erase("settled")
-	# On a village's ground (VillageBed.reaches), what it persisted may have been measured before the
-	# village came: it is measured again instead.
-	if not settled.is_empty() and VillageBed.reaches(_village_beds, rec, radius * PI / 180.0):
-		settled = {}
-	var uuid := str(rec.get("uuid", ""))
-	if uuid.is_empty():
-		return {}
+	return register_pads([rec_in])
+
+
+## [method register_pad] for many pads in one pass: one index clone, one re-levelling and one re-merge
+## of the road cuts for all of them, and the union of their stale pixels for one rebuild. A city's 166
+## pads registered one by one froze the server for 16 s (F0001, 2026-11-05). The ground comes out the
+## same: a level depends on the set of pads, not on the order they came in (PadLevels).
+func register_pads(recs_in: Array) -> Dictionary:
 	_pad_mutex.lock()
 	var idx := _ensure_pads()
-	var old := idx.get_rec(uuid)
-	# Nothing moved: answer before the ~145 relief samples and the index clone.
-	# This is the common call — the client re-places the planet 3x/s, every
-	# pad on it gets a transform notification and re-registers an identical
-	# record, and pad_stats alone measures 3.3 ms a pad (test bench, 2026-09-24).
-	if not old.is_empty() and _pad_alt.has(uuid) and not _pads_starved.has(uuid) \
-			and PadBed.same_geometry(old, rec):
-		_pad_mutex.unlock()
-		return {}
-	var dirty: Dictionary = idx.pixels_of(old) if not old.is_empty() else {}
-	var stats: Dictionary
-	if PadBed.is_notch(rec):
-		# A notch's floor is authored (PadBed.notch_record): nothing to measure, no tile to wait for.
-		stats = {"z": float(rec["z"]), "span": 0.0, "talus_m": 0.0}
-	else:
-		stats = settled if not settled.is_empty() else _pad_stats_if_readable(rec)
-	# Copy-on-write: the workers read the published index, so it is the CLONE
-	# that is edited and the reference that is swapped, in one assignment.
-	var next := idx.clone()
-	if stats.is_empty():
-		# Not readable yet: drop whatever was registered under this uuid rather
-		# than leave a stale platform, and wait for the catch-up.
-		_pads_starved[uuid] = rec
-		if old.is_empty():
-			_pad_mutex.unlock()
-			return {}
-		next.unregister(uuid)
-		_pad_alt.erase(uuid)
-		_pads = next
-		_set_pad_road_cuts(uuid, {})
-		_pad_mutex.unlock()
-		return dirty
-	_pads_starved.erase(uuid)
-	rec["z"] = float(stats["z"])
-	rec["talus_m"] = float(stats["talus_m"])
-	_pad_alt[uuid] = stats
-	next.register(rec)
-	var changed := _settle_pad_levels(next, idx, [old, rec])
-	if changed.is_empty():
+	var next: PadIndex = null  # Cloned by the first pad that changes anything.
+	var dirty := {}
+	var seeds: Array = []
+	var cuts := {}
+	var dropped := false
+	var m_per_deg := radius * PI / 180.0
+	for rec_in: Dictionary in recs_in:
+		var rec := PadBed.quantise(rec_in)
+		var settled := _pad_settled_of(rec, m_per_deg)
+		var measured: Dictionary = rec.get("measured", {})
+		var measured_on: Variant = rec.get("measured_on")
+		rec.erase("settled")
+		rec.erase("measured")
+		rec.erase("measured_on")
+		# Measured by pad_with_measure on the beds still published.
+		if not measured.is_empty() and is_same(measured_on, _village_beds):
+			settled = measured
+		var uuid := str(rec.get("uuid", ""))
+		if uuid.is_empty():
+			continue
+		var current: PadIndex = next if next != null else idx
+		var old := current.get_rec(uuid)
+		# Nothing moved: answer before the ~145 relief samples and the index clone.
+		# This is the common call — the client re-places the planet 3x/s, every
+		# pad on it gets a transform notification and re-registers an identical
+		# record, and pad_stats alone measures 3.3 ms a pad (test bench, 2026-09-24).
+		if not old.is_empty() and _pad_alt.has(uuid) and not _pads_starved.has(uuid) \
+				and PadBed.same_geometry(old, rec):
+			continue
+		var stats: Dictionary
+		if PadBed.is_notch(rec):
+			# A notch's floor is authored (PadBed.notch_record): nothing to measure, no tile to wait for.
+			stats = {"z": float(rec["z"]), "span": 0.0, "talus_m": 0.0}
+		else:
+			stats = settled if not settled.is_empty() else _pad_stats_if_readable(rec)
+		if stats.is_empty():
+			# Not readable yet: drop whatever was registered under this uuid rather
+			# than leave a stale platform, and wait for the catch-up.
+			_pads_starved[uuid] = rec
+			if old.is_empty():
+				continue
+		# Copy-on-write: the workers read the published index, so it is the CLONE
+		# that is edited and the reference that is swapped, in one assignment.
+		if next == null:
+			next = idx.clone()
+		if not old.is_empty():
+			dirty.merge(idx.pixels_of(old))
+		if stats.is_empty():
+			next.unregister(uuid)
+			_pad_alt.erase(uuid)
+			cuts[uuid] = {}
+			dropped = true
+			continue
+		_pads_starved.erase(uuid)
+		rec["z"] = float(stats["z"])
+		rec["talus_m"] = float(stats["talus_m"])
+		_pad_alt[uuid] = stats
+		next.register(rec)
+		seeds.append_array([old, rec])
+		cuts[uuid] = rec
+	var changed: Array[String] = []
+	if not seeds.is_empty():
+		changed = _settle_pad_levels(next, idx, seeds)
+	if changed.is_empty() and not dropped:
 		_pad_mutex.unlock()
 		return {}
 	for u: String in changed:
-		if u != uuid:
-			dirty.merge(idx.pixels_of(idx.get_rec(u)))
+		var published := idx.get_rec(u)
+		if not published.is_empty():
+			dirty.merge(idx.pixels_of(published))
+			_moved_pads.append(published)
 		dirty.merge(next.pixels_of(next.get_rec(u)))
+		_moved_pads.append(next.get_rec(u))
+	for uuid: String in cuts:
+		if (cuts[uuid] as Dictionary).is_empty():
+			_moved_pads.append(idx.get_rec(uuid))
 	_pads = next
-	_set_pad_road_cuts(uuid, rec)
+	_set_pads_road_cuts(cuts)
 	_pad_mutex.unlock()
 	return dirty
+
+
+## What [param rec] persisted of its measure, unless it stands on a village's ground (VillageBed.reaches):
+## that may have been measured before the village came, and is measured again instead.
+func _pad_settled_of(rec: Dictionary, m_per_deg: float) -> Dictionary:
+	var settled: Dictionary = rec.get("settled", {})
+	if not settled.is_empty() and VillageBed.reaches(_village_beds, rec, m_per_deg):
+		return {}
+	return settled
+
+
+## [param rec_in] carrying its measure, for a later [method register_pads] to spend no time on it: a city's
+## 166 pads, ~3 ms each, measured in one frame cost 0.5 s. As it is when there is nothing to measure.
+func pad_with_measure(rec_in: Dictionary) -> Dictionary:
+	var rec := PadBed.quantise(rec_in)
+	var m_per_deg := radius * PI / 180.0
+	var old: Dictionary = _pads.get_rec(str(rec.get("uuid", ""))) if _pads != null else {}
+	if PadBed.is_notch(rec) or not _pad_settled_of(rec, m_per_deg).is_empty() \
+			or (not old.is_empty() and PadBed.same_geometry(old, rec)):
+		return rec_in
+	var stats := _pad_stats_if_readable(rec)
+	if not stats.is_empty():
+		rec["measured"] = stats
+		rec["measured_on"] = _village_beds
+	return rec
+
+
+## The records of the pads that changed since the last call, as they were and as they are, emptied by
+## the call: where the ground moved, finer than the pixels register_pads answers (a pixel is ~800 m).
+func take_moved_pads() -> Array:
+	var out := _moved_pads
+	_moved_pads = []
+	return out
 
 
 ## Remove a pad. Returns the finest-level pixels whose chunks are now stale.
@@ -6305,10 +6391,13 @@ func unregister_pad(uuid: String) -> Dictionary:
 		var next := _pads.clone()
 		var rec := next.unregister(uuid)
 		dirty = next.pixels_of(rec)
+		_moved_pads.append(rec)
 		# The pads that stood on its level go back to theirs (or to the next largest one's).
 		for u: String in _settle_pad_levels(next, _pads, [rec]):
 			dirty.merge(_pads.pixels_of(_pads.get_rec(u)))
 			dirty.merge(next.pixels_of(next.get_rec(u)))
+			_moved_pads.append(_pads.get_rec(u))
+			_moved_pads.append(next.get_rec(u))
 		_pads = next
 		_set_pad_road_cuts(uuid, {})
 	_pad_mutex.unlock()
@@ -6407,7 +6496,7 @@ func _pad_stats_if_readable(rec: Dictionary) -> Dictionary:
 	var dirs := PadBed.sample_dirs(rec, m_per_deg)
 	if dirs.is_empty() or not _tiles_readable(dirs):
 		return {}
-	return PadBed.quantise_stats(PadBed.pad_stats(rec, pad_sampler(), m_per_deg))
+	return PadBed.quantise_stats(PadBed.pad_stats(rec, pad_sampler(rec), m_per_deg))
 
 
 ## Where a road must stop: the viaduct decks (bridges) AND the building pads it
@@ -6458,16 +6547,23 @@ func _build_pad_road_exclusions(idx: PadIndex) -> Dictionary:
 ## touch. The published table is replaced, never edited — the mesh workers read
 ## it while the main thread writes (call with _pad_mutex held).
 func _set_pad_road_cuts(uuid: String, rec: Dictionary) -> void:
+	_set_pads_road_cuts({uuid: rec})
+
+
+## [method _set_pad_road_cuts] for many pads ({uuid: rec}, {} = it is gone), each feature re-merged once.
+func _set_pads_road_cuts(recs: Dictionary) -> void:
 	var touched := {}
-	for fid: int in _pad_road_cuts.get(uuid, {}):
-		touched[fid] = true
-	var cuts := _pad_cuts_of(rec) if not rec.is_empty() else {}
-	for fid: int in cuts:
-		touched[fid] = true
-	if cuts.is_empty():
-		_pad_road_cuts.erase(uuid)
-	else:
-		_pad_road_cuts[uuid] = cuts
+	for uuid: String in recs:
+		var rec: Dictionary = recs[uuid]
+		for fid: int in _pad_road_cuts.get(uuid, {}):
+			touched[fid] = true
+		var cuts := _pad_cuts_of(rec) if not rec.is_empty() else {}
+		for fid: int in cuts:
+			touched[fid] = true
+		if cuts.is_empty():
+			_pad_road_cuts.erase(uuid)
+		else:
+			_pad_road_cuts[uuid] = cuts
 	if touched.is_empty():
 		return
 	# Shallow copy: the untouched features keep their arrays, which nobody edits.
@@ -6502,9 +6598,9 @@ func _pad_cuts_of(rec: Dictionary) -> Dictionary:
 			pix.append(int(nb))
 	var seen := {}
 	for ip: int in pix:
-		for r: Dictionary in get_roads_for_chunk(nside, int(ip)):
-			if bool(r.get("village", false)):
-				continue  # a village's own road runs beside its buildings, by design
+		# Not a village's own roads: they run beside its buildings, by design. Cutting them into pieces
+		# here, to skip them, was 20 ms a pad (3.3 s for a city's 166, 2026-11-05).
+		for r: Dictionary in _pack_roads_for_chunk(nside, int(ip)):
 			var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
 			var cum: PackedFloat64Array = r.get("_cum_lengths", PackedFloat64Array())
 			if cl.size() < 2 or cum.size() != cl.size():

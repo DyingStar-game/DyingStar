@@ -34,6 +34,8 @@ class_name GradeBed
 static var use_native := true
 static var _native_tried := false
 static var _native_script: Script = null
+## A cell of PadBed.cells_of no pad reaches.
+const NO_PADS: Array = []
 
 
 static func native_available() -> bool:
@@ -128,6 +130,11 @@ static func make_ctx(data: PlanetData, hp_nside: int, hp_ipix: int,
 	var ctx := _gather_ctx(data, hp_nside, hp_ipix)
 	if not ctx.is_empty():
 		ctx["floor_margin"] = floor_margin_m(vtx_spacing_m)
+		var mpd := float(ctx["m_per_deg"])
+		# What the many sub-vertices of a city ask of its many pads: see [method apply], GradeRefine.
+		ctx["pad_cells"] = PadBed.cells_of(ctx["pads"], mpd)
+		ctx["refine_pads"] = (ctx["pads"] as Array).filter(func(rec: Dictionary) -> bool:
+				return not VillageBed.pad_on_plane(rec, ctx["villages"], mpd))
 	return ctx
 
 
@@ -258,6 +265,8 @@ static func apply(h: float, lonlat: Vector2, ctx: Dictionary) -> float:
 		if coarse:
 			out = PadBed.shaved(out, lonlat, pads, mpd, float(ctx["coarse_band_m"]))
 		else:
+			if ctx.has("pad_cells"):
+				pads = (ctx["pad_cells"] as Dictionary).get(PadBed.cell_of(lonlat, mpd), NO_PADS)
 			out = PadBed.apply(out, lonlat, pads, mpd)
 	# The roads drawn in a village take their own width back from the pads (VillageRoadBed).
 	var village_roads: Array = ctx.get("village_roads", [])
@@ -267,13 +276,14 @@ static func apply(h: float, lonlat: Vector2, ctx: Dictionary) -> float:
 
 
 ## What TileFrameNative.Normals needs to apply [param ctx] to a probe as [method apply] does:
-## [native, mode, param, served]. served = false when only GDScript can (pads, or the pieces
-## without their C# twin): the vertices the context moved then stay on the GDScript path.
+## [native, mode, param, served]. served = false when only GDScript can (pads, a village's ground, or
+## the pieces without their C# twin): the vertices the context moved then stay on the GDScript path.
 static func native_args(ctx: Dictionary) -> Array:
 	var native: RefCounted = ctx.get("native", null)
 	var pieces: Array = ctx.get("pieces", [])
 	var pads: Array = ctx.get("pads", [])
-	var served: bool = pads.is_empty() and (native != null or pieces.is_empty())
+	var served: bool = pads.is_empty() and (ctx.get("villages", []) as Array).is_empty() \
+			and (native != null or pieces.is_empty())
 	if ctx.has("coarse_band_m"):
 		return [native, 1, float(ctx["coarse_band_m"]), served]
 	return [native, 0, float(ctx.get("floor_margin", GradeSettings.GORGE_FLOOR_MARGIN_M)), served]

@@ -150,7 +150,7 @@ static func mesh_of(geo: Dictionary, panel_material: Material, post_material: Ma
 ## [{fence: an entry of [method of], feet: PackedVector3Array (the posts' feet, in the frame
 ## [param origin] is given in), ups: PackedVector3Array (their local up), open: Array (bool a panel,
 ## see [method build])}]: the caller samples the ground, this builds what stands on it.
-static func build_node(node_name: String, origin: Vector3, laid: Array) -> Node3D:
+static func build_node(node_name: String, origin: Vector3, laid: Array, with_mesh: bool = true) -> Node3D:
 	var node := Node3D.new()
 	node.name = node_name
 	node.position = origin
@@ -162,11 +162,12 @@ static func build_node(node_name: String, origin: Vector3, laid: Array) -> Node3
 		for foot: Vector3 in (entry["feet"] as PackedVector3Array):
 			local.append(foot - origin)
 		var geo := build(local, entry["ups"], entry["open"], float(f["height"]))
-		var mesh := mesh_of(geo, f["panel_material"], f["post_material"])
-		if mesh.get_surface_count() > 0:
-			var mi := MeshInstance3D.new()
-			mi.mesh = mesh
-			node.add_child(mi)
+		if with_mesh:
+			var mesh := mesh_of(geo, f["panel_material"], f["post_material"])
+			if mesh.get_surface_count() > 0:
+				var mi := MeshInstance3D.new()
+				mi.mesh = mesh
+				node.add_child(mi)
 		for box: Array in geo["boxes"]:
 			var shape := BoxShape3D.new()
 			shape.size = box[1]

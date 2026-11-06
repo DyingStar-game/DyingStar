@@ -49,13 +49,13 @@ func test_a_hill_shows_at_its_place_and_height() -> void:
 
 func test_the_build_is_spread_over_frames_and_swaps_whole() -> void:
 	var g := DustGround.new()
-	assert_false(g.update(ANCHOR, _smooth, 0.0), "no budget: one row this frame")
+	assert_false(g.update(ANCHOR, _smooth, 0.0), "no budget: one cell this frame")
 	assert_false(g.ready)
 	_build(g, ANCHOR, _smooth)
 	assert_true(g.ready)
 	var first: Vector3 = g.anchor
 	var moved: Vector3 = ANCHOR + g.east * (DustGround.REBUILD_M + 10.0)
-	assert_false(g.update(moved, _hill, 0.0), "a new build starts, one row only")
+	assert_false(g.update(moved, _hill, 0.0), "a new build starts, one cell only")
 	assert_eq(g.anchor, first, "the grid in use stays until the new one is complete")
 	_build(g, moved, _hill)
 	assert_ne(g.anchor, first, "then both swap at once")
@@ -75,6 +75,61 @@ func test_moving_on_asks_only_the_new_strips() -> void:
 	assert_eq(g.east, DustGround.tangent_frame(ANCHOR)[0], "the same plane, slid")
 	var again: float = DustGround.ground_at(g._heights, g.east, g.north, g.east * 200.0 - (g.anchor - ANCHOR))
 	assert_almost_eq(again, hill_top, 0.01, "the hill kept where it was, from the copied cells")
+
+
+var _asked: int = 0
+
+
+func _counted_hill(dir: Vector3) -> float:
+	_asked += 1
+	return _hill(dir)
+
+
+## What a real query costs (~200 us on tarsis_3): the budget has something to run out on.
+func _slow_smooth(_dir: Vector3) -> float:
+	_asked += 1
+	OS.delay_usec(200)
+	return R
+
+
+func test_a_build_stopped_in_a_row_ends_on_the_same_grid() -> void:
+	var whole := DustGround.new()
+	_build(whole, ANCHOR, _hill)
+	var stepped := DustGround.new()
+	_build(stepped, ANCHOR, _hill)
+	var moved: Vector3 = ANCHOR + whole.north * 128.0
+	_build(whole, moved, _hill)
+	var calls := 0
+	_asked = 0
+	var most := 0
+	while true:
+		var before := _asked
+		var swapped := stepped.update(moved, _counted_hill, 0.0)
+		most = maxi(most, _asked - before)
+		calls += 1
+		if swapped or calls > DustGround.SIZE * DustGround.SIZE:
+			break
+	assert_eq(most, 1, "one cell an update, even in the rows of new cells")
+	assert_eq(_asked, whole.last_build_cells, "and every new cell once")
+	assert_eq(stepped.anchor, whole.anchor)
+	assert_eq(stepped._heights, whole._heights, "cell by cell, the same grid")
+
+
+func test_the_budget_holds_inside_a_row_of_new_cells() -> void:
+	var g := DustGround.new()
+	_build(g, ANCHOR, _smooth)
+	var moved: Vector3 = ANCHOR + g.north * 128.0
+	_asked = 0
+	g.update(moved, _slow_smooth, DustGround.BUDGET_MS)
+	assert_lte(_asked, int(DustGround.BUDGET_MS * 1000.0 / 200.0) + 1, "1.5 ms of 200 us queries, not the row's 128")
+
+
+func test_a_whole_grid_gets_more_than_the_usual_budget_but_stays_bounded() -> void:
+	var g := DustGround.new()
+	_asked = 0
+	g.update(ANCHOR, _slow_smooth, DustGround.BUDGET_MS)
+	assert_lte(_asked, int(DustGround.WHOLE_BUILD_BUDGET_MS * 1000.0 / 200.0) + 1, "within its own budget")
+	assert_gt(DustGround.WHOLE_BUILD_BUDGET_MS, DustGround.BUDGET_MS, "nothing to copy: it would take a minute")
 
 
 func test_the_grid_reaches_the_near_layer_range() -> void:

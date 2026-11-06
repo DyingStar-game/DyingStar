@@ -82,6 +82,12 @@ func _ready() -> void:
 	SettingsManager.shadow_distance_changed.connect(_on_shadow_distance_changed)
 
 func _process(delta: float) -> void:
+	var perf: int = ClientPerf.scope_begin()
+	_update_sun(delta)
+	ClientPerf.scope_end("sun", perf)
+
+
+func _update_sun(delta: float) -> void:
 	if not is_instance_valid(player):
 		return
 	if not is_instance_valid(_star):
