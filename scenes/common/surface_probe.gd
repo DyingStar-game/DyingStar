@@ -252,14 +252,21 @@ static func _material_of(node: Node, point: Vector3) -> Material:
 		var shape: GeometryInstance3D = m as GeometryInstance3D
 		if _surface_material(shape) == null:
 			continue  # no material to read: not a candidate at all
-		var box: AABB = shape.global_transform * _local_aabb(shape)
-		if box.has_point(point):
-			var volume: float = box.size.x * box.size.y * box.size.z
+		# In the mesh's OWN frame: on a planet a building stands tilted to the world's axes, and a
+		# world-aligned box around a 6 cm floor slab turned at 40 degrees is metres thick — it then
+		# holds the point as much as the walls do, and the "smallest" was a matter of chance. The
+		# margin covers the floor's top sitting a hair off the collision's.
+		var local_box: AABB = _local_aabb(shape).grow(CONTAIN_MARGIN_M)
+		var local_point: Vector3 = shape.global_transform.affine_inverse() * point
+		if local_box.has_point(local_point):
+			var scale: Vector3 = shape.global_transform.basis.get_scale()
+			var size: Vector3 = local_box.size * scale
+			var volume: float = size.x * size.y * size.z
 			if volume < best_volume:
 				best_volume = volume
 				best = shape
 		else:
-			var d: float = box.get_center().distance_to(point)
+			var d: float = (shape.global_transform * local_box.get_center()).distance_to(point)
 			if d < nearest_d:
 				nearest_d = d
 				nearest = shape
@@ -341,6 +348,9 @@ static func _family_from_id(id: String) -> StringName:
 ## meshes are part of this thing" has a fixed answer for as long as the thing exists.
 static var _mesh_cache: Dictionary = {}
 
+## How far (m) outside a mesh's bounds the point under the feet still counts as on it.
+const CONTAIN_MARGIN_M: float = 0.03
+
 
 static func _meshes_near(node: Node) -> Array:
 	if node == null:
@@ -357,13 +367,17 @@ static func _meshes_near(node: Node) -> Array:
 	# The collider's own subtree first: on a GLB prop the model sits right under the body.
 	_collect_meshes(node, node, out)
 	# Still nothing? The instance root that owns this collider — a level piece often puts the body and
-	# the model side by side. Never above it: past the instance we describe the neighbours.
-	if out.is_empty() and node.owner != null and node.owner != node:
-		_collect_meshes(node.owner, node, out)
+	# the model side by side. Never above it: past the instance we describe the neighbours. There the
+	# meshes that hang from NO body count too: a GLB's "-colonly" collisions come in as bodies BESIDE
+	# its meshes (the town hall), so its floors belong to no body at all — while the player's boots or
+	# a crate standing on it, under bodies of their own, stay out.
 	# A CSG blockout (the village MVP placeholders): the collider IS the CSG shape that carries
-	# use_collision, and its surfaces are the CSG primitives under it — no MeshInstance3D at all.
+	# use_collision, and its surfaces are the CSG primitives under it — no MeshInstance3D at all. Looked
+	# at before the instance's bodiless meshes: a blockout's sign or lamps are not what one walks on.
 	if out.is_empty() and node is CSGShape3D:
 		_collect_csg_shapes(node, out)
+	if out.is_empty() and node.owner != null and node.owner != node:
+		_collect_meshes(node.owner, node, out, true)
 	_mesh_cache[key] = out
 	return out
 
@@ -379,10 +393,12 @@ static func _collect_csg_shapes(root: Node, out: Array) -> void:
 
 
 ## Gather the meshes under `root` that still belong to `body` — anything under a DIFFERENT physics
-## body is another object standing on ours, not the surface we hit.
-static func _collect_meshes(root: Node, body: Node, out: Array) -> void:
+## body is another object standing on ours, not the surface we hit. [param or_bodiless] also takes the
+## meshes under no body at all (the static geometry of the collider's own instance).
+static func _collect_meshes(root: Node, body: Node, out: Array, or_bodiless: bool = false) -> void:
 	for m in root.find_children("*", "MeshInstance3D", true, false):
-		if _body_owning(m) == body and not out.has(m):
+		var owning: Node = _body_owning(m)
+		if (owning == body or (or_bodiless and owning == null)) and not out.has(m):
 			out.append(m)
 
 

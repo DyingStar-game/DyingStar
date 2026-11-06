@@ -2,8 +2,6 @@
 
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
-[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_grey.tres" id="3_placeholder_"]
-[ext_resource type="Material" path="res://assets/_universe/_shared/materials/placeholder_dark.tres" id="4_placeholder_"]
 [ext_resource type="Script" uid="uid://co37kjdlg6xqk" path="res://scenes/_universe/props/lighting/neon_sign/neon_sign.gd" id="5_neon_sign"]
 [ext_resource type="Script" uid="uid://ivchuymhmqm0" path="res://scenes/common/photocell.gd" id="6_photocell"]
 [ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="7_light_group"]
@@ -13,6 +11,35 @@
 [ext_resource type="Script" path="res://ui/missions/mission_feed.gd" id="11_mission_feed"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/missions/mission_board.tscn" id="12_mission_board"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/missions/mission_kiosk.tscn" id="13_mission_kiosk"]
+[ext_resource type="PackedScene" path="res://assets/_universe/structures/buildings/civic/town_hall.glb" id="14_model"]
+[ext_resource type="Script" uid="uid://mifl0d5rgfxb" path="res://scenes/_universe/props/lighting/emissive_glow.gd" id="15_glow"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/props/furniture/furn_danger_light.tscn" id="16_danger_light"]
+[ext_resource type="FontFile" uid="uid://ccjaqbtg4s41b" path="res://assets/fonts/Xolonium/Xolonium-Regular.ttf" id="17_font"]
+
+[sub_resource type="BoxShape3D" id="Shape_artist_board"]
+size = Vector3(1.7, 2.1, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="Mat_board"]
+albedo_color = Color(0.06, 0.065, 0.075, 1)
+metallic = 0.7
+roughness = 0.4
+
+[sub_resource type="StandardMaterial3D" id="Mat_board_trim"]
+albedo_color = Color(0.9, 0.6, 0.18, 1)
+metallic = 1.0
+roughness = 0.3
+
+[sub_resource type="BoxMesh" id="Mesh_board"]
+material = SubResource("Mat_board")
+size = Vector3(1.6, 1.0, 0.06)
+
+[sub_resource type="BoxMesh" id="Mesh_post"]
+material = SubResource("Mat_board")
+size = Vector3(0.08, 1.1, 0.08)
+
+[sub_resource type="BoxMesh" id="Mesh_trim"]
+material = SubResource("Mat_board_trim")
+size = Vector3(1.6, 0.04, 0.07)
 
 [node name="TownHall" type="Node3D"]
 
@@ -27,35 +54,19 @@ apron_m = 8
 metadata/_custom_type_script = "uid://custckqbhkkow"
 
 [node name="Ground" type="CSGBox3D" parent="TerrainPad"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
-size = Vector3(48, 1, 22)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, -1.5)
+size = Vector3(48, 1, 25)
 
-[node name="Blockout" type="CSGBox3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.4, 0)
-use_collision = true
-collision_mask = 0
-size = Vector3(48, 9.2, 22)
-material = ExtResource("3_placeholder_")
-
-[node name="Hollow" type="CSGBox3D" parent="Blockout"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
-operation = 2
-size = Vector3(47.4, 8.7, 21.4)
-material = ExtResource("3_placeholder_")
-
-[node name="Doorway" type="CSGBox3D" parent="Blockout"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.65, -11)
-operation = 2
-size = Vector3(4, 3.5, 1)
-material = ExtResource("4_placeholder_")
+[node name="Model" parent="." instance=ExtResource("14_model")]
 
 [node name="NeonSign" type="Node3D" parent="."]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 8.4, -11.05)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 5.85, -11.36)
 script = ExtResource("5_neon_sign")
 branded = true
 text_key = "%%SIGN_TOWN_HALL"
 glow = 1.5
-letter_height = 1.2
+letter_height = 0.7
+max_width = 5.5
 light_energy = 0.5
 light_range = 8.0
 
@@ -77,18 +88,44 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.65, 0)
 [node name="LedPanel 03" parent="Lights" instance=ExtResource("8_led_panel_1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.2, 8.65, 0)
 
+[node name="Glow" type="Node" parent="Lights"]
+script = ExtResource("15_glow")
+model_path = NodePath("../../Model")
+glass_materials = PackedStringArray("town_hall_gold_trim", "town_hall_emblem")
+
+[node name="SupervisorOffice" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.6, 6.9, 8.6)
+light_color = Color(0.75, 0.88, 1, 1)
+light_energy = 1.2
+omni_range = 7.0
+
+[node name="GuardPost" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.75, 2.4, -8.85)
+light_color = Color(1, 0.85, 0.6, 1)
+light_energy = 0.8
+omni_range = 4.0
+
+[node name="Floodlight1" type="SpotLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 0.469472, -0.882948, 0, 0.882948, 0.469472, -5.0, 23.3, -11)
+light_color = Color(0.85, 0.92, 1, 1)
+light_energy = 6.0
+shadow_enabled = true
+spot_range = 40.0
+spot_angle = 38.0
+
+[node name="Floodlight2" type="SpotLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 0.469472, -0.882948, 0, 0.882948, 0.469472, 5.0, 23.3, -11)
+light_color = Color(0.85, 0.92, 1, 1)
+light_energy = 6.0
+shadow_enabled = true
+spot_range = 40.0
+spot_angle = 38.0
+
 [node name="MapMarker" type="Node3D" parent="."]
 script = ExtResource("9_map_marker")
 icon = ExtResource("10_administration")
 label = "%%MAP_MARKER_TOWN_HALL"
 importance = 2
-
-[node name="Counter" type="CSGBox3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 6)
-use_collision = true
-collision_mask = 0
-size = Vector3(8, 1.1, 0.8)
-material = ExtResource("4_placeholder_")
 
 [node name="NpcCounterSpot" type="Marker3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 7)
@@ -100,13 +137,62 @@ script = ExtResource("11_mission_feed")
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 4.45, 10.6)
 
 [node name="MissionKiosk1" parent="." instance=ExtResource("13_mission_kiosk")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0, -10)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -10.4, 0, 9.6)
 
 [node name="MissionKiosk2" parent="." instance=ExtResource("13_mission_kiosk")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0, -10)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -12.6, 0, 9.6)
 
 [node name="MissionKiosk3" parent="." instance=ExtResource("13_mission_kiosk")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0, -10)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -14.8, 0, 9.6)
 
 [node name="MissionKiosk4" parent="." instance=ExtResource("13_mission_kiosk")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0, -10)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -17.0, 0, 9.6)
+
+[node name="Beacon1" parent="." instance=ExtResource("16_danger_light")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 26.0, 7)
+
+[node name="Beacon2" parent="." instance=ExtResource("16_danger_light")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 26.0, 7)
+
+[node name="Beacon3" parent="." instance=ExtResource("16_danger_light")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 26.0, -9)
+
+[node name="Beacon4" parent="." instance=ExtResource("16_danger_light")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 26.0, -9)
+
+[node name="Beacon5" parent="." instance=ExtResource("16_danger_light")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 34.0, -1)
+
+[node name="ArtistWanted" type="StaticBody3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6.5, 0, -13.3)
+
+[node name="Collision" type="CollisionShape3D" parent="ArtistWanted"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0)
+shape = SubResource("Shape_artist_board")
+
+[node name="Board" type="MeshInstance3D" parent="ArtistWanted"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+mesh = SubResource("Mesh_board")
+
+[node name="Trim" type="MeshInstance3D" parent="ArtistWanted"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.12, 0)
+mesh = SubResource("Mesh_trim")
+
+[node name="PostL" type="MeshInstance3D" parent="ArtistWanted"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7, 0.55, 0)
+mesh = SubResource("Mesh_post")
+
+[node name="PostR" type="MeshInstance3D" parent="ArtistWanted"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0.55, 0)
+mesh = SubResource("Mesh_post")
+
+[node name="Text" type="Label3D" parent="ArtistWanted"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0.035)
+pixel_size = 0.0035
+modulate = Color(1, 0.82, 0.45, 1)
+outline_size = 0
+text = "%%SIGN_ARTIST_WANTED"
+font = ExtResource("17_font")
+font_size = 40
+autowrap_mode = 3
+width = 420.0
