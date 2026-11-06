@@ -95,3 +95,11 @@ func test_an_empty_crate_is_still_a_crate_the_refinery_refuses() -> void:
 func test_the_refinery_consumes_into_its_own_system_holder() -> void:
 	assert_eq(Refinery.consumed_holder("r-1"), {"holderType": "system", "holderId": "r-1"})
 
+
+func test_a_flagged_app_blinks_until_it_is_opened() -> void:
+	var terminal := TerminalUI.new()
+	add_child_autofree(terminal)
+	terminal.flag_app("missions")
+	assert_true(terminal.has_pending())
+	terminal.flag_app("")
+	assert_true(terminal.has_pending(), "nothing to flag changes nothing")

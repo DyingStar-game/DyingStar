@@ -124,7 +124,11 @@ var _next_open: Callable = Callable()
 ## One tab of the bottom bar: a wide tile carrying the active app's amber corner mark, the mockup's
 ## flag on ECONOMIE. The style is [ServiceStyle.apply_nav]; only the flag is drawn here.
 class NavTab extends Button:
+	## The light of a tab with news behind it (a notification not read there yet): green, blinking.
+	const PENDING_COLOUR := Color(0.25, 1.0, 0.45)
+	const PENDING_BLINK_HZ := 1.2
 	var active: bool = false
+	var pending: bool = false
 
 	func set_active(value: bool) -> void:
 		if active == value:
@@ -133,7 +137,25 @@ class NavTab extends Button:
 		ServiceStyle.apply_nav(self, active)
 		queue_redraw()
 
+	## Light the tab (news behind it) or put it out.
+	func set_pending(value: bool) -> void:
+		if pending == value:
+			return
+		pending = value
+		set_process(value)
+		queue_redraw()
+
+	func _ready() -> void:
+		set_process(pending)
+
+	func _process(_delta: float) -> void:
+		queue_redraw()  # the blink
+
 	func _draw() -> void:
+		if pending:
+			var t := Time.get_ticks_msec() / 1000.0
+			var alpha := 0.35 + 0.65 * (0.5 + 0.5 * sin(t * TAU * PENDING_BLINK_HZ))
+			draw_circle(Vector2(14.0, 14.0), 7.0, Color(PENDING_COLOUR, alpha))
 		if not active:
 			return
 		# Inset from the corner so the mark sits inside the rounded tile rather than over its curve.
@@ -145,6 +167,36 @@ class NavTab extends Button:
 			corner,
 			Vector2(corner.x, inset + leg),
 		]), ServiceStyle.ACCENT)
+
+
+## The apps with news not looked at yet (a notification about them): their tab blinks until opened.
+var _pending: Dictionary = {}
+
+## Some app has news (true), or none any more (false): the wrist's light follows.
+signal pending_changed(any: bool)
+
+
+## [param id] (an APPS id) has news: its tab of the bottom bar blinks until the player opens it.
+func flag_app(id: String) -> void:
+	if id == "" or _pending.has(id):
+		return
+	_pending[id] = true
+	_show_pending()
+	pending_changed.emit(true)
+
+
+## Whether an app still has news the player has not opened.
+func has_pending() -> bool:
+	return not _pending.is_empty()
+
+
+## The tab each pending app lights: its own, or PLUS for an app without one.
+func _show_pending() -> void:
+	var lit: Dictionary = {}
+	for id: String in _pending:
+		lit[id if _nav_tabs.has(id) else "plus"] = true
+	for key: String in _nav_tabs:
+		(_nav_tabs[key] as NavTab).set_pending(lit.has(key))
 
 
 func _ready() -> void:
@@ -428,6 +480,7 @@ func _build_nav_bar() -> Control:
 		button.pressed.connect(_nav_to.bind(app))
 		bar.add_child(button)
 		_nav_tabs[app] = button
+	_show_pending()
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -614,6 +667,9 @@ func _open_app(id: String) -> void:
 	(_side_slots[id] as Control).visible = true
 	_set_chrome(id)
 	_set_nav_active(id)
+	if _pending.erase(id):
+		_show_pending()
+		pending_changed.emit(has_pending())
 	var panel := _panels[id] as ServicePanel
 	_apply_pane_layout(panel.has_main_content(), panel.has_side_content())
 	if PlayerServices.is_available():

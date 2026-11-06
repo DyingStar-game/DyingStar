@@ -356,6 +356,14 @@ func setup() -> void:
 	player.add_child(_wrist)
 	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
 	_wrist.up_changed.connect(func(up: bool) -> void: player.get_node("UserInterface").set_crosshair_shown(not up))
+	# The wrist's light blinks while an app has news nobody opened: put away without looking at it,
+	# the tablet blinks again (WristDatapad clears it when it is read).
+	_wrist.up_changed.connect(func(up: bool) -> void:
+		if not up and _services.has_pending():
+			_wrist_model.set_notified(true))
+	_services.pending_changed.connect(func(any: bool) -> void:
+		if not any:
+			_wrist_model.set_notified(false))
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
@@ -2662,6 +2670,7 @@ func _on_notification(envelope: Dictionary) -> void:
 	if text == "":
 		return
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
+	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
 
 	var data: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
 	# Resolve in the background so the NEXT notification about this player is spelled properly. The
@@ -2744,6 +2753,15 @@ func _on_mission_accepted(mission_id: String, title: String) -> void:
 	_services.open_next(show_it)
 	var text: String = tr("%%MISSION_ACCEPTED_TOAST") % (title if title != "" else tr("%%SVC_LBL_UNKNOWN_MISSION"))
 	_notifications.push(text, func() -> void: _wrist.open_with(show_it))
+	_services.flag_app("missions")
+
+
+## The DataPad app a notification of [param type] is about (its tab blinks until opened): missions
+## for a mission's news, social for the rest (friends, corporations, place names).
+static func app_of_notification(type: String) -> String:
+	if type.begins_with("mission."):
+		return "missions"
+	return "social" if type != "" else ""
 
 
 ## Open what the notification is about, so the toast is a shortcut and not a dead end. The id is
@@ -2752,6 +2770,13 @@ func _on_notification_clicked(envelope: Dictionary) -> void:
 	if _services == null:
 		return
 	var type := str(envelope.get("type", ""))
+	if type.begins_with("mission."):
+		# A mission's news: the tablet opens on that mission (its objectives, where to turn it in).
+		var data: Variant = envelope.get("data")
+		var mission_id := str(data.get("missionId", "")) if data is Dictionary else ""
+		if mission_id != "":
+			_wrist.open_with(_services.open_mission.bind(mission_id))
+			return
 	var segment: int = -1
 	match type:
 		"friend_request_received":
