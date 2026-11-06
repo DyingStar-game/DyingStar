@@ -551,3 +551,20 @@ func test_a_server_fence_has_its_collision_and_no_mesh() -> void:
 	var node: Node = t._village_fences[BED]["node"]
 	assert_eq(node.find_children("*", "MeshInstance3D", true, false).size(), 0)
 	assert_gt(node.find_children("*", "CollisionShape3D", true, false).size(), 0)
+
+
+func test_a_fence_is_left_open_where_a_road_crosses_and_told_post_by_post() -> void:
+	var t := _fenced()
+	var road_at := LayoutRoads.FEATURE_ID_BASE
+	var cl := PackedVector2Array([Vector2(0.0, -0.002), Vector2(0.0, 0.002)])
+	var cum := PackedFloat64Array([0.0, 0.004 * t.planet_data.radius * PI / 180.0])
+	t.planet_data.register_village_roads(BED, [{"road_type": "road", "width": 10.0, "centerline": cl, "_cum_lengths": cum,
+			"village": true, "bed": BED, "feature_id": road_at, "_sink_m": 0.0}])
+	t._build_village_fences(BED)
+	var s: Dictionary = t._fences_sampling[BED]
+	var open: Array = s["laid"][0]["open"]
+	assert_eq(open.count(true), 0, "nothing told yet")
+	t._step_fence_sampling(true)
+	var laid_open: Array = t._village_fences[BED]["laid"][0]["open"]
+	assert_gt(laid_open.count(true), 0, "the road crosses the fence: some panels open")
+	assert_lt(laid_open.count(true), laid_open.size() / 2, "and only there")

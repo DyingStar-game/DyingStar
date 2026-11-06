@@ -2884,21 +2884,24 @@ func _build_village_fences(bed_uuid: String) -> void:
 	var finest: int = 1 << maxi(planet_data.max_quadtree_depth, 0)
 	# The pixels first: a fence that waits for its ground is found again when that ground comes.
 	var pixels := {}
-	var pins := {}
+	var pin_pixels := {}
 	var pin_nside: int = planet_data.collision_detail_nside()
 	for f: Dictionary in job["fences"]:
 		for p_layout: Vector2 in (f["points"] as PackedVector2Array):
 			var p0 := p_layout - centre
 			var post_dir := PadBed.dir_at(bed, p0.x, -p0.y, mpd)
 			pixels[HEALPix.vec2pix_nest(finest, post_dir)] = true
-			pins["hp_n%d_p%d" % [pin_nside, HEALPix.vec2pix_nest(pin_nside, post_dir)]] = true
+			pin_pixels[HEALPix.vec2pix_nest(pin_nside, post_dir)] = true
 	job["pixels"] = pixels
+	var pins := {}
+	for ip: int in pin_pixels:
+		pins["hp_n%d_p%d" % [pin_nside, ip]] = true
 	job["pins"] = pins
 	if not planet_data.has_village_bed(bed_uuid):
 		return  # its plane waits for a tile: built again on the next change of ground (_fences_ground_moved)
-	var roads := planet_data.village_roads_of(bed_uuid)
 	var laid: Array = []
 	var sampling := _new_fence_sampling(laid, true)
+	sampling["roads"] = planet_data.village_roads_of(bed_uuid)
 	for f: Dictionary in job["fences"]:
 		var feet := PackedVector3Array()
 		var ups := PackedVector3Array()
@@ -2911,9 +2914,8 @@ func _build_village_fences(bed_uuid: String) -> void:
 			ups.append(d)
 			lonlats.append(HEALPix.vec2lonlat(d))
 		var open: Array = []
-		for k in lonlats.size() - 1:
-			var mid := (lonlats[k] + lonlats[k + 1]) * 0.5
-			open.append(not roads.is_empty() and VillageRoadBed.distance_out_m(mid, roads, mpd) <= 0.0)
+		open.resize(maxi(lonlats.size() - 1, 0))  # told post by post, as they are sampled (_sample_fence_post)
+		open.fill(false)
 		laid.append({"fence": f, "feet": feet, "ups": ups, "lonlats": lonlats, "open": open})
 	if not (sampling["todo"] as Array).is_empty():
 		_fences_sampling[bed_uuid] = sampling
@@ -2964,9 +2966,7 @@ func _step_fence_sampling(whole: bool = false) -> void:
 			var key: Vector2i = todo[s["at"]]
 			s["at"] = int(s["at"]) + 1
 			(s["queued"] as Dictionary).erase(key)
-			var up: Vector3 = (laid[key.x]["ups"] as PackedVector3Array)[key.y]
-			var feet: PackedVector3Array = laid[key.x]["feet"]
-			feet[key.y] = up * planet_data.carved_surface_dist(up, s["memo"])
+			_sample_fence_post(s, laid[key.x], key.y, mpd)
 			s["sampled"] = int(s["sampled"]) + 1
 			if not whole and Time.get_ticks_usec() >= end:
 				return
@@ -2974,6 +2974,19 @@ func _step_fence_sampling(whole: bool = false) -> void:
 		_fence_sampling_done(uuid, s)
 		if not whole:
 			return  # a node was built: enough for this frame
+
+
+## Post [param k] of [param entry] on the ground, and, the first time, whether a village road crosses its
+## panel. Told here rather than all at once: a city's 1 000 panels over its roads were 200 ms in one frame.
+func _sample_fence_post(s: Dictionary, entry: Dictionary, k: int, mpd: float) -> void:
+	var up: Vector3 = (entry["ups"] as PackedVector3Array)[k]
+	var feet: PackedVector3Array = entry["feet"]
+	feet[k] = up * planet_data.carved_surface_dist(up, s["memo"])
+	var roads: Array = s.get("roads", [])
+	var lonlats: PackedVector2Array = entry["lonlats"]
+	if not roads.is_empty() and k < lonlats.size() - 1:
+		var mid := (lonlats[k] + lonlats[k + 1]) * 0.5
+		entry["open"][k] = VillageRoadBed.distance_out_m(mid, roads, mpd) <= 0.0
 
 
 ## SERVER: the village [param uuid] is awake, so a body is around: its fences go first.

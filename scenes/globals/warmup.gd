@@ -9,8 +9,9 @@ extends Node
 ## It loads, on worker threads, the layouts of the places the world spawns (loading one loads every scene
 ## it is built of), the vehicles and the items of the dispensers, and keeps them for the session: the
 ## game's own load() then finds them in memory. Then it draws their meshes, a few a frame, out of sight
-## in a viewport of its own, so their shaders are compiled. No scene is instanced: nothing of the game
-## runs, only meshes and materials are read from the scenes (PackedScene.get_state).
+## in a viewport of its own, so their shaders are compiled. Only meshes and materials are read from the
+## scenes (PackedScene.get_state), and what the terrain reads of a layout (LayoutData), which instances it
+## out of the tree: nothing of the game runs. Read at the first village met, that froze the game ~1 s.
 ##
 ## Client only, where something is drawn; one per session (start), under the tree's root so it goes on
 ## once the game is entered. While the menu shows, a line in its corner says how far it is.
@@ -20,6 +21,16 @@ const SCENES: Array[String] = [
 	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
 	"res://scenes/_universe/structures/urban/cities/ares_city_factory.tscn",
 	"res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
+	ROCK_SCENE,
+]
+## A mining rock: drawn with its scene's materials and with the shader the game gives it at run time
+## (MiningRock, rock_vein), which no scene names: the first rock met froze the game 2.7 s to compile it.
+const ROCK_SCENE := "res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn"
+const ROCK_SHADER := preload("res://assets/_universe/environment/terrain/rocks/rock_vein.gdshader")
+## Those of SCENES whose LayoutData is read ahead too.
+const LAYOUTS: Array[String] = [
+	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
+	"res://scenes/_universe/structures/urban/cities/ares_city_factory.tscn",
 ]
 ## The dispensers' item folders (DispenserCatalog): each item's scene is wanted too.
 const CATALOGUES: Array[String] = [
@@ -68,6 +79,14 @@ static func wanted() -> Array[String]:
 	return paths
 
 
+## Add the mining rocks' run-time shader to the materials of [param meshes] ([method meshes_of]).
+static func with_rock_shader(meshes: Array) -> void:
+	var material := ShaderMaterial.new()
+	material.shader = ROCK_SHADER
+	for entry: Array in meshes:
+		(entry[1] as Array).append(material)
+
+
 ## The [mesh, [materials]] of [param scene] and of the scenes it instances, each once: what is drawn
 ## to compile their shaders. [param seen] gathers the scenes, meshes and materials already listed.
 static func meshes_of(scene: PackedScene, seen: Dictionary = {}) -> Array:
@@ -112,9 +131,17 @@ func _ready() -> void:
 	var camera := Camera3D.new()
 	camera.position = Vector3(0.0, 0.0, 6.0)
 	_viewport.add_child(camera)
+	# With shadows, as in the game: a mesh is also drawn in the shadow passes, with pipelines of their own,
+	# and those were still compiling when a place was first seen (the sun's cascades, a lamp's atlas).
 	var sun := DirectionalLight3D.new()
 	sun.rotation = Vector3(-0.8, 0.4, 0.0)
+	sun.shadow_enabled = true
 	_viewport.add_child(sun)
+	var lamp := OmniLight3D.new()
+	lamp.position = Vector3(1.0, 1.0, 1.0)
+	lamp.omni_range = 10.0
+	lamp.shadow_enabled = true
+	_viewport.add_child(lamp)
 
 
 func _process(_delta: float) -> void:
@@ -129,8 +156,13 @@ func _process(_delta: float) -> void:
 		if status == ResourceLoader.THREAD_LOAD_LOADED:
 			var loaded: Resource = ResourceLoader.load_threaded_get(path)
 			_held[path] = loaded
+			if LAYOUTS.has(path):
+				LayoutData.of(path)
 			if loaded is PackedScene:
-				_to_draw.append_array(meshes_of(loaded as PackedScene, _seen))
+				var meshes := meshes_of(loaded as PackedScene, _seen)
+				if path == ROCK_SCENE:
+					with_rock_shader(meshes)
+				_to_draw.append_array(meshes)
 	for i in mini(MESHES_PER_FRAME, _to_draw.size()):
 		_draw(_to_draw.pop_back())
 		_meshes_done += 1
