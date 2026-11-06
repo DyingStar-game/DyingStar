@@ -362,6 +362,7 @@ func setup() -> void:
 	_notifications.pushed.connect(_on_notification_pushed)
 	_watch_debug_notification()
 	ChatNetwork.notification_received.connect(_on_notification)
+	PlayerServices.mission_accepted.connect(_on_mission_accepted)
 	_places = PlaceWatcher.new()
 	_places.name = "PlaceWatcher"
 	add_child(_places)
@@ -1087,6 +1088,11 @@ func _input(event: InputEvent) -> void:
 	if _cab != null and _cab.input(event):
 		get_viewport().set_input_as_handled()
 		return
+	# The wheel over a screen scrolls the screen (its lists, its pages), and not the walk speed.
+	if _is_wheel(event) and is_instance_valid(_pointed_gui):
+		_pointed_gui.push_at(event as InputEventMouseButton, _pointed_at)
+		get_viewport().set_input_as_handled()
+		return
 	if not event.is_action(&"perforate"):
 		return
 	var typing: bool = _screen_typing()
@@ -1100,6 +1106,12 @@ func _input(event: InputEvent) -> void:
 			_screen_tap(_pointed_at)
 	if typing or is_instance_valid(_pointed_gui):
 		get_viewport().set_input_as_handled()
+
+
+## Whether [param event] is a turn of the mouse wheel (up, down, or tilted sideways).
+static func _is_wheel(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and (event as InputEventMouseButton).button_index in [
+		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]
 
 
 ## The arm taps the screen clicked at [param at] (world): the gesture plays here at once and the server
@@ -2686,6 +2698,18 @@ func _watch_debug_notification() -> void:
 	SettingsManager.debug.watch(&"notification_debug", follow)
 	if SettingsManager.debug.is_on(&"notification_debug"):
 		follow.call(true)
+
+
+## A mission was taken somewhere else than on the tablet (a kiosk): a line says so, the wrist blinks,
+## and the tablet opens on it — from the line, or the next time it is opened. Taken on the tablet, the
+## player is already looking at it.
+func _on_mission_accepted(mission_id: String, title: String) -> void:
+	if _services == null or _notifications == null or _services.is_open():
+		return
+	var show_it: Callable = _services.open_mission.bind(mission_id)
+	_services.open_next(show_it)
+	var text: String = tr("%%MISSION_ACCEPTED_TOAST") % (title if title != "" else tr("%%SVC_LBL_UNKNOWN_MISSION"))
+	_notifications.push(text, func() -> void: _wrist.open_with(show_it))
 
 
 ## Open what the notification is about, so the toast is a shortcut and not a dead end. The id is

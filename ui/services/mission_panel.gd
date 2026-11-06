@@ -90,6 +90,10 @@ var _browse: ItemList
 var _page_browse: ServicePage
 var _mine: ItemList
 var _page_mine: ServicePage
+## The "My missions" segment's contract box, and the mission it is to show once the list has it
+## (focus_mission), "" when none.
+var _mine_contract: VBoxContainer
+var _focus_id: String = ""
 var _created_status: OptionButton
 var _created: ItemList
 var _page_created: ServicePage
@@ -352,6 +356,29 @@ func _build_mine_page(page: VBoxContainer) -> void:
 	_page_mine.load_requested.connect(_load_mine)
 	_mine = _paged_list(left, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine, 320.0)
 	_mine.item_selected.connect(func(_i: int) -> void: _open_mine(contract))
+	_mine_contract = contract
+
+
+## Show mission [param mission_id] in "My missions": selected in the list and its contract open, now
+## when the list already holds it, else as soon as it does (the next refresh brings it).
+func focus_mission(mission_id: String) -> void:
+	_focus_id = mission_id
+	goto_segment(1)  # "My missions"
+	_select_focus()
+
+
+func _select_focus() -> void:
+	if _focus_id == "" or _mine == null:
+		return
+	for i: int in range(_mine.item_count):
+		var entry: Variant = _mine.get_item_metadata(i)
+		var mission: Variant = (entry as Dictionary).get("mission") if entry is Dictionary else null
+		if mission is Dictionary and str((mission as Dictionary).get("id", "")) == _focus_id:
+			_focus_id = ""
+			_mine.select(i)
+			_mine.ensure_current_is_visible()
+			_open_mine(_mine_contract)
+			return
 
 
 # ---------------------------------------------------------------------------------------------
@@ -620,6 +647,7 @@ func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 		lines.append(tr("%%SVC_MSG_NO_ASSIGNMENTS"))
 	_fill_list(_mine, lines, metadata)
 	_classify_mission_pois()
+	_select_focus()
 
 
 # ---------------------------------------------------------------------------------------------

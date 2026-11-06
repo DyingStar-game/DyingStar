@@ -615,6 +615,15 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "screen-unlock.ogg",
+			"path": "res://assets/_universe/audio/sfx/ui/screen-unlock.ogg",
+			"author": "SkibkaMusic",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/478896/",
+			"license": "CC0"
+		},
+		{
 			"asset": "special-lee-horn.ogg",
 			"path": "res://assets/_universe/audio/sfx/vehicles/ground/special-lee-horn.ogg",
 			"author": "Myinstants",

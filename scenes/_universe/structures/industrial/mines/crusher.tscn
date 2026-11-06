@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://c3ma5g7nd8jwu"]
 
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="1_prop_sync"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="2_terrain_pad"]
@@ -9,81 +9,79 @@
 [ext_resource type="Script" uid="uid://bn115trgbqkwx" path="res://scenes/_universe/props/lighting/light_group.gd" id="7_light_group"]
 [ext_resource type="PackedScene" uid="uid://b2qwb6wo5x1bi" path="res://scenes/_universe/props/lighting/led_panel_1x1m.tscn" id="8_led_panel_1x"]
 [ext_resource type="Script" uid="uid://eaonkg3hk6kk" path="res://scenes/common/map_marker.gd" id="9_map_marker"]
-[ext_resource type="Texture2D" path="res://assets/textures/map_markers/factory.png" id="10_factory"]
+[ext_resource type="Texture2D" uid="uid://5uawyc3c4v64" path="res://assets/textures/map_markers/factory.png" id="10_factory"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/refinery/ore_processor_machine.tscn" id="11_ore_processo"]
 
-[node name="Crusher" type="Node3D"]
+[node name="Crusher" type="Node3D" unique_id=734219316]
 
-[node name="PropSync" type="Node" parent="."]
+[node name="PropSync" type="Node" parent="." unique_id=997151880]
 script = ExtResource("1_prop_sync")
 type_name = "simple_building"
 metadata/_custom_type_script = "uid://crq5yq1gfb42p"
 
-[node name="TerrainPad" type="Node3D" parent="."]
+[node name="TerrainPad" type="Node3D" parent="." unique_id=1709019205]
 script = ExtResource("2_terrain_pad")
-apron_m = 8
 metadata/_custom_type_script = "uid://custckqbhkkow"
 
-[node name="Ground" type="CSGBox3D" parent="TerrainPad"]
+[node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=1477621088]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
 size = Vector3(56, 1, 34)
 
-[node name="Blockout" type="CSGBox3D" parent="."]
+[node name="Blockout" type="CSGBox3D" parent="." unique_id=1869310526]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6.9, 0)
 use_collision = true
 collision_mask = 0
 size = Vector3(56, 14.2, 34)
 material = ExtResource("3_placeholder_")
 
-[node name="Hollow" type="CSGBox3D" parent="Blockout"]
+[node name="Hollow" type="CSGBox3D" parent="Blockout" unique_id=1693043462]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
 operation = 2
 size = Vector3(55.4, 13.7, 33.4)
 material = ExtResource("3_placeholder_")
 
-[node name="Doorway" type="CSGBox3D" parent="Blockout"]
+[node name="Doorway" type="CSGBox3D" parent="Blockout" unique_id=2101984232]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.9, -17)
 operation = 2
 size = Vector3(12, 10, 1)
 material = ExtResource("4_placeholder_")
 
-[node name="NeonSign" type="Node3D" parent="."]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 13.4, -17.05)
+[node name="NeonSign" type="Node3D" parent="." unique_id=678509337]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 11.855942752968451, -17.05)
 script = ExtResource("5_neon_sign")
+text_key = "%%SIGN_CRUSHER"
 branded = true
 brand = 2
-text_key = "%%SIGN_CRUSHER"
 glow = 1.5
 letter_height = 1.2
 light_energy = 0.5
 light_range = 8.0
 
-[node name="Photocell" type="Node3D" parent="NeonSign"]
+[node name="Photocell" type="Node3D" parent="NeonSign" unique_id=1553756600]
 script = ExtResource("6_photocell")
 
-[node name="Lights" type="Node3D" parent="."]
+[node name="Lights" type="Node3D" parent="." unique_id=1589733131]
 script = ExtResource("7_light_group")
 
-[node name="Photocell" type="Node3D" parent="Lights"]
+[node name="Photocell" type="Node3D" parent="Lights" unique_id=846913685]
 script = ExtResource("6_photocell")
 
-[node name="LedPanel 01" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+[node name="LedPanel 01" parent="Lights" unique_id=1909102443 instance=ExtResource("8_led_panel_1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14.7, 13.65, 0)
 
-[node name="LedPanel 02" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+[node name="LedPanel 02" parent="Lights" unique_id=901901982 instance=ExtResource("8_led_panel_1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.9, 13.65, 0)
 
-[node name="LedPanel 03" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+[node name="LedPanel 03" parent="Lights" unique_id=194737066 instance=ExtResource("8_led_panel_1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.9, 13.65, 0)
 
-[node name="LedPanel 04" parent="Lights" instance=ExtResource("8_led_panel_1x")]
+[node name="LedPanel 04" parent="Lights" unique_id=732159632 instance=ExtResource("8_led_panel_1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14.7, 13.65, 0)
 
-[node name="MapMarker" type="Node3D" parent="."]
+[node name="MapMarker" type="Node3D" parent="." unique_id=1477321762]
 script = ExtResource("9_map_marker")
 icon = ExtResource("10_factory")
 label = "%%MAP_MARKER_CRUSHER"
-importance = 3
 
-[node name="OreProcessorMachine" parent="." instance=ExtResource("11_ore_processo")]
+[node name="OreProcessorMachine" parent="." unique_id=1478880444 instance=ExtResource("11_ore_processo")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)

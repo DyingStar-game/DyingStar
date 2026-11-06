@@ -88,6 +88,7 @@ const MISSION_CATEGORY_KEYS: Dictionary = {
 	"delivery": "%%SVC_ENUM_CATEGORY_DELIVERY",
 	"transport": "%%SVC_ENUM_CATEGORY_TRANSPORT",
 	"generic": "%%SVC_ENUM_CATEGORY_GENERIC",
+	"divers": "%%SVC_ENUM_CATEGORY_GENERIC",  # the mission service's name for "generic"
 	"mining": "%%SVC_ENUM_CATEGORY_MINING",
 	"farming": "%%SVC_ENUM_CATEGORY_FARMING",
 	"crafting": "%%SVC_ENUM_CATEGORY_CRAFTING",

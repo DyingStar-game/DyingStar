@@ -79,6 +79,6 @@ size = Vector3(0.985710935960924, 0.42862953095573175, 0.7651658864606361)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00714454948902129, -0.21046824956811683, -0.02258293271064759)
 size = Vector3(0.985710935960924, 0.42862953095573175, 0.7651658864606361)
 
-[node name="MapMarker" parent="." index="15"]
-label = "%%MAP_MARKER_FOOD_DISPENSER"
+[node name="MapMarker" parent="." index="15" unique_id=1986961059]
 icon = ExtResource("mm_icon")
+label = "%%MAP_MARKER_FOOD_DISPENSER"

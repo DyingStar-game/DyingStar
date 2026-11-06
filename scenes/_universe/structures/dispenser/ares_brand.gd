@@ -85,6 +85,70 @@ static func logo_control(subsidiary: Subsidiary, height: float) -> Control:
 	return box
 
 
+## Dress the machine under [param root] in [param subsidiary]'s colours: every CSG shape of the group
+## `brand_accent` takes the colour, and every Sprite3D of the group `brand_logo` gives way to the logo,
+## as high as its placeholder picture. Any branded machine (a dispenser, a mission kiosk) calls it.
+static func wear(root: Node, subsidiary: Subsidiary) -> void:
+	var accent := StandardMaterial3D.new()
+	accent.albedo_color = colour(subsidiary)
+	accent.metallic = 0.2
+	accent.roughness = 0.45
+	for node: Node in root.find_children("*", "CSGShape3D", true, false):
+		if node.is_in_group(&"brand_accent"):
+			(node as CSGShape3D).material = accent
+	for node: Node in root.find_children("*", "Sprite3D", true, false):
+		var placeholder := node as Sprite3D
+		if not placeholder.is_in_group(&"brand_logo") or placeholder.texture == null:
+			continue
+		var height: float = placeholder.texture.get_height() * placeholder.pixel_size
+		placeholder.add_child(logo_3d(subsidiary, height))
+		placeholder.texture = null
+
+
+# -- A branded screen's text -------------------------------------------------------------------------
+# The machines' screens (a dispenser, a mission kiosk, the mission board) write in the brand's font.
+
+## A label of [param text] at [param font_size] px in [param ink], in the brand's font.
+static func screen_label(text: String, font_size: int, ink: Color) -> Label:
+	var line := Label.new()
+	line.text = text
+	line.add_theme_font_size_override("font_size", font_size)
+	line.add_theme_color_override("font_color", ink)
+	if font() != null:
+		line.add_theme_font_override("font", font())
+	return line
+
+
+## What [param fill] looks like under the pointer: clearly different, whatever it is — a solid colour
+## a quarter of the way to white (a near-white one, ARES CORP.'s, a little darker instead: it cannot
+## get lighter), a faint or empty one more opaque. Every branded screen's buttons answer the hover the
+## same way.
+static func hover_of(fill: Color) -> Color:
+	if fill.a >= 0.5 and fill.get_luminance() > 0.85:
+		return fill.darkened(0.18)
+	var lit: Color = fill.lerp(Color.WHITE, 0.25)
+	lit.a = minf(maxf(fill.a, 0.0) + 0.14, 1.0) if fill.a < 0.5 else fill.a
+	return lit
+
+
+## A flat button: [param fill] background (hover_of when hovered), [param ink] text at [param font_size].
+static func style_button(button: Button, fill: Color, ink: Color, font_size: int) -> void:
+	for state: String in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
+		var box := StyleBoxFlat.new()
+		box.bg_color = hover_of(fill) if state.begins_with("hover") else fill
+		if state == "disabled":
+			box.bg_color = Color(fill, fill.a * 0.35)
+		box.content_margin_left = 20
+		box.content_margin_right = 20
+		button.add_theme_stylebox_override(state, box)
+	button.add_theme_font_size_override("font_size", font_size)
+	for key: String in ["font_color", "font_hover_color", "font_pressed_color"]:
+		button.add_theme_color_override(key, ink)
+	button.add_theme_color_override("font_disabled_color", Color(ink, 0.4))
+	if font() != null:
+		button.add_theme_font_override("font", font())
+
+
 ## The logo of [param subsidiary] in the world, [param height] m high, centred, facing +Z.
 static func logo_3d(subsidiary: Subsidiary, height: float) -> Node3D:
 	var px: float = height / MARK_SIZE.y  # metres per pixel of the mark
