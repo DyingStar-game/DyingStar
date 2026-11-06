@@ -3041,6 +3041,7 @@ func _server_drop_carried_item() -> void:
 	if player.hands_item == null:
 		return
 	var item: RigidBody3D = player.hands_item as RigidBody3D
+	WarehouseDelivery.note_dropped_by(item, player)  # who deposits it, whoever shelves it later
 	# Use the placement the PHYSICS TICK resolved (at most one frame old), never a fresh query: E
 	# arrives on the network dispatch, OUTSIDE the physics step, where the space state gives nothing —
 	# the ray would silently miss and drop the crate at the end of the ray instead of on its disc.
@@ -3083,7 +3084,7 @@ func _server_drop_carried_item() -> void:
 		# freezes it once it has settled on its tier (see Shelf). No free slot left: an ordinary drop.
 		var shelf = place["shelf"] if place["shelf"] != null else _shelf_for_drop(place["position"])
 		if shelf != null and shelf.store_at_nearest_slot(item):
-			WarehouseDelivery.on_stored(item, shelf)  # into the depot's stock, once
+			WarehouseDelivery.on_stored(item, shelf, player)  # into the depot's stock, once
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return

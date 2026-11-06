@@ -16,6 +16,7 @@ extends RefCounted
 ##   units       inventory units of the good (litres of ore)
 ##   owner       who the goods belong to, for the plate: the player who extracted them (their login)
 ##   miner_id    service identity of the player who extracted it: the one the inventory credits
+##   carrier_id  the player who took it off a warehouse shelf last (a transport), holding its goods
 
 const KIND_CRUSHED := "crushed"
 const KIND_INGOT := "ingot"
@@ -60,6 +61,7 @@ static func refined(crushed_content: Dictionary) -> Dictionary:
 		"units": MissionHeartbeat.units_of_volume(ore_m3),
 		"owner": str(crushed_content.get("owner", OWNER_ARES)),
 		"miner_id": str(crushed_content.get("miner_id", "")),
+		"carrier_id": str(crushed_content.get("carrier_id", "")),
 	}
 
 
@@ -75,6 +77,13 @@ static func game_mass(mineral: String, ore_m3: float, gangue_kg: float) -> float
 ## ±[param spread] (absolute), kept inside [0.01, 1]. [param roll] in [-1, 1] makes it testable.
 static func crushed_purity(input_purity: float, roll: float, spread: float = 0.05) -> float:
 	return clampf(input_purity + roll * spread, 0.01, 1.0)
+
+
+## Whose inventory holds the crate's goods: the last player who loaded it off a shelf, else its
+## miner. "" when nobody does (a crate of the admin fill).
+static func holder_of(content: Dictionary) -> String:
+	var carrier := str(content.get("carrier_id", ""))
+	return carrier if carrier != "" else str(content.get("miner_id", ""))
 
 
 static func is_crushed(content: Dictionary) -> bool:

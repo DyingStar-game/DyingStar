@@ -33,6 +33,13 @@ func _belt_blocked(bodies: Array) -> bool:
 
 func _consume(crate: Node) -> void:
 	_pending = (crate_content_of(crate) as Dictionary).duplicate()
+	# The ore leaves its holder into the refinery's hopper: the ingots it becomes are credited at the
+	# output (OreProcessor._credit). Without this, the crushed ore stayed carried forever.
+	var holder := CrateContent.holder_of(_pending)
+	var units := int(_pending.get("units", 0))
+	if holder != "" and units > 0:
+		MissionHeartbeat.drop_carried(holder, CrateContent.good_type(_pending), units,
+			WarehouseDelivery.warehouse(uuid))
 
 
 func _can_pack() -> bool:

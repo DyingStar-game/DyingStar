@@ -431,13 +431,13 @@ func handle_extract() -> void:
 ## crate is already in the world, and a service that is down must not also cost the player their
 ## belt run — the warning on the failure already says the goods are not accounted for.
 func _credit(content: Dictionary) -> void:
-	var miner_id := str(content.get("miner_id", ""))
+	var holder := CrateContent.holder_of(content)
 	var good_type := CrateContent.good_type(content)
 	var units := int(content.get("units", 0))
-	if miner_id == "" or good_type == "" or units <= 0:
+	if holder == "" or good_type == "" or units <= 0:
 		return
-	MissionHeartbeat.credit_mined(miner_id, good_type, units)
-	print("[%s] packed %d x %s for %s" % [name, units, good_type, miner_id])
+	MissionHeartbeat.credit_mined(holder, good_type, units)
+	print("[%s] packed %d x %s for %s" % [name, units, good_type, holder])
 
 
 # ── 3D screen contract (ScreenTarget) ─────────────────────────────────────────────────────────────
