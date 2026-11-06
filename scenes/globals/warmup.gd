@@ -56,6 +56,8 @@ var _drawn: Array[Node] = []
 var _viewport: SubViewport
 var _wanted: int = 0
 var _meshes_done: int = 0
+## The neon signs of the layouts still to trace (NeonSign.mesh_params), one a frame.
+var _signs: Array = []
 var _label: Label
 
 
@@ -157,17 +159,19 @@ func _process(_delta: float) -> void:
 			var loaded: Resource = ResourceLoader.load_threaded_get(path)
 			_held[path] = loaded
 			if LAYOUTS.has(path):
-				LayoutData.of(path)
+				_signs.append_array(LayoutData.of(path)["signs"])
 			if loaded is PackedScene:
 				var meshes := meshes_of(loaded as PackedScene, _seen)
 				if path == ROCK_SCENE:
 					with_rock_shader(meshes)
 				_to_draw.append_array(meshes)
+	if not _signs.is_empty():
+		NeonSign.shared_mesh(_signs.pop_back())
 	for i in mini(MESHES_PER_FRAME, _to_draw.size()):
 		_draw(_to_draw.pop_back())
 		_meshes_done += 1
 	_show_progress()
-	if _loading.is_empty() and _to_draw.is_empty() and _drawn.is_empty():
+	if _loading.is_empty() and _to_draw.is_empty() and _drawn.is_empty() and _signs.is_empty():
 		print("[Warmup] %d scenes ready, their shaders compiled" % _held.size())
 		_viewport.queue_free()
 		if _label != null:
