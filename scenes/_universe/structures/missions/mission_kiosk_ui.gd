@@ -10,6 +10,10 @@ extends Panel
 ## (ScreenAttract) covers it until pressed, and comes back when nobody uses it. Accepting goes straight to the mission
 ## service with the player's own token (PlayerServices.mission_accept): nothing in the world changes,
 ## and the service, not the screen, decides.
+##
+## The IN PROGRESS tab lists the player's own missions: each sheet shows every objective's progress,
+## and a mission whose objectives are done and that is turned in at a town hall gets TURN IN, which
+## asks the game server (MissionKiosk -> MissionTurnIn): only it knows where the kiosk stands.
 
 const BG_COLOR := Color(0.06, 0.07, 0.09)
 const TEXT := Color(0.92, 0.93, 0.95)
@@ -44,6 +48,10 @@ var _accept: Button
 var _status: Label
 ## The mission whose sheet is open, {} on the list.
 var _open: Dictionary = {}
+## The IN PROGRESS tab is shown instead of the offers.
+var _mine: bool = false
+var _tab_chips: HBoxContainer
+var _turn_in: Button
 
 
 ## Build the screen in [param subsidiary]'s colours (AresBrand), showing what [param feed] brings.
@@ -86,6 +94,7 @@ func is_typing() -> bool:
 ## Nobody uses the screen any more: the next one finds it as new — the list at its top, no filter,
 ## the default order, no sheet open.
 func _back_to_start() -> void:
+	_set_tab(false)
 	_category_chips.close_list()
 	_giver_chips.close_list()
 	_close_sheet()
@@ -98,10 +107,16 @@ func _back_to_start() -> void:
 
 
 func _render_tiles() -> void:
+	if _mine:
+		return  # the IN PROGRESS tab fills the grid itself (_load_mine)
+	_fill_grid(shown())
+
+
+func _fill_grid(missions: Array) -> void:
 	for tile: Node in _grid.get_children():
 		tile.queue_free()
 	var now: float = Time.get_unix_time_from_system()
-	for mission: Dictionary in shown():
+	for mission: Dictionary in missions:
 		var tile := MissionTile.new().setup(mission, TILE_ZOOM, now)
 		tile.picked.connect(_open_sheet)
 		_grid.add_child(tile)
@@ -161,6 +176,7 @@ func _open_sheet(mission: Dictionary) -> void:
 	_say("", DIM)
 	_accept.disabled = false
 	_accept.visible = true
+	_turn_in.visible = false
 	_fill_sheet(mission, [])
 	var id: String = str(mission.get("id", ""))
 	var result: Dictionary = await PlayerServices.mission_get(id)
@@ -171,9 +187,13 @@ func _open_sheet(mission: Dictionary) -> void:
 		var full: Dictionary = data.get("mission") if data.get("mission") is Dictionary else mission
 		var objectives: Array = data.get("objectives") if data.get("objectives") is Array else []
 		_fill_sheet(full, objectives)
-		if data.get("assignment") is Dictionary:
+		var participants := ServiceTypes.participants_text(data.get("participants"))
+		if participants != "":
+			_sheet.add_child(_text(TranslationServer.translate("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, DIM))
+		var assignment: Variant = data.get("assignment")
+		if assignment is Dictionary:
 			_accept.visible = false  # already the player's
-			_say("%%MISSION_ALREADY_YOURS", _accent)
+			_show_turn_in(full, objectives, assignment)
 	else:
 		_say(HttpClient.describe_error(result), WARN)
 
@@ -212,7 +232,10 @@ func _fill_sheet(mission: Dictionary, objectives: Array) -> void:
 		_sheet.add_child(_text("%%MISSION_OBJECTIVES", _accent))
 		for objective: Variant in objectives:
 			if objective is Dictionary:
-				_sheet.add_child(_text("•  " + objective_line(objective), TEXT))
+				_sheet.add_child(_text("•  " + objective_line(objective) + progress_suffix(objective), TEXT))
+				var step := ServiceTypes.transport_step_text(objective)
+				if step != "":
+					_sheet.add_child(_text("     " + step, _accent))
 	var now: float = Time.get_unix_time_from_system()
 	_sheet.add_child(_text(TranslationServer.translate("%%MISSION_REWARD")
 			% MissionTile.reward_line(mission), TEXT))
@@ -230,6 +253,94 @@ static func objective_line(objective: Dictionary) -> String:
 	if bool(objective.get("isBonus", false)):
 		line += "  (%s)" % TranslationServer.translate("%%MISSION_BONUS")
 	return line
+
+
+## The progress of a started objective ("  —  12 / 66", "  —  done"), "" when nothing counts yet.
+static func progress_suffix(objective: Dictionary) -> String:
+	if str(objective.get("status", "")) == "completed":
+		return "  —  " + TranslationServer.translate("%%MISSION_OBJECTIVE_DONE")
+	var progress: int = ServiceTypes.num(objective.get("currentProgress"), 0)
+	if progress <= 0:
+		return ""
+	return "  —  %d / %d" % [progress, ServiceTypes.num(objective.get("targetQuantity"), 1)]
+
+
+## Whether every required (non-bonus) objective is done: the mission can be turned in.
+static func ready_to_turn_in(objectives: Array) -> bool:
+	var any := false
+	for o: Variant in objectives:
+		if o is Dictionary and not bool(o.get("isBonus", false)):
+			any = true
+			if str(o.get("status", "")) != "completed":
+				return false
+	return any
+
+
+## The player's mission: TURN IN when it waits for a town hall and its objectives are done, else
+## where it stands.
+func _show_turn_in(mission: Dictionary, objectives: Array, assignment: Dictionary) -> void:
+	var turned_at_kiosk: bool = mission.get("autoComplete") == false
+	if str(assignment.get("status", "")) != "active":
+		_say("%%MISSION_ALREADY_YOURS", _accent)
+	elif turned_at_kiosk and ready_to_turn_in(objectives):
+		_turn_in.visible = true
+		_turn_in.disabled = false
+		_say("%%MISSION_READY_TO_TURN_IN", _accent)
+	else:
+		_say("%%MISSION_IN_PROGRESS", DIM)
+
+
+func _on_turn_in_pressed() -> void:
+	if _open.is_empty():
+		return
+	_turn_in.disabled = true
+	_say("%%MISSION_TURNING_IN", DIM)
+	ScreenTarget.send(ScreenTarget.owner_of(self), {"state": "turn_in", "mission_id": str(_open.get("id", ""))})
+
+
+## The game server's answer to a TURN IN (MissionKiosk.screen_event).
+func turn_in_result(event: Dictionary) -> void:
+	if str(event.get("mission_id", "")) != str(_open.get("id", "")):
+		return
+	if bool(event.get("ok", false)):
+		_turn_in.visible = false
+		_say("%%MISSION_TURNED_IN", _accent)
+		PlayerServices.changed.emit("missions")
+	else:
+		_turn_in.disabled = false
+		var error := str(event.get("error", ""))
+		_say("%%MISSION_TURN_IN_ELSEWHERE" if error == "WRONG_TOWN_HALL" else "%%MISSION_TURN_IN_FAILED", WARN)
+
+
+# -- Tabs: offers / in progress ---------------------------------------------------------------------
+
+func _set_tab(mine: bool) -> void:
+	_mine = mine
+	_clear(_tab_chips)
+	_tab_chips.add_child(_chip(TranslationServer.translate("%%MISSION_TAB_OFFERS"), not mine, _set_tab.bind(false)))
+	_tab_chips.add_child(_chip(TranslationServer.translate("%%MISSION_TAB_MINE"), mine, _set_tab.bind(true)))
+	for line: Node in [_category_chips.get_parent(), _giver_chips.get_parent(), _sort_chips]:
+		(line as Control).visible = not mine
+	_close_sheet()
+	if mine:
+		_load_mine()
+	else:
+		_empty.text = "%%MISSION_BOARD_EMPTY"
+		_render_tiles()
+
+
+## The player's missions in progress, as tiles: a tile opens the sheet with each objective's progress.
+func _load_mine() -> void:
+	_fill_grid([])
+	_empty.text = "%%MISSION_MINE_EMPTY"
+	var result: Dictionary = await PlayerServices.my_missions("active", 50)
+	if not _mine:
+		return
+	var missions: Array = []
+	for row: Dictionary in ServiceTypes.mission_rows(result.get("data")):
+		if row.get("mission") is Dictionary:
+			missions.append(row["mission"])
+	_fill_grid(missions)
 
 
 func _on_accept_pressed() -> void:
@@ -283,6 +394,9 @@ func _build(subsidiary: AresBrand.Subsidiary) -> void:
 	rule.color = _accent
 	rule.custom_minimum_size = Vector2(0, 4)
 	column.add_child(rule)
+	_tab_chips = HBoxContainer.new()
+	_tab_chips.add_theme_constant_override("separation", 8)
+	column.add_child(_tab_chips)
 
 	_list_view = VBoxContainer.new()
 	_list_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -342,6 +456,16 @@ func _build(subsidiary: AresBrand.Subsidiary) -> void:
 	AresBrand.style_button(_accept, _accent, BG_COLOR, BUTTON_PX)
 	_accept.pressed.connect(_on_accept_pressed)
 	buttons.add_child(_accept)
+	_turn_in = Button.new()
+	_turn_in.text = "%%MISSION_TURN_IN"
+	_turn_in.custom_minimum_size = Vector2(0, 72)
+	_turn_in.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_turn_in.focus_mode = Control.FOCUS_NONE
+	_turn_in.visible = false
+	AresBrand.style_button(_turn_in, _accent, BG_COLOR, BUTTON_PX)
+	_turn_in.pressed.connect(_on_turn_in_pressed)
+	buttons.add_child(_turn_in)
+	_set_tab(false)
 
 
 ## One filter's line: its caption [param caption_key], then its chips; [param choose] gets the value.

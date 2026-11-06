@@ -1,6 +1,7 @@
 class_name PlayerClient
 extends Node
 
+
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
 const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
@@ -355,12 +356,21 @@ func setup() -> void:
 	player.add_child(_wrist)
 	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
 	_wrist.up_changed.connect(func(up: bool) -> void: player.get_node("UserInterface").set_crosshair_shown(not up))
+	# The wrist's light blinks while an app has news nobody opened: put away without looking at it,
+	# the tablet blinks again (WristDatapad clears it when it is read).
+	_wrist.up_changed.connect(func(up: bool) -> void:
+		if not up and _services.has_pending():
+			_wrist_model.set_notified(true))
+	_services.pending_changed.connect(func(any: bool) -> void:
+		if not any:
+			_wrist_model.set_notified(false))
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
 	_screens_root().add_child(_notifications)
 	_notifications.pushed.connect(_on_notification_pushed)
 	_watch_debug_notification()
+	_watch_debug_shadow_atlas()
 	ChatNetwork.notification_received.connect(_on_notification)
 	PlayerServices.mission_accepted.connect(_on_mission_accepted)
 	_places = PlaceWatcher.new()
@@ -2012,7 +2022,7 @@ func _spawn_depot() -> void:
 			"action": "spawn",
 			"entity": "mining_depot",
 			"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
-			"scenename": "scenes/structures/mining_depot.tscn",
+			"scenename": "scenes/_universe/structures/industrial/mines/crusher.tscn",
 			"parent_id": parentuuid,
 		}
 	)
@@ -2660,6 +2670,7 @@ func _on_notification(envelope: Dictionary) -> void:
 	if text == "":
 		return
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
+	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
 
 	var data: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
 	# Resolve in the background so the NEXT notification about this player is spelled properly. The
@@ -2680,6 +2691,38 @@ func _on_notification_pushed() -> void:
 		_wrist_model.beep()
 	else:
 		_wrist_model.set_notified(true)
+
+
+## Settings > Debug > shadow atlas: the viewport draws its shadow atlas instead of the scene (which lights
+## take a shadow slot, and how big), and the console gets the count of lights with and without shadows.
+func _watch_debug_shadow_atlas() -> void:
+	var follow := func(on: bool) -> void:
+		get_viewport().debug_draw = Viewport.DEBUG_DRAW_SHADOW_ATLAS if on else Viewport.DEBUG_DRAW_DISABLED
+		if on:
+			print_light_report(get_tree().root)
+	SettingsManager.debug.watch(&"shadow_atlas_debug", follow)
+	if SettingsManager.debug.is_on(&"shadow_atlas_debug"):
+		follow.call(true)
+
+
+## Print how many visible lights of each kind stand under [param root], how many cast shadows, and which.
+static func print_light_report(root: Node) -> void:
+	var counts := {}
+	var shadowed: Array[String] = []
+	for node: Node in root.find_children("*", "Light3D", true, false):
+		var light := node as Light3D
+		if not light.is_visible_in_tree():
+			continue
+		var kind := light.get_class()
+		var c: Dictionary = counts.get(kind, {"total": 0, "shadows": 0})
+		c["total"] += 1
+		if light.shadow_enabled:
+			c["shadows"] += 1
+			shadowed.append("%s | %s" % [light.get_path(), kind])
+		counts[kind] = c
+	print("[LightReport] ", counts)
+	for line: String in shadowed:
+		print("[LightReport] shadow: ", line)
 
 
 ## Settings > Debug > test notification: while it is on, a line now and one every DEBUG_NOTIFICATION_S,
@@ -2710,6 +2753,15 @@ func _on_mission_accepted(mission_id: String, title: String) -> void:
 	_services.open_next(show_it)
 	var text: String = tr("%%MISSION_ACCEPTED_TOAST") % (title if title != "" else tr("%%SVC_LBL_UNKNOWN_MISSION"))
 	_notifications.push(text, func() -> void: _wrist.open_with(show_it))
+	_services.flag_app("missions")
+
+
+## The DataPad app a notification of [param type] is about (its tab blinks until opened): missions
+## for a mission's news, social for the rest (friends, corporations, place names).
+static func app_of_notification(type: String) -> String:
+	if type.begins_with("mission."):
+		return "missions"
+	return "social" if type != "" else ""
 
 
 ## Open what the notification is about, so the toast is a shortcut and not a dead end. The id is
@@ -2718,6 +2770,13 @@ func _on_notification_clicked(envelope: Dictionary) -> void:
 	if _services == null:
 		return
 	var type := str(envelope.get("type", ""))
+	if type.begins_with("mission."):
+		# A mission's news: the tablet opens on that mission (its objectives, where to turn it in).
+		var data: Variant = envelope.get("data")
+		var mission_id := str(data.get("missionId", "")) if data is Dictionary else ""
+		if mission_id != "":
+			_wrist.open_with(_services.open_mission.bind(mission_id))
+			return
 	var segment: int = -1
 	match type:
 		"friend_request_received":

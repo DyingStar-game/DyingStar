@@ -819,6 +819,8 @@ func server_action_received(data: Dictionary) -> void:
 					# If it's secured in a vehicle bed or stored on a shelf, take it out of there first: the
 					# carrier frees the load / the slot (retrieval).
 					var prev_parent = parent_node.get_parent()
+					if prev_parent is Shelf:
+						WarehouseDelivery.on_taken(parent_node, prev_parent, player)  # out of the depot's stock
 					if prev_parent.has_method("release_cargo"):
 						prev_parent.release_cargo(parent_node)
 					# A part taken back out of a bay frees it, the same way a crate frees a shelf slot.
@@ -1008,14 +1010,20 @@ func _spawn_prop(key: String) -> void:
 	var net_parent: Node = PropSpawn.find_net_parent(player)
 	var local_pos: Vector3 = PropSpawn.to_parent_local(net_parent, spawn_world)
 	var local_rot: Vector3 = _to_parent_rotation(net_parent, basis)
-	NetworkOrchestrator.spawn_prop_authoritative({
+	var data := {
 		"type": str(entry["type"]),
 		"uuid": UUID_UTIL.v4(),
 		"position": {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z},
 		"rotation": {"x": local_rot.x, "y": local_rot.y, "z": local_rot.z},
 		"scenename": str(entry["scene"]).trim_prefix("res://"),
 		"parent_id": PropSpawn.net_parent_uuid(net_parent),
-	})
+	}
+	# A full test crate of the ore chain: its goods are minted to the player, as the Crusher would.
+	var content := SpawnCatalog.test_crate(entry, str(player.client_uuid), str(player.name))
+	if not content.is_empty():
+		data["content"] = content
+		MissionHeartbeat.credit_mined(str(player.client_uuid), CrateContent.good_type(content), int(content["units"]))
+	NetworkOrchestrator.spawn_prop_authoritative(data)
 	print("🌱 Spawn '%s' (%s) for %s" % [key, entry["type"], player.client_uuid])
 
 ## Admin: fill the shelves of the cargo depot nearest the player (within _ADMIN_DEPOT_RANGE) with hauling
@@ -3033,6 +3041,7 @@ func _server_drop_carried_item() -> void:
 	if player.hands_item == null:
 		return
 	var item: RigidBody3D = player.hands_item as RigidBody3D
+	WarehouseDelivery.note_dropped_by(item, player)  # who deposits it, whoever shelves it later
 	# Use the placement the PHYSICS TICK resolved (at most one frame old), never a fresh query: E
 	# arrives on the network dispatch, OUTSIDE the physics step, where the space state gives nothing —
 	# the ray would silently miss and drop the crate at the end of the ray instead of on its disc.
@@ -3075,6 +3084,7 @@ func _server_drop_carried_item() -> void:
 		# freezes it once it has settled on its tier (see Shelf). No free slot left: an ordinary drop.
 		var shelf = place["shelf"] if place["shelf"] != null else _shelf_for_drop(place["position"])
 		if shelf != null and shelf.store_at_nearest_slot(item):
+			WarehouseDelivery.on_stored(item, shelf, player)  # into the depot's stock, once
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
 			return

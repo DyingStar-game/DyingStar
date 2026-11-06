@@ -12,7 +12,7 @@ const FACTORY := "res://scenes/_universe/structures/urban/cities/ares_city_facto
 const S := "res://scenes/_universe/structures/"
 const GARAGE := S + "industrial/garage.tscn"
 const CARGO := S + "industrial/cargo_depot.tscn"
-const MINING := S + "industrial/mines/mining_depot.tscn"
+const REFINERY := S + "industrial/refinery/refinery.tscn"
 const TELEPORTER := S + "buildings/teleporter/teleporter.tscn"
 const HOME := S + "buildings/spawn_building.tscn"
 const LAMPPOST := "res://scenes/_universe/props/furniture/furn_lamppost_outdoor_3.4m.tscn"
@@ -34,7 +34,7 @@ const BUILDINGS := [
 	"industrial/modules/prefab_module_factory.tscn", "industrial/storage/imports_warehouse.tscn",
 	"industrial/storage/cold_storage.tscn", "industrial/storage/water_reserve.tscn",
 	"industrial/recycling/recycling_centre.tscn", "industrial/cargo_depot.tscn", "industrial/garage.tscn",
-	"industrial/mines/mining_depot.tscn", "industrial/mines/changing_rooms.tscn",
+	"industrial/mines/changing_rooms.tscn",
 	"industrial/mines/mine_maintenance.tscn", "industrial/power/transformer_station.tscn",
 	"industrial/power/battery_park.tscn", "industrial/power/wind_field_block.tscn",
 	"industrial/metallurgy/arc_furnace.tscn", "industrial/metallurgy/blast_furnace.tscn",
@@ -83,11 +83,11 @@ func test_the_city_keeps_to_its_area() -> void:
 		assert_lt(Vector2(at.x, at.z).length(), MAX_REACH_M, "%s within %d m" % [item[2], MAX_REACH_M])
 
 
-## The ore yards: the mining depots stand in rows of three or four, evenly spaced, one heading per row.
+## The ore yards: the refineries (RefineryIron*, RefineryCopper*) stand in rows of three or four, evenly spaced, one heading per row.
 func test_its_mining_depots_stand_in_aligned_groups_of_three_or_four() -> void:
 	var depots: Array = []  # [heading, offset across the row, position along it]
 	for item: Array in _items:
-		if item[0] != MINING:
+		if item[0] != REFINERY or not str(item[2]).begins_with("Refinery"):
 			continue
 		var xf: Transform3D = item[1]
 		var along := Vector2(xf.basis.x.x, xf.basis.x.z).normalized()

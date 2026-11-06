@@ -606,6 +606,13 @@ func _side_page(index: int) -> VBoxContainer:
 	return _side_pages[index]
 
 
+## Hide the [param index]-th segment's tab: the segment stays built (others are addressed by index)
+## but cannot be reached from the bar any more.
+func hide_segment_tab(index: int) -> void:
+	if _seg_bar != null and index >= 0 and index < _seg_bar.get_child_count():
+		(_seg_bar.get_child(index) as Control).visible = false
+
+
 ## Switch to the [param index]-th segment built by the last [method _segments_pages] call.
 func goto_segment(index: int) -> void:
 	if _seg_bar != null and index >= 0 and index < _seg_holders.size():

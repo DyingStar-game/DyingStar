@@ -210,16 +210,63 @@ func credit_mined(player_id: String, good_type: String, units: int) -> void:
 
 
 ## Goods leave the player entirely and land on [param destination] — a `Holder`, e.g.
-## `{"holderType": "warehouse", "holderId": <uuid POI>}` for a delivery zone. Mandatory on a
+## `{"holderType": "warehouse", "holderId": <cargo depot uuid>}` (see WarehouseDelivery). Mandatory on a
 ## negative delta: the service answers 422 DESTINATION_REQUIRED rather than voiding the goods.
-func drop_carried(player_id: String, good_type: String, units: int, destination: Dictionary) -> void:
-	_carried_delta(player_id, good_type, -units, {"to": destination})
+## True when the inventory accepted it (the caller may wait for that: WarehouseDelivery does).
+func drop_carried(player_id: String, good_type: String, units: int, destination: Dictionary,
+		move_key: String = "") -> bool:
+	if not await _carried_delta(player_id, good_type, -units, {"to": destination}):
+		return false
+	_report_goods_move(player_id, good_type, units, "drop", destination, move_key)
+	return true
 
 
 ## Goods move from a stock the player has access to into their hands. The service re-reads
 ## [param source]'s AVAILABLE stock, so it is the authority on whether the load was affordable.
-func load_carried(player_id: String, good_type: String, units: int, source: Dictionary) -> void:
-	_carried_delta(player_id, good_type, units, {"from": source})
+## True when it accepted the load.
+func load_carried(player_id: String, good_type: String, units: int, source: Dictionary,
+		move_key: String = "") -> bool:
+	if not await _carried_delta(player_id, good_type, units, {"from": source}):
+		return false
+	_report_goods_move(player_id, good_type, units, "load", source, move_key)
+	return true
+
+
+## Tell the mission service that goods really moved between [param player_id] and a warehouse — a
+## crate shelved in a cargo depot or taken off a shelf: what its `via: warehouse` objectives count.
+## Only after the inventory accepted the move, and only for a warehouse with a [param move_key]
+## (unique per move, so a retry counts once). Detached, said once on failure, like the rest.
+func _report_goods_move(player_id: String, good_type: String, units: int, direction: String,
+		holder: Dictionary, move_key: String) -> void:
+	if move_key == "" or str(holder.get("holderType", "")) != "warehouse" or not _is_active():
+		return
+	var result := await mission_internal(HTTPClient.METHOD_POST, "/missions/goods-moves", {
+		"playerId": player_id, "goodType": good_type, "quantity": units, "direction": direction,
+		"warehouseId": str(holder.get("holderId", "")), "key": move_key,
+	})
+	if not bool(result.get("ok", false)):
+		_note_error(str(result.get("error", "ERROR")), "goods-moves", false)
+
+
+## One call to the mission service's internal API ([param path] under /api/internal) under the game
+## server's service identity: {ok, data | error}. For the turn-in at a kiosk and the goods moves.
+func mission_internal(method: HTTPClient.Method, path: String, body: Variant) -> Dictionary:
+	return await _internal(_is_active(), _url, method, path, body)
+
+
+## The same, for the inventory service's internal API (the warehouse behind a POI, at a turn-in).
+func inventory_internal(method: HTTPClient.Method, path: String, body: Variant) -> Dictionary:
+	return await _internal(_carried_is_active(), _inventory_url, method, path, body)
+
+
+func _internal(active: bool, base_url: String, method: HTTPClient.Method, path: String,
+		body: Variant) -> Dictionary:
+	if not active:
+		return {"ok": false, "error": "NOT_CONFIGURED"}
+	var headers: PackedStringArray = await ServiceAuth.authorization_header()
+	if headers.is_empty():
+		return {"ok": false, "error": "NO_SERVICE_TOKEN"}
+	return await _client.request(method, "%s/api/internal%s" % [base_url, path], headers, body)
 
 
 ## One `POST .../stacks/{goodType}/carried`. [param counterparty] is empty for a mining credit, and
@@ -228,25 +275,28 @@ func load_carried(player_id: String, good_type: String, units: int, source: Dict
 ##
 ## A failure is said ONCE and never retried in a loop: the delta has already been lost server-side,
 ## so replaying it would either double-credit or fight the player's next real action.
+##
+## True when the inventory accepted the move.
 func _carried_delta(player_id: String, good_type: String, delta: int,
-		counterparty: Dictionary) -> void:
+		counterparty: Dictionary) -> bool:
 	if not _carried_is_active() or delta == 0 or good_type == "" or player_id == "":
-		return
+		return false
 	var body := {"goodType": good_type, "delta": delta}
 	body.merge(counterparty)
 	var headers: PackedStringArray = await ServiceAuth.authorization_header()
 	if headers.is_empty():
 		_note_error("NO_SERVICE_TOKEN", "carried", false)
-		return
+		return false
 	var result: Dictionary = await _client.request(HTTPClient.METHOD_POST,
 			_carried_url(player_id, good_type), headers, body)
 	if not bool(result.get("ok", false)):
 		_note_error(str(result.get("error", "ERROR")), "carried %s %+d" % [good_type, delta], false)
-		return
+		return false
 	_note_error("", "carried")
 	# The write answers a Stack, which carries no `carried`: the new figure is whatever the service
 	# says it is, so it is read back rather than computed from the delta we just sent.
 	await _read_carried(player_id, good_type)
+	return true
 
 
 ## Re-read one player's carried quantity for one good and adopt it as the truth.

@@ -135,7 +135,7 @@ var stand_body_height: float = 1.8
 ## (GodMode). Toggled with the `god_mode` action ('$' by default, remappable in Settings > Controls).
 ## A test aid to fly around a body and inspect its day/night faces: the server detaches the player from
 ## gravity and flies it where the camera looks, ignoring collision. Not the real EVA (below).
-@export var god_mode_speed: float = 2000.0
+@export var god_mode_speed: float = 16.0
 @export_subgroup("EVA / 0g")
 ## Weightless (no gravity area, or the dev EVA flight): the top roll rate of roll_left / roll_right about
 ## the view axis, in rad/s...

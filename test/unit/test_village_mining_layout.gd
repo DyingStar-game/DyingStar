@@ -12,7 +12,7 @@ const S := "res://scenes/_universe/structures/"
 const BUILDINGS := [
 	"industrial/mines/mine_portal.tscn", "industrial/mines/spoil_heap.tscn", "industrial/mines/crusher.tscn",
 	"industrial/mines/changing_rooms.tscn", "industrial/mines/mine_administration.tscn",
-	"industrial/mines/mine_maintenance.tscn", "industrial/mines/mining_depot.tscn",
+	"industrial/mines/mine_maintenance.tscn",
 	"industrial/power/transformer_station.tscn", "industrial/power/battery_park.tscn",
 	"industrial/power/wind_farm.tscn", "industrial/storage/imports_warehouse.tscn",
 	"industrial/cargo_depot.tscn", "industrial/garage.tscn",
@@ -38,9 +38,10 @@ const PLACEHOLDERS := [
 	"buildings/houses/worker_houses.tscn", "buildings/houses/dormitory.tscn",
 	"urban/streets/avenue_segment_12x40.tscn", "urban/walls/wall_segment_20m.tscn",
 ]
+## Placeholders that are working machines (OreProcessor), networked as such, not as simple buildings.
+const MACHINES := ["industrial/mines/crusher.tscn", "industrial/refinery/refinery.tscn"]
 ## Placeholders with no name to show.
 const NO_SIGN := ["urban/streets/avenue_segment_12x40.tscn", "urban/walls/wall_segment_20m.tscn"]
-const MACHINE := S + "industrial/refinery/ore_processor_machine.tscn"
 const BOLLARDS := S + "urban/streets/bollard_row_6m.tscn"
 const WALL := S + "urban/walls/wall_segment_20m.tscn"
 ## A wall segment: its length along its X, and its thickness with a margin.
@@ -127,7 +128,8 @@ func test_the_placeholders_are_networked_and_named() -> void:
 		var sync := PropSync.of(root)
 		assert_not_null(sync, "%s: a layout spawns it" % scene.get_file())
 		if sync != null:
-			assert_eq(sync.type_name, "simple_building", scene.get_file())
+			var expected := "mining_depot" if scene in MACHINES else "simple_building"
+			assert_eq(sync.type_name, expected, scene.get_file())
 		var sign := root.get_node_or_null("NeonSign") as NeonSign
 		if scene not in NO_SIGN:
 			assert_not_null(sign, "%s: its name in neon" % scene.get_file())
@@ -151,17 +153,15 @@ func test_the_ground_is_levelled_under_each_building() -> void:
 		root.free()
 
 
-func test_crusher_and_refinery_are_one_machine_under_another_sign() -> void:
+func test_crusher_and_refinery_are_two_ore_processors_under_their_own_sign() -> void:
 	var signs := []
 	for scene: String in ["industrial/mines/crusher.tscn", "industrial/refinery/refinery.tscn"]:
 		var root: Node3D = load(S + scene).instantiate()
-		var machine := root.get_node_or_null("OreProcessorMachine")
-		assert_not_null(machine, scene.get_file())
-		if machine != null:
-			assert_eq(machine.scene_file_path, MACHINE, "the shared placeholder machine")
+		assert_true(root is OreProcessor, "%s: a working ore processor" % scene.get_file())
+		assert_eq(PropSync.of(root).type_name, "mining_depot", "one network type for every machine")
 		signs.append((root.get_node("NeonSign") as NeonSign).text_key)
 		root.free()
-	assert_ne(signs[0], signs[1], "told apart by their sign only")
+	assert_eq(signs, ["%%SIGN_CRUSHER", "%%SIGN_REFINERY"])
 
 
 func _count(scene: String) -> int:

@@ -427,7 +427,7 @@ func _seed_zone_contents() -> void:
 		pnj_box_temp_zones = zones
 		_send_pnj_box_temp_zones()
 
-	var counter := get_node_or_null("ReceptionDesk/PNJBoxDepositPlayer") as Area3D
+	var counter := get_node_or_null("Reception Desk/PNJBoxDepositPlayer") as Area3D
 	if counter != null:
 		var on_counter: Array = []
 		for body in counter.get_overlapping_bodies():
@@ -470,6 +470,16 @@ func _on_box_counter_body_entered(body: Node3D) -> void:
 	var id := _box_uuid(body)
 	if id == "" or pnj_reception_deposited_item.has(id):
 		return
+	# Only a crate its depositor may deposit (their own, a mission partner's) is offered to the
+	# storekeepers: anybody else's stays on the counter (WarehouseDelivery.may_deposit).
+	var depositor := WarehouseDelivery.depositor_of(body, null)
+	if not await WarehouseDelivery.may_deposit(body, depositor):
+		print("[cargo_depot] %s left on the counter: %s may not deposit it" % [id, depositor])
+		return
+	var counter := get_node_or_null("Reception Desk/PNJBoxDepositPlayer") as Area3D
+	if not is_instance_valid(body) or pnj_reception_deposited_item.has(id) \
+			or (counter != null and not counter.overlaps_body(body)):
+		return  # taken back, or listed by the seed pass, while the mission service answered
 	pnj_reception_deposited_item.append(id)
 	_send_reception_deposited_item()
 
