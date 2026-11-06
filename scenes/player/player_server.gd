@@ -1010,14 +1010,20 @@ func _spawn_prop(key: String) -> void:
 	var net_parent: Node = PropSpawn.find_net_parent(player)
 	var local_pos: Vector3 = PropSpawn.to_parent_local(net_parent, spawn_world)
 	var local_rot: Vector3 = _to_parent_rotation(net_parent, basis)
-	NetworkOrchestrator.spawn_prop_authoritative({
+	var data := {
 		"type": str(entry["type"]),
 		"uuid": UUID_UTIL.v4(),
 		"position": {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z},
 		"rotation": {"x": local_rot.x, "y": local_rot.y, "z": local_rot.z},
 		"scenename": str(entry["scene"]).trim_prefix("res://"),
 		"parent_id": PropSpawn.net_parent_uuid(net_parent),
-	})
+	}
+	# A full test crate of the ore chain: its goods are minted to the player, as the Crusher would.
+	var content := SpawnCatalog.test_crate(entry, str(player.client_uuid), str(player.name))
+	if not content.is_empty():
+		data["content"] = content
+		MissionHeartbeat.credit_mined(str(player.client_uuid), CrateContent.good_type(content), int(content["units"]))
+	NetworkOrchestrator.spawn_prop_authoritative(data)
 	print("🌱 Spawn '%s' (%s) for %s" % [key, entry["type"], player.client_uuid])
 
 ## Admin: fill the shelves of the cargo depot nearest the player (within _ADMIN_DEPOT_RANGE) with hauling

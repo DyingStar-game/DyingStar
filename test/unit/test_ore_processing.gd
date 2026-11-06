@@ -125,3 +125,14 @@ func test_the_plate_lays_out_both_kinds() -> void:
 		add_child_autofree(plate)
 		assert_not_null(plate)
 
+
+# ── Dev spawn wheel test crates ───────────────────────────────────────────────────────────────────
+
+func test_the_wheel_spawns_full_test_crates_of_both_kinds() -> void:
+	var crushed := SpawnCatalog.test_crate(SpawnCatalog.entry("crate_crushed"), "p1")
+	var ingot := SpawnCatalog.test_crate(SpawnCatalog.entry("crate_ingot"), "p1")
+	assert_true(CrateContent.is_crushed(crushed))
+	assert_true(CrateContent.is_ingot(ingot))
+	assert_eq(crushed["miner_id"], "p1")
+	assert_gt(int(ingot["units"]), 0)
+	assert_true(SpawnCatalog.test_crate(SpawnCatalog.entry("hauling_box"), "p1").is_empty(), "an empty box stays empty")

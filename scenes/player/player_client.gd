@@ -1,6 +1,7 @@
 class_name PlayerClient
 extends Node
 
+
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
 const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
@@ -361,6 +362,7 @@ func setup() -> void:
 	_screens_root().add_child(_notifications)
 	_notifications.pushed.connect(_on_notification_pushed)
 	_watch_debug_notification()
+	_watch_debug_shadow_atlas()
 	ChatNetwork.notification_received.connect(_on_notification)
 	PlayerServices.mission_accepted.connect(_on_mission_accepted)
 	_places = PlaceWatcher.new()
@@ -2680,6 +2682,38 @@ func _on_notification_pushed() -> void:
 		_wrist_model.beep()
 	else:
 		_wrist_model.set_notified(true)
+
+
+## Settings > Debug > shadow atlas: the viewport draws its shadow atlas instead of the scene (which lights
+## take a shadow slot, and how big), and the console gets the count of lights with and without shadows.
+func _watch_debug_shadow_atlas() -> void:
+	var follow := func(on: bool) -> void:
+		get_viewport().debug_draw = Viewport.DEBUG_DRAW_SHADOW_ATLAS if on else Viewport.DEBUG_DRAW_DISABLED
+		if on:
+			print_light_report(get_tree().root)
+	SettingsManager.debug.watch(&"shadow_atlas_debug", follow)
+	if SettingsManager.debug.is_on(&"shadow_atlas_debug"):
+		follow.call(true)
+
+
+## Print how many visible lights of each kind stand under [param root], how many cast shadows, and which.
+static func print_light_report(root: Node) -> void:
+	var counts := {}
+	var shadowed: Array[String] = []
+	for node: Node in root.find_children("*", "Light3D", true, false):
+		var light := node as Light3D
+		if not light.is_visible_in_tree():
+			continue
+		var kind := light.get_class()
+		var c: Dictionary = counts.get(kind, {"total": 0, "shadows": 0})
+		c["total"] += 1
+		if light.shadow_enabled:
+			c["shadows"] += 1
+			shadowed.append("%s | %s" % [light.get_path(), kind])
+		counts[kind] = c
+	print("[LightReport] ", counts)
+	for line: String in shadowed:
+		print("[LightReport] shadow: ", line)
 
 
 ## Settings > Debug > test notification: while it is on, a line now and one every DEBUG_NOTIFICATION_S,
