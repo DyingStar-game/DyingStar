@@ -423,7 +423,7 @@ func _gather(node: Node) -> void:
 ## A mesh that ALREADY wears an overlay is left strictly alone -- not claimed, and so never cleared
 ## either. There is only one overlay slot, and taking it would silently undo somebody's work: the
 ## cargo depot's floor (cargo_depot.tscn:120) gets its concrete that way, and so do
-## pallet_liquid_120x80x100.tscn and mining_depot.tscn. Losing the fringe on three meshes is a much
+## pallet_liquid_120x80x100.tscn and crusher.tscn. Losing the fringe on three meshes is a much
 ## smaller price than a floor that quietly loses its material.
 ##
 ## For the depot floor this is the right answer anyway: a slab is the thing others rest ON, it has

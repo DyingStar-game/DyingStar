@@ -162,8 +162,10 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/props/containers/box_4m.tscn'),
 	'scenes/_universe/vehicles/ground/trucks/truck.tscn':
 		preload('res://scenes/_universe/vehicles/ground/trucks/truck.tscn'),
-	'scenes/_universe/structures/industrial/mines/mining_depot.tscn':
-		preload('res://scenes/_universe/structures/industrial/mines/mining_depot.tscn'),
+	'scenes/_universe/structures/industrial/mines/crusher.tscn':
+		preload('res://scenes/_universe/structures/industrial/mines/crusher.tscn'),
+	'scenes/_universe/structures/industrial/refinery/refinery.tscn':
+		preload('res://scenes/_universe/structures/industrial/refinery/refinery.tscn'),
 	'scenes/_universe/structures/industrial/cargo_depot.tscn':
 		preload('res://scenes/_universe/structures/industrial/cargo_depot.tscn'),
 }

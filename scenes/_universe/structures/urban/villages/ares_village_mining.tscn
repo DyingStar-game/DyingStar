@@ -2,7 +2,6 @@
 
 [ext_resource type="PackedScene" uid="uid://d14u2bcesufk6" path="res://scenes/_universe/structures/buildings/spawn_building.tscn" id="2_n6sqd"]
 [ext_resource type="PackedScene" uid="uid://sn4ohukiewv6" path="res://scenes/_universe/structures/industrial/cargo_depot.tscn" id="3_limx2"]
-[ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="4_hnyaj"]
 [ext_resource type="PackedScene" uid="uid://dyoytajqysjhf" path="res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn" id="5_tele"]
 [ext_resource type="PackedScene" uid="uid://d2s14o4v7mrcl" path="res://scenes/_universe/props/containers/crate_container.tscn" id="6_hnyaj"]
 [ext_resource type="PackedScene" uid="uid://uoeedtve2rkg" path="res://scenes/_universe/props/furniture/furn_lamppost_outdoor_3.4m.tscn" id="8_80d3s"]
@@ -186,9 +185,6 @@ floors = 2
 
 [node name="cargo_depot" parent="." unique_id=693024100 instance=ExtResource("3_limx2")]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -62.72, 0, -4.196862553800944)
-
-[node name="MiningDepot" parent="." unique_id=1889403175 instance=ExtResource("4_hnyaj")]
-transform = Transform3D(-6.123032e-17, 0, 1, 0, 1, 0, -1, 0, -6.123032e-17, -130.30648538141463, 0, -43.86928393272177)
 
 [node name="Garage" parent="." unique_id=1534038917 instance=ExtResource("mvp_25")]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -99.0141933816342, 0, 1.2729378784061254)

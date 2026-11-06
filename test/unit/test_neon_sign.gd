@@ -9,7 +9,8 @@ const BUILDINGS := {
 	"res://scenes/_universe/structures/industrial/garage.tscn": "%%SIGN_GARAGE",
 	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn": "%%SIGN_TELEPORTER",
 	"res://scenes/_universe/structures/industrial/cargo_depot.tscn": "%%SIGN_CARGO_DEPOT",
-	"res://scenes/_universe/structures/industrial/mines/mining_depot.tscn": "%%SIGN_MINING_DEPOT",
+	"res://scenes/_universe/structures/industrial/mines/crusher.tscn": "%%SIGN_CRUSHER",
+	"res://scenes/_universe/structures/industrial/refinery/refinery.tscn": "%%SIGN_REFINERY",
 }
 ## The ones whose sign hangs on a facade, to be read from the street.
 const ON_FACADE: Array[String] = [

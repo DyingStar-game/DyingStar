@@ -4,7 +4,8 @@ extends GutTest
 
 const BUILDING := AABB(Vector3(-6.0, 0.0, -4.0), Vector3(12.0, 8.0, 8.0))
 const SCENES: Array[String] = [
-	"res://scenes/_universe/structures/industrial/mines/mining_depot.tscn",
+	"res://scenes/_universe/structures/industrial/mines/crusher.tscn",
+	"res://scenes/_universe/structures/industrial/refinery/refinery.tscn",
 	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn",
 	"res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 	"res://scenes/_universe/structures/dispenser/food_dispenser.tscn",

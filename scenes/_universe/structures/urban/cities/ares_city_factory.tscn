@@ -58,7 +58,6 @@
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/metallurgy/casting_hall_iron.tscn" id="56_casting_hall_i"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/metallurgy/pelletizing_plant.tscn" id="57_pelletizing_pl"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/metallurgy/casting_hall_rare_earths.tscn" id="58_casting_hall_r"]
-[ext_resource type="PackedScene" uid="uid://dduoljfgr6sjn" path="res://scenes/_universe/structures/industrial/mines/mining_depot.tscn" id="59_mining_depot"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/buildings/civic/guard_post.tscn" id="60_guard_post"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/power/battery_park.tscn" id="61_battery_park"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/refinery/refinery.tscn" id="62_refinery"]
@@ -541,25 +540,25 @@ transform = Transform3D(-0.840297, 0, -0.542127, 0, 1, 0, 0.542127, 0, -0.840297
 [node name="Transformer_2" parent="." unique_id=1650403453 instance=ExtResource("46_transformer_st")]
 transform = Transform3D(0.7186773649530648, 0, 0.6953437103484287, 0, 1, 0, -0.6953437103484287, 0, 0.7186773649530648, 102.51606998621715, 0, 144.9262432173157)
 
-[node name="MiningDepotIron" parent="." unique_id=1396840465 instance=ExtResource("59_mining_depot")]
+[node name="RefineryIron" parent="." unique_id=1396840465 instance=ExtResource("62_refinery")]
 transform = Transform3D(0.949689, 0, -0.313195, 0, 1, 0, 0.313195, 0, 0.949689, -138.100407, 0, 77.622518)
 
-[node name="MiningDepotIron_2" parent="." unique_id=856562399 instance=ExtResource("59_mining_depot")]
+[node name="RefineryIron_2" parent="." unique_id=856562399 instance=ExtResource("62_refinery")]
 transform = Transform3D(0.949689, 0, -0.313195, 0, 1, 0, 0.313195, 0, 0.949689, -107.710365, 0, 87.644764)
 
-[node name="MiningDepotIron_3" parent="." unique_id=1429808907 instance=ExtResource("59_mining_depot")]
+[node name="RefineryIron_3" parent="." unique_id=1429808907 instance=ExtResource("62_refinery")]
 transform = Transform3D(0.949689, 0, -0.313195, 0, 1, 0, 0.313195, 0, 0.949689, -77.320324, 0, 97.667009)
 
-[node name="MiningDepotIron_4" parent="." unique_id=768443852 instance=ExtResource("59_mining_depot")]
+[node name="RefineryIron_4" parent="." unique_id=768443852 instance=ExtResource("62_refinery")]
 transform = Transform3D(0.949689, 0, -0.313195, 0, 1, 0, 0.313195, 0, 0.949689, -46.930283, 0, 107.689255)
 
-[node name="MiningDepotCopper" parent="." unique_id=1197365389 instance=ExtResource("59_mining_depot")]
+[node name="RefineryCopper" parent="." unique_id=1197365389 instance=ExtResource("62_refinery")]
 transform = Transform3D(0.912783, 0, -0.408444, 0, 1, 0, 0.408444, 0, 0.912783, -190.069112, 0, 111.563572)
 
-[node name="MiningDepotCopper_2" parent="." unique_id=21296504 instance=ExtResource("59_mining_depot")]
+[node name="RefineryCopper_2" parent="." unique_id=21296504 instance=ExtResource("62_refinery")]
 transform = Transform3D(0.912783, 0, -0.408444, 0, 1, 0, 0.408444, 0, 0.912783, -160.860043, 0, 124.633779)
 
-[node name="MiningDepotCopper_3" parent="." unique_id=544124794 instance=ExtResource("59_mining_depot")]
+[node name="RefineryCopper_3" parent="." unique_id=544124794 instance=ExtResource("62_refinery")]
 transform = Transform3D(0.912783, 0, -0.408444, 0, 1, 0, 0.408444, 0, 0.912783, -131.650975, 0, 137.703986)
 
 [node name="Storage_EmptyContainers" parent="." unique_id=149652257 instance=ExtResource("28_pad_storage_ar")]

@@ -2012,7 +2012,7 @@ func _spawn_depot() -> void:
 			"action": "spawn",
 			"entity": "mining_depot",
 			"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
-			"scenename": "scenes/structures/mining_depot.tscn",
+			"scenename": "scenes/_universe/structures/industrial/mines/crusher.tscn",
 			"parent_id": parentuuid,
 		}
 	)
