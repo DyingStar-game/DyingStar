@@ -32,10 +32,12 @@ const WARNING_INK := Color(1.0, 0.52, 0.27)
 const PICTO_PX := 150
 ## How long a machine works on a crate (s): crushing at the Crusher, refining at the Refinery. The
 ## screen counts it down on a ring, the machine sounds run meanwhile.
-const PROCESS_S := 10.0
+const PROCESS_S := 5.0
 const RING_PX := 220
 ## How often the server runs a machine's logic (s): belts, collection, replication (see _process).
 const SERVER_TICK_S := 0.2
+## The states EXTRACT is taken from: a full machine waits for it, a refused belt does not stop it.
+const EXTRACT_FROM := ["idle", "full", "blocked"]
 
 ## Designer-placed machine: tick it on the instance dropped in a world scene. On the server it spawns
 ## the REAL networked machine at the same spot (deterministic uuid) and frees itself.
@@ -122,6 +124,10 @@ func _consume(_body: Node) -> void:
 
 ## SERVER: whether a whole crate can be packed now.
 func _can_pack() -> bool:
+	return false
+
+## SERVER: whether the machine holds all it can: the belt stops taking anything until EXTRACT empties it.
+func _is_full() -> bool:
 	return false
 
 ## SERVER: take one crate's worth out of the stock and return its `content` (see CrateContent), or {}
@@ -240,7 +246,7 @@ func _spawn_networked_copy() -> void:
 ## In collect mode, an item that slides off the belt end (leaves the detector) is collected. Skip
 ## items a player just picked up (carried) so grabbing one off the belt doesn't count it.
 func _on_belt_exited(body: Node3D) -> void:
-	if state != "collect" or not _accepts(body):
+	if state != "collect" or not _accepts(body) or _is_full():
 		return
 	if "carried" in body and body.carried:
 		return
@@ -263,12 +269,18 @@ func _process(delta: float) -> void:
 func _server_tick() -> void:
 	var on_belt: Array = rock_detector.get_overlapping_bodies()
 	var accepted: Array = filter_accepted(on_belt)
-	var blocked := _belt_blocked(on_belt)
-	if not blocked:
+	var full := _is_full()
+	var blocked := not full and _belt_blocked(on_belt)
+	if not blocked and not full:
 		for body in filter_accepted(rock_collector.get_overlapping_bodies()):
 			if not ("carried" in body and body.carried):
 				_collect(body)
-	if blocked and state in ["idle", "collect"]:
+		full = _is_full()
+	if full and state in ["idle", "collect", "blocked"]:
+		state = "full"
+	elif not full and state == "full":
+		state = "idle"
+	elif blocked and state in ["idle", "collect"]:
 		state = "blocked"
 	elif not blocked and state == "blocked":
 		state = "idle"
@@ -464,7 +476,7 @@ func update_screen(data: Dictionary) -> void:
 	var target_state: String = data["state"]
 	if state == "idle" and target_state == "collect":
 		state = target_state
-	elif state == "idle" and target_state == "extract":
+	elif state in EXTRACT_FROM and target_state == "extract" and _can_pack():
 		state = target_state
 		handle_extract()
 

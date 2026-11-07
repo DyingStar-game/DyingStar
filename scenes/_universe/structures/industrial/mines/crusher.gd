@@ -70,6 +70,11 @@ func _can_pack() -> bool:
 	return mineral_to_pack(_stock, crate_volume()) != ""
 
 
+## A crate's worth is in: no more rock until it is extracted, so nothing piles up past 100 %.
+func _is_full() -> bool:
+	return _can_pack()
+
+
 func _next_crate(miner_id: String, miner_name: String) -> Dictionary:
 	return pack(_stock, crate_volume(), randf_range(-1.0, 1.0), miner_id, miner_name)
 
@@ -109,6 +114,20 @@ static func mineral_to_pack(stock: Dictionary, crate_m3: float) -> String:
 	return ""
 
 
+## How full the next crate is, 0..1+: the mineral the next EXTRACT packs (mineral_to_pack) once one
+## fills a crate, else the fullest one.
+static func fill_of(stock: Dictionary, crate_m3: float) -> float:
+	var packed := mineral_to_pack(stock, crate_m3)
+	var fill := 0.0
+	for key: Variant in stock:
+		var s: Dictionary = stock[key]
+		var f := (float(s["ore_m3"]) + float(s["gangue_m3"])) / crate_m3
+		if str(key) == packed:
+			return f
+		fill = maxf(fill, f)
+	return fill
+
+
 ## The mineral this rock carries ("gold"), or "" for barren rock and for anything unnamed. An inert
 ## mineral's `get_ore_volume()` is already 0, so this mostly guards a rock that never had its mineral.
 static func mineral_id_of(rock: Node) -> String:
@@ -137,11 +156,7 @@ func _extra_state() -> Dictionary:
 	for r in filter_accepted(rock_detector.get_overlapping_bodies()):
 		rock_m3 += r.get_volume()
 		ore_m3 += r.get_ore_volume()
-	# Fill of the fullest mineral: that is the crate the next EXTRACT packs.
-	var fill := 0.0
-	for s: Dictionary in _stock.values():
-		fill = maxf(fill, (float(s["ore_m3"]) + float(s["gangue_m3"])) / crate_volume())
-	return {"conveyor_rock_volume": rock_m3, "conveyor_ore_volume": ore_m3, "fill": fill}
+	return {"conveyor_rock_volume": rock_m3, "conveyor_ore_volume": ore_m3, "fill": fill_of(_stock, crate_volume())}
 
 
 func _client_ui() -> void:
@@ -149,6 +164,9 @@ func _client_ui() -> void:
 	var ore_m3 := float(extra.get("conveyor_ore_volume", 0.0))
 	var fill := float(extra.get("fill", 0.0))
 	(_ui("RockTotalLabel/RockTotal") as Label).text = "%d%%" % int(clampf(fill, 0.0, 1.0) * 100.0)
+	if state == "full":
+		_show_screen(true, "%%HUD_CRUSHER_FULL", true, [ICON_ORE], true)
+		return
 	if state == "blocked":
 		_show_screen(true, "%%HUD_CRUSHER_REFUSED", false, [ICON_ROCKS], true)
 		return
