@@ -50,8 +50,8 @@ size = Vector3(0.012, 0.008, 0.006)
 
 [sub_resource type="SphereMesh" id="Mesh_led"]
 material = SubResource("Mat_led")
-radius = 0.0018
-height = 0.0036
+radius = 0.0035
+height = 0.007
 radial_segments = 16
 rings = 8
 
