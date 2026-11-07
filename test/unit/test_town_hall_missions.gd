@@ -28,7 +28,7 @@ func test_the_town_hall_has_a_board_and_four_kiosks_on_one_feed() -> void:
 	# The board faces the entrance (the door is at -Z), across the hall; the kiosks stand inside.
 	assert_lt(board.global_basis.z.z, -0.9, "the board looks toward the door")
 	var screen: Vector2 = ((board.get_node("Screen") as MeshInstance3D).mesh as QuadMesh).size
-	assert_gt(screen.y, 6.0, "a wall of ads, nearly floor to ceiling")
+	assert_gt(screen.y, 4.0, "a wall of ads, its top third left to the wall (playtest 2026-11-06)")
 	assert_true(board.position.y - screen.y / 2 > 0.5 and board.position.y + screen.y / 2 < 8.6, "within the wall")
 	assert_lt(screen.x, 47.0, "and within its width")
 	assert_gte(MissionBoard.columns_for(board.get_node("SubViewport").size.x, board.tile_zoom), 7,
