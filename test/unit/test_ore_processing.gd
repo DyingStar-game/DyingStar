@@ -126,6 +126,44 @@ func test_the_plate_lays_out_both_kinds() -> void:
 		assert_not_null(plate)
 
 
+func test_the_crusher_fill_is_the_crate_its_extract_packs() -> void:
+	var stock := _stock_at("iron", 0.2, 0.6)
+	stock.merge(_stock_at("gold", 0.2, 1.2))
+	assert_almost_eq(Crusher.fill_of(stock, CRATE_M3), 1.2, 0.0001, "gold fills a crate: its fill")
+	var partial := _stock_at("iron", 0.2, 0.3)
+	partial.merge(_stock_at("gold", 0.2, 0.6))
+	assert_almost_eq(Crusher.fill_of(partial, CRATE_M3), 0.6, 0.0001, "none full: the fullest")
+
+
+func _crushed(mineral: String, ore_m3: float, miner: String) -> Dictionary:
+	return CrateContent.crushed(mineral, ore_m3, CRATE_M3 - ore_m3, 0.0, miner, miner)
+
+
+func test_the_refinery_gathers_crates_until_a_crate_of_metal() -> void:
+	var stock := {}
+	for i: int in range(4):
+		Refinery.add_to_stock(stock, _crushed("gold", CRATE_M3 * 0.3, "p1"))
+	assert_almost_eq(Refinery.fill_of(stock, CRATE_M3), 1.2, 0.0001, "four 30 % crates")
+	var ingots := Refinery.take_crate(stock, CRATE_M3)
+	assert_true(CrateContent.is_ingot(ingots))
+	assert_almost_eq(float(ingots["ore_m3"]), CRATE_M3, 0.0001, "a full crate of metal")
+	assert_eq(str(ingots["miner_id"]), "p1", "the stock holder's ingots")
+	assert_almost_eq(Refinery.fill_of(stock, CRATE_M3), 0.2, 0.0001, "the rest stays in")
+	var partial := Refinery.take_crate(stock, CRATE_M3)
+	assert_almost_eq(float(partial["ore_m3"]), CRATE_M3 * 0.2, 0.0001, "EXTRACT before 100 %: a partial crate")
+	assert_true(stock.is_empty(), "empty: forgets its mineral and holder")
+	assert_true(Refinery.take_crate(stock, CRATE_M3).is_empty())
+
+
+func test_the_refinery_stock_is_the_first_crate_s_mineral_and_holder() -> void:
+	var stock := {}
+	Refinery.add_to_stock(stock, _crushed("gold", 0.01, "p1"))
+	Refinery.add_to_stock(stock, _crushed("gold", 0.02, "p1"))
+	assert_eq(str(stock["mineral"]), "gold")
+	assert_eq(str(stock["holder"]), "p1")
+	assert_almost_eq(float(stock["ore_m3"]), 0.03, 0.0001, "ore only, the barren rock is gone")
+
+
 # ── Dev spawn wheel test crates ───────────────────────────────────────────────────────────────────
 
 func test_the_wheel_spawns_full_test_crates_of_both_kinds() -> void:
