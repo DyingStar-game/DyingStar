@@ -533,9 +533,21 @@ func refresh() -> void:
 		var zone_picker: Variant = row.get("poi")
 		if zone_picker is MissionPlacePicker:
 			(zone_picker as MissionPlacePicker).refresh_list()
+	# The mission open in "My missions" opens again on the fresh list: its progress is what changed.
+	if _focus_id == "":
+		_focus_id = _selected_mine_id()
 	await _load_mine()
 	await _load_created()
 	_end_refresh()
+
+
+## The id of the mission selected in "My missions", "" when none is.
+func _selected_mine_id() -> String:
+	if _mine == null or _mine.get_selected_items().is_empty():
+		return ""
+	var entry: Variant = _mine.get_item_metadata(_mine.get_selected_items()[0])
+	var mission: Variant = (entry as Dictionary).get("mission") if entry is Dictionary else null
+	return str((mission as Dictionary).get("id", "")) if mission is Dictionary else ""
 
 
 ## The catalogue feeds every dynamic dropdown; on failure the hardcoded lists stay in place.

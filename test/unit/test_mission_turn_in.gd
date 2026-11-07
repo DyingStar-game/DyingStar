@@ -49,6 +49,12 @@ func test_a_mission_notification_lights_the_missions_tab() -> void:
 	assert_eq(PlayerClient.app_of_notification(""), "", "nothing to light")
 
 
+func test_a_goods_move_counted_for_a_mission_is_told_to_its_player() -> void:
+	var text := ChatNetwork.notification_text({"type": "mission.progress", "data": {"title": "Gold run"}})
+	assert_string_contains(text, "Gold run")
+	assert_eq(PlayerClient.app_of_notification("mission.progress"), "missions")
+
+
 func test_the_participants_read_as_names() -> void:
 	var participants := [{"playerId": "4aa97da7-6ae4", "name": "player-kira"}, {"playerId": "b91c2854-3ae4", "name": null}]
 	assert_eq(ServiceTypes.participants_text(participants), "player-kira, b91c2854")

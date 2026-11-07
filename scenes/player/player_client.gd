@@ -2671,6 +2671,9 @@ func _on_notification(envelope: Dictionary) -> void:
 		return
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
 	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
+	# A mission's news changed it on the service: the DataPad, open on it, reads it again.
+	if str(envelope.get("type", "")).begins_with("mission."):
+		PlayerServices.changed.emit("missions")
 
 	var data: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
 	# Resolve in the background so the NEXT notification about this player is spelled properly. The
