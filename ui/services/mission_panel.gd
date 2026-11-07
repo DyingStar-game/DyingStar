@@ -96,6 +96,9 @@ var _invites_box: VBoxContainer
 ## (focus_mission), "" when none.
 var _mine_contract: VBoxContainer
 var _focus_id: String = ""
+## The "My missions" tabs (MINE_TABS) and the one shown.
+var _mine_tabs: HBoxContainer
+var _mine_tab: int = 0
 var _created_status: OptionButton
 var _created: ItemList
 var _page_created: ServicePage
@@ -354,6 +357,14 @@ func _build_browse_page(page: VBoxContainer) -> void:
 # Tab 1 — my missions (assignments)
 # ---------------------------------------------------------------------------------------------
 
+## "My missions" in three tabs (playtest 2026-11-07): [label key, the assignment statuses it lists].
+const MINE_TABS: Array = [
+	["%%SVC_TAB_MINE_ACTIVE", "active"],
+	["%%SVC_TAB_MINE_DONE", "completed,partially_completed"],
+	["%%SVC_TAB_MINE_STOPPED", "abandoned,expired,failed"],
+]
+
+
 func _build_mine_page(page: VBoxContainer) -> void:
 	var parts := _master_detail(page)
 	var left: VBoxContainer = parts[0]
@@ -365,9 +376,35 @@ func _build_mine_page(page: VBoxContainer) -> void:
 	_invites_box = VBoxContainer.new()
 	_invites_box.add_theme_constant_override("separation", 6)
 	left.add_child(_invites_box)
+	_mine_tabs = _row(6)
+	left.add_child(_mine_tabs)
+	_show_mine_tabs()
 	_mine = _paged_list(left, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine, 320.0)
 	_mine.item_selected.connect(func(_i: int) -> void: _open_mine(contract))
 	_mine_contract = contract
+
+
+## The three tabs over "My missions", the chosen one lit.
+func _show_mine_tabs() -> void:
+	for child: Node in _mine_tabs.get_children():
+		child.queue_free()
+	for i: int in MINE_TABS.size():
+		var tab := Button.new()
+		tab.text = tr(str(MINE_TABS[i][0]))
+		tab.focus_mode = Control.FOCUS_NONE
+		ServiceStyle.apply_segment(tab, i == _mine_tab)
+		tab.pressed.connect(_set_mine_tab.bind(i))
+		_mine_tabs.add_child(tab)
+
+
+func _set_mine_tab(index: int) -> void:
+	if index == _mine_tab:
+		return
+	_mine_tab = index
+	_show_mine_tabs()
+	_page_mine.offset = 0
+	_clear(_mine_contract)
+	_load_mine()
 
 
 ## Show mission [param mission_id] in "My missions": selected in the list and its contract open, now
@@ -595,9 +632,8 @@ func _load_created() -> void:
 
 func _load_mine() -> void:
 	var at: int = _page_mine.offset
-	# Every contract of mine, the ones over too (done, given up, cancelled, expired: playtest
-	# 2026-11-07, a player wants their history); each line says its status.
-	var result: Dictionary = await PlayerServices.my_missions("", _page_mine.limit, at)
+	# The contracts of the tab chosen: running, done, or stopped (given up, expired, failed).
+	var result: Dictionary = await PlayerServices.my_missions(str(MINE_TABS[_mine_tab][1]), _page_mine.limit, at)
 	if _land(_page_mine, at, result):
 		_apply_mine(_page_mine, result)
 	await _load_invitations()
