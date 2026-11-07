@@ -119,9 +119,19 @@ func _show_drop(excl: Array[RID]) -> void:
 	var query := PhysicsRayQueryParameters3D.create(from, from - up * DROP_REACH_M)
 	query.exclude = excl
 	var hit: Dictionary = _player.get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return
-	var ground: Vector3 = hit["position"]
+	var ground: Vector3
+	if not hit.is_empty():
+		ground = hit["position"]  # a floor, a bed, a shelf: something with a collider
+	else:
+		# The client has no terrain collision (the server alone builds it): the planet's ground is
+		# read off its height map instead (playtest 2026-11-07: no line outdoors).
+		var planet := Planet.of(_player)
+		if planet == null:
+			return
+		var clearance: float = planet.surface_altitude_of(from)
+		if clearance <= 0.0 or clearance > DROP_REACH_M:
+			return
+		ground = from - up * clearance
 	var height: float = (from - ground).dot(up)
 	_drop.global_transform = Transform3D(CarryPlacement.surface_basis(Basis.IDENTITY, up),
 			ground + up * SURFACE_LIFT)
