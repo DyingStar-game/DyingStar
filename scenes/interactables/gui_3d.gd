@@ -73,7 +73,7 @@ func _process(delta: float) -> void:
 	if seen == _seen:
 		return
 	_seen = seen
-	node_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if seen else SubViewport.UPDATE_ONCE
+	node_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE if seen else SubViewport.UPDATE_ONCE
 
 
 func _mouse_entered_area() -> void:

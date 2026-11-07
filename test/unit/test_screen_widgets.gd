@@ -183,7 +183,7 @@ func test_a_world_screen_renders_only_near_the_camera_and_in_its_view() -> void:
 	var range_m: float = gui.render_range_m
 	gui.global_position = Vector3(0.0, 0.0, -range_m * 0.5)
 	gui._process(1.0)
-	assert_eq(viewport.render_target_update_mode, SubViewport.UPDATE_ALWAYS, "near and in view: live")
+	assert_eq(viewport.render_target_update_mode, SubViewport.UPDATE_WHEN_VISIBLE, "near and in view: live")
 	gui.global_position = Vector3(0.0, 0.0, -range_m * 3.0)
 	gui._process(1.0)
 	assert_eq(viewport.render_target_update_mode, SubViewport.UPDATE_ONCE, "too far: one last picture")
