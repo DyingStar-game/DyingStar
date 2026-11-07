@@ -174,3 +174,10 @@ func test_the_wheel_spawns_full_test_crates_of_both_kinds() -> void:
 	assert_eq(crushed["miner_id"], "p1")
 	assert_gt(int(ingot["units"]), 0)
 	assert_true(SpawnCatalog.test_crate(SpawnCatalog.entry("hauling_box"), "p1").is_empty(), "an empty box stays empty")
+
+
+func test_a_crate_counts_its_plate_weight_in_whole_kilograms() -> void:
+	var crate := CrateContent.crushed("gold", CRATE_M3 * 0.1, CRATE_M3 * 0.9, CRATE_M3 * 0.9 * GRANITE_KG_M3, "p1")
+	assert_eq(int(crate["units"]), roundi(float(crate["mass_kg"])), "what the plate weighs is what counts")
+	assert_eq(CrateContent.units_of_mass(0.2), 1, "a small partial crate still counts")
+	assert_eq(CrateContent.units_of_mass(0.0), 0)

@@ -1111,11 +1111,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 
 ## "2/5 units · in progress" — language-neutral numbers, localized objective status.
 func _objective_progress(objective: Dictionary) -> String:
-	var progress := "%d/%d" % [ServiceTypes.num(objective.get("currentProgress")),
-			ServiceTypes.num(objective.get("targetQuantity"))]
-	var unit := str(objective.get("unit", "")).strip_edges()
-	if unit != "":
-		progress += " " + unit
+	var unit: Variant = objective.get("unit")
+	var progress := "%s / %s" % [ServiceTypes.quantity_text(ServiceTypes.num(objective.get("currentProgress")), unit),
+			ServiceTypes.quantity_text(ServiceTypes.num(objective.get("targetQuantity")), unit)]
 	return progress + " · " + ServiceTypes.objective_status_label(objective.get("status"))
 
 

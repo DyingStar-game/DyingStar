@@ -68,3 +68,14 @@ func test_a_warehouse_transport_says_where_to_load_first() -> void:
 	objective["state"] = {"loadedAt": "2026-11-06T20:00:00Z"}
 	assert_ne(ServiceTypes.transport_step_text(objective), before, "once loaded, it says so")
 	assert_eq(ServiceTypes.transport_step_text({"type": "deliver_material", "params": {"via": "warehouse"}}), "")
+
+
+func test_a_quantity_reads_in_its_unit() -> void:
+	assert_eq(ServiceTypes.quantity_text(90, "kg"), "90 kg")
+	assert_eq(ServiceTypes.quantity_text(1500, "kg"), "1.5 t")
+	assert_eq(ServiceTypes.quantity_text(2000, "kg"), "2 t")
+	assert_eq(ServiceTypes.quantity_text(400, "l"), "400 L")
+	assert_eq(ServiceTypes.quantity_text(20000, "L"), "20 m³")
+	assert_eq(ServiceTypes.quantity_text(12, "m3"), "12 m³")
+	assert_eq(ServiceTypes.quantity_text(3, "unit"), "3")
+	assert_eq(ServiceTypes.quantity_text(3, null), "3")

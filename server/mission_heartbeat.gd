@@ -65,11 +65,6 @@ const DEFAULT_INVENTORY_URL: String = "http://service-inventory:3000"
 ## The holder kind this node writes under. Only a player can be the server's own actor: a crate of
 ## ore credited to a corporation is the corporation's good, not the miner stepping on the pedal.
 const PLAYER_HOLDER: String = "player"
-## service-inventory trades `carried` in whole units, but the world measures ore in cubic metres and
-## one hauling box holds about 0.0657 m3 — which rounds to NOTHING in metres. Litres are the unit
-## that makes a crate an integer (≈66) while keeping the rounding error under half a litre, which
-## the depot absorbs out of its own float pool rather than out of the player's stack.
-const LITRES_PER_M3: float = 1000.0
 ## service-inventory's goods vocabulary for mined ore: a mineral id prefixed with this.
 const MINERAL_GOOD_PREFIX: String = "ore."
 
@@ -346,11 +341,6 @@ static func good_type_for_mineral(mineral_id: String) -> String:
 	var clean := mineral_id.strip_edges()
 	return "" if clean == "" else MINERAL_GOOD_PREFIX + clean
 
-
-## [param cubic_metres] of ore as whole inventory units. One hauling box is ≈0.0657 m3, which is
-## ZERO in whole metres — this is the conversion that keeps a crate worth something.
-static func units_of_volume(cubic_metres: float) -> int:
-	return maxi(0, roundi(cubic_metres * LITRES_PER_M3))
 
 
 ## Push now, so a change is measured in a second instead of at the next tick. Only what actually

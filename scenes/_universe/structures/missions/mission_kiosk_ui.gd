@@ -244,12 +244,13 @@ func _fill_sheet(mission: Dictionary, objectives: Array) -> void:
 			% ServiceTypes.zones_text(mission.get("zones")), DIM))
 
 
-## One objective as a line: its title, and how many when it counts some ("Deliver ore  ×12").
+## One objective as a line: its title, and how much when it counts some ("Deliver ore  ×12",
+## "Deliver ingots  ×90 kg").
 static func objective_line(objective: Dictionary) -> String:
 	var line: String = ServiceTypes.dash(objective.get("title"))
 	var target: int = ServiceTypes.num(objective.get("targetQuantity"), 1)
 	if target > 1:
-		line += "  ×%d" % target
+		line += "  ×" + ServiceTypes.quantity_text(target, objective.get("unit"))
 	if bool(objective.get("isBonus", false)):
 		line += "  (%s)" % TranslationServer.translate("%%MISSION_BONUS")
 	return line
@@ -262,7 +263,9 @@ static func progress_suffix(objective: Dictionary) -> String:
 	var progress: int = ServiceTypes.num(objective.get("currentProgress"), 0)
 	if progress <= 0:
 		return ""
-	return "  —  %d / %d" % [progress, ServiceTypes.num(objective.get("targetQuantity"), 1)]
+	var unit: Variant = objective.get("unit")
+	return "  —  %s / %s" % [ServiceTypes.quantity_text(progress, unit),
+			ServiceTypes.quantity_text(ServiceTypes.num(objective.get("targetQuantity"), 1), unit)]
 
 
 ## Whether every required (non-bonus) objective is done: the mission can be turned in.
