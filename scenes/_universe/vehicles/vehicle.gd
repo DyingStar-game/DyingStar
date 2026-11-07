@@ -4029,7 +4029,10 @@ func _draw_energy(force: float, delta: float) -> void:
 	for motor in bays.engines():
 		torque_nm += motor.torque_nm
 	torque_nm *= clampf(absf(force) / _powertrain.engine_power, 0.0, 1.0)
-	if energy.draw_for_torque(torque_nm, delta) > 0.0:
+	# The work on the road: engine_force pushes EACH driven wheel (see _apply_drive_spec), along the
+	# forward speed; a heavier truck takes more of it to reach a speed or climb a slope.
+	var wheel_power_w: float = force * float(_driven_wheel_count()) * _forward_speed_kmh() / 3.6
+	if energy.draw_for_drive(wheel_power_w, torque_nm, delta) > 0.0:
 		_cut_if_no_energy()
 
 

@@ -30,19 +30,23 @@ func _fit(scene: String, index: int) -> VehicleComponent:
 	return part
 
 
-func test_the_draw_is_the_torque_times_the_coefficient() -> void:
+func test_the_draw_is_the_work_on_the_road_plus_the_losses() -> void:
 	var battery : VehicleBattery = _fit(BATTERY, 0)
 	var before : float = battery.charge_j
-	assert_almost_eq(_truck.energy.draw_for_torque(600.0, 1.0), 0.0, 0.001, "fully supplied")
-	assert_almost_eq(before - battery.charge_j, 127.0 * 600.0, 0.01, "127 J per N·m per second")
-	_truck.energy.draw_for_torque(0.0, 10.0)
-	assert_almost_eq(before - battery.charge_j, 127.0 * 600.0, 0.01, "no torque, no draw")
+	assert_almost_eq(_truck.energy.draw_for_drive(45000.0, 600.0, 1.0), 0.0, 0.001, "fully supplied")
+	assert_almost_eq(before - battery.charge_j, 45000.0 / 0.9 + 12.7 * 600.0, 0.01, "work / efficiency + losses")
+	_truck.energy.draw_for_drive(0.0, 0.0, 10.0)
+	assert_almost_eq(before - battery.charge_j, 45000.0 / 0.9 + 12.7 * 600.0, 0.01, "no torque, no draw")
 
 
-func test_full_throttle_on_one_motor_lasts_about_39_minutes() -> void:
+func test_a_loaded_truck_climbing_costs_more_than_an_empty_one_cruising() -> void:
 	var spec := VehicleBatterySpec.new()
-	var seconds : float = spec.capacity_j / spec.draw_w(600.0)
-	assert_almost_eq(seconds / 60.0, 39.4, 0.1, "180 MJ at 127 x 600 W")
+	# 5 t climbing 10 % at 30 km/h against 2 t holding 50 km/h on the flat (rolling and air, ~600 N).
+	var climbing: float = spec.draw_w(5000.0 * 9.81 * 0.1 * 30.0 / 3.6, 600.0)
+	var cruising: float = spec.draw_w(600.0 * 50.0 / 3.6, 100.0)
+	assert_gt(climbing, cruising * 4.0, "the load and the slope are paid for")
+	assert_almost_eq(spec.draw_w(-20000.0, 0.0), 0.0, 0.001, "coasting downhill: no regeneration")
+	assert_gt(spec.draw_w(0.0, 600.0), 0.0, "stuck against a slope: the motors still drain it")
 
 
 func test_one_battery_at_a_time_then_the_next() -> void:
@@ -50,7 +54,7 @@ func test_one_battery_at_a_time_then_the_next() -> void:
 	var second : VehicleBattery = _fit(BATTERY, 2)
 	assert_eq(_truck.energy.active(), first, "the first in bay order")
 	first.charge_j = 1000.0
-	_truck.energy.draw_for_torque(1.0, 10.0)  # 1270 J: the first runs dry mid-tick
+	_truck.energy.draw_for_drive(0.0, 10.0, 10.0)  # 1270 J: the first runs dry mid-tick
 	assert_true(first.is_empty())
 	assert_almost_eq(second.capacity_j() - second.charge_j, 270.0, 0.01, "the next covers the rest")
 	assert_eq(_truck.energy.active(), second, "and is now the one in use")
