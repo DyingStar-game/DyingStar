@@ -7,8 +7,9 @@ extends RefCounted
 ## SERVER: the first player to act on a screen (any ScreenTarget action, or the claim a click sends)
 ## holds it until they step out of ScreenTarget.USE_RANGE_M or leave; meanwhile the others' actions
 ## on it are refused. The holder's client shares what the screen shows -- its VIEW -- which the server
-## passes on (ScreenTarget.announce) to every client around, so they see the same page, unable to touch
-## it, and read who is using it.
+## passes on (ScreenTarget.announce) to every client around, and again every REPEAT_S for one who comes
+## later: they see the same page, and it does not answer them -- no hover, no click, no message that
+## would suggest it could (playtest 2026-11-07).
 ##
 ## The view contract, on the screen's UI (the first node of its viewport that has both, view_node):
 ##   view_state() -> Dictionary          CLIENT: what the user is looking at (tab, filters, page...).
@@ -24,9 +25,15 @@ const HOLDER_META := &"screen_holder"
 ## How often (s) the holder's client looks for a change of its view to share, and the server for
 ## holders who walked away.
 const CHECK_S := 0.25
+## How often (s) the server tells again who holds a screen and what it shows: a player who came
+## afterwards (late join, walked up) sees the right page at once, not at the user's next click.
+const REPEAT_S := 1.0
 
 ## SERVER: screen owner -> its holder, for the sweep (release_away).
 static var _held: Dictionary = {}
+## SERVER: screen owner -> its last announced event (the holder's view), and when to repeat it (ms).
+static var _last: Dictionary = {}
+static var _repeat_at_ms: Dictionary = {}
 ## CLIENT: screen address ("uuid/path") -> {"holder", "holder_name"}.
 static var _holders: Dictionary = {}
 
@@ -59,8 +66,15 @@ static func claim(screen_owner: Node3D, player: Node3D) -> bool:
 		return current == player
 	screen_owner.set_meta(HOLDER_META, player)
 	_held[screen_owner] = player
-	ScreenTarget.announce(screen_owner, player, event_of(player, {}))
+	_tell(screen_owner, player, event_of(player, {}))
 	return true
+
+
+## SERVER: announce [param event] about [param screen_owner] through [param via], and keep it to repeat.
+static func _tell(screen_owner: Node3D, via: Node3D, event: Dictionary) -> void:
+	_last[screen_owner] = event
+	_repeat_at_ms[screen_owner] = Time.get_ticks_msec() + int(REPEAT_S * 1000.0)
+	ScreenTarget.announce(screen_owner, via, event)
 
 
 ## SERVER: a ScreenTarget action of STATE from [param player]: a claim, with the view they now see.
@@ -70,7 +84,7 @@ static func serve(screen_owner: Node3D, player: Node3D, data: Dictionary) -> voi
 		return
 	var view: Variant = data.get("view")
 	if view is Dictionary and not (view as Dictionary).is_empty():
-		ScreenTarget.announce(screen_owner, player, event_of(player, view))
+		_tell(screen_owner, player, event_of(player, view))
 
 
 ## SERVER, every CHECK_S or so: free the screens whose holder walked away or left, and say so to the
@@ -79,11 +93,18 @@ static func release_away(tree: SceneTree) -> void:
 	for screen_owner: Variant in _held.keys():
 		if not is_instance_valid(screen_owner):
 			_held.erase(screen_owner)
+			_last.erase(screen_owner)
+			_repeat_at_ms.erase(screen_owner)
 			continue
-		if holder(screen_owner) != null:
+		var current: Node3D = holder(screen_owner)
+		if current != null:
+			if Time.get_ticks_msec() >= int(_repeat_at_ms.get(screen_owner, 0)):
+				_tell(screen_owner, current, _last.get(screen_owner, event_of(current, {})))
 			continue
 		var was: Variant = _held[screen_owner]
 		_held.erase(screen_owner)
+		_last.erase(screen_owner)
+		_repeat_at_ms.erase(screen_owner)
 		(screen_owner as Node).remove_meta(HOLDER_META)
 		var via: Node3D = was as Node3D if is_instance_valid(was) and (was as Node).is_inside_tree() \
 				else _someone_near(tree, screen_owner)

@@ -94,3 +94,12 @@ func test_a_watcher_knows_who_uses_it_and_sees_their_view() -> void:
 	assert_eq(ScreenLock.used_by_other(_screen, "b"), "", "A walked off: not held, whatever was heard")
 	ScreenLock.on_event(_screen, {"holder": ""}, "b")
 	assert_false(ScreenLock.is_mine(_screen, "a"), "released")
+
+
+func test_the_holder_s_view_is_told_again_for_who_comes_later() -> void:
+	ScreenLock.serve(_screen, _a, {"view": {"page": 2}})
+	var told: int = _a.sent.size()
+	ScreenLock._repeat_at_ms[_screen] = 0  # the repeat is due
+	ScreenLock.release_away(get_tree())
+	assert_eq(_a.sent.size(), told + 1, "told again")
+	assert_eq((_a.sent.back() as Dictionary)["screen_event"]["view"], {"page": 2}, "the same page")

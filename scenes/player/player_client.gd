@@ -1063,10 +1063,13 @@ func _point_screen(ui_focus: bool) -> bool:
 				nearest = eye.distance_to(at)
 				gui = screen_gui
 				point = at
+	# Another player's screen: no hover, no click -- nothing says it can be used -- but still a screen
+	# under the crosshair, so the tool in hand does not fire into it.
+	var watched: bool = gui != null and _used_by_other(gui)
+	if watched:
+		gui = null
 	if is_instance_valid(_pointed_gui) and _pointed_gui != gui:
 		_pointed_gui.pointer_left()
-	if gui != null and gui != _pointed_gui:
-		_say_if_used(gui)  # another player at it: say who, as the crosshair lands on it
 	_pointed_gui = gui
 	if gui != null:
 		_pointed_at = point
@@ -1078,15 +1081,12 @@ func _point_screen(ui_focus: bool) -> bool:
 			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
-	return gui != null
+	return gui != null or watched
 
 
-## Whether another player is using the screen of [param gui] (ScreenLock): then say who, and true.
-func _say_if_used(gui: Node3D) -> bool:
-	var who: String = ScreenLock.used_by_other(ScreenTarget.owner_of(gui))
-	if who != "":
-		_flash_prompt(tr("%%SCREEN_IN_USE_BY") % who)
-	return who != ""
+## Whether another player is using the screen of [param gui] (ScreenLock): it is theirs to touch.
+func _used_by_other(gui: Node3D) -> bool:
+	return ScreenLock.used_by_other(ScreenTarget.owner_of(gui)) != ""
 
 
 ## The screen we hold (ScreenLock): every CHECK_S, what it shows goes to the server when it changed,
@@ -1129,10 +1129,6 @@ func _input(event: InputEvent) -> void:
 	# The crosshair on the chart a cab screen shows: every mouse button is the chart's, the wheel too
 	# (not the limiter's then).
 	if _cab != null and _cab.input(event):
-		get_viewport().set_input_as_handled()
-		return
-	# Another player is using the screen: it is theirs to touch, ours to watch (ScreenLock).
-	if is_instance_valid(_pointed_gui) and _say_if_used(_pointed_gui):
 		get_viewport().set_input_as_handled()
 		return
 	# The wheel over a screen scrolls the screen (its lists, its pages), and not the walk speed.

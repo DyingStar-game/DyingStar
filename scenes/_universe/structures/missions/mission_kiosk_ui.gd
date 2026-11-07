@@ -50,6 +50,10 @@ var _status: Label
 var _open: Dictionary = {}
 ## The IN PROGRESS tab is shown instead of the offers.
 var _mine: bool = false
+## The "In progress" tiles, and the open sheet as the service sent it: the user's own, which a
+## watcher shows as they are (view_state) rather than fetching theirs.
+var _mine_missions: Array = []
+var _sheet_data: Dictionary = {}
 var _tab_chips: HBoxContainer
 var _turn_in: Button
 
@@ -91,7 +95,8 @@ func shown() -> Array:
 func view_state() -> Dictionary:
 	return {"awake": not _attract.visible, "mine": _mine, "category": _category, "giver": _giver,
 			"sort": int(_sort), "reverse": _reverse, "open": str(_open.get("id", "")),
-			"scroll": _list_scroll.scroll_vertical}
+			"scroll": _list_scroll.scroll_vertical, "missions": _mine_missions if _mine else [],
+			"sheet": _sheet_data if not _open.is_empty() else {}}
 
 
 ## Screen view contract (ScreenLock): show what the user of this kiosk is looking at. The missions are
@@ -105,7 +110,11 @@ func apply_view_state(view: Dictionary) -> void:
 	elif not awake and not _attract.visible:
 		_attract.sleep()
 	if bool(view.get("mine", false)) != _mine:
-		_set_tab(bool(view.get("mine", false)))
+		_set_tab(bool(view.get("mine", false)), false)
+	var their_missions: Array = view.get("missions") if view.get("missions") is Array else []
+	if _mine and their_missions != _mine_missions:
+		_mine_missions = their_missions
+		_fill_grid(their_missions)  # the user's missions in progress, not the watcher's
 	var filters := [str(view.get("category", "")), str(view.get("giver", "")), int(view.get("sort", 0)),
 			bool(view.get("reverse", false))]
 	if not _mine and filters != [_category, _giver, int(_sort), _reverse]:
@@ -117,12 +126,16 @@ func apply_view_state(view: Dictionary) -> void:
 	var open_id := str(view.get("open", ""))
 	if open_id == "" and not _open.is_empty():
 		_close_sheet()
-	elif open_id != "" and str(_open.get("id", "")) != open_id:
-		var mission: Dictionary = {"id": open_id}
-		for m: Variant in _missions:
-			if m is Dictionary and str((m as Dictionary).get("id", "")) == open_id:
-				mission = m
-		_open_sheet(mission)
+	elif open_id != "":
+		var sheet: Dictionary = view.get("sheet") if view.get("sheet") is Dictionary else {}
+		if str(_open.get("id", "")) != open_id or (not sheet.is_empty() and sheet != _sheet_data):
+			var mission: Dictionary = {"id": open_id}
+			for m: Variant in _missions + _mine_missions:
+				if m is Dictionary and str((m as Dictionary).get("id", "")) == open_id:
+					mission = m
+			_show_sheet(mission)
+			if not sheet.is_empty():
+				_show_sheet_data(mission, sheet)  # the user's sheet: their progress, their turn-in
 	_list_scroll.scroll_vertical = int(view.get("scroll", 0))
 
 
@@ -209,7 +222,22 @@ func _set_sort(sort: MissionQuery.Sort) -> void:
 # -- The mission sheet -----------------------------------------------------------------------------
 
 func _open_sheet(mission: Dictionary) -> void:
+	_show_sheet(mission)
+	var id: String = str(mission.get("id", ""))
+	var result: Dictionary = await PlayerServices.mission_get(id)
+	if _open.get("id") != mission.get("id"):
+		return  # the player moved on meanwhile
+	var data: Variant = result.get("data")
+	if bool(result.get("ok", false)) and data is Dictionary:
+		_show_sheet_data(mission, data)
+	else:
+		_say(HttpClient.describe_error(result), WARN)
+
+
+## The sheet of [param mission], before its details come.
+func _show_sheet(mission: Dictionary) -> void:
 	_open = mission
+	_sheet_data = {}
 	_list_view.visible = false
 	_sheet_view.visible = true
 	_say("", DIM)
@@ -217,24 +245,22 @@ func _open_sheet(mission: Dictionary) -> void:
 	_accept.visible = true
 	_turn_in.visible = false
 	_fill_sheet(mission, [])
-	var id: String = str(mission.get("id", ""))
-	var result: Dictionary = await PlayerServices.mission_get(id)
-	if _open.get("id") != mission.get("id"):
-		return  # the player moved on meanwhile
-	var data: Variant = result.get("data")
-	if bool(result.get("ok", false)) and data is Dictionary:
-		var full: Dictionary = data.get("mission") if data.get("mission") is Dictionary else mission
-		var objectives: Array = data.get("objectives") if data.get("objectives") is Array else []
-		_fill_sheet(full, objectives)
-		var participants := ServiceTypes.participants_text(data.get("participants"))
-		if participants != "":
-			_sheet.add_child(_text(TranslationServer.translate("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, DIM))
-		var assignment: Variant = data.get("assignment")
-		if assignment is Dictionary:
-			_accept.visible = false  # already the player's
-			_show_turn_in(full, objectives, assignment)
-	else:
-		_say(HttpClient.describe_error(result), WARN)
+
+
+## The sheet of [param mission] with [param data] as the service sent it (mission, objectives,
+## participants, the reader's assignment).
+func _show_sheet_data(mission: Dictionary, data: Dictionary) -> void:
+	_sheet_data = data
+	var full: Dictionary = data.get("mission") if data.get("mission") is Dictionary else mission
+	var objectives: Array = data.get("objectives") if data.get("objectives") is Array else []
+	_fill_sheet(full, objectives)
+	var participants := ServiceTypes.participants_text(data.get("participants"))
+	if participants != "":
+		_sheet.add_child(_text(TranslationServer.translate("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, DIM))
+	var assignment: Variant = data.get("assignment")
+	if assignment is Dictionary:
+		_accept.visible = false  # already the player's
+		_show_turn_in(full, objectives, assignment)
 
 
 func _close_sheet() -> void:
@@ -356,7 +382,8 @@ func turn_in_result(event: Dictionary) -> void:
 
 # -- Tabs: offers / in progress ---------------------------------------------------------------------
 
-func _set_tab(mine: bool) -> void:
+## [param fetch] false: a watcher shows the user's missions (apply_view_state), not its own.
+func _set_tab(mine: bool, fetch: bool = true) -> void:
 	_mine = mine
 	_clear(_tab_chips)
 	_tab_chips.add_child(_chip(TranslationServer.translate("%%MISSION_TAB_OFFERS"), not mine, _set_tab.bind(false)))
@@ -364,8 +391,10 @@ func _set_tab(mine: bool) -> void:
 	for line: Node in [_category_chips.get_parent(), _giver_chips.get_parent(), _sort_chips]:
 		(line as Control).visible = not mine
 	_close_sheet()
-	if mine:
+	if mine and fetch:
 		_load_mine()
+	elif mine:
+		_fill_grid(_mine_missions)
 	else:
 		_empty.text = "%%MISSION_BOARD_EMPTY"
 		_render_tiles()
@@ -382,6 +411,7 @@ func _load_mine() -> void:
 	for row: Dictionary in ServiceTypes.mission_rows(result.get("data")):
 		if row.get("mission") is Dictionary:
 			missions.append(row["mission"])
+	_mine_missions = missions
 	_fill_grid(missions)
 
 
