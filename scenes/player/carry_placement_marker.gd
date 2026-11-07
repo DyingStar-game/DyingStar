@@ -24,7 +24,7 @@ const FILL_COLOR := Color(1.0, 1.0, 1.0, 0.3)
 ## drops from it to the ground below, a cross where the load will land (playtest 2026-11-07).
 const DROP_COLOR := Color(1.0, 1.0, 1.0, 0.8)
 ## Half the cross's arm (m), and how far down (m) the plumb line looks for ground.
-const CROSS_HALF_M := 0.15
+const CROSS_HALF_M := 0.04
 const DROP_REACH_M := 30.0
 const BORDER_COLOR := Color(0.0, 0.0, 0.0, 0.9)
 
@@ -83,7 +83,8 @@ func spot() -> Node3D:
 func _physics_process(_delta: float) -> void:
 	if _player == null or _disc == null:
 		return
-	if not _player._owner_carrying:
+	# Seated or lying down nothing is put down from here: no disc (playtest 2026-11-07, in a bed).
+	if not _player._owner_carrying or _player.seated_role != "" or _player.lying_on != null:
 		place = {}
 		_held = null
 		_disc.visible = false
