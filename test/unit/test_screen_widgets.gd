@@ -89,6 +89,63 @@ func test_the_screen_saver_wakes_on_a_press_and_sleeps_when_left_alone() -> void
 	assert_true(attract.visible, "left alone: asleep again")
 
 
+func test_a_sleeping_screen_only_moves_near_the_camera_and_in_its_view() -> void:
+	var machine := Node3D.new()
+	add_child_autofree(machine)
+	var viewport := SubViewport.new()
+	machine.add_child(viewport)
+	var attract := ScreenAttract.new().setup(AresBrand.Subsidiary.CORP, "%%MISSION_KIOSK_TITLE")
+	viewport.add_child(attract)
+	var pattern: FacetPattern = attract._pattern
+	assert_false(pattern.is_processing(), "nobody has looked yet")
+
+	var camera := Camera3D.new()  # looks down -Z
+	add_child_autofree(camera)
+	camera.make_current()
+	machine.global_position = Vector3(0.0, 0.0, -ScreenAttract.ANIMATE_RANGE_M * 0.5)
+	attract._update_seen()
+	assert_true(pattern.is_processing(), "near and in view: it moves")
+	machine.global_position = Vector3(0.0, 0.0, -ScreenAttract.ANIMATE_RANGE_M * 2.0)
+	attract._update_seen()
+	assert_false(pattern.is_processing(), "in view but too far")
+	machine.global_position = Vector3(0.0, 0.0, ScreenAttract.ANIMATE_RANGE_M * 0.5)
+	attract._update_seen()
+	assert_false(pattern.is_processing(), "near but behind the camera")
+
+
+func test_a_screen_with_no_camera_stands_still_and_one_not_in_3d_moves() -> void:
+	var machine := Node3D.new()
+	add_child_autofree(machine)
+	var viewport := SubViewport.new()
+	machine.add_child(viewport)
+	var in_world := ScreenAttract.new().setup(AresBrand.Subsidiary.CORP, "%%MISSION_KIOSK_TITLE")
+	viewport.add_child(in_world)
+	var flat := ScreenAttract.new().setup(AresBrand.Subsidiary.CORP, "%%MISSION_KIOSK_TITLE")
+	add_child_autofree(flat)
+	var current: Camera3D = get_viewport().get_camera_3d()
+	if current != null:
+		current.clear_current()
+	in_world._update_seen()
+	flat._update_seen()
+	assert_false(in_world._pattern.is_processing(), "the dedicated server's case: nobody is looking")
+	assert_true(flat._pattern.is_processing(), "not in a 3D world: the screen is on show as it is")
+
+
+func test_a_paused_pattern_takes_up_where_it_stopped() -> void:
+	var pattern := FacetPattern.new()
+	add_child_autofree(pattern)
+	pattern.drift = 0.5
+	assert_true(pattern.is_processing())
+	pattern._process(1.0)
+	pattern.paused = true
+	assert_false(pattern.is_processing())
+	assert_almost_eq(pattern._t, 1.0, 0.001, "no time passes while nobody looks")
+	pattern.paused = false
+	assert_true(pattern.is_processing())
+	pattern.drift = 0.0
+	assert_false(pattern.is_processing(), "still, whatever paused says")
+
+
 func test_every_button_lights_up_under_the_pointer() -> void:
 	for fill: Color in [Color(1, 1, 1, 0.05), Color(1, 1, 1, 0.0), Color(1.0, 0.4, 0.0), Color(1, 1, 1, 1)]:
 		var lit: Color = AresBrand.hover_of(fill)

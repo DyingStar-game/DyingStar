@@ -21,7 +21,16 @@ const LOAD_S: float = 1.0
 const RING_PX: float = 140.0
 const UNLOCK_SOUND: AudioStream = preload("res://assets/_universe/audio/sfx/ui/screen-unlock.ogg")
 const UNLOCK_DB: float = -24.0
+## How far (m) from the camera a sleeping screen still moves. Sleeping is every machine's usual state,
+## and a town's worth of them redrawing for nobody took 55 ms a frame.
+const ANIMATE_RANGE_M: float = 12.0
+## How often (s) a sleeping screen asks whether anyone can see it.
+const SEEN_CHECK_S: float = 0.25
 
+## Whether the camera is near this screen and has it in view; it stands still otherwise.
+var _seen: bool = false
+## When (s of _t) to ask again; each screen starts at its own moment, so they do not all ask together.
+var _next_seen_check_s: float = randf() * SEEN_CHECK_S
 var _pattern: FacetPattern
 var _prompt: Label
 ## The saver's face (logo, name, prompt), and the loading ring shown instead once unlocked.
@@ -48,6 +57,7 @@ func setup(subsidiary: AresBrand.Subsidiary, title_key: String) -> ScreenAttract
 	_pattern.seed_text = title_key
 	_pattern.columns = 8
 	_pattern.rows = 5
+	_pattern.paused = true
 	_pattern.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_pattern.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_pattern)
@@ -107,16 +117,37 @@ func _reveal() -> void:
 	woke.emit()
 
 
-## The chime, from the machine whose screen this is (the first 3D node holding this screen's viewport),
-## so it is heard where the screen is.
+## The chime, from the machine whose screen this is, so it is heard where the screen is.
 func _chime() -> void:
-	if Sfx3D.muted() or get_viewport() == null:
+	if Sfx3D.muted():
 		return
+	var machine: Node3D = _machine()
+	if machine != null:
+		Sfx3D.play(machine, UNLOCK_SOUND, UNLOCK_DB, 1.5, 10.0, Sfx3D.Attenuation.VERY_SHORT)
+
+
+## The first 3D node holding this screen's viewport; null when the screen is not in a 3D world.
+func _machine() -> Node3D:
+	if get_viewport() == null:
+		return null
 	var at: Node = get_viewport().get_parent()
 	while at != null and not (at is Node3D):
 		at = at.get_parent()
-	if at != null:
-		Sfx3D.play(at as Node3D, UNLOCK_SOUND, UNLOCK_DB, 1.5, 10.0, Sfx3D.Attenuation.VERY_SHORT)
+	return at as Node3D
+
+
+## Moves only when near the camera and in its view. A screen not in a 3D world is on show as it is;
+## with no camera at all (the dedicated server) nobody is looking.
+func _update_seen() -> void:
+	_next_seen_check_s = _t + SEEN_CHECK_S
+	var machine: Node3D = _machine()
+	_seen = true
+	if machine != null:
+		var camera: Camera3D = machine.get_viewport().get_camera_3d()
+		_seen = camera != null \
+				and camera.global_position.distance_squared_to(machine.global_position) <= ANIMATE_RANGE_M * ANIMATE_RANGE_M \
+				and camera.is_position_in_frustum(machine.global_position)
+	_pattern.paused = not _seen
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -140,7 +171,10 @@ func _process(delta: float) -> void:
 		if _t >= _loaded_at:
 			_reveal()
 	elif visible:
-		_prompt.modulate.a = 0.55 + 0.45 * sin(_t * 3.0)
+		if _t >= _next_seen_check_s:
+			_update_seen()
+		if _seen:
+			_prompt.modulate.a = 0.55 + 0.45 * sin(_t * 3.0)
 	elif _t - _last_input_s > IDLE_S:
 		sleep()
 
