@@ -107,6 +107,22 @@ func test_a_pad_without_tiles_waits_and_the_others_do_not() -> void:
 	assert_false(data._pads.get_rec("prop:settled").is_empty())
 
 
+func test_a_starved_pad_is_retried_only_once_its_tile_is_there() -> void:
+	var data := _data()
+	data.chunk_heightmaps_dir = "res://does_not_exist_chunks"  # every tile unreadable
+	data.register_pads([PadBed.record("prop:starved", 0.0, 0.0, 0.0, 8.0, 8.0, 8.0, 0.0)])
+	assert_true(data._pads_wait_tile.has("prop:starved"), "the tile it was refused for is kept")
+	assert_true(data._still_waiting_tile(data._pads_wait_tile, "prop:starved"))
+	assert_true(data.retry_starved_pads().is_empty())
+	assert_true(data._pads_starved.has("prop:starved"), "still waiting while its tile is missing")
+	data.chunk_heightmaps_dir = ""  # the tiles are there
+	assert_false(data._still_waiting_tile(data._pads_wait_tile, "prop:starved"))
+	data.retry_starved_pads()
+	assert_false(data.pads_incomplete(), "measured as soon as its tile is readable")
+	assert_false(data._pads_wait_tile.has("prop:starved"))
+	assert_false(data._pads.get_rec("prop:starved").is_empty())
+
+
 func test_a_pad_gone_starved_leaves_the_index_and_its_ground() -> void:
 	var data := _data()
 	data.register_pad(_pad("prop:a", 0.0, 0.0, 8.0, 100.0))

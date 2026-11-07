@@ -519,6 +519,9 @@ var _pending_desired_keys: PackedStringArray = PackedStringArray()
 ## key → { phase: int, task_id: int, result_ref: Array,
 ##          ipix: int, col_res: int, cached_shape: Variant, evicted: bool }
 var _server_chunk_tasks: Dictionary = {}
+## Never-stepped, empty physics space in which the chunk tasks build their shapes' Jolt meshes
+## (see [method _prebuild_jolt_shape]). Invalid until the first server chunk task.
+var _prebuild_space: RID = RID()
 ## Chunks waiting for a free task slot (bounded by MAX_SERVER_CHUNK_TASKS).
 ## Each entry: { key: String, ipix: int, col_res: int }
 var _server_chunk_queue: Array[Dictionary] = []
@@ -1286,6 +1289,7 @@ func _server_drain_chunk_queue() -> void:
 	# les différés ne le restent pas longtemps.
 	var budget: int = mini(_server_chunk_queue.size(), MAX_SERVER_CHUNK_TASKS * 2)
 	var deferred: Array[Dictionary] = []
+	var pads_caught_up := false
 	while budget > 0 and _server_chunk_tasks.size() < MAX_SERVER_CHUNK_TASKS \
 			and not _server_chunk_queue.is_empty():
 		budget -= 1
@@ -1293,7 +1297,16 @@ func _server_drain_chunk_queue() -> void:
 		var key: String = entry["key"]
 		if _server_collision_chunks.has(key) or _server_chunk_tasks.has(key):
 			continue  # Loaded or started since it was queued.
-		if not _server_start_chunk_load(key, entry["ipix"], entry["col_res"]):
+		# A pad waiting for its elevation tiles is waiting for the SAME tiles the chunk needs: if it only
+		# came in at the next throttled poll (_poll_starved_pads), the chunk would be built bare and then
+		# rebuilt — on the server an unload and a reload, the ground gone from under whatever stands on
+		# it, and a truck parked there left sunk 3 m under the platform when the pad came back. Once per
+		# drain, before its first start: the tiles do not move between two starts of one drain, and the
+		# retry cost ~2 ms a chunk, five chunks at each zone change (2026-11-07 measure).
+		if not pads_caught_up:
+			pads_caught_up = true
+			_catch_up_starved_pads_now()
+		if not _server_start_chunk_load(key, entry["ipix"], entry["col_res"], entry.get("skip_cache", false)):
 			deferred.append(entry)
 	_server_chunk_queue.append_array(deferred)
 
@@ -1312,38 +1325,65 @@ func _next_queued_chunk() -> int:
 	return best
 
 
-## Begin async loading for one chunk.  Loads the collision shape from the disk
-## cache (fast), pre-loads recipe data on the main thread (~0.5 ms), then
+## Begin async loading for one chunk.  A collision shape in the disk cache is
+## read on a worker thread (phase 2, see [method _server_submit_cache_read]);
+## without one, pre-loads recipe data on the main thread (~0.5 ms), then
 ## submits generate_heightmap to a worker thread (phase 0).  When that
 ## completes, _server_poll_chunk_tasks() stores the image and submits
 ## generate_collision_shape_healpix (phase 1).
+## [param skip_cache]: the cached shape was read and refused, build it.
 ## Rend false quand le chunk est DIFFÉRÉ faute de tuiles : l'appelant le remet en file.
-func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
+func _server_start_chunk_load(key: String, ipix: int, col_res: int, skip_cache: bool = false) -> bool:
 	if stargrot_registry != null and not stargrot_registry.ready_for_chunk(key):
 		return false
-	# A pad waiting for its elevation tiles is waiting for the SAME tiles this chunk needs: if it only
-	# came in at the next throttled poll (_poll_starved_pads), the chunk would be built bare and then
-	# rebuilt — on the server an unload and a reload, the ground gone from under whatever stands on it,
-	# and a truck parked there left sunk 3 m under the platform when the pad came back.
-	_catch_up_starved_pads_now()
-
-	# Try the disk-cached collision shape (cheap main-thread I/O).
-	var cached_shape: ConcavePolygonShape3D = null
-	if _chunk_cache and _chunk_cache.has_collision(key, 0) \
+	# The starved pads were caught up by the caller (_server_drain_chunk_queue), once for its starts.
+	if not skip_cache and _chunk_cache != null and _chunk_cache.has_collision(key, 0) \
 			and not planet_data.chunk_cache_ineligible(_parse_nside_from_key(key), ipix):
-		cached_shape = _chunk_cache.load_collision(key, 0)
+		_server_submit_cache_read(key, ipix, col_res)
+		return true
+	return _server_continue_chunk_load(key, ipix, col_res, null)
 
+
+## Phase 2: read the cached collision shape of [param key] on a worker thread. Read on the main thread it
+## cost 8-15 ms a chunk, and a zone change starts five at once (2026-11-07 measure: 93-114 ms in one
+## frame). [method _server_poll_chunk_tasks] validates it and carries on with
+## [method _server_continue_chunk_load].
+func _server_submit_cache_read(key: String, ipix: int, col_res: int) -> void:
+	var path := _chunk_cache.collision_path(key, 0)
+	var nside := _parse_nside_from_key(key)
+	if nside <= 0:
+		nside = planet_data.export_nside
+	# [shape, read µs]: written by the worker, read once is_task_completed().
+	var result_ref: Array = [null, 0]
+	var task_entry := {
+		"phase": 2, "task_id": -1, "result_ref": result_ref,
+		"ipix": ipix, "col_res": col_res, "evicted": false,
+	}
+	_server_chunk_tasks[key] = task_entry
+	task_entry["task_id"] = WorkerThreadPool.add_task(func():
+		var _t0 := Time.get_ticks_usec()
+		var cs := ChunkDiskCache.read_collision(path)
+		result_ref[1] = Time.get_ticks_usec() - _t0
+		if cs != null:
+			prepare_chunk_shape(cs, nside, ipix)
+		result_ref[0] = cs
+	)
+
+
+## The rest of [method _server_start_chunk_load], once the disk cache has answered: [param cached_shape]
+## is its VALIDATED shape, or null to build one. Rend false quand le chunk est DIFFÉRÉ faute de tuiles.
+func _server_continue_chunk_load(key: String, ipix: int, col_res: int,
+		cached_shape: ConcavePolygonShape3D) -> bool:
 	# File mode: skip recipe phase-0. The shape task lazily loads the .r32 tile
 	# via load_chunk_heightmap() while sampling collision heights.
 	var key_nside := _parse_nside_from_key(key)
 	if key_nside <= 0:
 		key_nside = planet_data.export_nside
-
-	# Discard a cached shape that was baked from fallback heights (see
-	# _cached_geom_valid) — regenerating is far cheaper than a player
-	# bouncing forever between a wrong collision floor and the real surface.
-	if cached_shape != null and not _cached_shape_valid(cached_shape, key_nside, ipix, key):
-		cached_shape = null
+	# A village's ground still being prepared on a worker (PlanetData.submit_village_bed) reaches this
+	# chunk: wait for it, as for a tile. Built now, the chunk would be built without it and unloaded and
+	# loaded again the moment it lands — the ground gone from under whatever stands on it.
+	if planet_data.village_bed_pending_for_chunk(key_nside, ipix):
+		return false
 
 	# La MÊME garantie que côté client, et elle vaut davantage ici. Sans elle, une tuile
 	# absente ne fait pas échouer l'échantillonnage : il retombe sur la carte
@@ -1362,7 +1402,7 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
 
 	if planet_data.chunk_heightmaps_dir != "":
 		if cached_shape != null:
-			_server_assemble_chunk(key, key_nside, ipix, cached_shape)
+			_server_submit_jolt_build(key, ipix, col_res, cached_shape)
 		else:
 			_server_submit_shape_task(key, ipix, col_res)
 		return true
@@ -1370,7 +1410,7 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
 	# Fast-path: both image and shape already available — assemble now.
 	if planet_data.is_chunk_cached(key):
 		if cached_shape != null:
-			_server_assemble_chunk(key, key_nside, ipix, cached_shape)
+			_server_submit_jolt_build(key, ipix, col_res, cached_shape)
 		else:
 			_server_submit_shape_task(key, ipix, col_res)
 		return true
@@ -1410,6 +1450,30 @@ func _server_start_chunk_load(key: String, ipix: int, col_res: int) -> bool:
 	return true
 
 
+## Submit a phase-3 task that builds [param shape]'s Jolt mesh on a worker (see [method _prebuild_jolt_shape]);
+## [method _server_poll_chunk_tasks] assembles the chunk once it is done. [param shape] comes from a chunk
+## task (generated or read from the disk cache) and was prepared there (see [method prepare_chunk_shape]).
+func _server_submit_jolt_build(key: String, ipix: int, col_res: int, shape: ConcavePolygonShape3D) -> void:
+	var space := _jolt_prebuild_space()
+	# What the chunk task did to the shape — its faces, its winding, its debug colour — is still waiting in
+	# the physics server's command queue: shape_set_data from another thread is queued for the main thread
+	# (PhysicsServer3DWrapMT), so until it runs the Jolt shape is EMPTY. Any server call from the main
+	# thread runs that queue first; this one does nothing else.
+	PhysicsServer3D.space_is_active(space)
+	# Fetched here: the server refuses it to other threads. The object itself is Jolt's, not wrapped, and
+	# may be queried from a worker.
+	var state := PhysicsServer3D.space_get_direct_state(space)
+	var result_ref: Array = [shape]
+	var task_entry := {
+		"phase": 3, "task_id": -1, "result_ref": result_ref,
+		"ipix": ipix, "col_res": col_res, "evicted": false,
+	}
+	_server_chunk_tasks[key] = task_entry
+	task_entry["task_id"] = WorkerThreadPool.add_task(func():
+		_prebuild_jolt_shape(shape, state)
+	)
+
+
 ## Submit a phase-1 WorkerThreadPool task that generates the collision shape.
 ## The heightmap image MUST already be stored in planet_data before calling.
 func _server_submit_shape_task(key: String, ipix: int, col_res: int) -> void:
@@ -1430,9 +1494,12 @@ func _server_submit_shape_task(key: String, ipix: int, col_res: int) -> void:
 	_server_chunk_tasks[key] = task_entry
 	var task_id := WorkerThreadPool.add_task(func():
 		var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
-		result_ref[0] = PlanetChunk.generate_collision_shape_healpix(pd, nside, ipix, col_res)
+		var shape := PlanetChunk.generate_collision_shape_healpix(pd, nside, ipix, col_res)
 		if _t0 != 0:
 			result_ref[1] = Time.get_ticks_usec() - _t0
+		if shape != null:
+			prepare_chunk_shape(shape, nside, ipix)
+		result_ref[0] = shape
 	)
 	task_entry["task_id"] = task_id
 
@@ -1493,7 +1560,7 @@ func _server_poll_chunk_tasks() -> void:
 			var cs: ConcavePolygonShape3D = \
 					entry.get("cached_shape") as ConcavePolygonShape3D
 			if cs != null:
-				_server_assemble_chunk(key, nside, ipix, cs)
+				_server_submit_jolt_build(key, ipix, col_res, cs)
 			elif img != null:
 				_server_submit_shape_task(key, ipix, col_res)
 			else:
@@ -1510,9 +1577,31 @@ func _server_poll_chunk_tasks() -> void:
 				if _chunk_cache and _persistable(shape) \
 						and not planet_data.chunk_cache_ineligible(nside, ipix):
 					_chunk_cache.save_collision(key, 0, shape)
-				_server_assemble_chunk(key, nside, ipix, shape)
+				_server_submit_jolt_build(key, ipix, col_res, shape)
 			else:
 				push_warning("[PlanetTerrain] async _load_chunk: shape '%s' null — skipping." % key)
+
+		elif phase == 2:
+			# The disk cache's shape, read on a worker (_server_submit_cache_read): checked here, where
+			# the live surface it is compared with may be sampled, then the load goes on as it always did.
+			var cs: ConcavePolygonShape3D = entry["result_ref"][0] as ConcavePolygonShape3D
+			if cs != null:
+				_chunk_cache.cache_hits += 1
+				if PropNet.prof_on:
+					PropNet.prof_cache_load_calls += 1
+					PropNet.prof_cache_load_usec += int(entry["result_ref"][1])
+				# Discard a cached shape that was baked from fallback heights (see
+				# _cached_geom_valid) — regenerating is far cheaper than a player
+				# bouncing forever between a wrong collision floor and the real surface.
+				if not _cached_shape_valid(cs, nside, ipix, key):
+					cs = null
+			if not _server_continue_chunk_load(key, ipix, col_res, cs):
+				# Deferred for want of tiles: back in the queue, without reading the cache again.
+				_server_chunk_queue.append({"key": key, "ipix": ipix, "col_res": col_res, "skip_cache": true})
+
+		elif phase == 3:
+			# Its Jolt mesh built on a worker (_server_submit_jolt_build): add_child only links it.
+			_server_assemble_chunk(key, nside, ipix, entry["result_ref"][0] as ConcavePolygonShape3D)
 
 	_server_drain_chunk_queue()
 
@@ -1538,6 +1627,75 @@ func _chunk_collision_origin(nside: int, ipix: int) -> Vector3:
 		HEALPix.pix2vec_nest(nside, ipix) * planet_data.radius)
 
 
+## Make [param shape] solid from both sides, wind its faces CLOCKWISE-front and give it its debug colour.
+## Idempotent, and safe on a worker thread: the server runs it in its chunk tasks, before
+## [method _prebuild_jolt_shape], because each of these changes drops the Jolt shape already built
+## (JoltConcavePolygonShape3D::set_data destroys it, even for an unchanged backface_collision) — made after
+## the build, the whole build came back in add_child on the main thread.
+##
+## The winding: geometric normal (e1-e0)x(e2-e0) pointing INTO the ground. backface_collision keeps physics
+## solid either way, but the NPC navmesh bake parses these bodies through the same face pipeline as mesh/CSG
+## sources, which expects CW-front input (it flips for Recast internally): faces whose geometric normal points
+## OUTWARD bake ZERO navmesh while raycasts hit them fine, sealing NPCs inside any building placed on terrain.
+## Proven empirically on the real cached chunk hp_n8192_p214960184 (scratchpad navbake_chunk_test.gd,
+## 2026-08-14): as-cached outward winding -> 0 polygons, flipped -> polygons. Winding is uniform within a chunk
+## (HEALPix grid orientation varies per base face), so one detection on the first non-degenerate triangle
+## suffices. Done after generation, not in the generator, so shapes reloaded from the prebaked disk cache are
+## corrected too.
+static func prepare_chunk_shape(shape: ConcavePolygonShape3D, nside: int, ipix: int) -> void:
+	if not shape.backface_collision:
+		shape.backface_collision = true  # solid from both sides (cached shapes too)
+	# Debug builds (editor, debug export): CollisionShape3D.set_shape() hands the shape its debug colour, and
+	# a ConcavePolygonShape3D re-sends all its data for it — the third setter that drops the Jolt build
+	# (measured: 50 ms add_child left after a prebuild, 0.1 ms with this). A throwaway node does it here,
+	# once; the shape then counts as edited and the body's CollisionShape3D takes its colour, leaving it be.
+	if OS.is_debug_build():
+		var tint := CollisionShape3D.new()
+		tint.shape = shape
+		tint.free()
+	var faces := shape.get_faces()
+	var outward := HEALPix.pix2vec_nest(nside, ipix)
+	var probe := 0
+	while probe + 2 < faces.size():
+		var n := (faces[probe + 1] - faces[probe]).cross(faces[probe + 2] - faces[probe])
+		if n.length_squared() > 0.000001:
+			if n.dot(outward) > 0.0:
+				for j in range(0, faces.size() - 2, 3):
+					var tmp := faces[j + 1]
+					faces[j + 1] = faces[j + 2]
+					faces[j + 2] = tmp
+				shape.set_faces(faces)
+			break
+		probe += 3
+
+
+## Build [param shape]'s Jolt mesh (bounding-volume tree, active edges) on the CALLING thread — a server chunk
+## task — instead of in add_child on the main thread: ~1.5 µs a triangle, 23-48 ms for the 15-30 k triangle
+## chunks along roads and villages, 2.5-3.5 ms for a plain one (2026-11-07 measure). A shape query builds the
+## shape it is given (JoltShape3D::try_build, behind that shape's own mutex) and keeps the result, which the
+## body then reuses. [param state] is the direct state of a private space that holds nothing and is never
+## stepped, so the query neither waits for nor races the physics step of the world; it is fetched on the main
+## thread ([method _server_submit_jolt_build]). Returns the time spent, in µs.
+static func _prebuild_jolt_shape(shape: Shape3D, state: PhysicsDirectSpaceState3D) -> int:
+	if shape == null or state == null:
+		return 0
+	var t0 := Time.get_ticks_usec()
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape_rid = shape.get_rid()
+	query.collision_mask = 0
+	query.collide_with_bodies = false
+	state.intersect_shape(query, 1)
+	return Time.get_ticks_usec() - t0
+
+
+## The private physics space of [method _prebuild_jolt_shape], created on first use (main thread) and freed
+## in [method _exit_tree] once every chunk task has been joined.
+func _jolt_prebuild_space() -> RID:
+	if not _prebuild_space.is_valid():
+		_prebuild_space = PhysicsServer3D.space_create()
+	return _prebuild_space
+
+
 ## Create a dedicated StaticBody3D for one chunk, positioned AT the chunk
 ## origin, with the shape at ZERO local offset.
 ##
@@ -1552,32 +1710,8 @@ func _chunk_collision_origin(nside: int, ipix: int) -> Vector3:
 ## Also helps GodotPhysics' broadphase (many small AABBs vs one planet-sized).
 func _make_chunk_collision_body(key: String, nside: int, ipix: int,
 		shape: ConcavePolygonShape3D) -> StaticBody3D:
-	shape.backface_collision = true  # solid from both sides (cached shapes too)
-	# Wind the faces in Godot's CLOCKWISE-front convention, i.e. geometric normal
-	# (e1-e0)x(e2-e0) pointing INTO the ground. backface_collision keeps physics solid either
-	# way, but the NPC navmesh bake parses these bodies through the same face pipeline as
-	# mesh/CSG sources, which expects CW-front input (it flips for Recast internally): faces
-	# whose geometric normal points OUTWARD bake ZERO navmesh while raycasts hit them fine,
-	# sealing NPCs inside any building placed on terrain. Proven empirically on the real
-	# cached chunk hp_n8192_p214960184 (scratchpad navbake_chunk_test.gd, 2026-08-14):
-	# as-cached outward winding -> 0 polygons, flipped -> polygons. Winding is uniform within
-	# a chunk (HEALPix grid orientation varies per base face), so one detection on the first
-	# non-degenerate triangle suffices. Done HERE, not in the generator, so shapes reloaded
-	# from the prebaked disk cache are corrected too.
-	var _faces := shape.get_faces()
-	var _outward := HEALPix.pix2vec_nest(nside, ipix)
-	var _probe := 0
-	while _probe + 2 < _faces.size():
-		var _n := (_faces[_probe + 1] - _faces[_probe]).cross(_faces[_probe + 2] - _faces[_probe])
-		if _n.length_squared() > 0.000001:
-			if _n.dot(_outward) > 0.0:
-				for _j in range(0, _faces.size() - 2, 3):
-					var _tmp := _faces[_j + 1]
-					_faces[_j + 1] = _faces[_j + 2]
-					_faces[_j + 2] = _tmp
-				shape.set_faces(_faces)
-			break
-		_probe += 3
+	# A no-op when the server's worker already did it (see prepare_chunk_shape).
+	prepare_chunk_shape(shape, nside, ipix)
 	var body := StaticBody3D.new()
 	body.name = key + "_body"
 	# Same identity as the legacy shared PlanetCollision body.
@@ -1615,19 +1749,14 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 				% [key, _climbs] + " — its surface may differ from the clients' by the parent/child gap")
 	if PropNet.prof_on:
 		PropNet.prof_chunk_loads += 1  # TEMPORARY (étape 0d): measure the churn under the player
+	# get_faces() shares the shape's array (copy on write): only its size is read. The altitude span this
+	# line used to give walked every vertex in script — 1-2 ms a plain chunk, 10-27 ms a 15-30 k triangle
+	# one near a village, on the main thread at each zone change (2026-11-07 measure).
 	var faces: PackedVector3Array = shape.get_faces()
 	if faces.size() > 0:
-		var col_origin := _chunk_collision_origin(nside, ipix)
-		var dmin: float = INF
-		var dmax: float = -INF
-		for v in faces:
-			var d := (v + col_origin).length()
-			if d < dmin: dmin = d
-			if d > dmax: dmax = d
 		@warning_ignore("integer_division")
 		var tri_count: int = faces.size() / 3
 		print("[PlanetTerrain] loaded chunk ", key, " tris=", tri_count,
-			" alt_min=", dmin - planet_data.radius, " alt_max=", dmax - planet_data.radius,
 			" body_global=", body.global_position,
 			" body_layer=", body.collision_layer,
 			" body_mask=", body.collision_mask)
@@ -1855,6 +1984,9 @@ func _exit_tree() -> void:
 		stargrot_registry.retire()
 	_join_lod_task()
 	_join_worker_tasks()
+	if _prebuild_space.is_valid():  # after the join: no chunk task queries it any more
+		PhysicsServer3D.free_rid(_prebuild_space)
+		_prebuild_space = RID()
 	if _chunk_cache != null:
 		_chunk_cache.save_trusted(true)
 	if _atmosphere_lod != null:
@@ -1881,6 +2013,8 @@ func _join_worker_tasks() -> void:
 			if task_id >= 0:
 				join_task(task_id)
 		tasks.clear()
+	if planet_data != null:
+		planet_data.join_village_bed_jobs()
 
 
 ## Wait for a task that may still be running, from the main thread. A plain
@@ -1917,6 +2051,8 @@ func _physics_process(_delta: float) -> void:
 	_poll_starved_grade_profiles()
 	# So does a pad whose elevation tiles have only just arrived.
 	_poll_starved_pads()
+	# And a village's ground, prepared on a worker.
+	_collect_village_beds()
 	_flush_pad_rebuild()
 	_step_fence_sampling()
 
@@ -2777,10 +2913,40 @@ func _register_village_bed(uuid: String, local_pos: Vector3, basis: Basis, layou
 	if bed.is_empty():
 		return
 	var bed_uuid := str(bed["uuid"])
-	var centre: Vector2 = fp["centre"]
+	# What stands on the ground waits for it: the bed is fitted, and its pads measured, on a worker
+	# (PlanetData.submit_village_bed), and _collect_village_beds lays the rest once it is published.
+	_village_bed_after[bed_uuid] = [parts, bed, fp["centre"]]
+	if not planet_data.submit_village_bed(bed) and not planet_data.village_bed_in_flight(bed_uuid):
+		_village_bed_laid(bed_uuid)  # the same ground as published: nothing to wait for
+
+
+## bed uuid -> [layout parts, bed record, layout centre] of a village whose ground is being prepared:
+## what _village_bed_laid lays on it once it is published.
+var _village_bed_after: Dictionary = {}
+
+
+## Publish the village beds whose worker is done (PlanetData.collect_village_beds), rebuild their
+## chunks, and lay on them what their village draws.
+func _collect_village_beds() -> void:
+	if planet_data == null:
+		return
+	for done: Array in planet_data.collect_village_beds():
+		_pads_changed(done[1], {}, "a village's ground")
+		_announce_caught_up_pads()
+		_village_bed_laid(str(done[0]))
+
+
+## The half of _register_village_bed that stands on the village's ground: its report, the roads, the
+## levelled areas and the fences of its layout — laid when the ground is, as they always were.
+func _village_bed_laid(bed_uuid: String) -> void:
+	if not _village_bed_after.has(bed_uuid):
+		return
+	var after: Array = _village_bed_after[bed_uuid]
+	_village_bed_after.erase(bed_uuid)
+	var parts: Dictionary = after[0]
+	var bed: Dictionary = after[1]
+	var centre: Vector2 = after[2]
 	var mpd := planet_data.radius * PI / 180.0
-	_pads_changed(planet_data.register_village_bed(bed), {}, "a village's ground")
-	_announce_caught_up_pads()
 	_schedule_village_bed_report(bed_uuid)
 	# The roads drawn inside the layout (VillageRoad), laid on the same bed: painted on its plane.
 	var roads := LayoutRoads.to_zones(parts["roads"], bed, centre, mpd)

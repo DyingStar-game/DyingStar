@@ -21,7 +21,7 @@ const GENERATED_ROOT := "Generated"
 ## Marker meta set on the container, so the output can be recognised without relying on the name.
 const GENERATED_META := "scatter_generated"
 ## Rejected candidates are cheap, so allow a generous number of tries before giving up on
-## reaching [member count]. Same guard-rail ratio as MiningZone._build_spawn_queue().
+## reaching [member count]. Same guard-rail ratio as MiningZone._begin_spawn_queue().
 const ATTEMPTS_PER_ITEM := 40
 ## Physics frames waited between clearing the old output and raycasting, so the freed bodies
 ## have actually left the physics space and can't be hit by the new rays.
