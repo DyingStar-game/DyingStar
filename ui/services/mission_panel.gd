@@ -595,10 +595,9 @@ func _load_created() -> void:
 
 func _load_mine() -> void:
 	var at: int = _page_mine.offset
-	# The contracts that are still running. The ones that are over are not in the list: a list of
-	# what has been done is a list of what is not to do, and the service counts what it sends, so
-	# the count under the list is the count of what is left.
-	var result: Dictionary = await PlayerServices.my_missions("active", _page_mine.limit, at)
+	# Every contract of mine, the ones over too (done, given up, cancelled, expired: playtest
+	# 2026-11-07, a player wants their history); each line says its status.
+	var result: Dictionary = await PlayerServices.my_missions("", _page_mine.limit, at)
 	if _land(_page_mine, at, result):
 		_apply_mine(_page_mine, result)
 	await _load_invitations()
@@ -934,7 +933,8 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	doc.add_child(meta)
 
 	# Description.
-	var description := str(mission.get("description", "")).strip_edges()
+	var described: Variant = mission.get("description")
+	var description := "" if described == null else str(described).strip_edges()  # null: none, not "<null>"
 	if description != "":
 		var body := _label(description, ServiceStyle.TEXT)
 		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -999,8 +999,24 @@ static func _objective_poi(objective: Dictionary) -> Dictionary:
 			continue
 		var poi_id := str((place as Dictionary).get("poiId", ""))
 		if poi_id != "":
-			return {"id": poi_id, "name": _poi_name_of(poi_id)}
+			var name := _poi_name_of(poi_id)
+			if name == "":
+				name = location_name(objective.get("locationTo" if field == "zone" else "locationFrom"))
+			return {"id": poi_id, "name": name}
 	return {}
+
+
+## The name a mission's location carries ({village, name}, as the simulator writes it): "F0001 · CargoDepot_2",
+## the village alone or the place alone when only one is known, "" when neither. A warehouse is no POI
+## of the player's (MissionPoiCache), so this is the only name it has on the DataPad.
+static func location_name(location: Variant) -> String:
+	if not (location is Dictionary):
+		return ""
+	var village := str((location as Dictionary).get("village", "") if (location as Dictionary).get("village") != null else "")
+	var place := str((location as Dictionary).get("name", "") if (location as Dictionary).get("name") != null else "")
+	if village != "" and place != "" and village != place:
+		return "%s · %s" % [village, place]
+	return village if village != "" else place
 
 
 static func _poi_name_of(poi_id: String) -> String:
