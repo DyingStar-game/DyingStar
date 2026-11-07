@@ -1253,10 +1253,19 @@ func lock_dropped_cargo(body: Node) -> bool:
 		return true  # already aboard: the caller's job is done either way
 	if body is VehicleComponent and (body as VehicleComponent).is_fitted():
 		return false  # bolted into a bay: part of the vehicle, not a load it is carrying
-	if body is RigidBody3D and body.mass > 0.0:
+	if body is RigidBody3D and body.mass > 0.0 and is_loadable(body):
 		_lock_cargo(body)
 		return true
 	return false
+
+
+## Whether [param body] may ride in a bed: only what a player could carry (playtest 2026-11-07: a whole
+## rock, backed into, was taken in as a load). A carriable prop (group "carriable") that can be carried
+## NOW: a rock only once cut down to carrying size (RockMining.can_be_carried).
+static func is_loadable(body: Node) -> bool:
+	if body == null or not body.is_in_group("carriable"):
+		return false
+	return not body.has_method("can_be_carried") or bool(body.call("can_be_carried"))
 
 ## Catch a carriable that FELL, bounced or was thrown into the bed (the carry-drop path only locks an
 ## item released BY HAND inside the zone). Every few frames, ask the PHYSICS ENGINE which prop bodies
