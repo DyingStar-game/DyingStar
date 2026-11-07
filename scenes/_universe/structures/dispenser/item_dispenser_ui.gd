@@ -52,6 +52,7 @@ var dispense_key: String = "%%DISPENSER_DISPENSE"
 var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
 ## The items on offer (setup), to start over from the first when the screen falls asleep.
 var _items: Array[Resource] = []
+var _attract: ScreenAttract = null
 
 
 ## Build the screen for [param subsidiary] (AresBrand), under [param title_key], offering [param items]
@@ -62,9 +63,9 @@ func setup(subsidiary: AresBrand.Subsidiary, title_key: String, items: Array[Res
 	_items = items
 	# Every dispenser sleeps behind its brand until pressed (ScreenAttract), and the next one to wake
 	# it finds it as new: the first item chosen, no refusal on show.
-	var attract := ScreenAttract.new().setup(subsidiary, title_key)
-	attract.slept.connect(_start_over)
-	add_child(attract)
+	_attract = ScreenAttract.new().setup(subsidiary, title_key)
+	_attract.slept.connect(_start_over)
+	add_child(_attract)
 	show_items(items)
 
 
@@ -133,6 +134,27 @@ func set_tray_full(full: bool) -> void:
 	_tray_full = full
 	if full:
 		_waiting = false
+	_show_status()
+
+
+## Screen view contract (ScreenLock): what its user is looking at, for the players watching.
+func view_state() -> Dictionary:
+	return {"awake": _attract != null and not _attract.visible, "chosen": chosen()}
+
+
+## Screen view contract (ScreenLock): show what the user of this dispenser is looking at.
+func apply_view_state(view: Dictionary) -> void:
+	var awake := bool(view.get("awake", false))
+	if _attract != null and awake:
+		_attract.keep_awake()
+	if _attract != null and awake and _attract.visible:
+		_attract.wake()
+	elif _attract != null and not awake and not _attract.visible:
+		_attract.sleep()
+	var path := str(view.get("chosen", ""))
+	for row: Node in _rows.get_children():
+		if row is BaseButton and str(row.get_meta("spec_path", "")) == path:
+			(row as BaseButton).button_pressed = true
 	_show_status()
 
 

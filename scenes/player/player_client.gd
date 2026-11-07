@@ -96,6 +96,9 @@ var _flash_text: String = ""
 var _flash_until_ms: int = 0
 ## The 3D screen (its Gui3D) under the crosshair, and where on it (_point_screen); null when none.
 var _pointed_gui: Node3D = null
+## The view of the screen we hold, as last shared, and when to look for a change again (ScreenLock).
+var _shared_view: Dictionary = {}
+var _view_check_s: float = 0.0
 var _pointed_at: Vector3 = Vector3.ZERO
 
 var _conversation_text: Label = null
@@ -549,6 +552,7 @@ func _process(_delta: float) -> void:
 		# passenger seat. It only ever pointed -- the view stays the player's, the mouse stays captured --
 		# so "driving with a freed mouse", the reason seats once dropped screens, no longer holds.
 		_point_screen(seated_focus)
+		_share_screen_view(_delta)
 		return
 	_update_cab_screen(null)  # on foot: no cab screen, the chart goes home
 	if not is_instance_valid(player.lying_on) and _bed_pending:
@@ -599,6 +603,7 @@ func _process(_delta: float) -> void:
 	# and a held click would keep the tool engaged). Entering a menu cancels any in-progress action.
 	# The crosshair on a 3D screen points at it (_point_screen): its click is the screen's, not the tool's.
 	var pointing: bool = _point_screen(ui_focus)
+	_share_screen_view(_delta)
 	if ui_focus or pointing:
 		player.mining_tool.cancel()
 	else:
@@ -1060,6 +1065,8 @@ func _point_screen(ui_focus: bool) -> bool:
 				point = at
 	if is_instance_valid(_pointed_gui) and _pointed_gui != gui:
 		_pointed_gui.pointer_left()
+	if gui != null and gui != _pointed_gui:
+		_say_if_used(gui)  # another player at it: say who, as the crosshair lands on it
 	_pointed_gui = gui
 	if gui != null:
 		_pointed_at = point
@@ -1072,6 +1079,32 @@ func _point_screen(ui_focus: bool) -> bool:
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
 	return gui != null
+
+
+## Whether another player is using the screen of [param gui] (ScreenLock): then say who, and true.
+func _say_if_used(gui: Node3D) -> bool:
+	var who: String = ScreenLock.used_by_other(ScreenTarget.owner_of(gui))
+	if who != "":
+		_flash_prompt(tr("%%SCREEN_IN_USE_BY") % who)
+	return who != ""
+
+
+## The screen we hold (ScreenLock): every CHECK_S, what it shows goes to the server when it changed,
+## for the players watching it.
+func _share_screen_view(delta: float) -> void:
+	_view_check_s -= delta
+	if _view_check_s > 0.0:
+		return
+	_view_check_s = ScreenLock.CHECK_S
+	var used: Node3D = player.screen_in_use if is_instance_valid(player.screen_in_use) else null
+	if used == null or not ScreenLock.is_mine(used):
+		_shared_view = {}
+		return
+	var ui: Node = ScreenLock.view_node(used)
+	var view: Dictionary = ui.view_state() if ui != null else {}
+	if not view.is_empty() and view != _shared_view:
+		_shared_view = view
+		ScreenTarget.send(used, {"state": ScreenLock.STATE, "view": view})
 
 
 ## Say [param text] where the prompts are, in red, for FLASH_PROMPT_S: a key pressed for nothing
@@ -1098,6 +1131,10 @@ func _input(event: InputEvent) -> void:
 	if _cab != null and _cab.input(event):
 		get_viewport().set_input_as_handled()
 		return
+	# Another player is using the screen: it is theirs to touch, ours to watch (ScreenLock).
+	if is_instance_valid(_pointed_gui) and _say_if_used(_pointed_gui):
+		get_viewport().set_input_as_handled()
+		return
 	# The wheel over a screen scrolls the screen (its lists, its pages), and not the walk speed.
 	if _is_wheel(event) and is_instance_valid(_pointed_gui):
 		_pointed_gui.push_at(event as InputEventMouseButton, _pointed_at)
@@ -1111,6 +1148,9 @@ func _input(event: InputEvent) -> void:
 		if used != null:
 			used.release_keyboard()
 	if is_instance_valid(_pointed_gui):
+		var screen_owner: Node3D = ScreenTarget.owner_of(_pointed_gui)
+		if event.is_pressed() and not ScreenLock.is_mine(screen_owner):
+			ScreenTarget.send(screen_owner, {"state": ScreenLock.STATE})  # ours now, the others watch
 		_pointed_gui.click_at(_pointed_at, event.is_pressed())
 		if event.is_pressed():
 			_screen_tap(_pointed_at)

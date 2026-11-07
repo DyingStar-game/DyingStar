@@ -104,6 +104,12 @@ func wake() -> void:
 	_chime()
 
 
+## Counts as a touch: a watched screen (ScreenLock) stays awake while its user is at it, though the
+## watcher's own hands are off it.
+func keep_awake() -> void:
+	_last_input_s = _t
+
+
 ## Whether it is between the press and the screen.
 func is_loading() -> bool:
 	return _loaded_at >= 0.0

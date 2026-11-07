@@ -1380,6 +1380,7 @@ SUR LE CONVOYEUR DE DROITE.",
 %%SCREEN_SEARCH,Search…,Rechercher…,
 %%SCREEN_TOUCH_TO_START,Touch the screen to start,Touchez l'écran pour commencer,
 %%SCREEN_LOADING,Loading…,Chargement…,
+%%SCREEN_IN_USE_BY,In use by %s,Utilisé par %s,
 %%SIGN_ARTIST_WANTED,Looking for a 3D artist to turn me into a real building,Recherche artiste 3D pour me transformer en véritable bâtiment,
 %%HUD_CRUSHER_REFUSED,"ROCK REFUSED.
 Only drop fractured rock.","ROCHE REFUSÉE.

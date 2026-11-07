@@ -87,6 +87,45 @@ func shown() -> Array:
 
 
 ## Whether a search field of this screen has the keyboard (MissionKiosk.is_typing).
+## Screen view contract (ScreenLock): what its user is looking at, for the players watching.
+func view_state() -> Dictionary:
+	return {"awake": not _attract.visible, "mine": _mine, "category": _category, "giver": _giver,
+			"sort": int(_sort), "reverse": _reverse, "open": str(_open.get("id", "")),
+			"scroll": _list_scroll.scroll_vertical}
+
+
+## Screen view contract (ScreenLock): show what the user of this kiosk is looking at. The missions are
+## this player's own fetch (the "In progress" tab lists the watcher's), the page is the user's.
+func apply_view_state(view: Dictionary) -> void:
+	var awake := bool(view.get("awake", false))
+	if awake:
+		_attract.keep_awake()
+	if awake and _attract.visible:
+		_attract.wake()
+	elif not awake and not _attract.visible:
+		_attract.sleep()
+	if bool(view.get("mine", false)) != _mine:
+		_set_tab(bool(view.get("mine", false)))
+	var filters := [str(view.get("category", "")), str(view.get("giver", "")), int(view.get("sort", 0)),
+			bool(view.get("reverse", false))]
+	if not _mine and filters != [_category, _giver, int(_sort), _reverse]:
+		_category = filters[0]
+		_giver = filters[1]
+		_sort = filters[2] as MissionQuery.Sort
+		_reverse = filters[3]
+		show_missions(_missions)
+	var open_id := str(view.get("open", ""))
+	if open_id == "" and not _open.is_empty():
+		_close_sheet()
+	elif open_id != "" and str(_open.get("id", "")) != open_id:
+		var mission: Dictionary = {"id": open_id}
+		for m: Variant in _missions:
+			if m is Dictionary and str((m as Dictionary).get("id", "")) == open_id:
+				mission = m
+		_open_sheet(mission)
+	_list_scroll.scroll_vertical = int(view.get("scroll", 0))
+
+
 func is_typing() -> bool:
 	return _category_chips.is_typing() or _giver_chips.is_typing()
 

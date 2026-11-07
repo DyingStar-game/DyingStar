@@ -14,6 +14,8 @@ extends RefCounted
 ##   set_screen_actor(player)            SERVER, optional: who sent it, just before update_screen.
 ##   is_typing() -> bool                 CLIENT, optional: a field holds the keyboard (locks gameplay keys).
 ##   screen_event(event)                 CLIENT, optional: what the server announced (announce).
+## One player at a time uses a screen, the others watch it (ScreenLock): an action from anyone else is
+## refused before update_screen.
 ## Walking away from a screen, or clicking while typing, gives its keyboard back (Gui3D.release_keyboard).
 
 ## Farthest (m) the server accepts an action from, eye to screen: the crosshair reaches
@@ -70,7 +72,7 @@ static func send(screen_owner: Node, data: Dictionary) -> void:
 ## screen — reaches every client around them, which hands it to the screen (receive). It is stamped
 ## with the server's clock ("at"), so it reads as a state, not as an event to replay: a client arriving
 ## midway joins at the right moment (time_left), one arriving after it is over ignores it.
-static func announce(screen_owner: Node, via: Player, event: Dictionary) -> void:
+static func announce(screen_owner: Node, via: Node, event: Dictionary) -> void:  # via: a Player
 	var stamped: Dictionary = event.duplicate()
 	stamped.merge(address_of(screen_owner), true)
 	stamped["at"] = Time.get_unix_time_from_system()
@@ -90,14 +92,18 @@ static func receive(tree: SceneTree, event: Dictionary) -> void:
 	if _last_at.has(key) and _last_at[key] == event.get("at"):
 		return
 	_last_at[key] = event.get("at")
+	var lock: bool = str(event.get("state", "")) == ScreenLock.STATE
 	for gui: Node in tree.get_nodes_in_group(GROUP):
 		var screen_owner: Node3D = owner_of(gui)
-		if screen_owner == null or not screen_owner.has_method("screen_event"):
+		if screen_owner == null or not (lock or screen_owner.has_method("screen_event")):
 			continue
 		var address: Dictionary = address_of(screen_owner)
 		if str(address.get("target_uuid", "")) == str(event.get("target_uuid", "")) \
 				and str(address.get("screen", "")) == str(event.get("screen", "")):
-			screen_owner.screen_event(event)
+			if lock:
+				ScreenLock.on_event(screen_owner, event)  # who uses it, and what they see
+			else:
+				screen_owner.screen_event(event)
 			return
 
 
