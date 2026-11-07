@@ -3,6 +3,8 @@ extends GutTest
 ## (ChipPicker), the screen saver (ScreenAttract), the hover every branded button answers with
 ## (AresBrand.hover_of), and the sort orders that turn round (MissionQuery).
 
+## The world screen script (it has no class_name).
+const GUI_3D := preload("res://scenes/interactables/gui_3d.gd")
 const OPTIONS: Array = [
 	{"value": "mining", "text": "Minage"},
 	{"value": "delivery", "text": "Livraison"},
@@ -163,3 +165,38 @@ func test_each_order_has_its_own_direction_and_turns_round() -> void:
 	var a := {"id": "a", "rewards": [{"type": "credits", "amount": 10}]}
 	var b := {"id": "b", "rewards": [{"type": "credits", "amount": 20}]}
 	assert_eq(MissionQuery.apply([a, b], "", "", MissionQuery.Sort.REWARD, true), [a, b])
+
+
+func test_a_world_screen_renders_only_near_the_camera_and_in_its_view() -> void:
+	var gui: Node3D = GUI_3D.new()
+	var viewport := SubViewport.new()
+	var quad := MeshInstance3D.new()
+	quad.mesh = QuadMesh.new()
+	gui.add_child(viewport)
+	gui.add_child(quad)
+	gui.node_viewport = viewport
+	gui.node_quad = quad
+	add_child_autofree(gui)
+	var camera := Camera3D.new()  # looks down -Z
+	add_child_autofree(camera)
+	camera.make_current()
+	var range_m: float = gui.render_range_m
+	gui.global_position = Vector3(0.0, 0.0, -range_m * 0.5)
+	gui._process(1.0)
+	assert_eq(viewport.render_target_update_mode, SubViewport.UPDATE_WHEN_VISIBLE, "near and in view: live")
+	gui.global_position = Vector3(0.0, 0.0, -range_m * 3.0)
+	gui._process(1.0)
+	assert_eq(viewport.render_target_update_mode, SubViewport.UPDATE_ONCE, "too far: one last picture")
+	gui.global_position = Vector3(0.0, 0.0, range_m * 0.5)
+	gui._process(1.0)
+	assert_eq(viewport.render_target_update_mode, SubViewport.UPDATE_ONCE, "behind the camera: still")
+
+
+func test_a_screen_that_drives_its_own_viewport_is_left_alone() -> void:
+	var gui: Node3D = GUI_3D.new()
+	var viewport := SubViewport.new()
+	gui.add_child(viewport)
+	gui.node_viewport = viewport
+	gui.render_when_seen = false
+	add_child_autofree(gui)
+	assert_false(gui.is_processing(), "the truck's dashboard, the wrist: their owners decide")

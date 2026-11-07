@@ -134,7 +134,7 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 7)
 script = ExtResource("11_mission_feed")
 
 [node name="MissionBoard" parent="." instance=ExtResource("12_mission_board")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 4.45, 10.6)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 3.283, 10.6)
 
 [node name="MissionKiosk1" parent="." instance=ExtResource("13_mission_kiosk")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -10.4, 0, 9.6)

@@ -1,7 +1,8 @@
 class_name CratePlate
 extends MeshInstance3D
 
-## The e-ink plate on a hauling crate's front: what the crate holds (type picto, type, mass, content,
+## The e-ink plate on a hauling crate's front, repeated on its top (a crate on a shelf is read from the
+## front, one on the ground or in a truck bed from above): what the crate holds (type picto, type, mass, content,
 ## purity, owner), drawn ONCE into a texture — an e-ink display keeps its picture without power, and a
 ## crate shelf full of live SubViewports would cost a render pass each. Redrawn only when the content
 ## changes (show_content()). Client only: a dedicated server draws nothing.
@@ -41,7 +42,13 @@ const ICON_MASS := preload(ICON_DIR + "icon_plate_mass.png")
 const ICON_CONTENT := preload(ICON_DIR + "icon_plate_content.png")
 const ICON_OWNER := preload(ICON_DIR + "icon_plate_owner.png")
 
+## Where the plate's copy on the crate's top sits, in the crate's frame (facing up, behind the serial
+## number's top label).
+@export var top_position := Vector3(0.0, 0.1495, 0.01)
+
 var _material := StandardMaterial3D.new()
+## The copy on the top: same mesh, same material, so one drawing shows on both.
+var _top: MeshInstance3D = null
 var _shown: Dictionary = {}
 var _drawing := false
 ## The picture shows _shown: false when the content changed, or the picture was dropped.
@@ -64,11 +71,29 @@ func _ready() -> void:
 	_material.emission = BACKLIGHT
 	_material.emission_energy_multiplier = BACKLIGHT_ENERGY
 	visibility_range_end = DRAW_RANGE_M
-	_add_bezel()
+	_add_bezel(self)
 	if not OS.has_feature("dedicated_server"):
 		add_child(Photocell.new())  # drives its parent: set_lit() below
+		_add_top.call_deferred()
 	visible = false
 	set_process(false)
+
+
+## The plate's copy on the crate's top, a sibling (the front plate's own transform must not carry it).
+func _add_top() -> void:
+	if get_parent() == null:
+		return
+	_top = MeshInstance3D.new()
+	_top.name = "PlateTop"
+	_top.mesh = mesh
+	_top.material_override = _material
+	_top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_top.visibility_range_end = DRAW_RANGE_M
+	_top.position = top_position
+	_top.rotation.x = -PI / 2.0  # the quad faces +Z: turned to face up
+	_top.visible = visible
+	_add_bezel(_top)
+	get_parent().add_child(_top)
 
 
 ## Photocell contract: the backlight on at dusk, off at dawn. The glow is the plate's own picture, so
@@ -77,8 +102,8 @@ func set_lit(on: bool, _animate: bool = false) -> void:
 	_material.emission_enabled = on
 
 
-## The grey frame around the display, just behind it.
-func _add_bezel() -> void:
+## The grey frame around the display [param on], just behind it.
+static func _add_bezel(on: MeshInstance3D) -> void:
 	var frame := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = Vector3(SIZE_M.x + BEZEL_M * 2.0, SIZE_M.y + BEZEL_M * 2.0, 0.004)
@@ -91,7 +116,7 @@ func _add_bezel() -> void:
 	frame.material_override = metal
 	frame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	frame.visibility_range_end = DRAW_RANGE_M
-	add_child(frame)
+	on.add_child(frame)
 
 
 ## Show [param content] (CrateContent format). Empty content = no plate.
@@ -101,6 +126,8 @@ func show_content(content: Dictionary) -> void:
 	_shown = content.duplicate()
 	_drawn = false
 	visible = not content.is_empty()
+	if _top != null:
+		_top.visible = visible
 	set_process(visible)  # drawn when the camera comes near (_process)
 
 

@@ -362,6 +362,12 @@ func apply_prop_data(data: Dictionary) -> void:
 
 ## Reparent [param body] under the shelf if it is not there yet, bind it to slot [param idx] and set its
 ## origin on the slot, aligned to the shelf. Its freeze is the caller's business.
+## How a crate sits on a slot: turned a quarter about Y, so its front (+Z, the e-ink plate) faces the
+## shelf's front (+X, the aisle, what the NPC service is told) -- square on, it showed its side
+## (playtest 2026-11-07).
+const SLOT_YAW := PI / 2.0
+
+
 func _put_on_slot(idx: int, body: RigidBody3D) -> void:
 	if body.get_parent() != self:
 		if body.has_method("server_parent_change"):
@@ -369,7 +375,7 @@ func _put_on_slot(idx: int, body: RigidBody3D) -> void:
 		else:
 			body.reparent(self)
 	_bind(idx, body)
-	body.transform = Transform3D(Basis.IDENTITY, shelf_slots[idx])
+	body.transform = Transform3D(Basis(Vector3.UP, SLOT_YAW), shelf_slots[idx])
 
 func _bind(idx: int, body: Node3D) -> void:
 	_slot_bodies[idx] = body

@@ -5,10 +5,10 @@ extends RefCounted
 ## next when it runs dry; bay order is the same on the server and on every replica, so everyone
 ## agrees which battery is in use without it being replicated.
 ##
-## What it costs: the torque the motors are actually asked for, at the battery's discharge
-## coefficient (VehicleBatterySpec.draw_w) — not the speed. A slope, a load or a bad road ask for
-## more torque for the same distance, and so for more energy. Nothing else draws: the head lights and
-## the dashboard work for free, as long as some energy is left.
+## What it costs: the work the motors put on the road (driving force x speed) over their efficiency,
+## plus their losses for the torque asked (VehicleBatterySpec.draw_w). A load, a slope or a launch
+## take more work for the same distance, and so more energy; cruising on the flat takes little.
+## Nothing else draws: the head lights and the dashboard work for free, as long as some energy is left.
 
 var _bays: VehicleComponentBays
 
@@ -44,14 +44,14 @@ func has_energy() -> bool:
 	return active() != null
 
 
-## Draw what [param torque_nm] of motor torque costs over [param delta] seconds, from the battery in
-## use, then the next ones if it runs out mid-tick (server). Returns the energy that could not be
-## supplied (J): above 0, the batteries are all empty.
-func draw_for_torque(torque_nm: float, delta: float) -> float:
+## Draw what putting [param wheel_power_w] on the road with [param torque_nm] of motor torque costs
+## over [param delta] seconds, from the battery in use, then the next ones if it runs out mid-tick
+## (server). Returns the energy that could not be supplied (J): above 0, the batteries are all empty.
+func draw_for_drive(wheel_power_w: float, torque_nm: float, delta: float) -> float:
 	var wanted: float = 0.0
 	var battery: VehicleBattery = active()
 	if battery != null:
-		wanted = (battery.spec as VehicleBatterySpec).draw_w(torque_nm) * delta
+		wanted = (battery.spec as VehicleBatterySpec).draw_w(wheel_power_w, torque_nm) * delta
 	while wanted > 0.0 and battery != null:
 		wanted -= battery.draw(wanted)
 		battery = active()

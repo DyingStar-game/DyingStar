@@ -225,7 +225,8 @@ static func parallax_uv(cursor: Vector2) -> Vector2:
 
 
 ## The arm is up: the tablet opens on the screen and the view starts closing in on it. Reading the
-## wrist is reading what it said: its notification light goes out.
+## wrist is reading what it said: its notification light goes out -- unless an app still has news not
+## opened (TerminalUI.has_pending): then it blinks on until that tab is opened, as the tab does.
 func _begin_zoom() -> void:
 	phase = Phase.ZOOMING
 	_t = 0.0
@@ -236,7 +237,8 @@ func _begin_zoom() -> void:
 		_zoom_fov = minf(zoom_fov(_model.screen_size_m(), distance, viewport.x / maxf(viewport.y, 1.0), SCREEN_FILL),
 				_base_fov())
 		_model.set_live(true)
-		_model.set_notified(false)
+		if not _terminal.has_pending():
+			_model.set_notified(false)
 	if _then.is_valid():
 		_then.call()
 	_then = Callable()

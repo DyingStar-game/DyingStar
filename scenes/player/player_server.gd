@@ -289,6 +289,12 @@ func setup() -> void:
 	player.position = player.spawn_position
 	player.connect_area_detect()
 	player.update_last_basis()
+	# Horizon keeps a player's last properties across a reconnection: one who left carrying came back
+	# with "carrying" true and the "drop" prompt, though nothing is in their hands here -- and the
+	# prompt, unchanged as seen from here, was never sent again (playtest 2026-11-07: "Drop" stuck on).
+	if not player.is_npc and player.hands_item == null:
+		player._carry_prompt = ""
+		player.server_send_properties_to_client.call_deferred({"carrying": false, "carry_prompt": ""})
 	if player.is_npc:
 		_npc_trim()
 	# Start at the scene's walk speed, so the wheel tier is a real speed from the very first frame
@@ -446,7 +452,11 @@ func server_action_received(data: Dictionary) -> void:
 			# player is within reach of it, so a tampered client reaches no screen it is not at.
 			var screen: Node3D = ScreenTarget.resolve(_find_deletable_prop(str(data.get("target_uuid", ""))),
 					data, player.interact_ray.global_position)
-			if screen != null:
+			if screen != null and str(data.get("state", "")) == ScreenLock.STATE:
+				ScreenLock.serve(screen, player, data)  # a claim, or the view its holder now sees
+			elif screen != null and not ScreenLock.claim(screen, player):
+				pass  # another player is using it: theirs until they step away (ScreenLock)
+			elif screen != null:
 				# Hand the ACTOR over when the screen asks for one: WHOSE action this is must never be read
 				# from the payload, which the client wrote. Screens that do not care are untouched.
 				if screen.has_method("set_screen_actor"):

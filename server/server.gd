@@ -778,6 +778,7 @@ func _process_impl() -> void:
 		if _perf_report:
 			_perf_cull_usec += Time.get_ticks_usec() - _tq
 			_perf_sweeps += 1
+		ScreenLock.release_away(get_tree())  # screens whose user walked away are free again
 
 
 ## [Perf/nodes]: how many nodes process / physics-process, by script (or class when scriptless),

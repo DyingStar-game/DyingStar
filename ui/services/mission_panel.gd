@@ -96,6 +96,9 @@ var _invites_box: VBoxContainer
 ## (focus_mission), "" when none.
 var _mine_contract: VBoxContainer
 var _focus_id: String = ""
+## The "My missions" tabs (MINE_TABS) and the one shown.
+var _mine_tabs: HBoxContainer
+var _mine_tab: int = 0
 var _created_status: OptionButton
 var _created: ItemList
 var _page_created: ServicePage
@@ -354,6 +357,14 @@ func _build_browse_page(page: VBoxContainer) -> void:
 # Tab 1 — my missions (assignments)
 # ---------------------------------------------------------------------------------------------
 
+## "My missions" in three tabs (playtest 2026-11-07): [label key, the assignment statuses it lists].
+const MINE_TABS: Array = [
+	["%%SVC_TAB_MINE_ACTIVE", "active"],
+	["%%SVC_TAB_MINE_DONE", "completed,partially_completed"],
+	["%%SVC_TAB_MINE_STOPPED", "abandoned,expired,failed"],
+]
+
+
 func _build_mine_page(page: VBoxContainer) -> void:
 	var parts := _master_detail(page)
 	var left: VBoxContainer = parts[0]
@@ -365,9 +376,35 @@ func _build_mine_page(page: VBoxContainer) -> void:
 	_invites_box = VBoxContainer.new()
 	_invites_box.add_theme_constant_override("separation", 6)
 	left.add_child(_invites_box)
+	_mine_tabs = _row(6)
+	left.add_child(_mine_tabs)
+	_show_mine_tabs()
 	_mine = _paged_list(left, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine, 320.0)
 	_mine.item_selected.connect(func(_i: int) -> void: _open_mine(contract))
 	_mine_contract = contract
+
+
+## The three tabs over "My missions", the chosen one lit.
+func _show_mine_tabs() -> void:
+	for child: Node in _mine_tabs.get_children():
+		child.queue_free()
+	for i: int in MINE_TABS.size():
+		var tab := Button.new()
+		tab.text = tr(str(MINE_TABS[i][0]))
+		tab.focus_mode = Control.FOCUS_NONE
+		ServiceStyle.apply_segment(tab, i == _mine_tab)
+		tab.pressed.connect(_set_mine_tab.bind(i))
+		_mine_tabs.add_child(tab)
+
+
+func _set_mine_tab(index: int) -> void:
+	if index == _mine_tab:
+		return
+	_mine_tab = index
+	_show_mine_tabs()
+	_page_mine.offset = 0
+	_clear(_mine_contract)
+	_load_mine()
 
 
 ## Show mission [param mission_id] in "My missions": selected in the list and its contract open, now
@@ -533,9 +570,21 @@ func refresh() -> void:
 		var zone_picker: Variant = row.get("poi")
 		if zone_picker is MissionPlacePicker:
 			(zone_picker as MissionPlacePicker).refresh_list()
+	# The mission open in "My missions" opens again on the fresh list: its progress is what changed.
+	if _focus_id == "":
+		_focus_id = _selected_mine_id()
 	await _load_mine()
 	await _load_created()
 	_end_refresh()
+
+
+## The id of the mission selected in "My missions", "" when none is.
+func _selected_mine_id() -> String:
+	if _mine == null or _mine.get_selected_items().is_empty():
+		return ""
+	var entry: Variant = _mine.get_item_metadata(_mine.get_selected_items()[0])
+	var mission: Variant = (entry as Dictionary).get("mission") if entry is Dictionary else null
+	return str((mission as Dictionary).get("id", "")) if mission is Dictionary else ""
 
 
 ## The catalogue feeds every dynamic dropdown; on failure the hardcoded lists stay in place.
@@ -583,10 +632,8 @@ func _load_created() -> void:
 
 func _load_mine() -> void:
 	var at: int = _page_mine.offset
-	# The contracts that are still running. The ones that are over are not in the list: a list of
-	# what has been done is a list of what is not to do, and the service counts what it sends, so
-	# the count under the list is the count of what is left.
-	var result: Dictionary = await PlayerServices.my_missions("active", _page_mine.limit, at)
+	# The contracts of the tab chosen: running, done, or stopped (given up, expired, failed).
+	var result: Dictionary = await PlayerServices.my_missions(str(MINE_TABS[_mine_tab][1]), _page_mine.limit, at)
 	if _land(_page_mine, at, result):
 		_apply_mine(_page_mine, result)
 	await _load_invitations()
@@ -922,7 +969,8 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	doc.add_child(meta)
 
 	# Description.
-	var description := str(mission.get("description", "")).strip_edges()
+	var described: Variant = mission.get("description")
+	var description := "" if described == null else str(described).strip_edges()  # null: none, not "<null>"
 	if description != "":
 		var body := _label(description, ServiceStyle.TEXT)
 		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -987,8 +1035,24 @@ static func _objective_poi(objective: Dictionary) -> Dictionary:
 			continue
 		var poi_id := str((place as Dictionary).get("poiId", ""))
 		if poi_id != "":
-			return {"id": poi_id, "name": _poi_name_of(poi_id)}
+			var name := _poi_name_of(poi_id)
+			if name == "":
+				name = location_name(objective.get("locationTo" if field == "zone" else "locationFrom"))
+			return {"id": poi_id, "name": name}
 	return {}
+
+
+## The name a mission's location carries ({village, name}, as the simulator writes it): "F0001 · CargoDepot_2",
+## the village alone or the place alone when only one is known, "" when neither. A warehouse is no POI
+## of the player's (MissionPoiCache), so this is the only name it has on the DataPad.
+static func location_name(location: Variant) -> String:
+	if not (location is Dictionary):
+		return ""
+	var village := str((location as Dictionary).get("village", "") if (location as Dictionary).get("village") != null else "")
+	var place := str((location as Dictionary).get("name", "") if (location as Dictionary).get("name") != null else "")
+	if village != "" and place != "" and village != place:
+		return "%s · %s" % [village, place]
+	return village if village != "" else place
 
 
 static func _poi_name_of(poi_id: String) -> String:
@@ -1099,11 +1163,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 
 ## "2/5 units · in progress" — language-neutral numbers, localized objective status.
 func _objective_progress(objective: Dictionary) -> String:
-	var progress := "%d/%d" % [ServiceTypes.num(objective.get("currentProgress")),
-			ServiceTypes.num(objective.get("targetQuantity"))]
-	var unit := str(objective.get("unit", "")).strip_edges()
-	if unit != "":
-		progress += " " + unit
+	var unit: Variant = objective.get("unit")
+	var progress := "%s / %s" % [ServiceTypes.quantity_text(ServiceTypes.num(objective.get("currentProgress")), unit),
+			ServiceTypes.quantity_text(ServiceTypes.num(objective.get("targetQuantity")), unit)]
 	return progress + " · " + ServiceTypes.objective_status_label(objective.get("status"))
 
 

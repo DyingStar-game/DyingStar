@@ -32,10 +32,12 @@ const WARNING_INK := Color(1.0, 0.52, 0.27)
 const PICTO_PX := 150
 ## How long a machine works on a crate (s): crushing at the Crusher, refining at the Refinery. The
 ## screen counts it down on a ring, the machine sounds run meanwhile.
-const PROCESS_S := 10.0
+const PROCESS_S := 5.0
 const RING_PX := 220
 ## How often the server runs a machine's logic (s): belts, collection, replication (see _process).
 const SERVER_TICK_S := 0.2
+## The states EXTRACT is taken from: a full machine waits for it, a refused belt does not stop it.
+const EXTRACT_FROM := ["idle", "full", "blocked"]
 
 ## Designer-placed machine: tick it on the instance dropped in a world scene. On the server it spawns
 ## the REAL networked machine at the same spot (deterministic uuid) and frees itself.
@@ -87,6 +89,8 @@ var _pictos: HBoxContainer = null
 var _ring: ItemDispenserUI.DeliveryRing = null
 # SERVER: when the work in progress ends (Time.get_ticks_msec()).
 var _process_end_ms := 0
+# CLIENT: the same end, from the replicated seconds left, for the ring's countdown.
+var _client_end_ms := 0
 # SERVER: time left before the next _server_tick.
 var _server_wait_s := 0.0
 # The looping sounds (client): belts, machine at work, its rattling stones.
@@ -122,6 +126,10 @@ func _consume(_body: Node) -> void:
 
 ## SERVER: whether a whole crate can be packed now.
 func _can_pack() -> bool:
+	return false
+
+## SERVER: whether the machine holds all it can: the belt stops taking anything until EXTRACT empties it.
+func _is_full() -> bool:
 	return false
 
 ## SERVER: take one crate's worth out of the stock and return its `content` (see CrateContent), or {}
@@ -199,6 +207,7 @@ func _ready() -> void:
 		# note in cargo_depot.gd.
 		for area: Area3D in [rock_detector, rock_collector, box_detector]:
 			area.set_deferred(&"monitoring", false)
+		_refresh_client()
 
 
 ## SERVER: replace this editor placeholder by the real networked machine. spawn_prop_authoritative
@@ -240,7 +249,7 @@ func _spawn_networked_copy() -> void:
 ## In collect mode, an item that slides off the belt end (leaves the detector) is collected. Skip
 ## items a player just picked up (carried) so grabbing one off the belt doesn't count it.
 func _on_belt_exited(body: Node3D) -> void:
-	if state != "collect" or not _accepts(body):
+	if state != "collect" or not _accepts(body) or _is_full():
 		return
 	if "carried" in body and body.carried:
 		return
@@ -249,10 +258,11 @@ func _on_belt_exited(body: Node3D) -> void:
 
 ## Server: the machine's logic runs SERVER_TICK_S apart, not every frame — three area queries and a
 ## replication check per machine per frame bought nothing (the state replicates on change only).
-## Client: the screen and the belts' look follow the replicated state every frame.
+## Client: only the countdown ring moves, while the machine works (_refresh_client turns it on); the
+## rest follows the replicated state when it changes (ADR 0027: a town's machines cost nothing idle).
 func _process(delta: float) -> void:
 	if not GameOrchestrator.is_server():
-		_client_tick()
+		_ring.show_left(maxf(0.0, (_client_end_ms - Time.get_ticks_msec()) / 1000.0), PROCESS_S)
 		return
 	_server_wait_s -= delta
 	if _server_wait_s <= 0.0:
@@ -263,12 +273,18 @@ func _process(delta: float) -> void:
 func _server_tick() -> void:
 	var on_belt: Array = rock_detector.get_overlapping_bodies()
 	var accepted: Array = filter_accepted(on_belt)
-	var blocked := _belt_blocked(on_belt)
-	if not blocked:
+	var full := _is_full()
+	var blocked := not full and _belt_blocked(on_belt)
+	if not blocked and not full:
 		for body in filter_accepted(rock_collector.get_overlapping_bodies()):
 			if not ("carried" in body and body.carried):
 				_collect(body)
-	if blocked and state in ["idle", "collect"]:
+		full = _is_full()
+	if full and state in ["idle", "collect", "blocked"]:
+		state = "full"
+	elif not full and state == "full":
+		state = "idle"
+	elif blocked and state in ["idle", "collect"]:
 		state = "blocked"
 	elif not blocked and state == "blocked":
 		state = "idle"
@@ -288,10 +304,13 @@ func _server_tick() -> void:
 		server_prop_update(payload)
 
 
-func _client_tick() -> void:
+## CLIENT: screen, lights, belts and sounds from the replicated state — once per change, not per frame.
+func _refresh_client() -> void:
 	var processing := state == "processing"
 	_ring.visible = processing
+	set_process(processing)
 	if processing:
+		_client_end_ms = Time.get_ticks_msec() + int(float(extra.get("process_left", PROCESS_S)) * 1000.0)
 		_show_screen(true, _processing_key(), false)
 		_ring.show_left(float(extra.get("process_left", PROCESS_S)), PROCESS_S)
 	else:
@@ -387,6 +406,8 @@ func apply_prop_data(_data: Dictionary) -> void:
 	belt_count = int(metadata.get("belt_count", belt_count))
 	packable = bool(metadata.get("packable", packable))
 	extra.merge(metadata, true)
+	if not GameOrchestrator.is_server() and _ring != null:
+		_refresh_client()
 
 
 # ── Output ────────────────────────────────────────────────────────────────────────────────────────
@@ -464,7 +485,7 @@ func update_screen(data: Dictionary) -> void:
 	var target_state: String = data["state"]
 	if state == "idle" and target_state == "collect":
 		state = target_state
-	elif state == "idle" and target_state == "extract":
+	elif state in EXTRACT_FROM and target_state == "extract" and _can_pack():
 		state = target_state
 		handle_extract()
 

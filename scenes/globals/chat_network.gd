@@ -64,6 +64,8 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 			return TranslationServer.translate("%%NOTIF_CORPORATION_JOINED")
 		"mission.ready":
 			return TranslationServer.translate("%%NOTIF_MISSION_READY") % str(data.get("title", ""))
+		"mission.progress":
+			return TranslationServer.translate("%%NOTIF_MISSION_PROGRESS") % str(data.get("title", ""))
 		"mission.invited":
 			return TranslationServer.translate("%%NOTIF_MISSION_INVITED") % str(data.get("title", ""))
 		"mission.completed":

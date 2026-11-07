@@ -96,6 +96,9 @@ var _flash_text: String = ""
 var _flash_until_ms: int = 0
 ## The 3D screen (its Gui3D) under the crosshair, and where on it (_point_screen); null when none.
 var _pointed_gui: Node3D = null
+## The view of the screen we hold, as last shared, and when to look for a change again (ScreenLock).
+var _shared_view: Dictionary = {}
+var _view_check_s: float = 0.0
 var _pointed_at: Vector3 = Vector3.ZERO
 
 var _conversation_text: Label = null
@@ -549,6 +552,7 @@ func _process(_delta: float) -> void:
 		# passenger seat. It only ever pointed -- the view stays the player's, the mouse stays captured --
 		# so "driving with a freed mouse", the reason seats once dropped screens, no longer holds.
 		_point_screen(seated_focus)
+		_share_screen_view(_delta)
 		return
 	_update_cab_screen(null)  # on foot: no cab screen, the chart goes home
 	if not is_instance_valid(player.lying_on) and _bed_pending:
@@ -599,6 +603,7 @@ func _process(_delta: float) -> void:
 	# and a held click would keep the tool engaged). Entering a menu cancels any in-progress action.
 	# The crosshair on a 3D screen points at it (_point_screen): its click is the screen's, not the tool's.
 	var pointing: bool = _point_screen(ui_focus)
+	_share_screen_view(_delta)
 	if ui_focus or pointing:
 		player.mining_tool.cancel()
 	else:
@@ -1058,6 +1063,11 @@ func _point_screen(ui_focus: bool) -> bool:
 				nearest = eye.distance_to(at)
 				gui = screen_gui
 				point = at
+	# Another player's screen: no hover, no click -- nothing says it can be used -- but still a screen
+	# under the crosshair, so the tool in hand does not fire into it.
+	var watched: bool = gui != null and _used_by_other(gui)
+	if watched:
+		gui = null
 	if is_instance_valid(_pointed_gui) and _pointed_gui != gui:
 		_pointed_gui.pointer_left()
 	_pointed_gui = gui
@@ -1071,7 +1081,30 @@ func _point_screen(ui_focus: bool) -> bool:
 			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
-	return gui != null
+	return gui != null or watched
+
+
+## Whether another player is using the screen of [param gui] (ScreenLock): it is theirs to touch.
+func _used_by_other(gui: Node3D) -> bool:
+	return ScreenLock.used_by_other(ScreenTarget.owner_of(gui)) != ""
+
+
+## The screen we hold (ScreenLock): every CHECK_S, what it shows goes to the server when it changed,
+## for the players watching it.
+func _share_screen_view(delta: float) -> void:
+	_view_check_s -= delta
+	if _view_check_s > 0.0:
+		return
+	_view_check_s = ScreenLock.CHECK_S
+	var used: Node3D = player.screen_in_use if is_instance_valid(player.screen_in_use) else null
+	if used == null or not ScreenLock.is_mine(used):
+		_shared_view = {}
+		return
+	var ui: Node = ScreenLock.view_node(used)
+	var view: Dictionary = ui.view_state() if ui != null else {}
+	if not view.is_empty() and view != _shared_view:
+		_shared_view = view
+		ScreenTarget.send(used, {"state": ScreenLock.STATE, "view": view})
 
 
 ## Say [param text] where the prompts are, in red, for FLASH_PROMPT_S: a key pressed for nothing
@@ -1111,6 +1144,9 @@ func _input(event: InputEvent) -> void:
 		if used != null:
 			used.release_keyboard()
 	if is_instance_valid(_pointed_gui):
+		var screen_owner: Node3D = ScreenTarget.owner_of(_pointed_gui)
+		if event.is_pressed() and not ScreenLock.is_mine(screen_owner):
+			ScreenTarget.send(screen_owner, {"state": ScreenLock.STATE})  # ours now, the others watch
 		_pointed_gui.click_at(_pointed_at, event.is_pressed())
 		if event.is_pressed():
 			_screen_tap(_pointed_at)
@@ -1286,7 +1322,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if seated_handle != null:
 			_toggle_door(seated_handle)
 		elif _cab != null and _cab.aimed():
-			_send_vehicle_action("vehicle_screen_mode")  # the cab screen: offline -> chart -> camera
+			_send_vehicle_action("vehicle_screen_mode")  # the cab screen: offline -> camera -> chart
 		return  # seated: `action` operates doors and the cab screen, never carry
 
 	# Dev instruments: they only LOOK at the world, they never act on it, so they sit before the walk
@@ -2671,6 +2707,9 @@ func _on_notification(envelope: Dictionary) -> void:
 		return
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
 	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
+	# A mission's news changed it on the service: the DataPad, open on it, reads it again.
+	if str(envelope.get("type", "")).begins_with("mission."):
+		PlayerServices.changed.emit("missions")
 
 	var data: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
 	# Resolve in the background so the NEXT notification about this player is spelled properly. The

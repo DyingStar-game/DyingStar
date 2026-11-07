@@ -13,6 +13,12 @@ extends Node3D
 ## XY reading pointed beside the crosshair). Needs a flat mesh whose UVs span the face linearly 0..1 --
 ## what a screen showing a viewport has anyway. Off: the XY plane, as every other screen.
 @export var uv_frame: bool = false
+## Render the viewport only while the camera is within render_range_m and has the screen in view
+## (ADR 0027); otherwise its last picture stays. Off for a screen whose owner drives the viewport's
+## updates itself (the truck's dashboard and cab chart, the wrist DataPad).
+@export var render_when_seen: bool = true
+## How far (m) from the camera the screen keeps rendering.
+@export var render_range_m: float = 15.0
 
 var _frame: Array = []  # uv_frame: [origin, du, dv] in the mesh's frame, P(u, v) = origin + u du + v dv
 
@@ -24,6 +30,11 @@ var last_event_pos_2d := Vector2()
 
 ## The time of the last event in seconds since engine start.
 var last_event_time := -1.0
+
+## Whether the camera saw the screen at the last check (render_when_seen); null before the first.
+var _seen: Variant = null
+## Time left before the next visibility check (s), started at a random moment (ScreenVisibility.CHECK_S).
+var _check_s: float = randf() * ScreenVisibility.CHECK_S
 
 
 func _ready() -> void:
@@ -39,10 +50,31 @@ func _ready() -> void:
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.cull_mode = BaseMaterial3D.CULL_BACK
 		node_quad.material_override = mat
+	set_process(render_when_seen and node_viewport != null)
+	if render_when_seen and node_viewport != null and GameOrchestrator.is_server():
+		node_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED  # nobody looks
+		set_process(false)
 	if node_area != null:
 		node_area.mouse_entered.connect(_mouse_entered_area)
 		node_area.mouse_exited.connect(_mouse_exited_area)
 		node_area.input_event.connect(_mouse_input_event)
+
+## render_when_seen: the viewport renders while seen; leaving the view, it renders one last picture
+## (UPDATE_ONCE), which the screen then keeps showing.
+func _process(delta: float) -> void:
+	_check_s -= delta
+	if _check_s > 0.0:
+		return
+	_check_s = ScreenVisibility.CHECK_S
+	var shown: Node3D = node_quad if node_quad != null else self
+	var box: AABB = shown.global_transform * node_quad.get_aabb() if node_quad != null \
+			else AABB(global_position, Vector3.ZERO)
+	var seen: bool = ScreenVisibility.sees_box(get_viewport().get_camera_3d(), box, render_range_m)
+	if seen == _seen:
+		return
+	_seen = seen
+	node_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE if seen else SubViewport.UPDATE_ONCE
+
 
 func _mouse_entered_area() -> void:
 	is_mouse_inside = true

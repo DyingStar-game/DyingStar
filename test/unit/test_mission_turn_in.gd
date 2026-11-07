@@ -49,6 +49,12 @@ func test_a_mission_notification_lights_the_missions_tab() -> void:
 	assert_eq(PlayerClient.app_of_notification(""), "", "nothing to light")
 
 
+func test_a_goods_move_counted_for_a_mission_is_told_to_its_player() -> void:
+	var text := ChatNetwork.notification_text({"type": "mission.progress", "data": {"title": "Gold run"}})
+	assert_string_contains(text, "Gold run")
+	assert_eq(PlayerClient.app_of_notification("mission.progress"), "missions")
+
+
 func test_the_participants_read_as_names() -> void:
 	var participants := [{"playerId": "4aa97da7-6ae4", "name": "player-kira"}, {"playerId": "b91c2854-3ae4", "name": null}]
 	assert_eq(ServiceTypes.participants_text(participants), "player-kira, b91c2854")
@@ -62,3 +68,14 @@ func test_a_warehouse_transport_says_where_to_load_first() -> void:
 	objective["state"] = {"loadedAt": "2026-11-06T20:00:00Z"}
 	assert_ne(ServiceTypes.transport_step_text(objective), before, "once loaded, it says so")
 	assert_eq(ServiceTypes.transport_step_text({"type": "deliver_material", "params": {"via": "warehouse"}}), "")
+
+
+func test_a_quantity_reads_in_its_unit() -> void:
+	assert_eq(ServiceTypes.quantity_text(90, "kg"), "90 kg")
+	assert_eq(ServiceTypes.quantity_text(1500, "kg"), "1.5 t")
+	assert_eq(ServiceTypes.quantity_text(2000, "kg"), "2 t")
+	assert_eq(ServiceTypes.quantity_text(400, "l"), "400 L")
+	assert_eq(ServiceTypes.quantity_text(20000, "L"), "20 m³")
+	assert_eq(ServiceTypes.quantity_text(12, "m3"), "12 m³")
+	assert_eq(ServiceTypes.quantity_text(3, "unit"), "3")
+	assert_eq(ServiceTypes.quantity_text(3, null), "3")

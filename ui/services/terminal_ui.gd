@@ -406,7 +406,6 @@ func _build() -> void:
 		panel.side_slot = slot
 		panel.pane_layout.connect(_on_pane_layout.bind(panel))
 		panel.visible = false
-		panel.home_requested.connect(_go_home)
 		panel.placement_requested.connect(_relay_placement.bind(id))
 		panel.focus_poi_requested.connect(_relay_focus_poi.bind(id))
 		_content.add_child(panel)

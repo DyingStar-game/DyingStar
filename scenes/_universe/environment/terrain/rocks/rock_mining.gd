@@ -654,6 +654,14 @@ func _to_mesh_local(body_local: Vector3) -> Vector3:
 		return body_local
 	return mesh_node.transform.affine_inverse() * body_local
 
+## The middle of the piece as it stands (its CSG result), in world space: where a prompt about it
+## points (PromptLeader.anchor_of). The middle of its hull box was off the piece once cut (playtest
+## 2026-11-07).
+func aim_point() -> Vector3:
+	var mesh_node := _mesh_node()
+	return mesh_node.global_transform * _piece_aabb().get_center() if mesh_node != null else global_position
+
+
 ## Longest side (metres) of the piece as it stands — the size half of the breakable test.
 func longest_side() -> float:
 	var box: AABB = _piece_aabb()

@@ -702,6 +702,29 @@ static func assignment_line(assignment: Dictionary) -> String:
 			dash(assignment.get("rewardAmount")), str(bool(assignment.get("rewardSettled", false)))]
 
 
+## A quantity in its unit, as a player reads it: kilograms past 1 000 in tonnes, litres past 1 000 in
+## cubic metres; `unit` (things counted) or none: the bare number. The mission's `unit` is the
+## simulator's (kg solids, l liquids, m3 gases), the same rule as its titles (quantity_text there).
+static func quantity_text(quantity: int, unit: Variant) -> String:
+	var u := str(unit if unit != null else "").strip_edges().to_lower()
+	match u:
+		"kg":
+			return _thousands(quantity, "t") if quantity >= 1000 else "%d kg" % quantity
+		"l":
+			return _thousands(quantity, "m³") if quantity >= 1000 else "%d L" % quantity
+		"m3":
+			return "%d m³" % quantity
+		"", "unit":
+			return str(quantity)
+	return "%d %s" % [quantity, u]
+
+
+## [param quantity] / 1000 with [param big_unit], one decimal unless whole ("1.5 t", "2 t").
+static func _thousands(quantity: int, big_unit: String) -> String:
+	var v := quantity / 1000.0
+	return ("%d %s" % [int(v), big_unit]) if is_equal_approx(v, roundf(v)) else ("%.1f %s" % [v, big_unit])
+
+
 static func player_mission_line(entry: Dictionary) -> String:
 	var mission: Variant = entry.get("mission")
 	var assignment: Variant = entry.get("assignment")

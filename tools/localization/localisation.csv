@@ -1363,6 +1363,10 @@ SUR LE CONVOYEUR DE DROITE.",
 %%MISSION_TURN_IN,Turn in,Valider,
 %%NOTIF_MISSION_READY,"Mission done: %s — turn it in at the town hall of the delivery village","Mission remplie : %s — validez-la à l'hôtel de ville du village de livraison",
 %%NOTIF_MISSION_COMPLETED,Mission complete: reward paid,Mission validée : récompense versée,
+%%SVC_TAB_MINE_ACTIVE,In progress,En cours,
+%%SVC_TAB_MINE_DONE,Done,Terminées,
+%%SVC_TAB_MINE_STOPPED,Stopped,Arrêtées,
+%%NOTIF_MISSION_PROGRESS,"Mission progress: %s (DataPad, My missions)","Mission avancée : %s (DataPad, Mes missions)",
 %%MISSION_TURNING_IN,Turning in…,Validation…,
 %%MISSION_TURNED_IN,Mission complete: reward paid,Mission validée : récompense versée,
 %%MISSION_TURN_IN_ELSEWHERE,Turn it in at the town hall of the village it delivers to,À valider à l'hôtel de ville du village de livraison,
@@ -1394,6 +1398,18 @@ Les lingots sont déjà raffinés.",
 %%HUD_CRUSHING,CRUSHING…,CONCASSAGE…,
 %%HUD_REFINING,REFINING…,RAFFINAGE…,
 %%HUD_REFINERY_READY,CRATE READY TO REFINE,CAISSE PRÊTE À RAFFINER,
+%%HUD_CRUSHER_FULL,"CRATE FULL.
+Extract it before crushing more.","CAISSE PLEINE.
+Extrayez-la avant de concasser à nouveau.",
+%%HUD_REFINERY_FULL,"INGOT CRATE FULL.
+Extract it before refining more.","CAISSE DE LINGOTS PLEINE.
+Extrayez-la avant de raffiner à nouveau.",
+%%HUD_REFINERY_OTHER_MINERAL,"ANOTHER MINERAL.
+Extract the ingots in progress first.","AUTRE MINÉRAL.
+Extrayez d'abord les lingots en cours.",
+%%HUD_REFINERY_OTHER_OWNER,"NOT YOUR ORE.
+Only the owner or a mission partner adds to it.","CE MINERAI N'EST PAS À VOUS.
+Seul son propriétaire ou un partenaire de mission complète.",
 %%PLATE_TYPE,TYPE,TYPE,
 %%PLATE_TYPE_ORE,CRUSHED ORE,MINERAI CONCASSÉ,
 %%PLATE_TYPE_INGOT,INGOTS,LINGOTS,

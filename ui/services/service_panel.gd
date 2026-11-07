@@ -10,9 +10,6 @@ extends VBoxContainer
 ## and [method release_fields] — so the owning structure can shield gameplay input while a field has
 ## the keyboard.
 
-## The tablet asks a panel to leave its app and go back to the overview (the app bar's « Accueil »
-## button emits this; TerminalUI routes it).
-signal home_requested
 
 ## A section wants the chart to name a place for it (a point of interest being created asks where it
 ## should stand). Relayed up through the shells that host it (see [method mount_segment]) so
@@ -488,13 +485,14 @@ static func _clear(box: Node) -> void:
 # Mobile-app kit: app bar, segmented tabs, pages, empty states
 # ---------------------------------------------------------------------------------------------
 
-## An app's top bar: a back-to-overview button, its glyph and title, with room on the right for action
-## buttons (added by the caller after this returns — the internal spacer pushes them to the end).
+## An app's top bar: its glyph and title, with room on the right for action buttons (added by the
+## caller after this returns — the internal spacer pushes them to the end). No back button: the bottom
+## bar's tabs are the way home (playtest 2026-11-07, one in every app).
 func _app_bar(title: String, icon_kind: ServiceAppIcon.Kind) -> HBoxContainer:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 12)
 	bar.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_action_button(bar, "‹  " + tr("%%SVC_ACT_HOME"), func() -> void: home_requested.emit())
+	bar.set_meta(APP_BAR_META, true)
 	var icon := ServiceAppIcon.new()
 	icon.kind = icon_kind
 	icon.colour = ServiceStyle.ACCENT
@@ -627,6 +625,10 @@ func goto_segment(index: int) -> void:
 ## The section becomes a DIRECT child of [code]self[/code] — never nested in a page of this shell's
 ## own. It is laid out by the same VBoxContainer the sections of a plain app would be, which is the
 ## only arrangement the card is known to hand a real height to.
+## Marks an app's title bar (_app_bar): a mounted section's goes up above the shell's section bar.
+const APP_BAR_META := &"app_bar"
+
+
 func mount_segment(index: int, script_path: String) -> ServicePanel:
 	var chrome := VBoxContainer.new()
 	chrome.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -644,6 +646,15 @@ func mount_segment(index: int, script_path: String) -> ServicePanel:
 	panel.visible = index == _seg_index
 	_mounts.append({"index": index, "chrome": chrome, "panel": panel})
 	add_child(panel)
+	# The section's title above the shell's bar of sections, as every app's title tops its tabs
+	# (playtest 2026-11-07: "Banque" sat under "Banque | Marché"). It follows its section's visibility.
+	for child: Node in chrome.get_children():
+		if child.has_meta(APP_BAR_META):
+			var host: Node = tab_slot if tab_slot != null else self
+			child.reparent(host)
+			host.move_child(child, 0)
+			(child as Control).visible = chrome.visible
+			_mounts.back()["title"] = child
 	# A form-only segment of the section asks for the column: the shell relays it so the tablet splits
 	# the way the section on show needs, not the way the shell itself would.
 	panel.pane_layout.connect(_relay_pane.bind(panel))
@@ -679,6 +690,9 @@ func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: i
 		var chrome: Control = mount.get("chrome")
 		if chrome != null:
 			chrome.visible = mounted_index == index
+		var title: Variant = mount.get("title")
+		if title is Control:
+			(title as Control).visible = mounted_index == index
 		# The section itself is drawn in the card, and must follow its chrome — a section that is
 		# hidden while its chrome shows is a title bar over nothing.
 		var mounted: ServicePanel = mount.get("panel") as ServicePanel

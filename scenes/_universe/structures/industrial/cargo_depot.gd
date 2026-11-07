@@ -306,7 +306,7 @@ func server_fill_shelves(rng: RandomNumberGenerator) -> int:
 				"type": str(box["type"]),
 				"uuid": UUID_UTIL.v4(),
 				"position": {"x": slot.x, "y": slot.y, "z": slot.z},
-				"rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+				"rotation": {"x": 0.0, "y": Shelf.SLOT_YAW, "z": 0.0},  # plate to the aisle
 				"scenename": str(box["scene"]).trim_prefix("res://"),
 				"parent_id": shelf.uuid,
 			})

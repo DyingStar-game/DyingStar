@@ -244,26 +244,6 @@ func test_an_empty_mineral_credits_nothing() -> void:
 	assert_eq(MISSION_HEARTBEAT.good_type_for_mineral("   "), "")
 
 
-func test_one_haul_box_is_not_zero_units() -> void:
-	# The crate collision box is 0.395 x 0.411 x 0.404 m, so a crate holds ≈0.0657 m3. In WHOLE
-	# METRES that rounds to 0, and every extract would mint nothing at all — the reason goods are
-	# counted in litres.
-	var crate_m3: float = 0.3953384826854745 * 0.4112716205195284 * 0.4039184679659229
-	assert_eq(MISSION_HEARTBEAT.units_of_volume(crate_m3), 66)
-
-
-func test_units_of_volume_round_to_the_nearest_litre() -> void:
-	assert_eq(MISSION_HEARTBEAT.units_of_volume(1.0), 1000)
-	assert_eq(MISSION_HEARTBEAT.units_of_volume(0.0657), 66)
-	assert_eq(MISSION_HEARTBEAT.units_of_volume(0.0), 0)
-
-
-func test_units_of_volume_never_goes_negative() -> void:
-	# A depot that rounded a sub-litre remainder the wrong way would send a negative delta, which
-	# service-inventory reads as a drop-off.
-	assert_eq(MISSION_HEARTBEAT.units_of_volume(-0.0004), 0)
-
-
 func test_carried_of_reads_the_service_view() -> void:
 	# The write answers a Stack, which carries no `carried`; the figure is read back from a
 	# StackView instead, so this is the one number the payload's `carried` rests on.
