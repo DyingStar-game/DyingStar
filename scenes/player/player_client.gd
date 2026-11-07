@@ -1286,7 +1286,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if seated_handle != null:
 			_toggle_door(seated_handle)
 		elif _cab != null and _cab.aimed():
-			_send_vehicle_action("vehicle_screen_mode")  # the cab screen: offline -> chart -> camera
+			_send_vehicle_action("vehicle_screen_mode")  # the cab screen: offline -> camera -> chart
 		return  # seated: `action` operates doors and the cab screen, never carry
 
 	# Dev instruments: they only LOOK at the world, they never act on it, so they sit before the walk

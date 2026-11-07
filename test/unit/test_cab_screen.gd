@@ -12,9 +12,9 @@ func test_the_key_cycles_offline_chart_camera() -> void:
 	var mode := VehicleScreenMode.new()
 	assert_eq(mode.mode, VehicleScreenMode.Mode.OFF, "a new truck's screen is OFFLINE")
 	mode.cycle()
-	assert_eq(mode.mode, VehicleScreenMode.Mode.MAP, "first press: the chart")
+	assert_eq(mode.mode, VehicleScreenMode.Mode.CAMERA, "first press: the rear camera")
 	mode.cycle()
-	assert_eq(mode.mode, VehicleScreenMode.Mode.CAMERA, "second: the rear camera")
+	assert_eq(mode.mode, VehicleScreenMode.Mode.MAP, "second: the chart")
 	mode.cycle()
 	assert_eq(mode.mode, VehicleScreenMode.Mode.OFF, "and OFFLINE again")
 
@@ -28,13 +28,13 @@ func test_only_a_change_is_sent_and_a_received_float_is_read() -> void:
 	mode.write_changes(data)
 	assert_true(data.is_empty(), "unchanged: nothing")
 	var replica := VehicleScreenMode.new()
-	replica.read({VehicleScreenMode.KEY: 2.0})  # Godot's JSON hands integers back as floats
+	replica.read({VehicleScreenMode.KEY: 1.0})  # Godot's JSON hands integers back as floats
 	assert_eq(replica.mode, VehicleScreenMode.Mode.CAMERA)
 	data = {}
 	replica.write_changes(data)
 	assert_true(data.is_empty(), "a received value is not sent back")
 	replica.read({VehicleScreenMode.KEY: 9.0})
-	assert_eq(replica.mode, VehicleScreenMode.Mode.CAMERA, "out of range: kept inside the modes")
+	assert_eq(replica.mode, VehicleScreenMode.Mode.MAP, "out of range: kept inside the modes (the last)")
 
 
 func test_a_screen_shows_what_power_and_mode_say() -> void:
