@@ -57,3 +57,4 @@ it names under **In the code** still exist.
 | [0024](0024-asset-credits-and-licences.md) | A credit `.txt` beside every asset; `credits.json` is generated and checked by CI; a lost author is `Unknown`. |
 | [0025](0025-dev-tools-off-by-one-table.md) | Dev tools switch in `ENABLED_DEV_TOOLS`; their code stays; builds force them off; the server refuses them. |
 | [0026](0026-shared-materials-linked-by-name-generated-and-checked.md) | Shared materials link by name, are generated from `material.json`, and a pull request checks they are. |
+| [0027](0027-world-screens-work-only-when-seen.md) | A screen in the world animates or redraws only when the camera is near and has it in view; static faces are drawn once. |

@@ -94,6 +94,8 @@ it. Never work around one silently.
   build ([ADR 0025](docs/adr/0025-dev-tools-off-by-one-table.md)).
 - Positions are astronomic (~3e10 m): never hand a world position to a shader, a billboard or a
   float32 value ([ADR 0011](docs/adr/0011-double-precision-no-world-positions-in-float32.md)).
+- A screen or plate in the world animates or redraws only near the camera and in its view, and a static
+  face is drawn once ([ADR 0027](docs/adr/0027-world-screens-work-only-when-seen.md)).
 - A new `Area3D` does not monitor; it is detected by the player's `AreaDetector`
   ([ADR 0013](docs/adr/0013-named-collision-layers-one-active-monitor.md)).
 
