@@ -44,7 +44,7 @@ const ICON_OWNER := preload(ICON_DIR + "icon_plate_owner.png")
 
 ## Where the plate's copy on the crate's top sits, in the crate's frame (facing up, behind the serial
 ## number's top label).
-@export var top_position := Vector3(0.0, 0.1495, -0.06)
+@export var top_position := Vector3(0.0, 0.1495, 0.01)
 
 var _material := StandardMaterial3D.new()
 ## The copy on the top: same mesh, same material, so one drawing shows on both.
