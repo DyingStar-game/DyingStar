@@ -4381,19 +4381,27 @@ func village_roads_for_chunk(nside: int, ipix: int) -> Array:
 	if roads.is_empty():
 		return []
 	var out: Array = []
+	var c := HEALPix.pix2vec_nest(nside, ipix)
+	var half_diag := _chunk_half_diag(nside)
 	for z: Dictionary in roads:
-		if _near_chunk(z["_dir"], float(z["_reach_m"]) + VillageRoadBed.BAND_M, nside, ipix):
+		if _near(z["_dir"], float(z["_reach_m"]) + VillageRoadBed.BAND_M, c, half_diag):
 			out.append(z)
 	return out
 
 
 ## Could something centred on [param dir] (planet-local unit) and moving the ground up to
-## [param reach_m] metres from it reach the chunk ([param nside], [param ipix])? Measured from the
-## chunk's centre, with three quarters of its side as its half diagonal: the filter of the village
-## beds and roads, per chunk.
-func _near_chunk(dir: Vector3, reach_m: float, nside: int, ipix: int) -> bool:
-	return HEALPix.pix2vec_nest(nside, ipix).angle_to(dir) * radius \
-			<= reach_m + HEALPix.pixel_side_length(nside, radius) * 0.75
+## [param reach_m] metres from it reach the chunk of centre [param chunk_dir] (HEALPix.pix2vec_nest)
+## and half diagonal [param half_diag] ([method _chunk_half_diag])? Measured from the chunk's centre:
+## the filter of the village beds and roads, per chunk. The caller works the chunk out ONCE for all
+## the beds or roads it tests: pix2vec_nest per road was most of the 6-10 ms a chunk load spent in
+## get_roads_for_chunk on the server, with no road at all (2026-11-07 measure, 118 villages).
+func _near(dir: Vector3, reach_m: float, chunk_dir: Vector3, half_diag: float) -> bool:
+	return chunk_dir.angle_to(dir) * radius <= reach_m + half_diag
+
+
+## Three quarters of the side of an [param nside] chunk: its half diagonal, for [method _near].
+func _chunk_half_diag(nside: int) -> float:
+	return HEALPix.pixel_side_length(nside, radius) * 0.75
 
 
 ## Are the road zones [param a] (registered: with their derived `_` fields) the zones [param b] (as
@@ -4420,8 +4428,10 @@ func _village_road_pieces(nside: int, ipix: int) -> Array:
 	if roads.is_empty():
 		return []
 	var out: Array = []
+	var c := HEALPix.pix2vec_nest(nside, ipix)
+	var half_diag := _chunk_half_diag(nside)
 	for z: Dictionary in roads:
-		if not _near_chunk(z["_dir"], float(z["_reach_m"]), nside, ipix):
+		if not _near(z["_dir"], float(z["_reach_m"]), c, half_diag):
 			continue
 		var cl: PackedVector2Array = z["centerline"]
 		var cum: PackedFloat64Array = z["_cum_lengths"]
@@ -6005,6 +6015,9 @@ var _pad_alt: Dictionary = {}
 ## would level the ground at two different altitudes and the building would
 ## stand on one of them.
 var _pads_starved: Dictionary = {}
+## uuid → the tile (export_nside pixel) a starved pad was refused for (see _still_waiting_tile); absent
+## when it was refused for something else, and then every retry measures it again.
+var _pads_wait_tile: Dictionary = {}
 ## Uuids retry_starved_pads() gave an altitude, until PlanetTerrain takes them (take_caught_up_pads):
 ## their TerrainPad has to come back and seat its building on the platform it now has.
 var _pads_caught_up: Array[String] = []
@@ -6089,9 +6102,14 @@ func _pad_index() -> PadIndex:
 ## relief: that is what puts the buildings of a village on one gentle plane. Inside a bed's footprint
 ## the relief is not even read. With [param rec], for reading around that pad only.
 func pad_sampler(rec: Dictionary = {}) -> Callable:
+	return _pad_sampler_on(rec, _village_beds)
+
+
+## [method pad_sampler] over the village beds [param all_beds] instead of the published ones.
+func _pad_sampler_on(rec: Dictionary, all_beds: Array) -> Callable:
 	var raw := relief_sampler()
 	var mpd := radius * PI / 180.0
-	var beds: Array = _village_beds if rec.is_empty() else VillageBed.near_pad(_village_beds, rec, mpd)
+	var beds: Array = all_beds if rec.is_empty() else VillageBed.near_pad(all_beds, rec, mpd)
 	if beds.is_empty():
 		return raw
 	return func(dir: Vector3) -> float:
@@ -6103,9 +6121,31 @@ func pad_sampler(rec: Dictionary = {}) -> Callable:
 
 
 ## The raw relief a village bed is fitted to: [method pad_sampler] without the beds.
+##
+## Sampled through one TileFrame per export tile, made on first use and kept for the life of the
+## callable: its mountains resolved once (prepare_mountain_frame) and the C# sampler wherever it can
+## answer — the chunk builders' path, the same heights to the bit (checked on 117 village beds, 289
+## samples each). Without a frame every sample looked its mountains up again in script: 25-110 ms for
+## one village bed, a whole planet's villages in one frame at boot (2026-11-07 measure). The callable is
+## meant to be short-lived and used on one thread (its frames are its own).
+##
+## The C# is asked even under the profiling rig, which otherwise keeps every sample in script to count
+## it: what the rig shows of these has to be what they cost in a build.
 func relief_sampler() -> Callable:
+	var frames := {}
 	return func(dir: Vector3) -> float:
-		return sample_height_for_direction(dir, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
+		var ipix := HEALPix.vec2pix_nest(export_nside, dir)
+		var frame: TileFrame = frames.get(ipix)
+		if frame == null:
+			frame = make_tile_frame()
+			prepare_mountain_frame(frame, export_nside, ipix)
+			frames[ipix] = frame
+		if frame.native_ok:
+			var fast: float = frame.native.Sample(dir, ipix, export_nside, 0.0, CrackCarve.NONE)
+			if not is_nan(fast):
+				return fast
+		# NaN: a tile the C# does not hold yet (this path adds it to the frame) or cannot answer exactly.
+		return sample_height_for_direction(dir, ipix, -1, Vector2i(-1, -1), null, -1, frame, 0.0,
 				CrackCarve.NONE)
 
 
@@ -6116,6 +6156,8 @@ func relief_sampler() -> Callable:
 var _village_beds: Array = []
 ## uuid → record of beds waiting for an elevation tile under their fitting grid.
 var _beds_starved: Dictionary = {}
+## uuid → the tile (export_nside pixel) a starved bed was refused for (see _still_waiting_tile).
+var _beds_wait_tile: Dictionary = {}
 
 
 ## Does this body carry any village bed? O(1): asked by the chunk builders (GradeBed.has_work) and
@@ -6131,8 +6173,10 @@ func village_beds_for_chunk(nside: int, ipix: int) -> Array:
 	if beds.is_empty():
 		return []
 	var out: Array = []
+	var c := HEALPix.pix2vec_nest(nside, ipix)
+	var half_diag := _chunk_half_diag(nside)
 	for rec: Dictionary in beds:
-		if _near_chunk(HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])), PadBed.reach_m(rec), nside, ipix):
+		if _near(HEALPix.lonlat2vec(float(rec["lon"]), float(rec["lat"])), PadBed.reach_m(rec), c, half_diag):
 			out.append(rec)
 	return out
 
@@ -6148,32 +6192,222 @@ func _village_bed_of(uuid: String) -> Dictionary:
 ## Register or move the village bed [param rec_in] (VillageBed.record): its plane is fitted to the
 ## relief, and every pad its ground reaches is measured again on it. Returns the finest-level pixels
 ## whose chunks are now stale ({} when nothing changed, or while it waits for a tile).
+##
+## All of it on the calling thread: tools and tests. The game goes through [method submit_village_bed],
+## which does the same two steps with the first one on a worker.
 func register_village_bed(rec_in: Dictionary) -> Dictionary:
 	var rec := PadBed.quantise(rec_in)
 	var uuid := str(rec.get("uuid", ""))
-	if uuid.is_empty():
+	if uuid.is_empty() or _village_bed_unchanged(uuid, rec):
 		return {}
 	var old := _village_bed_of(uuid)
-	if not old.is_empty() and PadBed.same_geometry(old, rec) and not _beds_starved.has(uuid):
-		return {}
-	var dirs := VillageBed.fit_dirs(rec, radius * PI / 180.0)
-	if not _tiles_readable(dirs):
+	return _apply_village_bed(rec, _prepare_village_bed(rec, _village_beds, old, _pads_reached_copy([rec, old])))
+
+
+## Is [param rec] the ground the bed [param uuid] already has, measured and published?
+func _village_bed_unchanged(uuid: String, rec: Dictionary) -> bool:
+	var old := _village_bed_of(uuid)
+	return not old.is_empty() and PadBed.same_geometry(old, rec) and not _beds_starved.has(uuid)
+
+
+## Copies of the pads one of [param beds] reaches ({} entries skipped), for a worker to measure: the
+## index's records are the main thread's.
+func _pads_reached_copy(beds: Array) -> Array:
+	var reach: Array = beds.filter(func(b: Dictionary) -> bool: return not b.is_empty())
+	var out: Array = []
+	if _pads == null or reach.is_empty():
+		return out
+	var mpd := radius * PI / 180.0
+	_pad_mutex.lock()
+	for p: Dictionary in _pads_near(reach):
+		if not PadBed.is_notch(p) and VillageBed.reaches(reach, p, mpd):
+			out.append(p.duplicate())
+	_pad_mutex.unlock()
+	return out
+
+
+## The pads whose centre one of [param beds] can reach (a superset of VillageBed.reaches): looked up by
+## pixel in the index — a walk over all of them cost 5-9 ms a village on a server (2026-11-07 measure).
+func _pads_near(beds: Array) -> Array:
+	var pixels := {}
+	for b: Dictionary in beds:
+		pixels.merge(_pads.pixels_of(b))
+	return _pads.centred_in(pixels)
+
+
+## The work of registering the bed [param rec] (quantised) over the published beds [param beds], where
+## the bed of that uuid was [param old] ({} if none): pure, any thread. Reads the relief, nothing else of
+## this body that a worker may not. Returns {missing: tile} while an elevation tile under its fitting grid
+## is unreadable, else {rec: fitted, beds: the beds to publish, measures: uuid -> [pad as measured, stats]}
+## for the pads of [param pads] its ground (or [param old]'s) reaches — a pad whose own tile is unreadable
+## gets none, and register_pads finds that out again.
+func _prepare_village_bed(rec: Dictionary, beds: Array, old: Dictionary, pads: Array) -> Dictionary:
+	var mpd := radius * PI / 180.0
+	var missing := _first_unreadable_tile(VillageBed.fit_dirs(rec, mpd))
+	if missing >= 0:
+		return {"missing": missing}
+	var fitted := VillageBed.fit(rec, relief_sampler(), mpd)
+	var uuid := str(fitted["uuid"])
+	var next: Array = beds.filter(func(b: Dictionary) -> bool: return str(b["uuid"]) != uuid)
+	next.append(fitted)
+	next.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a["uuid"]) < str(b["uuid"]))
+	var reach: Array = [fitted] if old.is_empty() else [fitted, old]
+	var measures := {}
+	for p: Dictionary in pads:
+		var q := PadBed.quantise(p)
+		if PadBed.is_notch(q) or not VillageBed.reaches(reach, q, mpd):
+			continue
+		var stats := _pad_stats_on(q, next)
+		if not stats.is_empty():
+			measures[str(q["uuid"])] = [q, stats]
+	return {"rec": fitted, "beds": next, "measures": measures}
+
+
+## Publish what [method _prepare_village_bed] made of [param rec] (main thread). Returns the stale pixels.
+##
+## The plane is the relief's alone: a bed published while it was prepared changes nothing of it, only the
+## list it goes into (made again here) and the measure of a pad standing near that other bed — dropped,
+## and register_pads measures that pad as it would any other. So is a pad registered, moved or gone since.
+## Throwing the whole preparation away instead made a server's boot prepare its 118 villages again one by
+## one on the main thread, each publication outdating all the others (2026-11-07 measure: 1.4 s).
+func _apply_village_bed(rec: Dictionary, prepared: Dictionary) -> Dictionary:
+	var uuid := str(rec["uuid"])
+	var old := _village_bed_of(uuid)
+	if prepared.has("missing"):
 		_beds_starved[uuid] = rec
+		_beds_wait_tile[uuid] = int(prepared["missing"])
 		return {}
 	_beds_starved.erase(uuid)
-	rec = VillageBed.fit(rec, relief_sampler(), radius * PI / 180.0)
+	_beds_wait_tile.erase(uuid)
+	var fitted: Dictionary = prepared["rec"]
 	var next: Array = _village_beds.filter(func(b: Dictionary) -> bool: return str(b["uuid"]) != uuid)
-	next.append(rec)
+	next.append(fitted)
 	next.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a["uuid"]) < str(b["uuid"]))
+	var measures := _measures_still_true(prepared["measures"], prepared["beds"], next)
 	_village_beds = next
-	var pads := _ensure_pads()
-	var dirty: Dictionary = pads.pixels_of(rec)
+	var index := _ensure_pads()
+	var dirty: Dictionary = index.pixels_of(fitted)
 	if not old.is_empty():
-		dirty.merge(pads.pixels_of(old))
+		dirty.merge(index.pixels_of(old))
 	# A village that moved: the pads its OLD ground reached were measured on it, and are measured again
 	# too (on the relief, or on another bed now).
-	dirty.merge(_remeasure_pads_on([rec] if old.is_empty() else [rec, old]))
+	dirty.merge(_remeasure_pads_on([fitted] if old.is_empty() else [fitted, old], measures))
 	return dirty
+
+
+## The [param measures] (uuid -> [pad, stats]) taken on the beds [param made_on] that the beds [param now]
+## leave true: those of the pads whose nearby beds (VillageBed.near_pad, what their sampler reads) are the
+## very same records in both. Records are never edited, only replaced, so identity says it.
+func _measures_still_true(measures: Dictionary, made_on: Array, now: Array) -> Dictionary:
+	if is_same(made_on, now) or measures.is_empty():
+		return measures
+	var mpd := radius * PI / 180.0
+	var out := {}
+	for uuid: String in measures:
+		var pad: Dictionary = measures[uuid][0]
+		var a := VillageBed.near_pad(made_on, pad, mpd)
+		var b := VillageBed.near_pad(now, pad, mpd)
+		var same := a.size() == b.size()
+		for k in a.size():
+			if not same:
+				break
+			same = is_same(a[k], b[k])
+		if same:
+			out[uuid] = measures[uuid]
+	return out
+
+
+# ── Village beds on a worker ─────────────────────────────────────────────
+
+## uuid -> the bed being prepared on a worker: {task_id, result: [prepared], rec, pixels (the finest-level
+## pixels it reaches), again: the record registered while it ran, to prepare next ({} if none)}.
+var _bed_jobs: Dictionary = {}
+
+
+## Register the village bed [param rec_in] as [method register_village_bed] does, the fit and the
+## measures of its pads on a worker: they cost ~6 ms a bed and ~4 ms a pad on the main thread, 0.6 s
+## for a village of 104 pads in one client frame, a planet's 117 villages at a server's boot (2026-11-07
+## measure). [method collect_village_beds] publishes it. False when there is nothing to do: the same
+## ground as published, or as the job already running for it.
+func submit_village_bed(rec_in: Dictionary) -> bool:
+	var rec := PadBed.quantise(rec_in)
+	var uuid := str(rec.get("uuid", ""))
+	if uuid.is_empty():
+		return false
+	if _bed_jobs.has(uuid):
+		var job: Dictionary = _bed_jobs[uuid]
+		if PadBed.same_geometry(job["rec"], rec):
+			job["again"] = {}
+			return false
+		job["again"] = rec  # prepared once this one is done: what it makes would be stale
+		return true
+	if _village_bed_unchanged(uuid, rec):
+		return false
+	_beds_starved.erase(uuid)  # the job decides, and puts it back if a tile is still missing
+	var beds: Array = _village_beds
+	var old := _village_bed_of(uuid)
+	var pads := _pads_reached_copy([rec, old])
+	var result: Array = [null]
+	var pixels := _ensure_pads().pixels_of(rec)
+	if not old.is_empty():
+		pixels.merge(_ensure_pads().pixels_of(old))
+	var task_id := WorkerThreadPool.add_task(func() -> void:
+		result[0] = _prepare_village_bed(rec, beds, old, pads))
+	_bed_jobs[uuid] = {"task_id": task_id, "result": result, "rec": rec, "pixels": pixels, "again": {}}
+	return true
+
+
+## Publish the village beds whose worker is done (main thread). Returns [[uuid, stale pixels], …], one
+## per bed published or set aside for a tile.
+func collect_village_beds() -> Array:
+	var out: Array = []
+	if _bed_jobs.is_empty():
+		return out
+	for uuid: String in _bed_jobs.keys():
+		var job: Dictionary = _bed_jobs[uuid]
+		if not WorkerThreadPool.is_task_completed(int(job["task_id"])):
+			continue
+		WorkerThreadPool.wait_for_task_completion(int(job["task_id"]))
+		_bed_jobs.erase(uuid)
+		var again: Dictionary = job["again"]
+		if not again.is_empty():
+			submit_village_bed(again)
+			continue
+		out.append([uuid, _apply_village_bed(job["rec"], job["result"][0])])
+	return out
+
+
+## Is a village bed being prepared whose ground reaches the chunk ([param nside], [param ipix])? The
+## server's collision waits for it: built without it, the chunk would be unloaded and loaded again the
+## moment it lands, the ground gone from under whatever stands there.
+func village_bed_pending_for_chunk(nside: int, ipix: int) -> bool:
+	if _bed_jobs.is_empty() or nside <= 0:
+		return false
+	var finest := 1 << maxi(max_quadtree_depth, 0)
+	var shift := 0
+	var n := nside
+	while n < finest:
+		n <<= 1
+		shift += 2
+	for job: Dictionary in _bed_jobs.values():
+		for p: int in job["pixels"]:
+			if (p >> shift) == ipix:
+				return true
+	return false
+
+
+## Is the bed [param uuid] being prepared on a worker?
+func village_bed_in_flight(uuid: String) -> bool:
+	return _bed_jobs.has(uuid)
+
+
+## Wait for every village bed job (the terrain going away): they read this body.
+func join_village_bed_jobs() -> void:
+	for job: Dictionary in _bed_jobs.values():
+		WorkerThreadPool.wait_for_task_completion(int(job["task_id"]))
+	_bed_jobs.clear()
+
+
 
 
 ## Diagnostic: how far the pads standing on the village bed [param uuid] are drawn from its plane.
@@ -6215,29 +6449,53 @@ func village_bed_report(uuid: String, worst: int = 8) -> String:
 
 ## Measure again every pad whose centre the ground of one of [param beds] reaches (VillageBed.reaches):
 ## their altitude follows the beds now. They are queued as caught up, so their buildings come down
-## (or up) onto it. Each pad once, however many of [param beds] reach it.
-func _remeasure_pads_on(beds: Array) -> Dictionary:
-	var dirty := {}
+## (or up) onto it. Each pad once, however many of [param beds] reach it. [param measures] (uuid -> [pad
+## as measured, stats], _prepare_village_bed) are taken as they are for a pad of the same geometry,
+## measured on the beds just published: nothing is sampled for it here.
+##
+## In ONE register_pads pass — one index clone, one levelling, one road-cut merge for the whole village —
+## the same ground as one by one (test_terrain_pad_batch). One by one, each pad levelled the whole index
+## again: 1.7 s of PadLevels.settle for the 99 pads of a village, in one client frame (2026-11-07 measure).
+func _remeasure_pads_on(beds: Array, measures: Dictionary = {}) -> Dictionary:
 	if _pads == null:
-		return dirty
+		return {}
 	var mpd := radius * PI / 180.0
-	for rec: Dictionary in _pads.all():
+	var recs: Array = []
+	_pad_mutex.lock()
+	for rec: Dictionary in _pads_near(beds):
 		if PadBed.is_notch(rec) or not VillageBed.reaches(beds, rec, mpd):
 			continue
 		var uuid := str(rec["uuid"])
-		_pad_mutex.lock()
-		_pad_alt.erase(uuid)
-		_pad_mutex.unlock()
-		dirty.merge(register_pad(rec))
-		_pads_caught_up.append(uuid)
+		_pad_alt.erase(uuid)  # measured again, not answered from what it was
+		var m: Variant = measures.get(uuid)
+		if m != null and PadBed.same_geometry(m[0], rec):
+			var r: Dictionary = rec.duplicate()
+			r["measured"] = m[1]
+			r["measured_on"] = _village_beds
+			recs.append(r)
+		else:
+			recs.append(rec)
+	_pad_mutex.unlock()
+	if recs.is_empty():
+		return {}
+	var dirty := register_pads(recs)
+	for rec: Dictionary in recs:
+		var uuid := str(rec["uuid"])
+		if not _pads_caught_up.has(uuid):
+			_pads_caught_up.append(uuid)
 	return dirty
 
 
 ## Is every elevation tile under [param dirs] readable? A direction that falls through to the flat
 ## global map would put the ground at two different altitudes on the client and on the server.
 func _tiles_readable(dirs: PackedVector3Array) -> bool:
+	return _first_unreadable_tile(dirs) < 0
+
+
+## The first elevation tile (export_nside pixel) under [param dirs] that is not readable, -1 when all are.
+func _first_unreadable_tile(dirs: PackedVector3Array) -> int:
 	if chunk_heightmaps_dir == "":
-		return true
+		return -1
 	var seen := {}
 	for d in dirs:
 		var ipix := HEALPix.vec2pix_nest(export_nside, d)
@@ -6245,8 +6503,19 @@ func _tiles_readable(dirs: PackedVector3Array) -> bool:
 			continue
 		seen[ipix] = true
 		if not _grade_tile_available(ipix):
-			return false
-	return true
+			return ipix
+	return -1
+
+
+## Is the starved pad or bed [param uuid] still waiting for the tile it was refused for? A retry then has
+## nothing to gain: that tile alone is checked, not the whole footprint again (2-4 ms for a village bed,
+## every 2 s and at every zone change, for a village whose tiles nobody loads — 2026-11-07 measure).
+## Once that tile is there, the full check runs as before and may name the next missing one.
+func _still_waiting_tile(waits: Dictionary, uuid: String) -> bool:
+	if chunk_heightmaps_dir == "":
+		return false  # no tiles to wait for: every direction is readable (see _first_unreadable_tile)
+	var ipix := int(waits.get(uuid, -1))
+	return ipix >= 0 and not _grade_tile_available(ipix)
 
 
 ## Register or move a pad. Returns the finest-level pixels whose chunks are now
@@ -6296,15 +6565,20 @@ func register_pads(recs_in: Array) -> Dictionary:
 				and PadBed.same_geometry(old, rec):
 			continue
 		var stats: Dictionary
+		var missing: Array = []  # the tile _pad_stats_if_readable was refused for, if that is why
 		if PadBed.is_notch(rec):
 			# A notch's floor is authored (PadBed.notch_record): nothing to measure, no tile to wait for.
 			stats = {"z": float(rec["z"]), "span": 0.0, "talus_m": 0.0}
 		else:
-			stats = settled if not settled.is_empty() else _pad_stats_if_readable(rec)
+			stats = settled if not settled.is_empty() else _pad_stats_if_readable(rec, missing)
 		if stats.is_empty():
 			# Not readable yet: drop whatever was registered under this uuid rather
 			# than leave a stale platform, and wait for the catch-up.
 			_pads_starved[uuid] = rec
+			if missing.is_empty():
+				_pads_wait_tile.erase(uuid)
+			else:
+				_pads_wait_tile[uuid] = missing[0]
 			if old.is_empty():
 				continue
 		# Copy-on-write: the workers read the published index, so it is the CLONE
@@ -6320,6 +6594,7 @@ func register_pads(recs_in: Array) -> Dictionary:
 			dropped = true
 			continue
 		_pads_starved.erase(uuid)
+		_pads_wait_tile.erase(uuid)
 		rec["z"] = float(stats["z"])
 		rec["talus_m"] = float(stats["talus_m"])
 		_pad_alt[uuid] = stats
@@ -6385,6 +6660,7 @@ func take_moved_pads() -> Array:
 func unregister_pad(uuid: String) -> Dictionary:
 	_pad_mutex.lock()
 	_pads_starved.erase(uuid)
+	_pads_wait_tile.erase(uuid)
 	_pad_alt.erase(uuid)
 	var dirty := {}
 	if _pads != null and not _pads.get_rec(uuid).is_empty():
@@ -6462,17 +6738,22 @@ func pad_pixels(rec: Dictionary) -> Dictionary:
 ## counterpart of retry_starved_grade_profiles().
 func retry_starved_pads() -> Dictionary:
 	var dirty := {}
-	# The village beds first: the pads under them are measured on them.
+	# The village beds: on a worker (submit_village_bed), published by collect_village_beds, which
+	# measures again the pads they reach — those caught up below included.
 	for uuid: String in _beds_starved.keys().duplicate():
-		dirty.merge(register_village_bed(_beds_starved[uuid]))
-	if _pads_starved.is_empty():
-		return dirty
-	for uuid: String in _pads_starved.keys().duplicate():
-		var rec: Dictionary = _pads_starved[uuid]
-		dirty.merge(register_pad(rec))
-		if not _pads_starved.has(uuid):
-			_pads_caught_up.append(uuid)
+		if not _still_waiting_tile(_beds_wait_tile, uuid):
+			submit_village_bed(_beds_starved[uuid])
+	if not _pads_starved.is_empty():
+		for uuid: String in _pads_starved.keys().duplicate():
+			if _still_waiting_tile(_pads_wait_tile, uuid):
+				continue
+			var rec: Dictionary = _pads_starved[uuid]
+			dirty.merge(register_pad(rec))
+			if not _pads_starved.has(uuid):
+				_pads_caught_up.append(uuid)
 	return dirty
+
+
 
 
 ## The pads retry_starved_pads() gave an altitude since the last call, emptied by the call.
@@ -6491,12 +6772,22 @@ func pads_incomplete() -> bool:
 ## read. Every direction the median is taken over must resolve to a real tile:
 ## one that falls through to the flat global map would move the platform on one
 ## machine and not on the other.
-func _pad_stats_if_readable(rec: Dictionary) -> Dictionary:
+func _pad_stats_if_readable(rec: Dictionary, missing_out: Array = []) -> Dictionary:
+	return _pad_stats_on(rec, _village_beds, missing_out)
+
+
+## [method _pad_stats_if_readable] on the village beds [param beds] instead of the published ones: any
+## thread, given beds it may read (a published array is never edited, only replaced).
+func _pad_stats_on(rec: Dictionary, beds: Array, missing_out: Array = []) -> Dictionary:
 	var m_per_deg := radius * PI / 180.0
 	var dirs := PadBed.sample_dirs(rec, m_per_deg)
-	if dirs.is_empty() or not _tiles_readable(dirs):
+	if dirs.is_empty():
 		return {}
-	return PadBed.quantise_stats(PadBed.pad_stats(rec, pad_sampler(rec), m_per_deg))
+	var missing := _first_unreadable_tile(dirs)
+	if missing >= 0:
+		missing_out.append(missing)
+		return {}
+	return PadBed.quantise_stats(PadBed.pad_stats(rec, _pad_sampler_on(rec, beds), m_per_deg))
 
 
 ## Where a road must stop: the viaduct decks (bridges) AND the building pads it

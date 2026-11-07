@@ -169,6 +169,17 @@ func pixels_of(rec: Dictionary) -> Dictionary:
 	return out
 
 
+## The pads whose centre lies in one of the finest-level [param pixels] (pixel -> anything): with
+## [method pixels_of] of a ground, every pad it can reach, for a few dictionary lookups instead of a
+## walk over the whole planet's pads.
+func centred_in(pixels: Dictionary) -> Array:
+	var out: Array = []
+	for ip: int in pixels:
+		for uuid: String in _pix.get(ip, []):
+			out.append(_recs[uuid])
+	return out
+
+
 func set_radius(radius_m: float) -> void:
 	_radius_m = radius_m
 

@@ -44,6 +44,12 @@ const SPAWN_CLEARANCE := 0.05
 const DETECT_INTERVAL_FRAMES := 30   # re-check ~once per second at 30 Hz physics
 const DETECT_MARGIN := 210.0          # metres beyond the field half-size at which a player triggers
 
+# Points of the field placed per physics step (ground raycast, POI test, richness and colour of the
+# ground). The whole field in ONE step froze the server 147-208 ms when a player came near a fresh zone
+# (2026-11-07, local measure, ~244 points): every player on it skipped 10 positions. At 16 a step a
+# 244-rock field takes 16 steps, about a quarter of a second, against the 40 s its spawn drain lasts.
+const BUILD_POINTS_PER_STEP := 16
+
 @export_group("Identity")
 ## Designer-placed zone: tick this on the instance you drop in a world scene. On the server it
 ## spawns the REAL networked zone (same scene, PropSync-backed, deterministic uuid) and frees
@@ -118,6 +124,9 @@ var _spawn_tick: int = 0
 var _detect_tick: int = 0
 var _ground_wait_logged: bool = false
 var _last_poi_culled: int = 0
+## The field being placed, BUILD_POINTS_PER_STEP points a physics step (see _begin_spawn_queue): empty
+## when no placement is under way.
+var _build: Dictionary = {}
 
 var preload_scenes = {
 	SCENE_SMALL: preload("res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn"),
@@ -273,7 +282,9 @@ func _physics_process(_delta: float) -> void:
 				generate_queue = true
 	if generate_queue:
 		generate_queue = false
-		if _spawn_queue.is_empty() and not _has_rocks_in_field() and not _ground_is_loaded():
+		if not _build.is_empty():
+			pass  # already placing this field
+		elif _spawn_queue.is_empty() and not _has_rocks_in_field() and not _ground_is_loaded():
 			# Not an error: the chunk's collision is still being built on a worker thread. Say it
 			# once, so a zone that never populates is never a mystery.
 			if not _ground_wait_logged:
@@ -283,24 +294,28 @@ func _physics_process(_delta: float) -> void:
 			# Stamp the time BEFORE building: it seeds the field, so the rocks and the persisted
 			# timestamp have to describe the same draw.
 			last_generation_datetime = int(Time.get_unix_time_from_system())
-			_build_spawn_queue()
-			# Only NOW is the zone "generated". Flagging it before checking would brick the zone
-			# for good: every raycast in _build_spawn_queue misses while the chunk's collision is
-			# still loading (it is built asynchronously on WorkerThreadPool), the queue comes back
-			# empty, and a persisted generated = true means nothing ever retries.
-			print("[MiningZone] %s generating: %d rocks queued (%s in %s @ %.0f kg/m3, richness %.2f)%s" % [
-				name, _spawn_queue.size(), mineral_id,
-				_resolved_host_rock_id() if _resolved_host_rock_id() != "" else "<none>",
-				_host_rock_density(), richness,
-				"" if _last_poi_culled == 0 else " — %d dropped inside a POI" % _last_poi_culled])
-			if not _spawn_queue.is_empty():
-				generated = true
-				# Persist it: without this the zone re-populates on every server restart (Horizon
-				# replays the stored object_data, which would still say generated = false).
-				server_prop_update({
-					"generated": generated,
-					"last_generation_datetime": last_generation_datetime,
-				})
+			_begin_spawn_queue()
+	if not _build.is_empty() and _continue_spawn_queue():
+		_spawn_queue = _build["queue"]
+		_last_poi_culled = _build["culled"]
+		_build = {}
+		# Only NOW is the zone "generated". Flagging it before checking would brick the zone
+		# for good: every raycast of the placement misses while the chunk's collision is
+		# still loading (it is built asynchronously on WorkerThreadPool), the queue comes back
+		# empty, and a persisted generated = true means nothing ever retries.
+		print("[MiningZone] %s generating: %d rocks queued (%s in %s @ %.0f kg/m3, richness %.2f)%s" % [
+			name, _spawn_queue.size(), mineral_id,
+			_resolved_host_rock_id() if _resolved_host_rock_id() != "" else "<none>",
+			_host_rock_density(), richness,
+			"" if _last_poi_culled == 0 else " — %d dropped inside a POI" % _last_poi_culled])
+		if not _spawn_queue.is_empty():
+			generated = true
+			# Persist it: without this the zone re-populates on every server restart (Horizon
+			# replays the stored object_data, which would still say generated = false).
+			server_prop_update({
+				"generated": generated,
+				"last_generation_datetime": last_generation_datetime,
+			})
 	if not _spawn_queue.is_empty():
 		_spawn_tick += 1
 		if _spawn_tick >= SPAWN_INTERVAL_FRAMES:
@@ -353,9 +368,9 @@ func _has_rocks_in_field() -> bool:
 				return true
 	return false
 
-## Seed the RNG and fill _spawn_queue with ready-to-send rock spawn data. All ground
-## raycasts are done here (called from _physics_process) so the physics space is available.
-func _build_spawn_queue() -> void:
+## Seed the RNG and start placing the field (see _continue_spawn_queue): what every point of the
+## field shares, resolved once. Called from _physics_process, like the placement it starts.
+func _begin_spawn_queue() -> void:
 	var seed_str: String = stable_id if stable_id != "" \
 		else "%.2f,%.2f,%.2f" % [global_position.x, global_position.y, global_position.z]
 
@@ -374,11 +389,10 @@ func _build_spawn_queue() -> void:
 	# the zone itself: the rocks must survive the zone and ride the frame that actually MOVES.
 	# Positions are then expressed in that parent's local frame instead of fixed world space, where
 	# a planet moving at ~3e10 would leave them behind (mirror mining_depot).
+	# The frame is resolved here, its transform at every step of the placement (_continue_spawn_queue):
+	# the planet moves between two steps.
 	var net_parent: Node = PropSpawn.find_net_parent(self)
 	var parent_uuid: String = PropSpawn.net_parent_uuid(net_parent)
-	var to_parent_local: Transform3D = Transform3D.IDENTITY
-	if net_parent is Node3D:
-		to_parent_local = (net_parent as Node3D).global_transform.affine_inverse()
 	# POIs to keep clear of, resolved once for the whole field. MiningZonePlanner only guarantees
 	# the zone's CENTRE clears them, so a field next to a village legitimately overhangs it; the
 	# rocks in that overhang are dropped here. Same PlanetTerrain.first_blocking_poi the siting used,
@@ -387,12 +401,40 @@ func _build_spawn_queue() -> void:
 	var poi_spheres: Array = terrain.poi_spheres() if terrain != null else []
 	var poi_margin: float = terrain.planet_data.mining_zone_poi_margin \
 		if terrain != null and terrain.planet_data != null else 0.0
-	var culled: int = 0
-	# The planet under the field, for the per-rock richness (see below); null on a station.
-	var planet: Planet = _planet()
+	var queue: Array[Dictionary] = []
+	_build = {
+		"seed_str": seed_str, "rng": rng, "points": points, "next": 0, "index": 0, "culled": 0,
+		"parent_uuid": parent_uuid, "net_parent": net_parent,
+		"poi_spheres": poi_spheres, "poi_margin": poi_margin,
+		# The planet under the field, for the per-rock richness (see below); null on a station.
+		"planet": _planet(),
+		"queue": queue,
+	}
 
-	var index: int = 0
-	for point in points:
+
+## Place the next BUILD_POINTS_PER_STEP points of the field begun by _begin_spawn_queue, in the order
+## of the seeded draw — so a re-run still draws the SAME rocks at the SAME uuids. True once every point
+## is done; the rocks are then in _build["queue"]. All ground raycasts are done here (called from
+## _physics_process) so the physics space is available.
+func _continue_spawn_queue() -> bool:
+	var points: Array = _build["points"]
+	var rng: RandomNumberGenerator = _build["rng"]
+	var seed_str: String = _build["seed_str"]
+	var parent_uuid: String = _build["parent_uuid"]
+	var to_parent_local: Transform3D = Transform3D.IDENTITY
+	var net_parent: Node = _build["net_parent"] if is_instance_valid(_build["net_parent"]) else null
+	if net_parent is Node3D:
+		to_parent_local = (net_parent as Node3D).global_transform.affine_inverse()
+	var poi_spheres: Array = _build["poi_spheres"]
+	var poi_margin: float = _build["poi_margin"]
+	var planet: Planet = _build["planet"] if is_instance_valid(_build["planet"]) else null
+	var queue: Array[Dictionary] = _build["queue"]
+	var culled: int = _build["culled"]
+	var index: int = _build["index"]
+	var first: int = _build["next"]
+	var last: int = mini(first + BUILD_POINTS_PER_STEP, points.size())
+	for i in range(first, last):
+		var point: Vector2 = points[i]
 		# Find the surface under this XZ: raycast along the zone's up axis. MUST run here (called
 		# from _physics_process) because direct_space_state is only valid during the physics step.
 		# Skip points with no ground under them rather than spawning a rock floating at the zone's
@@ -424,7 +466,7 @@ func _build_spawn_queue() -> void:
 		var local_pos: Vector3 = to_parent_local * spawn_world
 		var local_rot: Vector3 = PropSpawn.surface_euler(
 			normal, rng.randf_range(0.0, TAU), to_parent_local)
-		_spawn_queue.append({
+		queue.append({
 			"type": "miningrock",
 			"uuid": PropSpawn.stable_uuid("%s|%d#%d" % [seed_str, last_generation_datetime, index]),
 			"position": {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z},
@@ -442,7 +484,10 @@ func _build_spawn_queue() -> void:
 			"ground_color": ground_color,
 		})
 		index += 1
-	_last_poi_culled = culled
+	_build["next"] = last
+	_build["index"] = index
+	_build["culled"] = culled
+	return last >= points.size()
 
 
 

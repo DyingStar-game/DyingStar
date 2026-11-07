@@ -133,6 +133,121 @@ func test_a_pad_registered_before_the_village_comes_down_onto_it() -> void:
 	assert_true(data.take_caught_up_pads().has("prop:house"), "its building is re-seated")
 
 
+## uuid -> [the level its ground is drawn at, its talus].
+func _levels(data: PlanetData) -> Dictionary:
+	var out := {}
+	for rec: Dictionary in data._pads.all():
+		out[rec["uuid"]] = [rec["z"], rec["talus_m"]]
+	return out
+
+
+func test_a_street_registered_before_its_village_ends_where_it_does_after() -> void:
+	# The pads already standing are measured again in one pass when the village comes (touching aprons
+	# share a level, PadLevels): the same ground as pads registered on the village one at a time.
+	var street: Array = []
+	for i in 8:
+		street.append(_pad("prop:%d" % i, -70.0 + 18.0 * float(i)))
+	var before := _data()
+	for rec: Dictionary in street:
+		var early: Dictionary = rec.duplicate()
+		early["settled"] = {"z": 250.0 + float(_index_of(rec)), "span": 0.0, "talus_m": 6.0}
+		before.register_pad(early)
+	before.register_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	var after := _data()
+	after.register_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	for rec: Dictionary in street:
+		after.register_pad(rec)
+	assert_eq(_levels(before).size(), 8)
+	assert_eq(_levels(before), _levels(after))
+	var caught := before.take_caught_up_pads()
+	for rec: Dictionary in street:
+		assert_true(caught.has(str(rec["uuid"])), "%s re-seated" % rec["uuid"])
+
+
+func _index_of(rec: Dictionary) -> int:
+	return int(str(rec["uuid"]).trim_prefix("prop:"))
+
+
+# ── The ground prepared on a worker (submit_village_bed) ────────────────
+
+## Publish what the workers prepared, waiting for them (at most 10 s): [[uuid, stale pixels], …].
+func _collect(data: PlanetData) -> Array:
+	var out: Array = []
+	var deadline := Time.get_ticks_msec() + 10000
+	while Time.get_ticks_msec() < deadline:
+		out.append_array(data.collect_village_beds())
+		if data._bed_jobs.is_empty():
+			break
+		OS.delay_msec(1)
+	return out
+
+
+func _street(data: PlanetData) -> void:
+	for i in 8:
+		data.register_pad(_pad("prop:%d" % i, -70.0 + 18.0 * float(i)))
+
+
+func test_a_ground_prepared_on_a_worker_is_the_ground_registered_at_once() -> void:
+	var at_once := _data()
+	_street(at_once)
+	var dirty := at_once.register_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	var worker := _data()
+	_street(worker)
+	assert_true(worker.submit_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0)))
+	var done := _collect(worker)
+	assert_eq(done.size(), 1)
+	assert_eq_deep(worker._village_beds, at_once._village_beds)
+	assert_eq(_levels(worker), _levels(at_once))
+	assert_eq_deep(done[0][1], dirty)
+
+
+func test_a_chunk_under_a_ground_being_prepared_waits_for_it() -> void:
+	var data := _data()
+	var finest := 1 << 14
+	var under := HEALPix.vec2pix_nest(finest, HEALPix.lonlat2vec(0.0, 0.0))
+	var far := HEALPix.vec2pix_nest(finest, HEALPix.lonlat2vec(10.0, 10.0))
+	data.submit_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	assert_true(data.village_bed_pending_for_chunk(finest, under))
+	assert_true(data.village_bed_pending_for_chunk(finest >> 2, under >> 4), "and its coarser parent")
+	assert_false(data.village_bed_pending_for_chunk(finest, far))
+	_collect(data)
+	assert_false(data.village_bed_pending_for_chunk(finest, under), "no longer once it is published")
+
+
+func test_a_pad_registered_while_its_ground_is_prepared_stands_on_it() -> void:
+	var data := _data()
+	data.submit_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	data.register_pad(_pad("prop:house", 40.0))  # measured on the relief: the village is not there yet
+	_collect(data)
+	var bed: Dictionary = data._village_beds[0]
+	assert_almost_eq(data.pad_altitude(PadBed.quantise(_pad("prop:house", 40.0))),
+			VillageBed.plane_at(bed, Vector2(40.0, 0.0)), 0.002, "measured again on the village's ground")
+
+
+func test_a_ground_published_meanwhile_is_not_lost() -> void:
+	var data := _data()
+	_street(data)
+	data.submit_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	data.register_village_bed(VillageBed.record("village:b", 0.0, 0.01, 0.0, 40.0, 40.0))
+	_collect(data)
+	var both := _data()
+	_street(both)
+	both.register_village_bed(VillageBed.record("village:b", 0.0, 0.01, 0.0, 40.0, 40.0))
+	both.register_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	assert_eq(data._village_beds.size(), 2)
+	assert_eq_deep(data._village_beds, both._village_beds)
+	assert_eq(_levels(data), _levels(both))
+
+
+func test_a_village_moved_while_prepared_ends_where_it_was_moved() -> void:
+	var data := _data()
+	data.submit_village_bed(VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0))
+	assert_true(data.submit_village_bed(VillageBed.record("village:a", 0.0, 0.02, 0.0, 100.0, 60.0)))
+	_collect(data)
+	assert_eq(data._village_beds.size(), 1)
+	assert_almost_eq(float(data._village_beds[0]["lat"]), 0.02, 1e-6)
+
+
 func test_the_same_village_again_changes_nothing() -> void:
 	var data := _data()
 	var rec := VillageBed.record("village:a", 0.0, 0.0, 0.0, 100.0, 60.0)
