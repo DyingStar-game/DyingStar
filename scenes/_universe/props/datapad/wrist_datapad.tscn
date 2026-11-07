@@ -108,3 +108,4 @@ render_target_update_mode = 1
 script = ExtResource("2_gui")
 node_viewport = NodePath("../ScreenViewport")
 node_quad = NodePath("../Screen")
+render_when_seen = false

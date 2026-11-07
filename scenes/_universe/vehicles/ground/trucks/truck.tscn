@@ -201,6 +201,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9869999999937136, 0.429000
 transform = Transform3D(-1.8369095e-16, 0, 1, 0, 1, 0, -1, 0, -1.8369095e-16, 0.8808829, 1.5104302, -2.9404380675619173)
 node_viewport = NodePath("SubViewport")
 node_quad = NodePath("../Model/Carrosserie/ScreenFront")
+render_when_seen = false
 
 [node name="SubViewport" type="SubViewport" parent="Gui3D" unique_id=2131469253]
 disable_3d = true

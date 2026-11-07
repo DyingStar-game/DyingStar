@@ -143,10 +143,7 @@ func _update_seen() -> void:
 	var machine: Node3D = _machine()
 	_seen = true
 	if machine != null:
-		var camera: Camera3D = machine.get_viewport().get_camera_3d()
-		_seen = camera != null \
-				and camera.global_position.distance_squared_to(machine.global_position) <= ANIMATE_RANGE_M * ANIMATE_RANGE_M \
-				and camera.is_position_in_frustum(machine.global_position)
+		_seen = ScreenVisibility.sees(machine.get_viewport().get_camera_3d(), machine.global_position, ANIMATE_RANGE_M)
 	_pattern.paused = not _seen
 
 
