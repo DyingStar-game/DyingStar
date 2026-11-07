@@ -89,6 +89,8 @@ var _pictos: HBoxContainer = null
 var _ring: ItemDispenserUI.DeliveryRing = null
 # SERVER: when the work in progress ends (Time.get_ticks_msec()).
 var _process_end_ms := 0
+# CLIENT: the same end, from the replicated seconds left, for the ring's countdown.
+var _client_end_ms := 0
 # SERVER: time left before the next _server_tick.
 var _server_wait_s := 0.0
 # The looping sounds (client): belts, machine at work, its rattling stones.
@@ -205,6 +207,7 @@ func _ready() -> void:
 		# note in cargo_depot.gd.
 		for area: Area3D in [rock_detector, rock_collector, box_detector]:
 			area.set_deferred(&"monitoring", false)
+		_refresh_client()
 
 
 ## SERVER: replace this editor placeholder by the real networked machine. spawn_prop_authoritative
@@ -255,10 +258,11 @@ func _on_belt_exited(body: Node3D) -> void:
 
 ## Server: the machine's logic runs SERVER_TICK_S apart, not every frame — three area queries and a
 ## replication check per machine per frame bought nothing (the state replicates on change only).
-## Client: the screen and the belts' look follow the replicated state every frame.
+## Client: only the countdown ring moves, while the machine works (_refresh_client turns it on); the
+## rest follows the replicated state when it changes (ADR 0027: a town's machines cost nothing idle).
 func _process(delta: float) -> void:
 	if not GameOrchestrator.is_server():
-		_client_tick()
+		_ring.show_left(maxf(0.0, (_client_end_ms - Time.get_ticks_msec()) / 1000.0), PROCESS_S)
 		return
 	_server_wait_s -= delta
 	if _server_wait_s <= 0.0:
@@ -300,10 +304,13 @@ func _server_tick() -> void:
 		server_prop_update(payload)
 
 
-func _client_tick() -> void:
+## CLIENT: screen, lights, belts and sounds from the replicated state — once per change, not per frame.
+func _refresh_client() -> void:
 	var processing := state == "processing"
 	_ring.visible = processing
+	set_process(processing)
 	if processing:
+		_client_end_ms = Time.get_ticks_msec() + int(float(extra.get("process_left", PROCESS_S)) * 1000.0)
 		_show_screen(true, _processing_key(), false)
 		_ring.show_left(float(extra.get("process_left", PROCESS_S)), PROCESS_S)
 	else:
@@ -399,6 +406,8 @@ func apply_prop_data(_data: Dictionary) -> void:
 	belt_count = int(metadata.get("belt_count", belt_count))
 	packable = bool(metadata.get("packable", packable))
 	extra.merge(metadata, true)
+	if not GameOrchestrator.is_server() and _ring != null:
+		_refresh_client()
 
 
 # ── Output ────────────────────────────────────────────────────────────────────────────────────────
