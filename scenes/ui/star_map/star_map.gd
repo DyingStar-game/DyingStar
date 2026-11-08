@@ -614,8 +614,14 @@ func host_in(slot: Control) -> void:
 	PlayerServices.changed.connect(_on_services_changed)
 
 
-## Something the player owns changed in a service. Only the points of interest concern the chart.
+## Something the player owns changed in a service: its points of interest, or its missions (which name points).
 func _on_services_changed(area: String) -> void:
+	if area == "missions":
+		# A mission was taken, turned in, given up: which points are live contracts changed.
+		await MissionPoiCache.refresh_accepted()
+		if is_instance_valid(self) and is_open():
+			_push_service_pois()
+		return
 	if area != "pois":
 		return
 	# A mutation happened, so the cache is REBUILT rather than re-read: ensure_loaded answers

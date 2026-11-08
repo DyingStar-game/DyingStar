@@ -31,13 +31,18 @@ static var _closed: Dictionary = {}
 ##
 ## The points of CLOSED contracts are not among them: a contract's place dies with the contract, and
 ## offering a place that no longer exists is how a builder ends up naming somewhere that is gone.
+##
+## Nor are the points a contract brought in (ORIGIN_CONTRACT) once no live contract names them: a mission
+## turned in at a kiosk, given up or expired left its markers on the chart (playtest 2026-11-08).
 static func entries() -> Array:
-	if _closed.is_empty():
-		return _shared
 	var live: Array = []
 	for poi: Dictionary in _shared:
-		if not _closed.has(str(poi.get("id", ""))):
-			live.append(poi)
+		var id := str(poi.get("id", ""))
+		if _closed.has(id):
+			continue
+		if str(poi.get("origin", "")) == ORIGIN_CONTRACT and not _roles.has(id):
+			continue
+		live.append(poi)
 	return live
 
 
@@ -59,6 +64,49 @@ static func set_mission_roles(created: Array, accepted: Array, closed: Array) ->
 		if not _roles.has(key):
 			_roles[key] = "accepted"
 	close_pois(closed)
+
+
+## The points named by the missions the player holds now ("accepted").
+static func accepted_ids() -> Array:
+	return _roles.keys().filter(func(id: Variant) -> bool: return _roles[id] == "accepted")
+
+
+## Ask the service which missions the player holds now and name their points "accepted" again; the
+## others' are no longer anybody's live contract. The chart calls it when a mission changed, wherever the
+## DataPad is.
+static func refresh_accepted() -> void:
+	var result: Dictionary = await PlayerServices.my_missions("active", 100)
+	if not bool(result.get("ok", false)):
+		return
+	for id: Variant in accepted_ids():
+		_roles.erase(id)
+	for row: Dictionary in ServiceTypes.mission_rows(result.get("data")):
+		if row.get("mission") is Dictionary:
+			for id: Variant in poi_ids_of(row["mission"]):
+				if not _roles.has(str(id)):
+					_roles[str(id)] = "accepted"
+
+
+## Every point [param mission] names: its availability zones and its objectives' zone and source.
+static func poi_ids_of(mission: Dictionary) -> Array:
+	var ids: Array = []
+	for zone: Variant in mission.get("zones", []):
+		if zone is Dictionary:
+			_add_id(ids, (zone as Dictionary).get("poiId", ""))
+	for objective: Variant in mission.get("objectives", []):
+		var params: Variant = (objective as Dictionary).get("params") if objective is Dictionary else null
+		if params is Dictionary:
+			for field: String in ["zone", "source"]:
+				var place: Variant = (params as Dictionary).get(field)
+				if place is Dictionary:
+					_add_id(ids, (place as Dictionary).get("poiId", ""))
+	return ids
+
+
+static func _add_id(ids: Array, id: Variant) -> void:
+	var key := str(id if id != null else "")
+	if key != "" and not ids.has(key):
+		ids.append(key)
 
 
 ## The points of a contract that is over: they stop being offered, and stop being drawn.

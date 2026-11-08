@@ -819,31 +819,13 @@ func _remember_contract_pois(mission_id: String, mission: Dictionary) -> void:
 ## The points a mission names, as far as the client can see them: the availability zones' and the
 ## objectives' targets, plus whatever a contract the player opened has told us.
 static func _poi_ids_of(mission: Dictionary) -> Array:
-	var ids: Array = []
-	for zone: Variant in mission.get("zones", []):
-		if not (zone is Dictionary):
-			continue
-		var poi_id := str((zone as Dictionary).get("poiId", ""))
-		if poi_id != "" and not ids.has(poi_id):
-			ids.append(poi_id)
-	for objective: Dictionary in mission.get("objectives", []):
-		var params: Variant = objective.get("params")
-		if not (params is Dictionary):
-			continue
-		for field: String in ["zone", "source"]:
-			var place: Variant = (params as Dictionary).get(field)
-			if not (place is Dictionary):
-				continue
-			var poi_id := str((place as Dictionary).get("poiId", ""))
-			if poi_id != "" and not ids.has(poi_id):
-				ids.append(poi_id)
-	return ids
+	return MissionPoiCache.poi_ids_of(mission)
 
 
 ## Is this contract over? A contract that is completed, cancelled or expired has said everything it
 ## had to say, and the place it named is gone with it.
 static func _is_closed_status(status: String) -> bool:
-	return status in ["completed", "cancelled", "expired"]
+	return status in ["completed", "partially_completed", "cancelled", "expired", "abandoned", "failed"]
 
 
 ## Tell the cache what the missions naming its points are: the ones the player created, the ones
@@ -870,8 +852,11 @@ func _classify_mission_pois() -> void:
 		ids.append_array(_contract_pois.get(str((mission as Dictionary).get("id", "")), []))
 		if _is_closed_status(status):
 			closed.append_array(ids)
-		else:
+		elif _mine_tab == 0:
 			accepted.append_array(ids)
+	if _mine_tab != 0:
+		# Done or Stopped on show: the missions held are not in the list, keep what is known of them.
+		accepted = MissionPoiCache.accepted_ids()
 	for i: int in range(_created.item_count):
 		var mission: Variant = _created.get_item_metadata(i)
 		if not (mission is Dictionary):
