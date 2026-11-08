@@ -26,7 +26,12 @@ const MAX_T := 14000
 const Q16 := 65536
 # exp(0.18) approximated by the versioned rational 1197217/1000000.
 # Integer-generated, immutable 10°C viscosity multipliers from 950 to 1400°C.
-const MU_LUT = [36597940, 30569179, 25533533, 21327406, 17814153, 14879636, 12428521, 10381177, 8671091, 7242707, 6049620, 5053069, 4220680, 3525410, 2944671, 2459597, 2054429, 1716004, 1433328, 1197217, 1000000, 835270, 697676, 582748, 486752, 406569, 339595, 283653, 236926, 197897, 165297, 138067, 115323, 96325, 80457, 67203, 56132, 46885, 39161, 32710, 27321, 22820, 19060, 15920, 13297, 11106]
+const MU_LUT = [
+	36597940, 30569179, 25533533, 21327406, 17814153, 14879636, 12428521, 10381177, 8671091, 7242707, 6049620, 5053069,
+	4220680, 3525410, 2944671, 2459597, 2054429, 1716004, 1433328, 1197217, 1000000, 835270, 697676, 582748,
+	486752, 406569, 339595, 283653, 236926, 197897, 165297, 138067, 115323, 96325, 80457, 67203,
+	56132, 46885, 39161, 32710, 27321, 22820, 19060, 15920, 13297, 11106,
+]
 static var _age_roots := PackedInt64Array()
 static var use_native := true
 static var _native_checked := false
@@ -281,7 +286,9 @@ func advance_tick(expected_tick: int, commands: PackedInt64Array = PackedInt64Ar
 	_flux.fill(0); _dv.fill(0); _de.fill(0); _da.fill(0); _incoming.fill(0)
 	vx_q.fill(0); vz_q.fill(0)
 	limited_cells = 0
-	var pressure := eruption_head_mm * clampi(last_source_tick + SOURCE_IDLE_TICKS + 60 - expected_tick, 0, 60) / 60 if last_source_tick >= 0 else 0
+	var pressure := 0
+	if last_source_tick >= 0:
+		pressure = eruption_head_mm * clampi(last_source_tick + SOURCE_IDLE_TICKS + 60 - expected_tick, 0, 60) / 60
 	for i in _work:
 		var volume := volume_q[i]
 		if volume == 0:
@@ -520,9 +527,11 @@ func restore(bytes: PackedByteArray) -> bool:
 		var v := fields[1][i]
 		if v < 0 or v > candidate.capacities_q[i] or fields[2][i] < 0 or fields[2][i] > v * (MAX_T - AMBIENT_T): return false
 		if fields[3][i] < 0 or fields[3][i] > v * MAX_AGE_TICKS: return false
-		if fields[4][i] < -MAX_VELOCITY_Q or fields[4][i] > MAX_VELOCITY_Q or fields[5][i] < -MAX_VELOCITY_Q or fields[5][i] > MAX_VELOCITY_Q: return false
+		if (fields[4][i] < -MAX_VELOCITY_Q or fields[4][i] > MAX_VELOCITY_Q
+				or fields[5][i] < -MAX_VELOCITY_Q or fields[5][i] > MAX_VELOCITY_Q): return false
 		if fields[6][i] < 0 or fields[6][i] > FADE_DURATION_TICKS or (v == 0 and fields[6][i] != 0): return false
-		if fields[7][i] < 0 or fields[7][i] > candidate.capacities_q[i] or (fields[6][i] == 0 and fields[7][i] != 0) or (fields[6][i] > 0 and fields[7][i] == 0): return false
+		if (fields[7][i] < 0 or fields[7][i] > candidate.capacities_q[i]
+				or (fields[6][i] == 0 and fields[7][i] != 0) or (fields[6][i] > 0 and fields[7][i] == 0)): return false
 		var epoch := fields[8][i]
 		if epoch != -1 and (epoch != saved_tick or v == 0 or AMBIENT_T + fields[2][i] / v > BLACK_T): return false
 		total += v
@@ -585,7 +594,9 @@ func configure_polar_q(sectors: int, edges: PackedInt64Array, terrain: PackedInt
 
 
 func cooling_age_ticks(at_tick: int = -1) -> int:
-	return maxi(0, (tick if at_tick < 0 else at_tick) - last_source_tick - SOURCE_IDLE_TICKS) if cleanup_enabled and last_source_tick >= 0 else 0
+	if not cleanup_enabled or last_source_tick < 0:
+		return 0
+	return maxi(0, (tick if at_tick < 0 else at_tick) - last_source_tick - SOURCE_IDLE_TICKS)
 
 
 func _apply_cleanup() -> void:

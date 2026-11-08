@@ -143,7 +143,8 @@ func diagnostics() -> Dictionary:
 				frozen += 1
 	return {"volume_m3": total / float(Q_PER_M3), "volume_q": total, "injected_m3": injected_q / float(Q_PER_M3),
 		"heat_proxy": heat / (Q_PER_M3 * 10.0), "heat_q": heat, "wet_cells": wet, "frozen_cells": frozen,
-		"max_depth_m": max_depth, "elapsed_s": tick / 10.0, "tick": tick, "limited_cells": limited_cells, "removed_m3": removed_q / float(Q_PER_M3)}
+		"max_depth_m": max_depth, "elapsed_s": tick / 10.0, "tick": tick, "limited_cells": limited_cells,
+		"removed_m3": removed_q / float(Q_PER_M3)}
 
 
 func release_views() -> void:

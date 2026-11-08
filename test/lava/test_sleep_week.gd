@@ -50,7 +50,8 @@ func _run() -> void:
 		if server.current_energy_q(i) > 0: heated_receivers += 1
 	var report := {"model": Core.SCHEMA, "simulated_days": 7, "ticks_per_peer": WEEK_TICKS,
 		"deposited_cells": bed.size(), "updated_cells_after_first_tick": visits,
-		"daily_comparisons": comparisons, "heated_cells_after_reactivation": heated_receivers, "bit_identical_including_reheat_and_late_join": same,
+		"daily_comparisons": comparisons, "heated_cells_after_reactivation": heated_receivers,
+		"bit_identical_including_reheat_and_late_join": same,
 		"native_server": server.has_native_backend(), "reference_client": not client.has_native_backend(),
 		"remaining_m3": remaining / 1000.0, "mass_conserved": remaining == server.injected_q,
 		"wall_seconds": (Time.get_ticks_usec() - started) / 1000000.0,

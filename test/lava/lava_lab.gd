@@ -265,7 +265,10 @@ func _percentile(values: Array[float], fraction: float) -> float:
 
 func _update_hud() -> void:
 	var d := sim.diagnostics()
-	stats_label.text = "%.0f s simulées  ·  %d FPS\n%d × %d cellules  ·  %d occupées\nVolume %.1f m³  ·  apport %.1f m³\nÉcart de volume : %.6f m³\nCalcul P95 %.2f ms  ·  transfert P95 %.2f ms\nÉpaisseur max. %.2f m  ·  %d cellules figées" % [
+	stats_label.text = (
+		"%.0f s simulées  ·  %d FPS\n%d × %d cellules  ·  %d occupées\nVolume %.1f m³  ·  apport %.1f m³\n"
+		+ "Écart de volume : %.6f m³\nCalcul P95 %.2f ms  ·  transfert P95 %.2f ms\nÉpaisseur max. %.2f m  ·  %d cellules figées"
+	) % [
 		sim.elapsed_s, Engine.get_frames_per_second(), nx, nz, d.wet_cells,
 		d.volume_m3, d.injected_m3, d.volume_m3 - d.injected_m3,
 		_percentile(_step_times, 0.95), _percentile(_upload_times, 0.95), d.max_depth_m, d.frozen_cells]
@@ -338,7 +341,8 @@ func _build_ui() -> void:
 	reset.pressed.connect(_reset)
 	buttons.add_child(reset)
 	stats_label = _label(box, "", 13, Color("bdcbd9"))
-	_label(box, "Glisser dans la vue : orbite · molette : zoom\nEspace : pause · R : repartir · L : source\nModèle local 2,5D · sans éclaboussures", 12, Color("8698ab"))
+	_label(box, "Glisser dans la vue : orbite · molette : zoom\nEspace : pause · R : repartir · L : source\n"
+		+ "Modèle local 2,5D · sans éclaboussures", 12, Color("8698ab"))
 
 
 func _label(parent: Node, text: String, size: int, color: Color) -> Label:

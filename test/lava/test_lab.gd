@@ -1,6 +1,10 @@
 extends SceneTree
 
 const LabScene = preload("res://test/lava/lava_lab.tscn")
+const SolverScript = preload("res://scenes/planet/lava/viscous_lava_solver.gd")
+const SurfaceScript = preload("res://scenes/planet/lava/viscous_lava_surface.gd")
+const LavaShader = preload("res://assets/_universe/environment/terrain/viscous_lava.gdshader")
+const LavaGroundShader = preload("res://assets/_universe/environment/terrain/viscous_lava_ground.gdshader")
 var failures := 0
 var checks := 0
 
@@ -34,23 +38,27 @@ func _run() -> void:
 	var visual_alpha: float = lab.material.get_shader_parameter("interpolation_alpha")
 	for frame in 8:
 		await process_frame
-	_check(lab.sim.elapsed_s == paused_time and lab.material.get_shader_parameter("interpolation_alpha") == visual_alpha, "pause freezes both physics and surface animation")
+	_check(lab.sim.elapsed_s == paused_time and lab.material.get_shader_parameter("interpolation_alpha") == visual_alpha,
+			"pause freezes both physics and surface animation")
 	for scenario in 3:
 		lab.terrain_choice.select(scenario)
 		lab.terrain_choice.item_selected.emit(scenario)
 		await process_frame
-		_check(lab.terrain_kind == scenario and lab.sim.elapsed_s == 0.0 and absf(lab.sim.injected_m3 - 24.0) < 1e-9, "terrain scenario resets cleanly: " + str(scenario))
+		_check(lab.terrain_kind == scenario and lab.sim.elapsed_s == 0.0 and absf(lab.sim.injected_m3 - 24.0) < 1e-9,
+				"terrain scenario resets cleanly: " + str(scenario))
 	for quality in 3:
 		lab.quality_choice.select(quality)
 		lab.quality_choice.item_selected.emit(quality)
 		await process_frame
 		var expected: int = [32 * 48, 48 * 72, 64 * 96][quality]
-		_check(lab.sim.depth.size() == expected and lab.lava_node.mesh != null, "quality resize rebuilds compatible meshes: " + str(quality))
+		_check(lab.sim.depth.size() == expected and lab.lava_node.mesh != null,
+				"quality resize rebuilds compatible meshes: " + str(quality))
 	for preset in 3:
 		lab.preset_choice.select(preset)
 		lab.preset_choice.item_selected.emit(preset)
 		await process_frame
-		_check(lab.sim.depth.size() == 64 * 96 and lab.sim.diagnostics().volume_m3 > 23.99, "rheology preset restarts without losing source accounting: " + str(preset))
+		_check(lab.sim.depth.size() == 64 * 96 and lab.sim.diagnostics().volume_m3 > 23.99,
+				"rheology preset restarts without losing source accounting: " + str(preset))
 	lab.material.set_shader_parameter("thermal_view", true)
 	await RenderingServer.frame_post_draw
 	_check(root.get_texture().get_image().get_width() > 0, "GPU produces a thermal-view image")
@@ -74,7 +82,8 @@ func _run() -> void:
 		await process_frame
 		await RenderingServer.frame_post_draw
 		hashes.append(hash(root.get_texture().get_image().get_data()))
-	_check(hashes[0] != hashes[1] and hashes[1] != hashes[2] and hashes[0] != hashes[2], "GPU renders genuinely distinct previous, intermediate and current surfaces")
+	_check(hashes[0] != hashes[1] and hashes[1] != hashes[2] and hashes[0] != hashes[2],
+			"GPU renders genuinely distinct previous, intermediate and current surfaces")
 	_check(lab.sim.diagnostics() == unchanged, "visual interpolation preserves physical volume, heat and clock")
 	var state_rids: Array[RID] = []
 	var phase_rids: Array[RID] = []
@@ -90,7 +99,8 @@ func _run() -> void:
 			phase_rids.append(phase_texture.get_rid())
 	_check(absf(lab.surface.phases[wet].x - 0.6) < 1e-5, "fissure displacement integrates velocity increments even after long runtimes")
 	_check(state_rids.size() == 2 and phase_rids.size() == 2, "GPU texture allocations stay bounded and are reused")
-	_check(lab.lava_node.mesh.get_rid() == fixed_mesh and lab.surface.mesh_builds == lab._initial_mesh_builds, "simulation never rebuilds or replaces its mesh")
+	_check(lab.lava_node.mesh.get_rid() == fixed_mesh and lab.surface.mesh_builds == lab._initial_mesh_builds,
+			"simulation never rebuilds or replaces its mesh")
 	lab._reset()
 	_check(lab.surface.phases[wet] == Vector2.ZERO, "reset clears accumulated visual displacement")
 	# Exercise the real frame driver between physics ticks, including pause.
@@ -109,7 +119,8 @@ func _run() -> void:
 	lab._reset()
 	var physical_state: String = lab.sim.state_digest()
 	for n in 100: lab.smoke.advance(0.1, lab.sim)
-	_check(lab.smoke.active_count > 0 and lab.smoke.active_count <= 96 and lab.smoke.edge_count > 0, "lateral smoke uses a bounded edge-only pool")
+	_check(lab.smoke.active_count > 0 and lab.smoke.active_count <= 96 and lab.smoke.edge_count > 0,
+			"lateral smoke uses a bounded edge-only pool")
 	_check(lab.sim.state_digest() == physical_state, "smoke cannot change any authoritative bit")
 	var smoke_clock: float = lab.smoke.clock
 	lab.paused = true
@@ -153,18 +164,18 @@ func _test_terrain_overlay() -> void:
 	ground.material_override = stone
 	ground.position = Vector3(4, 1, 4) # Coarse terrain above the physical bed.
 	viewport.add_child(ground)
-	var sim = preload("res://scenes/planet/lava/viscous_lava_solver.gd").new()
+	var sim = SolverScript.new()
 	var bed := PackedInt64Array()
 	bed.resize(81); bed.fill(0)
 	sim.configure_q(9, 9, 1000, bed)
 	sim.inject_q(sim.disc_commands(4000, 4000, 1800, 3000, 11500))
 	sim.refresh_views()
-	var surface = preload("res://scenes/planet/lava/viscous_lava_surface.gd").new()
+	var surface = SurfaceScript.new()
 	var lava := ShaderMaterial.new()
-	lava.shader = load("res://assets/_universe/environment/terrain/viscous_lava.gdshader")
+	lava.shader = LavaShader
 	surface.configure(sim, lava)
 	var overlay := ShaderMaterial.new()
-	overlay.shader = load("res://assets/_universe/environment/terrain/viscous_lava_ground.gdshader")
+	overlay.shader = LavaGroundShader
 	surface.add_material(overlay, sim.cell_m)
 	overlay.set_shader_parameter("patch_from_view", camera.global_transform)
 	overlay.set_shader_parameter("thermal_view", true)
@@ -257,7 +268,7 @@ func _test_polar_fade() -> void:
 	ground.material_override = stone
 	ground.position.y = 1.0
 	viewport.add_child(ground)
-	var sim = preload("res://scenes/planet/lava/viscous_lava_solver.gd").new()
+	var sim = SolverScript.new()
 	var edges := PackedInt64Array()
 	for r in 13: edges.append(r * 1000)
 	var bed := PackedInt64Array(); bed.resize(32 * 12); bed.fill(0)
@@ -266,12 +277,12 @@ func _test_polar_fade() -> void:
 	sim.cleanup_enabled = true
 	sim.inject_q(sim.disc_commands(0, 0, 9000, 50000, 12000))
 	sim.refresh_views()
-	var surface = preload("res://scenes/planet/lava/viscous_lava_surface.gd").new()
+	var surface = SurfaceScript.new()
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://assets/_universe/environment/terrain/viscous_lava.gdshader")
+	mat.shader = LavaShader
 	surface.configure(sim, mat)
 	var overlay := ShaderMaterial.new()
-	overlay.shader = load("res://assets/_universe/environment/terrain/viscous_lava_ground.gdshader")
+	overlay.shader = LavaGroundShader
 	surface.add_material(overlay, sim.cell_m)
 	overlay.set_shader_parameter("patch_from_view", camera.global_transform)
 	ground.material_overlay = overlay

@@ -1,6 +1,8 @@
 extends Node
 const Builder = preload("res://scenes/planet/lava/lava_planet_patch.gd")
 const Runtime = preload("res://scenes/planet/lava/lava_planet_runtime.gd")
+const CoreScript = preload("res://scenes/planet/lava/lava_fixed_core.gd")
+const CacheRules = preload("res://scenes/planet/lava/lava_terrain_cache.gd")
 var failures := 0
 
 
@@ -18,10 +20,9 @@ func _ready() -> void:
 	data.has_lava()
 	data.warm_grade_profiles()
 	check_native_equivalence()
-	var cache_rules = preload("res://scenes/planet/lava/lava_terrain_cache.gd")
 	var wanted := data.grade_bake_key()
 	var legacy := wanted.replace(LavaSettings.runtime_policy, "")
-	check(cache_rules.legacy_matches(legacy, wanted) and not cache_rules.legacy_matches(legacy + "changed", wanted),
+	check(CacheRules.legacy_matches(legacy, wanted) and not CacheRules.legacy_matches(legacy + "changed", wanted),
 		"cache compatibility accepts only the explicit lava policy migration")
 	check(not data._grade_baked.is_empty(), "unaffected infrastructure profiles survive the removal of QGIS spillways")
 	var excluded: Dictionary = data._lava_cache_exclusions().lines
@@ -77,7 +78,8 @@ func _ready() -> void:
 			server = authority.patches[key].solver
 			client = replica.patches[key].solver
 		var before: String = server.state_digest()
-		check(not authority.advance_patch(key, server.tick + 2, PackedInt64Array()) and server.state_digest() == before, "missing tick is rejected by the game runtime")
+		check(not authority.advance_patch(key, server.tick + 2, PackedInt64Array()) and server.state_digest() == before,
+				"missing tick is rejected by the game runtime")
 		var frame: Transform3D = packet.frame
 		check(frame.basis.y.dot(frame.origin.normalized()) > 0.99999, "patch up follows the planet's spherical up")
 		check_terrain_overlay_lifecycle(data, packet)
@@ -129,7 +131,7 @@ func check_terrain_overlay_lifecycle(data: PlanetData, packet: Dictionary) -> vo
 	visual.remove_patch(packet.key)
 	check(ground.material_overlay == null and visual._overlay_targets.is_empty(),
 		"retiring lava removes its terrain pass and weak mesh registry")
-	var tiny = load("res://scenes/planet/lava/lava_fixed_core.gd").new()
+	var tiny = CoreScript.new()
 	tiny.configure_q(3, 3, 1000, PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0]))
 	tiny.cleanup_enabled = true
 	tiny.inject_q(PackedInt64Array([4, 10000, 8000]))
@@ -150,7 +152,7 @@ func check_terrain_overlay_lifecycle(data: PlanetData, packet: Dictionary) -> vo
 
 
 func check_native_equivalence() -> void:
-	var core = load("res://scenes/planet/lava/lava_fixed_core.gd")
+	var core = CoreScript
 	var native = core.new()
 	var edges := PackedInt64Array()
 	for r in 13: edges.append(r * 1000)
@@ -174,7 +176,8 @@ func check_native_equivalence() -> void:
 		var commands: PackedInt64Array = native.disc_commands(0, 0, 3900, 6400, 12000) if emitting else PackedInt64Array()
 		same = native.advance_tick(tick, commands) and reference.advance_tick(tick, commands) and same
 		if tick % 10 == 0: same = native.checkpoint() == reference.checkpoint() and same
-	check(same and native.cleanup_complete(), "native and reference states stay byte-identical through pressure, overflow, reheating and complete cleanup")
+	check(same and native.cleanup_complete(),
+			"native and reference states stay byte-identical through pressure, overflow, reheating and complete cleanup")
 
 
 func long_eruption(authority: Node3D, replica: Node3D, packet: Dictionary) -> void:
@@ -224,9 +227,11 @@ func long_eruption(authority: Node3D, replica: Node3D, packet: Dictionary) -> vo
 	for seen in sides: count += seen
 	check(count == server.width, "lava overflows and travels down every angular sector")
 	check(black_before_fade, "lava is black before its disappearance phase")
-	check(server.cleanup_complete() and server.removed_q == server.injected_q and server.wet_indices.is_empty(), "all lava despawns with a complete removal ledger")
-	var resume = load("res://scenes/planet/lava/lava_fixed_core.gd").new()
-	check(resume.restore(server.checkpoint()) and resume.checkpoint() == server.checkpoint(), "a cleaned-up field can be restored without recreating a deposit")
+	check(server.cleanup_complete() and server.removed_q == server.injected_q and server.wet_indices.is_empty(),
+			"all lava despawns with a complete removal ledger")
+	var resume = CoreScript.new()
+	check(resume.restore(server.checkpoint()) and resume.checkpoint() == server.checkpoint(),
+			"a cleaned-up field can be restored without recreating a deposit")
 	timings.sort()
 	var report := {"simulated_seconds": 1230, "eruption_seconds": 900, "ticks_per_peer": 12300,
 		"native_backend": server.has_native_backend() and client.has_native_backend(),

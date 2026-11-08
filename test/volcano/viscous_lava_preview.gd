@@ -174,7 +174,11 @@ func _process(delta: float) -> void:
 	_sync_event_visual()
 	var age := maxf(0.0, (_display_tick - _event_start_tick) / 10.0)
 	var phase := "éruption" if age < _duration_s else ("lave disparue" if _replica.patches[_key].retired else "refroidissement / disparition")
-	_label.text = "LAVE · %s · %02d:%02d · vitesse ×%d · client/serveur : %s\nL : vue du cratère   K : nouvelle éruption   J : %s   Y : accélérer   M : fumée\nDébordement à 360° · %.0f m³ émis · %.0f m³ disparus" % [
+	_label.text = (
+		"LAVE · %s · %02d:%02d · vitesse ×%d · client/serveur : %s\n"
+		+ "L : vue du cratère   K : nouvelle éruption   J : %s   Y : accélérer   M : fumée\n"
+		+ "Débordement à 360° · %.0f m³ émis · %.0f m³ disparus"
+	) % [
 		phase, int(age) / 60, int(age) % 60, _time_rate, "IDENTIQUES" if _mismatches == 0 else "DIVERGENCE",
 		"reprendre l'apport" if _source_paused else "couper l'apport", _display_injected / 1000.0, _display_removed / 1000.0]
 	if not _capture_file.is_empty() and _capture_clock >= 12.0 and not _captured:

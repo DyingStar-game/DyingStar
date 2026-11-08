@@ -10,6 +10,7 @@ extends Resource
 const PlanetPackScript = preload("res://scenes/planet/planet_pack.gd")
 const HeightPackScript = preload("res://scenes/planet/height_pack.gd")
 const ModifierPackScript = preload("res://scenes/planet/modifier_pack.gd")
+const LavaTerrainCacheScript = preload("res://scenes/planet/lava/lava_terrain_cache.gd")
 
 @export_group("General")
 ## for example "tarsis_3" correspond to the QGIS file name
@@ -3941,11 +3942,12 @@ func _ensure_grade_bake() -> void:
 		return
 	var key := grade_bake_key()
 	if str(doc.get("key", "")) != key:
-		if preload("res://scenes/planet/lava/lava_terrain_cache.gd").legacy_matches(str(doc.get("key", "")), key):
+		if LavaTerrainCacheScript.legacy_matches(str(doc.get("key", "")), key):
 			_grade_baked = (doc.get("lines", {}) as Dictionary).duplicate()
 			for fid: int in _lava_cache_exclusions().lines:
 				_grade_baked.erase(fid)
-			print("[LAVA CACHE] reusing ", _grade_baked.size(), " unaffected line profiles; local invalidations=", _lava_cache_exclusions().lines.size())
+			print("[LAVA CACHE] reusing ", _grade_baked.size(), " unaffected line profiles; local invalidations=",
+				_lava_cache_exclusions().lines.size())
 			return
 		push_warning("[PlanetData] '%s': the baked line profiles (%s) were made for other data — "
 				% [planet_name, GRADE_BAKE_FILE]
@@ -4013,13 +4015,13 @@ func _baked_bridges() -> Dictionary:
 		return _bridge_baked
 	var key := bridge_bake_key()
 	if str(b.get("key", "")) != key:
-		if preload("res://scenes/planet/lava/lava_terrain_cache.gd").legacy_matches(str(b.get("key", "")), key):
+		if LavaTerrainCacheScript.legacy_matches(str(b.get("key", "")), key):
 			# Crossing positions depend on cracks/footprints, not rim tilt. Only
 			# deck/ramp elevations near a changed cone need fresh terrain samples.
 			_bridge_baked = b.duplicate()
 			var rebuild := {}
 			for span: Dictionary in b.get("spans", []):
-				if preload("res://scenes/planet/lava/lava_terrain_cache.gd").span_affected(span, _lava_cache_exclusions().volcanoes, radius):
+				if LavaTerrainCacheScript.span_affected(span, _lava_cache_exclusions().volcanoes, radius):
 					rebuild[bridge_span_key(span)] = true
 			_bridge_baked["rebuild"] = rebuild
 			print("[LAVA CACHE] reusing bridge crossings; local deck invalidations=", rebuild.size())
@@ -4037,7 +4039,7 @@ func _baked_bridges() -> Dictionary:
 
 func _lava_cache_exclusions() -> Dictionary:
 	if _lava_bake_exclusions == null:
-		_lava_bake_exclusions = preload("res://scenes/planet/lava/lava_terrain_cache.gd").exclusions(self)
+		_lava_bake_exclusions = LavaTerrainCacheScript.exclusions(self)
 	return _lava_bake_exclusions
 
 

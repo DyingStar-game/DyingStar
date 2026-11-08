@@ -34,9 +34,11 @@ func _run() -> void:
 	var before := sim.checkpoint()
 	_check(not sim.configure_q(257, 3, 1000, PackedInt64Array()) and sim.checkpoint() == before, "reject oversized grid atomically")
 	_check(not sim.advance_tick(2) and sim.checkpoint() == before, "reject missing tick without changing state")
-	_check(not sim.inject_q(PackedInt64Array([2, 100, 11500, 1, 200, 11500])) and sim.checkpoint() == before, "reject reordered source cells atomically")
+	_check(not sim.inject_q(PackedInt64Array([2, 100, 11500, 1, 200, 11500])) and sim.checkpoint() == before,
+			"reject reordered source cells atomically")
 	_check(not sim.inject_q(PackedInt64Array([1, 100, 11500, 1, 200, 11500])), "reject duplicate source cells")
-	_check(not sim.inject_q(PackedInt64Array([1, -1, 11500])) and not sim.inject_q(PackedInt64Array([1, 100, 15000])), "reject invalid source volume and temperature")
+	_check(not sim.inject_q(PackedInt64Array([1, -1, 11500])) and not sim.inject_q(PackedInt64Array([1, 100, 15000])),
+			"reject invalid source volume and temperature")
 	var commands := sim.disc_commands(8000, 4000, 2200, 30007, 11500)
 	var commanded := 0
 	for p in range(1, commands.size(), 3): commanded += commands[p]
@@ -122,7 +124,8 @@ func _run() -> void:
 	var gravity_test := _make()
 	gravity_test.gravity_milli = 7770
 	var gravity_copy := Core.new()
-	_check(gravity_copy.restore(gravity_test.checkpoint()) and gravity_copy.gravity_milli == 7770, "planet gravity is part of the canonical checkpoint")
+	_check(gravity_copy.restore(gravity_test.checkpoint()) and gravity_copy.gravity_milli == 7770,
+			"planet gravity is part of the canonical checkpoint")
 	var cliff := _make(3, 3, 0)
 	cliff.terrain_q[4] = Core.MAX_TERRAIN_SPAN_MM
 	cliff.gravity_milli = 50000
