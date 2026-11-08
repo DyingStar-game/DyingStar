@@ -48,7 +48,7 @@ const DEV_TOOL_OF_ACTION: Dictionary = {
 }
 ## Client actions only an admin may run (AdminRoles.grants_admin, on the realm roles Horizon verified in the
 ## player's token). Refused at the top of server_action_received, whatever the client shows or sends.
-const ADMIN_ACTIONS: Array[String] = ["admin_fill_shelves"]
+const ADMIN_ACTIONS: Array[String] = ["admin_fill_shelves", "admin_stock_ore"]
 ## How far (m) from a cargo depot's origin an admin may stand to fill its shelves.
 const _ADMIN_DEPOT_RANGE := 300.0
 
@@ -535,6 +535,9 @@ func server_action_received(data: Dictionary) -> void:
 		"admin_fill_shelves":
 			# Admin (refused at the top without an admin role): stock the shelves of the depot we stand in.
 			_admin_fill_shelves()
+		"admin_stock_ore":
+			# Admin, as above: crates of crushed ore shelved in the depot we stand in.
+			_admin_stock_ore()
 		"screen_tap":
 			# The arm taps a screen (ScreenPoke): an EVENT for the others to see and hear, nothing to
 			# validate but its bounds -- within an arm's reach of the body, no faster than a finger.
@@ -1036,9 +1039,19 @@ func _spawn_prop(key: String) -> void:
 	NetworkOrchestrator.spawn_prop_authoritative(data)
 	print("🌱 Spawn '%s' (%s) for %s" % [key, entry["type"], player.client_uuid])
 
-## Admin: fill the shelves of the cargo depot nearest the player (within _ADMIN_DEPOT_RANGE) with hauling
-## boxes, a random number of free slots per shelf (CargoDepot.server_fill_shelves).
-func _admin_fill_shelves() -> void:
+## Admin: stock the cargo depot nearest the player with crates of crushed gold, shelved as if delivered
+## (CargoDepot.server_stock_ore): something for a transport mission to load (playtest 2026-11-08).
+func _admin_stock_ore() -> void:
+	var depot: Node3D = _admin_depot()
+	if depot == null:
+		print("[Admin] %s: no cargo depot within %d m to stock" % [player.client_uuid, int(_ADMIN_DEPOT_RANGE)])
+		return
+	var count: int = await depot.server_stock_ore(SpawnCatalog.ADMIN_STOCK_CRATES)
+	print("[Admin] %s stocked %s: %d crates of crushed ore" % [player.client_uuid, depot.name, count])
+
+
+## The cargo depot nearest the player within _ADMIN_DEPOT_RANGE, in their world; null when none.
+func _admin_depot() -> Node3D:
 	var depot: Node3D = null
 	var best_d := _ADMIN_DEPOT_RANGE * _ADMIN_DEPOT_RANGE
 	for node in get_tree().get_nodes_in_group("cargo_depots"):
@@ -1049,6 +1062,13 @@ func _admin_fill_shelves() -> void:
 		if d < best_d:
 			best_d = d
 			depot = node
+	return depot
+
+
+## Admin: fill the shelves of the cargo depot nearest the player (within _ADMIN_DEPOT_RANGE) with hauling
+## boxes, a random number of free slots per shelf (CargoDepot.server_fill_shelves).
+func _admin_fill_shelves() -> void:
+	var depot: Node3D = _admin_depot()
 	if depot == null:
 		print("[Admin] %s: no cargo depot within %d m to fill" % [player.client_uuid, int(_ADMIN_DEPOT_RANGE)])
 		return

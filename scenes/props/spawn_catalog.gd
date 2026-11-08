@@ -107,7 +107,10 @@ const WHEEL := [
 ## Horizon verified.
 const ADMIN_ENTRIES := {
 	"admin_fill_shelves": {"label": "%%SPAWN_FILL_SHELVES", "action": "admin_fill_shelves"},
+	"admin_stock_ore": {"label": "%%SPAWN_STOCK_ORE", "action": "admin_stock_ore"},
 }
+## How many crates of crushed ore the admin stock puts in a depot (CargoDepot.server_stock_ore).
+const ADMIN_STOCK_CRATES := 20
 
 ## Test crates of the ore chain: one crate of TEST_MINERAL at TEST_PURITY, as the Crusher packs it.
 const TEST_MINERAL := "gold"

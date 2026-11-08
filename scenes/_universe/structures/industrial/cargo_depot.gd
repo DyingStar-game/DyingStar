@@ -341,6 +341,50 @@ func server_fill_shelves(rng: RandomNumberGenerator) -> int:
 	return batch.size()
 
 
+## SERVER, admin action: put [param count] crates of crushed ore (SpawnCatalog's test crate) on free
+## slots of this depot's shelves, as if delivered: the warehouse's, and its stock credited with their
+## goods in service-inventory -- what a transport mission loads. Returns how many were spawned.
+func server_stock_ore(count: int) -> int:
+	var owner: Dictionary = await WarehouseOwner.owner_of(uuid)
+	var box: Dictionary = SpawnCatalog.entry(FILL_CATALOG_KEY)
+	var batch: Array = []
+	var units := 0
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for child in get_children():
+		if batch.size() >= count:
+			break
+		if not (child is Shelf) or (child as Shelf).uuid == "" or ShelfLabels.label_for(child) == "":
+			continue
+		var shelf := child as Shelf
+		for idx in shelf.reserve_random_slots(rng):
+			if batch.size() >= count:
+				break
+			var content := SpawnCatalog.test_crate({"crate": CrateContent.KIND_CRUSHED}, "", str(owner["name"]))
+			content["delivered_to"] = uuid
+			content["owner_type"] = str(owner["type"])
+			content["owner_id"] = str(owner["id"])
+			units += int(content.get("units", 0))
+			var slot: Vector3 = shelf.shelf_slots[idx]
+			batch.append({
+				"type": str(box["type"]),
+				"uuid": UUID_UTIL.v4(),
+				"position": {"x": slot.x, "y": slot.y, "z": slot.z},
+				"rotation": {"x": 0.0, "y": Shelf.SLOT_YAW, "z": 0.0},
+				"scenename": str(box["scene"]).trim_prefix("res://"),
+				"parent_id": shelf.uuid,
+				"content": content,
+			})
+	NetworkOrchestrator.spawn_props_authoritative(batch, false)
+	if units > 0:
+		var good := MissionHeartbeat.good_type_for_mineral(SpawnCatalog.TEST_MINERAL)
+		var result: Dictionary = await MissionHeartbeat.inventory_internal(HTTPClient.METHOD_POST,
+				"/holders/warehouse/%s/credit" % uuid.uri_encode(), {"goodType": good, "quantity": units})
+		print("[cargo_depot] %s: %d x %s credited to its warehouse: %s" % [name, units, good,
+				"ok" if bool(result.get("ok", false)) else str(result.get("error", result))])
+	return batch.size()
+
+
 func _server_player_exists(uuid: String) -> bool:
 	var agent = NetworkOrchestrator.network_agent
 	if agent == null or not ("players_list" in agent):
