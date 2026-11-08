@@ -63,6 +63,13 @@ func test_a_crate_that_never_becomes_the_warehouse_s_stops_blocking() -> void:
 	assert_false(StockReconciler._moving(depot), "a minute on: a stray, left out")
 
 
+func test_the_depots_awake_on_the_server_are_found() -> void:
+	var depot := Node3D.new()
+	depot.add_to_group(TransportReservations.DEPOTS_GROUP)
+	add_child_autofree(depot)
+	assert_true(TransportReservations.live_depots(get_tree()).has(depot), "by the group every depot joins")
+
+
 func _crate(content: Dictionary) -> Node3D:
 	var crate := Node3D.new()
 	crate.set_script(_CRATE_SCRIPT)

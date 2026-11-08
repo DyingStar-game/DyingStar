@@ -14,6 +14,8 @@ extends RefCounted
 
 ## How often (s) the reservations are brought up to date.
 const REFRESH_S: float = 10.0
+## The group a cargo depot joins on the server (CargoDepot._ready).
+const DEPOTS_GROUP := &"cargo_depots"
 
 static var _next_ms: int = 0
 static var _running: bool = false
@@ -166,17 +168,13 @@ static func _mark(crate: Node, reservation: Dictionary) -> void:
 	WarehouseDelivery.update(crate, c)
 
 
-## The cargo depots awake on this server (StockReconciler walks them too).
+## The cargo depots awake on this server (StockReconciler walks them too): each joins DEPOTS_GROUP in its
+## _ready on the server. Not NetworkOrchestrator.props_list: the props Horizon sends are listed on the
+## network agent, and that old list never held a depot -- nothing was ever reconciled nor reserved.
 static func live_depots(tree: SceneTree) -> Array:
 	var out: Array = []
-	for list_type: String in NetworkOrchestrator.props_list:
-		if list_type != WarehouseDelivery.DEPOT_TYPE:
-			continue
-		for node: Variant in NetworkOrchestrator.props_list[list_type].values():
-			if is_instance_valid(node) and (node as Node).is_inside_tree():
-				out.append(node)
-	if out.is_empty():
-		for node: Node in tree.get_nodes_in_group(&"cargo_depot"):
+	for node: Node in tree.get_nodes_in_group(DEPOTS_GROUP):
+		if is_instance_valid(node) and node.is_inside_tree():
 			out.append(node)
 	return out
 

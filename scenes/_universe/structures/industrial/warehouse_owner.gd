@@ -60,9 +60,11 @@ static func plate_owner(owner: Dictionary) -> String:
 
 ## The name of the village [param village_uuid] ("M0001"), "" when it is not loaded here.
 static func village_name(village_uuid: String) -> String:
-	if village_uuid == "" or not NetworkOrchestrator.props_list.has(VILLAGE_TYPE):
+	var agent: Variant = NetworkOrchestrator.network_agent
+	var lists: Variant = agent.get("props_list") if agent != null else null
+	if village_uuid == "" or not (lists is Dictionary) or not (lists as Dictionary).has(VILLAGE_TYPE):
 		return ""
-	var village: Variant = NetworkOrchestrator.props_list[VILLAGE_TYPE].get(village_uuid)
+	var village: Variant = (lists as Dictionary)[VILLAGE_TYPE].get(village_uuid)
 	return str((village as Node).name) if is_instance_valid(village) else ""
 
 
