@@ -54,7 +54,7 @@ static func _refresh(tree: SceneTree) -> void:
 				var need := await need_of(detail["data"])
 				if not need.is_empty():
 					wanted[mission_id] = need
-	for depot: Node in _depots(tree):
+	for depot: Node in live_depots(tree):
 		apply(depot, wanted, checked)
 
 
@@ -166,7 +166,8 @@ static func _mark(crate: Node, reservation: Dictionary) -> void:
 	WarehouseDelivery.update(crate, c)
 
 
-static func _depots(tree: SceneTree) -> Array:
+## The cargo depots awake on this server (StockReconciler walks them too).
+static func live_depots(tree: SceneTree) -> Array:
 	var out: Array = []
 	for list_type: String in NetworkOrchestrator.props_list:
 		if list_type != WarehouseDelivery.DEPOT_TYPE:

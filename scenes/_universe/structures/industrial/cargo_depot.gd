@@ -352,35 +352,20 @@ func server_fill_shelves(rng: RandomNumberGenerator) -> int:
 ## goods in service-inventory -- what a transport mission loads. Returns how many were spawned.
 func server_stock_ore(count: int) -> int:
 	var owner: Dictionary = await WarehouseOwner.owner_of(self)
-	var box: Dictionary = SpawnCatalog.entry(FILL_CATALOG_KEY)
 	var batch: Array = []
 	var units := 0
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
 	for child in get_children():
 		if batch.size() >= count:
 			break
 		if not (child is Shelf) or (child as Shelf).uuid == "" or ShelfLabels.label_for(child) == "":
 			continue
 		var shelf := child as Shelf
-		for idx in shelf.reserve_random_slots(rng):
-			if batch.size() >= count:
-				break
+		for idx in shelf.reserve_free_slots(count - batch.size()):
 			var content := SpawnCatalog.test_crate({"crate": CrateContent.KIND_CRUSHED}, "", WarehouseOwner.plate_owner(owner))
-			content["delivered_to"] = uuid
 			content["owner_type"] = str(owner["type"])
 			content["owner_id"] = str(owner["id"])
 			units += int(content.get("units", 0))
-			var slot: Vector3 = shelf.shelf_slots[idx]
-			batch.append({
-				"type": str(box["type"]),
-				"uuid": UUID_UTIL.v4(),
-				"position": {"x": slot.x, "y": slot.y, "z": slot.z},
-				"rotation": {"x": 0.0, "y": Shelf.SLOT_YAW, "z": 0.0},
-				"scenename": str(box["scene"]).trim_prefix("res://"),
-				"parent_id": shelf.uuid,
-				"content": content,
-			})
+			batch.append(StockReconciler.crate_spawn(shelf, idx, content, uuid))
 	NetworkOrchestrator.spawn_props_authoritative(batch, false)
 	if units > 0:
 		var good := MissionHeartbeat.good_type_for_mineral(SpawnCatalog.TEST_MINERAL)

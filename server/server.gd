@@ -780,6 +780,7 @@ func _process_impl() -> void:
 			_perf_sweeps += 1
 		ScreenLock.release_away(get_tree())  # screens whose user walked away are free again
 		TransportReservations.tick(get_tree())  # crates kept for the transports out of each warehouse
+		StockReconciler.tick(get_tree())  # each warehouse's crates = its stock (the crates are the truth)
 
 
 ## [Perf/nodes]: how many nodes process / physics-process, by script (or class when scriptless),

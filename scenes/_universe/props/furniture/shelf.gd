@@ -353,6 +353,21 @@ func reserve_random_slots(rng: RandomNumberGenerator) -> Array[int]:
 	_send_slots_occupied()
 	return picked
 
+## Server: reserve up to [param count] free slots, in slot order -- occupied, with no crate yet; the
+## caller spawns a crate on each (CargoDepot.server_stock_ore, StockReconciler). Only what is asked is
+## taken, so no slot stays marked with nothing coming to it.
+func reserve_free_slots(count: int) -> Array[int]:
+	var picked: Array[int] = []
+	for i in range(mini(shelf_slots.size(), mini(shelf_slots_occupied.size(), _slot_bodies.size()))):
+		if picked.size() >= count:
+			break
+		if not shelf_slots_occupied[i] and typeof(_slot_bodies[i]) == TYPE_NIL:
+			shelf_slots_occupied[i] = true
+			picked.append(i)
+	if not picked.is_empty():
+		_send_slots_occupied()
+	return picked
+
 ## Server: [param body] is being taken off the shelf — the carry pickup, just before it reparents the
 ## crate to the player: free its slot. Same contract as Vehicle.release_cargo.
 func release_cargo(body: Node) -> void:
