@@ -769,12 +769,30 @@ static func report_total_line(total: Dictionary) -> String:
 # ---------------------------------------------------------------------------------------------
 
 static func stack_line(stack: Dictionary) -> String:
-	return "%s  x%s" % [dash(stack.get("goodType")), dash(stack.get("quantity"))]
+	var good := str(stack.get("goodType", ""))
+	return "%s  ·  %s" % [good_label(good), good_quantity(good, stack.get("quantity"))]
 
 
 static func stack_view_line(view: Dictionary) -> String:
-	return text("%%SVC_FMT_STACK_VIEW") % [dash(view.get("goodType")), dash(view.get("quantity")),
-			dash(view.get("available")), dash(view.get("held"))]
+	var good := str(view.get("goodType", ""))
+	return text("%%SVC_FMT_STACK_VIEW") % [good_label(good), good_quantity(good, view.get("quantity")),
+			good_quantity(good, view.get("available")), good_quantity(good, view.get("held"))]
+
+
+## The name of a good as a player reads it: the ore chain's goods spelt out ("ore.gold" -> "Crushed ore
+## (Gold)", "ingot.gold" -> "Ingots (Gold)"), anything else as the service names it.
+static func good_label(good_type: String) -> String:
+	var parts := good_type.split(".", true, 1)
+	if parts.size() == 2 and parts[0] in ["ore", "ingot"]:
+		var mineral := text(CrateContent.content_key({"mineral": parts[1]}))
+		return text("%%GOOD_ORE_OF" if parts[0] == "ore" else "%%GOOD_INGOT_OF").replace("%s", mineral)
+	return good_type if good_type != "" else "—"
+
+
+## How much of a good: the ore chain counts whole kilograms (CrateContent.units_of_mass), the rest units.
+static func good_quantity(good_type: String, quantity: Variant) -> String:
+	var unit := "kg" if good_type.begins_with("ore.") or good_type.begins_with("ingot.") else "unit"
+	return quantity_text(num(quantity), unit)
 
 
 static func instance_line(instance: Dictionary) -> String:
