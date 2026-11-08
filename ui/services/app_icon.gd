@@ -6,7 +6,7 @@ extends Control
 ## kept to the same visual family (rounded corners, even stroke, generous margins) so the app grid
 ## reads as one system.
 
-enum Kind { IDENTITY, CONTACTS, CORPORATIONS, MISSIONS, BANK, REPORTS, DIAGNOSTICS, INVENTORY, MARKET, SQUAD, POIS }
+enum Kind { IDENTITY, CONTACTS, CORPORATIONS, MISSIONS, BANK, REPORTS, DIAGNOSTICS, INVENTORY, MARKET, SQUAD, POIS, REFRESH }
 
 ## Which app pictogram is drawn.
 @export var kind: Kind = Kind.IDENTITY
@@ -48,6 +48,8 @@ func _draw() -> void:
 			_squad(origin, side, stroke)
 		Kind.POIS:
 			_pois(origin, side, stroke)
+		Kind.REFRESH:
+			_refresh(origin, side, stroke)
 
 
 func _p(origin: Vector2, side: float, x: float, y: float) -> Vector2:
@@ -158,3 +160,13 @@ func _pois(o: Vector2, s: float, w: float) -> void:
 	draw_circle(_p(o, s, 0.50, 0.38), 0.26 * s, colour, false, w, true)
 	draw_circle(_p(o, s, 0.50, 0.38), 0.08 * s, colour)
 	draw_line(_p(o, s, 0.50, 0.64), _p(o, s, 0.50, 0.88), colour, w, true)
+
+
+## Refresh: an open circle whose end carries an arrowhead (the header's reload button).
+func _refresh(o: Vector2, s: float, w: float) -> void:
+	var c: Vector2 = _p(o, s, 0.5, 0.5)
+	var r: float = 0.30 * s
+	draw_arc(c, r, -PI * 0.25, PI * 1.45, 40, colour, w, true)
+	var tip: Vector2 = c + Vector2(cos(-PI * 0.25), sin(-PI * 0.25)) * r
+	draw_line(tip, tip + Vector2(-0.20, 0.0) * s, colour, w, true)
+	draw_line(tip, tip + Vector2(0.0, 0.20) * s, colour, w, true)

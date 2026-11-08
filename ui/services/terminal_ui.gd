@@ -1,13 +1,12 @@
 class_name TerminalUI
 extends CanvasLayer
 
-## The player's tablet: a content card, the open app's action column beside it, and a bar of app
-## tabs along the bottom (the mockup in `ui interface.png`). Built in code and styled through
-## [ServiceStyle]; no scene, no shared theme.
+## The player's tablet (A.R.E.S. OS): the open app's header and tabs, a content panel with the app's
+## action column beside it, and a rail of app tabs along the bottom (the A.R.E.S. OS mock-up,
+## 2026-11). Built in code and styled through [ServiceStyle]; no scene, no shared theme.
 ##
-## The bar carries the six apps that fit a tab (home, profile, economy, inventory, missions,
-## social, system), the star chart (NAVIGATION: the chart's face is hosted in the content card, see
-## [method navigation_slot]) and the PLUS grid for the rest. The right-hand column is the
+## The rail carries the overview, the apps, the star chart (NAVIGATION: the chart's face is hosted in
+## the content panel, see [method navigation_slot]) and PLUS, the app that holds the rest. The right-hand column is the
 ## segment's action half: panels build their forms and buttons into [member ServicePanel.side_slot]
 ## instead of stacking them under their lists, and a segment that is nothing but a form leaves the
 ## left card empty so the column takes the whole width.
@@ -15,7 +14,7 @@ extends CanvasLayer
 ## Like [StarMap] it is a full-screen [CanvasLayer] (its own layer, a full-rect Panel inside), opened
 ## with F3; while it is up the game is frozen and the mouse is free.
 
-## The installed apps, in PLUS grid order. `area` is the [signal PlayerServices.changed] key that
+## The installed apps. `area` is the [signal PlayerServices.changed] key that
 ## app refreshes on.
 const APPS: Array = [
 	{"id": "identity", "title": "%%SVC_APP_IDENTITY", "area": "profile",
@@ -28,15 +27,12 @@ const APPS: Array = [
 		"icon": ServiceAppIcon.Kind.INVENTORY, "path": "res://ui/services/properties_panel.gd"},
 	{"id": "missions", "title": "%%SVC_APP_MISSIONS", "area": "missions",
 		"icon": ServiceAppIcon.Kind.MISSIONS, "path": "res://ui/services/mission_panel.gd"},
-	{"id": "reports", "title": "%%SVC_APP_REPORTS", "area": "reports",
-		"icon": ServiceAppIcon.Kind.REPORTS, "path": "res://ui/services/reports_panel.gd"},
-	{"id": "diagnostics", "title": "%%SVC_APP_DIAGNOSTICS", "area": "diagnostics",
-		"icon": ServiceAppIcon.Kind.DIAGNOSTICS, "path": "res://ui/services/diagnostics_panel.gd"},
+	{"id": "plus", "title": "%%SVC_NAV_PLUS", "area": "reports",
+		"icon": ServiceAppIcon.Kind.REPORTS, "path": "res://ui/services/plus_panel.gd"},
 ]
 
 ## The bottom bar, left to right. `app` is what the tab opens: an APPS id, `""` for the overview,
-## `"plus"` for the grid of the apps with no tab of their own, and NAVIGATION for the star chart,
-## drawn in the content card (see [signal navigation_requested]).
+## and NAVIGATION for the star chart, drawn in the content panel (see [signal navigation_requested]).
 const NAV: Array = [
 	{"app": "", "title": "%%SVC_NAV_HOME"},
 	{"app": "identity", "title": "%%SVC_NAV_PROFILE"},
@@ -48,8 +44,12 @@ const NAV: Array = [
 	{"app": "plus", "title": "%%SVC_NAV_PLUS"},
 ]
 
-## The apps the bar has no room for: the PLUS grid, in the order they were on the old home rail.
+## The sections the PLUS app holds (plus_panel.gd): news about one of them lights the PLUS tab.
 const PLUS_APPS: PackedStringArray = ["reports", "diagnostics"]
+## A rail tab's width (px): the mock-up's fixed tiles, scaled to the tablet's 1920.
+const NAV_TAB_WIDTH: float = 156.0
+## The rail's height (px).
+const RAIL_HEIGHT: float = 104.0
 
 ## The action column's width while the left card still has something to show beside it.
 const SIDE_WIDTH: float = 400.0
@@ -93,11 +93,12 @@ var _chrome: VBoxContainer = null
 var _main_card: PanelContainer = null
 var _side_card: PanelContainer = null
 var _content: MarginContainer = null
-var _plus: Control = null
+## The header of the screens that are not apps (the overview, the chart): their title alone.
+var _plain_header: Label = null
 ## The NAVIGATION tab's content: whatever is hosted in it (the chart's face), full card.
 var _navigation: Control = null
 var _clock: Label = null
-## The open app id, "plus" for the grid, or "" when the overview is showing.
+## The open app id, NAVIGATION for the chart, or "" when the overview is showing.
 var _active_id: String = ""
 ## The app that last asked the chart for a place, "" when none did.
 ##
@@ -121,8 +122,8 @@ var _opened_for_navigation: bool = false
 var _next_open: Callable = Callable()
 
 
-## One tab of the bottom bar: a wide tile carrying the active app's amber corner mark, the mockup's
-## flag on ECONOMIE. The style is [ServiceStyle.apply_nav]; only the flag is drawn here.
+## One tab of the rail: a bare tile, amber while it is the one on show ([ServiceStyle.apply_nav]).
+## Only the news light is drawn here.
 class NavTab extends Button:
 	## The light of a tab with news behind it (a notification not read there yet): green, blinking.
 	const PENDING_COLOUR := Color(0.25, 1.0, 0.45)
@@ -155,18 +156,7 @@ class NavTab extends Button:
 		if pending:
 			var t := Time.get_ticks_msec() / 1000.0
 			var alpha := 0.35 + 0.65 * (0.5 + 0.5 * sin(t * TAU * PENDING_BLINK_HZ))
-			draw_circle(Vector2(14.0, 14.0), 7.0, Color(PENDING_COLOUR, alpha))
-		if not active:
-			return
-		# Inset from the corner so the mark sits inside the rounded tile rather than over its curve.
-		var inset: float = 4.0
-		var leg: float = minf(size.x, size.y) * 0.30
-		var corner := Vector2(size.x - inset, inset)
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(corner.x - leg, inset),
-			corner,
-			Vector2(corner.x, inset + leg),
-		]), ServiceStyle.ACCENT)
+			draw_circle(Vector2(size.x - 14.0, 14.0), 6.0, Color(PENDING_COLOUR, alpha))
 
 
 ## The apps with news not looked at yet (a notification about them): their tab blinks until opened.
@@ -178,6 +168,8 @@ signal pending_changed(any: bool)
 
 ## [param id] (an APPS id) has news: its tab of the bottom bar blinks until the player opens it.
 func flag_app(id: String) -> void:
+	if id in PLUS_APPS:
+		id = "plus"
 	if id == "" or _pending.has(id):
 		return
 	_pending[id] = true
@@ -317,46 +309,60 @@ func _build() -> void:
 	add_child(root)
 	ServiceStyle.apply_window(root)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side: String in ["left", "top", "right", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 20)
-	root.add_child(margin)
-
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 16)
-	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	margin.add_child(column)
+	column.set_anchors_preset(Control.PRESET_FULL_RECT)
+	column.add_theme_constant_override("separation", 0)
+	root.add_child(column)
 
-	# Chrome: the open app's title bar and segment tabs, above the cards so they survive a
-	# form-only segment (which hands the whole content card to the action column).
+	# Chrome: the open app's header and tabs, above the panels so they survive a form-only segment
+	# (which hands the whole content panel to the action column).
+	var chrome_margin := MarginContainer.new()
+	chrome_margin.add_theme_constant_override("margin_left", 36)
+	chrome_margin.add_theme_constant_override("margin_right", 36)
+	chrome_margin.add_theme_constant_override("margin_top", 14)
+	column.add_child(chrome_margin)
 	var chrome := VBoxContainer.new()
-	chrome.add_theme_constant_override("separation", 8)
+	chrome.add_theme_constant_override("separation", 10)
 	chrome.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.add_child(chrome)
+	chrome_margin.add_child(chrome)
 	_chrome = chrome
 
-	# The two cards: what the app shows, and the column its actions live in.
+	# The overview's and the chart's header: a title, as an app's header has.
+	_plain_header = ServiceStyle.ares_label("", ServiceStyle.TEXT, ServiceStyle.SIZE_TITLE)
+	_plain_header.custom_minimum_size = Vector2(0, 64)
+	_plain_header.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	chrome.add_child(_plain_header)
+
+	# The two panels: what the app shows, and the column its actions live in.
+	var panes_margin := MarginContainer.new()
+	panes_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for side: String in ["left", "right"]:
+		panes_margin.add_theme_constant_override("margin_" + side, 36)
+	panes_margin.add_theme_constant_override("margin_top", 24)
+	panes_margin.add_theme_constant_override("margin_bottom", 28)
+	column.add_child(panes_margin)
 	var panes := HBoxContainer.new()
-	panes.add_theme_constant_override("separation", 16)
+	panes.add_theme_constant_override("separation", 28)
 	panes.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panes.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(panes)
+	panes_margin.add_child(panes)
 
+	# The content area draws no frame of its own (the mock-up's `.content`): every page is a panel,
+	# or lays out its panels itself. Only the action column is framed here.
 	_main_card = PanelContainer.new()
-	ServiceStyle.apply_frame(_main_card, 14.0)
+	_main_card.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_main_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_main_card.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panes.add_child(_main_card)
 
-	# The content: the overview, the PLUS grid and every app overlap; one is visible at a time.
+	# The content: the overview, the chart's slot and every app overlap; one is visible at a time.
 	_content = MarginContainer.new()
 	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_main_card.add_child(_content)
 
 	_side_card = PanelContainer.new()
-	ServiceStyle.apply_frame(_side_card, 8.0)
+	ServiceStyle.apply_frame(_side_card)
 	_side_card.custom_minimum_size = Vector2(SIDE_WIDTH, 0)
 	_side_card.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panes.add_child(_side_card)
@@ -373,14 +379,15 @@ func _build() -> void:
 	_overview = ServiceOverviewScreen.new()
 	_overview.setup()
 	_overview.visible = false
+	_overview.open_app_requested.connect(open_app_at)
+	_overview.open_mission_requested.connect(open_mission)
 	_content.add_child(_overview)
 
-	_plus = _build_plus()
-	_plus.visible = false
-	_content.add_child(_plus)
-
-	_navigation = Control.new()
-	_navigation.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The chart's slot outlives a rebuild (a language change): the chart's face lives in it, and the
+	# chart is PlayerClient's — freeing the slot freed the face, and F2 then opened nothing.
+	if _navigation == null:
+		_navigation = Control.new()
+		_navigation.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_navigation.visible = false
 	_content.add_child(_navigation)
 
@@ -390,6 +397,7 @@ func _build() -> void:
 		var id: String = str(app["id"])
 		var tabs := VBoxContainer.new()
 		tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tabs.add_theme_constant_override("separation", 10)
 		tabs.visible = false
 		chrome.add_child(tabs)
 		_tab_slots[id] = tabs
@@ -408,72 +416,52 @@ func _build() -> void:
 		panel.visible = false
 		panel.placement_requested.connect(_relay_placement.bind(id))
 		panel.focus_poi_requested.connect(_relay_focus_poi.bind(id))
+		panel.open_app_requested.connect(open_app_at)
 		_content.add_child(panel)
 		_panels[id] = panel
 		_areas[id] = str(app["area"])
 
 	column.add_child(_build_nav_bar())
 	_start_clock()
-	# The overview is what an opening shows: one card, no chrome, no action column.
+	# The overview is what an opening shows: one panel, its title, no action column.
 	_set_chrome("")
 	_apply_pane_layout(true, false)
 
 
-## Show one app's chrome, or none of it — the overview and the grid need no title bar of their own.
+## Show one app's chrome (its header and tabs).
+##
+## The overview and the chart have no app header: they get the plain one, their title alone.
 func _set_chrome(id: String) -> void:
-	if _chrome != null:
-		_chrome.visible = id != ""
+	if _plain_header != null:
+		_plain_header.visible = not _tab_slots.has(id)
+		_plain_header.text = tr("%%SVC_NAV_NAVIGATION") if id == NAVIGATION else tr("%%SVC_NAV_HOME")
 	for key: String in _tab_slots:
 		(_tab_slots[key] as Control).visible = key == id
 
 
-## The grid of the apps with no tab of their own, opened by the PLUS tab.
-func _build_plus() -> Control:
-	var page := VBoxContainer.new()
-	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	page.add_theme_constant_override("separation", 18)
-
-	var heading := Label.new()
-	heading.text = tr("%%SVC_LBL_MORE_APPS").to_upper()
-	heading.add_theme_color_override("font_color", ServiceStyle.MUTED)
-	ServiceStyle.font_of(heading, 13, true)
-	page.add_child(heading)
-
-	var grid := GridContainer.new()
-	grid.columns = PLUS_APPS.size()
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 14)
-	grid.add_theme_constant_override("v_separation", 14)
-	for id: String in PLUS_APPS:
-		for app: Dictionary in APPS:
-			if str(app["id"]) != id:
-				continue
-			var tile := ServiceAppTile.new()
-			tile.setup(id, tr(str(app["title"])), app["icon"])
-			tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			# bind, not a lambda: the id has to be the one this tile was built for, whatever the
-			# loop variable holds by the time the tile is pressed.
-			tile.pressed.connect(_open_app.bind(id))
-			grid.add_child(tile)
-	page.add_child(grid)
-	return page
-
-
-## The bottom bar: the tabs, then the clock and the brand they leave room for.
+## The rail along the bottom: the tabs, then the clock and the brand they leave room for.
 func _build_nav_bar() -> Control:
+	var rail := PanelContainer.new()
+	var box := ServiceStyle.flat(ServiceStyle.RAIL, 0, ServiceStyle.LINE, 0, 26.0, 0.0)
+	box.border_width_top = 1
+	box.corner_radius_bottom_left = 20
+	box.corner_radius_bottom_right = 20
+	rail.add_theme_stylebox_override("panel", box)
+	rail.custom_minimum_size = Vector2(0, RAIL_HEIGHT)
+
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 10)
-	bar.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	bar.alignment = BoxContainer.ALIGNMENT_BEGIN
+	rail.add_child(bar)
 
 	for tab: Dictionary in NAV:
 		var app: String = str(tab["app"])
 		var button := NavTab.new()
 		button.text = tr(str(tab["title"])).to_upper()
-		# No fixed width: a Button is at least its own label, and the tabs share whatever is left
-		# once the clock and the brand have taken theirs — so the bar never pushes them off screen.
-		button.custom_minimum_size = Vector2(0, 54)
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# A fixed tile, as the mock-up's, but never narrower than its own label.
+		button.custom_minimum_size = Vector2(NAV_TAB_WIDTH, 68)
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		button.clip_text = false
 		ServiceStyle.apply_nav(button, app == _active_id)
 		button.active = app == _active_id
 		button.pressed.connect(_nav_to.bind(app))
@@ -485,30 +473,33 @@ func _build_nav_bar() -> Control:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
 
-	_clock = Label.new()
-	_clock.add_theme_color_override("font_color", ServiceStyle.TEXT)
-	ServiceStyle.font_of(_clock, 26, true)
+	_clock = ServiceStyle.ares_label("", ServiceStyle.TEXT, 30)
 	_clock.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(_clock)
 
+	# The brand: the ARES mark in amber over the system's name and build, behind a hairline.
+	var brand_box := PanelContainer.new()
+	var edge := StyleBoxFlat.new()
+	edge.bg_color = Color.TRANSPARENT
+	edge.border_width_left = 1
+	edge.border_color = ServiceStyle.LINE
+	edge.content_margin_left = 20.0
+	brand_box.add_theme_stylebox_override("panel", edge)
+	brand_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var brand := VBoxContainer.new()
-	brand.add_theme_constant_override("separation", 0)
-	brand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var name := Label.new()
-	name.text = "A.R.E.S. OS"
-	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	name.add_theme_color_override("font_color", ServiceStyle.TEXT)
-	ServiceStyle.font_of(name, 14, true)
-	brand.add_child(name)
-	var version := Label.new()
-	version.text = tr("%%SVC_FMT_VERSION") % _build_version()
+	brand.add_theme_constant_override("separation", 4)
+	var logo := brand_logo()
+	logo.modulate = ServiceStyle.ACCENT
+	logo.size_flags_horizontal = Control.SIZE_SHRINK_END
+	brand.add_child(logo)
+	var version := ServiceStyle.label("A.R.E.S. OS · " + tr("%%SVC_FMT_VERSION") % _build_version(), ServiceStyle.HINT,
+			ServiceStyle.SIZE_CAPTION)
 	version.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	version.add_theme_color_override("font_color", ServiceStyle.MUTED)
-	ServiceStyle.font_of(version, 12)
 	brand.add_child(version)
-	bar.add_child(brand)
-	bar.add_child(brand_logo())
-	return bar
+	brand_box.add_child(brand)
+	bar.add_child(brand_box)
+	return rail
 
 
 ## The ARES wordmark, cropped to the mark inside the decal texture and shown white. Static: the wrist
@@ -566,6 +557,10 @@ func _on_language_changed(_language: String) -> void:
 		return
 	var was_open: String = _active_id
 	var was_visible: bool = visible
+	if _active_id == NAVIGATION:
+		_leave_navigation()
+	if _navigation != null and _navigation.get_parent() != null:
+		_navigation.get_parent().remove_child(_navigation)
 	for child: Node in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -575,7 +570,7 @@ func _on_language_changed(_language: String) -> void:
 	_tab_slots.clear()
 	_nav_tabs.clear()
 	_overview = null
-	_plus = null
+	_plain_header = null
 	_chrome = null
 	_main_card = null
 	_side_card = null
@@ -584,11 +579,10 @@ func _on_language_changed(_language: String) -> void:
 	_active_id = ""
 	_close_armed = false
 	_build()
-	if was_open != "" and (_panels.has(was_open) or was_open == "plus"):
-		if was_open == "plus":
-			_open_plus()
-		else:
-			_open_app(was_open)
+	if _panels.has(was_open):
+		_open_app(was_open)
+	elif was_open == NAVIGATION:
+		_show_navigation()
 	else:
 		_go_home()
 	visible = was_visible
@@ -604,39 +598,34 @@ func _nav_to(app: String) -> void:
 		_show_navigation()
 	elif app == "":
 		_go_home()
-	elif app == "plus":
-		_open_plus()
 	else:
 		_open_app(app)
 
 
-## Light the tab of whatever is now on show. An app opened from the grid has no tab of its own:
-## the grid keeps the light — that is where the player came from, and where the rest wait.
+## Light the tab of whatever is now on show.
 func _set_nav_active(app: String) -> void:
-	var lit: String = app if _nav_tabs.has(app) else "plus"
+	var lit: String = app
 	for key: String in _nav_tabs:
 		(_nav_tabs[key] as NavTab).set_active(key == lit)
 
 
-## The chart's tab: one card, no chrome, the slot shown — and the chart asked for, once the slot is up.
+## The chart's tab: one panel, its title, the slot shown — and the chart asked for, once the slot is up.
 func _show_navigation() -> void:
 	if _active_id == NAVIGATION:
 		return
 	_show_nothing()
 	_active_id = NAVIGATION
 	_navigation.visible = true
-	_set_chrome("")
+	_set_chrome(NAVIGATION)
 	_set_nav_active(NAVIGATION)
 	_apply_pane_layout(true, false)
 	navigation_requested.emit()
 
 
-## Hide every content (the overview, the grid, the apps, the chart's slot) before showing one.
+## Hide every content (the overview, the apps, the chart's slot) before showing one.
 func _show_nothing() -> void:
 	_leave_navigation()
 	_overview.visible = false
-	if _plus != null:
-		_plus.visible = false
 	for key: String in _panels:
 		(_panels[key] as ServicePanel).visible = false
 	for key: String in _side_slots:
@@ -682,10 +671,26 @@ func _open_app(id: String) -> void:
 func open_app(id: String, segment: int = -1) -> void:
 	if not _built:
 		_ensure_built()
+	var held: int = PLUS_APPS.find(id)
+	if held >= 0:
+		id = "plus"
+		segment = held
 	show()
 	_open_app(id)
 	if segment >= 0 and _panels.has(id):
 		(_panels[id] as ServicePanel).goto_segment(segment)
+
+
+## Open [param id] on [param segment], and that segment's own tab [param sub] — a composed app's
+## section (the economy's bank, the social's contacts) has tabs of its own. [param sub] < 0 leaves the
+## tab as it is. What the home's shortcuts use: "friend requests" lands on Social › Contacts › Requests.
+func open_app_at(id: String, segment: int, sub: int = -1) -> void:
+	open_app(id, segment)
+	if sub < 0 or not _panels.has(id):
+		return
+	var section: ServicePanel = (_panels[id] as ServicePanel).mounted_section()
+	if section != null:
+		section.goto_segment(sub)
 
 
 ## An app asked the chart for a place: remember which one, and pass the request on.
@@ -739,16 +744,6 @@ func open_placed_app(app: String) -> void:
 	if app == "" or not _panels.has(app):
 		return
 	open_app(app, (_panels[app] as ServicePanel).placement_segment())
-
-
-func _open_plus() -> void:
-	_show_nothing()
-	_active_id = "plus"
-	if _plus != null:
-		_plus.visible = true
-	_set_chrome("")
-	_set_nav_active("plus")
-	_apply_pane_layout(true, false)
 
 
 func _go_home() -> void:
