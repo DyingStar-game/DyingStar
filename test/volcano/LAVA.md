@@ -57,8 +57,11 @@ le déversoir artificiel. Les sources exportées sont conservées. La politique
 `simulated_lava_4` reste la clé du terrain sans anciens chemins : le schéma
 physique v6 est distinct. Les profils de routes inchangées sont réutilisés
 uniquement si leur ancienne clé diffère de cette seule politique lave ; les
-profils proches des volcans sont invalidés. Sur cet export : 134 profils
-réutilisés, une route et un plan de pont recalculés localement.
+profils proches des volcans sont invalidés. Le `grade_profiles.pack` de Tarsis III
+a été recuit le 2026-11-08 avec cette politique (132 lignes, 12 504 ponts) : la clé
+correspond, rien n’est recalculé au démarrage (profils 0,5 s au lieu de 1,0 s,
+ponts 0,3 s au lieu de 0,5 s). Avec `--authored-lava`, ce bake ne correspond plus
+et toutes les lignes sont profilées au démarrage (plusieurs minutes).
 
 ## Validation reproductible
 

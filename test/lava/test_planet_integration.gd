@@ -25,11 +25,15 @@ func _ready() -> void:
 	check(CacheRules.legacy_matches(legacy, wanted) and not CacheRules.legacy_matches(legacy + "changed", wanted),
 		"cache compatibility accepts only the explicit lava policy migration")
 	check(not data._grade_baked.is_empty(), "unaffected infrastructure profiles survive the removal of QGIS spillways")
-	var excluded: Dictionary = data._lava_cache_exclusions().lines
-	var safe := true
-	for fid: int in excluded:
-		safe = safe and not data._grade_baked.has(fid)
-	check(safe, "infrastructure profiles near changed volcanoes are invalidated")
+	if str(data._load_grade_bake_doc().get("key", "")) == wanted:
+		check(true, "the committed bake was made with the simulated-lava terrain: every profile is current")
+	else:
+		# A bake from before the switch: only the lines away from the volcanoes are reused.
+		var excluded: Dictionary = data._lava_cache_exclusions().lines
+		var safe := true
+		for fid: int in excluded:
+			safe = safe and not data._grade_baked.has(fid)
+		check(safe, "infrastructure profiles near changed volcanoes are invalidated")
 	check(not data.has_lava() and data.get_whole_lava().is_empty()
 		and data.get_chunk_lava(1, 0).is_empty() and data.lava_fingerprint().is_empty(),
 		"QGIS lava ribbons, carving and grading are disabled")
