@@ -43,6 +43,14 @@ func test_a_reserved_crate_is_never_taken() -> void:
 	assert_false(kept.is_queued_for_deletion(), "the one kept for a transport stays")
 
 
+func test_a_depot_just_stocked_is_left_alone() -> void:
+	var depot := Node3D.new()
+	add_child_autofree(depot)
+	assert_false(StockReconciler._moving(depot), "nothing on its way")
+	StockReconciler.hold_off(depot)
+	assert_true(StockReconciler._moving(depot), "crates on their way: not counted yet")
+
+
 func _crate(content: Dictionary) -> Node3D:
 	var crate := Node3D.new()
 	crate.set_script(_CRATE_SCRIPT)

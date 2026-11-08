@@ -366,6 +366,7 @@ func server_stock_ore(count: int) -> int:
 			content["owner_id"] = str(owner["id"])
 			units += int(content.get("units", 0))
 			batch.append(StockReconciler.crate_spawn(shelf, idx, content, uuid))
+	StockReconciler.hold_off(self)  # crates on their way, stock credited before they land
 	NetworkOrchestrator.spawn_props_authoritative(batch, false)
 	if units > 0:
 		var good := MissionHeartbeat.good_type_for_mineral(SpawnCatalog.TEST_MINERAL)

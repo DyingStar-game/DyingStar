@@ -18,6 +18,11 @@ const WAKE_GRACE_S := 20.0
 const CRATE_TYPE := "crate_container"
 ## The SpawnCatalog entry of the crate a warehouse is stocked with (CargoDepot.FILL_CATALOG_KEY too).
 const CRATE_CATALOG_KEY := "hauling_box"
+## Depot meta: ticks msec until which crates just spawned there are on their way through Horizon --
+## counted by nobody yet, so the depot is not reconciled before (hold_off).
+const HOLD_META := &"stock_hold_until_ms"
+## Seconds a depot is left alone after crates were spawned on its shelves.
+const HOLD_S := 45.0
 
 static var _next_ms: int = 0
 static var _running: bool = false
@@ -55,6 +60,8 @@ static func _settled(depot: Node) -> bool:
 ## Whether a crate of [param depot] is being shelved or taken right now (its goods and its marks not yet
 ## agreeing): the stock and the crates may disagree for a moment.
 static func _moving(depot: Node) -> bool:
+	if Time.get_ticks_msec() < int(depot.get_meta(HOLD_META, 0)):
+		return true
 	var depot_uuid := _uuid_of(depot)
 	for shelf: Node in depot.get_children():
 		if not (shelf is Shelf):
@@ -159,6 +166,7 @@ static func _add(depot: Node, good: String, count: int) -> void:
 			continue
 		for idx: int in (shelf as Shelf).reserve_free_slots(count - batch.size()):
 			batch.append(crate_spawn(shelf as Shelf, idx, _new_content(good, owner), _uuid_of(depot)))
+	hold_off(depot)
 	NetworkOrchestrator.spawn_props_authoritative(batch, false)
 	print("[Stock] %s: %d crate(s) of %s put on the shelves (stock)" % [depot.name, batch.size(), good])
 
@@ -190,6 +198,12 @@ static func _new_content(good: String, owner: Dictionary) -> Dictionary:
 		content["owner_type"] = str(owner.get("type", ""))
 		content["owner_id"] = str(owner.get("id", ""))
 	return content
+
+
+## Leave [param depot] alone for HOLD_S: crates spawned on its shelves are on their way, and its stock
+## may already count them (CargoDepot.server_stock_ore credits it at once).
+static func hold_off(depot: Node) -> void:
+	depot.set_meta(HOLD_META, Time.get_ticks_msec() + int(HOLD_S * 1000.0))
 
 
 static func _uuid_of(node: Node) -> String:
