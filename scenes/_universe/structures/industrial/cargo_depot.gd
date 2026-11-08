@@ -29,8 +29,8 @@ extends Node3D
 ## Where the screen of crates to collect hangs (depot frame) when the scene has no PickupBoardAt marker:
 ## on the buffer room's far wall, left of the door to the aisles, facing the counter.
 const PICKUP_BOARD_AT := Vector3(-1.8, 2.0, 11.2)
-## How far (m) an aisle's sign is read from.
-const AISLE_SIGN_READ_M := 30.0
+## Font size of an aisle's letter painted on the floor ("AILE A"): no wider than the aisle.
+const AISLE_PAINT_SIZE := 90
 const SHELVES_LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelves.json"
 ## The scene every shelf of SHELVES_LAYOUT is spawned from.
 const SHELF_SCENE := "scenes/_universe/props/furniture/metal_shelf.tscn"
@@ -122,22 +122,21 @@ func _ready() -> void:
 		var at := get_node_or_null("PickupBoardAt") as Node3D
 		board.transform = at.transform if at != null else Transform3D(Basis(Vector3.UP, PI), PICKUP_BOARD_AT)
 		add_child(board)
-		# At the mouth of each aisle, over the walk: its letter, seen coming from the buffer room (-Z).
+		# Facing it, by the buffer rack: what the warehouse holds (StockBoard), at the scene's StockBoardAt
+		# marker, else the pickup board's place mirrored across the door.
+		var stock := StockBoard.new().setup(self)
+		stock.name = "StockBoard"
+		var stock_at := get_node_or_null("StockBoardAt") as Node3D
+		if stock_at != null:
+			stock.transform = stock_at.transform
+		else:
+			stock.transform = board.transform
+			stock.position.x = -board.position.x
+		add_child(stock)
+		# Painted on the floor at the mouth of each aisle, its letter read walking in (+Z): only on the
+		# floor, a sign hung over the walk floated in the air (playtest 2026-11-08).
 		for sign_at: Array in ShelfLabels.aisle_signs():
-			var aisle := Label3D.new()
-			aisle.name = "AisleSign_%s" % sign_at[0]
-			aisle.text = tr("%%DEPOT_AISLE") % sign_at[0]
-			aisle.font = AresBrand.font()
-			aisle.font_size = 64
-			aisle.pixel_size = 0.0025
-			aisle.outline_size = 6
-			aisle.modulate = PickupBoard.INK
-			aisle.position = sign_at[1]
-			aisle.rotation.y = PI  # a Label3D faces +Z: turned to whoever walks in from -Z
-			aisle.visibility_range_end = AISLE_SIGN_READ_M
-			add_child(aisle)
-			# Painted on the floor at the mouth too, read walking in (+Z).
-			var paint := FloorPaint.label(aisle.text, 220)
+			var paint := FloorPaint.label(tr("%%DEPOT_AISLE") % sign_at[0], AISLE_PAINT_SIZE)
 			paint.name = "AisleFloorSign_%s" % sign_at[0]
 			paint.position = Vector3((sign_at[1] as Vector3).x, FloorPaint.LIFT_M, (sign_at[1] as Vector3).z)
 			paint.basis = FloorPaint.flat(PI)  # the text's top into the aisle (+Z)

@@ -116,8 +116,9 @@ func _export_to_npc_service() -> void:
   ]
 }""" % [JSON.stringify(scenename), ",\n".join(slot_lines)])
 
-## CLIENT: the shelf's label (ShelfLabels: "A12") on a small sign at the top of its front, read from
-## the aisle. None for a shelf outside the depot's rows (the buffer rack, a shelf elsewhere).
+## CLIENT: the shelf's label (ShelfLabels: "A12") painted on the floor in front of it, read from the
+## aisle -- only on the floor, a sign over the shelf floated in the air (playtest 2026-11-08). None for a
+## shelf outside the depot's rows (the buffer rack, a shelf elsewhere).
 func _add_label() -> void:
 	var label_text := ShelfLabels.label_for(self)
 	if label_text == "":
@@ -126,20 +127,6 @@ func _add_label() -> void:
 		if _sign_tries < 4 and is_inside_tree():
 			get_tree().create_timer(1.0).timeout.connect(_add_label)
 		return
-	var sign := Label3D.new()
-	sign.name = "ShelfSign"
-	sign.text = label_text
-	sign.font = AresBrand.font()
-	sign.font_size = 64
-	sign.pixel_size = 0.003
-	sign.outline_size = 8
-	sign.modulate = Color(1.0, 0.73, 0.03)
-	sign.double_sided = false
-	sign.position = Vector3(0.3, 3.3, 0.0)
-	sign.rotation.y = PI / 2.0  # a Label3D faces +Z: turned to the shelf's front (+X), the aisle
-	sign.visibility_range_end = SIGN_READ_M
-	add_child(sign)
-	# And painted on the floor in front of it, read looking down the aisle.
 	var paint := FloorPaint.label(label_text, 160)
 	paint.name = "ShelfFloorSign"
 	paint.position = Vector3(0.75, FloorPaint.LIFT_M, 0.0)
@@ -413,8 +400,6 @@ func apply_prop_data(data: Dictionary) -> void:
 ## shelf's front (+X, the aisle, what the NPC service is told) -- square on, it showed its side
 ## (playtest 2026-11-07).
 const SLOT_YAW := PI / 2.0
-## How far (m) a shelf's sign is read from.
-const SIGN_READ_M := 14.0
 
 var _sign_tries := 0
 
