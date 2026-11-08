@@ -151,7 +151,7 @@ static func crates_of(depot: Node) -> Array:
 			if content is Dictionary and str((content as Dictionary).get("delivered_to", "")) == depot_uuid:
 				out.append(crate)
 	out.sort_custom(func(a: Node, b: Node) -> bool:
-		return ShelfLabels.label_of(str(a.get_parent().name)) < ShelfLabels.label_of(str(b.get_parent().name)))
+		return ShelfLabels.label_for(a.get_parent()) < ShelfLabels.label_for(b.get_parent()))
 	return out
 
 

@@ -170,3 +170,12 @@ func test_the_depot_board_says_who_collects_what_where() -> void:
 	var text := PickupBoard.board_text(crates)
 	assert_string_contains(text, "player-orin  ·  %s  ·  2 × " % ShelfLabels.label_of("shelf_cargo_row1_1"))
 	assert_eq(text.count("\n"), 1, "the title and one line: the third crate is kept for nobody")
+
+
+func test_a_shelf_is_labelled_by_where_it_stands_when_its_name_is_late() -> void:
+	var shelf := Node3D.new()
+	add_child_autofree(shelf)
+	shelf.position = Vector3(-7.643, 0.0, 13.0)  # shelf_cargo_row1_1 in the depot's layout
+	assert_eq(ShelfLabels.label_for(shelf), ShelfLabels.label_of("shelf_cargo_row1_1"), "by its place")
+	shelf.position = Vector3(40.0, 0.0, 40.0)
+	assert_eq(ShelfLabels.label_for(shelf), "", "a shelf outside the depot's rows has none")

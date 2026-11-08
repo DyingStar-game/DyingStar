@@ -13,16 +13,44 @@ const LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelve
 ## The buffer rack the storekeepers fill first: not in an aisle.
 const BUFFER_SHELF := "shelf_cargo_temp_zone"
 
-## Shelf name -> label, built once from the layout.
+## Shelf name -> label, built once from the layout; and [position, name] of every shelf of it.
 static var _labels: Dictionary = {}
+static var _places: Array = []
 
 
 ## The label of the shelf [param shelf_name] ("A12"), "" for the buffer rack or a name the layout lacks.
 static func label_of(shelf_name: String) -> String:
-	if _labels.is_empty():
-		var layout: Variant = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT))
-		_labels = labels_for(layout if layout is Array else [])
+	_load()
 	return str(_labels.get(shelf_name, ""))
+
+
+## The label of [param shelf] (a Shelf in its depot): by its name, else by where it stands in the depot
+## -- a shelf's network name may arrive after it was built, its place never lies (playtest 2026-11-08).
+static func label_for(shelf: Node3D) -> String:
+	var by_name := label_of(str(shelf.name))
+	return by_name if by_name != "" else label_at(shelf.position)
+
+
+## The label of the layout's shelf standing within half a metre of [param depot_position] (depot frame).
+static func label_at(depot_position: Vector3) -> String:
+	_load()
+	for place: Array in _places:
+		var p: Vector3 = place[0]
+		if Vector2(p.x - depot_position.x, p.z - depot_position.z).length() < 0.5:
+			return str(_labels.get(place[1], ""))
+	return ""
+
+
+static func _load() -> void:
+	if not _labels.is_empty():
+		return
+	var layout: Variant = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT))
+	var shelves: Array = layout if layout is Array else []
+	_labels = labels_for(shelves)
+	for shelf: Variant in shelves:
+		if shelf is Dictionary:
+			var at: Dictionary = shelf["position"]
+			_places.append([Vector3(float(at["x"]), float(at["y"]), float(at["z"])), str(shelf["name"])])
 
 
 ## Every shelf of [param layout] (CargoDepot.SHELVES_LAYOUT entries: name, position, rotation) by its label.

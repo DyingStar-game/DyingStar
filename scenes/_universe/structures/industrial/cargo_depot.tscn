@@ -433,6 +433,9 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9400000000023283, 3.3999999
 [node name="LedPanel 04" parent="Lights/Junk Basement" unique_id=1257331707 instance=ExtResource("5_yil1r")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9400000000023283, 3.3999999999941792, 2)
 
+[node name="PickupBoardAt" type="Marker3D" parent="." unique_id=1281901499]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -1.8, 2, 11.2)
+
 [node name="Label3D" type="Label3D" parent="." unique_id=1281901473]
 transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -5.857416347148768, 1.9449055731039908, 89.82074714987318)
 text = "%%SIGN_MEAL_ZONE"

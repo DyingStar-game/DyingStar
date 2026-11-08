@@ -26,10 +26,11 @@ static func owner_of(depot_uuid: String) -> Dictionary:
 	return owner
 
 
-## The owner a warehouse POI names: a federation (political) is ARES, the one there is; anything else
-## by its id until its name can be read from social.
+## The owner a warehouse POI names: a corporation by its id until its name can be read from social;
+## anything else (a federation, a POI made by hand for a test) is ARES, the one federation there is.
 static func owner_from_poi(poi: Dictionary) -> Dictionary:
 	var type := str(poi.get("ownerType", "political"))
 	var id := str(poi.get("ownerId", ""))
-	var name := CrateContent.OWNER_ARES if type == "political" else id.substr(0, 8)
-	return {"type": type, "id": id, "name": name}
+	if type == "corporation":
+		return {"type": type, "id": id, "name": id.substr(0, 8)}
+	return {"type": "political", "id": id if type == "political" else "", "name": CrateContent.OWNER_ARES}

@@ -119,8 +119,12 @@ func _export_to_npc_service() -> void:
 ## CLIENT: the shelf's label (ShelfLabels: "A12") on a small sign at the top of its front, read from
 ## the aisle. None for a shelf outside the depot's rows (the buffer rack, a shelf elsewhere).
 func _add_label() -> void:
-	var label_text := ShelfLabels.label_of(str(name))
+	var label_text := ShelfLabels.label_for(self)
 	if label_text == "":
+		# Its place may not be applied yet (streamed in): look again a few times, then give up (not a depot's).
+		_sign_tries += 1
+		if _sign_tries < 4 and is_inside_tree():
+			get_tree().create_timer(1.0).timeout.connect(_add_label)
 		return
 	var sign := Label3D.new()
 	sign.name = "ShelfSign"
@@ -162,7 +166,7 @@ func _ready() -> void:
 		child_entered_tree.connect(_client_on_child_entered_tree)
 		limit_draw_distance()
 		child_exiting_tree.connect(_client_on_child_exiting_tree)
-		_add_label()
+		_add_label.call_deferred()  # once its spawn data (name, place) is applied
 
 ## Client: a stored crate is out of the physics space — body and interact area — unless the camera
 ## is within _REACH_M of it. The server owns every collision it takes part in; the client only needs
@@ -390,6 +394,8 @@ func apply_prop_data(data: Dictionary) -> void:
 const SLOT_YAW := PI / 2.0
 ## How far (m) a shelf's sign is read from.
 const SIGN_READ_M := 14.0
+
+var _sign_tries := 0
 
 
 func _put_on_slot(idx: int, body: RigidBody3D) -> void:

@@ -26,8 +26,9 @@ extends Node3D
 @export var shelves_spawned: bool = false
 
 ## Where each networked shelf of a depot stands, in the depot's local frame: [{name, position, rotation}].
-## Where the board of crates to collect hangs (depot frame): over the buffer rack, facing the room.
-const PICKUP_BOARD_AT := Vector3(-5.0, 3.6, 8.2)
+## Where the screen of crates to collect hangs (depot frame) when the scene has no PickupBoardAt marker:
+## on the buffer room's far wall, left of the door to the aisles, facing the counter.
+const PICKUP_BOARD_AT := Vector3(-1.8, 2.0, 11.2)
 const SHELVES_LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelves.json"
 ## The scene every shelf of SHELVES_LAYOUT is spawned from.
 const SHELF_SCENE := "scenes/_universe/props/furniture/metal_shelf.tscn"
@@ -113,10 +114,11 @@ func _ready() -> void:
 		for area: Area3D in find_children("*", "Area3D", true, true):
 			area.set_deferred(&"monitoring", false)
 		# Over the buffer rack: where each transporter's crates wait (TransportReservations).
+		# On the wall of the buffer room, where the scene's PickupBoardAt marker stands (facing +Z).
 		var board := PickupBoard.new().setup(self)
 		board.name = "PickupBoard"
-		board.position = PICKUP_BOARD_AT
-		board.rotation.y = PI / 2.0  # a Label3D faces +Z: turned to face the aisle (+X)
+		var at := get_node_or_null("PickupBoardAt") as Node3D
+		board.transform = at.transform if at != null else Transform3D(Basis(Vector3.UP, PI), PICKUP_BOARD_AT)
 		add_child(board)
 	# DIAGNOSTIC: confirm the depot exists on the server and its reception_area is monitoring.
 	var _ra := get_node_or_null("reception_area")
