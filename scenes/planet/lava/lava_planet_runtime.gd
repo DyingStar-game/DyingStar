@@ -2,9 +2,22 @@ extends Node3D
 ## Shared PlanetTerrain subsystem. Physics is tick-command driven; camera/LOD
 ## never starts, retires or changes a physical patch. The authority installs
 ## canonical checkpoints. Only the client creates materials and cosmetic smoke.
+##
+## A patch installed with an eruption "plan" (LavaPlanetPatch.eruption_plan) is driven here: its tick follows the
+## shared clock (Globals.reference_time), every peer derives the same crater commands from (tick, plan), and the
+## ticks run on a worker, catching up a few at a time after a late arrival. Patches without a plan are advanced by
+## their owner through advance_patch (offline preview, tests).
 
 const Core = preload("res://scenes/planet/lava/lava_fixed_core.gd")
-const MAX_PATCHES := 2
+const Builder = preload("res://scenes/planet/lava/lava_planet_patch.gd")
+## Ticks between two recorded state digests (5 s): the authority publishes them, replicas compare.
+const DIGEST_TICKS := 50
+## Digests a replica keeps to compare with the authority's late ones.
+const DIGEST_KEEP := 24
+## Patches this runtime accepts at once (the client only receives the volcanoes near it).
+var max_patches := 2
+## Ticks one worker job may run per frame while catching up: higher = faster catch-up, longer jobs.
+var catch_up_ticks := 6
 var patches: Dictionary = {}
 var server_mode := true
 var planet_name := ""
@@ -13,33 +26,65 @@ var physics_pending := false
 var smoke_enabled := true
 var last_physics_ms := 0.0
 var last_visual_ms := 0.0
+## Shared clock in ms (tests replace it).
+var clock_ms: Callable = func() -> int: return int(Globals.reference_time() * 1000.0)
 var _overlay_head: ShaderMaterial
 var _overlay_targets: Dictionary = {} # Weak references: never retain retired chunks.
+var _jobs: Array = [] # [{key, job, task}] in flight on WorkerThreadPool.
+
+
+## Worker payload of a driven patch: [member from_tick]..[member to_tick] with the plan's commands.
+class DriveJob:
+	extends RefCounted
+	var solver: RefCounted
+	var packet: Dictionary
+	var plan: Dictionary
+	var to_tick := 0
+	var ok := true
+	var cpu_usec := 0
+	## tick -> SHA-256 hex of the state at that tick, for ticks multiple of DIGEST_TICKS.
+	var digests: Dictionary = {}
+
+	func run() -> void:
+		var started := Time.get_ticks_usec()
+		while ok and solver.tick < to_tick:
+			var next: int = solver.tick + 1
+			ok = solver.advance_tick(next, Builder.eruption_commands(solver, packet, plan, next))
+			if ok and next % DIGEST_TICKS == 0:
+				digests[next] = solver.state_digest()
+		cpu_usec = Time.get_ticks_usec() - started
 
 
 func setup(data: PlanetData, authority_only: bool) -> void:
 	planet_name = data.planet_name
 	server_mode = authority_only
-	set_process(not server_mode)
 
 
 func install_patch(description: Dictionary) -> bool:
 	var key := str(description.get("key", ""))
 	if key.is_empty() or key.length() > 160 or str(description.get("planet", "")) != planet_name:
 		return false
-	if not patches.has(key) and patches.size() >= MAX_PATCHES:
+	if not patches.has(key) and patches.size() >= max_patches:
 		return false
 	if not description.get("frame") is Transform3D or not description.get("checkpoint") is PackedByteArray:
 		return false
 	var frame: Transform3D = description.frame
 	if not frame.origin.is_finite() or not frame.basis.is_finite() or absf(frame.basis.determinant() - 1.0) > 0.00001:
 		return false
+	var plan: Dictionary = description.get("plan", {})
+	if not plan.is_empty() and not Builder.valid_plan(plan):
+		return false
 	var solver = Core.new() if server_mode else load("res://scenes/planet/lava/viscous_lava_solver.gd").new()
 	if not solver.restore(description.checkpoint):
 		return false
 	remove_patch(key)
-	var entry := {"solver": solver, "description": description.duplicate(true), "since_tick": 0.0,
-		"holder": null, "surface": null, "mesh": null, "smoke": null, "overlay": null, "retired": false}
+	# The checkpoint is not kept: the solver holds the state, and 665 KB per patch would only be a stale copy.
+	var kept := description.duplicate(true)
+	kept.erase("checkpoint")
+	var entry := {"solver": solver, "description": kept, "plan": plan, "since_tick": 0.0,
+		"holder": null, "surface": null, "mesh": null, "smoke": null, "overlay": null, "retired": false,
+		"digests": {}, "expected": {}, "diverged": false, "tick": int(solver.tick),
+		"cleaned": solver.cleanup_complete()}
 	if not server_mode:
 		if solver.cleanup_complete():
 			entry.retired = true
@@ -48,6 +93,64 @@ func install_patch(description: Dictionary) -> bool:
 	patches[key] = entry
 	_refresh_terrain_overlays()
 	return true
+
+
+## Tick a driven patch should have reached now: 100 ms steps since its eruption started.
+func target_tick(key: String) -> int:
+	var plan: Dictionary = patches[key].plan
+	return maxi(0, (int(clock_ms.call()) - int(plan.start_unix_ms)) / 100)
+
+
+## Current tick of a patch, -1 when absent (as of its last finished job: safe while a worker runs it).
+func patch_tick(key: String) -> int:
+	return int(patches[key].tick) if patches.has(key) else -1
+
+
+## True once a patch's eruption is over and its deposit has cooled and gone (see Core.cleanup_complete).
+func is_cleaned_up(key: String) -> bool:
+	return patches.has(key) and bool(patches[key].cleaned)
+
+
+## Latest digest recorded for a driven patch: [tick, sha256 hex], or [] before the first one.
+func latest_digest(key: String) -> Array:
+	if not patches.has(key):
+		return []
+	var digests: Dictionary = patches[key].digests
+	if digests.is_empty():
+		return []
+	var best: int = digests.keys().max()
+	return [best, digests[best]]
+
+
+## Canonical checkpoint of a patch, or empty when absent. Waits for its worker job first.
+func patch_checkpoint(key: String) -> PackedByteArray:
+	if not patches.has(key):
+		return PackedByteArray()
+	_wait_patch(key)
+	return patches[key].solver.checkpoint()
+
+
+## The authority's digest of [param tick]: compared now if this peer has it, later otherwise. A mismatch stops
+## the patch until the next checkpoint repairs it (install_patch).
+func expect_digest(key: String, tick: int, digest: String) -> void:
+	if not patches.has(key) or tick <= 0 or digest.is_empty():
+		return
+	var entry: Dictionary = patches[key]
+	if entry.digests.has(tick):
+		_compare_digest(key, entry, tick, digest)
+	elif tick > int(entry.solver.tick):
+		entry.expected[tick] = digest
+
+
+## True when a replica found its state different from the authority's and waits for a checkpoint.
+func is_diverged(key: String) -> bool:
+	return patches.has(key) and bool(patches[key].diverged)
+
+
+func _compare_digest(key: String, entry: Dictionary, tick: int, digest: String) -> void:
+	if str(entry.digests[tick]) != digest and not entry.diverged:
+		entry.diverged = true
+		push_warning("[LAVA] %s diverged from the authority at tick %d; waiting for a checkpoint" % [key, tick])
 
 
 func _create_visuals(entry: Dictionary) -> void:
@@ -83,10 +186,13 @@ func _create_visuals(entry: Dictionary) -> void:
 func advance_patch(key: String, next_tick: int, commands: PackedInt64Array) -> bool:
 	if not patches.has(key):
 		return false
+	_wait_patch(key)
 	var entry: Dictionary = patches[key]
 	var started := Time.get_ticks_usec()
 	if not entry.solver.advance_tick(next_tick, commands):
 		return false
+	entry.tick = next_tick
+	entry.cleaned = entry.solver.cleanup_complete()
 	last_physics_ms = (Time.get_ticks_usec() - started) / 1000.0
 	publish_patch(key)
 	return true
@@ -123,6 +229,7 @@ func _retire_visuals(entry: Dictionary) -> void:
 func remove_patch(key: String) -> void:
 	if not patches.has(key):
 		return
+	_wait_patch(key)
 	var holder = patches[key].holder
 	if is_instance_valid(holder):
 		# Remove immediately so two replacements cannot draw at the same place.
@@ -138,6 +245,7 @@ func clear_patches() -> void:
 
 
 func _process(delta: float) -> void:
+	_drive()
 	if server_mode:
 		return
 	for entry: Dictionary in patches.values():
@@ -150,6 +258,70 @@ func _process(delta: float) -> void:
 			entry.surface.set_interpolation(float(entry.since_tick) * 10.0)
 			if not physics_pending:
 				entry.smoke.advance(delta, entry.solver)
+
+
+## Joins the finished worker jobs, then starts one job per driven patch that lags its target tick.
+func _drive() -> void:
+	if not _jobs.is_empty():
+		for running: Dictionary in _jobs:
+			if not WorkerThreadPool.is_task_completed(running.task):
+				return
+		var finished := _jobs
+		_jobs = []
+		for running: Dictionary in finished:
+			WorkerThreadPool.wait_for_task_completion(running.task)
+			_after_job(running.key, running.job)
+		physics_pending = false
+	if paused:
+		return
+	for key: String in patches:
+		var entry: Dictionary = patches[key]
+		if entry.plan.is_empty() or entry.diverged:
+			continue
+		var target := target_tick(key)
+		var tick: int = entry.tick
+		if tick >= target:
+			continue
+		var job := DriveJob.new()
+		job.solver = entry.solver
+		job.packet = entry.description
+		job.plan = entry.plan
+		job.to_tick = mini(target, tick + catch_up_ticks)
+		_jobs.append({"key": key, "job": job, "task": WorkerThreadPool.add_task(job.run, false, "lava " + key)})
+	physics_pending = not _jobs.is_empty()
+
+
+func _after_job(key: String, job: DriveJob) -> void:
+	if not patches.has(key) or patches[key].solver != job.solver:
+		return
+	var entry: Dictionary = patches[key]
+	last_physics_ms = job.cpu_usec / 1000.0
+	entry.tick = int(job.solver.tick)
+	entry.cleaned = job.solver.cleanup_complete()
+	if not job.ok:
+		entry.diverged = true
+		push_error("[LAVA] %s refused tick %d; the patch stops" % [key, int(job.solver.tick) + 1])
+	for tick: int in job.digests:
+		entry.digests[tick] = job.digests[tick]
+		if entry.expected.has(tick):
+			_compare_digest(key, entry, tick, entry.expected[tick])
+			entry.expected.erase(tick)
+	while entry.digests.size() > DIGEST_KEEP:
+		entry.digests.erase(entry.digests.keys().min())
+	for tick: int in entry.expected.keys():
+		if tick < int(job.solver.tick): entry.expected.erase(tick)
+	publish_patch(key)
+
+
+## Blocks until the worker job of [param key] (if any) is done, so the main thread may touch its solver.
+func _wait_patch(key: String) -> void:
+	for n in range(_jobs.size() - 1, -1, -1):
+		var running: Dictionary = _jobs[n]
+		if running.key == key:
+			WorkerThreadPool.wait_for_task_completion(running.task)
+			_jobs.remove_at(n)
+			_after_job(key, running.job)
+	physics_pending = not _jobs.is_empty()
 
 
 func register_terrain_mesh(mesh: MeshInstance3D) -> void:
@@ -212,6 +384,10 @@ func _refresh_terrain_overlays() -> void:
 
 
 func _exit_tree() -> void:
+	for running: Dictionary in _jobs:
+		WorkerThreadPool.wait_for_task_completion(running.task)
+	_jobs.clear()
+	physics_pending = false
 	_clear_terrain_overlays()
 
 

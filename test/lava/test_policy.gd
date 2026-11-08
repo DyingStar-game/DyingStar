@@ -4,7 +4,7 @@ func _ready() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	var simulated := "--viscous-lava" in OS.get_cmdline_user_args()
+	var simulated := not "--authored-lava" in OS.get_cmdline_user_args()
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest(); data.ensure_queries_loaded()
 	var key := data.grade_bake_key()

@@ -111,10 +111,37 @@ accepte les différences de LOD. Les références des chunks sont faibles. Aprè
 nettoyage, le runtime libère surface, textures, fumée et raccord de terrain ;
 l’état canonique vide reste disponible pour la prochaine éruption.
 
-Le pont de `test/volcano/viscous_lava_preview.gd` est une autorité locale hors
-ligne. Les points d’entrée client/serveur existent dans le moteur ; le transport
-de production, les collisions, dégâts et la persistance ne sont pas raccordés.
+## Transport en jeu
 
+Le serveur de jeu fait autorité (`server/lava_eruptions.gd`). Pour chaque éruption d’un volcan proche d’un
+joueur, il échantillonne le champ une fois, puis fixe un **plan entier** à partir de la fenêtre d’éruption
+du calendrier (`VolcanoActivityProfile.eruption_window`, flottants lus une seule fois par l’autorité) :
+`start_unix_ms` (au 100 ms près), `eruption_ticks`, `strength_milli`, `ramp_up_ticks`, `ramp_down_ticks`,
+`source_rate_q`, `tail_permille`.
+
+Les commandes du tick `n` (compté depuis `start_unix_ms`) valent
+`LavaPlanetPatch.eruption_commands(état, description, plan, n)` : volume entier
+`eruption_volume_q(n, plan)`, réparti par `disc_commands`, chaque part bornée à la place restante de sa
+cellule. Elles ne dépendent que de l’état canonique, du plan et du tick : chaque pair les calcule, aucune
+commande ne circule. `inject_q` et le schéma v6 sont inchangés.
+
+Le prop `lava_flow` (un par volcan, uuid stable) porte, par canal GORC (25 km) :
+
+| Zone | Champs | Rythme |
+|---|---|---|
+| 0 | `position` (sommet), `rotation`, `parent_id` (planète) | à la création |
+| 6 | description du champ (`frame` en 12 nombres, source, `patch_key`) et `plan` | à chaque éruption |
+| 2 | `checkpoint` (`<taille>:<base64 deflate>`, ~100-200 Ko), `checkpoint_tick`, `schema` | 60 s |
+| 1 | `tick`, `digest` (SHA-256 de l’état à un tick multiple de 50) | 5 s |
+
+Le runtime de chaque `PlanetTerrain` avance les zones munies d’un plan sur l’horloge partagée
+(`Globals.reference_time`), sur un travailleur, quelques ticks par image en rattrapage. Un client arrivé en
+cours d’éruption reçoit le dernier checkpoint (≤ 60 s) et rattrape. Il compare ses empreintes à celles de
+l’autorité ; un écart arrête la zone jusqu’au checkpoint suivant, qui la remplace. Le serveur supprime le
+prop une fois le dépôt disparu ; un prop persisté d’une éruption finie est supprimé à l’approche d’un joueur.
+
+L’aperçu `test/volcano/viscous_lava_preview.gd` reste une autorité locale hors ligne, avec les mêmes
+commandes entières. Collision et dégâts ne sont pas raccordés.
 
 ## Repos déterministe v6
 

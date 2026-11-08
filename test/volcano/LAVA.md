@@ -7,7 +7,7 @@ nécessaire ; les caches de cet essai restent sous `.godot/`.
 
 ## Comportement
 
-L’éruption de 10 minutes commence sans dépôt. L’apport est réparti dans le
+L’éruption de 40 minutes commence sans dépôt. L’apport est réparti dans le
 cratère, qui se remplit, déborde et alimente les flancs sur 360°. La grille
 polaire de **96 secteurs × 96 anneaux** couvre **7,22 km de rayon** sur le site
 testé. Les 24 anneaux intérieurs décrivent le cratère ; les anneaux extérieurs
@@ -52,7 +52,7 @@ deux états GPU, 96 bouffées de fumée au maximum. Le raccord aux mailles du
 terrain partage ces textures et suit la convention double face HEALPix.
 Les références de chunks sont faibles et retirées à leur sortie.
 
-Dans l’aperçu lancé avec `--viscous-lava`, `authored_flows_enabled = false` désactive les rubans QGIS, leur nivellement et
+Par défaut (sans `--authored-lava`), `authored_flows_enabled = false` désactive les rubans QGIS, leur nivellement et
 le déversoir artificiel. Les sources exportées sont conservées. La politique
 `simulated_lava_4` reste la clé du terrain sans anciens chemins : le schéma
 physique v6 est distinct. Les profils de routes inchangées sont réutilisés
@@ -72,7 +72,7 @@ réutilisés, une route et un plan de pont recalculés localement.
 
 `-FastForwardSeconds` calcule tous les ticks côté autorité avant l’arrivée du
 client, puis lui transmet le checkpoint actuel. `-DurationSeconds` accepte
-10–604 800 s, avec 600 s par défaut. Le lanceur recompile l’accélérateur si sa
+10–604 800 s, avec 2 400 s par défaut. Le lanceur recompile l’accélérateur si sa
 source est plus récente et les dépendances .NET sont déjà disponibles ; sinon
 le cœur de référence reste utilisable.
 
@@ -101,7 +101,7 @@ vues CPU, hors GPU et réseau. Un champ entièrement au repos est à environ
 **0,005 ms/tick**. Ces mesures debug i7-13700 ne garantissent pas le budget
 d’un serveur chargé. Le mode v6 sans repos retrouve les mêmes empreintes.
 
-La durée par défaut reste **600 s**, et le lanceur accepte sept jours. La grille
+La durée par défaut est **2 400 s** (40 min), et le lanceur accepte sept jours. La grille
 bornée évite une accumulation de mémoire, mais le volume injecté peut remplir
 ce domaine fermé : la mise au repos n’étend pas le terrain. À 3 000 m³/s, le
 plateau d’une semaine représenterait environ **1,81 milliard de m³** ; il faudra
@@ -109,22 +109,34 @@ plateau d’une semaine représenterait environ **1,81 milliard de m³** ; il fa
 Le compteur historique accepte désormais 1 000 milliards de m³, tandis que les
 capacités locales et les contrôles de saturation restent inchangés.
 
-Le test long volcanique reste un cas explicite de **15 min d’éruption puis
-5 min 30 de refroidissement/nettoyage**, même si l’aperçu démarre désormais
-avec 10 min. Le cycle v6 complet reste identique entre les pairs, atteint les
-96 secteurs et retire l’intégralité des 7 477 500 m³. Coût mesuré sur les deux
-pairs : 4,03 ms médiane / 9,94 ms P95 par tick, hors rendu. Le nettoyage demeure
-une phase active pour animer et comptabiliser le retrait ; le repos vise les
-dépôts stables pendant les longues éruptions. Les résultats v2/v3/v4/v5 sont
-conservés comme archives.
+Le test long volcanique suit l’éruption du jeu : **40 min à la force maximale
+tirée (1,6), puis 5 min 30 de refroidissement/nettoyage** (`-DurationSeconds`).
+Mesure du 2026-11-08 (Linux, assembly C# Debug) : 12 858 576 m³ injectés, front
+à **5,3 km** sur un champ de 7,22 km (aucune lave dans l’anneau extérieur), 96
+secteurs atteints, 3 737 cellules mouillées au plus, lave noire avant le retrait,
+retrait complet et pairs identiques à l’octet. Le front avance vite pendant 10 min,
+s’arrête presque vers 3,8 km, puis une percée l’emmène à 5,2 km vers 30 min. Coût
+des deux pairs avec l’assembly Debug : 23 ms médiane / 26 ms P95 par tick. Une
+assembly Debug est environ six fois plus lente qu’en Release, et la mesure Windows
+v6 de 15 min donnait 4 ms. Le débit de fond retenu est donc **5 %**
+(`TAIL_PERMILLE`). Le nettoyage demeure une phase active pour animer et
+comptabiliser le retrait ; le repos vise les dépôts stables pendant les longues
+éruptions. Les résultats v2/v3/v4/v5 sont conservés comme archives.
+
+`test/lava/test_eruption_server.tscn` vérifie l’autorité du serveur sans réseau :
+échantillonnage, rattrapage, publication du prop, réplica construit depuis les
+seules données du prop (via JSON) identique à l’autorité, empreintes concordantes
+et suppression du prop après le nettoyage.
 Le contrat de checkpoint v6 et les vérifications reproductibles sont dans
 [README](../lava/README.md) et [NETWORK](../lava/NETWORK.md).
 
-Le jeu et l’éditeur sans `--viscous-lava` conservent leurs rubans QGIS, leurs
-lacs et leurs clés de cache. Le lanceur active seul ce mode d’essai.
+La lave simulée est active par défaut dans le jeu et l’éditeur ; `--authored-lava`
+rétablit les rubans QGIS, les lacs et leurs anciennes clés de cache. En jeu, les
+éruptions du calendrier des volcans la déclenchent : voir [README](../lava/README.md).
 
-Le pont client/serveur reste local ; Horizon/GORC de production, collision,
-dégâts, persistance et transferts entre zones restent à raccorder. Le raccord
+Le transport client/serveur passe par le prop `lava_flow` (Horizon/GORC, voir
+[NETWORK](../lava/NETWORK.md)) ; collision, dégâts et transferts entre zones
+restent à raccorder. Le raccord
 visuel suit le terrain affiché mais ne répare pas ses défauts préexistants de LOD.
 La CI prépare les tests Linux/Windows ; la validation locale couvre Windows.
 Les diagnostics préexistants du compteur d’orphelins GUT et de quelques

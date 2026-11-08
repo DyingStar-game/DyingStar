@@ -1,0 +1,12 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/lava/lava_flow.gd" id="1_lava"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
+
+[node name="LavaFlow" type="Node3D"]
+script = ExtResource("1_lava")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_sync")
+type_name = "lava_flow"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"

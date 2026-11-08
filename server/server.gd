@@ -14,6 +14,8 @@ const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
 var _mining_planner := MiningZonePlanner.new()
 ## Who discovered which place first, and the names they propose (server/discoveries.gd).
 var discoveries := Discoveries.new()
+## The lava of the volcanoes' eruptions, simulated here and published as LavaFlow props (server/lava_eruptions.gd).
+var lava_eruptions := LavaEruptions.new()
 ## Stops stepping the physics space of every planet with nothing in it that can move (see the class).
 var planet_spaces := PlanetSpaceGate.new()
 ## Max number of [Pin] log entries before suppressing further output.
@@ -238,6 +240,19 @@ func _ready() -> void:
 		NetworkOrchestrator.protected_prop_uuids[str(data["uuid"])] = true
 		NetworkOrchestrator.spawn_prop_authoritative(data, false)
 	add_child(discoveries)
+	lava_eruptions.planets = func() -> Dictionary: return props_list["planets"]
+	lava_eruptions.viewers = func() -> Dictionary: return LavaEruptions.viewer_positions(players_list.values())
+	lava_eruptions.registry_data = discoveries.registry_data
+	lava_eruptions.spawn_prop = func(data: Dictionary) -> void:
+		NetworkOrchestrator.protected_prop_uuids[str(data["uuid"])] = true
+		NetworkOrchestrator.spawn_prop_authoritative(data, false)
+	lava_eruptions.update_prop = discoveries.update_prop
+	lava_eruptions.delete_prop = func(uuid: String, type: String) -> void:
+		var node: Variant = prop_registry.get_entry(uuid).get("node")
+		if is_instance_valid(node):
+			(node as Node).queue_free()
+		_on_prop_delete(uuid, type)
+	add_child(lava_eruptions)
 	_send_metrics()
 	# Say it out loud at boot, both ways. A rig that is silently off looks exactly like a server with
 	# nothing to report, and that ambiguity is what a low-TPS log must never contain.
@@ -4109,6 +4124,7 @@ func manage_zone(event: Dictionary) -> void:
 	# memory tracks our authoritative zones.  See _push_zone_residency_*.
 	_zones_initialized = true
 	discoveries.zones_assigned()
+	lava_eruptions.zones_assigned()
 	_push_zone_residency_to_all()
 	if server_zones.is_empty():
 		_unload_world_objects()

@@ -1,5 +1,5 @@
 param([switch]$Test, [switch]$LongTest, [switch]$WeekTest, [switch]$SleepBenchmark, [switch]$DebugOverlay, [string]$Capture,
-    [ValidateRange(10,604800)][int]$DurationSeconds = 600,
+    [ValidateRange(10,604800)][int]$DurationSeconds = 2400,
     [ValidateRange(0,604800)][int]$FastForwardSeconds = 0)
 $ErrorActionPreference = 'Stop'
 $lavaProject = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -47,8 +47,8 @@ if ($WeekTest -or $SleepBenchmark) {
     $lavaScript = if ($WeekTest) { 'res://test/lava/test_sleep_week.gd' } else { 'res://test/lava/benchmark_sleep.gd' }
     $lavaArguments += @('--headless', '--script', $lavaScript)
 } elseif ($Test -or $LongTest) {
-    $lavaArguments += @('--headless', 'res://test/lava/test_planet_integration.tscn', '--', '--volcano-view', '--viscous-lava')
-    if ($LongTest) { $lavaArguments += '--lava-long-test' }
+    $lavaArguments += @('--headless', 'res://test/lava/test_planet_integration.tscn', '--', '--volcano-view')
+    if ($LongTest) { $lavaArguments += @('--lava-long-test', "--lava-duration=$DurationSeconds") }
 } else {
     $lavaArguments += @('res://test/volcano/volcano_view.tscn', '--windowed', '--resolution', '1440x900',
         '--', '--volcano-view', '--viscous-lava', '--cache-probe-cache=chunk_cache_lava',

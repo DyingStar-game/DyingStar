@@ -191,13 +191,24 @@ func long_eruption(authority: Node3D, replica: Node3D, packet: Dictionary) -> vo
 	var timings: Array[float] = []
 	var sides := PackedByteArray(); sides.resize(server.width); sides.fill(0)
 	var max_distance := 0
+	var boundary_q := 0 # Largest volume seen in the outer ring: the closed edge must never hold lava.
 	var peak_cells := 0
 	var peak_volume := 0
 	var black_before_fade := false
 	var started := Time.get_ticks_usec()
-	for tick in range(1, 12301):
-		var strength := VolcanoEvent.emission_envelope(tick / 10.0, 900.0, 2.0, 10.0, true)
-		var commands: PackedInt64Array = Builder.source_commands(server, packet, tick, strength)
+	# The game's eruption: --lava-duration=<s> (default 40 min) at --lava-strength=<0..4> (default 1.6, the strongest
+	# random eruption), then the end-of-eruption cooling and removal (~302 s) with some margin.
+	var duration_s := 2400.0
+	var strength := 1.6
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--lava-duration="): duration_s = clampf(float(argument.trim_prefix("--lava-duration=")), 10.0, 86400.0)
+		if argument.begins_with("--lava-strength="): strength = clampf(float(argument.trim_prefix("--lava-strength=")), 0.0, 4.0)
+	var plan := Builder.eruption_plan({"start_unix": 0.0, "length_s": duration_s, "strength": strength}, packet)
+	var eruption_ticks: int = plan.eruption_ticks
+	var last_tick := eruption_ticks + 3300
+	var front_by_minute: Array = []
+	for tick in range(1, last_tick + 1):
+		var commands: PackedInt64Array = Builder.eruption_commands(server, packet, plan, tick)
 		for p in range(1, commands.size(), 3): expected_q += commands[p]
 		var before := Time.get_ticks_usec()
 		same = authority.advance_patch(key, tick, commands) and same
@@ -212,34 +223,41 @@ func long_eruption(authority: Node3D, replica: Node3D, packet: Dictionary) -> vo
 				if row > packet.crater_rows and server.volume_q[i] >= 1000:
 					sides[i % server.width] = 1
 					max_distance = maxi(max_distance, server.radial_edges_mm[row + 1])
+				if row == server.height - 1:
+					boundary_q = maxi(boundary_q, server.volume_q[i])
 			peak_volume = maxi(peak_volume, volume)
 			peak_cells = maxi(peak_cells, server.wet_indices.size())
 			check(volume + server.removed_q + server.escaped_q == expected_q, "mass ledger at tick %d" % tick)
-		if tick == 10100:
+		if tick % 600 == 0 and tick <= eruption_ticks:
+			front_by_minute.append(max_distance / 1000.0)
+		if tick == eruption_ticks + 1100:
 			black_before_fade = true
 			for i: int in server.wet_indices:
 				black_before_fade = black_before_fade and server.AMBIENT_T + server.energy_q[i] / server.volume_q[i] <= server.BLACK_T
 		if tick % 300 == 0:
 			print("LAVA_LONG tick=", tick, " wet=", server.wet_indices.size(), " removed_m3=", server.removed_q / 1000.0)
 			await get_tree().process_frame
-	check(same, "15min eruption and complete cleanup remain bit-identical")
+	check(same, "%d s eruption and complete cleanup remain bit-identical" % roundi(duration_s))
 	var count := 0
 	for seen in sides: count += seen
 	check(count == server.width, "lava overflows and travels down every angular sector")
 	check(black_before_fade, "lava is black before its disappearance phase")
+	check(boundary_q == 0, "the flow stops before the closed outer edge of the field")
 	check(server.cleanup_complete() and server.removed_q == server.injected_q and server.wet_indices.is_empty(),
 			"all lava despawns with a complete removal ledger")
 	var resume = CoreScript.new()
 	check(resume.restore(server.checkpoint()) and resume.checkpoint() == server.checkpoint(),
 			"a cleaned-up field can be restored without recreating a deposit")
 	timings.sort()
-	var report := {"simulated_seconds": 1230, "eruption_seconds": 900, "ticks_per_peer": 12300,
+	var report := {"simulated_seconds": last_tick / 10.0, "eruption_seconds": duration_s, "strength": strength,
+		"ticks_per_peer": last_tick, "tail_permille": plan.tail_permille, "front_m_by_minute": front_by_minute,
+		"field_radius_m": packet.field_radius_m,
 		"native_backend": server.has_native_backend() and client.has_native_backend(),
 		"bit_identical": same, "grid": [server.width, server.height], "geometry": "polar",
 		"injected_m3": server.injected_q / 1000.0, "removed_m3": server.removed_q / 1000.0,
 		"remaining_m3": 0 if server.wet_indices.is_empty() else -1, "sides_reached": count,
 		"peak_wet_cells": peak_cells, "peak_active_m3": peak_volume / 1000.0,
-		"front_distance_m": max_distance / 1000.0, "black_before_fade": black_before_fade,
+		"front_distance_m": max_distance / 1000.0, "boundary_volume_q": boundary_q, "black_before_fade": black_before_fade,
 		"both_peers_tick_ms_p50": timings[timings.size() / 2],
 		"both_peers_tick_ms_p95": timings[int(timings.size() * 0.95)],
 		"wall_seconds": (Time.get_ticks_usec() - started) / 1000000.0,

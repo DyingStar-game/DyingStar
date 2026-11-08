@@ -2,14 +2,36 @@
 
 Branche `rnd/viscous-lava-20261105`, depuis le build `0.1.0-dev.202611042208`.
 
+## En jeu
+
+La lave simulée est le comportement par défaut. Les éruptions suivent le calendrier des volcans
+(`VolcanoActivityProfile`) :
+
+- un créneau commence en moyenne **10 minutes** après la fin du précédent (±2 min 30) ;
+- 55 % des créneaux sont des **éruptions de 40 minutes** (`eruption_duration_s`) : panache, pierres et lave ;
+- les autres sont une fumée seule de 90 s, sans lave.
+
+Le serveur de jeu (`server/lava_eruptions.gd`) simule l’éruption des volcans proches d’un joueur
+(50 km, `[lava]` de `server.ini`). Il échantillonne le cratère une fois, quelques anneaux par image, puis
+publie un prop `lava_flow` (`scenes/planet/lava/lava_flow.gd`) :
+
+- le **plan entier** de l’éruption et la description du champ (zone 6) ;
+- le **checkpoint** compressé, renouvelé chaque minute (zone 2) ;
+- le **tick et l’empreinte** de l’état, toutes les 5 s (zone 1).
+
+Chaque client à moins de 25 km restaure le checkpoint, puis calcule lui-même chaque tick : les commandes de
+source sont une fonction entière du tick et du plan (`LavaPlanetPatch.eruption_commands`). Une empreinte
+différente arrête la zone jusqu’au checkpoint suivant. Le prop est supprimé quand le dépôt a disparu.
+Pas encore de collision ni de dégâts : la lave est visuelle.
+
+`--authored-lava` rétablit les coulées QGIS, leur nivellement et les lacs statiques (comparaison, debug).
+
 ## Essayer sur les volcans
 
 Double-cliquer sur **`test/volcano/launch_lava.cmd`**. La vue emploie le vrai
 terrain de Tarsis III, le joueur, le ciel et les effets volcaniques du jeu.
-Une éruption de **10 minutes** commence dans le cratère vide, le remplit,
+Une éruption de **40 minutes** commence dans le cratère vide, le remplit,
 déborde et alimente les versants sur **360°**. Le relief détermine les chemins.
-Les anciens chemins QGIS, leur déversoir et le lac incandescent statique sont
-désactivés dans cet aperçu.
 
 **L** : vue du cratère ; **V** : volcan suivant ; **K** : nouvelle éruption ;
 **J** : couper/reprendre l’apport ; **Y** : temps ×1 / ×4 / ×12 ; **M** : fumée ;
@@ -26,17 +48,17 @@ du cratère. Les cellules s’élargissent sur les flancs : le volcan testé cou
 un disque de **7,22 km de rayon**, avec seulement 9 216 cellules. Les sources
 restent dans le cratère. La viscosité de référence est **400 Pa·s** à 1 150 °C,
 avec une source à **1 200 °C** et un seuil de **30 Pa**. La gravité vient de la
-planète. Le débit d’essai est dimensionné au volume du cratère : montée forte,
-puis alimentation réduite. Une hauteur de pression éruptive de 64 m aide le
+planète.
+
+Débit (`LavaPlanetPatch.eruption_volume_q`, entiers) : rampe de 45 s, plein débit
+dimensionné au volume du cratère jusqu’à 120 s, descente jusqu’à 240 s, puis
+**5 %** du débit maximal jusqu’à la fin (`TAIL_PERMILLE`). Jamais nul pendant
+l’éruption : une coupure de 2 s lancerait le nettoyage. Chaque commande est bornée
+à la place restante de sa cellule. Une hauteur de pression éruptive de 64 m aide le
 magma à franchir les lèvres irrégulières ; elle disparaît après la coupure.
 Le volume transporté provient toujours des seuls apports comptabilisés.
 
 Voir [l’intégration volcans](../volcano/LAVA.md) pour les mesures et les limites.
-
-Le lanceur active automatiquement `--viscous-lava`. Sans ce mode d’essai, le
-jeu et l’éditeur conservent les chemins QGIS, les lacs et leurs clés de cache ;
-le runtime de simulation n’est pas créé. L’activation en partie normale attend
-le raccordement des événements d’éruption et du transport réseau.
 
 ## Dépôts au repos et éruptions longues
 
@@ -57,7 +79,7 @@ GDScript/C#. Le jumeau C# reste nécessaire pour accélérer les équations ; le
 tests exigent son égalité avec la référence. Aucun générateur ou système de
 cache supplémentaire n’a été ajouté.
 
-La durée par défaut reste **600 s**. Le lanceur accepte jusqu’à **604 800 s**
+La durée par défaut est **2 400 s** (40 min). Le lanceur accepte jusqu’à **604 800 s**
 (sept jours). La mémoire reste bornée par la grille, mais le domaine fermé peut
 se remplir à fort débit : la mise au repos économise du CPU, elle n’élimine pas
 le volume. Le test d’une semaine couvre les dépôts stables et leur réactivation,
@@ -92,8 +114,8 @@ boucles de fluide et ne conservent que leur état canonique réutilisable.
 
 L’égalité exige les mêmes checkpoints, version, paramètres et commandes au même
 tick. Le client ne reconstruit pas son propre relief physique depuis son LOD.
-Le pont de test est local : **le transport Horizon/GORC de production reste à
-raccorder**, ainsi que collision, dégâts et persistance. Voir [NETWORK.md](NETWORK.md).
+Le transport passe par le prop `lava_flow` (Horizon/GORC). Collision et dégâts
+restent à raccorder. Voir [NETWORK.md](NETWORK.md).
 
 ## Modèle
 
@@ -136,9 +158,9 @@ couture polaire, lave noire, retrait progressif et suppression des anciens texel
 Le rejeu lance deux processus indépendants : **20 empreintes sur 2 000 ticks**,
 états binaires identiques et référence v6 figée.
 
-Le test long suit **15 minutes d’éruption puis 5 min 30 de refroidissement et
-nettoyage**, sur deux pairs. Il exige l’atteinte des 96 secteurs, le noir avant
-la disparition, le bilan exact et la suppression complète. Les preuves v6 sont
-dans `results/`. Les résultats v2/v3/v4/v5 sont conservés comme archives ; leurs
-unités, dimensions et coûts ne décrivent pas le modèle v6. La matrice CI
-Linux/Windows est préparée ; la vérification locale couvre Windows x86-64.
+Le test long suit **40 minutes d’éruption à force 1,6 puis 5 min 30 de
+refroidissement et nettoyage**, sur deux pairs. Il exige l’atteinte des 96 secteurs,
+aucune lave dans l’anneau extérieur, le noir avant la disparition, le bilan exact et
+la suppression complète. Mesures dans [LAVA.md](../volcano/LAVA.md). Les résultats
+v2/v3/v4/v5 sont conservés comme archives ; leurs unités, dimensions et coûts ne
+décrivent pas le modèle v6.

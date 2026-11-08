@@ -15,7 +15,7 @@ var _selection := -1
 var _loading := false
 var _source_paused := false
 var _accumulator := 0.0
-var _duration_s := 600.0
+var _duration_s := 2400.0
 var _event_start_tick := 0
 var _time_rate := 1
 var _fast_forward_s := 0.0
@@ -127,14 +127,12 @@ func _select_current() -> void:
 
 func _commands(next: int) -> PackedInt64Array:
 	var server = _authority.patches[_key].solver
-	# Only the authority evaluates the event; both peers consume integer commands.
-	# A smoke-only event and a finished eruption produce no fresh lava.
-	var strength := 0.0
-	if not _source_paused and _preview != null and _preview.eruption_enabled:
-		strength = _preview.strength * VolcanoEvent.emission_envelope(
-			(next - _event_start_tick) / 10.0, _duration_s,
-			_preview.ramp_up_s, _preview.ramp_down_s, true)
-	return Builder.source_commands(server, _packet, next - _event_start_tick, strength)
+	# Same integer plan as the game's eruptions (LavaPlanetPatch.eruption_commands), counted from K.
+	if _source_paused or _preview == null or not _preview.eruption_enabled:
+		return PackedInt64Array()
+	var plan := Builder.eruption_plan({"start_unix": 0.0, "length_s": _duration_s, "strength": _preview.strength,
+		"ramp_up_s": _preview.ramp_up_s, "ramp_down_s": _preview.ramp_down_s}, _packet)
+	return Builder.eruption_commands(server, _packet, plan, next - _event_start_tick)
 
 
 func _process(delta: float) -> void:
