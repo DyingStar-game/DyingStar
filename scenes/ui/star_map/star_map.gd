@@ -496,7 +496,7 @@ func _offer_play_hints() -> void:
 		PlayHints.row(&"star_map_search", "%%HINT_MAP_SEARCH"),
 		PlayHints.row(&"star_map_reset", "%%HINT_MAP_RESET"),
 		PlayHints.row(&"star_map", "%%HINT_MAP_CLOSE"),
-	], is_open, 50)
+	], func() -> bool: return is_open() and keys_live, 50)  # on the cab screen its keys are not live: no help
 
 
 ## Tell the chart which body is the local player, so it can show where you are.
