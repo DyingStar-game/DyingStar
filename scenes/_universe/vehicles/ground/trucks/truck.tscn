@@ -383,11 +383,18 @@ cast_shadow = 0
 mesh = SubResource("QuadMesh_plate")
 
 [node name="IdFrameTruck" type="Label3D" parent="PlateRear" unique_id=1962500958 groups=["prop_id_label"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.002)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.018, 0.002)
 pixel_size = 0.0015
 double_sided = false
 modulate = Color(0.79537547, 0.7962044, 0.8426672, 1)
 text = "ARES-TRUCK-XXXXXXXX"
+outline_size = 0
+
+[node name="IdOwnerTruck" type="Label3D" parent="PlateRear" unique_id=1962500957 groups=["prop_owner_label"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.038, 0.002)
+pixel_size = 0.001
+double_sided = false
+modulate = Color(0.79537547, 0.7962044, 0.8426672, 1)
 outline_size = 0
 
 [node name="FlatbedSmallMiniTruck" parent="." unique_id=115087127 instance=ExtResource("19_lnse2")]
