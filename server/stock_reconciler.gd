@@ -23,11 +23,18 @@ const CRATE_CATALOG_KEY := "hauling_box"
 const HOLD_META := &"stock_hold_until_ms"
 ## Seconds a depot is left alone after crates were spawned on its shelves.
 const HOLD_S := 45.0
+## Crate meta: ticks msec it was first seen shelved here without being this warehouse's yet.
+const UNMARKED_META := &"stock_unmarked_since_ms"
+## Seconds such a crate is taken for one being shelved; past them it is one that never will be (an
+## old test crate, a crate of another warehouse): it is left out, and blocks nothing any more.
+const UNMARKED_S := 60.0
 
 static var _next_ms: int = 0
 static var _running: bool = false
 ## Depot node instance id -> ticks msec it was first seen awake.
 static var _seen_ms: Dictionary = {}
+## Depot node instance ids reconciled once since they woke (their first count is logged).
+static var _reported: Dictionary = {}
 
 
 ## SERVER, from the server's loop: reconcile every REFRESH_S.
@@ -43,6 +50,7 @@ static func tick(tree: SceneTree) -> void:
 	for id: int in _seen_ms.keys():
 		if not live.has(id):
 			_seen_ms.erase(id)  # gone to sleep: its grace starts over when it wakes again
+			_reported.erase(id)
 	for depot: Node in depots:
 		if is_instance_valid(depot) and _settled(depot):
 			await reconcile(depot)
@@ -70,8 +78,14 @@ static func _moving(depot: Node) -> bool:
 			var content: Variant = crate.get("content")
 			if not (content is Dictionary) or (content as Dictionary).is_empty():
 				continue
-			if crate.has_meta(WarehouseDelivery.DELIVERING_META) \
-					or str((content as Dictionary).get("delivered_to", "")) != depot_uuid:
+			if crate.has_meta(WarehouseDelivery.DELIVERING_META):
+				return true
+			if str((content as Dictionary).get("delivered_to", "")) == depot_uuid:
+				crate.remove_meta(UNMARKED_META)
+				continue
+			if not crate.has_meta(UNMARKED_META):
+				crate.set_meta(UNMARKED_META, Time.get_ticks_msec())
+			if Time.get_ticks_msec() - int(crate.get_meta(UNMARKED_META)) < int(UNMARKED_S * 1000.0):
 				return true
 	return false
 
@@ -92,10 +106,15 @@ static func reconcile(depot: Node) -> void:
 			sum += int((crate.get("content") as Dictionary).get("units", 0))
 		var per_crate := int(_new_content(good, {}).get("units", 0))
 		var change := change_for(int(stock.get(good, 0)), sum, per_crate)
+		if not _reported.has(depot.get_instance_id()):
+			print("[Stock] %s: %s stock %d, crates %d kg (%d) -> %+d crate(s)" % [depot.name, good,
+					int(stock.get(good, 0)), sum, crates.size(), change])
 		if change < 0:
 			_take(crates, -change, good, depot.name)
 		elif change > 0:
 			await _add(depot, good, change)
+	if is_instance_valid(depot):
+		_reported[depot.get_instance_id()] = true
 
 
 ## The quantity of each good a warehouse holds, from service-inventory's holder view.

@@ -51,6 +51,18 @@ func test_a_depot_just_stocked_is_left_alone() -> void:
 	assert_true(StockReconciler._moving(depot), "crates on their way: not counted yet")
 
 
+func test_a_crate_that_never_becomes_the_warehouse_s_stops_blocking() -> void:
+	var depot := Node3D.new()
+	add_child_autofree(depot)
+	var shelf := Shelf.new()
+	depot.add_child(shelf)
+	var stray := _crate({"units": 20, "delivered_to": "another-warehouse"})
+	stray.reparent(shelf)
+	assert_true(StockReconciler._moving(depot), "just shelved: maybe on its way in")
+	stray.set_meta(StockReconciler.UNMARKED_META, Time.get_ticks_msec() - int(StockReconciler.UNMARKED_S * 1000.0) - 1)
+	assert_false(StockReconciler._moving(depot), "a minute on: a stray, left out")
+
+
 func _crate(content: Dictionary) -> Node3D:
 	var crate := Node3D.new()
 	crate.set_script(_CRATE_SCRIPT)
