@@ -73,7 +73,12 @@ func _process(delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or camera.global_position.distance_to(global_position) > READ_RANGE_M:
 		return
-	_text.text = board_text(TransportReservations.crates_of(_depot))
+	_text.text = _compose(TransportReservations.crates_of(_depot))
+
+
+## The screen's text for [param crates], the depot's shelved crates (StockBoard shows its own).
+func _compose(crates: Array) -> String:
+	return board_text(crates)
 
 
 ## The board for [param crates] (TransportReservations.crates_of): its title, then a line per player and

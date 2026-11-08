@@ -175,6 +175,33 @@ func test_the_depot_board_says_who_collects_what_where() -> void:
 	assert_eq(text.count("\n"), 1, "the title and one line: the third crate is kept for nobody")
 
 
+func test_the_stock_board_lists_each_good_its_crates_kg_and_shelves() -> void:
+	var shelf := Node3D.new()
+	shelf.name = "shelf_cargo_row1_1"
+	add_child_autofree(shelf)
+	var crates: Array = []
+	for i: int in range(3):
+		var crate := CrateDouble.new()
+		var crushed := CrateContent.crushed("gold", 0.02, 0.04, 108.0, "kira", "kira")
+		crate.content = CrateContent.refined(crushed) if i == 0 else crushed
+		shelf.add_child(crate)
+		crates.append(crate)
+	var lines := StockBoard.stock_lines(crates)
+	assert_eq(lines.size(), 4, "two goods, each with its shelves under it")
+	var kg := int((crates[1] as CrateDouble).content["units"]) * 2
+	assert_string_contains(" | ".join(lines), "%d kg" % kg, "the crushed ore's two crates summed")
+	assert_string_contains(lines[1], ShelfLabels.label_of("shelf_cargo_row1_1"), "where it is")
+	assert_eq(StockBoard.stock_lines([]).size(), 1, "an empty warehouse says so")
+
+
+func test_the_stock_board_scrolls_a_long_list_round() -> void:
+	var lines := PackedStringArray(["a", "b", "c"])
+	assert_eq(StockBoard.window(lines, 5, 4), lines, "it fits: all of it, no scrolling")
+	assert_eq(StockBoard.window(lines, 0, 2), PackedStringArray(["a", "b"]))
+	assert_eq(StockBoard.window(lines, 2, 2), PackedStringArray(["c", ""]), "a blank line before it starts over")
+	assert_eq(StockBoard.window(lines, 3, 2), PackedStringArray(["", "a"]))
+
+
 func test_a_shelf_is_labelled_by_where_it_stands_when_its_name_is_late() -> void:
 	var shelf := Node3D.new()
 	add_child_autofree(shelf)
