@@ -310,7 +310,7 @@ func _capture() -> void:
 		"cell_mm": server.cell_mm, "terrain_build_ms": _packet.build_ms,
 		"simulated_seconds": server.tick / 10.0, "eruption_seconds": _duration_s,
 		"injected_m3": server.injected_q / 1000.0, "wet_cells": server.wet_indices.size(),
-		"authored_lava_enabled": LavaSettings.AUTHORED_FLOWS_ENABLED,
+		"authored_lava_enabled": LavaSettings.authored_flows_enabled,
 		"source_radius_from_summit_m": _packet.source_radius_from_summit_m,
 		"native_backend": server.has_native_backend() and client.has_native_backend(),
 		"active_cells": server.active_indices.size(), "updated_cells": server.last_updated_cells,

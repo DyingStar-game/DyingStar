@@ -47,7 +47,7 @@ if ($WeekTest -or $SleepBenchmark) {
     $lavaScript = if ($WeekTest) { 'res://test/lava/test_sleep_week.gd' } else { 'res://test/lava/benchmark_sleep.gd' }
     $lavaArguments += @('--headless', '--script', $lavaScript)
 } elseif ($Test -or $LongTest) {
-    $lavaArguments += @('--headless', 'res://test/lava/test_planet_integration.tscn', '--', '--volcano-view')
+    $lavaArguments += @('--headless', 'res://test/lava/test_planet_integration.tscn', '--', '--volcano-view', '--viscous-lava')
     if ($LongTest) { $lavaArguments += '--lava-long-test' }
 } else {
     $lavaArguments += @('res://test/volcano/volcano_view.tscn', '--windowed', '--resolution', '1440x900',

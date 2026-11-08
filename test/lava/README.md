@@ -9,7 +9,7 @@ terrain de Tarsis III, le joueur, le ciel et les effets volcaniques du jeu.
 Une éruption de **10 minutes** commence dans le cratère vide, le remplit,
 déborde et alimente les versants sur **360°**. Le relief détermine les chemins.
 Les anciens chemins QGIS, leur déversoir et le lac incandescent statique sont
-désactivés sur cette branche.
+désactivés dans cet aperçu.
 
 **L** : vue du cratère ; **V** : volcan suivant ; **K** : nouvelle éruption ;
 **J** : couper/reprendre l’apport ; **Y** : temps ×1 / ×4 / ×12 ; **M** : fumée ;
@@ -32,6 +32,11 @@ magma à franchir les lèvres irrégulières ; elle disparaît après la coupure
 Le volume transporté provient toujours des seuls apports comptabilisés.
 
 Voir [l’intégration volcans](../volcano/LAVA.md) pour les mesures et les limites.
+
+Le lanceur active automatiquement `--viscous-lava`. Sans ce mode d’essai, le
+jeu et l’éditeur conservent les chemins QGIS, les lacs et leurs clés de cache ;
+le runtime de simulation n’est pas créé. L’activation en partie normale attend
+le raccordement des événements d’éruption et du transport réseau.
 
 ## Dépôts au repos et éruptions longues
 

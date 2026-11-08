@@ -52,7 +52,7 @@ deux états GPU, 96 bouffées de fumée au maximum. Le raccord aux mailles du
 terrain partage ces textures et suit la convention double face HEALPix.
 Les références de chunks sont faibles et retirées à leur sortie.
 
-`AUTHORED_FLOWS_ENABLED = false` désactive les rubans QGIS, leur nivellement et
+Dans l’aperçu lancé avec `--viscous-lava`, `authored_flows_enabled = false` désactive les rubans QGIS, leur nivellement et
 le déversoir artificiel. Les sources exportées sont conservées. La politique
 `simulated_lava_4` reste la clé du terrain sans anciens chemins : le schéma
 physique v6 est distinct. Les profils de routes inchangées sont réutilisés
@@ -119,6 +119,9 @@ dépôts stables pendant les longues éruptions. Les résultats v2/v3/v4/v5 sont
 conservés comme archives.
 Le contrat de checkpoint v6 et les vérifications reproductibles sont dans
 [README](../lava/README.md) et [NETWORK](../lava/NETWORK.md).
+
+Le jeu et l’éditeur sans `--viscous-lava` conservent leurs rubans QGIS, leurs
+lacs et leurs clés de cache. Le lanceur active seul ce mode d’essai.
 
 Le pont client/serveur reste local ; Horizon/GORC de production, collision,
 dégâts, persistance et transferts entre zones restent à raccorder. Le raccord

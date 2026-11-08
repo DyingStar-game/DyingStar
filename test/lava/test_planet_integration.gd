@@ -20,7 +20,7 @@ func _ready() -> void:
 	check_native_equivalence()
 	var cache_rules = preload("res://scenes/planet/lava/lava_terrain_cache.gd")
 	var wanted := data.grade_bake_key()
-	var legacy := wanted.replace(LavaSettings.RUNTIME_POLICY, "")
+	var legacy := wanted.replace(LavaSettings.runtime_policy, "")
 	check(cache_rules.legacy_matches(legacy, wanted) and not cache_rules.legacy_matches(legacy + "changed", wanted),
 		"cache compatibility accepts only the explicit lava policy migration")
 	check(not data._grade_baked.is_empty(), "unaffected infrastructure profiles survive the removal of QGIS spillways")

@@ -51,11 +51,11 @@ static func build(data: PlanetData, v: VolcanoRelief.Volcano) -> Node3D:
 		level = minf(level, floor_h + v.dc * MAX_FILL_FRAC)
 	var centre := v.c * (data.radius + level)
 	root.position = centre
-	if v.lake and v.rc > 0.0 and not LavaSettings.SIMULATED_CRATERS:
+	if v.lake and v.rc > 0.0 and not LavaSettings.simulated_craters:
 		root.add_child(_lake(data, v, level, centre, crust))
 	if v.activity != "dormant" or profile.has_events(key_of(v)):
 		root.add_child(VolcanoPlume.create(data, v, centre))
-		if v.activity == "active" and v.lake and not LavaSettings.SIMULATED_CRATERS:
+		if v.activity == "active" and v.lake and not LavaSettings.simulated_craters:
 			var light := OmniLight3D.new()
 			light.name = "LakeGlow"
 			light.light_color = Color(1.0, 0.45, 0.12)

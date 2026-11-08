@@ -79,8 +79,10 @@ jobs:
 
       - name: Volcano activity, lifecycle and Tarsis III integration
         run: |
+          "$GODOT" --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
+          "$GODOT" --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --viscous-lava
           "$GODOT" --headless --path . res://test/volcano/test_tarsis_volcano_vfx.tscn -- --volcano-view
-          "$GODOT" --headless --path . res://test/lava/test_planet_integration.tscn -- --volcano-view --lava-long-test
+          "$GODOT" --headless --path . res://test/lava/test_planet_integration.tscn -- --volcano-view --viscous-lava --lava-long-test
           "$GODOT" --headless --path . --script res://test/lava/test_sleep_week.gd
 
       # The whole suite still carries known failures (test_collision_shape, a few road tests): it
@@ -147,6 +149,10 @@ jobs:
 
       - name: Lava dormant deposits through one week (C# against reference)
         run: |
+          & $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --viscous-lava
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:GODOT --headless --path . --script res://test/lava/test_sleep_week.gd
           exit $LASTEXITCODE
 

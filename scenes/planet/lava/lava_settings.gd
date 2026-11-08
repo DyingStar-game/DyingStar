@@ -16,10 +16,11 @@ class_name LavaSettings
 ## (centerline, _cum_lengths, feature_id, half_width_m) so GradeGeom reads it
 ## as any line, with road_type = [constant LAVA_TYPE].
 
-## Test branch: only simulated lava; ignore authored QGIS ribbons and carving.
-const AUTHORED_FLOWS_ENABLED := false
-const SIMULATED_CRATERS := true
-const RUNTIME_POLICY := "simulated_lava_4"
+## Process-wide experiment switch. Normal play/editor keep the authored terrain
+## and lakes until production eruption dispatch and replication are connected.
+static var simulated_craters: bool = "--viscous-lava" in OS.get_cmdline_user_args()
+static var authored_flows_enabled: bool = not simulated_craters
+static var runtime_policy: String = "simulated_lava_4" if simulated_craters else ""
 
 const LAVA_TYPE := "lava_river"
 const STATES: Array[String] = ["active", "cooling", "solid"]

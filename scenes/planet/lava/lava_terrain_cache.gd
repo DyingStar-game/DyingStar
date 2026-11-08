@@ -3,8 +3,8 @@ extends RefCounted
 ## were removed, without rebuilding a planet-wide railway for a lava test.
 
 static func legacy_matches(stored: String, wanted: String) -> bool:
-	var marker := "|vr%d%s|" % [VolcanoRelief.ALGO_VERSION, LavaSettings.RUNTIME_POLICY]
-	return not LavaSettings.AUTHORED_FLOWS_ENABLED and wanted.contains(marker) and stored == wanted.replace(
+	var marker := "|vr%d%s|" % [VolcanoRelief.ALGO_VERSION, LavaSettings.runtime_policy]
+	return not LavaSettings.authored_flows_enabled and wanted.contains(marker) and stored == wanted.replace(
 		marker, "|vr%d|" % VolcanoRelief.ALGO_VERSION)
 
 

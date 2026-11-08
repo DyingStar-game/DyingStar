@@ -2440,12 +2440,12 @@ func get_whole_roads() -> Array:
 func get_whole_lava() -> Array:
 	if _debug_lava_active():
 		return [_debug_lava_whole()]
-	return _whole_lines(get_chunk_lava) if LavaSettings.AUTHORED_FLOWS_ENABLED else []
+	return _whole_lines(get_chunk_lava) if LavaSettings.authored_flows_enabled else []
 
 
 ## Lava flow records of the pack tile (nside, ipix).
 func get_chunk_lava(nside: int, ipix: int) -> Array:
-	if not LavaSettings.AUTHORED_FLOWS_ENABLED:
+	if not LavaSettings.authored_flows_enabled:
 		return []
 	return get_chunk_modifiers(nside, ipix).get("lava_flows", [])
 
@@ -2471,7 +2471,7 @@ func get_lava_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
 
 ## Does this planet carry a lava flow (the pack's lava part, or the debug one)?
 func has_lava() -> bool:
-	if not LavaSettings.AUTHORED_FLOWS_ENABLED and not _debug_lava_active():
+	if not LavaSettings.authored_flows_enabled and not _debug_lava_active():
 		return false
 	if _has_lava >= 0:
 		return _has_lava == 1
@@ -2542,7 +2542,7 @@ func fumarole_fingerprint() -> String:
 
 ## Fingerprint of the lava flows ("" without any) — the chunk cache key.
 func lava_fingerprint() -> String:
-	if not LavaSettings.AUTHORED_FLOWS_ENABLED and not _debug_lava_active():
+	if not LavaSettings.authored_flows_enabled and not _debug_lava_active():
 		return ""
 	if _debug_lava_active():
 		return "dbg%08x" % (hash(str([debug_lava_points, debug_lava_style])) & 0xFFFFFFFF)
@@ -3898,7 +3898,7 @@ func grade_bake_key() -> String:
 	var key := "v%d|%s|n%d|r%.3f|mh%.4f|ho%.4f|ex%.4f|tr%d|dv%s|mt%s|vr%s|pz%s|dbg%d|gs%s" % [
 		GRADE_BAKE_VERSION, planet_name, export_nside, radius, max_height, height_offset,
 		terrain_exaggeration, chunk_heightmap_res, elev, mountain_fingerprint(),
-		str(VolcanoRelief.ALGO_VERSION) + LavaSettings.RUNTIME_POLICY, populate_fingerprint(),
+		str(VolcanoRelief.ALGO_VERSION) + LavaSettings.runtime_policy, populate_fingerprint(),
 		int(debug_mountain_enabled or debug_volcano_enabled or debug_rock_enabled),
 		GradeSettings.signature()]
 	# Rocky terrain's algorithm, only where there is some: the bakes of the

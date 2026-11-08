@@ -642,7 +642,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# Volcanoes: their fingerprint is in _mt; the relief ALGORITHM is keyed
 		# here, only when the planet has one (byte-identical key otherwise).
 		if data.volcano_fingerprint() != "" or data.debug_volcano_enabled:
-			_mt += "_vr%d_%s" % [VolcanoRelief.ALGO_VERSION, LavaSettings.RUNTIME_POLICY]
+			_mt += "_vr%d" % VolcanoRelief.ALGO_VERSION
+			if not LavaSettings.runtime_policy.is_empty():
+				_mt += "_" + LavaSettings.runtime_policy
 		# Rocky terrain: same rule, its algorithm keyed only where it is.
 		if data.rocky_fingerprint() != "" or data.debug_rock_enabled:
 			_mt += "_rk%d" % RockFieldRelief.ALGO_VERSION
@@ -957,7 +959,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	warm_terrain_pads()
 
 	_initialized = true
-	if not Engine.is_editor_hint() and lava_runtime == null:
+	if LavaSettings.simulated_craters and not Engine.is_editor_hint() and lava_runtime == null:
 		lava_runtime = load("res://scenes/planet/lava/lava_planet_runtime.gd").new()
 		lava_runtime.name = "ViscousLavaRuntime"
 		lava_runtime.setup(planet_data, is_server)

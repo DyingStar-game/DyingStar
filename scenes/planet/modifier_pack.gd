@@ -508,7 +508,7 @@ func decode_tile(bytes: PackedByteArray, m_per_deg: float = 0.0,
 			KIND_VOLCANO:
 				var vl: Array = []
 				for z in _decode_populate(bytes, start, record_count):
-					if not LavaSettings.AUTHORED_FLOWS_ENABLED:
+					if not LavaSettings.authored_flows_enabled:
 						z.erase("tilt_m")
 						z.erase("fx")
 						z.erase("fy")
