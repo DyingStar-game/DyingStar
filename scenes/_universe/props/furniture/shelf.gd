@@ -139,6 +139,12 @@ func _add_label() -> void:
 	sign.rotation.y = PI / 2.0  # a Label3D faces +Z: turned to the shelf's front (+X), the aisle
 	sign.visibility_range_end = SIGN_READ_M
 	add_child(sign)
+	# And painted on the floor in front of it, read looking down the aisle.
+	var paint := FloorPaint.label(label_text, 160)
+	paint.name = "ShelfFloorSign"
+	paint.position = Vector3(0.75, FloorPaint.LIFT_M, 0.0)
+	paint.basis = FloorPaint.flat(PI / 2.0)  # the text's top toward the shelf (-X)
+	add_child(paint)
 
 
 ## CLIENT: the model of this shelf is drawn up to DRAW_END_M (the crates on it keep their own rule).

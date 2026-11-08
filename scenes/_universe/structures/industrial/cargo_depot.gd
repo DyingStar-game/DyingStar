@@ -136,6 +136,12 @@ func _ready() -> void:
 			aisle.rotation.y = PI  # a Label3D faces +Z: turned to whoever walks in from -Z
 			aisle.visibility_range_end = AISLE_SIGN_READ_M
 			add_child(aisle)
+			# Painted on the floor at the mouth too, read walking in (+Z).
+			var paint := FloorPaint.label(aisle.text, 220)
+			paint.name = "AisleFloorSign_%s" % sign_at[0]
+			paint.position = Vector3((sign_at[1] as Vector3).x, FloorPaint.LIFT_M, (sign_at[1] as Vector3).z)
+			paint.basis = FloorPaint.flat(PI)  # the text's top into the aisle (+Z)
+			add_child(paint)
 	# DIAGNOSTIC: confirm the depot exists on the server and its reception_area is monitoring.
 	var _ra := get_node_or_null("reception_area")
 	print("[cargo_depot] _ready on %s  reception_area=%s monitoring=%s mask=%s" % [

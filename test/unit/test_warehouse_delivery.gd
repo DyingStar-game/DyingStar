@@ -194,3 +194,10 @@ func test_each_aisle_has_its_sign_at_its_mouth() -> void:
 	assert_almost_eq((signs[1][1] as Vector3).x, -5.2, 0.001, "in the middle of the walk")
 	assert_almost_eq((signs[1][1] as Vector3).z, 12.0, 0.001, "before its first shelf")
 	assert_eq(ShelfLabels.aisle_signs().size(), 5, "the depot's five aisles")
+
+
+func test_floor_paint_lies_flat_its_top_where_asked() -> void:
+	var basis := FloorPaint.flat(PI / 2.0)
+	assert_almost_eq(basis.z, Vector3.UP, Vector3.ONE * 0.001, "facing up")
+	assert_almost_eq(basis.y, Vector3(-1, 0, 0), Vector3.ONE * 0.001, "its text's top toward -X")
+	assert_almost_eq(FloorPaint.flat(PI).y, Vector3(0, 0, 1), Vector3.ONE * 0.001, "into an aisle")
