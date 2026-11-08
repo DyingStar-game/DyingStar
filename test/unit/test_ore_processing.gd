@@ -181,3 +181,8 @@ func test_a_crate_counts_its_plate_weight_in_whole_kilograms() -> void:
 	assert_eq(int(crate["units"]), roundi(float(crate["mass_kg"])), "what the plate weighs is what counts")
 	assert_eq(CrateContent.units_of_mass(0.2), 1, "a small partial crate still counts")
 	assert_eq(CrateContent.units_of_mass(0.0), 0)
+
+
+func test_the_refinery_shows_the_metal_it_holds_in_kilograms() -> void:
+	assert_eq(Refinery.held_text(37.6, 50.4), "38 / 50 kg")
+	assert_eq(Refinery.held_text(0.0, 50.0), "0 / 50 kg")
