@@ -121,6 +121,9 @@ func test_a_warehouse_of_the_federation_is_ares() -> void:
 	var ares := WarehouseOwner.owner_from_poi({"ownerType": "political", "ownerId": "fed-1"})
 	assert_eq(ares["name"], CrateContent.OWNER_ARES)
 	assert_eq(ares["type"], "political")
+	assert_eq(WarehouseOwner.plate_owner({"name": "ARES CORP.", "village": "M0001"}), "ARES CORP. · M0001",
+			"the owner, and the village whose warehouse holds it")
+	assert_eq(WarehouseOwner.plate_owner({"name": "ARES CORP."}), "ARES CORP.")
 
 
 func test_a_transport_out_of_a_warehouse_asks_for_its_crates() -> void:

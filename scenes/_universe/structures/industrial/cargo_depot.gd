@@ -128,9 +128,9 @@ func _ready() -> void:
 			aisle.name = "AisleSign_%s" % sign_at[0]
 			aisle.text = tr("%%DEPOT_AISLE") % sign_at[0]
 			aisle.font = AresBrand.font()
-			aisle.font_size = 96
-			aisle.pixel_size = 0.004
-			aisle.outline_size = 10
+			aisle.font_size = 64
+			aisle.pixel_size = 0.0025
+			aisle.outline_size = 6
 			aisle.modulate = PickupBoard.INK
 			aisle.position = sign_at[1]
 			aisle.rotation.y = PI  # a Label3D faces +Z: turned to whoever walks in from -Z
@@ -345,7 +345,7 @@ func server_fill_shelves(rng: RandomNumberGenerator) -> int:
 ## slots of this depot's shelves, as if delivered: the warehouse's, and its stock credited with their
 ## goods in service-inventory -- what a transport mission loads. Returns how many were spawned.
 func server_stock_ore(count: int) -> int:
-	var owner: Dictionary = await WarehouseOwner.owner_of(uuid)
+	var owner: Dictionary = await WarehouseOwner.owner_of(self)
 	var box: Dictionary = SpawnCatalog.entry(FILL_CATALOG_KEY)
 	var batch: Array = []
 	var units := 0
@@ -360,7 +360,7 @@ func server_stock_ore(count: int) -> int:
 		for idx in shelf.reserve_random_slots(rng):
 			if batch.size() >= count:
 				break
-			var content := SpawnCatalog.test_crate({"crate": CrateContent.KIND_CRUSHED}, "", str(owner["name"]))
+			var content := SpawnCatalog.test_crate({"crate": CrateContent.KIND_CRUSHED}, "", WarehouseOwner.plate_owner(owner))
 			content["delivered_to"] = uuid
 			content["owner_type"] = str(owner["type"])
 			content["owner_id"] = str(owner["id"])

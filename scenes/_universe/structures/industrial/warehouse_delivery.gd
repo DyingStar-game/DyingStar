@@ -104,7 +104,7 @@ static func on_stored(crate: Node, shelf: Node, player: Node = null) -> void:
 		crate.remove_meta(DELIVERING_META)
 	if not delivered:
 		return
-	var owner: Dictionary = await WarehouseOwner.owner_of(depot_uuid)
+	var owner: Dictionary = await WarehouseOwner.owner_of(shelf.get_parent())
 	if not is_instance_valid(crate):
 		return
 	var c: Dictionary = (crate.get("content") as Dictionary).duplicate()
@@ -112,7 +112,7 @@ static func on_stored(crate: Node, shelf: Node, player: Node = null) -> void:
 	c.erase("carrier_id")
 	c.erase("reserved_for")
 	# The warehouse's now: its owner on the plate.
-	c["owner"] = str(owner.get("name", CrateContent.OWNER_ARES))
+	c["owner"] = WarehouseOwner.plate_owner(owner)
 	c["owner_type"] = str(owner.get("type", ""))
 	c["owner_id"] = str(owner.get("id", ""))
 	c["move_seq"] = int(c.get("move_seq", 0)) + 1
