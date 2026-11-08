@@ -1,0 +1,27 @@
+{
+	"failures": 0,
+	"gravity_milli": 7770,
+	"sha256": "38ca29080ac1c4554d17488ae109e80823be06a40a14646637fcb93eb636a87f",
+	"site": {
+		"build_ms": 608.516,
+		"crater_radius_m": 300.0,
+		"crater_rows": 24,
+		"eruption_ticks": 9000,
+		"field_radius_m": 7220.0,
+		"fill_to_lowest_rim_m3": 7514328.039,
+		"frame": "[X: (-0.6369213231882, 0.0, 0.77092880869), Y: (0.7019789986841, 0.41337103663808, 0.5799567841445), Z: (-0.31867964082235, 0.91056267553022, -0.26328482762321), O: (4461649.3190642, 2627310.22950036, 3686098.58117626)]",
+		"key": "tarsis_3/@-39.562632,24.416774",
+		"planet": "tarsis_3",
+		"relief_mm": 3494807,
+		"source_height_m": 3006.84079326277,
+		"source_radius_from_summit_m": 0.0,
+		"source_radius_mm": 294000,
+		"source_rate_q": 3000000,
+		"source_temperature_t": 12000,
+		"source_x_mm": 0,
+		"source_z_mm": 0,
+		"volcano_key": "@-39.562632,24.416774",
+		"volcano_seed": 99
+	},
+	"tick": 12300
+}

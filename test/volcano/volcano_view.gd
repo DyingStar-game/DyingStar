@@ -49,6 +49,11 @@ func _ready() -> void:
 	await _settle(1.0)
 	await _shift_sun(0.55, true)
 	_go_to(0)
+	if "--viscous-lava" in OS.get_cmdline_user_args():
+		var lava_preview = load("res://test/volcano/viscous_lava_preview.gd").new()
+		lava_preview.view = self
+		lava_preview.world = explorer
+		add_child(lava_preview)
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		await _smoke_test()
 		return

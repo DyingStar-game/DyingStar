@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://test/lava/test_eruption_server.gd" id="1"]
+
+[node name="TestEruptionServer" type="Node"]
+script = ExtResource("1")

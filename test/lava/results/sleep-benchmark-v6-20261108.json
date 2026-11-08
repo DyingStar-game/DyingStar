@@ -1,0 +1,62 @@
+{
+	"cases": [
+		{
+			"grid": [
+				96,
+				96
+			],
+			"hot_cells": 0,
+			"max_updated_cells": 9216,
+			"native": true,
+			"pair_p50_ms": 45.72,
+			"pair_p95_ms": 50.844,
+			"sha256": "5984b0c6b1f1bd52810cf2d58e27913638a4bbc4601136d999a05277bf386341",
+			"sleeping": false,
+			"wet_cells": 9216
+		},
+		{
+			"grid": [
+				96,
+				96
+			],
+			"hot_cells": 0,
+			"max_updated_cells": 0,
+			"native": true,
+			"pair_p50_ms": 0.005,
+			"pair_p95_ms": 0.006,
+			"sha256": "5984b0c6b1f1bd52810cf2d58e27913638a4bbc4601136d999a05277bf386341",
+			"sleeping": true,
+			"wet_cells": 9216
+		},
+		{
+			"grid": [
+				96,
+				96
+			],
+			"hot_cells": 8,
+			"max_updated_cells": 9216,
+			"native": true,
+			"pair_p50_ms": 44.604,
+			"pair_p95_ms": 49.237,
+			"sha256": "9265856e161cb03e408eb091d5832aea2fdb4d8c2fa43e88a69e85f63583a7f1",
+			"sleeping": false,
+			"wet_cells": 9216
+		},
+		{
+			"grid": [
+				96,
+				96
+			],
+			"hot_cells": 8,
+			"max_updated_cells": 8,
+			"native": true,
+			"pair_p50_ms": 0.359,
+			"pair_p95_ms": 0.953,
+			"sha256": "9265856e161cb03e408eb091d5832aea2fdb4d8c2fa43e88a69e85f63583a7f1",
+			"sleeping": true,
+			"wet_cells": 9216
+		}
+	],
+	"cpu": "13th Gen Intel(R) Core(TM) i7-13700",
+	"model": 6
+}

@@ -1,0 +1,90 @@
+{
+	"build": "debug engine, GDScript, no 3D rendering",
+	"cpu": "13th Gen Intel(R) Core(TM) i7-13700",
+	"engine": {
+		"build": "custom_build",
+		"hash": "5b4e0cb0fd279832bbdd69fed5354d4e5ad26f88",
+		"hex": 263936,
+		"major": 4,
+		"minor": 7,
+		"patch": 0,
+		"status": "stable",
+		"string": "4.7-stable (custom_build)",
+		"timestamp": 0
+	},
+	"os": "Windows",
+	"results": [
+		{
+			"grid": [
+				32,
+				48
+			],
+			"initial_occupancy": 0.1,
+			"step_ms_max": 1.338,
+			"step_ms_median": 0.391,
+			"step_ms_p95": 0.661,
+			"steps": 160,
+			"wet_cells": 249
+		},
+		{
+			"grid": [
+				32,
+				48
+			],
+			"initial_occupancy": 1.0,
+			"step_ms_max": 5.172,
+			"step_ms_median": 1.972,
+			"step_ms_p95": 3.629,
+			"steps": 160,
+			"wet_cells": 1536
+		},
+		{
+			"grid": [
+				48,
+				72
+			],
+			"initial_occupancy": 0.1,
+			"step_ms_max": 2.634,
+			"step_ms_median": 0.816,
+			"step_ms_p95": 1.52,
+			"steps": 160,
+			"wet_cells": 489
+		},
+		{
+			"grid": [
+				48,
+				72
+			],
+			"initial_occupancy": 1.0,
+			"step_ms_max": 7.697,
+			"step_ms_median": 4.784,
+			"step_ms_p95": 7.035,
+			"steps": 160,
+			"wet_cells": 3456
+		},
+		{
+			"grid": [
+				64,
+				96
+			],
+			"initial_occupancy": 0.1,
+			"step_ms_max": 3.622,
+			"step_ms_median": 1.4,
+			"step_ms_p95": 2.802,
+			"steps": 160,
+			"wet_cells": 806
+		},
+		{
+			"grid": [
+				64,
+				96
+			],
+			"initial_occupancy": 1.0,
+			"step_ms_max": 13.413,
+			"step_ms_median": 9.664,
+			"step_ms_p95": 12.14,
+			"steps": 160,
+			"wet_cells": 6144
+		}
+	]
+}

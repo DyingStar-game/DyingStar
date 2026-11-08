@@ -1,0 +1,12 @@
+{
+  "develop_sha": "1f0fe85cee0d9442db446c6d40a3114d99ff3b84",
+  "upstream_commits_integrated": 60,
+  "gut_tests": 77,
+  "passing_branch": 75,
+  "passing_baseline": 75,
+  "same_failures": [
+    "test_a_server_samples_no_fence_where_no_body_has_its_ground",
+    "test_a_client_samples_its_villages_in_order_without_pins"
+  ],
+  "baseline_method": "Compared origin/develop bytes for all six modified existing game scripts; restored lava branch byte for byte after baseline run."
+}

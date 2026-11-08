@@ -1,0 +1,17 @@
+{
+	"bit_identical_including_reheat_and_late_join": true,
+	"daily_comparisons": 7,
+	"deposited_cells": 1024,
+	"heated_cells_after_reactivation": 5,
+	"mass_conserved": true,
+	"model": 6,
+	"native_server": true,
+	"reference_client": true,
+	"remaining_m3": 1034.07,
+	"scope": "stable deposited field, daily cold inputs, then hot reactivation; not continuous full-volcano discharge",
+	"sha256_after_reheat": "f25d6e012ec66a5fbda756466e8bf4d8688347320e6328a8c885edd6a895505c",
+	"simulated_days": 7,
+	"ticks_per_peer": 6048000,
+	"updated_cells_after_first_tick": 7,
+	"wall_seconds": 30.999277
+}

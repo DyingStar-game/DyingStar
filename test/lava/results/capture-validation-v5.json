@@ -1,0 +1,54 @@
+[
+  {
+    "capture": "lava-tarsis3-start-v5",
+    "tick": 119,
+    "active_m3": 291000.0,
+    "removed_m3": 0.0,
+    "canonical_bytes": 591512,
+    "sha256": "cd0342f7fa854ae400ce35126967c6d75756a16518d582bbca5d202b6deb4ea9"
+  },
+  {
+    "capture": "lava-tarsis3-active-v5",
+    "tick": 3119,
+    "hottest_celsius": 1199.6,
+    "active_m3": 5728350.0,
+    "removed_m3": 0.0,
+    "overflow_sectors": 96,
+    "wet_cells": 3179,
+    "canonical_bytes": 591512,
+    "sha256": "e54119d3b4e03b8575d6438e26573668b300fbef3aa8166468ec78b1302a7489"
+  },
+  {
+    "capture": "lava-tarsis3-black-v5",
+    "tick": 10119,
+    "hottest_celsius": 740.0,
+    "active_m3": 7477500.0,
+    "removed_m3": 0.0,
+    "overflow_sectors": 96,
+    "wet_cells": 3418,
+    "canonical_bytes": 591512,
+    "sha256": "944b70750a347c0980afc432df6644f4e16e4172d981e5f8aceb9e47df9365d6"
+  },
+  {
+    "capture": "lava-tarsis3-fade-v5",
+    "tick": 11119,
+    "hottest_celsius": 140.0,
+    "active_m3": 3734594.12,
+    "removed_m3": 3742905.88,
+    "overflow_sectors": 96,
+    "wet_cells": 3418,
+    "canonical_bytes": 591512,
+    "sha256": "6b916fd616bd772e67dc47efe8f92435f378173c96af3e229001f97fe7a88bfc"
+  },
+  {
+    "capture": "lava-tarsis3-gone-v5",
+    "tick": 12419,
+    "hottest_celsius": 20.0,
+    "active_m3": 0.0,
+    "removed_m3": 7477500.0,
+    "overflow_sectors": 0,
+    "wet_cells": 0,
+    "canonical_bytes": 591512,
+    "sha256": "1f5d553ec61651ed07ff17b86c72e4220e459619cc88ffa37706bd362d8f42a6"
+  }
+]

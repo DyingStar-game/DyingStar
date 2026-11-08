@@ -1,0 +1,10 @@
+{
+  "model": 5,
+  "native_reference_checkpoints_match": true,
+  "fixture_ticks": 5100,
+  "full_cycle_sha256": "38ca29080ac1c4554d17488ae109e80823be06a40a14646637fcb93eb636a87f",
+  "full_cycle_peer_ticks": 12300,
+  "native_pair_p50_ms": 4.544,
+  "reference_pair_p50_ms": 30.977,
+  "windows_x86_64": true
+}

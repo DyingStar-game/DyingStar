@@ -1,0 +1,24 @@
+{
+	"bit_identical": true,
+	"black_before_fade": true,
+	"both_peers_tick_ms_p50": 4.544,
+	"both_peers_tick_ms_p95": 5.565,
+	"eruption_seconds": 900,
+	"failures": 0,
+	"front_distance_m": 2991.111,
+	"geometry": "polar",
+	"grid": [
+		96,
+		96
+	],
+	"injected_m3": 7477500.0,
+	"peak_active_m3": 7477500.0,
+	"peak_wet_cells": 3417,
+	"remaining_m3": 0,
+	"removed_m3": 7477500.0,
+	"sha256": "38ca29080ac1c4554d17488ae109e80823be06a40a14646637fcb93eb636a87f",
+	"sides_reached": 96,
+	"simulated_seconds": 1230,
+	"ticks_per_peer": 12300,
+	"wall_seconds": 52.019592
+}

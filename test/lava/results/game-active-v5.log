@@ -1,0 +1,15 @@
+[LAVA CACHE] reusing bridge crossings; local deck invalidations=1
+[LAVA CACHE] reusing 134 unaffected line profiles; local invalidations=1
+[LAVA CACHE] reusing bridge crossings; local deck invalidations=1
+[LAVA CACHE] reusing 134 unaffected line profiles; local invalidations=1
+[LAVA GAME] tarsis_3/@-39.562632,24.416774 grid=96x96 cell=12500mm gravity=7770 build_ms=750.876
+LAVA_GAME_CAPTURE {"authored_lava_enabled":false,"boundary_volume_q":0,"camera_in_patch":"(1350.00000000047, 4394.52500000037, 1350.00000000035)","capture_error":0,"cell_mm":12500,"client_sha256":"e54119d3b4e03b8575d6438e26573668b300fbef3aa8166468ec78b1302a7489","comparisons":4,"eruption_seconds":900.0,"field_radius_m":7220.0,"fps":120.0,"geometry":"polar","gpu_ms":4.70100021362305,"gravity_milli":7770,"grid":[96,96],"injected_m3":5728350.0,"main_visual_publish_ms_p95":2.222,"mismatches":0,"native_backend":true,"overlay_matrix":"[X: (0.70710678118648, -0.0, -0.70710678118661), Y: (-0.36947327482213, 0.8526306342048, -0.36947327482206), Z: (0.60290090329365, 0.52251411618781, 0.60290090329354), O: (1349.93979071287, 4396.14213290282, 1349.93979071284)]","physics_pair_cpu_ms_p95":4.505,"planet":"tarsis_3","removed_m3":0.0,"retired":false,"runtime_processing":true,"server_sha256":"e54119d3b4e03b8575d6438e26573668b300fbef3aa8166468ec78b1302a7489","simulated_seconds":311.9,"source_radius_from_summit_m":0.0,"terrain_build_ms":750.876,"terrain_lava_overlays":62,"tick":3119,"visual_nodes":1,"volcano":"@-39.562632,24.416774","wet_cells":3179}
+OpVectorExtractDynamic is not supported yet.
+OpVectorExtractDynamic is not supported yet.
+OpVectorExtractDynamic is not supported yet.
+OpVectorExtractDynamic is not supported yet.
+OpVectorExtractDynamic is not supported yet.
+OpVectorExtractDynamic is not supported yet.
+OpVectorExtractDynamic is not supported yet.
+OpVectorExtractDynamic is not supported yet.
+WARNING: 3 ObjectDB instances were leaked at exit (run with `--verbose` for details).

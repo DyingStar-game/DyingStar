@@ -16,6 +16,13 @@ class_name LavaSettings
 ## (centerline, _cum_lengths, feature_id, half_width_m) so GradeGeom reads it
 ## as any line, with road_type = [constant LAVA_TYPE].
 
+## Process-wide switch. Lava is simulated by default: eruptions fill the crater and flow down the real relief
+## (server/lava_eruptions.gd, LavaFlow), the QGIS ribbons, their spillways and the static crater lakes are off.
+## `--authored-lava` brings the authored flows back (debug, comparison).
+static var simulated_craters: bool = not "--authored-lava" in OS.get_cmdline_user_args()
+static var authored_flows_enabled: bool = not simulated_craters
+static var runtime_policy: String = "simulated_lava_4" if simulated_craters else ""
+
 const LAVA_TYPE := "lava_river"
 const STATES: Array[String] = ["active", "cooling", "solid"]
 

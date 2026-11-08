@@ -1,0 +1,26 @@
+{
+	"budget_frames": 7,
+	"capture_error": 0,
+	"elapsed_s": 159.999999999995,
+	"fps": 120.0,
+	"frame_ms_p50": 8.33333333333333,
+	"frame_ms_p95": 8.33333333333333,
+	"frame_ms_p99": 9.09090909090909,
+	"frozen_cells": 0,
+	"grid": [
+		48,
+		72
+	],
+	"heat_proxy": 748867.271375622,
+	"injected_m3": 663.999999999979,
+	"interpolated_frames": 4738,
+	"limited_cells": 0,
+	"max_depth_m": 1.70040464730996,
+	"mesh_rebuilds_during_simulation": 0,
+	"solver_ms_p95": 1.005,
+	"state_publications": 1600,
+	"upload_ms_p95": 2.378,
+	"visual_frames": 4744,
+	"volume_m3": 664.0,
+	"wet_cells": 458
+}

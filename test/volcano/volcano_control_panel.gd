@@ -41,9 +41,10 @@ func _ready() -> void:
 	_planet.item_selected.connect(_select_planet)
 	_random.text = "Activites aleatoires actives"
 	_box.add_child(_random)
-	_number("interval_s", "Intervalle moyen (minutes)", 0.17, 10080, 1)
-	_number("interval_jitter", "Variation de l'intervalle (%)", 0, 40, 1)
-	_number("duration_s", "Duree d'une activite (secondes)", 1, 86400, 1)
+	_number("interval_s", "Calme moyen entre deux activites (minutes)", 0.17, 10080, 1)
+	_number("interval_jitter", "Variation du calme (%)", 0, 40, 1)
+	_number("duration_s", "Duree d'une fumee seule (secondes)", 1, 86400, 1)
+	_number("eruption_duration_s", "Duree d'une eruption (minutes)", 0.02, 1440, 1)
 	_number("eruption_chance", "Chance d'eruption par activite (%)", 0, 100, 1)
 	_number("ramp_up_s", "Formation du panache (secondes)", 1, 3600, 1)
 	_number("ramp_down_s", "Arret de l'emission (secondes)", 1, 3600, 1)
@@ -125,7 +126,7 @@ func _select_planet(index: int) -> void:
 		if key.begins_with("event_"):
 			continue
 		var value := float(_draft.get(key))
-		if key == "interval_s":
+		if key == "interval_s" or key == "eruption_duration_s":
 			value /= 60.0
 		elif key == "interval_jitter" or key == "eruption_chance":
 			value *= 100.0
@@ -201,7 +202,7 @@ func _commit(save: bool) -> void:
 		if key.begins_with("event_"):
 			continue
 		var value: float = _fields[key].value
-		if key == "interval_s":
+		if key == "interval_s" or key == "eruption_duration_s":
 			value *= 60.0
 		elif key == "interval_jitter" or key == "eruption_chance":
 			value /= 100.0

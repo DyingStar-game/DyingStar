@@ -52,7 +52,9 @@ func _ready() -> void:
 						check(plume.volcano == v and plume.data == data, key + ": plume uses actual planet and volcano")
 						check(plume.basis.y.is_equal_approx(v.c.normalized()), key + ": plume follows spherical up")
 			if root != null:
-				check((root.get_node_or_null("LavaLake") != null) == (v.lake and v.rc > 0.0), key + ": lake preserved")
+				# Simulated lava (default) fills the crater during eruptions instead of a static lake.
+				var lake_expected := v.lake and v.rc > 0.0 and not LavaSettings.simulated_craters
+				check((root.get_node_or_null("LavaLake") != null) == lake_expected, key + ": lake only with authored lava")
 				root.free()
 	check(smoking > 0, "Tarsis III manifest contains non-dormant volcanoes")
 	check(schedules.size() == smoking, "each volcano has its own schedule: %d for %d volcanoes" % [schedules.size(), smoking])
@@ -116,8 +118,10 @@ func _test_activity_and_wind() -> void:
 		if strength != profile.activity_at(t, 12, "other"):
 			differences += 1
 	check(peaks > 0 and differences > 0, "random cycles erupt and differ across volcanoes")
-	profile.duration_s = profile.interval_s
-	check(not profile.validation_error().is_empty(), "reject overlapping jittered cycles")
+	profile.eruption_duration_s = 2400.0
+	check(profile.validation_error().is_empty(), "a 40-minute eruption fits: the calm follows the longest slot")
+	profile.eruption_duration_s = 0.0
+	check(not profile.validation_error().is_empty(), "reject an eruption without length")
 	var model := VolcanoPlumeModel.new()
 	model.sample_wind(1000, Vector2(10, 0))
 	check(model.wind_displacement(1000, 100).is_equal_approx(Vector2(1000, 0)), "steady wind advects existing smoke")

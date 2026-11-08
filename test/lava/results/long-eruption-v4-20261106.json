@@ -1,0 +1,20 @@
+{
+	"bit_identical": true,
+	"both_peers_tick_ms_p50": 3.424,
+	"both_peers_tick_ms_p95": 6.116,
+	"boundary_volume_q": 0,
+	"cell_mm": 4000,
+	"eruption_seconds": 900,
+	"failures": 0,
+	"front_distance_m": 416.004807664527,
+	"grid": [
+		128,
+		256
+	],
+	"injected_m3": 3571.0,
+	"sha256": "44d378a4b36807158a4f3eb846380a7f83674791fce4b6d14b01835f4a1f309d",
+	"simulated_seconds": 960,
+	"ticks_per_peer": 9600,
+	"wall_seconds": 34.348496,
+	"wet_cells": 1018
+}
