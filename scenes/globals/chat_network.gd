@@ -67,7 +67,7 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 		"mission.progress":
 			return TranslationServer.translate("%%NOTIF_MISSION_PROGRESS") % str(data.get("title", ""))
 		"mission.invited":
-			return TranslationServer.translate("%%NOTIF_MISSION_INVITED") % str(data.get("title", ""))
+			return TranslationServer.translate("%%NOTIF_MISSION_INVITED") % [who, str(data.get("title", ""))]
 		"mission.completed":
 			return TranslationServer.translate("%%NOTIF_MISSION_COMPLETED")
 		"place_name_approved":
@@ -189,6 +189,8 @@ var _contexts_wired: bool = false
 # than every contact. Filled by start_dm() (the contact card knows the name for free) and
 # by resolve_peer_name() for a peer that arrives from the wire carrying nothing but its id.
 var _peer_names: Dictionary = {}
+## Names looked up for a notification (lookup_name): known, but not contacts -- not in the DM list.
+var _looked_up_names: Dictionary = {}
 # Peers whose DM arrived while they were NOT the pinned one: the player is told there is a
 # new message without the log losing track of whose thread it belongs to. Cleared when the
 # peer is pinned, or when the player opens that thread.
@@ -372,6 +374,24 @@ func remember_peer_name(peer_id: String, display_name: String) -> void:
 		return
 	_peer_names[peer_id] = display_name.strip_edges()
 	peer_name_resolved.emit(peer_id, str(_peer_names[peer_id]))
+
+
+## The display name of [param peer_id], from what is known or else from social; "" when it cannot be
+## found. Unlike resolve_peer_name it does not make them a contact: a friend request from a stranger
+## must not put them in the DM list.
+func lookup_name(peer_id: String) -> String:
+	if peer_id == "":
+		return ""
+	if _peer_names.has(peer_id):
+		return str(_peer_names[peer_id])
+	if _looked_up_names.has(peer_id):
+		return str(_looked_up_names[peer_id])
+	var result: Dictionary = await PlayerServices.profile_get_by_id(peer_id)
+	var profile: Variant = result.get("data") if bool(result.get("ok", false)) else null
+	var found := str((profile as Dictionary).get("displayName", "")) if profile is Dictionary else ""
+	if found != "":
+		_looked_up_names[peer_id] = found
+	return found
 
 
 ## Look [param peer_id] up in social when its name is unknown, and announce the answer. A no-op
