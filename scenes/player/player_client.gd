@@ -1645,9 +1645,9 @@ func _driven_vehicle() -> Vehicle:
 ## its LOCAL position with WORLD axes, so the prop flew off in a skewed direction on a rotated parent;
 ## and it named the scene, which let any tampered client instance anything anywhere.
 func _on_spawn_selected(key) -> void:
-	var admin_action: String = SpawnCatalog.admin_action(str(key))
-	if admin_action != "":
-		player.client_send_action_to_server({"action": admin_action})  # the server checks the role
+	var action: String = SpawnCatalog.action_of(str(key))
+	if action != "":
+		player.client_send_action_to_server({"action": action})  # the server checks the role or the tool
 		return
 	player.client_send_action_to_server({"action": "spawn_prop", "key": str(key)})
 

@@ -25,9 +25,9 @@ func test_admin_action_refused_without_the_role() -> void:
 
 func test_every_admin_wheel_entry_sends_an_admin_action() -> void:
 	for key in SpawnCatalog.ADMIN_ENTRIES:
-		assert_true(PlayerServer.ADMIN_ACTIONS.has(SpawnCatalog.admin_action(key)),
+		assert_true(PlayerServer.ADMIN_ACTIONS.has(SpawnCatalog.action_of(key)),
 				"%s sends an action the server gates" % key)
-	assert_eq(SpawnCatalog.admin_action("hauling_box"), "", "a spawn key is no admin action")
+	assert_eq(SpawnCatalog.action_of("hauling_box"), "", "a spawn key is no admin action")
 
 
 func test_admin_category_only_for_an_admin() -> void:
@@ -42,3 +42,9 @@ func test_the_fill_stocks_a_catalogued_box() -> void:
 	var key: String = depot_script.FILL_CATALOG_KEY
 	assert_false(SpawnCatalog.entry(key).is_empty(), "the fill spawns a SpawnCatalog entry (%s)" % key)
 
+
+
+func test_stocking_a_depot_is_a_dev_tool_not_an_admin_one() -> void:
+	assert_eq(SpawnCatalog.action_of("stock_ore"), "stock_ore", "a wheel entry that is an action")
+	assert_false(PlayerServer.ADMIN_ACTIONS.has("stock_ore"), "any player of a dev build")
+	assert_eq(PlayerServer.DEV_TOOL_OF_ACTION.get("stock_ore"), &"spawn_wheel", "off with the spawn wheel")
