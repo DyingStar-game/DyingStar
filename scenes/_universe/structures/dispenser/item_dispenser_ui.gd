@@ -105,6 +105,8 @@ func show_refusal(reason_key: String) -> void:
 ## A delivery is on its way: [param left_s] of [param total_s] s still to go. The rows give way to
 ## the ring until it is over.
 func start_delivery(left_s: float, total_s: float) -> void:
+	if _attract != null:
+		_attract.dismiss()  # ordered without a touch here (an NPC at the truck kiosk): show the delivery
 	_delivery_total_s = total_s
 	_delivery_end_ms = Time.get_ticks_msec() + int(left_s * 1000.0)
 	_waiting = true
