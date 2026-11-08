@@ -19,6 +19,9 @@ extends Node
 ## missions, economy, market, reports, pois. The terminal refreshes the matching section when it is
 ## the one on screen.
 signal changed(area: String)
+## The player took mission [param mission_id] ([param title], "" when the caller did not say).
+## Whoever shows the player's missions can point at it (the wrist DataPad, after a kiosk).
+signal mission_accepted(mission_id: String, title: String)
 
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
 
@@ -524,9 +527,11 @@ func mission_create(body: Dictionary) -> Dictionary:
 func mission_get(mission_id: String) -> Dictionary:
 	return await _http_get(SERVICE_MISSION, "/api/missions/%s" % mission_id)
 
-func mission_accept(mission_id: String) -> Dictionary:
+func mission_accept(mission_id: String, title: String = "") -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/%s/accept" % mission_id)
-	if _ok(r): changed.emit("missions")
+	if _ok(r):
+		changed.emit("missions")
+		mission_accepted.emit(mission_id, title)
 	return r
 
 func mission_abandon(mission_id: String) -> Dictionary:
@@ -539,9 +544,24 @@ func mission_complete(mission_id: String) -> Dictionary:
 	if _ok(r): changed.emit("missions")
 	return r
 
-func mission_progress(mission_id: String, objective_id: String, quantity: int) -> Dictionary:
-	var r: Dictionary = await _http_post(SERVICE_MISSION,
-			"/api/missions/%s/objectives/%s/progress" % [mission_id, objective_id], {"quantity": quantity})
+## Share a mission I took with one player ({"playerId": id}) or my group ({"groupId": id}): the
+## invitees may join it (shared progress, reward split equally).
+func mission_invite(mission_id: String, target: Dictionary) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/%s/invite" % mission_id, target)
+	if _ok(r): changed.emit("missions")
+	return r
+
+## The invitations I may answer (mine, my group's): {invitations: [{invitation, mission}]}.
+func mission_invitations() -> Dictionary:
+	return await _http_get(SERVICE_MISSION, "/api/me/mission-invitations")
+
+func mission_join(invitation_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/invitations/%s/join" % invitation_id)
+	if _ok(r): changed.emit("missions")
+	return r
+
+func mission_decline(invitation_id: String) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/invitations/%s/decline" % invitation_id)
 	if _ok(r): changed.emit("missions")
 	return r
 

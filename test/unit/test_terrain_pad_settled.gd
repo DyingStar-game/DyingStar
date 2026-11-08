@@ -227,7 +227,7 @@ class RoadData extends PlanetData:
 	func has_roads() -> bool:
 		return true
 
-	func get_roads_for_chunk(_hp_nside: int, _hp_ipix: int) -> Array:
+	func _pack_roads_for_chunk(_hp_nside: int, _hp_ipix: int) -> Array:
 		return roads
 
 
@@ -271,3 +271,15 @@ func test_road_cuts_follow_each_pad_without_rebuilding_them_all() -> void:
 	_assert_incremental_equals_full(data, "a pad gone")
 	data.unregister_pad("prop:a")
 	assert_eq(data._pad_road_excl, {}, "no pad, no cut")
+
+
+func test_road_cuts_of_a_batch_equal_the_full_rebuild() -> void:
+	var data := _road_data()
+	data.register_pads([
+		PadBed.record("prop:a", 0.0, 0.0, 0.0, 10.0, 15.0, 8.0, 0.0),
+		PadBed.record("prop:b", 0.002, 0.0, 0.0, 10.0, 15.0, 8.0, 0.0),
+	])
+	assert_true(data.road_exclusions_for_feature(1).size() > 0)
+	assert_true(data.road_exclusions_for_feature(2).size() > 0)
+	assert_eq(data.road_exclusions_for_feature(3), [])
+	_assert_incremental_equals_full(data, "two pads in one pass")

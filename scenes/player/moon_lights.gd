@@ -66,6 +66,12 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var perf: int = ClientPerf.scope_begin()
+	_update_moons()
+	ClientPerf.scope_end("moons", perf)
+
+
+func _update_moons() -> void:
 	if not is_instance_valid(player) or not is_instance_valid(sun) or not is_instance_valid(atmosphere):
 		return
 	var moons := _moons_of_current_body()

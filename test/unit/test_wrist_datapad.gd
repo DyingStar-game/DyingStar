@@ -237,6 +237,14 @@ func test_reading_the_wrist_puts_its_light_out() -> void:
 	assert_false(model.notified, "read once the arm is up")
 
 
+func test_the_light_blinks_on_until_the_app_with_news_is_opened() -> void:
+	var model := _with_screen()
+	_tablet.flag_app("missions")
+	_wrist.toggle()
+	_run(_player.datapad_raise_time + 0.02)
+	assert_true(model.notified, "the missions tab has news nobody opened: still blinking")
+
+
 func test_f3_during_the_zoom_closes_the_tablet_and_lowers() -> void:
 	_wrist.toggle()
 	_run(_player.datapad_raise_time + 0.02)

@@ -275,6 +275,19 @@ func test_a_pad_stays_gdscript_within_its_reach() -> void:
 
 
 ## A pruned tile read from its ancestor: the climb, settled once by GDScript and then followed by the C#.
+## The C# knows no village: where a bed reaches, the drawn ground was the relief while the walked ground
+## was the plane, up to 90 cm apart in F0001 (2026-11-06).
+func test_a_village_bed_stays_gdscript_within_its_reach() -> void:
+	var pd := _planet(PlanetData.new())
+	pd.register_village_bed(VillageBed.record("village:test", _centre.x - 0.4, _centre.y, 0.3, 200.0, 150.0))
+	assert_true(pd.has_village_beds(), "the fixture has its bed")
+	var fast := _build(pd, CHUNK_NSIDE, _hp_ipix, RES, true)
+	var slow := _build(pd, CHUNK_NSIDE, _hp_ipix, RES, false)
+	_assert_identical(fast, slow, "village bed")
+	assert_gt(int(fast["served"]), 0, "away from the bed: the C#'s")
+	assert_lt(int(fast["served"]), VERT_COUNT, "around the bed: GDScript's")
+
+
 func test_a_pruned_tile_is_identical_and_served() -> void:
 	var pd: _SparseData = _planet(_SparseData.new(), true, _export_ipix)
 	var slow := _build(pd, CHUNK_NSIDE, _hp_ipix, RES, false)

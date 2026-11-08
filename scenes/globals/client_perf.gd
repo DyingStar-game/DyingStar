@@ -282,6 +282,12 @@ var _band_pos_probe: Node = null
 var _band_rest_usec: int = 0
 var _band_pos_usec: int = 0
 var _band_max: Dictionary = {}
+## What each band cost in the frame just gone (ms), for the hitch line: the window's worst cannot say
+## what a slow frame was made of. Without a band of their own, the nodes born since the census all went
+## to `rest0`, and the frames of an arrival (a city's 386 shelves, 2026-11-06) were 24 ms of nobody:
+## each node is given its band the frame after it enters (_band_new).
+var _band_frame: Dictionary = {}
+var _band_new: Array[Node] = []
 ## Area ablation (debug_no_area_monitoring): how many Area3D this session has silenced, and how many
 ## are left monitoring. An Area3D costs a broadphase query on EVERY physics step whether or not
 ## anything moved — which is the shape of cost measured here (53 ms/tick with act=0 pairs=0).
@@ -462,6 +468,7 @@ func _ready() -> void:
 	if _bands_on:
 		_band_rest_probe = _band_probe(-1, _band_rest_tick)
 		_band_pos_probe = _band_probe(1, _band_pos_tick)
+		get_tree().node_added.connect(_on_node_added_band)
 		print("[CPerf] !! debug_perf_by_script=true — _process order among priority-0 nodes is"
 			+ " regrouped by script so each script's _process cost can be timed ([CPerf%] line).")
 	# Connected from an autoload's _ready, so this handler runs near the FRONT of the signal's
@@ -760,7 +767,7 @@ func _process(_delta: float) -> void:
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
 				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
 				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f mq=%.0f xf=%.0f) ms"
-				+ " | nodes=%d%+d | %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
+				+ " | nodes=%d%+d | %s | bands: %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
@@ -768,6 +775,7 @@ func _process(_delta: float) -> void:
 				pf_ms, tf_ms, mq_ms, xf_ms,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
+				_bands_of_frame(scripts_ms),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 				int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
 				int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS)),
@@ -1213,8 +1221,7 @@ func _visit(node: Node, planet: String) -> void:
 		var pscr: Script = node.get_script()
 		var pname: String = pscr.resource_path.get_file() if pscr != null else "<no script>"
 		_proc_by_script[pname] = int(_proc_by_script.get(pname, 0)) + 1
-		if _bands_on and node.process_priority == 0 and node != self:
-			node.process_priority = _band_priority(pname) + 1
+	_band_node(node)
 	if node.is_physics_processing():
 		_phys_procs += 1
 		_phys_by_class[cls] = int(_phys_by_class.get(cls, 0)) + 1
@@ -1385,6 +1392,22 @@ func _print_frame_signal_subs() -> void:
 	print("[CPerf&] %s | %s" % [_clock(), " | ".join(out)])
 
 
+## Give [param node] the band of its script (or of its class, for the engine's own internal process),
+## if it processes at the default priority. A viewport keeps its place: it is not ours to order.
+func _band_node(node: Node) -> void:
+	if not _bands_on or node.process_priority != 0 or node == self or node is Viewport:
+		return
+	if node.is_processing():
+		var scr: Script = node.get_script()
+		node.process_priority = _band_priority(scr.resource_path.get_file() if scr != null else "<no script>") + 1
+	elif node.is_processing_internal():
+		node.process_priority = _band_priority("int:" + node.get_class()) + 1
+
+
+func _on_node_added_band(node: Node) -> void:
+	_band_new.append(node)
+
+
 ## The band for a script, created on first sight: a probe at its base priority, its name in the list.
 func _band_priority(script_name: String) -> int:
 	var k: int = _band_scripts.find(script_name)
@@ -1422,18 +1445,41 @@ func _band_pos_tick() -> void:
 ## priority 0 (`rest0`); from the +1 probe to the tail are the scripts with a positive priority.
 func _band_collect() -> void:
 	var n: int = _band_scripts.size()
+	_band_frame.clear()
 	for k: int in n:
 		var t0: int = _band_t[k]
 		var t1: int = _band_t[k + 1] if k + 1 < n else _band_rest_usec
 		if t0 > 0 and t1 >= t0:
-			var name_k: String = _band_scripts[k]
-			_band_max[name_k] = maxf(float(_band_max.get(name_k, 0.0)), float(t1 - t0) / 1000.0)
+			_band_frame[_band_scripts[k]] = float(t1 - t0) / 1000.0
 	if _band_rest_usec > 0 and _band_pos_usec >= _band_rest_usec:
-		_band_max["rest0"] = maxf(float(_band_max.get("rest0", 0.0)),
-				float(_band_pos_usec - _band_rest_usec) / 1000.0)
+		_band_frame["rest0"] = float(_band_pos_usec - _band_rest_usec) / 1000.0
 	if _band_pos_usec > 0 and _tail_usec >= _band_pos_usec:
-		_band_max["prio+"] = maxf(float(_band_max.get("prio+", 0.0)),
-				float(_tail_usec - _band_pos_usec) / 1000.0)
+		_band_frame["prio+"] = float(_tail_usec - _band_pos_usec) / 1000.0
+	for name_k: String in _band_frame:
+		_band_max[name_k] = maxf(float(_band_max.get(name_k, 0.0)), float(_band_frame[name_k]))
+	# Bands given after reading them: a new probe has no time yet, and starts next frame.
+	for node in _band_new:  # untyped: a node freed since would abort a typed loop variable
+		if is_instance_valid(node):
+			_band_node(node)
+	_band_new.clear()
+
+
+## The bands of the frame just gone, and what [param scripts_ms] holds besides them.
+func _bands_of_frame(scripts_ms: float) -> String:
+	var banded := 0.0
+	for k: String in _band_frame:
+		banded += float(_band_frame[k])
+	return "%s unbanded=%.1f" % [bands_line(_band_frame, 1.0), scripts_ms - banded]
+
+
+## [param bands] (name -> ms) from the dearest, those of at least [param min_ms], for a log line.
+static func bands_line(bands: Dictionary, min_ms: float) -> String:
+	var names: Array = bands.keys().filter(func(k: String) -> bool: return float(bands[k]) >= min_ms)
+	names.sort_custom(func(a: String, b: String) -> bool: return float(bands[a]) > float(bands[b]))
+	var parts: PackedStringArray = []
+	for k: String in names:
+		parts.append("%s=%.1f" % [k, float(bands[k])])
+	return " ".join(parts)
 
 
 ## Worst frame of the window, per script. Sorted, so the culprit is the first word on the line.

@@ -25,6 +25,21 @@ func test_a_scene_s_meshes_are_read_without_instancing_it() -> void:
 		assert_true(entry[0] is Mesh)
 
 
+func test_a_rock_is_warmed_with_the_shader_the_game_gives_it() -> void:
+	assert_true(Warmup.ROCK_SCENE in Warmup.wanted())
+	var meshes: Array = Warmup.meshes_of(load(Warmup.ROCK_SCENE))
+	assert_gt(meshes.size(), 0, "the rock's mesh")
+	Warmup.with_rock_shader(meshes)
+	for entry: Array in meshes:
+		var shaders: Array = (entry[1] as Array).map(func(m: Material) -> Variant: return m.get("shader"))
+		assert_true(Warmup.ROCK_SHADER in shaders, "drawn with rock_vein")
+
+
+func test_the_layouts_read_ahead_are_among_those_loaded() -> void:
+	for path: String in Warmup.LAYOUTS:
+		assert_true(path in Warmup.wanted(), path)
+
+
 func test_progress_runs_from_nothing_to_all() -> void:
 	assert_eq(Warmup.progress(10, 10, 0, 0), 0.0, "nothing loaded yet")
 	assert_eq(Warmup.progress(10, 0, 0, 40), 0.5, "all loaded, nothing drawn")

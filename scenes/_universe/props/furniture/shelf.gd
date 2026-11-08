@@ -26,6 +26,9 @@ extends StaticBody3D
 ## Per-slot occupancy, parallel to shelf_slots. Initialised in _ready if left empty in the scene.
 @export var shelf_slots_occupied: Array[bool] = []
 
+## How far a shelf is drawn (m), times Graphics > Roads, rails and buildings distance: the length of a depot's
+## hall (76 m) and a bit, seen from its door. A city's 386 shelves had no limit, a few draws each.
+const DRAW_END_M := 90.0
 ## How far a dropped crate's centre may be from a free slot for that slot to swallow it (metres).
 const SLOT_SNAP_RANGE := 2.0
 ## How many physics frames to keep re-sending a just-frozen crate's resting pose, so a single lost
@@ -113,6 +116,12 @@ func _export_to_npc_service() -> void:
   ]
 }""" % [JSON.stringify(scenename), ",\n".join(slot_lines)])
 
+## CLIENT: the model of this shelf is drawn up to DRAW_END_M (the crates on it keep their own rule).
+func limit_draw_distance() -> void:
+	for mesh: Node in find_children("*", "MeshInstance3D", true, false):
+		DrawRange.track(mesh as MeshInstance3D, StructureDrawRange.OPTION, 0.0, DRAW_END_M)
+
+
 func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
@@ -130,6 +139,7 @@ func _ready() -> void:
 		# second on every client to return at once.
 		set_physics_process(false)
 		child_entered_tree.connect(_client_on_child_entered_tree)
+		limit_draw_distance()
 		child_exiting_tree.connect(_client_on_child_exiting_tree)
 
 ## Client: a stored crate is out of the physics space — body and interact area — unless the camera
@@ -352,6 +362,12 @@ func apply_prop_data(data: Dictionary) -> void:
 
 ## Reparent [param body] under the shelf if it is not there yet, bind it to slot [param idx] and set its
 ## origin on the slot, aligned to the shelf. Its freeze is the caller's business.
+## How a crate sits on a slot: turned a quarter about Y, so its front (+Z, the e-ink plate) faces the
+## shelf's front (+X, the aisle, what the NPC service is told) -- square on, it showed its side
+## (playtest 2026-11-07).
+const SLOT_YAW := PI / 2.0
+
+
 func _put_on_slot(idx: int, body: RigidBody3D) -> void:
 	if body.get_parent() != self:
 		if body.has_method("server_parent_change"):
@@ -359,7 +375,7 @@ func _put_on_slot(idx: int, body: RigidBody3D) -> void:
 		else:
 			body.reparent(self)
 	_bind(idx, body)
-	body.transform = Transform3D(Basis.IDENTITY, shelf_slots[idx])
+	body.transform = Transform3D(Basis(Vector3.UP, SLOT_YAW), shelf_slots[idx])
 
 func _bind(idx: int, body: Node3D) -> void:
 	_slot_bodies[idx] = body

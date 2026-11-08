@@ -9,7 +9,8 @@ const BUILDINGS := {
 	"res://scenes/_universe/structures/industrial/garage.tscn": "%%SIGN_GARAGE",
 	"res://scenes/_universe/structures/buildings/teleporter/teleporter.tscn": "%%SIGN_TELEPORTER",
 	"res://scenes/_universe/structures/industrial/cargo_depot.tscn": "%%SIGN_CARGO_DEPOT",
-	"res://scenes/_universe/structures/industrial/mines/mining_depot.tscn": "%%SIGN_MINING_DEPOT",
+	"res://scenes/_universe/structures/industrial/mines/crusher.tscn": "%%SIGN_CRUSHER",
+	"res://scenes/_universe/structures/industrial/refinery/refinery.tscn": "%%SIGN_REFINERY",
 }
 ## The ones whose sign hangs on a facade, to be read from the street.
 const ON_FACADE: Array[String] = [
@@ -156,3 +157,30 @@ func _internal(sign: Node, type: Variant) -> Node:
 		if is_instance_of(child, type):
 			return child
 	return null
+
+
+func test_signs_that_read_the_same_share_one_mesh() -> void:
+	var a := NeonSign.new()
+	a.text_key = "SAME"
+	add_child_autofree(a)
+	var b := NeonSign.new()
+	b.text_key = "SAME"
+	add_child_autofree(b)
+	assert_same(a.mesh_params()["text"], "SAME")
+	assert_eq(a.get_child(0, true).mesh, b.get_child(0, true).mesh, "one mesh for the two")
+	var c := NeonSign.new()
+	c.text_key = "OTHER"
+	add_child_autofree(c)
+	assert_ne(c.get_child(0, true).mesh, a.get_child(0, true).mesh, "another text, another mesh")
+
+
+func test_a_layout_lists_its_signs_once_each() -> void:
+	var layout := Node3D.new()
+	for key: String in ["ONE", "ONE", "TWO"]:
+		var sign := NeonSign.new()
+		sign.text_key = key
+		layout.add_child(sign)
+	var signs: Array = LayoutData._signs_of(layout)
+	layout.free()
+	assert_eq(signs.size(), 2)
+

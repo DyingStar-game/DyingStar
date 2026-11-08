@@ -25,7 +25,8 @@ func test_the_spec_is_the_sheets_t1() -> void:
 	assert_almost_eq(spec.capacity_j, 180.0e6, 1.0, "180 MJ (50 kWh)")
 	assert_almost_eq(spec.max_current_a, 1000.0, 0.01, "1000 A")
 	assert_almost_eq(spec.nominal_voltage_v, 500.0, 0.01, "500 V: the motor's 100 kW at 200 A")
-	assert_almost_eq(spec.discharge_j_per_nm_s, 127.0, 0.01, "127 J per N·m per second, to validate in game")
+	assert_almost_eq(spec.motor_efficiency, 0.9, 0.001, "90 % of the draw reaches the wheels")
+	assert_almost_eq(spec.loss_j_per_nm_s, 12.7, 0.01, "and the motors' losses per N·m asked")
 	assert_almost_eq(spec.mass_kg, 25.0, 0.01, "as heavy as a T1 motor")
 
 

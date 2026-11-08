@@ -62,6 +62,14 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 			# No actor: this one's about YOU (the service notified the player who joined), and its
 			# data is a corporationId, so there is nobody to name.
 			return TranslationServer.translate("%%NOTIF_CORPORATION_JOINED")
+		"mission.ready":
+			return TranslationServer.translate("%%NOTIF_MISSION_READY") % str(data.get("title", ""))
+		"mission.progress":
+			return TranslationServer.translate("%%NOTIF_MISSION_PROGRESS") % str(data.get("title", ""))
+		"mission.invited":
+			return TranslationServer.translate("%%NOTIF_MISSION_INVITED") % str(data.get("title", ""))
+		"mission.completed":
+			return TranslationServer.translate("%%NOTIF_MISSION_COMPLETED")
 		"place_name_approved":
 			# ARES (the admins) approved the name a discoverer proposed (Discovery): the place, not a who.
 			return TranslationServer.translate("%%NOTIF_PLACE_NAME_APPROVED") % str(data.get("name", ""))

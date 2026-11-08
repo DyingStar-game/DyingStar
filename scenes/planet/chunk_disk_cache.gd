@@ -306,6 +306,21 @@ func has_collision(chunk_key: String, lod: int) -> bool:
 	return FileAccess.file_exists(_res_path(chunk_key, lod, "col"))
 
 
+## Where the collision shape of (chunk_key, lod) lives: what a worker reads with [method read_collision].
+func collision_path(chunk_key: String, lod: int) -> String:
+	return _res_path(chunk_key, lod, "col")
+
+
+## WORKER-SAFE: read the collision shape at [param path] (from [method collision_path]), null when the
+## file is missing or holds anything else. No counter is touched, so it can run off the main thread: the
+## server reads its cached chunks this way, 8-15 ms each that a zone change paid on the main thread five
+## at a time (2026-11-07 measure). The caller counts the hit ([member cache_hits]) back on the main thread.
+static func read_collision(path: String) -> ConcavePolygonShape3D:
+	if not FileAccess.file_exists(path):
+		return null
+	return ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE) as ConcavePolygonShape3D
+
+
 func load_collision(chunk_key: String, lod: int) -> ConcavePolygonShape3D:
 	if not _enabled:
 		return null

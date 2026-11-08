@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://djl6nyvovos50" path="res://scenes/_universe/props/containers/crate_container.gd" id="1_haul"]
 [ext_resource type="ArrayMesh" path="res://assets/_universe/props/containers/box_merged.res" id="2_merged"]
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
+[ext_resource type="Script" path="res://scenes/_universe/props/containers/crate_plate.gd" id="plate_1"]
 [ext_resource type="Resource" path="res://scenes/common/metal_box_landing.tres" id="sfx_landing"]
 [ext_resource type="AudioStream" uid="uid://dxmlv4wa1gkx7" path="res://assets/_universe/audio/sfx/props/metal-box-pick-up.mp3" id="sfx_pick"]
 
@@ -79,7 +80,7 @@ font_size = 30
 outline_size = 0
 
 [node name="IdFrameTop" type="Label3D" parent="." unique_id=771122338 groups=["prop_id_label"]]
-transform = Transform3D(-1, 0, 1.2246064e-16, 1.2246064e-16, 0, 1, 0, 1, 0, 0, 0.14788524644088408, 0)
+transform = Transform3D(-1, 0, 1.2246064e-16, 1.2246064e-16, 0, 1, 0, 1, 0, 0, 0.14788524644088408, 0.155)
 visibility_range_end = 4.0
 pixel_size = 0.0005
 modulate = Color(0.09, 0.09, 0.09, 1)
@@ -87,3 +88,8 @@ text = "ARES-HAUL-XXXXXXXX"
 font_size = 30
 outline_size = 0
 
+[node name="Plate" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.063, 0.1925)
+cast_shadow = 0
+visibility_range_end = 4.0
+script = ExtResource("plate_1")

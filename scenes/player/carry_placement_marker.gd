@@ -20,6 +20,12 @@ const BORDER_WIDTH := 0.005
 ## How far (m) the disc floats above the surface, so it never z-fights the ground it lies on.
 const SURFACE_LIFT := 0.01
 const FILL_COLOR := Color(1.0, 1.0, 1.0, 0.3)
+## Hanging in open air, the disc says where the load is let go, not where it ends up: a plumb line
+## drops from it to the ground below, a cross where the load will land (playtest 2026-11-07).
+const DROP_COLOR := Color(1.0, 1.0, 1.0, 0.8)
+## Half the cross's arm (m), and how far down (m) the plumb line looks for ground.
+const CROSS_HALF_M := 0.04
+const DROP_REACH_M := 30.0
 const BORDER_COLOR := Color(0.0, 0.0, 0.0, 0.9)
 
 var _player: Node = null
@@ -29,6 +35,8 @@ var _fill_mat: StandardMaterial3D = null
 var _border_mat: StandardMaterial3D = null
 var _held: Node3D = null       # the crate we are carrying, resolved from the scene tree
 var _built_radius: float = -1.0  # radius the current mesh was built for (-1 = nothing built yet)
+var _drop: MeshInstance3D = null  # the plumb line and the landing cross (open air only)
+var _drop_mesh: ImmediateMesh = null
 
 ## Wire the marker to its owner player. Called right after instancing (NOT in _ready, which runs on
 ## add_child before `player` is injected), exactly like AdminCleanupTool.setup.
@@ -47,6 +55,14 @@ func setup(player: Node) -> void:
 	_disc.visible = false
 	_disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_disc)
+	_drop_mesh = ImmediateMesh.new()
+	_drop = MeshInstance3D.new()
+	_drop.mesh = _drop_mesh
+	_drop.top_level = true
+	_drop.visible = false
+	_drop.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_drop.material_override = _make_material(DROP_COLOR)
+	add_child(_drop)
 
 func _make_material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
@@ -67,10 +83,12 @@ func spot() -> Node3D:
 func _physics_process(_delta: float) -> void:
 	if _player == null or _disc == null:
 		return
-	if not _player._owner_carrying:
+	# Seated or lying down nothing is put down from here: no disc (playtest 2026-11-07, in a bed).
+	if not _player._owner_carrying or _player.seated_role != "" or _player.lying_on != null:
 		place = {}
 		_held = null
 		_disc.visible = false
+		_drop.visible = false
 		return
 	_held = _resolve_held()
 	var radius: float = CarryPlacement.disc_radius(_held)
@@ -86,6 +104,46 @@ func _physics_process(_delta: float) -> void:
 			CarryPlacement.surface_basis(Basis.IDENTITY, normal),
 			(place["position"] as Vector3) + normal * SURFACE_LIFT)
 	_disc.visible = true
+	_show_drop(excl)
+
+
+## In open air, the plumb line from the disc to the ground and the cross where the load lands; on a
+## surface, nothing (the disc is where it lands). Built in the ground point's own frame: no world
+## position goes into the mesh (ADR 0011).
+func _show_drop(excl: Array[RID]) -> void:
+	_drop.visible = false
+	if bool(place.get("on_surface", true)):
+		return
+	var up: Vector3 = _player.up_direction
+	var from: Vector3 = place["position"]
+	var query := PhysicsRayQueryParameters3D.create(from, from - up * DROP_REACH_M)
+	query.exclude = excl
+	var hit: Dictionary = _player.get_world_3d().direct_space_state.intersect_ray(query)
+	var ground: Vector3
+	if not hit.is_empty():
+		ground = hit["position"]  # a floor, a bed, a shelf: something with a collider
+	else:
+		# The client has no terrain collision (the server alone builds it): the planet's ground is
+		# read off its height map instead (playtest 2026-11-07: no line outdoors).
+		var planet := Planet.of(_player)
+		if planet == null:
+			return
+		var clearance: float = planet.surface_altitude_of(from)
+		if clearance <= 0.0 or clearance > DROP_REACH_M:
+			return
+		ground = from - up * clearance
+	var height: float = (from - ground).dot(up)
+	_drop.global_transform = Transform3D(CarryPlacement.surface_basis(Basis.IDENTITY, up),
+			ground + up * SURFACE_LIFT)
+	_drop_mesh.clear_surfaces()
+	_drop_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for line: Array in [[Vector3.ZERO, Vector3.UP * height],
+			[Vector3(-CROSS_HALF_M, 0, -CROSS_HALF_M), Vector3(CROSS_HALF_M, 0, CROSS_HALF_M)],
+			[Vector3(-CROSS_HALF_M, 0, CROSS_HALF_M), Vector3(CROSS_HALF_M, 0, -CROSS_HALF_M)]]:
+		_drop_mesh.surface_add_vertex(line[0])
+		_drop_mesh.surface_add_vertex(line[1])
+	_drop_mesh.surface_end()
+	_drop.visible = true
 
 ## The crate we carry: the client has it reparented under the Player by the replication, so it is one
 ## of our own direct children in the "carriable" group. Cached until it goes away or we stop carrying.

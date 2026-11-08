@@ -336,6 +336,15 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "conveyor-belt-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/conveyor-belt-loop.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "crate-pick-up.mp3",
 			"path": "res://assets/_universe/audio/sfx/props/crate-pick-up.mp3",
 			"author": "WarpZone",
@@ -612,6 +621,15 @@
 			"source": "Freesound",
 			"id": "",
 			"url": "https://freesound.org/s/843296/",
+			"license": "CC0"
+		},
+		{
+			"asset": "screen-unlock.ogg",
+			"path": "res://assets/_universe/audio/sfx/ui/screen-unlock.ogg",
+			"author": "SkibkaMusic",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/478896/",
 			"license": "CC0"
 		},
 		{
@@ -1184,6 +1202,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "delivery.png",
+			"path": "res://assets/textures/mission_categories/delivery.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "depot.png",
 			"path": "res://assets/textures/map_markers/depot.png",
 			"author": "WarpZone",
@@ -1216,6 +1243,15 @@
 			"author": "The_Moye",
 			"source": "Discord",
 			"id": "215147560246050816",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "exploration.png",
+			"path": "res://assets/textures/mission_categories/exploration.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -1312,6 +1348,15 @@
 		{
 			"asset": "garage.png",
 			"path": "res://assets/textures/map_markers/garage.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "generic.png",
+			"path": "res://assets/textures/mission_categories/generic.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
@@ -1438,6 +1483,51 @@
 		{
 			"asset": "headlights.png",
 			"path": "res://assets/_universe/vehicles/ui/dashboard_icons/headlights.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "icon_plate_content.png",
+			"path": "res://assets/ui/icons/mining/icon_plate_content.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "icon_plate_ingot.png",
+			"path": "res://assets/ui/icons/mining/icon_plate_ingot.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "icon_plate_mass.png",
+			"path": "res://assets/ui/icons/mining/icon_plate_mass.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "icon_plate_ore.png",
+			"path": "res://assets/ui/icons/mining/icon_plate_ore.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "icon_plate_owner.png",
+			"path": "res://assets/ui/icons/mining/icon_plate_owner.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
@@ -1639,6 +1729,15 @@
 			"author": "Tarcellos",
 			"source": "Discord",
 			"id": "571991741763158016",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "mining.png",
+			"path": "res://assets/textures/mission_categories/mining.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -2023,6 +2122,33 @@
 		{
 			"asset": "tool_dispenser.png",
 			"path": "res://assets/textures/map_markers/tool_dispenser.png",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "town_hall.blend",
+			"path": "res://assets_blender/_universe/structures/buildings/civic/town_hall.blend",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "town_hall.glb",
+			"path": "res://assets/_universe/structures/buildings/civic/town_hall.glb",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "transport.png",
+			"path": "res://assets/textures/mission_categories/transport.png",
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",

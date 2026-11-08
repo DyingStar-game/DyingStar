@@ -34,6 +34,11 @@ const GRID_N := 17
 const BAND_M := 40.0
 ## Quantisation of the plane's slope (rise per metre).
 const Q_GRAD := 1e-6
+## How far off a village's plane the ground may stand and still be drawn by the plain terrain grid (m),
+## instead of the 8 x 8 sub-grid (GradeRefine). A plane needs no sub-grid, and refining a whole city
+## for it cost a chunk 111 608 triangles and 78 s (F0001, 2026-11-06). Raising it saves triangles; the ground
+## can then stand that far above or below a building's floor.
+const FLAT_TOLERANCE_M := 0.1
 
 
 ## A quantised village bed record over ±[param hx] × ±[param hy] metres around
@@ -134,6 +139,42 @@ static func floor_at(lonlat: Vector2, beds: Array, m_per_deg: float) -> float:
 	if not q["hit"] or float(q["d"]) > 0.0:
 		return NAN
 	return clamped_plane(q["rec"], lonlat, m_per_deg)
+
+
+## Does a ground height [param h] at [param lonlat] lie on the plane of one of [param beds]: inside its
+## footprint and within FLAT_TOLERANCE_M?
+static func on_plane(h: float, lonlat: Vector2, beds: Array, m_per_deg: float) -> bool:
+	var plane := floor_at(lonlat, beds, m_per_deg)
+	return not is_nan(plane) and absf(h - plane) <= FLAT_TOLERANCE_M
+
+
+## Does the whole levelled area of the pad [param rec] (footprint and apron) lie on the plane of one of
+## [param beds]? Its four corners are enough: a footprint is convex, and a plane is straight between them.
+## A notch digs into the ground: never.
+static func pad_on_plane(rec: Dictionary, beds: Array, m_per_deg: float) -> bool:
+	if beds.is_empty() or PadBed.is_notch(rec):
+		return false
+	var ex := float(rec["hx"]) + float(rec["apron_m"])
+	var ey := float(rec["hy"]) + float(rec["apron_m"])
+	for corner: Vector2 in [Vector2(-ex, -ey), Vector2(ex, -ey), Vector2(-ex, ey), Vector2(ex, ey)]:
+		var ll := HEALPix.vec2lonlat(PadBed.dir_at(rec, corner.x, corner.y, m_per_deg))
+		if not on_plane(float(rec["z"]), ll, beds, m_per_deg):
+			return false
+	return true
+
+
+## The beds of [param beds] that can shape the ground anywhere [method PadBed.pad_stats] reads for the pad
+## [param rec], in the same order: its sampler gives the same bits with them as with all of [param beds],
+## and a planet's 118 beds cost a pad 60 ms instead of 3 (F0001, 2026-11-06).
+static func near_pad(beds: Array, rec: Dictionary, m_per_deg: float) -> Array:
+	var c := Vector2(float(rec["lon"]), float(rec["lat"]))
+	var out: Array = []
+	for bed: Dictionary in beds:
+		# The bed's reach, the pad's own, and the widest ring pad_stats samples.
+		var reach: float = PadBed.apply_reach_m(bed) + PadBed.apply_reach_m(rec) + PadSettings.TALUS_MAX_M
+		if PadBed.local_m(bed, c, m_per_deg).length_squared() <= reach * reach:
+			out.append(bed)
+	return out
 
 
 ## The plane of the bed [param rec] at the footprint point nearest [param lonlat]: outside the

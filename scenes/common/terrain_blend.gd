@@ -223,6 +223,11 @@ static func wants_fringe(prop: Node) -> bool:
 	# directly -- the tree-walk above already refuses to cross into them.
 	if prop is Player:
 		return false
+	# A shelf stands on the floor of a hall, where a fringe of ground has no business, and a depot has 193
+	# of them: measured three times each (carved_surface_dist, ~2 ms), they were 10-20 ms of every frame
+	# of the wave when a depot came within reach, and went on for 12 s after it (2026-11-06).
+	if prop is Shelf:
+		return false
 	# Vehicles DRIVE, and the band is measured when an object settles rather than every frame, so a
 	# truck would carry a strip of sand from wherever it was last parked. Carried crates need no
 	# such rule: leaving the ground already removes their fringe, and it returns when they settle.
@@ -418,7 +423,7 @@ func _gather(node: Node) -> void:
 ## A mesh that ALREADY wears an overlay is left strictly alone -- not claimed, and so never cleared
 ## either. There is only one overlay slot, and taking it would silently undo somebody's work: the
 ## cargo depot's floor (cargo_depot.tscn:120) gets its concrete that way, and so do
-## pallet_liquid_120x80x100.tscn and mining_depot.tscn. Losing the fringe on three meshes is a much
+## pallet_liquid_120x80x100.tscn and crusher.tscn. Losing the fringe on three meshes is a much
 ## smaller price than a floor that quietly loses its material.
 ##
 ## For the depot floor this is the right answer anyway: a slab is the thing others rest ON, it has

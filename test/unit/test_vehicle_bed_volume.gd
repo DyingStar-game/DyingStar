@@ -85,3 +85,23 @@ func test_a_load_dropped_towards_the_cab_lands_between_the_boards() -> void:
 	var box: AABB = Globals.collision_aabb(crate, truck.global_transform.affine_inverse() * crate.global_transform)
 	assert_true(box.position.z >= inside.position.z - 0.001, "not into the cab")
 	assert_true(box.end.x <= inside.end.x + 0.001, "not into the side board")
+
+
+## A prop a player could carry, or not (a whole rock: carriable once cut down to size).
+class Loadable extends RigidBody3D:
+	var carriable_now := true
+
+	func can_be_carried() -> bool:
+		return carriable_now
+
+
+func test_only_what_a_player_could_carry_rides_in_the_bed() -> void:
+	var piece := Loadable.new()
+	piece.add_to_group("carriable")
+	assert_true(Vehicle.is_loadable(piece), "a piece cut down to size")
+	piece.carriable_now = false
+	assert_false(Vehicle.is_loadable(piece), "a whole rock backed into: not a load")
+	var scenery := RigidBody3D.new()
+	assert_false(Vehicle.is_loadable(scenery), "nothing a player carries")
+	piece.free()
+	scenery.free()

@@ -315,6 +315,7 @@ func _build_map_screen() -> void:
 	_map_gui.node_viewport = _map_viewport
 	_map_gui.node_quad = screen
 	_map_gui.uv_frame = true  # a cab screen sits tilted inside its mesh: point it by its UVs
+	_map_gui.render_when_seen = false  # _process drives the chart's updates (near, hosted, shown)
 	add_child(_map_gui)
 
 ## Walk up the tree to the owning Vehicle (the rear camera is placed under it).

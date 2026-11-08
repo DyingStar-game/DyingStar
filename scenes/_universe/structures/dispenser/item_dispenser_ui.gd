@@ -50,6 +50,9 @@ var _accent: Color = Color.WHITE
 ## The button's word and the full hatch's message (translation keys), set by the machine before setup.
 var dispense_key: String = "%%DISPENSER_DISPENSE"
 var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
+## The items on offer (setup), to start over from the first when the screen falls asleep.
+var _items: Array[Resource] = []
+var _attract: ScreenAttract = null
 
 
 ## Build the screen for [param subsidiary] (AresBrand), under [param title_key], offering [param items]
@@ -57,6 +60,12 @@ var tray_full_key: String = "%%DISPENSER_TAKE_ITEMS"
 func setup(subsidiary: AresBrand.Subsidiary, title_key: String, items: Array[Resource]) -> void:
 	_accent = AresBrand.colour(subsidiary)
 	_build(subsidiary, title_key)
+	_items = items
+	# Every dispenser sleeps behind its brand until pressed (ScreenAttract), and the next one to wake
+	# it finds it as new: the first item chosen, no refusal on show.
+	_attract = ScreenAttract.new().setup(subsidiary, title_key)
+	_attract.slept.connect(_start_over)
+	add_child(_attract)
 	show_items(items)
 
 
@@ -75,6 +84,13 @@ func _process(_delta: float) -> void:
 	if _refusal_key != "" and now > _refusal_until_ms:
 		_refusal_key = ""
 		_show_status()
+
+
+## Back to the first item, no refusal on show: the screen fell asleep. A delivery under way and a
+## full hatch stay what they are — the machine's state, not the screen's.
+func _start_over() -> void:
+	_refusal_key = ""
+	show_items(_items)
 
 
 ## The server said no ([param reason_key], a translation key): on the status line for a while, and
@@ -118,6 +134,27 @@ func set_tray_full(full: bool) -> void:
 	_tray_full = full
 	if full:
 		_waiting = false
+	_show_status()
+
+
+## Screen view contract (ScreenLock): what its user is looking at, for the players watching.
+func view_state() -> Dictionary:
+	return {"awake": _attract != null and not _attract.visible, "chosen": chosen()}
+
+
+## Screen view contract (ScreenLock): show what the user of this dispenser is looking at.
+func apply_view_state(view: Dictionary) -> void:
+	var awake := bool(view.get("awake", false))
+	if _attract != null and awake:
+		_attract.keep_awake()
+	if _attract != null and awake and _attract.visible:
+		_attract.wake()
+	elif _attract != null and not awake and not _attract.visible:
+		_attract.sleep()
+	var path := str(view.get("chosen", ""))
+	for row: Node in _rows.get_children():
+		if row is BaseButton and str(row.get_meta("spec_path", "")) == path:
+			(row as BaseButton).button_pressed = true
 	_show_status()
 
 
@@ -243,31 +280,11 @@ func _item_row(item: Resource) -> Button:
 
 ## Flat [param fill] background (lighter when hovered), [param ink] text at [param font_size].
 static func _style_button(button: Button, fill: Color, ink: Color, font_size: int) -> void:
-	for state: String in ["normal", "hover", "pressed", "disabled", "focus"]:
-		var box := StyleBoxFlat.new()
-		box.bg_color = fill.lightened(0.15) if state == "hover" and fill.a > 0.0 \
-				else (Color(1, 1, 1, 0.06) if state == "hover" else fill)
-		if state == "disabled":
-			box.bg_color = Color(fill, fill.a * 0.35)
-		box.content_margin_left = 20
-		box.content_margin_right = 20
-		button.add_theme_stylebox_override(state, box)
-	button.add_theme_font_size_override("font_size", font_size)
-	for key: String in ["font_color", "font_hover_color", "font_pressed_color"]:
-		button.add_theme_color_override(key, ink)
-	button.add_theme_color_override("font_disabled_color", Color(ink, 0.4))
-	if AresBrand.font() != null:
-		button.add_theme_font_override("font", AresBrand.font())
+	AresBrand.style_button(button, fill, ink, font_size)
 
 
 static func _label(text: String, font_size: int, colour: Color) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", colour)
-	if AresBrand.font() != null:
-		label.add_theme_font_override("font", AresBrand.font())
-	return label
+	return AresBrand.screen_label(text, font_size, colour)
 
 
 ## A ring that fills as a delivery goes on, the whole seconds left in its middle.

@@ -1,6 +1,7 @@
 class_name PlayerClient
 extends Node
 
+
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
 const GOD_MODE := preload("res://scenes/player/god_mode.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
@@ -95,6 +96,9 @@ var _flash_text: String = ""
 var _flash_until_ms: int = 0
 ## The 3D screen (its Gui3D) under the crosshair, and where on it (_point_screen); null when none.
 var _pointed_gui: Node3D = null
+## The view of the screen we hold, as last shared, and when to look for a change again (ScreenLock).
+var _shared_view: Dictionary = {}
+var _view_check_s: float = 0.0
 var _pointed_at: Vector3 = Vector3.ZERO
 
 var _conversation_text: Label = null
@@ -355,13 +359,23 @@ func setup() -> void:
 	player.add_child(_wrist)
 	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
 	_wrist.up_changed.connect(func(up: bool) -> void: player.get_node("UserInterface").set_crosshair_shown(not up))
+	# The wrist's light blinks while an app has news nobody opened: put away without looking at it,
+	# the tablet blinks again (WristDatapad clears it when it is read).
+	_wrist.up_changed.connect(func(up: bool) -> void:
+		if not up and _services.has_pending():
+			_wrist_model.set_notified(true))
+	_services.pending_changed.connect(func(any: bool) -> void:
+		if not any:
+			_wrist_model.set_notified(false))
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
 	_screens_root().add_child(_notifications)
 	_notifications.pushed.connect(_on_notification_pushed)
 	_watch_debug_notification()
+	_watch_debug_shadow_atlas()
 	ChatNetwork.notification_received.connect(_on_notification)
+	PlayerServices.mission_accepted.connect(_on_mission_accepted)
 	_places = PlaceWatcher.new()
 	_places.name = "PlaceWatcher"
 	add_child(_places)
@@ -538,6 +552,7 @@ func _process(_delta: float) -> void:
 		# passenger seat. It only ever pointed -- the view stays the player's, the mouse stays captured --
 		# so "driving with a freed mouse", the reason seats once dropped screens, no longer holds.
 		_point_screen(seated_focus)
+		_share_screen_view(_delta)
 		return
 	_update_cab_screen(null)  # on foot: no cab screen, the chart goes home
 	if not is_instance_valid(player.lying_on) and _bed_pending:
@@ -588,6 +603,7 @@ func _process(_delta: float) -> void:
 	# and a held click would keep the tool engaged). Entering a menu cancels any in-progress action.
 	# The crosshair on a 3D screen points at it (_point_screen): its click is the screen's, not the tool's.
 	var pointing: bool = _point_screen(ui_focus)
+	_share_screen_view(_delta)
 	if ui_focus or pointing:
 		player.mining_tool.cancel()
 	else:
@@ -1047,6 +1063,11 @@ func _point_screen(ui_focus: bool) -> bool:
 				nearest = eye.distance_to(at)
 				gui = screen_gui
 				point = at
+	# Another player's screen: no hover, no click -- nothing says it can be used -- but still a screen
+	# under the crosshair, so the tool in hand does not fire into it.
+	var watched: bool = gui != null and _used_by_other(gui)
+	if watched:
+		gui = null
 	if is_instance_valid(_pointed_gui) and _pointed_gui != gui:
 		_pointed_gui.pointer_left()
 	_pointed_gui = gui
@@ -1060,7 +1081,30 @@ func _point_screen(ui_focus: bool) -> bool:
 			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
-	return gui != null
+	return gui != null or watched
+
+
+## Whether another player is using the screen of [param gui] (ScreenLock): it is theirs to touch.
+func _used_by_other(gui: Node3D) -> bool:
+	return ScreenLock.used_by_other(ScreenTarget.owner_of(gui)) != ""
+
+
+## The screen we hold (ScreenLock): every CHECK_S, what it shows goes to the server when it changed,
+## for the players watching it.
+func _share_screen_view(delta: float) -> void:
+	_view_check_s -= delta
+	if _view_check_s > 0.0:
+		return
+	_view_check_s = ScreenLock.CHECK_S
+	var used: Node3D = player.screen_in_use if is_instance_valid(player.screen_in_use) else null
+	if used == null or not ScreenLock.is_mine(used):
+		_shared_view = {}
+		return
+	var ui: Node = ScreenLock.view_node(used)
+	var view: Dictionary = ui.view_state() if ui != null else {}
+	if not view.is_empty() and view != _shared_view:
+		_shared_view = view
+		ScreenTarget.send(used, {"state": ScreenLock.STATE, "view": view})
 
 
 ## Say [param text] where the prompts are, in red, for FLASH_PROMPT_S: a key pressed for nothing
@@ -1087,6 +1131,11 @@ func _input(event: InputEvent) -> void:
 	if _cab != null and _cab.input(event):
 		get_viewport().set_input_as_handled()
 		return
+	# The wheel over a screen scrolls the screen (its lists, its pages), and not the walk speed.
+	if _is_wheel(event) and is_instance_valid(_pointed_gui):
+		_pointed_gui.push_at(event as InputEventMouseButton, _pointed_at)
+		get_viewport().set_input_as_handled()
+		return
 	if not event.is_action(&"perforate"):
 		return
 	var typing: bool = _screen_typing()
@@ -1095,11 +1144,20 @@ func _input(event: InputEvent) -> void:
 		if used != null:
 			used.release_keyboard()
 	if is_instance_valid(_pointed_gui):
+		var screen_owner: Node3D = ScreenTarget.owner_of(_pointed_gui)
+		if event.is_pressed() and not ScreenLock.is_mine(screen_owner):
+			ScreenTarget.send(screen_owner, {"state": ScreenLock.STATE})  # ours now, the others watch
 		_pointed_gui.click_at(_pointed_at, event.is_pressed())
 		if event.is_pressed():
 			_screen_tap(_pointed_at)
 	if typing or is_instance_valid(_pointed_gui):
 		get_viewport().set_input_as_handled()
+
+
+## Whether [param event] is a turn of the mouse wheel (up, down, or tilted sideways).
+static func _is_wheel(event: InputEvent) -> bool:
+	return event is InputEventMouseButton and (event as InputEventMouseButton).button_index in [
+		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]
 
 
 ## The arm taps the screen clicked at [param at] (world): the gesture plays here at once and the server
@@ -1264,7 +1322,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if seated_handle != null:
 			_toggle_door(seated_handle)
 		elif _cab != null and _cab.aimed():
-			_send_vehicle_action("vehicle_screen_mode")  # the cab screen: offline -> chart -> camera
+			_send_vehicle_action("vehicle_screen_mode")  # the cab screen: offline -> camera -> chart
 		return  # seated: `action` operates doors and the cab screen, never carry
 
 	# Dev instruments: they only LOOK at the world, they never act on it, so they sit before the walk
@@ -2000,7 +2058,7 @@ func _spawn_depot() -> void:
 			"action": "spawn",
 			"entity": "mining_depot",
 			"position": {"x": spawn_pos.x, "y": spawn_pos.y, "z": spawn_pos.z},
-			"scenename": "scenes/structures/mining_depot.tscn",
+			"scenename": "scenes/_universe/structures/industrial/mines/crusher.tscn",
 			"parent_id": parentuuid,
 		}
 	)
@@ -2648,6 +2706,10 @@ func _on_notification(envelope: Dictionary) -> void:
 	if text == "":
 		return
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
+	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
+	# A mission's news changed it on the service: the DataPad, open on it, reads it again.
+	if str(envelope.get("type", "")).begins_with("mission."):
+		PlayerServices.changed.emit("missions")
 
 	var data: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
 	# Resolve in the background so the NEXT notification about this player is spelled properly. The
@@ -2670,6 +2732,38 @@ func _on_notification_pushed() -> void:
 		_wrist_model.set_notified(true)
 
 
+## Settings > Debug > shadow atlas: the viewport draws its shadow atlas instead of the scene (which lights
+## take a shadow slot, and how big), and the console gets the count of lights with and without shadows.
+func _watch_debug_shadow_atlas() -> void:
+	var follow := func(on: bool) -> void:
+		get_viewport().debug_draw = Viewport.DEBUG_DRAW_SHADOW_ATLAS if on else Viewport.DEBUG_DRAW_DISABLED
+		if on:
+			print_light_report(get_tree().root)
+	SettingsManager.debug.watch(&"shadow_atlas_debug", follow)
+	if SettingsManager.debug.is_on(&"shadow_atlas_debug"):
+		follow.call(true)
+
+
+## Print how many visible lights of each kind stand under [param root], how many cast shadows, and which.
+static func print_light_report(root: Node) -> void:
+	var counts := {}
+	var shadowed: Array[String] = []
+	for node: Node in root.find_children("*", "Light3D", true, false):
+		var light := node as Light3D
+		if not light.is_visible_in_tree():
+			continue
+		var kind := light.get_class()
+		var c: Dictionary = counts.get(kind, {"total": 0, "shadows": 0})
+		c["total"] += 1
+		if light.shadow_enabled:
+			c["shadows"] += 1
+			shadowed.append("%s | %s" % [light.get_path(), kind])
+		counts[kind] = c
+	print("[LightReport] ", counts)
+	for line: String in shadowed:
+		print("[LightReport] shadow: ", line)
+
+
 ## Settings > Debug > test notification: while it is on, a line now and one every DEBUG_NOTIFICATION_S,
 ## with its sound and the wrist's light -- the whole path of a notification, without waiting for one.
 func _watch_debug_notification() -> void:
@@ -2688,12 +2782,40 @@ func _watch_debug_notification() -> void:
 		follow.call(true)
 
 
+## A mission was taken somewhere else than on the tablet (a kiosk): a line says so, the wrist blinks,
+## and the tablet opens on it — from the line, or the next time it is opened. Taken on the tablet, the
+## player is already looking at it.
+func _on_mission_accepted(mission_id: String, title: String) -> void:
+	if _services == null or _notifications == null or _services.is_open():
+		return
+	var show_it: Callable = _services.open_mission.bind(mission_id)
+	_services.open_next(show_it)
+	var text: String = tr("%%MISSION_ACCEPTED_TOAST") % (title if title != "" else tr("%%SVC_LBL_UNKNOWN_MISSION"))
+	_notifications.push(text, func() -> void: _wrist.open_with(show_it))
+	_services.flag_app("missions")
+
+
+## The DataPad app a notification of [param type] is about (its tab blinks until opened): missions
+## for a mission's news, social for the rest (friends, corporations, place names).
+static func app_of_notification(type: String) -> String:
+	if type.begins_with("mission."):
+		return "missions"
+	return "social" if type != "" else ""
+
+
 ## Open what the notification is about, so the toast is a shortcut and not a dead end. The id is
 ## [param app] of TerminalUI.APPS and [param segment] the tab to land on.
 func _on_notification_clicked(envelope: Dictionary) -> void:
 	if _services == null:
 		return
 	var type := str(envelope.get("type", ""))
+	if type.begins_with("mission."):
+		# A mission's news: the tablet opens on that mission (its objectives, where to turn it in).
+		var data: Variant = envelope.get("data")
+		var mission_id := str(data.get("missionId", "")) if data is Dictionary else ""
+		if mission_id != "":
+			_wrist.open_with(_services.open_mission.bind(mission_id))
+			return
 	var segment: int = -1
 	match type:
 		"friend_request_received":

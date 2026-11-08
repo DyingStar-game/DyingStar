@@ -88,6 +88,7 @@ const MISSION_CATEGORY_KEYS: Dictionary = {
 	"delivery": "%%SVC_ENUM_CATEGORY_DELIVERY",
 	"transport": "%%SVC_ENUM_CATEGORY_TRANSPORT",
 	"generic": "%%SVC_ENUM_CATEGORY_GENERIC",
+	"divers": "%%SVC_ENUM_CATEGORY_GENERIC",  # the mission service's name for "generic"
 	"mining": "%%SVC_ENUM_CATEGORY_MINING",
 	"farming": "%%SVC_ENUM_CATEGORY_FARMING",
 	"crafting": "%%SVC_ENUM_CATEGORY_CRAFTING",
@@ -635,6 +636,47 @@ static func zone_line(zone: Variant) -> String:
 	return zone_kind_label(kind)
 
 
+## The rows of a mission service listing {missions: [{assignment, mission}]} ([param data], the
+## answer's `data`): the dictionaries only, [] for anything else.
+static func mission_rows(data: Variant) -> Array:
+	var rows: Variant = data.get("missions") if data is Dictionary else null
+	return (rows as Array).filter(func(r: Variant) -> bool: return r is Dictionary) if rows is Array else []
+
+
+## Whether [param assignment] (a mission service assignment) is an active one.
+static func is_active_assignment(assignment: Variant) -> bool:
+	return assignment is Dictionary and str(assignment.get("status", "")) == "active"
+
+
+## The first step of a transport measured on the warehouses: the goods must first be taken off a
+## shelf of the source warehouse, or the delivery counts nothing. "" for any other objective; else
+## that step, done or still to do, naming the source village (`locationFrom.village`).
+static func transport_step_text(objective: Variant) -> String:
+	if not (objective is Dictionary) or str(objective.get("type", "")) != "transport":
+		return ""
+	var params: Variant = objective.get("params")
+	if not (params is Dictionary) or str(params.get("via", "")) != "warehouse":
+		return ""
+	var source: Variant = objective.get("locationFrom")
+	var village := str(source.get("village", "")) if source is Dictionary else ""
+	var state: Variant = objective.get("state")
+	var loaded: bool = state is Dictionary and state.get("loadedAt") != null
+	return TranslationServer.translate("%%MISSION_STEP_LOADED" if loaded else "%%MISSION_STEP_LOAD") % village
+
+
+## The participants of a mission (GET /api/missions/:id `participants`: [{playerId, name}]) as one
+## line of names; a player whose name is unknown shows the start of their id. "" when there are none.
+static func participants_text(participants: Variant) -> String:
+	if not (participants is Array):
+		return ""
+	var names: PackedStringArray = []
+	for p: Variant in participants:
+		if p is Dictionary:
+			var name: Variant = p.get("name")
+			names.append(str(name) if name != null and str(name) != "" else str(p.get("playerId", "")).left(8))
+	return ", ".join(names)
+
+
 ## The mission's zone list as a single line: every zone, or the "global" label when the list is
 ## empty — which is exactly the service's "available everywhere" case.
 static func zones_text(zones: Variant) -> String:
@@ -658,6 +700,29 @@ static func mission_line(mission: Dictionary) -> String:
 static func assignment_line(assignment: Dictionary) -> String:
 	return text("%%SVC_FMT_ASSIGNMENT") % [mission_status_label(assignment.get("status")),
 			dash(assignment.get("rewardAmount")), str(bool(assignment.get("rewardSettled", false)))]
+
+
+## A quantity in its unit, as a player reads it: kilograms past 1 000 in tonnes, litres past 1 000 in
+## cubic metres; `unit` (things counted) or none: the bare number. The mission's `unit` is the
+## simulator's (kg solids, l liquids, m3 gases), the same rule as its titles (quantity_text there).
+static func quantity_text(quantity: int, unit: Variant) -> String:
+	var u := str(unit if unit != null else "").strip_edges().to_lower()
+	match u:
+		"kg":
+			return _thousands(quantity, "t") if quantity >= 1000 else "%d kg" % quantity
+		"l":
+			return _thousands(quantity, "m³") if quantity >= 1000 else "%d L" % quantity
+		"m3":
+			return "%d m³" % quantity
+		"", "unit":
+			return str(quantity)
+	return "%d %s" % [quantity, u]
+
+
+## [param quantity] / 1000 with [param big_unit], one decimal unless whole ("1.5 t", "2 t").
+static func _thousands(quantity: int, big_unit: String) -> String:
+	var v := quantity / 1000.0
+	return ("%d %s" % [int(v), big_unit]) if is_equal_approx(v, roundf(v)) else ("%.1f %s" % [v, big_unit])
 
 
 static func player_mission_line(entry: Dictionary) -> String:

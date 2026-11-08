@@ -90,6 +90,15 @@ var _browse: ItemList
 var _page_browse: ServicePage
 var _mine: ItemList
 var _page_mine: ServicePage
+## Invitations to join a mission somebody else took (My missions, over the list).
+var _invites_box: VBoxContainer
+## The "My missions" segment's contract box, and the mission it is to show once the list has it
+## (focus_mission), "" when none.
+var _mine_contract: VBoxContainer
+var _focus_id: String = ""
+## The "My missions" tabs (MINE_TABS) and the one shown.
+var _mine_tabs: HBoxContainer
+var _mine_tab: int = 0
 var _created_status: OptionButton
 var _created: ItemList
 var _page_created: ServicePage
@@ -212,6 +221,11 @@ func _build() -> void:
 	# the card — the document needs every pixel it can get.
 	_build_create_page(_side_page(3))
 	add_chrome(_status_line())
+	# The DataPad CONSULTS the missions the player took: the offers are taken at a town hall kiosk,
+	# so the Available tab is hidden (kept built: segments are addressed by index) and the app
+	# opens on My missions.
+	hide_segment_tab(0)
+	goto_segment(1)
 
 	# One clause up front: the contract is never empty. Built AFTER the places are in hand, because
 	# its place picker reads the cache as it is created and would otherwise open on "no point of
@@ -343,6 +357,14 @@ func _build_browse_page(page: VBoxContainer) -> void:
 # Tab 1 — my missions (assignments)
 # ---------------------------------------------------------------------------------------------
 
+## "My missions" in three tabs (playtest 2026-11-07): [label key, the assignment statuses it lists].
+const MINE_TABS: Array = [
+	["%%SVC_TAB_MINE_ACTIVE", "active"],
+	["%%SVC_TAB_MINE_DONE", "completed,partially_completed"],
+	["%%SVC_TAB_MINE_STOPPED", "abandoned,expired,failed"],
+]
+
+
 func _build_mine_page(page: VBoxContainer) -> void:
 	var parts := _master_detail(page)
 	var left: VBoxContainer = parts[0]
@@ -350,8 +372,61 @@ func _build_mine_page(page: VBoxContainer) -> void:
 	_page_mine = ServicePage.new()
 	_page_mine.rows_key = "missions"
 	_page_mine.load_requested.connect(_load_mine)
+	# Invitations to join a mission somebody else took, over the list: Join / Decline.
+	_invites_box = VBoxContainer.new()
+	_invites_box.add_theme_constant_override("separation", 6)
+	left.add_child(_invites_box)
+	_mine_tabs = _row(6)
+	left.add_child(_mine_tabs)
+	_show_mine_tabs()
 	_mine = _paged_list(left, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine, 320.0)
 	_mine.item_selected.connect(func(_i: int) -> void: _open_mine(contract))
+	_mine_contract = contract
+
+
+## The three tabs over "My missions", the chosen one lit.
+func _show_mine_tabs() -> void:
+	for child: Node in _mine_tabs.get_children():
+		child.queue_free()
+	for i: int in MINE_TABS.size():
+		var tab := Button.new()
+		tab.text = tr(str(MINE_TABS[i][0]))
+		tab.focus_mode = Control.FOCUS_NONE
+		ServiceStyle.apply_segment(tab, i == _mine_tab)
+		tab.pressed.connect(_set_mine_tab.bind(i))
+		_mine_tabs.add_child(tab)
+
+
+func _set_mine_tab(index: int) -> void:
+	if index == _mine_tab:
+		return
+	_mine_tab = index
+	_show_mine_tabs()
+	_page_mine.offset = 0
+	_clear(_mine_contract)
+	_load_mine()
+
+
+## Show mission [param mission_id] in "My missions": selected in the list and its contract open, now
+## when the list already holds it, else as soon as it does (the next refresh brings it).
+func focus_mission(mission_id: String) -> void:
+	_focus_id = mission_id
+	goto_segment(1)  # "My missions"
+	_select_focus()
+
+
+func _select_focus() -> void:
+	if _focus_id == "" or _mine == null:
+		return
+	for i: int in range(_mine.item_count):
+		var entry: Variant = _mine.get_item_metadata(i)
+		var mission: Variant = (entry as Dictionary).get("mission") if entry is Dictionary else null
+		if mission is Dictionary and str((mission as Dictionary).get("id", "")) == _focus_id:
+			_focus_id = ""
+			_mine.select(i)
+			_mine.ensure_current_is_visible()
+			_open_mine(_mine_contract)
+			return
 
 
 # ---------------------------------------------------------------------------------------------
@@ -495,10 +570,21 @@ func refresh() -> void:
 		var zone_picker: Variant = row.get("poi")
 		if zone_picker is MissionPlacePicker:
 			(zone_picker as MissionPlacePicker).refresh_list()
+	# The mission open in "My missions" opens again on the fresh list: its progress is what changed.
+	if _focus_id == "":
+		_focus_id = _selected_mine_id()
 	await _load_mine()
-	await _load_browse()
 	await _load_created()
 	_end_refresh()
+
+
+## The id of the mission selected in "My missions", "" when none is.
+func _selected_mine_id() -> String:
+	if _mine == null or _mine.get_selected_items().is_empty():
+		return ""
+	var entry: Variant = _mine.get_item_metadata(_mine.get_selected_items()[0])
+	var mission: Variant = (entry as Dictionary).get("mission") if entry is Dictionary else null
+	return str((mission as Dictionary).get("id", "")) if mission is Dictionary else ""
 
 
 ## The catalogue feeds every dynamic dropdown; on failure the hardcoded lists stay in place.
@@ -546,12 +632,49 @@ func _load_created() -> void:
 
 func _load_mine() -> void:
 	var at: int = _page_mine.offset
-	# The contracts that are still running. The ones that are over are not in the list: a list of
-	# what has been done is a list of what is not to do, and the service counts what it sends, so
-	# the count under the list is the count of what is left.
-	var result: Dictionary = await PlayerServices.my_missions("active", _page_mine.limit, at)
+	# The contracts of the tab chosen: running, done, or stopped (given up, expired, failed).
+	var result: Dictionary = await PlayerServices.my_missions(str(MINE_TABS[_mine_tab][1]), _page_mine.limit, at)
 	if _land(_page_mine, at, result):
 		_apply_mine(_page_mine, result)
+	await _load_invitations()
+
+
+## The invitations to join a mission a friend or my group took: one line each, Join / Decline.
+func _load_invitations() -> void:
+	var result: Dictionary = await PlayerServices.mission_invitations()
+	_clear_children(_invites_box)
+	var data: Variant = result.get("data")
+	var rows: Variant = data.get("invitations") if data is Dictionary else null
+	if not (rows is Array) or (rows as Array).is_empty():
+		return
+	_invites_box.add_child(_label(tr("%%SVC_LBL_MISSION_INVITATIONS"), ServiceStyle.ACCENT))
+	for row: Variant in rows:
+		if not (row is Dictionary):
+			continue
+		var invitation: Dictionary = row.get("invitation") if row.get("invitation") is Dictionary else {}
+		var mission: Dictionary = row.get("mission") if row.get("mission") is Dictionary else {}
+		var id := str(invitation.get("id", ""))
+		var line := _row()
+		line.add_child(_label(ServiceTypes.dash(mission.get("title")), ServiceStyle.TEXT))
+		_action_button(line, tr("%%SVC_ACT_JOIN"), func() -> void: _answer_invitation(id, true))
+		_action_button(line, tr("%%SVC_ACT_DECLINE"), func() -> void: _answer_invitation(id, false))
+		_invites_box.add_child(line)
+
+
+func _answer_invitation(invitation_id: String, join: bool) -> void:
+	var result: Dictionary
+	if join:
+		result = await PlayerServices.mission_join(invitation_id)
+	else:
+		result = await PlayerServices.mission_decline(invitation_id)
+	if _report(result, tr("%%SVC_MSG_MISSION_JOINED") if join else tr("%%SVC_MSG_INVITATION_DECLINED")):
+		await _load_mine()
+
+
+static func _clear_children(box: Node) -> void:
+	for child: Node in box.get_children():
+		box.remove_child(child)
+		child.queue_free()
 
 
 ## Shared loader for the two mission-dict lists (browse + created).
@@ -620,6 +743,7 @@ func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 		lines.append(tr("%%SVC_MSG_NO_ASSIGNMENTS"))
 	_fill_list(_mine, lines, metadata)
 	_classify_mission_pois()
+	_select_focus()
 
 
 # ---------------------------------------------------------------------------------------------
@@ -838,10 +962,15 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	if not assignment.is_empty():
 		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ASSIGNMENT") %
 				ServiceTypes.assignment_line(assignment), ServiceStyle.TEXT))
+	# Who takes part (a shared mission): shown to its participants only.
+	var participants := ServiceTypes.participants_text(data.get("participants"))
+	if participants != "":
+		meta.add_child(_label(tr("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, ServiceStyle.TEXT))
 	doc.add_child(meta)
 
 	# Description.
-	var description := str(mission.get("description", "")).strip_edges()
+	var described: Variant = mission.get("description")
+	var description := "" if described == null else str(described).strip_edges()  # null: none, not "<null>"
 	if description != "":
 		var body := _label(description, ServiceStyle.TEXT)
 		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -906,8 +1035,24 @@ static func _objective_poi(objective: Dictionary) -> Dictionary:
 			continue
 		var poi_id := str((place as Dictionary).get("poiId", ""))
 		if poi_id != "":
-			return {"id": poi_id, "name": _poi_name_of(poi_id)}
+			var name := _poi_name_of(poi_id)
+			if name == "":
+				name = location_name(objective.get("locationTo" if field == "zone" else "locationFrom"))
+			return {"id": poi_id, "name": name}
 	return {}
+
+
+## The name a mission's location carries ({village, name}, as the simulator writes it): "F0001 · CargoDepot_2",
+## the village alone or the place alone when only one is known, "" when neither. A warehouse is no POI
+## of the player's (MissionPoiCache), so this is the only name it has on the DataPad.
+static func location_name(location: Variant) -> String:
+	if not (location is Dictionary):
+		return ""
+	var village := str((location as Dictionary).get("village", "") if (location as Dictionary).get("village") != null else "")
+	var place := str((location as Dictionary).get("name", "") if (location as Dictionary).get("name") != null else "")
+	if village != "" and place != "" and village != place:
+		return "%s · %s" % [village, place]
+	return village if village != "" else place
 
 
 static func _poi_name_of(poi_id: String) -> String:
@@ -997,6 +1142,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 
 	var footer := _row(10)
 	footer.add_child(_label(_objective_progress(objective), DIM))
+	var step := ServiceTypes.transport_step_text(objective)
+	if step != "":
+		box.add_child(_label(step, ServiceStyle.ACCENT))
 	var entry := _kind_entry("objectiveKinds", str(objective.get("type", "")))
 	var evaluation := str(entry.get("evaluation", ""))
 	if evaluation != "":
@@ -1013,31 +1161,11 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 	return card
 
 
-## The contract's clauses as a picker, for the progress line: a uuid is not an input a player can
-## produce, and the clause is on screen above it.
-func _objective_picker(objectives: Array) -> OptionButton:
-	var picker := OptionButton.new()
-	picker.custom_minimum_size = Vector2(320, 40)
-	ServiceStyle.apply_option(picker)
-	for objective: Dictionary in objectives:
-		var label := "%s. %s" % [str(ServiceTypes.num((objective as Dictionary).get("order", 0)) + 1),
-				ServiceTypes.dash((objective as Dictionary).get("title"))]
-		picker.add_item(label)
-		picker.set_item_metadata(picker.item_count - 1, str((objective as Dictionary).get("id", "")))
-	if picker.item_count == 0:
-		picker.add_item("%%SVC_MSG_NO_OBJECTIVES")
-		picker.set_item_metadata(0, "")
-	picker.select(0)
-	return picker
-
-
 ## "2/5 units · in progress" — language-neutral numbers, localized objective status.
 func _objective_progress(objective: Dictionary) -> String:
-	var progress := "%d/%d" % [ServiceTypes.num(objective.get("currentProgress")),
-			ServiceTypes.num(objective.get("targetQuantity"))]
-	var unit := str(objective.get("unit", "")).strip_edges()
-	if unit != "":
-		progress += " " + unit
+	var unit: Variant = objective.get("unit")
+	var progress := "%s / %s" % [ServiceTypes.quantity_text(ServiceTypes.num(objective.get("currentProgress")), unit),
+			ServiceTypes.quantity_text(ServiceTypes.num(objective.get("targetQuantity")), unit)]
 	return progress + " · " + ServiceTypes.objective_status_label(objective.get("status"))
 
 
@@ -1081,7 +1209,7 @@ func _confirm(mission_id: String, objective_id: String, contract: VBoxContainer)
 
 ## Footer: contextual lifecycle actions + the group share line.
 func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dictionary,
-		contract: VBoxContainer, objectives: Array) -> Control:
+		contract: VBoxContainer, _objectives: Array) -> Control:
 	var actions := VBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1100,23 +1228,28 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 		var lifecycle := _row()
 		_action_button(lifecycle, tr("%%SVC_ACT_ABANDON"),
 				func() -> void: _abandon(mission_id, contract))
-		_action_button(lifecycle, tr("%%SVC_ACT_COMPLETE"),
-				func() -> void: _complete(mission_id, contract))
+		# The DataPad only CONSULTS a mission that is turned in at a town hall (autoComplete false):
+		# the kiosk there validates it, the game server checking it is the right village. Progress is
+		# measured by the service (goods put into a warehouse...), never reported by hand.
+		if mission.get("autoComplete") == false:
+			lifecycle.add_child(_label(tr("%%SVC_LBL_TURN_IN_AT_TOWN_HALL"), DIM))
+		else:
+			_action_button(lifecycle, tr("%%SVC_ACT_COMPLETE"),
+					func() -> void: _complete(mission_id, contract))
 		actions.add_child(lifecycle)
-		var progress := _row()
-		progress.add_child(_label(tr("%%SVC_LBL_PROGRESS"), DIM))
-		# The objective, chosen by what it SAYS. This used to be a field for the objective's uuid —
-		# an id assigned by the service, printed nowhere, knowable only by copying it out of a
-		# network answer, and typed into a contract whose clauses are listed on screen a few rows
-		# above. The list is right there, so the list is the input.
-		var objective_pick := _objective_picker(objectives)
-		var quantity := _number_field(tr("%%SVC_PH_QUANTITY"), 100.0)
-		if objective_pick != null:
-			progress.add_child(objective_pick)
-		progress.add_child(quantity)
-		_action_button(progress, tr("%%SVC_ACT_REPORT_PROGRESS"),
-				func() -> void: _progress(mission_id, contract, objective_pick, quantity))
-		actions.add_child(progress)
+		# Share the mission I took: my group may join it, or one player I pick. Their crates then
+		# count for it too, the reward is split equally, and any of us turns it in.
+		var share := _row()
+		share.add_child(_label(tr("%%SVC_LBL_SHARE_TAKEN"), DIM))
+		_action_button(share, tr("%%SVC_ACT_SHARE_GROUP"),
+				func() -> void: _invite_group(mission_id, contract))
+		var picker := ServiceTargetPicker.new()
+		picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+		adopt_field(picker.search_field())
+		share.add_child(picker)
+		_action_button(share, tr("%%SVC_ACT_INVITE"),
+				func() -> void: _invite_player(mission_id, contract, picker))
+		actions.add_child(share)
 
 	# The share line is the CREATOR's business: handing a contract to a group is a decision about
 	# who may take it, and that is not the taker's to make. It also names the group rather than
@@ -1194,21 +1327,6 @@ func _close_contract_pois(mission_id: String) -> void:
 	MissionPoiCache.close_pois(ids)
 
 
-func _progress(mission_id: String, contract: VBoxContainer, objective_pick: OptionButton,
-		quantity_field: LineEdit) -> void:
-	release_fields()
-	var objective_id := ""
-	if objective_pick != null and objective_pick.selected >= 0:
-		objective_id = str(objective_pick.get_item_metadata(objective_pick.selected))
-	if objective_id == "" or not quantity_field.text.strip_edges().is_valid_int():
-		_say(tr("%%SVC_MSG_NEED_OBJECTIVE_QUANTITY"), WARN)
-		return
-	var result: Dictionary = await PlayerServices.mission_progress(mission_id, objective_id,
-			int(quantity_field.text))
-	if _report(result, tr("%%SVC_MSG_PROGRESS_SAVED")):
-		await _open_contract(contract, mission_id)
-
-
 # ---------------------------------------------------------------------------------------------
 # Sharing with the group (Squad)
 # ---------------------------------------------------------------------------------------------
@@ -1225,6 +1343,31 @@ func _share(mission_id: String, contract: VBoxContainer) -> void:
 	var result: Dictionary = await PlayerServices.mission_share(mission_id,
 			str((group as Dictionary).get("id", "")))
 	if _report(result, tr("%%SVC_MSG_MISSION_SHARED")):
+		await _open_contract(contract, mission_id)
+
+
+## Share the mission I took with my group: each member may join it.
+func _invite_group(mission_id: String, contract: VBoxContainer) -> void:
+	var mine: Dictionary = await PlayerServices.my_group()
+	var group: Variant = mine.get("data")
+	if not (group is Dictionary):
+		_say(tr("%%SVC_MSG_NO_GROUP"), WARN)
+		return
+	var target := {"groupId": str((group as Dictionary).get("id", ""))}
+	if _report(await PlayerServices.mission_invite(mission_id, target), tr("%%SVC_MSG_MISSION_INVITED")):
+		await _open_contract(contract, mission_id)
+
+
+## Share the mission I took with the player picked.
+func _invite_player(mission_id: String, contract: VBoxContainer, picker: ServiceTargetPicker) -> void:
+	release_fields()
+	var player_id := picker.picked_id()
+	if player_id == "":
+		_say(tr("%%SVC_MSG_PICK_PLAYER"), WARN)
+		return
+	var target := {"playerId": player_id}
+	if _report(await PlayerServices.mission_invite(mission_id, target), tr("%%SVC_MSG_MISSION_INVITED")):
+		picker.clear_pick()
 		await _open_contract(contract, mission_id)
 
 

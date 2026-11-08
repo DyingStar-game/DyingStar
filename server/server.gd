@@ -778,6 +778,7 @@ func _process_impl() -> void:
 		if _perf_report:
 			_perf_cull_usec += Time.get_ticks_usec() - _tq
 			_perf_sweeps += 1
+		ScreenLock.release_away(get_tree())  # screens whose user walked away are free again
 
 
 ## [Perf/nodes]: how many nodes process / physics-process, by script (or class when scriptless),
@@ -927,9 +928,11 @@ func _refresh_active_body_pins() -> void:
 		if planet.planet_terrain == null:
 			continue
 		var keys := PackedStringArray()
+		var ranks := PackedInt32Array()
 		for k in pins_by_planet[puuid].keys():
 			keys.append(k as String)
-		planet.planet_terrain.set_pinned_chunks(keys)
+			ranks.append(pins_by_planet[puuid][k])
+		planet.planet_terrain.set_pinned_chunks(keys, ranks)
 	if _perf_report:
 		_perf_pins_apply_usec += Time.get_ticks_usec() - _tpa
 
@@ -1348,14 +1351,16 @@ func _pin_pos_to_planet_chunk(best_planet: Planet, body_pos: Vector3, pins_by_pl
 	var nside: int = pd.collision_detail_nside()
 	var ipix: int = HEALPix.vec2pix_nest(nside, dir)
 	var planet_pins: Dictionary = pins_by_planet[best_uuid]
-	for key in _pin_keys_for_tile(nside, ipix, nside > pd.export_nside):
-		planet_pins[key] = true
+	var keys := _pin_keys_for_tile(nside, ipix, nside > pd.export_nside)
+	for rank in keys.size():
+		if int(planet_pins.get(keys[rank], rank)) >= rank:
+			planet_pins[keys[rank]] = rank
 
 
 ## The chunk keys pinned by a body standing on HEALPix tile (nside, ipix): the tile itself, plus 2
 ## neighbour rings at the fine collision nside (crack planets — each chunk is small, sub-km, so the
 ## rings give a walkable margin that streams as the body moves; a coarse export chunk is ~100 km and
-## covers the body on its own). The ring is a pure function of the tile, so it is CACHED: the BFS
+## covers the body on its own), nearest first. The ring is a pure function of the tile, so it is CACHED: the BFS
 ## costs ~9 GDScript HEALPix neighbour lookups (~0.6 ms), and it used to run for each of 48 players
 ## on every sweep — 28 ms per sweep, a quarter of the server's CPU, for tiles that never change.
 var _pin_ring_cache: Dictionary = {}
@@ -2647,6 +2652,9 @@ var _stream_dormant_ms: int = int(SettingsManager._server_ini_number("streaming"
 var _stream_budget_usec: int = int(SettingsManager._server_ini_number("streaming", "materialize_budget_ms", 4.0) * 1000.0)
 ## uuids waiting for a node, in creation order; _stream_queued is the same set for lookups.
 var _stream_queue: Array = []
+## How many villages are spawning their layout: nothing is built from the queue until they are done
+## (PoiVillages._hold_stream).
+var stream_holds: int = 0
 var _stream_queued: Dictionary = {}
 var _stream_sort_dirty: bool = false
 var _stream_sort_last_ms: int = 0
@@ -2860,6 +2868,9 @@ static func _stream_vec(v: Variant) -> Vector3:
 func _stream_adopt_waiting(uuid: String) -> void:
 	for child in prop_registry.take_waiting(uuid):
 		_stream_place(child)
+		# A village that came before its planet: left out here, it had neither ground nor fences on this
+		# server until it woke, and how many depended on the order of the messages (15 to 118 of 118).
+		_stream_register_poi_zone(child)
 		var ce: Dictionary = prop_registry.get_entry(child)
 		if not ce.is_empty() and _stream_should_live(ce):
 			_stream_enqueue(child)
@@ -3091,7 +3102,7 @@ func _stream_connect_planet(planet: Planet) -> void:
 
 ## Per frame: build queued nodes within the budget.
 func _stream_drain() -> void:
-	if _stream_queue.is_empty():
+	if _stream_queue.is_empty() or stream_holds > 0:
 		return
 	var t0: int = Time.get_ticks_usec()
 	if _stream_sort_dirty and _stream_queue.size() > 1 \

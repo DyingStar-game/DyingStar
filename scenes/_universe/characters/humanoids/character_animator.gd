@@ -189,6 +189,10 @@ var _float_tilt: float = 0.0  # radians, blended toward float_pitch_deg while fl
 var _head_cam := HeadCam.new()  # first-person camera placement from the head bone (no bob), see HeadCam
 var _head_bone: int = -1
 var _neck_bone: int = -1
+## The head's pose as the animation left it, and as we last wrote it with the look on top (see the
+## head look in _process): a clip that stops writing the head is told by our own write still there.
+var _head_animated: Quaternion = Quaternion.IDENTITY
+var _head_written: Quaternion = Quaternion(Vector3.UP, 1.0e-3)  # never a pose at first
 var _current: StringName = &""
 var _idle: StringName = &""  # resolved idle clip (the set's idle, or the first clip if names don't match)
 var _jump_phase: JumpPhase = JumpPhase.GROUND
@@ -472,9 +476,16 @@ func _process(delta: float) -> void:
 		var pitch: float = clampf(_player.camera_pivot.rotation.x * head_look_gain, -limit, limit)
 		var yaw: float = clampf(_player.camera_pivot.rotation.y * head_look_yaw_gain, -limit, limit)
 		var animated: Quaternion = _skeleton.get_bone_pose_rotation(_head_bone)
+		# A clip held on its last frame (lying in bed) no longer writes the head: what is there is our own
+		# last write, and the look added on it again turned the head round and round (playtest
+		# 2026-11-07). Then the clip's pose is the one kept from when it last wrote.
+		if animated.is_equal_approx(_head_written):
+			animated = _head_animated
+		_head_animated = animated
 		var look_q: Quaternion = Quaternion(head_look_yaw_axis.normalized(), yaw) \
 				* Quaternion(head_look_axis.normalized(), pitch)
-		_skeleton.set_bone_pose_rotation(_head_bone, animated * look_q)
+		_head_written = animated * look_q
+		_skeleton.set_bone_pose_rotation(_head_bone, _head_written)
 	if _puppet != null and _player.floating and _player.datapad_raised and _float_tilt != 0.0:
 		# The wrist comes up: straight at once, before the arm takes its pose before the eye. Eased, the
 		# screen swung round the camera that was already turning to it, and the view flipped.

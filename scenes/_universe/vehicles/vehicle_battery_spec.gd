@@ -17,10 +17,13 @@ extends VehicleComponentSpec
 @export var max_current_a: float = 1000.0
 ## Nominal voltage (V): the T1 motor's 100 kW at its 200 A nominal current.
 @export var nominal_voltage_v: float = 500.0
-## Energy drawn per N·m of torque the motors are asked for, per second (J / (N·m·s)). The battery
-## follows the torque REQUESTED, not the speed: a slope, a load or a bad road ask for more torque
-## for the same distance. 127 is the design's starting value, to be validated in game.
-@export var discharge_j_per_nm_s: float = 127.0
+## Share of the electric power that reaches the wheels (0..1): the work done on the road costs
+## 1 / efficiency of it. A heavy load, a slope, a launch ask for more work, so more energy.
+@export_range(0.1, 1.0, 0.01) var motor_efficiency: float = 0.9
+## What a motor straining costs on top of its work, per N·m of torque asked, per second
+## (J / (N·m·s)): its windings heat even when the wheels barely turn (a truck stuck against a
+## slope still empties its battery). A tenth of the 127 the first model charged for the whole draw.
+@export var loss_j_per_nm_s: float = 12.7
 ## Below this charge (0..1) the battery charges slower (the 0-20 % band of the sheet).
 @export_range(0.0, 1.0, 0.01) var slow_low_fraction: float = 0.2
 ## Above this charge (0..1) the battery charges slower (the 80-100 % band of the sheet).
@@ -52,6 +55,8 @@ func full_charge_time_s() -> float:
 	return linear_s * ((1.0 - slow_share) + slow_share * slow_factor)
 
 
-## Power drawn (W) for [param torque_nm] of torque requested from the motors.
-func draw_w(torque_nm: float) -> float:
-	return discharge_j_per_nm_s * maxf(torque_nm, 0.0)
+## Power drawn (W) to put [param wheel_power_w] on the road (driving force x speed; 0 or less when
+## coasting or pushing against the motion -- no regeneration) while the motors are asked for
+## [param torque_nm].
+func draw_w(wheel_power_w: float, torque_nm: float) -> float:
+	return maxf(wheel_power_w, 0.0) / motor_efficiency + loss_j_per_nm_s * maxf(torque_nm, 0.0)

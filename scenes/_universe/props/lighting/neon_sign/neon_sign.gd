@@ -12,8 +12,8 @@ extends Node3D
 ## leaves it alone and it never takes a place in the shadow atlas.
 ##
 ## The tube and the light are INTERNAL children built here: they are never saved into the scene that
-## places the sign, so the editor preview leaves no generated mesh behind, and two signs never share
-## one text. Drop a NeonSign node on a facade; its +Z is the side the text is read from.
+## places the sign, so the editor preview leaves no generated mesh behind. Signs that read the same share
+## one mesh (shared_mesh). Drop a NeonSign node on a facade; its +Z is the side the text is read from.
 
 ## Translation key of the text (localisation.csv), e.g. %%SIGN_GARAGE. A plain word is shown as is.
 ## No default: Godot does not save a value equal to the default, so a scene would silently hold none.
@@ -101,6 +101,11 @@ const FONT_SIZE := 64
 ## Height of a capital letter as a fraction of the font size (Xolonium's cap height).
 const CAP_HEIGHT := 0.72
 
+## text|font|pixel size|depth -> the TextMesh that draws it, for the session. Tracing a text's letters is
+## ~25 ms, and it was most of what a building cost to arrive: a city's ~100 signs, one a frame or more,
+## were the 75 ms frames of its arrival (2026-11-06). Warmup traces them at the menu.
+static var _meshes: Dictionary = {}
+
 ## Whether the sign is switched on. A sign stays lit unless a Photocell switches it (set_lit).
 var lit: bool = true
 
@@ -117,7 +122,6 @@ func _ready() -> void:
 		return
 	_tube = MeshInstance3D.new()
 	_tube.name = "Tube"
-	_tube.mesh = TextMesh.new()
 	_tube.material_override = StandardMaterial3D.new()
 	_tube.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tube, false, INTERNAL_MODE_BACK)
@@ -188,6 +192,32 @@ func width_of(shown: String, height: float) -> float:
 	return f.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x * height / (FONT_SIZE * CAP_HEIGHT)
 
 
+## What the mesh of this sign depends on: what [method shared_mesh] takes.
+func mesh_params() -> Dictionary:
+	var shown := shown_text()
+	return {"text": shown, "font": font, "pixel_size": drawn_letter_height(shown) / (FONT_SIZE * CAP_HEIGHT),
+			"depth": depth}
+
+
+## The mesh of the signs reading [param params] ([method mesh_params]), its letters traced the first time.
+static func shared_mesh(params: Dictionary) -> TextMesh:
+	var font_of: Font = params["font"]
+	var key := "%s|%s|%.6f|%.5f" % [params["text"], font_of.resource_path if font_of != null else "",
+			params["pixel_size"], params["depth"]]
+	var known: TextMesh = _meshes.get(key)
+	if known != null:
+		return known
+	var mesh := TextMesh.new()
+	mesh.text = params["text"]
+	mesh.font = font_of
+	mesh.font_size = FONT_SIZE
+	mesh.pixel_size = params["pixel_size"]
+	mesh.depth = params["depth"]
+	mesh.get_aabb()  # traced now, not at its first draw
+	_meshes[key] = mesh
+	return mesh
+
+
 ## The colour of the tube and of its light: the subsidiary's when [member branded], else [member color].
 func tube_colour() -> Color:
 	return AresBrand.colour(brand) if branded else color
@@ -196,12 +226,7 @@ func tube_colour() -> Color:
 func _apply() -> void:
 	if not is_node_ready() or _tube == null:
 		return
-	var mesh := _tube.mesh as TextMesh
-	mesh.text = shown_text()
-	mesh.font = font
-	mesh.font_size = FONT_SIZE
-	mesh.pixel_size = drawn_letter_height(mesh.text) / (FONT_SIZE * CAP_HEIGHT)
-	mesh.depth = depth
+	_tube.mesh = shared_mesh(mesh_params())
 	var tube := _tube.material_override as StandardMaterial3D
 	# Switched off (by day), the tube keeps its colour: painted glass, without glow or light. Darkened, it
 	# read as a black word on the facade.

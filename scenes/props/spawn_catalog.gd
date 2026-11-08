@@ -19,6 +19,7 @@ extends RefCounted
 ##   origin_height— how high the prop's ORIGIN sits above the ground, in metres (roughly half its
 ##                  height for a body centred on its origin, 0 for a building whose origin is at its
 ##                  base). A dynamic body only needs to be about right: it settles by itself.
+##   crate        — optional, a hauling crate spawned FULL: "crushed" or "ingot" (see test_crate).
 const ENTRIES := {
 	"rock": {
 		"label": "S", "scene": "res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn",
@@ -57,10 +58,18 @@ const ENTRIES := {
 		"type": "box", "distance": 3.0, "origin_height": 0.8,
 	},
 	"hauling_box": {
-		# The crate a mining depot packs its ore into (see mining_depot.gd). Replicates as the
+		# The crate the ore machines pack into (see ore_processor.gd). Replicates as the
 		# "crate_container" type: that is the def whose channels carry `content` (the ore volume).
 		"label": "%%SPAWN_HAULING", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
 		"type": "crate_container", "distance": 2.0, "origin_height": 0.3,
+	},
+	"crate_crushed": {
+		"label": "%%SPAWN_CRATE_CRUSHED", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
+		"type": "crate_container", "distance": 2.0, "origin_height": 0.3, "crate": CrateContent.KIND_CRUSHED,
+	},
+	"crate_ingot": {
+		"label": "%%SPAWN_CRATE_INGOT", "scene": "res://scenes/_universe/props/containers/hauling_box.tscn",
+		"type": "crate_container", "distance": 2.0, "origin_height": 0.3, "crate": CrateContent.KIND_INGOT,
 	},
 	"engine_t1": {
 		"label": "%%SPAWN_ENGINE_T1", "scene": "res://scenes/_universe/props/vehicles/engine_t1.tscn",
@@ -69,6 +78,11 @@ const ENTRIES := {
 	"battery_t1": {
 		"label": "%%SPAWN_BATTERY_T1", "scene": "res://scenes/_universe/props/vehicles/battery_t1.tscn",
 		"type": "vehicle_component", "distance": 2.0, "origin_height": 0.3,
+	},
+	"mining_tool": {
+		# The perforator the cargo depot's ARES Mining machine hands out, without the trip to fetch it.
+		"label": "%%SPAWN_MINING_TOOL", "scene": "res://scenes/_universe/props/tools/mining_tool_prop.tscn",
+		"type": "tool", "distance": 1.5, "origin_height": 0.4,
 	},
 	"truck": {
 		"label": "%%SPAWN_TRUCK", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
@@ -80,11 +94,11 @@ const ENTRIES := {
 ## Only KEYS live here — the labels come from ENTRIES, so there is nothing to keep in sync.
 const WHEEL := [
 	{"text": "%%SPAWN_ROCK", "keys": ["rock", "rock_medium", "rock_large"]},
-	{"text": "%%SPAWN_CRATE", "keys": ["box", "hauling_box", "crate_container", "pallet_plate",
-			"pallet_crate", "pallet_benne", "pallet_liquid"]},
-	{"key": "engine_t1"},
-	{"key": "battery_t1"},
+	{"text": "%%SPAWN_CRATE", "keys": ["box", "hauling_box", "crate_crushed", "crate_ingot", "crate_container",
+			"pallet_plate", "pallet_crate", "pallet_benne", "pallet_liquid"]},
+	{"text": "%%SPAWN_COMPONENTS_T1", "keys": ["engine_t1", "battery_t1"]},
 	{"key": "truck"},
+	{"key": "mining_tool"},
 ]
 
 ## Admin entries of the wheel, shown only to a player whose token holds an admin role
@@ -94,6 +108,26 @@ const WHEEL := [
 const ADMIN_ENTRIES := {
 	"admin_fill_shelves": {"label": "%%SPAWN_FILL_SHELVES", "action": "admin_fill_shelves"},
 }
+
+## Test crates of the ore chain: one crate of TEST_MINERAL at TEST_PURITY, as the Crusher packs it.
+const TEST_MINERAL := "gold"
+const TEST_PURITY := 0.3
+## Host rock density of the test crate's barren part (kg/m3, granite).
+const TEST_GANGUE_KG_M3 := 2700.0
+
+
+## The `content` of a test crate for [param entry] ({} when it is no crate), mined by [param miner_id]
+## whose name is [param miner_name].
+static func test_crate(entry: Dictionary, miner_id: String, miner_name: String = "") -> Dictionary:
+	var kind := str(entry.get("crate", ""))
+	if kind == "":
+		return {}
+	var crate_m3 := CrateContent.crate_volume()
+	var gangue_m3 := crate_m3 * (1.0 - TEST_PURITY)
+	var crushed := CrateContent.crushed(TEST_MINERAL, crate_m3 * TEST_PURITY, gangue_m3,
+		gangue_m3 * TEST_GANGUE_KG_M3, miner_id, miner_name)
+	return CrateContent.refined(crushed) if kind == CrateContent.KIND_INGOT else crushed
+
 
 ## The entry for a wheel key, or an empty Dictionary when the key is unknown (the server treats that
 ## as a refusal — see PlayerServer's "spawn_prop").
