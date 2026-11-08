@@ -619,11 +619,13 @@ static func zone_line(zone: Variant) -> String:
 		"system":
 			return text("%%SVC_FMT_ZONE_SYSTEM") % dash(z.get("system"))
 		"poi":
+			# The mission service names the POI when it can ("M0001"); its id otherwise.
+			var poi: String = dash(z.get("poiName")) if str(z.get("poiName", "")) != "" else dash(z.get("poiId"))
 			var radius: Variant = z.get("radiusM")
 			if radius == null:
 				# No radius: the zone is the POI's whole scene subtree, which is the wider thing.
-				return text("%%SVC_FMT_ZONE_POI") % dash(z.get("poiId"))
-			return text("%%SVC_FMT_ZONE_POI_RADIUS") % [dash(z.get("poiId")), num(radius)]
+				return text("%%SVC_FMT_ZONE_POI") % poi
+			return text("%%SVC_FMT_ZONE_POI_RADIUS") % [poi, num(radius)]
 		"scene":
 			return prefix + (text("%%SVC_FMT_ZONE_SCENE") % dash(z.get("scene")))
 		"area":
