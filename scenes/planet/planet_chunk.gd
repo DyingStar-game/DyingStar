@@ -1350,6 +1350,12 @@ static func generate_mesh(
 		# Invariants de boucle : pixel_side_length ne dépend que de hp_nside, et l'était
 		# recalculé à chaque sommet.
 		var _eps_rad := HEALPix.pixel_side_length(hp_nside, 1.0) * _eps_frac
+		# Wider probes (data.normal_probe_m) where no crack is near: they light the ground of the 198 m height
+		# grid smoothly instead of facet by facet. Near a crack they would reach over the rim and bend the
+		# plateau's edge down like a slope (test_crack_walls), so a vertex within a crack's half width plus
+		# three probe lengths keeps the narrow ones.
+		var _eps_wide := maxf(_eps_rad, data.normal_probe_m / data.radius)
+		var _wide_from_m: float = data.crack_width_m * 0.5 + 3.0 * data.normal_probe_m
 		# Un sommet dont le bord de crack le plus proche est au-delà de cette distance a
 		# ses quatre points de gradient hors crack : ils ne sont qu'à _eps_rad de lui, et la
 		# distance au bord varie d'au plus ~1,8 m par mètre (Voronoï 1-lipschitzien, plus
@@ -1387,7 +1393,7 @@ static func generate_mesh(
 				_frame.native.SetNormalGrade(_rw_band, _rw_args[0], float(_rw_native_ctx["m_per_deg"]), _rw_args[1],
 						_rw_args[2], _rw_args[3])
 			normals = _frame.native.Normals(_vdirs, _crack_edge, _snapped, res, _export_ipix, _sample_nside,
-					_crack_vtx_spacing, _eps_rad, _crack_skip_m, data.corundum_default_biome)
+					_crack_vtx_spacing, _eps_rad, _crack_skip_m, data.corundum_default_biome, _eps_wide, _wide_from_m)
 			_n_served = _frame.native.NormalsServed()
 		for yi in res + 1:
 			for xi in res + 1:
@@ -1400,10 +1406,11 @@ static func generate_mesh(
 				var arbitrary := Vector3.UP if absf(up.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
 				var tan_u := up.cross(arbitrary).normalized()
 				var tan_v := up.cross(tan_u).normalized()
-				var dir_l := (dir_c - tan_u * _eps_rad).normalized()
-				var dir_r := (dir_c + tan_u * _eps_rad).normalized()
-				var dir_b := (dir_c - tan_v * _eps_rad).normalized()
-				var dir_t := (dir_c + tan_v * _eps_rad).normalized()
+				var _eps := _eps_rad if data.corundum_default_biome and _crack_edge[idx] < _wide_from_m else _eps_wide
+				var dir_l := (dir_c - tan_u * _eps).normalized()
+				var dir_r := (dir_c + tan_u * _eps).normalized()
+				var dir_b := (dir_c - tan_v * _eps).normalized()
+				var dir_t := (dir_c + tan_v * _eps).normalized()
 				# Edge vertices: use sample_height_boundary so both sides of
 				# a chunk seam resolve to the same canonical export tile →
 				# identical normals.  Interior vertices can use the fast path.
@@ -2054,6 +2061,11 @@ static func generate_mesh(
 		if not _rock_any:
 			rock_custom = PackedFloat32Array()
 
+	# --- LOD morph: where each vertex stands on the next coarser grid --------
+	var lod_morph_offsets := PackedByteArray()
+	if data.lod_morph and hp_mode:
+		lod_morph_offsets = pack_half4(lod_morph_offsets_for(vertices, res))
+
 	# --- build mesh ---------------------------------------------------------
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -2068,6 +2080,9 @@ static func generate_mesh(
 
 	var mesh := ArrayMesh.new()
 	var _c0_fmt := Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	if not lod_morph_offsets.is_empty():
+		arrays[Mesh.ARRAY_CUSTOM2] = lod_morph_offsets
+		_c0_fmt |= Mesh.ARRAY_CUSTOM_RGBA_HALF << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT
 	if not rock_custom.is_empty():
 		arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
 		_c0_fmt |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
@@ -2111,6 +2126,8 @@ static func generate_mesh(
 		_so_arrays[Mesh.ARRAY_CUSTOM0] = skirt_offsets
 		if not rock_custom.is_empty():
 			_so_arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
+		if not lod_morph_offsets.is_empty():
+			_so_arrays[Mesh.ARRAY_CUSTOM2] = lod_morph_offsets
 		_so_arrays[Mesh.ARRAY_INDEX]   = _so_idx
 		var _so_surface := mesh.get_surface_count()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _so_arrays,
@@ -4056,6 +4073,60 @@ static func road_ground_tint(data: PlanetData, d: Vector3, zone: Dictionary,
 ## Use this to ensure mi.position matches the cc_f32 used internally
 ## by generate_mesh, eliminating the float64↔float32 chunk-center
 ## mismatch that causes sub-metre vertex seams between adjacent chunks.
+## For each vertex of a (res + 1)² grid: xyz the step from where it stands to where the next coarser grid
+## draws that point, w the STITCH_* bits of the edges it lies on; empty if the grid is not one. The coarser chunk
+## keeps every second row and column, so the even vertices are already on it: an odd one lies on the coarse edge
+## between its two even neighbours, and a cell centre on the coarse quad's diagonal, from the corner at +x -y to
+## the one at -x +y (the split of the index loop above; a carved quad's other split is not followed). A border
+## vertex moves only when the terrain lets that edge move (its neighbour is not settled there, see
+## PlanetTerrain._lod_morph_edges): w says which. Vertices past the grid (the skirts) stay. The parent may also
+## read another tile level: that part of the jump is not covered.
+static func lod_morph_offsets_for(vertices: PackedVector3Array, res: int) -> PackedFloat32Array:
+	var stride := res + 1
+	if res < 2 or res % 2 != 0 or vertices.size() < stride * stride:
+		return PackedFloat32Array()
+	var out := PackedFloat32Array()
+	out.resize(vertices.size() * 4)
+	for y in stride:
+		for x in stride:
+			var edges := 0
+			if x == 0:
+				edges |= STITCH_LEFT
+			elif x == res:
+				edges |= STITCH_RIGHT
+			if y == 0:
+				edges |= STITCH_BOTTOM
+			elif y == res:
+				edges |= STITCH_TOP
+			var i := (y * stride + x) * 4
+			out[i + 3] = edges
+			if x % 2 == 0 and y % 2 == 0:
+				continue
+			var coarse: Vector3
+			if y % 2 == 0:
+				coarse = (vertices[y * stride + x - 1] + vertices[y * stride + x + 1]) * 0.5
+			elif x % 2 == 0:
+				coarse = (vertices[(y - 1) * stride + x] + vertices[(y + 1) * stride + x]) * 0.5
+			else:
+				coarse = (vertices[(y - 1) * stride + x + 1] + vertices[(y + 1) * stride + x - 1]) * 0.5
+			var step := coarse - vertices[y * stride + x]
+			out[i] = step.x
+			out[i + 1] = step.y
+			out[i + 2] = step.z
+	return out
+
+
+## [param values] as half floats, the layout of a CUSTOM*_RGBA_HALF mesh array. Enough for the morph offsets: a
+## step of a few hundred metres keeps ~0.25 m, far below a pixel where such steps are drawn, and the edge bits
+## are small integers, exact.
+static func pack_half4(values: PackedFloat32Array) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(values.size() * 2)
+	for i in values.size():
+		out.encode_half(i * 2, values[i])
+	return out
+
+
 static func snap_to_f32(v: Vector3) -> Vector3:
 	var buf := PackedFloat32Array([v.x, v.y, v.z])
 	return Vector3(buf[0], buf[1], buf[2])

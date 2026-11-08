@@ -486,6 +486,7 @@ vec3 plain_plane(vec2 p, float s, out vec2 nxy, out float rough) {
 */
 
 void vertex() {
+	VERTEX += lod_morph_step(CUSTOM2);  // LOD morph, see terrain_far_light
 	// CUSTOM0 is zero on terrain vertices and holds the inverse skirt drop on
 	// skirt vertices, so the texture stays continuous down the skirts.
 	vec3 surface = VERTEX + CUSTOM0.xyz;

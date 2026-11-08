@@ -15,6 +15,7 @@ varying vec3 far_radial;
 varying float far_cam_dist;
 
 void vertex() {
+	VERTEX += lod_morph_step(CUSTOM2);  // LOD morph, see terrain_far_light
 	far_radial = far_light_radial(MODEL_MATRIX, VERTEX + CUSTOM0.xyz);
 	far_cam_dist = far_light_cam_dist(MODELVIEW_MATRIX, VERTEX + CUSTOM0.xyz);
 }

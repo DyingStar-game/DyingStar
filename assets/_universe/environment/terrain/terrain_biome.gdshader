@@ -171,6 +171,7 @@ vec4 detail_octave_sample(vec3 wp, float s, float layer, vec3 w, vec3 sgn, float
 }
 
 void vertex() {
+	VERTEX += lod_morph_step(CUSTOM2);  // LOD morph, see terrain_far_light
 	// Recover the surface position for triplanar UV.
 	// For terrain vertices CUSTOM0 is zero so VERTEX + CUSTOM0 == VERTEX.
 	// For skirt vertices VERTEX is at the dropped position and CUSTOM0

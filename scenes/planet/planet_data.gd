@@ -5460,6 +5460,19 @@ func get_lod_level(surface_distance: float) -> int:
 const FAR_QUAD_MAX_M := 50000.0
 ## And the most quads a far chunk side gets (a gas giant's n1 chunk would otherwise ask for 1 400).
 const FAR_RES_MAX := 128
+## The fewest quads per side of a chunk past LOD 0, set by a client's PlanetTerrain (0: the tiers as they
+## are, as the server's collision wants them). A chunk's size already follows its distance, so one grid for
+## every tier keeps a quad the same width on screen. At 8 quads, 50-200 km away, the horizon got one height
+## every 3 km, and grids that differ between neighbours cannot be stitched.
+var far_tier_res: int = 0
+## The least distance (m) a normal's height probes stand off the vertex, set by a client's PlanetTerrain (0: a
+## quarter cell of the chunk's grid, however fine). The heights are bilinear on a 198 m grid: probes metres
+## apart read one facet or the next, which lit every ridge as a saw of 200 m teeth (2026-11-05). At 40 m the
+## teeth go and the ridges stay; from 70 m the ground blurs and the cracks get halos.
+var normal_probe_m: float = 0.0
+## Build each visual chunk with its LOD morph offsets (PlanetChunk.lod_morph_offsets_for), set by a client's
+## PlanetTerrain: a finer chunk then appears on its parent's shape and eases into its own.
+var lod_morph: bool = false
 
 
 ## Quads per side of a chunk at [param lod], whose HEALPix level is [param nside] (0 = unknown).
@@ -5470,6 +5483,12 @@ const FAR_RES_MAX := 128
 ## in every quad (2026-10-06); a fixed 16 still left the 100-200 km quads of the n2-n4 chunks seen from
 ## 6 000 km. Visual chunks only: the server builds collision for LOD 0 and 1.
 func get_resolution_for_lod(lod: int, nside: int = 0) -> int:
+	if far_tier_res > 0 and lod > 0:
+		return maxi(far_tier_res, _tier_resolution(lod, nside))
+	return _tier_resolution(lod, nside)
+
+
+func _tier_resolution(lod: int, nside: int) -> int:
 	match lod:
 		0: return chunk_resolution        # e.g. 32
 		1: return maxi(chunk_resolution / 2, 8)  # 16

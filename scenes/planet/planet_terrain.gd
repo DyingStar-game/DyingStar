@@ -45,9 +45,10 @@ const HORIZON_MARGIN_RAD := 0.02
 ## Seconds between editor camera tracking updates.
 ## Maximum concurrent recipe worker tasks (avoid flooding the thread pool).
 const MAX_CONCURRENT_RECIPES := 8
-## Maximum chunks assembled (MeshInstance3D + vegetation) per physics frame.
-## 4 matches the number of HEALPix children so a full split assembles in one frame.
-const MAX_ASSEMBLE_PER_FRAME := 8
+## Maximum chunks assembled (MeshInstance3D + vegetation) per frame; ASSEMBLE_BUDGET_MS stops it first. A chunk
+## read back assembles in ~0.1 ms, and 8 left 88 of them waiting all along a return to known ground (300 chunks/s
+## at the ~37 fps of that moment, 2026-11-05).
+const MAX_ASSEMBLE_PER_FRAME := 24
 ## Wall-clock budget of one assembly batch. A count alone let a warm-cache
 ## world entry sit at 5-20 fps for 25 s: eight chunks a frame at 5-20 ms each
 ## (`terrain_assemble=35-170ms` on every hitch line of the 2026-09-16 log), a
@@ -64,24 +65,42 @@ var _server_assemble_end_us: int = 0
 var _server_assemble_spent: bool = false
 ## Ring-buffer size for camera history (look-ahead prefetch).
 const CAM_HISTORY_SIZE := 10
+## Least distance (m) of a normal's height probes on a client (PlanetData.normal_probe_m).
+const NORMAL_PROBE_M := 40.0
+## How long a finer chunk takes to ease from its parent's shape into its own (ms).
+const LOD_MORPH_MS := 600
+## A chunk's four sides as HEALPix.get_neighbors_nest names them, and the PlanetChunk.STITCH_* bit of each.
+const EDGE_SIDES := ["W", "E", "S", "N"]
+const EDGE_BITS := [PlanetChunk.STITCH_LEFT, PlanetChunk.STITCH_RIGHT, PlanetChunk.STITCH_BOTTOM,
+		PlanetChunk.STITCH_TOP]
+## Closer than this (m), a chunk appears on its own shape at once: around the player, trees, rocks and roads are
+## laid on that shape and would float while it eases. Past it the largest jumps were LOD 0 chunks too (83 of the
+## 95 over 3.9 px, about 11 km away on a fast approach, 2026-11-08), so the tier is not the test.
+const LOD_MORPH_NEAR_M := 1500.0
 ## Fast flight: [speed m/s, terrain mult]. From each speed on, the LOD distances beyond
 ## VIEW_DISTANCE_NEAR_M are scaled by that mult, as Graphics > Terrain distance does: 0.5 is
 ## one quadtree level coarser, 0.25 two. A fine ring the camera crosses in a few seconds
-## is not worth building: at full detail the mesh tasks fell behind and the ground came in
-## late, then all at once. Trucks (~30 m/s) never reach the first step.
-const SPEED_LOD_STEPS := [[150.0, 0.5], [500.0, 0.25]]
+## is not worth building: at full detail the mesh tasks fall behind. They hold up to about 1 000 m/s
+## (2026-11-05, i7-13700, unbuilt ground); from 150 m/s as before, the ground was half as fine in ordinary
+## flight and took 8 s to come back after stopping. Trucks (~30 m/s) never reach the first step.
+const SPEED_LOD_STEPS := [[1000.0, 0.5], [3000.0, 0.25]]
 ## A step already taken is left only below this share of its speed...
 const SPEED_LOD_EXIT := 0.8
 ## ...and only once the speed has stayed there this long (ms): a ship easing off for a moment
 ## does not rebuild the fine ring just to drop it again.
 const SPEED_LOD_HOLD_MS := 2000
-## The LOD update's steps under a time budget each (ms), so a leaf set that changes wholesale — the
+## The LOD update's steps run under a time budget each (ms), so a leaf set that changes wholesale — the
 ## fast-flight scale switching, coming back to full detail after it — spreads over a few updates
-## instead of one long frame: 30-60 ms frames for ~3 s on take-off, 105-135 ms on stopping
-## (2026-10-02). What a step leaves is still there at the next update (4 Hz) and taken then.
-## Steps 1 and 3 together: handing chunks to the pipeline, best first (~860 disk-cache reads queued
-## in one update on stopping).
-const HANDOVER_BUDGET_MS := 6.0
+## instead of one long frame: 30-60 ms frames for ~3 s on take-off, 105-135 ms on stopping (2026-10-02).
+## Handing the chunks to the pipeline (_admit_pending): most time (ms) a frame spends on it. Done at each
+## 4 Hz update under 6 ms, it admitted ~175 chunks/s (~115 us each), so ground already in the disk cache
+## took 5-6 s to come back after a move, each read then taking only ~60 ms (2026-11-05).
+const ADMIT_BUDGET_MS := 1.5
+## Chunks read or read and waiting for assembly at once, beyond which admission waits: what it admits
+## faster than the assembly takes would only pile up, and go stale there if the camera moves on.
+const ADMIT_MAX_UNASSEMBLED := 96
+## Most time (ms) a frame spends taking chunks off screen once what replaces them is there (_drain_retired).
+const RETIRE_BUDGET_MS := 1.5
 ## Step 2, each phase: examining the chunks no longer desired, then taking them off screen. One not yet
 ## removed only stays on screen one update longer.
 const STALE_BUDGET_MS := 4.0
@@ -192,6 +211,9 @@ var _terrain_mult: float = 1.0
 ## The fast-flight share of the terrain mult (SPEED_LOD_STEPS; 1.0 below the first step and
 ## on the server), and since when a finer one has been due (-1: none).
 var _speed_lod_scale: float = 1.0
+## Where a client keeps its meshes. Read by initialize, before the cache opens: opening it under another key
+## clears the folder.
+var mesh_cache_base: String = ChunkDiskCache.BASE_DIR
 var _speed_lod_finer_since: int = -1
 ## client.ini debug_no_speed_lod, read once: -1 not read yet, 0 on, 1 off.
 var _speed_lod_off: int = -1
@@ -365,6 +387,12 @@ var _assemble_rank_at: Array = [Vector3.INF, Vector3.ZERO]
 ## chunk_key → { info: Dictionary, path: String }. A synchronous read cost
 ## 5-15 ms of main thread a chunk (~140 ms a second in a rebuild wave).
 var _cache_loads: Dictionary = {}
+## Chunk keys the last LOD update found to hand to the pipeline, the best LAST (_admit_pending). Rebuilt
+## by each update, so it never holds more than one update's view of what is wanted.
+var _admit_queue: Array[String] = []
+## Keys of chunks found replaced by an assembly, to take off screen under RETIRE_BUDGET_MS. Waiting for
+## step 2 of the next update (4 Hz, under STALE_BUDGET_MS) kept old and new ground stacked ~2 s longer.
+var _retired: Array[String] = []
 
 ## ── Initial-load tracking ─────────────────────────────────────────
 var _initial_ready_emitted: bool = false
@@ -386,6 +414,11 @@ var _atmosphere_lod: AtmosphereLod = null
 ## ── Look-ahead prefetch ───────────────────────────────────────────
 ## Ring-buffer of recent camera positions (planet-local) for velocity estimation.
 var _cam_history: PackedVector3Array = PackedVector3Array()
+## When each of _cam_history was taken (ms). An update comes at least UPDATE_INTERVAL after the last, later on a
+## slow frame: at 15 images/s a steady 800 m/s read as 1 000, enough to coarsen the ground in mid-approach.
+var _cam_history_ms: PackedInt64Array = PackedInt64Array()
+## Chunks easing from their parent's shape: key -> when they appeared (ms).
+var _morphing: Dictionary = {}
 ## Last known camera position in planet-local space (for distance priority).
 var _last_local_cam: Vector3 = Vector3.ZERO
 ## The leaf set the last traversal + balance produced, and what it was computed for. Both depend only
@@ -541,6 +574,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# height range) before anything reads these values below.
 	if data.chunk_heightmaps_dir != "":
 		data.apply_chunk_manifest()
+	# The visual mesh only: the server's collision keeps the tiers, probes and shape it always had.
+	data.far_tier_res = 0 if server_mode else data.chunk_resolution
+	data.normal_probe_m = 0.0 if server_mode else NORMAL_PROBE_M
+	data.lod_morph = not server_mode
 	if not _pending_village_beds.is_empty():
 		_replay_pending_village_beds.call_deferred()
 
@@ -811,7 +848,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# "_skirt1": a bed's skirts and the road slabs read the plateau again, not
 		# the canyon floor — 180 m invisible walls under a bridge (tarsis_3,
 		# 39.561 W 24.842 N), since v67.
-		var _cache_base := ChunkDiskCache.BASE_DIR
+		var _cache_base := mesh_cache_base
 		if server_mode:
 			_cache_base = ChunkDiskCache.SERVER_COLLISION_BASE_DIR
 			_cache_version += "_colrel1_colbf2_grid8k_skirt1"
@@ -821,6 +858,12 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			# collision to re-bake; "_rail1" = the rail modules built with the mesh and saved on it
 			# (RailwayTrack.RAILS_META).
 			_cache_version += "_far50km_rail1"
+			if data.far_tier_res > 0:
+				_cache_version += "_dense%d" % data.far_tier_res
+			if data.normal_probe_m > 0.0:
+				_cache_version += "_np%d" % int(data.normal_probe_m)
+			if data.lod_morph:
+				_cache_version += "_gm3_rim1"
 		# An exported build starts from an empty cache: a change no field above captures (a road
 		# re-export, a forgotten vNN bump) cannot reach players through a mesh baked by the build
 		# before. Not in relief_signature: the persisted pad altitudes survive a deploy. Empty in
@@ -1942,7 +1985,7 @@ func refresh_stargrot_sites(placements: Array[CavePlacement]) -> void:
 	planet_data.stargrot_cut_sites = []
 	if _chunk_cache != null:
 		var version := _chunk_cache.version.trim_suffix(previous_signature) + planet_data.stargrot_signature()
-		var base := ChunkDiskCache.SERVER_COLLISION_BASE_DIR if is_server else ChunkDiskCache.BASE_DIR
+		var base := ChunkDiskCache.SERVER_COLLISION_BASE_DIR if is_server else mesh_cache_base
 		_chunk_cache = ChunkDiskCache.new(planet_data.planet_name, version, base)
 	if not placements.is_empty():
 		stargrot_registry = CavePlanetRegistry.attach(self)
@@ -2096,14 +2139,22 @@ func _physics_process(_delta: float) -> void:
 	_process_assemble_queue()
 	_perf_end("terrain_assemble", _tk)
 	_tk = _perf_begin()
+	_drain_retired()
+	_advance_morphs()
+	_admit_pending()
+	_perf_end("terrain_admit", _tk)
+	_tk = _perf_begin()
 	_drain_bridge_spawn_queue()
 	_perf_end("bridge_queue", _tk)
 
 	# ── Emit initial_chunks_ready once the pipeline drains ───────────
+	# Every wanted chunk must be on screen too: the queues run dry between two handovers, which said
+	# "ready" with 181 chunks of 1550 on screen (cache_probe, 2026-11-05).
 	if not _initial_ready_emitted and not _active_chunks.is_empty() \
 			and _recipe_waiters.is_empty() and _mesh_tasks.is_empty() and _cache_loads.is_empty() \
 			and _assemble_queue.is_empty() and _mesh_task_backlog.is_empty() \
-			and _pending_recipes.is_empty():
+			and _pending_recipes.is_empty() and _admit_queue.is_empty() \
+			and _desired_all_active():
 		_initial_ready_emitted = true
 		initial_chunks_ready.emit()
 		print("[PlanetTerrain] initial_chunks_ready emitted (active=%d)" % _active_chunks.size())
@@ -2294,8 +2345,10 @@ func _update_terrain() -> void:
 
 	# Update camera history ring-buffer for look-ahead prefetch.
 	_cam_history.append(local_cam)
+	_cam_history_ms.append(Time.get_ticks_msec())
 	if _cam_history.size() > CAM_HISTORY_SIZE:
 		_cam_history.remove_at(0)
+		_cam_history_ms.remove_at(0)
 	if not is_server:
 		_update_speed_lod()
 
@@ -2369,13 +2422,18 @@ func _update_terrain() -> void:
 	# linearly — 570 keys × a 500-entry backlog at world entry, four times
 	# per second, inside the physics step. Keys this pass queues are added
 	# as it goes, so the snapshot stays exact.
+	_prune_backlog(desired)
 	var pipeline := _pipeline_keys()
+	# Handed over a little every frame (_admit_pending), new chunks and other qualities ranked together.
+	_admit_queue.clear()
 	# Only what is neither on screen nor in flight gets sorted: in steady
 	# state that is a handful of keys, where sorting all ~480 with a distance
 	# lambda cost 4 ms of every update.
 	var _new_keys: Array = []
 	for key in desired:
-		if not _active_chunks.has(key) and not pipeline.has(key):
+		if pipeline.has(key):
+			continue
+		if not _active_chunks.has(key) or _quality_differs(_active_chunks[key], desired[key]):
 			_new_keys.append(key)
 	if _new_keys.size() > 1:
 		# Nearest first, those in view before those behind (build_priority). Worked out once per key:
@@ -2386,14 +2444,8 @@ func _update_terrain() -> void:
 		_new_keys.sort_custom(func(a: String, b: String) -> bool:
 			return prio[a] < prio[b])
 	var _tks := _perf_begin()
-	# Steps 1 and 3 share HANDOVER_BUDGET_MS.
-	var t_handover := Time.get_ticks_usec()
-	for key in _new_keys:
-		# Best first, so what the budget leaves for the next update is the least urgent.
-		if Time.get_ticks_usec() - t_handover >= HANDOVER_BUDGET_MS * 1000.0:
-			break
-		_try_create_or_defer(desired[key].duplicate())  # the pipeline writes into it (_swap)
-		pipeline[key] = true
+	for i in range(_new_keys.size() - 1, -1, -1):
+		_admit_queue.append(_new_keys[i])
 	_perf_end("steps:new", _tks)
 	_tks = _perf_begin()
 
@@ -2453,24 +2505,8 @@ func _update_terrain() -> void:
 		_hide_stale_in_caves(desired, local_cam)
 	_tks = _perf_begin()
 
-	# Step 3 — Re-queue chunks whose LOD quality changed (same key, different lod).
-	for key in desired:
-		if not _active_chunks.has(key) or pipeline.has(key):
-			continue
-		var _act: Dictionary = _active_chunks[key]
-		var _want: Dictionary = desired[key]  # shared with the cache: copied before any write
-		# Swapped, not removed: the old mesh stays on screen until the new quality is assembled.
-		# Removed here, every chunk crossing a quality threshold left a hole for as long as its
-		# rebuild took — ground blinking ahead of anyone moving (2026-10-01). A stitch change
-		# only moves the seam edges: the old mesh's skirt still covers the seam meanwhile.
-		if _act.lod != _want.lod or int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
-			if Time.get_ticks_usec() - t_handover >= HANDOVER_BUDGET_MS * 1000.0:
-				break  # the rest next update: still on screen meanwhile, at their old quality
-			var _swap: Dictionary = _want.duplicate()
-			_swap["_swap"] = true
-			_try_create_or_defer(_swap)
-			pipeline[key] = true
-	_perf_end("steps:requeue", _tks)
+	# Step 3 — a chunk at another quality (same key, other lod or stitch) is in _admit_queue with the new
+	# ones, ranked with them, and swapped: the old mesh stays on screen until the new quality is assembled.
 
 	_perf_end("terrain_steps", _tk)
 
@@ -3695,7 +3731,8 @@ func _update_speed_lod() -> void:
 		_speed_lod_scale = 1.0
 		return
 	var back := mini(n - 1, 4)
-	var speed := _cam_history[n - 1].distance_to(_cam_history[n - 1 - back]) / (back * UPDATE_INTERVAL)
+	var seconds := maxf((_cam_history_ms[n - 1] - _cam_history_ms[n - 1 - back]) / 1000.0, UPDATE_INTERVAL)
+	var speed := _cam_history[n - 1].distance_to(_cam_history[n - 1 - back]) / seconds
 	var want := speed_lod_scale(speed, _speed_lod_scale)
 	if want <= _speed_lod_scale:
 		_speed_lod_scale = want
@@ -3874,7 +3911,7 @@ func _balance_and_stitch(desired: Dictionary, p: LodPass) -> void:
 		var d: Dictionary = desired[key]
 		leaves[(int(d.nside) << 32) | int(d.ipix)] = key
 	var nbs_of: Dictionary = {}
-	var edge_dirs := ["W", "E", "S", "N"]
+	var edge_dirs := EDGE_SIDES
 
 	# ── 2:1 balance ─────────────────────────────────────────────
 	var changed := true
@@ -3916,8 +3953,7 @@ func _balance_and_stitch(desired: Dictionary, p: LodPass) -> void:
 
 	# ── Stitch mask ─────────────────────────────────────────────
 	if not is_server:
-		var edge_bits := [PlanetChunk.STITCH_LEFT, PlanetChunk.STITCH_RIGHT,
-				PlanetChunk.STITCH_BOTTOM, PlanetChunk.STITCH_TOP]
+		var edge_bits := EDGE_BITS
 		for id in leaves:
 			var nside: int = id >> 32
 			if not PlanetChunk.edge_stitch_applies(planet_data, nside):
@@ -3937,10 +3973,7 @@ func _balance_and_stitch(desired: Dictionary, p: LodPass) -> void:
 				var pid := ((nside >> 1) << 32) | (nip >> 2)
 				if not leaves.has(pid):
 					continue
-				# The stitch bakes the parent grid at THIS chunk's resolution: it
-				# only meets a neighbour drawn at that same resolution. A coarser-
-				# quality neighbour (distance LOD) keeps the skirt, as before.
-				if int(desired[leaves[pid]].lod) == int(mine.lod):
+				if _stitch_meets(desired[leaves[pid]], mine):
 					mask |= edge_bits[i]
 			if mask != 0:
 				mine["stitch"] = mask
@@ -4018,6 +4051,13 @@ func _pipeline_tree_index() -> Array:
 	for ek: String in _recipe_waiters:
 		for ck: String in _recipe_waiters[ek]:
 			var ci: Dictionary = _recipe_waiters[ek][ck]
+			_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
+	# Waiting for admission is not "no replacement coming": without these, the chunks that admission
+	# had not reached yet lost the ground they were to replace, and the hole lasted until they had
+	# been read and assembled.
+	for key: String in _admit_queue:
+		var ci: Dictionary = _desired_cache.get(key, {})
+		if not ci.is_empty():
 			_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
 	return [anc, selves]
 
@@ -4248,6 +4288,182 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		_recipe_waiters[export_key] = {}
 	_recipe_waiters[export_key][info.key] = info
 	_submit_recipe_if_needed(export_key, export_ipix, cam_dist_sq)
+
+
+## Does [param active], on screen, differ from [param wanted] in what its mesh is built with?
+static func _quality_differs(active: Dictionary, wanted: Dictionary) -> bool:
+	return int(active.lod) != int(wanted.lod) or int(active.get("stitch", 0)) != int(wanted.get("stitch", 0))
+
+
+## Is every chunk of the last leaf set on screen, at any quality?
+func _desired_all_active() -> bool:
+	if _desired_cache.is_empty():
+		return false
+	for key: String in _desired_cache:
+		if not _active_chunks.has(key):
+			return false
+	return true
+
+
+## Hand the chunks the last LOD update asked for to the pipeline, best first, for at most [param budget_ms]:
+## a frame always hands over at least one, so a long queue does drain, and none while ADMIT_MAX_UNASSEMBLED are
+## between read and assembly. An entry is looked at again here: what it was queued for may have been served
+## since, or no longer be wanted.
+func _admit_pending(budget_ms: float = ADMIT_BUDGET_MS) -> void:
+	if _admit_queue.is_empty():
+		return
+	var budget_us := budget_ms * 1000.0
+	var t0 := Time.get_ticks_usec()
+	var done := 0
+	while not _admit_queue.is_empty():
+		if done > 0 and Time.get_ticks_usec() - t0 >= budget_us:
+			return
+		if _cache_loads.size() + _assemble_queue.size() >= ADMIT_MAX_UNASSEMBLED:
+			return
+		var key: String = _admit_queue.pop_back()
+		var wanted: Dictionary = _desired_cache.get(key, {})
+		if wanted.is_empty() or _cache_loads.has(key) or _mesh_tasks.has(key) or _backlog_keys.has(key):
+			continue
+		var active: Dictionary = _active_chunks.get(key, {})
+		if not active.is_empty() and not _quality_differs(active, wanted):
+			continue
+		var info: Dictionary = wanted.duplicate()  # the pipeline writes into it (_swap)
+		if not active.is_empty():
+			info["_swap"] = true  # the old mesh stays on screen until the new quality is assembled
+		_try_create_or_defer(info)
+		done += 1
+
+
+## [param info] has just been assembled: note what it replaces, for _drain_retired. Below it, every
+## chunk drawn there (it covers their area on its own). Above it, its ancestors: _drain_retired takes one
+## only once finer chunks cover the whole of it. _active_desc_count says at once when there is nothing
+## below, which is every chunk that did not replace finer ones.
+func _note_replaced(info: Dictionary) -> void:
+	if not _desired_cache.has(info.key):
+		return
+	var nside := int(info.nside)
+	var ipix := int(info.ipix)
+	if _active_desc_count.has((nside << 32) | ipix):
+		_note_drawn_below(nside, ipix)
+	while nside > 1:
+		nside >>= 1
+		ipix >>= 2
+		var key := _chunk_key_hp(nside, ipix)
+		if _active_chunks.has(key):
+			_retired.append(key)
+
+
+func _note_drawn_below(nside: int, ipix: int) -> void:
+	var child_nside := nside * 2
+	for child: int in HEALPix.child_pixels(ipix):
+		var key := _chunk_key_hp(child_nside, child)
+		if _active_chunks.has(key):
+			_retired.append(key)
+		if _active_desc_count.has((child_nside << 32) | child):
+			_note_drawn_below(child_nside, child)
+
+
+## Can a chunk noted by _note_replaced go? Not if the last LOD update still wants it; if it is what stands
+## over the area, it must not leave a part of it uncovered: finer chunks all over it, or a wanted coarser
+## one on screen above it.
+func _replaced_now(key: String) -> bool:
+	if not _active_chunks.has(key) or _desired_cache.has(key):
+		return false
+	var nside := _parse_nside_from_key(key)
+	var ipix := _parse_ipix_from_key(key)
+	if nside <= 0 or ipix < 0:
+		return false
+	if _covered_by_active_descendants(nside, ipix):
+		return true
+	while nside > 1:
+		nside >>= 1
+		ipix >>= 2
+		var above := _chunk_key_hp(nside, ipix)
+		if _active_chunks.has(above) and _desired_cache.has(above):
+			return true
+	return false
+
+
+## Take the chunks found replaced off screen, for at most RETIRE_BUDGET_MS and at least one. Looked at
+## again here: an ancestor is noted by each of its children, and goes only with the last.
+## Does this chunk appear where a coarser one of its ancestors is on screen? Then it starts on that shape.
+## Not a chunk that only changes quality (the same key on screen), nor one appearing over nothing.
+func _lod_morph_starts(info: Dictionary) -> bool:
+	if not planet_data.lod_morph or _active_chunks.has(info.key):
+		return false
+	if (info.center as Vector3).distance_to(_last_local_cam) < LOD_MORPH_NEAR_M:
+		return false
+	var nside := int(info.nside) >> 1
+	var ipix := int(info.ipix) >> 2
+	while nside >= 1:
+		if _active_chunks.has(_chunk_key_hp(nside, ipix)):
+			return true
+		nside >>= 1
+		ipix >>= 2
+	return false
+
+
+## [edges, start]: the STITCH_* edges of this chunk that may move while it eases, and when its ease starts (ms).
+## An edge moves unless the same-level neighbour across it is on screen and settled: that one keeps its border,
+## and a border moving against it would open the seam. A neighbour easing too gives its start, so the two
+## borders move together; siblings of one split come in on consecutive frames. An edge against a coarser chunk
+## is stitched (PlanetChunk) and its odd vertices already sit on the coarse chord.
+func _lod_morph_edges(info: Dictionary) -> Array:
+	var nside := int(info.nside)
+	var neighbours: Dictionary = HEALPix.get_neighbors_nest(nside, int(info.ipix))
+	var mask := 0
+	var start := Time.get_ticks_msec()
+	for i in EDGE_SIDES.size():
+		var nip: int = neighbours[EDGE_SIDES[i]]
+		if nip < 0:
+			continue
+		var other := _chunk_key_hp(nside, nip)
+		if _morphing.has(other):
+			start = mini(start, int(_morphing[other]))
+			mask |= EDGE_BITS[i]
+		elif not _active_chunks.has(other):
+			mask |= EDGE_BITS[i]
+	return [mask, start]
+
+
+## Every easing chunk one step on: smoothstep from 1 to 0 over LOD_MORPH_MS.
+func _advance_morphs() -> void:
+	if _morphing.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	for key: String in _morphing.keys():
+		var info: Dictionary = _active_chunks.get(key, {})
+		var mi: MeshInstance3D = info.get("mesh_instance")
+		if mi == null:
+			_morphing.erase(key)
+			continue
+		var t := clampf(float(now - int(_morphing[key])) / LOD_MORPH_MS, 0.0, 1.0)
+		mi.set_instance_shader_parameter("lod_morph", 1.0 - t * t * (3.0 - 2.0 * t))
+		if t >= 1.0:
+			_morphing.erase(key)
+
+
+func _drain_retired() -> void:
+	if _retired.is_empty():
+		return
+	var t0 := Time.get_ticks_usec()
+	var removed := 0
+	while not _retired.is_empty():
+		if removed > 0 and Time.get_ticks_usec() - t0 >= RETIRE_BUDGET_MS * 1000.0:
+			return
+		var key: String = _retired.pop_back()
+		if _replaced_now(key):
+			_remove_chunk(key)
+			removed += 1
+
+
+## Is this disk-cache read for a chunk or a quality the last LOD update no longer wants? Dropping it
+## costs nothing, the file is still there: only built meshes are worth assembling whatever happens.
+func _read_went_stale(info: Dictionary) -> bool:
+	if not info.get("_from_disk_cache", false):
+		return false
+	var wanted: Dictionary = _desired_cache.get(info.key, {})
+	return wanted.is_empty() or _quality_differs(info, wanted)
 
 
 ## Sanity-check cached chunk geometry against the live analytic surface.
@@ -4682,6 +4898,30 @@ func _local_view_dir() -> Vector3:
 	return (global_transform.basis.inverse() * -cam.global_transform.basis.z).normalized()
 
 
+## The stitch bakes the parent grid at THIS chunk's resolution: it only meets a parent drawn at that same
+## resolution, whatever their LOD tiers. Across another resolution, the edge keeps its skirt.
+func _stitch_meets(parent: Dictionary, mine: Dictionary) -> bool:
+	return planet_data.get_resolution_for_lod(int(parent.lod), int(parent.nside)) \
+			== planet_data.get_resolution_for_lod(int(mine.lod), int(mine.nside))
+
+
+## Forget what waits for a mesh task and the last LOD update no longer wants as it is: nothing took it out
+## before. At 3 000 m/s the backlog reached 3 000 chunks of ground already left behind, all built one by
+## one, and the ground under a stopped camera took 54 s to settle. One wanted at another quality is admitted
+## again by this same update. Keeps the order: the backlog stays sorted.
+func _prune_backlog(desired: Dictionary) -> void:
+	if _mesh_task_backlog.is_empty():
+		return
+	var kept: Array[Dictionary] = []
+	for info: Dictionary in _mesh_task_backlog:
+		var wanted: Variant = desired.get(info.key)
+		if wanted != null and not _quality_differs(info, wanted):
+			kept.append(info)
+		else:
+			_backlog_keys.erase(info.key)
+	_mesh_task_backlog = kept
+
+
 ## Put a chunk in the backlog unless it already waits there.
 func _backlog_push(info: Dictionary) -> void:
 	if _backlog_keys.has(info.key):
@@ -4778,6 +5018,8 @@ func _process_assemble_queue() -> void:
 		var item: Dictionary = _assemble_queue.pop_back()
 		var info: Dictionary = item.info
 		var mesh: ArrayMesh = item.mesh
+		if _read_went_stale(info):
+			continue
 		if stargrot_registry != null and not stargrot_registry.ready_for_chunk(info.key):
 			# Keep the old ground visible until the cavity is ready. Reinsert after the drain so
 			# a nearby pending cave cannot keep us popping the same item or starve other chunks.
@@ -4813,6 +5055,7 @@ func _process_assemble_queue() -> void:
 			_remove_chunk(info.key)
 			info.erase("_swap")
 		_assemble_visual_chunk(info, mesh)
+		_note_replaced(info)
 		# An assembly that returned before its cache section.
 		_drop_cache_write(info)
 		assembled += 1
@@ -4967,6 +5210,11 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		fposmod(chunk_center.z, _wrap)))
 	# Full planet-local chunk centre for the terrain shader's true-radial normal (far terminator fix).
 	mi.set_instance_shader_parameter("chunk_center_local", chunk_center)
+	if _lod_morph_starts(info):
+		var edges := _lod_morph_edges(info)
+		mi.set_instance_shader_parameter("lod_morph", 1.0)
+		mi.set_instance_shader_parameter("lod_morph_edges", edges[0])
+		_morphing[key] = edges[1]
 	# Star direction for the shader's celestial-layer star lighting (see _star_dir_world).
 	mi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
 	# Born on the celestial layer when this planet is currently a distant body (star-lit), else local.
@@ -6025,6 +6273,7 @@ func _refresh_road_visibility_around(nside: int, ipix: int) -> void:
 
 
 func _remove_chunk(key: String) -> void:
+	_morphing.erase(key)
 	if not _active_chunks.has(key):
 		return
 	var info: Dictionary = _active_chunks[key]
@@ -6110,8 +6359,11 @@ func _release_volcano_nodes(key: String, info: Dictionary) -> void:
 
 
 func _clear_all_chunks() -> void:
+	_morphing.clear()
 	_join_lod_task()  # it writes _node_geom, cleared below
 	_desired_cache_cam = Vector3.INF  # the next pass recomputes from scratch
+	_admit_queue.clear()
+	_retired.clear()
 	for key in _active_chunks.keys():
 		_remove_chunk(key)
 	_node_geom.clear()

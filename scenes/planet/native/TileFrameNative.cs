@@ -492,7 +492,7 @@ public partial class TileFrameNative : RefCounted
     /// and the caller does that one the usual way, which registers what was missing.
     /// </summary>
     public Vector3[] Normals(Vector3[] dirs, float[] crackEdge, byte[] snapped, int res, long ipix, long nside,
-        double vtxSpacing, double epsRad, double crackSkipM, bool corundum)
+        double vtxSpacing, double epsRad, double crackSkipM, bool corundum, double epsWideRad, double wideFromM)
     {
         var normals = new Vector3[dirs.Length];
         _nServed = new byte[dirs.Length];
@@ -509,10 +509,12 @@ public partial class TileFrameNative : RefCounted
                 Vector3 arbitrary = Math.Abs(dirC.Dot(Vector3.Up)) < 0.99 ? Vector3.Up : Vector3.Right;
                 Vector3 tanU = dirC.Cross(arbitrary).Normalized();
                 Vector3 tanV = dirC.Cross(tanU).Normalized();
-                Vector3 dirL = (dirC - tanU * epsRad).Normalized();
-                Vector3 dirR = (dirC + tanU * epsRad).Normalized();
-                Vector3 dirB = (dirC - tanV * epsRad).Normalized();
-                Vector3 dirT = (dirC + tanV * epsRad).Normalized();
+                // Wide probes away from cracks, narrow ones near a rim (PlanetChunk, normals pass).
+                double eps = corundum && crackEdge[idx] < wideFromM ? epsRad : epsWideRad;
+                Vector3 dirL = (dirC - tanU * eps).Normalized();
+                Vector3 dirR = (dirC + tanU * eps).Normalized();
+                Vector3 dirB = (dirC - tanV * eps).Normalized();
+                Vector3 dirT = (dirC + tanV * eps).Normalized();
                 bool rim = xi == 0 || xi == res || yi == 0 || yi == res;
                 int mode = corundum && crackEdge[idx] < crackSkipM && snapped[idx] == 0 ? CracksCarve : CracksNone;
                 Vector4 h = Sample4(dirL, dirR, dirB, dirT, ipix, nside, vtxSpacing, rim, mode);

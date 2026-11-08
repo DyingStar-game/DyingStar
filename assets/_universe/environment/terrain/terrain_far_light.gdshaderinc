@@ -29,6 +29,18 @@ instance uniform vec3 chunk_center_local : instance_index(2);
 instance uniform vec4 far_air_scattering : instance_index(3);
 // The column's vertical absorption optical depth, per channel.
 instance uniform vec3 far_air_absorption : instance_index(4);
+// How far a chunk still stands on its parent's shape: 1 when it has just replaced it, easing to 0
+// (PlanetTerrain, LOD_MORPH_MS). CUSTOM2.xyz holds each vertex's step to that shape (meshes without it read 0),
+// CUSTOM2.w the edges it lies on; lod_morph_edges the edges allowed to move (PlanetTerrain._lod_morph_edges).
+instance uniform float lod_morph : instance_index(5);
+instance uniform int lod_morph_edges : instance_index(6);
+
+
+// The step a ground vertex takes toward its parent's shape: none on an edge facing a settled neighbour.
+vec3 lod_morph_step(vec4 custom2) {
+	int edges = int(custom2.w + 0.5);
+	return (edges & ~lod_morph_edges) == 0 ? custom2.xyz * lod_morph : vec3(0.0);
+}
 
 group_uniforms far_lighting;
 // Past radial_blend_far the shading is on the smooth planet radial — a clean great-circle terminator
