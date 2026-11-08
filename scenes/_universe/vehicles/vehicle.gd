@@ -402,6 +402,9 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 @export var max_payload: float = 1300.0
 ## Above max_payload x this factor the vehicle is immobilized (won't move) — GDD. 1.2 = 20%.
 @export var overload_immobilize: float = 1.2
+## Overloaded (past max_payload, short of immobilized), the battery drains this many times faster: the
+## motors strain past what they are built for (playtest 2026-11-08).
+@export var overload_drain_factor: float = 3.0
 ## Size of the cargo bay box -- ONLY for a vehicle whose model has no bed collision (a blockout): a
 ## real model's bed is read off its own col_bed* pieces (see _bay_box). Any massive body that comes to
 ## rest inside is absorbed into the truck (its mass is added once).
@@ -1595,6 +1598,10 @@ func get_cargo_mass() -> float:
 ## True when the cargo exceeds the max payload (GDD load limiter).
 func is_overloaded() -> bool:
 	return get_cargo_mass() > max_payload
+
+## How many times the battery's draw is taken: overload_drain_factor overloaded, else 1.
+func drain_strain() -> float:
+	return overload_drain_factor if is_overloaded() else 1.0
 
 ## True when the cargo is so far over the limit that the vehicle can no longer move (GDD).
 func is_immobilized() -> bool:
@@ -4032,7 +4039,8 @@ func _draw_energy(force: float, delta: float) -> void:
 	# The work on the road: engine_force pushes EACH driven wheel (see _apply_drive_spec), along the
 	# forward speed; a heavier truck takes more of it to reach a speed or climb a slope.
 	var wheel_power_w: float = force * float(_driven_wheel_count()) * _forward_speed_kmh() / 3.6
-	if energy.draw_for_drive(wheel_power_w, torque_nm, delta) > 0.0:
+	var strain: float = drain_strain()
+	if energy.draw_for_drive(wheel_power_w * strain, torque_nm * strain, delta) > 0.0:
 		_cut_if_no_energy()
 
 
