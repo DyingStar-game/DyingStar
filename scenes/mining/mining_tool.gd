@@ -407,10 +407,10 @@ func _perforator_active() -> bool:
 	return _perforator != null and _equipped and not _stowed
 
 ## Is the perforator drawn: never on a player who does not own one (no one starts with it, it is taken
-## at the ARES Mining dispenser), always when out, and stowed on the belt for OTHER players only — the
-## local owner does NOT see his own stowed perforator (first-person clutter).
-static func shows_tool(owned: bool, active: bool, is_owner: bool) -> bool:
-	return owned and (active or not is_owner)
+## at the ARES Mining dispenser), else always -- out in hand, or stowed on the belt, the owner's own
+## included: looking down, a player sees the tool they carry (playtest 2026-11-08).
+static func shows_tool(owned: bool, _active: bool = false, _is_owner: bool = false) -> bool:
+	return owned
 
 ## The player carrying this tool owns one (Player.owns_mining_tool, the server's say, owner and
 ## remotes). A parent that is not a player (a bench, a test) owns none.

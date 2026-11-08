@@ -79,3 +79,18 @@ func test_a_quantity_reads_in_its_unit() -> void:
 	assert_eq(ServiceTypes.quantity_text(12, "m3"), "12 m³")
 	assert_eq(ServiceTypes.quantity_text(3, "unit"), "3")
 	assert_eq(ServiceTypes.quantity_text(3, null), "3")
+
+
+func test_an_inventory_stack_reads_as_a_good_and_its_weight() -> void:
+	assert_string_contains(ServiceTypes.good_label("ingot.gold"), str(TranslationServer.translate("%%MINERAL_GOLD")))
+	assert_eq(ServiceTypes.good_quantity("ingot.gold", 30.0), "30 kg", "whole kilograms, not 30.0")
+	assert_eq(ServiceTypes.good_quantity("ore.gold", 1500.0), "1.5 t")
+	assert_eq(ServiceTypes.good_quantity("water", 4.0), "4", "other goods: units")
+	assert_eq(ServiceTypes.good_label("water"), "water", "a good the game does not spell out: as named")
+
+
+func test_a_mission_invitation_names_who_sent_it() -> void:
+	var envelope := {"type": "mission.invited", "data": {"title": "Gold run", "fromPlayerId": "4aa97da7-6ae4"}}
+	var text := ChatNetwork.notification_text(envelope, {"4aa97da7-6ae4": "player-kira"})
+	assert_string_contains(text, "player-kira")
+	assert_string_contains(text, "Gold run")

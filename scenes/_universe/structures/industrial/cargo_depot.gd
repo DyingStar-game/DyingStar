@@ -26,6 +26,11 @@ extends Node3D
 @export var shelves_spawned: bool = false
 
 ## Where each networked shelf of a depot stands, in the depot's local frame: [{name, position, rotation}].
+## Where the screen of crates to collect hangs (depot frame) when the scene has no PickupBoardAt marker:
+## on the buffer room's far wall, left of the door to the aisles, facing the counter.
+const PICKUP_BOARD_AT := Vector3(-1.8, 2.0, 11.2)
+## Font size of an aisle's letter painted on the floor ("AILE A"): no wider than the aisle.
+const AISLE_PAINT_SIZE := 90
 const SHELVES_LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelves.json"
 ## The scene every shelf of SHELVES_LAYOUT is spawned from.
 const SHELF_SCENE := "scenes/_universe/props/furniture/metal_shelf.tscn"
@@ -110,6 +115,32 @@ func _ready() -> void:
 		# with 2 400 crates (2026-10-23). They stay monitorable, so the player's probe still sees them.
 		for area: Area3D in find_children("*", "Area3D", true, true):
 			area.set_deferred(&"monitoring", false)
+		# Over the buffer rack: where each transporter's crates wait (TransportReservations).
+		# On the wall of the buffer room, where the scene's PickupBoardAt marker stands (facing +Z).
+		var board := PickupBoard.new().setup(self)
+		board.name = "PickupBoard"
+		var at := get_node_or_null("PickupBoardAt") as Node3D
+		board.transform = at.transform if at != null else Transform3D(Basis(Vector3.UP, PI), PICKUP_BOARD_AT)
+		add_child(board)
+		# Facing it, by the buffer rack: what the warehouse holds (StockBoard), at the scene's StockBoardAt
+		# marker, else the pickup board's place mirrored across the door.
+		var stock := StockBoard.new().setup(self)
+		stock.name = "StockBoard"
+		var stock_at := get_node_or_null("StockBoardAt") as Node3D
+		if stock_at != null:
+			stock.transform = stock_at.transform
+		else:
+			stock.transform = board.transform
+			stock.position.x = -board.position.x
+		add_child(stock)
+		# Painted on the floor at the mouth of each aisle, its letter read walking in (+Z): only on the
+		# floor, a sign hung over the walk floated in the air (playtest 2026-11-08).
+		for sign_at: Array in ShelfLabels.aisle_signs():
+			var paint := FloorPaint.label(tr("%%DEPOT_AISLE") % sign_at[0], AISLE_PAINT_SIZE)
+			paint.name = "AisleFloorSign_%s" % sign_at[0]
+			paint.position = Vector3((sign_at[1] as Vector3).x, FloorPaint.LIFT_M, (sign_at[1] as Vector3).z)
+			paint.basis = FloorPaint.flat(PI)  # the text's top into the aisle (+Z)
+			add_child(paint)
 	# DIAGNOSTIC: confirm the depot exists on the server and its reception_area is monitoring.
 	var _ra := get_node_or_null("reception_area")
 	print("[cargo_depot] _ready on %s  reception_area=%s monitoring=%s mask=%s" % [
@@ -312,6 +343,36 @@ func server_fill_shelves(rng: RandomNumberGenerator) -> int:
 			})
 	# Through the streaming, like the shelves: thousands of boxes are queued and built a few per frame.
 	NetworkOrchestrator.spawn_props_authoritative(batch, false)
+	return batch.size()
+
+
+## SERVER, admin action: put [param count] crates of crushed ore (SpawnCatalog's test crate) on free
+## slots of this depot's shelves, as if delivered: the warehouse's, and its stock credited with their
+## goods in service-inventory -- what a transport mission loads. Returns how many were spawned.
+func server_stock_ore(count: int) -> int:
+	var owner: Dictionary = await WarehouseOwner.owner_of(self)
+	var batch: Array = []
+	var units := 0
+	for child in get_children():
+		if batch.size() >= count:
+			break
+		if not (child is Shelf) or (child as Shelf).uuid == "" or ShelfLabels.label_for(child) == "":
+			continue
+		var shelf := child as Shelf
+		for idx in shelf.reserve_free_slots(count - batch.size()):
+			var content := SpawnCatalog.test_crate({"crate": CrateContent.KIND_CRUSHED}, "", WarehouseOwner.plate_owner(owner))
+			content["owner_type"] = str(owner["type"])
+			content["owner_id"] = str(owner["id"])
+			units += int(content.get("units", 0))
+			batch.append(StockReconciler.crate_spawn(shelf, idx, content, uuid))
+	StockReconciler.hold_off(self)  # crates on their way, stock credited before they land
+	NetworkOrchestrator.spawn_props_authoritative(batch, false)
+	if units > 0:
+		var good := MissionHeartbeat.good_type_for_mineral(SpawnCatalog.TEST_MINERAL)
+		var result: Dictionary = await MissionHeartbeat.inventory_internal(HTTPClient.METHOD_POST,
+				"/holders/warehouse/%s/credit" % uuid.uri_encode(), {"goodType": good, "quantity": units})
+		print("[cargo_depot] %s: %d x %s credited to its warehouse: %s" % [name, units, good,
+				"ok" if bool(result.get("ok", false)) else str(result.get("error", result))])
 	return batch.size()
 
 

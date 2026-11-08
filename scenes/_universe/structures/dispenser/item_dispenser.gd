@@ -94,6 +94,8 @@ const VEHICLE_CATALOGUE: String = "res://scenes/_universe/vehicles/terminal_item
 
 ## SERVER: the item on its way, the seconds left before it is handed out, and who asked.
 var _pending: Resource = null
+## The name of the player who ordered _pending: a vehicle writes it on its plate.
+var _pending_for: String = ""
 var _delivery_left_s: float = 0.0
 var _actor: Player = null
 ## SERVER: network type of each part scene, by scene path (MarkerSpawn.scene_type, read once).
@@ -140,6 +142,7 @@ func update_screen(data: Dictionary) -> void:
 		push_warning("[Dispenser] refused: '%s' is not in the catalogue" % str(data.get("spec", "")))
 		return
 	_pending = spec
+	_pending_for = str(_actor.name) if is_instance_valid(_actor) else ""
 	_delivery_left_s = delivery_s
 	set_physics_process(true)
 	if is_instance_valid(_actor):
@@ -211,7 +214,9 @@ func _serve_pending() -> void:
 		var at := Marker3D.new()
 		tray_marker.add_child(at)
 		at.position.x = batch_offset(i, count, batch_spacing_m)
-		MarkerSpawn.spawn(scene, str(_types[spec.scene_path]), at)
+		# Who ordered it: a vehicle writes their name on its plate (VehicleSpawnedBy); other props drop it.
+		MarkerSpawn.spawn(scene, str(_types[spec.scene_path]), at, "",
+				{VehicleSpawnedBy.KEY: _pending_for} if _pending_for != "" else {})
 		at.free()
 	print("[Dispenser] handed out %d x %s" % [count, spec.resource_path])
 

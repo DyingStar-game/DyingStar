@@ -116,6 +116,24 @@ func _export_to_npc_service() -> void:
   ]
 }""" % [JSON.stringify(scenename), ",\n".join(slot_lines)])
 
+## CLIENT: the shelf's label (ShelfLabels: "A12") painted on the floor in front of it, read from the
+## aisle -- only on the floor, a sign over the shelf floated in the air (playtest 2026-11-08). None for a
+## shelf outside the depot's rows (the buffer rack, a shelf elsewhere).
+func _add_label() -> void:
+	var label_text := ShelfLabels.label_for(self)
+	if label_text == "":
+		# Its place may not be applied yet (streamed in): look again a few times, then give up (not a depot's).
+		_sign_tries += 1
+		if _sign_tries < 4 and is_inside_tree():
+			get_tree().create_timer(1.0).timeout.connect(_add_label)
+		return
+	var paint := FloorPaint.label(label_text, 160)
+	paint.name = "ShelfFloorSign"
+	paint.position = Vector3(0.75, FloorPaint.LIFT_M, 0.0)
+	paint.basis = FloorPaint.flat(PI / 2.0)  # the text's top toward the shelf (-X)
+	add_child(paint)
+
+
 ## CLIENT: the model of this shelf is drawn up to DRAW_END_M (the crates on it keep their own rule).
 func limit_draw_distance() -> void:
 	for mesh: Node in find_children("*", "MeshInstance3D", true, false):
@@ -141,6 +159,7 @@ func _ready() -> void:
 		child_entered_tree.connect(_client_on_child_entered_tree)
 		limit_draw_distance()
 		child_exiting_tree.connect(_client_on_child_exiting_tree)
+		_add_label.call_deferred()  # once its spawn data (name, place) is applied
 
 ## Client: a stored crate is out of the physics space — body and interact area — unless the camera
 ## is within _REACH_M of it. The server owns every collision it takes part in; the client only needs
@@ -321,6 +340,21 @@ func reserve_random_slots(rng: RandomNumberGenerator) -> Array[int]:
 	_send_slots_occupied()
 	return picked
 
+## Server: reserve up to [param count] free slots, in slot order -- occupied, with no crate yet; the
+## caller spawns a crate on each (CargoDepot.server_stock_ore, StockReconciler). Only what is asked is
+## taken, so no slot stays marked with nothing coming to it.
+func reserve_free_slots(count: int) -> Array[int]:
+	var picked: Array[int] = []
+	for i in range(mini(shelf_slots.size(), mini(shelf_slots_occupied.size(), _slot_bodies.size()))):
+		if picked.size() >= count:
+			break
+		if not shelf_slots_occupied[i] and typeof(_slot_bodies[i]) == TYPE_NIL:
+			shelf_slots_occupied[i] = true
+			picked.append(i)
+	if not picked.is_empty():
+		_send_slots_occupied()
+	return picked
+
 ## Server: [param body] is being taken off the shelf — the carry pickup, just before it reparents the
 ## crate to the player: free its slot. Same contract as Vehicle.release_cargo.
 func release_cargo(body: Node) -> void:
@@ -366,6 +400,8 @@ func apply_prop_data(data: Dictionary) -> void:
 ## shelf's front (+X, the aisle, what the NPC service is told) -- square on, it showed its side
 ## (playtest 2026-11-07).
 const SLOT_YAW := PI / 2.0
+
+var _sign_tries := 0
 
 
 func _put_on_slot(idx: int, body: RigidBody3D) -> void:

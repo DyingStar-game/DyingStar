@@ -70,8 +70,10 @@ static func _collect_body_rids(node: Node, out: Array[RID]) -> void:
 
 ## Hand [param scene] (network type [param type_name]) to the network at [param marker], placed in the
 ## frame of the networked parent it sits on (the planet): a prop left in world coordinates would drift
-## away with the moving planet. [param uuid] is the prop's (a new one when empty). Returns it.
-static func spawn(scene: PackedScene, type_name: String, marker: Node3D, uuid: String = "") -> String:
+## away with the moving planet. [param uuid] is the prop's (a new one when empty); [param extra] more keys
+## of its spawn data (whitelisted in its Horizon def). Returns the uuid.
+static func spawn(scene: PackedScene, type_name: String, marker: Node3D, uuid: String = "",
+		extra: Dictionary = {}) -> String:
 	var net_parent: Node = PropSpawn.find_net_parent(marker)
 	var world: Transform3D = marker.global_transform
 	var local_pos: Vector3 = PropSpawn.to_parent_local(net_parent, world.origin)
@@ -81,12 +83,14 @@ static func spawn(scene: PackedScene, type_name: String, marker: Node3D, uuid: S
 	var local_rot: Vector3 = local_basis.orthonormalized().get_euler()
 	if uuid == "":
 		uuid = UUID_UTIL.v4()
-	NetworkOrchestrator.spawn_prop_authoritative({
+	var data := {
 		"type": type_name,
 		"uuid": uuid,
 		"position": {"x": local_pos.x, "y": local_pos.y, "z": local_pos.z},
 		"rotation": {"x": local_rot.x, "y": local_rot.y, "z": local_rot.z},
 		"scenename": scene.resource_path.trim_prefix("res://"),
 		"parent_id": PropSpawn.net_parent_uuid(net_parent),
-	})
+	}
+	data.merge(extra, false)
+	NetworkOrchestrator.spawn_prop_authoritative(data)
 	return uuid

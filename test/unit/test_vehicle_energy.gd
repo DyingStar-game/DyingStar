@@ -116,3 +116,10 @@ func test_the_ignition_works_at_any_speed() -> void:
 	assert_true(_truck.is_engine_on(), "started while rolling")
 	_truck.toggle_engine()
 	assert_false(_truck.is_engine_on(), "and cut while rolling")
+
+
+func test_an_overloaded_truck_drains_its_battery_three_times_faster() -> void:
+	assert_eq(_truck.drain_strain(), 1.0, "empty: the plain draw")
+	_truck.max_payload = -1.0  # anything aboard is too much
+	assert_eq(_truck.drain_strain(), _truck.overload_drain_factor, "overloaded")
+	assert_eq(_truck.overload_drain_factor, 3.0)

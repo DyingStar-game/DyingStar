@@ -115,6 +115,13 @@ func is_loading() -> bool:
 	return _loaded_at >= 0.0
 
 
+## Off at once, no chime nor ring: the machine is busy for somebody (a delivery an NPC ordered), so
+## the screen shows it rather than its saver.
+func dismiss() -> void:
+	if visible:
+		_reveal()
+
+
 func _reveal() -> void:
 	_loaded_at = -1.0
 	visible = false

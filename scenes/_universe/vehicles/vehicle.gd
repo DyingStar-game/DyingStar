@@ -402,6 +402,11 @@ const REVERSE_ENGAGE_KMH: float = 2.0
 @export var max_payload: float = 1300.0
 ## Above max_payload x this factor the vehicle is immobilized (won't move) — GDD. 1.2 = 20%.
 @export var overload_immobilize: float = 1.2
+## Overloaded (past max_payload, short of immobilized), the battery drains this many times faster: the
+## motors strain past what they are built for (playtest 2026-11-08).
+@export var overload_drain_factor: float = 3.0
+## The plate labels that show who had the vehicle delivered (VehicleSpawnedBy).
+const OWNER_PLATE_GROUP := &"prop_owner_label"
 ## Size of the cargo bay box -- ONLY for a vehicle whose model has no bed collision (a blockout): a
 ## real model's bed is read off its own col_bed* pieces (see _bay_box). Any massive body that comes to
 ## rest inside is absorbed into the truck (its mass is added once).
@@ -831,6 +836,13 @@ var odometer: VehicleOdometer:
 			_odometer = VehicleOdometer.new()
 		return _odometer
 var _odometer: VehicleOdometer = null
+## Who had it delivered (VehicleSpawnedBy): their name on the plate.
+var spawned_by: VehicleSpawnedBy:
+	get:
+		if _spawned_by == null:
+			_spawned_by = VehicleSpawnedBy.new()
+		return _spawned_by
+var _spawned_by: VehicleSpawnedBy = null
 var limiter: VehicleSpeedLimiter:
 	get:
 		if _limiter == null:
@@ -1001,6 +1013,14 @@ func serial() -> String:
 ## Write the registration on the plates. A no-op without a uuid: the plate keeps its placeholder.
 func _update_plates() -> void:
 	PropSerial.fill(self, serial())
+	_update_owner_plate()
+
+
+## Who had it delivered, on the plate above the serial (the OWNER_PLATE_GROUP labels); empty when unknown.
+func _update_owner_plate() -> void:
+	for label: Node in find_children("*", "Label3D", true, false):
+		if label.is_in_group(OWNER_PLATE_GROUP):
+			(label as Label3D).text = spawned_by.name
 
 
 ## In-game (replicated prop) when a uuid was assigned by the spawn pipeline; bench otherwise.
@@ -1595,6 +1615,10 @@ func get_cargo_mass() -> float:
 ## True when the cargo exceeds the max payload (GDD load limiter).
 func is_overloaded() -> bool:
 	return get_cargo_mass() > max_payload
+
+## How many times the battery's draw is taken: overload_drain_factor overloaded, else 1.
+func drain_strain() -> float:
+	return overload_drain_factor if is_overloaded() else 1.0
 
 ## True when the cargo is so far over the limit that the vehicle can no longer move (GDD).
 func is_immobilized() -> bool:
@@ -3081,7 +3105,7 @@ func _forget_sent() -> void:
 ## The state that replicates as parts of its own (VehicleNetPart): written by _replicate_transform,
 ## read back by client_channel_data_update and server_adopt_state.
 func _net_parts() -> Array[VehicleNetPart]:
-	return [odometer, limiter, cruise, shocks, screen_mode, chart_view]
+	return [odometer, limiter, cruise, shocks, screen_mode, chart_view, spawned_by]
 
 ## CLIENT: mirror the replicated bay table onto our own bays, so the HUD and the rev counter tell
 ## the truth about a truck someone else has been working on.
@@ -3316,6 +3340,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 	# still arrives here — it runs before the uuid is set, so _is_networked() is still false.
 	for part in _net_parts():
 		part.read(data)
+	if data.has(VehicleSpawnedBy.KEY):
+		_update_owner_plate()
 	for shot: Vector2i in shocks.take_heard():
 		_play_suspension_shock(shot.x, float(shot.y) / 100.0)
 	if data.has("position"):
@@ -4032,7 +4058,8 @@ func _draw_energy(force: float, delta: float) -> void:
 	# The work on the road: engine_force pushes EACH driven wheel (see _apply_drive_spec), along the
 	# forward speed; a heavier truck takes more of it to reach a speed or climb a slope.
 	var wheel_power_w: float = force * float(_driven_wheel_count()) * _forward_speed_kmh() / 3.6
-	if energy.draw_for_drive(wheel_power_w, torque_nm, delta) > 0.0:
+	var strain: float = drain_strain()
+	if energy.draw_for_drive(wheel_power_w * strain, torque_nm * strain, delta) > 0.0:
 		_cut_if_no_energy()
 
 

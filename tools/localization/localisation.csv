@@ -100,6 +100,10 @@ Retour automatique dans %d s.",
 %%ACT_WRITE_IN_CHAT,Write in chat,Écrire dans le chat,
 %%ACT_TOGGLE_SPEAKER,Mute / unmute all game sound,Couper / rétablir tout le son du jeu,
 %%ACT_TOGGLE_MICROPHONE,Mute / unmute your microphone,Couper / rétablir votre micro,
+%%ACT_PUSH_TO_TALK,Push to talk (hold),Appuyer pour parler (maintenir),
+%%SET_VOICE_MODE,Voice,Voix,
+%%SET_VOICE_PUSH_TO_TALK,Push to talk,Appuyer pour parler,
+%%SET_VOICE_OPEN_MIC,Open microphone,Micro ouvert,
 %%ACT_GOD_MODE,God mode (dev),Mode Dieu (dev),
 %%ACT_GOD_MODE_LAND,God mode: land (dev),Mode Dieu : se poser (dev),
 %%ACT_STRAFE_UP,EVA: move up,EVA : monter,
@@ -421,6 +425,7 @@ SUR LE CONVOYEUR DE DROITE.",
 %%SPAWN_COMPONENTS_T1,T1 components,Composants T1,
 %%SPAWN_ADMIN,Admin,Admin,
 %%SPAWN_FILL_SHELVES,Fill shelves,Remplir les étagères,
+%%SPAWN_STOCK_ORE,Stock crushed ore,Stocker du minerai concassé,
 %%SIGN_RECHARGING_BATTERIES,Recharging batteries,Recharge des batteries,
 %%SIGN_MEAL_ZONE,Meal zone,Zone de repas,
 %%SIGN_MANDATORY_ACTIVITY,Mandatory activity,Activité obligatoire,
@@ -1192,7 +1197,7 @@ SUR LE CONVOYEUR DE DROITE.",
 %%SVC_ENUM_ROLE_LEADER,leader,chef,
 %%SVC_ENUM_ROLE_TREASURER,treasurer,trésorier,
 %%SVC_ENUM_ROLE_MEMBER,member,membre,
-%%SVC_FMT_STACK_VIEW,%s  x%s  (available %s / held %s),%s  x%s  (dispo %s / réservé %s),
+%%SVC_FMT_STACK_VIEW,%s  ·  %s  (available %s / held %s),%s  ·  %s  (dispo %s / réservé %s),
 %%SVC_FMT_BOOK,Buy %d / Sell %d,Achat %d / Vente %d,
 %%SVC_FMT_ORDER,%s #%s  %s  %s/%s @ %s %s  (%s),%s #%s  %s  %s/%s @ %s %s  (%s),
 %%SVC_FMT_DEMAND,#%s  %s  x%s  max %s %s  (%s),#%s  %s  x%s  max %s %s  (%s),
@@ -1390,7 +1395,9 @@ Déposez uniquement de la roche fracturée.",
 %%HUD_REFINERY_PLACE,"PLACE ONE CRATE
 OF CRUSHED ORE","POSEZ UNE CAISSE
 DE MINERAI CONCASSÉ",
-%%HUD_REFINERY_ONE_CRATE,"ONE CRATE OF CRUSHED ORE AT A TIME","UNE SEULE CAISSE DE MINERAI CONCASSÉ À LA FOIS",
+%%HUD_REFINERY_ONE_CRATE,"CRATES OF DIFFERENT OWNERS.
+One owner at a time.","CAISSES DE PROPRIÉTAIRES DIFFÉRENTS.
+Un seul propriétaire à la fois.",
 %%HUD_REFINERY_CRUSHED_ONLY,"CRUSHED ORE ONLY.
 Ingots are already refined.","MINERAI CONCASSÉ UNIQUEMENT.
 Les lingots sont déjà raffinés.",
@@ -1401,18 +1408,27 @@ Les lingots sont déjà raffinés.",
 %%HUD_CRUSHER_FULL,"CRATE FULL.
 Extract it before crushing more.","CAISSE PLEINE.
 Extrayez-la avant de concasser à nouveau.",
-%%HUD_REFINERY_FULL,"INGOT CRATE FULL.
-Extract it before refining more.","CAISSE DE LINGOTS PLEINE.
-Extrayez-la avant de raffiner à nouveau.",
+%%HUD_REFINERY_FULL,INGOT CRATE FULL: EXTRACT IT.,CAISSE DE LINGOTS PLEINE : EXTRAYEZ-LA.,
 %%HUD_REFINERY_OTHER_MINERAL,"ANOTHER MINERAL.
 Extract the ingots in progress first.","AUTRE MINÉRAL.
 Extrayez d'abord les lingots en cours.",
-%%HUD_REFINERY_OTHER_OWNER,"NOT YOUR ORE.
-Only the owner or a mission partner adds to it.","CE MINERAI N'EST PAS À VOUS.
-Seul son propriétaire ou un partenaire de mission complète.",
+%%HUD_REFINERY_OTHER_OWNER,"CRATE OF %s REFUSED.
+The ore inside is %s's.","CAISSE DE %s REFUSÉE.
+Le minerai en cours est à %s.",
+%%HUD_REFINERY_HELD_BY,INGOTS OF %s: %s,LINGOTS DE %s : %s,
+%%HUD_REFINERY_HELD,INGOTS,LINGOTS,
 %%PLATE_TYPE,TYPE,TYPE,
+%%PLATE_RESERVED,FOR,POUR,
+%%DEPOT_PICKUP_TITLE,TO COLLECT,À RETIRER,
+%%DEPOT_AISLE,AISLE %s,ALLÉE %s,
+%%DEPOT_PICKUP_NONE,Nothing to collect,Rien à retirer,
+%%DEPOT_STOCK_TITLE,IN STOCK,EN STOCK,
+%%DEPOT_STOCK_NONE,Empty warehouse,Entrepôt vide,
+%%DEPOT_STOCK_CRATES,%d crate(s),%d caisse(s),
 %%PLATE_TYPE_ORE,CRUSHED ORE,MINERAI CONCASSÉ,
 %%PLATE_TYPE_INGOT,INGOTS,LINGOTS,
+%%GOOD_ORE_OF,Crushed ore (%s),Minerai concassé (%s),
+%%GOOD_INGOT_OF,Ingots (%s),Lingots (%s),
 %%PLATE_MASS,WEIGHT,POIDS,
 %%PLATE_CONTENT,CONTENT,CONTENU,
 %%PLATE_PURITY,PURITY,PURETÉ,
@@ -1427,7 +1443,7 @@ Seul son propriétaire ou un partenaire de mission complète.",
 %%SVC_ACT_SHARE_GROUP,My group,Mon groupe,
 %%SVC_MSG_MISSION_INVITED,Invitation sent: they may join the mission,Invitation envoyée : ils peuvent rejoindre la mission,
 %%SVC_MSG_MISSION_JOINED,You joined the mission: progress and reward are shared,Vous avez rejoint la mission : avancement et récompense partagés,
-%%NOTIF_MISSION_INVITED,"You are invited to join a mission: %s (DataPad, My missions)","Vous êtes invité à rejoindre une mission : %s (DataPad, Mes missions)",
+%%NOTIF_MISSION_INVITED,"%s invites you to join a mission: %s (DataPad, My missions)","%s vous invite à rejoindre une mission : %s (DataPad, Mes missions)",
 %%SVC_FMT_MISSION_PARTICIPANTS,Participants: %s,Participants : %s,
 %%MISSION_STEP_LOAD,Step 1: take a crate off a shelf at the %s warehouse,"Étape 1 : reprenez une caisse sur une étagère de l'entrepôt de %s",
 %%MISSION_STEP_LOADED,Loaded at %s ✓,Chargé à %s ✓,

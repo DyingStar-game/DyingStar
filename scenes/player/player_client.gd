@@ -1645,9 +1645,9 @@ func _driven_vehicle() -> Vehicle:
 ## its LOCAL position with WORLD axes, so the prop flew off in a skewed direction on a rotated parent;
 ## and it named the scene, which let any tampered client instance anything anywhere.
 func _on_spawn_selected(key) -> void:
-	var admin_action: String = SpawnCatalog.admin_action(str(key))
-	if admin_action != "":
-		player.client_send_action_to_server({"action": admin_action})  # the server checks the role
+	var action: String = SpawnCatalog.action_of(str(key))
+	if action != "":
+		player.client_send_action_to_server({"action": action})  # the server checks the role or the tool
 		return
 	player.client_send_action_to_server({"action": "spawn_prop", "key": str(key)})
 
@@ -2696,12 +2696,20 @@ func _weather_listener_of() -> WeatherListener:
 # ---------------------------------------------------------------------------------------------
 
 ## A social notification arrived over MQTT. Print it, and offer the screen where it can be acted
-## on. The name is looked up in the background: a line the player can read the moment it lands
-## beats waiting on a request to find out who it is from.
+## on. A sender the client cannot name yet is looked up first: the line names who it is from, not an
+## id (playtest 2026-11-08). The lookup does not make them a contact.
 func _on_notification(envelope: Dictionary) -> void:
 	if _notifications == null:
 		return
 	var names: Dictionary = _resolved_peer_names()
+	var about: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
+	var unknown_sender: String = _unresolved_peer_id(about)
+	if unknown_sender != "":
+		var found: String = await ChatNetwork.lookup_name(unknown_sender)
+		if found != "":
+			names[unknown_sender] = found
+		if not is_instance_valid(_notifications):
+			return
 	var text: String = ChatNetwork.notification_text(envelope, names)
 	if text == "":
 		return
@@ -2711,13 +2719,6 @@ func _on_notification(envelope: Dictionary) -> void:
 	if str(envelope.get("type", "")).begins_with("mission."):
 		PlayerServices.changed.emit("missions")
 
-	var data: Dictionary = envelope.get("data") if envelope.get("data") is Dictionary else {}
-	# Resolve in the background so the NEXT notification about this player is spelled properly. The
-	# line on screen keeps its short id for its four seconds — rewriting a live line would cost more
-	# machinery than the win is worth.
-	var unknown: String = _unresolved_peer_id(data)
-	if unknown != "":
-		ChatNetwork.resolve_peer_name(unknown)
 
 
 ## A notification landed: the wrist DataPad beeps, and while it is unread blinks and beeps again every

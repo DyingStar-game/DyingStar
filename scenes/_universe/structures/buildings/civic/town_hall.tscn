@@ -88,10 +88,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.65, 0)
 [node name="LedPanel 03" parent="Lights" instance=ExtResource("8_led_panel_1x")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.2, 8.65, 0)
 
-[node name="Glow" type="Node" parent="Lights"]
-script = ExtResource("15_glow")
-model_path = NodePath("../../Model")
-glass_materials = PackedStringArray("town_hall_gold_trim", "town_hall_emblem")
 
 [node name="SupervisorOffice" type="OmniLight3D" parent="Lights"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.6, 6.9, 8.6)
@@ -196,3 +192,8 @@ font = ExtResource("17_font")
 font_size = 40
 autowrap_mode = 3
 width = 420.0
+
+[node name="Glow" type="Node" parent="."]
+script = ExtResource("15_glow")
+model_path = NodePath("../Model")
+glass_materials = PackedStringArray("town_hall_gold_trim", "town_hall_emblem")

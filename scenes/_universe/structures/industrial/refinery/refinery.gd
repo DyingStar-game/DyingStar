@@ -8,7 +8,7 @@ extends OreProcessor
 
 ## Why the belt is refused, for the screen.
 const BLOCKED_NOT_CRUSHED := "not_crushed"
-const BLOCKED_TOO_MANY := "too_many"
+const BLOCKED_MIXED_OWNERS := "mixed_owners"
 const BLOCKED_OTHER_MINERAL := "other_mineral"
 const BLOCKED_OTHER_OWNER := "other_owner"
 ## The network type of a hauling crate (its PropSync): what tells a crate from anything else.
@@ -18,7 +18,7 @@ const COUNT_FONT_PX := 140
 ## What the screen says for each refusal: [text key, pictograms].
 const REFUSALS := {
 	BLOCKED_NOT_CRUSHED: ["%%HUD_REFINERY_CRUSHED_ONLY", [ICON_INGOT]],
-	BLOCKED_TOO_MANY: ["%%HUD_REFINERY_ONE_CRATE", [ICON_CRATE, ICON_ORE]],
+	BLOCKED_MIXED_OWNERS: ["%%HUD_REFINERY_ONE_CRATE", [ICON_CRATE, ICON_ORE]],
 	BLOCKED_OTHER_MINERAL: ["%%HUD_REFINERY_OTHER_MINERAL", [ICON_ORE]],
 	BLOCKED_OTHER_OWNER: ["%%HUD_REFINERY_OTHER_OWNER", [ICON_CRATE]],
 }
@@ -27,6 +27,8 @@ const REFUSALS := {
 var _stock: Dictionary = {}
 ## Why the belt is refused (one of the BLOCKED_* above), for the screen. Server only.
 var _blocked_reason := ""
+## Whose crate was refused for another owner (its plate's owner), for the screen. Server only.
+var _refused_owner := ""
 var _count_resized := false
 
 
@@ -34,13 +36,14 @@ func _accepts(body: Node) -> bool:
 	return CrateContent.is_crushed(crate_content_of(body))
 
 
-## One crate at a time, and only crushed ore: two crates, ingots or an empty crate stop the belt.
+## Crates of crushed ore of ONE mineral and ONE owner, as many as the belt holds (playtest 2026-11-08):
+## ingots or an empty crate, crates of two owners or two minerals, or one the stock cannot take stop
+## the belt, and the screen says which.
 func _belt_blocked(bodies: Array) -> bool:
-	var crates := 0
+	var first: Dictionary = {}
 	for body: Node in bodies:
 		if not is_crate(body):
 			continue  # not a crate (a rock, a player's foot...) — the belt ignores it
-		crates += 1
 		if not _accepts(body):
 			_blocked_reason = BLOCKED_NOT_CRUSHED  # ingots, or an empty crate
 			return true
@@ -48,8 +51,17 @@ func _belt_blocked(bodies: Array) -> bool:
 		if reason != "":
 			_blocked_reason = reason
 			return true
-	_blocked_reason = BLOCKED_TOO_MANY if crates > 1 else ""
-	return crates > 1
+		var content := crate_content_of(body)
+		if first.is_empty():
+			first = content
+		elif str(content.get("mineral", "")) != str(first.get("mineral", "")):
+			_blocked_reason = BLOCKED_OTHER_MINERAL
+			return true
+		elif CrateContent.holder_of(content) != CrateContent.holder_of(first):
+			_blocked_reason = BLOCKED_MIXED_OWNERS
+			return true
+	_blocked_reason = ""
+	return false
 
 
 ## Why the stock cannot take [param crate] in, "" when it can: another mineral, or the crate of a player
@@ -65,6 +77,7 @@ func _refusal_of(crate: Node) -> String:
 	if WarehouseDelivery.owns_or_unknown(CrateContent.holder_of(content), holder):
 		return ""
 	var known: Dictionary = crate.get_meta(WarehouseDelivery.DEPOSIT_OK_META, {})
+	_refused_owner = str(content.get("owner", ""))
 	if not known.has(holder):
 		WarehouseDelivery.may_deposit(crate, holder)  # answers on a later tick
 		return BLOCKED_OTHER_OWNER
@@ -140,9 +153,9 @@ func _title_key() -> String:
 	return "%%SIGN_REFINERY"
 
 
-## Top right: how full the crate of ingots being gathered is.
+## Top right: the metal held so far against a full crate's ("38 / 50 kg").
 func _corner_caption_key() -> String:
-	return "%%HUD_CRATE_FILL"
+	return "%%HUD_REFINERY_HELD"
 
 
 func _processing_key() -> String:
@@ -151,9 +164,19 @@ func _processing_key() -> String:
 
 func _extra_state() -> Dictionary:
 	var crates: Array = filter_accepted(rock_detector.get_overlapping_bodies())
-	var preview: Dictionary = crate_content_of(crates[0]) if crates.size() == 1 else {}
-	return {"preview_mass": float(preview.get("mass_kg", 0.0)),
-		"blocked_reason": _blocked_reason, "fill": fill_of(_stock, crate_volume())}
+	var on_belt_kg := 0.0
+	for crate: Node in crates:
+		on_belt_kg += float(crate_content_of(crate).get("mass_kg", 0.0))
+	# The mineral of the stock, else of the crates waiting: a full crate's metal is reckoned on it.
+	var mineral := str(_stock.get("mineral", ""))
+	if mineral == "" and not crates.is_empty():
+		mineral = str(crate_content_of(crates[0]).get("mineral", ""))
+	return {"preview_mass": on_belt_kg,
+		"blocked_reason": _blocked_reason, "fill": fill_of(_stock, crate_volume()),
+		# What the screen shows: the metal held in kg against a full crate's, whose it is, whose was refused.
+		"stock_kg": CrateContent.game_mass(mineral, float(_stock.get("ore_m3", 0.0)), 0.0),
+		"stock_cap_kg": CrateContent.game_mass(mineral, crate_volume(), 0.0),
+		"stock_owner": str(_stock.get("owner", "")), "refused_owner": _refused_owner}
 
 
 func _client_ui() -> void:
@@ -166,23 +189,34 @@ func _client_ui() -> void:
 		# smaller mass the caption would ride over it.
 		(_ui("VB/RockCounter/VB") as Control).add_theme_constant_override("separation", 0)
 	var fill := float(extra.get("fill", 0.0))
-	var pct := int(clampf(fill, 0.0, 1.0) * 100.0)
-	(_ui("RockTotalLabel/RockTotal") as Label).text = "%d%%" % pct
+	var held := held_text(float(extra.get("stock_kg", 0.0)), float(extra.get("stock_cap_kg", 0.0)))
+	(_ui("RockTotalLabel/RockTotal") as Label).text = held
 	var can_extract := fill > 0.0
+	var owner := str(extra.get("stock_owner", ""))
+	var whose := tr("%%HUD_REFINERY_HELD_BY") % [owner, held] if owner != "" else held
 	if state == "full":
-		_show_screen(true, "%%HUD_REFINERY_FULL", true, [ICON_INGOT], true)
+		_show_screen(true, tr("%%HUD_REFINERY_FULL") + "\n" + whose, true, [ICON_INGOT], true)
 	elif state == "blocked":
-		var shown: Array = REFUSALS.get(str(extra.get("blocked_reason", "")), REFUSALS[BLOCKED_TOO_MANY])
-		_show_screen(true, shown[0], can_extract, shown[1], true)
+		var reason := str(extra.get("blocked_reason", ""))
+		var shown: Array = REFUSALS.get(reason, REFUSALS[BLOCKED_MIXED_OWNERS])
+		var message: String = tr(shown[0])
+		if reason == BLOCKED_OTHER_OWNER:
+			message = tr("%%HUD_REFINERY_OTHER_OWNER") % [str(extra.get("refused_owner", "")), owner]
+		_show_screen(true, message, can_extract, shown[1], true)
 	elif state == "idle":
 		if belt_count > 0:
 			_show_screen(false, "", false)
 			(_ui("VB/RockCounter/VB/RockCount") as Label).text = "%.0f kg" % float(extra.get("preview_mass", 0.0))
 			(_ui("VB/RockCounter/VB/RockCountLabel") as Label).text = "%%HUD_REFINERY_READY"
 		elif can_extract:
-			_show_screen(true, tr("%%HUD_DEPOT_FILLING") % pct, true, [ICON_INGOT])
+			_show_screen(true, whose, true, [ICON_INGOT])
 		else:
 			_show_screen(true, "%%HUD_REFINERY_PLACE", false, [ICON_CRATE, ICON_ORE])
+
+
+## "38 / 50 kg": the metal held against a full crate's, whole kilograms.
+static func held_text(held_kg: float, cap_kg: float) -> String:
+	return "%d / %d kg" % [roundi(held_kg), roundi(cap_kg)]
 
 
 ## Whether [param body] is a hauling crate, empty or not.

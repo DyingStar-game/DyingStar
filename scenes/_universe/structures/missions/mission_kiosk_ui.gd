@@ -68,6 +68,14 @@ func setup(subsidiary: AresBrand.Subsidiary, feed: MissionFeed) -> void:
 	_feed = feed
 	_feed.updated.connect(show_missions)
 	show_missions(_feed.missions)
+	PlayerServices.changed.connect(_on_services_changed)
+
+
+## A mission was taken, turned in, given up (a notification, the DataPad, this kiosk): the "In progress"
+## tiles are read again, or one over left them showing (playtest 2026-11-08).
+func _on_services_changed(area: String) -> void:
+	if area == "missions" and _mine and is_inside_tree():
+		_load_mine()
 
 
 ## The missions on offer changed: the chips and the tiles follow; an open sheet stays open.

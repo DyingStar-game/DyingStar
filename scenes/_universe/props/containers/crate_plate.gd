@@ -10,10 +10,11 @@ extends MeshInstance3D
 ## Matte grey paper, dark grey ink, a grey bezel around it — the look of the machines' own screens.
 ## Backlit at night: a Photocell switches a soft glow on at dusk, like the village's street lamps.
 ##
-## Drawn only up close, like the crate's serial number: a depot's shelves hold two hundred crates, and
-## drawing every plate as they stream in would stall the frame and hold 1 MB of texture each. A plate
-## is drawn when the camera comes within RENDER_RANGE_M (a few per frame at most), shown up to
-## DRAW_RANGE_M, and its picture dropped past FORGET_RANGE_M.
+## Its text is drawn only up close: a depot's shelves hold two hundred crates, and drawing every plate as
+## they stream in would stall the frame and hold 1 MB of texture each. The text is drawn when the camera
+## comes within RENDER_RANGE_M (a few per frame at most) and dropped past FORGET_RANGE_M; the plate itself,
+## blank paper beyond that, stays in sight up to DRAW_RANGE_M, backlit at night (playtest 2026-11-08: from
+## afar the crates had lost their plates).
 
 const PX := 512
 ## The display on the crate front (m), and the bezel's margin around it.
@@ -25,12 +26,12 @@ const BEZEL := Color(0.32, 0.33, 0.34)
 ## The night backlight: a soft cold white, enough to read the plate, not to light the ground.
 const BACKLIGHT := Color(0.85, 0.9, 1.0)
 const BACKLIGHT_ENERGY := 0.35
-## Shown within this distance (m) of the camera, as the serial number's labels.
-const DRAW_RANGE_M := 4.0
+## The plate is in sight within this distance (m) of the camera, blank past FORGET_RANGE_M.
+const DRAW_RANGE_M := 25.0
 ## Drawn when the camera comes this close (m): a little ahead of being shown.
 const RENDER_RANGE_M := 6.0
-## Its picture is dropped past this distance (m); drawn again on the way back.
-const FORGET_RANGE_M := 15.0
+## Its text is dropped past this distance (m), the paper left blank; drawn again on the way back.
+const FORGET_RANGE_M := 8.0
 ## How often a plate looks at the camera distance (s).
 const CHECK_PERIOD_S := 0.5
 ## At most this many plates are drawn in one frame, the rest on the next ones.
@@ -228,6 +229,9 @@ static func build_layout(content: Dictionary) -> Control:
 			"%d %%" % roundi(float(content.get("purity", 0.0)) * 100.0)))
 	col.add_child(_rule(1))
 	col.add_child(_row(ICON_OWNER, "%%PLATE_OWNER", str(content.get("owner", CrateContent.OWNER_ARES))))
+	var reserved: Variant = content.get("reserved_for")
+	if reserved is Dictionary:  # kept for a transport: whose to take (TransportReservations)
+		col.add_child(_row(ICON_OWNER, "%%PLATE_RESERVED", str((reserved as Dictionary).get("name", ""))))
 	return root
 
 

@@ -19,6 +19,12 @@ func _ready() -> void:
 	_apply_content()
 
 
+## Grabbable as any prop, but a crate shelved in a warehouse is the warehouse's: only a storekeeper or
+## the players it is reserved for take it (WarehouseDelivery.may_take).
+func interact(interactor: Node = null) -> bool:
+	return super.interact(interactor) and WarehouseDelivery.may_take(self, interactor)
+
+
 ## PropSync applies the replicated transform, then calls this with the full payload so we can pick up
 ## our own (non-transform) fields.
 func apply_prop_data(data: Dictionary) -> void:

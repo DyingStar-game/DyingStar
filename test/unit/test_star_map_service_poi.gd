@@ -164,3 +164,20 @@ func test_a_mission_point_is_drawn_by_the_contract_that_names_it() -> void:
 	var own := StarMapPoi.service_entry(_poi({"id": "own", "ownerType": "player"}), "tarsis_3")
 	assert_eq(own["kind"], "player")
 	MissionPoiCache.set_mission_roles([], [], [])
+
+
+func test_a_contract_s_point_leaves_the_chart_with_the_contract() -> void:
+	MissionPoiCache.clear()
+	MissionPoiCache.add({"id": "depot", "name": "F0001"}, MissionPoiCache.ORIGIN_CONTRACT)
+	MissionPoiCache.set_mission_roles([], ["depot"], [])
+	assert_eq(MissionPoiCache.entries().size(), 1, "held: on the chart")
+	assert_eq(MissionPoiCache.accepted_ids(), ["depot"])
+	MissionPoiCache.set_mission_roles([], [], [])
+	assert_true(MissionPoiCache.entries().is_empty(), "turned in at a kiosk: nobody's contract, gone")
+	MissionPoiCache.clear()
+
+
+func test_every_point_a_mission_names_is_found() -> void:
+	var mission := {"zones": [{"poiId": "z"}], "objectives": [
+		{"params": {"zone": {"poiId": "to"}, "source": {"poiId": "from"}}}, {"params": {"zone": {"poiId": "to"}}}]}
+	assert_eq(MissionPoiCache.poi_ids_of(mission), ["z", "to", "from"])

@@ -114,6 +114,21 @@ func test_admin_fill_of_a_full_shelf_reserves_nothing() -> void:
 	assert_eq(_shelf.reserve_random_slots(RandomNumberGenerator.new()).size(), 0)
 
 
+func test_reserve_free_slots_takes_only_what_is_asked_never_a_taken_one() -> void:
+	_shelf.shelf_slots_occupied[0] = true  # a crate already there
+	var picked: Array[int] = _shelf.reserve_free_slots(3)
+	assert_eq(picked, [1, 2, 3] as Array[int], "the first free slots, in order")
+	var marked := 0
+	for v: bool in _shelf.shelf_slots_occupied:
+		marked += 1 if v else 0
+	assert_eq(marked, 4, "no slot left marked with no crate coming to it")
+
+
+func test_reserve_free_slots_of_a_full_shelf_reserves_nothing() -> void:
+	_shelf.shelf_slots_occupied.fill(true)
+	assert_eq(_shelf.reserve_free_slots(5).size(), 0)
+
+
 func test_crate_spawned_on_a_reserved_slot_binds_it() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3

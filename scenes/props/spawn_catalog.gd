@@ -84,6 +84,9 @@ const ENTRIES := {
 		"label": "%%SPAWN_MINING_TOOL", "scene": "res://scenes/_universe/props/tools/mining_tool_prop.tscn",
 		"type": "tool", "distance": 1.5, "origin_height": 0.4,
 	},
+	# Not a prop: an action (action_of). Stocks the depot the player stands in with crates of crushed ore,
+	# as if delivered -- something for a transport to load (CargoDepot.server_stock_ore).
+	"stock_ore": {"label": "%%SPAWN_STOCK_ORE", "action": "stock_ore"},
 	"truck": {
 		"label": "%%SPAWN_TRUCK", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 		"type": "vehicle", "distance": 8.0, "origin_height": 1.0,
@@ -94,7 +97,7 @@ const ENTRIES := {
 ## Only KEYS live here — the labels come from ENTRIES, so there is nothing to keep in sync.
 const WHEEL := [
 	{"text": "%%SPAWN_ROCK", "keys": ["rock", "rock_medium", "rock_large"]},
-	{"text": "%%SPAWN_CRATE", "keys": ["box", "hauling_box", "crate_crushed", "crate_ingot", "crate_container",
+	{"text": "%%SPAWN_CRATE", "keys": ["box", "hauling_box", "crate_crushed", "crate_ingot", "stock_ore", "crate_container",
 			"pallet_plate", "pallet_crate", "pallet_benne", "pallet_liquid"]},
 	{"text": "%%SPAWN_COMPONENTS_T1", "keys": ["engine_t1", "battery_t1"]},
 	{"key": "truck"},
@@ -108,6 +111,8 @@ const WHEEL := [
 const ADMIN_ENTRIES := {
 	"admin_fill_shelves": {"label": "%%SPAWN_FILL_SHELVES", "action": "admin_fill_shelves"},
 }
+## How many crates of crushed ore the stock entry puts in a depot (CargoDepot.server_stock_ore).
+const STOCK_CRATES := 20
 
 ## Test crates of the ore chain: one crate of TEST_MINERAL at TEST_PURITY, as the Crusher packs it.
 const TEST_MINERAL := "gold"
@@ -134,9 +139,9 @@ static func test_crate(entry: Dictionary, miner_id: String, miner_name: String =
 static func entry(key: String) -> Dictionary:
 	return ENTRIES.get(key, {})
 
-## The admin action a wheel key stands for, or "" for a spawn key.
-static func admin_action(key: String) -> String:
-	return str(ADMIN_ENTRIES.get(key, {}).get("action", ""))
+## The action a wheel key stands for (an admin entry, or a dev entry that is no prop), or "" for a spawn key.
+static func action_of(key: String) -> String:
+	return str(ADMIN_ENTRIES.get(key, ENTRIES.get(key, {})).get("action", ""))
 
 ## The options tree for the RadialMenu (see scenes/ui/radial_menu.gd), built from WHEEL + ENTRIES, plus
 ## an Admin category of ADMIN_ENTRIES when [param admin].

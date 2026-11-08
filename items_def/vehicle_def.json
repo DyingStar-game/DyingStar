@@ -65,7 +65,8 @@
 			"frequency": 1.0,
 			"properties": [
 				"scenename",
-				"parent_id"
+				"parent_id",
+				"spawned_by"
 			]
 		}
 	]

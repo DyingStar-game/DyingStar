@@ -129,3 +129,17 @@ func test_the_chart_camera_stands_where_a_view_says_at_once() -> void:
 	to.restore(from.snapshot())
 	assert_eq(to.snapshot(), from.snapshot())
 	assert_false(to.is_travelling(), "shown as it is, not travelled to")
+
+
+func test_who_had_the_truck_delivered_travels_once() -> void:
+	var tag := VehicleSpawnedBy.new()
+	tag.name = "player-kira"
+	var data := {}
+	tag.write_changes(data)
+	assert_eq(data, {VehicleSpawnedBy.KEY: "player-kira"}, "the server sends it")
+	data = {}
+	tag.write_changes(data)
+	assert_true(data.is_empty(), "once")
+	var replica := VehicleSpawnedBy.new()
+	replica.read({VehicleSpawnedBy.KEY: "player-kira"})
+	assert_eq(replica.name, "player-kira")

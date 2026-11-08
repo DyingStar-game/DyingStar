@@ -67,6 +67,58 @@ func is_typing() -> bool:
 	return false
 
 
+## Screen view contract (ScreenLock): what its user is looking at, for the players watching.
+func view_state() -> Dictionary:
+	return {"system": _system, "body": _body_key, "filter": _filter.text, "lon": _lon.text,
+			"lat": _lat.text, "height": _height.text, "mode": _mode.selected,
+			"station": _picked_station.label if _picked_station != null else "", "status": _status.text,
+			"open": _open_headings()}
+
+
+## The headings of the destination tree that are unfolded, by their text.
+func _open_headings() -> Array:
+	var out: Array = []
+	var root: TreeItem = _dest_list.get_root()
+	for heading: TreeItem in (root.get_children() if root != null else []):
+		if not heading.collapsed:
+			out.append(heading.get_text(0))
+	return out
+
+
+## Screen view contract (ScreenLock): show what the user of this teleporter is looking at. The lists
+## are rebuilt only when the system, the body or the filter changed (the view is repeated every second).
+func apply_view_state(view: Dictionary) -> void:
+	var system := str(view.get("system", ""))
+	if system != "" and system != _system:
+		for i: int in range(_system_list.item_count):
+			if str(_system_list.get_item_metadata(i)) == system:
+				_system_list.select(i)
+				_on_system_picked(i)
+	var body := str(view.get("body", ""))
+	if body != "" and body != _body_key:
+		for i: int in range(_body_list.item_count):
+			if str(_body_list.get_item_metadata(i)) == body:
+				_body_list.select(i)
+				_on_body_picked(i)
+	if str(view.get("filter", "")) != _filter.text:
+		_filter.text = str(view.get("filter", ""))
+		_apply_filter()
+	_lon.text = str(view.get("lon", ""))
+	_lat.text = str(view.get("lat", ""))
+	_height.text = str(view.get("height", ""))
+	_mode.select(clampi(int(view.get("mode", 0)), 0, _mode.item_count - 1))
+	var station := str(view.get("station", ""))
+	_picked_station = null
+	for dest: TeleportDestination in _all_dests:
+		if station != "" and dest.label == station and dest.is_station():
+			_picked_station = dest
+	_status.text = str(view.get("status", ""))
+	var open: Array = view.get("open") if view.get("open") is Array else []
+	var root: TreeItem = _dest_list.get_root()
+	for heading: TreeItem in (root.get_children() if root != null else []):
+		heading.collapsed = not open.has(heading.get_text(0))
+
+
 func set_enabled(on: bool) -> void:
 	_enabled = on
 	_refresh_buttons()

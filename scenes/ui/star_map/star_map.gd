@@ -496,7 +496,7 @@ func _offer_play_hints() -> void:
 		PlayHints.row(&"star_map_search", "%%HINT_MAP_SEARCH"),
 		PlayHints.row(&"star_map_reset", "%%HINT_MAP_RESET"),
 		PlayHints.row(&"star_map", "%%HINT_MAP_CLOSE"),
-	], is_open, 50)
+	], func() -> bool: return is_open() and keys_live, 50)  # on the cab screen its keys are not live: no help
 
 
 ## Tell the chart which body is the local player, so it can show where you are.
@@ -614,8 +614,14 @@ func host_in(slot: Control) -> void:
 	PlayerServices.changed.connect(_on_services_changed)
 
 
-## Something the player owns changed in a service. Only the points of interest concern the chart.
+## Something the player owns changed in a service: its points of interest, or its missions (which name points).
 func _on_services_changed(area: String) -> void:
+	if area == "missions":
+		# A mission was taken, turned in, given up: which points are live contracts changed.
+		await MissionPoiCache.refresh_accepted()
+		if is_instance_valid(self) and is_open():
+			_push_service_pois()
+		return
 	if area != "pois":
 		return
 	# A mutation happened, so the cache is REBUILT rather than re-read: ensure_loaded answers
