@@ -71,7 +71,18 @@ func is_typing() -> bool:
 func view_state() -> Dictionary:
 	return {"system": _system, "body": _body_key, "filter": _filter.text, "lon": _lon.text,
 			"lat": _lat.text, "height": _height.text, "mode": _mode.selected,
-			"station": _picked_station.label if _picked_station != null else "", "status": _status.text}
+			"station": _picked_station.label if _picked_station != null else "", "status": _status.text,
+			"open": _open_headings()}
+
+
+## The headings of the destination tree that are unfolded, by their text.
+func _open_headings() -> Array:
+	var out: Array = []
+	var root: TreeItem = _dest_list.get_root()
+	for heading: TreeItem in (root.get_children() if root != null else []):
+		if not heading.collapsed:
+			out.append(heading.get_text(0))
+	return out
 
 
 ## Screen view contract (ScreenLock): show what the user of this teleporter is looking at. The lists
@@ -102,6 +113,10 @@ func apply_view_state(view: Dictionary) -> void:
 		if station != "" and dest.label == station and dest.is_station():
 			_picked_station = dest
 	_status.text = str(view.get("status", ""))
+	var open: Array = view.get("open") if view.get("open") is Array else []
+	var root: TreeItem = _dest_list.get_root()
+	for heading: TreeItem in (root.get_children() if root != null else []):
+		heading.collapsed = not open.has(heading.get_text(0))
 
 
 func set_enabled(on: bool) -> void:

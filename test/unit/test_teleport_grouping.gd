@@ -83,3 +83,7 @@ func test_a_watcher_sees_the_teleporter_as_its_user_does() -> void:
 	watcher.load_systems(TeleportCatalog.systems(), "tarsis")
 	watcher.apply_view_state(user.view_state())
 	assert_eq(watcher.view_state(), user.view_state(), "same body, filter, fields and message")
+	var heading: TreeItem = user._dest_list.get_root().get_first_child()
+	heading.collapsed = not heading.collapsed
+	watcher.apply_view_state(user.view_state())
+	assert_eq(watcher._open_headings(), user._open_headings(), "the same headings unfolded")
