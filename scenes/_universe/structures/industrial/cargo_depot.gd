@@ -29,6 +29,8 @@ extends Node3D
 ## Where the screen of crates to collect hangs (depot frame) when the scene has no PickupBoardAt marker:
 ## on the buffer room's far wall, left of the door to the aisles, facing the counter.
 const PICKUP_BOARD_AT := Vector3(-1.8, 2.0, 11.2)
+## How far (m) an aisle's sign is read from.
+const AISLE_SIGN_READ_M := 30.0
 const SHELVES_LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelves.json"
 ## The scene every shelf of SHELVES_LAYOUT is spawned from.
 const SHELF_SCENE := "scenes/_universe/props/furniture/metal_shelf.tscn"
@@ -120,6 +122,20 @@ func _ready() -> void:
 		var at := get_node_or_null("PickupBoardAt") as Node3D
 		board.transform = at.transform if at != null else Transform3D(Basis(Vector3.UP, PI), PICKUP_BOARD_AT)
 		add_child(board)
+		# At the mouth of each aisle, over the walk: its letter, seen coming from the buffer room (-Z).
+		for sign_at: Array in ShelfLabels.aisle_signs():
+			var aisle := Label3D.new()
+			aisle.name = "AisleSign_%s" % sign_at[0]
+			aisle.text = tr("%%DEPOT_AISLE") % sign_at[0]
+			aisle.font = AresBrand.font()
+			aisle.font_size = 96
+			aisle.pixel_size = 0.004
+			aisle.outline_size = 10
+			aisle.modulate = PickupBoard.INK
+			aisle.position = sign_at[1]
+			aisle.rotation.y = PI  # a Label3D faces +Z: turned to whoever walks in from -Z
+			aisle.visibility_range_end = AISLE_SIGN_READ_M
+			add_child(aisle)
 	# DIAGNOSTIC: confirm the depot exists on the server and its reception_area is monitoring.
 	var _ra := get_node_or_null("reception_area")
 	print("[cargo_depot] _ready on %s  reception_area=%s monitoring=%s mask=%s" % [

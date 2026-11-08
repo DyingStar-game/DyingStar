@@ -179,3 +179,15 @@ func test_a_shelf_is_labelled_by_where_it_stands_when_its_name_is_late() -> void
 	assert_eq(ShelfLabels.label_for(shelf), ShelfLabels.label_of("shelf_cargo_row1_1"), "by its place")
 	shelf.position = Vector3(40.0, 0.0, 40.0)
 	assert_eq(ShelfLabels.label_for(shelf), "", "a shelf outside the depot's rows has none")
+
+
+func test_each_aisle_has_its_sign_at_its_mouth() -> void:
+	var at := func(n: String, x: float, z: float, yaw: float) -> Dictionary:
+		return {"name": n, "position": {"x": x, "y": 0.0, "z": z}, "rotation": {"x": 0.0, "y": yaw, "z": 0.0}}
+	var signs := ShelfLabels.aisle_signs_for([at.call("wall", -7.6, 13.0, PI), at.call("l1", -6.8, 13.0, 0.0),
+		at.call("l2", -6.8, 14.0, 0.0), at.call("r1", -3.6, 13.0, PI)])
+	assert_eq(signs.size(), 2)
+	assert_eq(signs[1][0], "B")
+	assert_almost_eq((signs[1][1] as Vector3).x, -5.2, 0.001, "in the middle of the walk")
+	assert_almost_eq((signs[1][1] as Vector3).z, 12.0, 0.001, "before its first shelf")
+	assert_eq(ShelfLabels.aisle_signs().size(), 5, "the depot's five aisles")

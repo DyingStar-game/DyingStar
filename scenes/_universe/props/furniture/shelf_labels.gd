@@ -12,10 +12,16 @@ extends RefCounted
 const LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelves.json"
 ## The buffer rack the storekeepers fill first: not in an aisle.
 const BUFFER_SHELF := "shelf_cargo_temp_zone"
+## An aisle sign: how far (m) before the aisle's first shelf, how high, and for a row against a wall
+## how far into the walk its middle is.
+const ENTRY_M := 1.0
+const SIGN_HEIGHT_M := 2.6
+const SOLO_AISLE_HALF_M := 1.6
 
 ## Shelf name -> label, built once from the layout; and [position, name] of every shelf of it.
 static var _labels: Dictionary = {}
 static var _places: Array = []
+static var _signs: Array = []
 
 
 ## The label of the shelf [param shelf_name] ("A12"), "" for the buffer rack or a name the layout lacks.
@@ -47,6 +53,7 @@ static func _load() -> void:
 	var layout: Variant = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT))
 	var shelves: Array = layout if layout is Array else []
 	_labels = labels_for(shelves)
+	_signs = aisle_signs_for(shelves)
 	for shelf: Variant in shelves:
 		if shelf is Dictionary:
 			var at: Dictionary = shelf["position"]
@@ -56,32 +63,9 @@ static func _load() -> void:
 ## Every shelf of [param layout] (CargoDepot.SHELVES_LAYOUT entries: name, position, rotation) by its label.
 ## Pure, for the tests.
 static func labels_for(layout: Array) -> Dictionary:
-	# Rows: the shelves standing at one X (to the decimetre), all facing one way.
-	var rows: Dictionary = {}  # x key -> {"facing", "shelves": [[z, name]]}
-	for shelf: Variant in layout:
-		if not (shelf is Dictionary) or str(shelf.get("name", "")) == BUFFER_SHELF:
-			continue
-		var key := roundf(float(shelf["position"]["x"]) * 10.0) / 10.0
-		if not rows.has(key):
-			rows[key] = {"facing": signf(cos(float(shelf["rotation"]["y"]))), "shelves": []}
-		(rows[key]["shelves"] as Array).append([float(shelf["position"]["z"]), str(shelf["name"])])
-	# Aisles, along X: a row facing +X and the next one facing -X across the walk make one; a row with
-	# nobody across (against a wall) makes one alone.
-	var xs: Array = rows.keys()
-	xs.sort()
-	var aisles: Array = []
-	var i := 0
-	while i < xs.size():
-		var row: Dictionary = rows[xs[i]]
-		if row["facing"] > 0.0 and i + 1 < xs.size() and rows[xs[i + 1]]["facing"] < 0.0:
-			aisles.append([rows[xs[i]], rows[xs[i + 1]]])
-			i += 2
-		else:
-			aisles.append([row])
-			i += 1
 	var out: Dictionary = {}
+	var aisles := aisles_of(layout)
 	for a: int in range(aisles.size()):
-		var letter := String.chr(65 + a) if a < 26 else "Z%d" % a
 		var shelves: Array = []
 		for side: int in range((aisles[a] as Array).size()):
 			for s: Array in aisles[a][side]["shelves"]:
@@ -89,5 +73,62 @@ static func labels_for(layout: Array) -> Dictionary:
 		shelves.sort_custom(func(l: Array, r: Array) -> bool:
 			return l[0] < r[0] if not is_equal_approx(l[0], r[0]) else l[1] < r[1])
 		for n: int in range(shelves.size()):
-			out[shelves[n][2]] = "%s%02d" % [letter, n + 1]
+			out[shelves[n][2]] = "%s%02d" % [letter_of(a), n + 1]
 	return out
+
+
+## The sign at the mouth of each aisle of [param layout]: [letter, where it hangs (depot frame: in the
+## middle of the walk, ENTRY_M before its first shelf, SIGN_HEIGHT_M up)]. Pure, for the tests.
+static func aisle_signs_for(layout: Array) -> Array:
+	var out: Array = []
+	var aisles := aisles_of(layout)
+	for a: int in range(aisles.size()):
+		var rows: Array = aisles[a]
+		var x: float = float(rows[0]["x"]) + float(rows[0]["facing"]) * SOLO_AISLE_HALF_M
+		if rows.size() == 2:
+			x = (float(rows[0]["x"]) + float(rows[1]["x"])) * 0.5  # the middle of the walk between them
+		var first_z := INF
+		for row: Dictionary in rows:
+			for s: Array in row["shelves"]:
+				first_z = minf(first_z, float(s[0]))
+		out.append([letter_of(a), Vector3(x, SIGN_HEIGHT_M, first_z - ENTRY_M)])
+	return out
+
+
+## Every aisle sign of the depot's layout (aisle_signs_for).
+static func aisle_signs() -> Array:
+	_load()
+	return _signs
+
+
+## The letter of the [param index]-th aisle along X.
+static func letter_of(index: int) -> String:
+	return String.chr(65 + index) if index < 26 else "Z%d" % index
+
+
+## The aisles of [param layout], along X: each [row] or [row, row], a row being {"x", "facing",
+## "shelves": [[z, name]]} -- the shelves standing at one X (to the decimetre), all facing one way. A row
+## facing +X and the next one facing -X across the walk make one aisle; a row with nobody across (against
+## a wall) makes one alone.
+static func aisles_of(layout: Array) -> Array:
+	var rows: Dictionary = {}
+	for shelf: Variant in layout:
+		if not (shelf is Dictionary) or str(shelf.get("name", "")) == BUFFER_SHELF:
+			continue
+		var key := roundf(float(shelf["position"]["x"]) * 10.0) / 10.0
+		if not rows.has(key):
+			rows[key] = {"x": key, "facing": signf(cos(float(shelf["rotation"]["y"]))), "shelves": []}
+		(rows[key]["shelves"] as Array).append([float(shelf["position"]["z"]), str(shelf["name"])])
+	var xs: Array = rows.keys()
+	xs.sort()
+	var aisles: Array = []
+	var i := 0
+	while i < xs.size():
+		var row: Dictionary = rows[xs[i]]
+		if row["facing"] > 0.0 and i + 1 < xs.size() and rows[xs[i + 1]]["facing"] < 0.0:
+			aisles.append([row, rows[xs[i + 1]]])
+			i += 2
+		else:
+			aisles.append([row])
+			i += 1
+	return aisles
