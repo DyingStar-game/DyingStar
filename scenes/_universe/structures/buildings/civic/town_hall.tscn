@@ -15,6 +15,7 @@
 [ext_resource type="Script" uid="uid://mifl0d5rgfxb" path="res://scenes/_universe/props/lighting/emissive_glow.gd" id="15_glow"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/props/furniture/furn_danger_light.tscn" id="16_danger_light"]
 [ext_resource type="FontFile" uid="uid://ccjaqbtg4s41b" path="res://assets/fonts/Xolonium/Xolonium-Regular.ttf" id="17_font"]
+[ext_resource type="Script" path="res://scenes/_universe/props/effects/chimney_smoke.gd" id="90_chimney_smoke"]
 
 [sub_resource type="BoxShape3D" id="Shape_artist_board"]
 size = Vector3(1.7, 2.1, 0.2)
@@ -197,3 +198,17 @@ width = 420.0
 script = ExtResource("15_glow")
 model_path = NodePath("../Model")
 glass_materials = PackedStringArray("town_hall_gold_trim", "town_hall_emblem")
+
+[node name="SmokeL" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -23.5, 10.9, -12.25)
+script = ExtResource("90_chimney_smoke")
+mouth_radius = 0.4
+rise_speed = 2.5
+density = 0.6
+
+[node name="SmokeR" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 23.5, 10.9, -12.25)
+script = ExtResource("90_chimney_smoke")
+mouth_radius = 0.4
+rise_speed = 2.5
+density = 0.6

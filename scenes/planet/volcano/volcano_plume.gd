@@ -268,19 +268,33 @@ func _update_wind(t: float) -> void:
 		stones.trail_mat.set_shader_parameter("wind", Vector3(model.wind.x, 0.0, model.wind.y) * 0.25)
 
 
-## Sun and sky, in this frame: the star's real direction, and how much of it reaches here by now.
-func _light() -> void:
+## Sun and sky seen from [param node], in its frame (+Y its up): "to_star" the star's real direction,
+## "day" 0 at night to 1, "sun" and "sky" the light that reaches it by now. Shared with ChimneySmoke.
+static func sky_light(node: Node3D) -> Dictionary:
 	var to_star := Vector3.UP
 	var scene: Node = NetworkOrchestrator.universe_scene
 	var star: Node3D = scene.get_node_or_null("Star") as Node3D if scene != null else null
 	if star != null:
-		to_star = (star.global_position - global_position).normalized()
-		to_star = (global_basis.inverse() * to_star).normalized()
-	model.sun_dir = to_star
+		to_star = (star.global_position - node.global_position).normalized()
+		to_star = (node.global_basis.inverse() * to_star).normalized()
 	var day := smoothstep(-0.1, 0.18, to_star.y)
 	var low := 1.0 - smoothstep(0.0, 0.35, to_star.y)
-	var sun := Vector3(1.9, 1.8, 1.65).lerp(Vector3(2.1, 1.25, 0.7), low) * day
-	var sky := Vector3(0.6, 0.66, 0.75) * lerpf(0.1, 1.0, day)
+	return {
+		"to_star": to_star,
+		"day": day,
+		"sun": Vector3(1.9, 1.8, 1.65).lerp(Vector3(2.1, 1.25, 0.7), low) * day,
+		"sky": Vector3(0.6, 0.66, 0.75) * lerpf(0.1, 1.0, day),
+	}
+
+
+## Sun and sky, in this frame: the star's real direction, and how much of it reaches here by now.
+func _light() -> void:
+	var light := sky_light(self)
+	var to_star: Vector3 = light["to_star"]
+	model.sun_dir = to_star
+	var day: float = light["day"]
+	var sun: Vector3 = light["sun"]
+	var sky: Vector3 = light["sky"]
 	stones.trail_mat.set_shader_parameter("smoke_color", Vector3(0.26, 0.25, 0.245) * lerpf(0.05, 1.0, day))
 	_mat.set_shader_parameter("sun_dir", to_star)
 	_mat.set_shader_parameter("sun_color", sun)

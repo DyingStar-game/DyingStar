@@ -31,6 +31,10 @@ uniform float glow = 1.0;
 uniform float multi_scatter = 0.45;
 uniform float lava_fill = 0.8;
 uniform int max_steps = 140;
+// Shortest march step (m): 12 for a volcano's puffs of hundreds of metres, under one for a chimney's.
+uniform float min_step = 12.0;
+// Height (m) over which the light bounced off the ground fades.
+uniform float ground_fade_m = 1500.0;
 uniform float erosion = 1.05;
 uniform float noise_freq = 0.42;
 uniform vec3 ash_dark = vec3(0.075, 0.075, 0.08);
@@ -143,7 +147,7 @@ void fragment() {
 
 	float dither = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 	// Short step: fine enough for the lobes at this distance, whatever the distance.
-	float fine = max(t0 * 0.0022, 12.0);
+	float fine = max(t0 * 0.0022, min_step);
 	float coarse = fine * 3.0;
 	float t = t0 + coarse * dither;
 	bool inside = false;
@@ -160,7 +164,7 @@ void fragment() {
 			break;
 		}
 		vec3 p = ro + rd * t;
-		fine = max(t * 0.0022, 12.0);
+		fine = max(t * 0.0022, min_step);
 		coarse = fine * 3.0;
 		// The puffs this stretch of the ray can touch, the probes' reach included.
 		uint near[7];
@@ -252,7 +256,7 @@ void fragment() {
 		albedo = mix(albedo, cloud_tint, cloudy);
 		vec3 light = sun_color * sun_t * phase + sky_color * mix(0.05, 1.0, sky_t);
 		light += sun_color * multi_scatter * mix(0.3, 1.0, sky_t);
-		light += ground_color * (1.0 - smoothstep(0.0, 1500.0, p.y)) * 0.3;
+		light += ground_color * (1.0 - smoothstep(0.0, ground_fade_m, p.y)) * 0.3;
 		light += vec3(1.0, 0.3, 0.07) * glow * exp(-max(p.y, 0.0) / 800.0) * lava_fill;
 		vec3 src = albedo * light;
 		// The fire under the volcano, lighting the very base of the column.
