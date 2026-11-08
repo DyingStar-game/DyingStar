@@ -68,7 +68,6 @@ var _prime_amount: LineEdit
 
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_CORPORATIONS"), ServiceAppIcon.Kind.CORPORATIONS)
-	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
 	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
@@ -193,7 +192,7 @@ func _build() -> void:
 	_transfer_picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
 	adopt_field(_transfer_picker.search_field())
 	transfer_row.add_child(_transfer_picker)
-	_action_button(transfer_row, tr("%%SVC_ACT_TRANSFER"), func() -> void: _transfer())
+	_primary_button(transfer_row, tr("%%SVC_ACT_TRANSFER"), func() -> void: _transfer())
 	side2.add_child(transfer_row)
 
 	var parent_row := _row()
@@ -217,7 +216,7 @@ func _build() -> void:
 	create.add_child(_create_ticker)
 	create.add_child(_label(tr("%%SVC_LBL_RECRUITMENT"), DIM))
 	create.add_child(_create_recruitment)
-	_action_button(create, tr("%%SVC_ACT_CREATE_CORP"), func() -> void: _create_corporation())
+	_primary_button(create, tr("%%SVC_ACT_CREATE_CORP"), func() -> void: _create_corporation())
 	# The create form is the whole of the fourth segment: it goes to the column, which then
 	# takes the card.
 	side3.add_child(_titled(tr("%%SVC_ACT_CREATE_CORP"), create))
@@ -262,7 +261,7 @@ func _build() -> void:
 	_page_corp_taxes = ServicePage.new()
 	_page_corp_taxes.load_requested.connect(_load_corp_taxes)
 	_corp_taxes = _paged_list(pages[4], tr("%%SVC_LBL_TAX_DEBTS"), _page_corp_taxes, 110.0)
-	_action_button(side4, tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_corp_taxes())
+	_primary_button(side4, tr("%%SVC_ACT_PAY_TAXES"), func() -> void: _pay_corp_taxes())
 
 	# Salaries / prime / payroll — the same corporation pick as the treasury. The role defaults are
 	# a fixed table; the per-member overrides are the window the footer walks.
@@ -319,7 +318,7 @@ func _build() -> void:
 	_action_button(prime_row, tr("%%SVC_ACT_PRIME"), func() -> void: _prime())
 	side4.add_child(prime_row)
 
-	_action_button(side4, tr("%%SVC_ACT_PAYROLL"), func() -> void: _payroll())
+	_primary_button(side4, tr("%%SVC_ACT_PAYROLL"), func() -> void: _payroll())
 
 	add_chrome(_status_line())
 

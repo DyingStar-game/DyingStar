@@ -31,7 +31,6 @@ var _selected_id: String = ""
 
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_CONTACTS"), ServiceAppIcon.Kind.CONTACTS)
-	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
 	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
@@ -45,13 +44,19 @@ func _build() -> void:
 
 
 # ---------------------------------------------------------------------------------------------
-# Onglet 0 — le carnet (master/detail)
+# Onglet 0 — le carnet (master/detail), the mock-up's two columns
 # ---------------------------------------------------------------------------------------------
 
-func _build_contacts_page(page: VBoxContainer) -> void:
-	# La page doit remplir la hauteur pour que les deux colonnes prennent toute la tablette.
-	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+## The roster panel's width (px): the mock-up's 420, scaled to the tablet.
+const ROSTER_WIDTH: float = 520.0
 
+## Contact rows by player id, so the picked one is lit without rebuilding the list.
+var _roster_rows: Dictionary = {}
+var _roster_card: ServicePanel.Card
+
+
+func _build_contacts_page(page: VBoxContainer) -> void:
+	_frameless(page)
 	# The roster is one big window rather than the API's default: its filter and its alphabetical
 	# order are local, so the fewer pages the list is cut into, the more of the phone-book feeling
 	# survives. Beyond a hundred contacts the footer takes over.
@@ -59,94 +64,87 @@ func _build_contacts_page(page: VBoxContainer) -> void:
 	_page_roster.limit = 100
 	_page_roster.load_requested.connect(_load_roster)
 
-	var columns := _row(18)
-	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	# Colonne gauche : liste des contacts. The filter that narrows it is the segment's control, so
-	# it sits in the column beside the detail column the tablet draws next to the card.
-	var left := VBoxContainer.new()
-	left.add_theme_constant_override("separation", 10)
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	left.size_flags_stretch_ratio = 1.0
-	left.custom_minimum_size = Vector2(300, 0)
+	var columns := _columns()
+	# Left: the filter over the contacts, as rich rows (avatar, presence, name).
+	_roster_card = _panel(tr("%%SVC_TAB_CONTACTS"))
+	_fixed(_roster_card, ROSTER_WIDTH)
 	_filter = _field(tr("%%SVC_PH_FILTER_CONTACTS"), 0.0)
 	_filter.text_changed.connect(func(_text: String) -> void: _render_roster())
-	_side_page(0).add_child(_filter)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_roster = VBoxContainer.new()
-	_roster.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_roster.add_theme_constant_override("separation", 8)
-	scroll.add_child(_roster)
-	left.add_child(scroll)
-	left.add_child(_pager(_page_roster))
-	columns.add_child(left)
+	_roster_card.body.add_child(_filter)
+	_roster = _list_box()
+	_roster_card.body.add_child(_scroll(_roster))
+	_roster_card.body.add_child(_pager(_page_roster))
+	columns.add_child(_roster_card)
 
-	# Colonne droite : la fiche du contact sélectionné.
-	var right := ScrollContainer.new()
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right.size_flags_stretch_ratio = 1.4
-	right.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_detail_box = VBoxContainer.new()
-	_detail_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_box.add_theme_constant_override("separation", 12)
-	right.add_child(_detail_box)
-	columns.add_child(right)
-
+	# Right: the picked contact's sheet and what can be done with them.
+	var sheet := _panel(tr("%%SVC_SOC_CONTACT_SHEET"))
+	_detail_box = _list_box(12)
+	sheet.body.add_child(_scroll(_detail_box))
+	columns.add_child(sheet)
 	page.add_child(columns)
 	_render_detail_placeholder()
 
 
 # ---------------------------------------------------------------------------------------------
-# Onglet 1 — demandes
+# Onglet 1 — demandes: received | sent
 # ---------------------------------------------------------------------------------------------
 
 func _build_requests_page(page: VBoxContainer) -> void:
+	_frameless(page)
 	# One window carries both halves of the tab, so the footer sits under the first of them.
 	_page_requests = ServicePage.new()
 	_page_requests.rows_key = "incoming"
 	_page_requests.total_keys = PackedStringArray(["incomingTotal", "outgoingTotal"])
 	_page_requests.load_requested.connect(_load_requests)
-	_incoming = VBoxContainer.new()
-	_incoming.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_incoming.add_theme_constant_override("separation", 8)
-	_paged_box(page, tr("%%SVC_LBL_INCOMING_REQUESTS"), _page_requests, _incoming)
-	_outgoing = VBoxContainer.new()
-	_outgoing.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_outgoing.add_theme_constant_override("separation", 8)
-	page.add_child(_titled(tr("%%SVC_LBL_OUTGOING_REQUESTS"), _outgoing, true))
+	var columns := _columns()
+	var received := _panel(tr("%%SVC_LBL_INCOMING_REQUESTS"))
+	_incoming = _list_box()
+	received.body.add_child(_scroll(_incoming))
+	received.body.add_child(_pager(_page_requests))
+	columns.add_child(received)
+	var sent := _panel(tr("%%SVC_LBL_OUTGOING_REQUESTS"))
+	_outgoing = _list_box()
+	sent.body.add_child(_scroll(_outgoing))
+	columns.add_child(sent)
+	page.add_child(columns)
 
 
 # ---------------------------------------------------------------------------------------------
-# Onglet 2 — ajouter (recherche + suggestions)
+# Onglet 2 — ajouter: the search on top, results | recently met below
 # ---------------------------------------------------------------------------------------------
 
 func _build_add_page(page: VBoxContainer) -> void:
-	# The query is the segment's control: it runs from the column, the hits land in the card.
-	var side := _side_page(2)
-	var search_row := _row()
+	_frameless(page)
+	page.add_theme_constant_override("separation", 24)
+	var search_card := _panel("", "", 26.0, false)
+	search_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var search_row := _row(14)
 	_search = _field(tr("%%SVC_PH_PLAYER_NAME"), 240.0)
 	_search.text_submitted.connect(func(_text: String) -> void: _run_search())
-	search_row.add_child(_search)
-	_action_button(search_row, tr("%%SVC_ACT_SEARCH"), func() -> void: _run_search())
-	side.add_child(_titled(tr("%%SVC_LBL_SEARCH_PLAYER"), search_row))
+	search_row.add_child(_form_field(tr("%%SVC_LBL_SEARCH_PLAYER"), _search))
+	var go := _primary_button(search_row, tr("%%SVC_ACT_SEARCH"), func() -> void: _run_search())
+	go.size_flags_vertical = Control.SIZE_SHRINK_END
+	search_card.body.add_child(search_row)
+	page.add_child(search_card)
+
+	var columns := _columns()
 	_page_search = ServicePage.new()
 	_page_search.load_requested.connect(_load_search)
-	_results = VBoxContainer.new()
-	_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_results.add_theme_constant_override("separation", 8)
-	_paged_box(page, tr("%%SVC_LBL_RESULTS"), _page_search, _results)
+	var results := _panel(tr("%%SVC_LBL_RESULTS"))
+	_results = _list_box()
+	results.body.add_child(_scroll(_results))
+	results.body.add_child(_pager(_page_search))
+	columns.add_child(results)
 	_page_suggestions = ServicePage.new()
 	_page_suggestions.load_requested.connect(_load_suggestions)
-	_suggestions = VBoxContainer.new()
-	_suggestions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_suggestions.add_theme_constant_override("separation", 8)
-	_paged_box(page, tr("%%SVC_LBL_RECENTLY_MET"), _page_suggestions, _suggestions)
+	var met := _panel(tr("%%SVC_LBL_RECENTLY_MET"))
+	_suggestions = _list_box()
+	met.body.add_child(_scroll(_suggestions))
+	met.body.add_child(_pager(_page_suggestions))
+	columns.add_child(met)
+	page.add_child(columns)
+	# Nothing asked yet: say how to start.
+	_results.add_child(_empty_state("", tr("%%SVC_SOC_SEARCH_HINT")))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -154,12 +152,14 @@ func _build_add_page(page: VBoxContainer) -> void:
 # ---------------------------------------------------------------------------------------------
 
 func _build_blocks_page(page: VBoxContainer) -> void:
+	_frameless(page)
 	_page_blocks = ServicePage.new()
 	_page_blocks.load_requested.connect(_load_blocks)
-	_blocks = VBoxContainer.new()
-	_blocks.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_blocks.add_theme_constant_override("separation", 8)
-	_paged_box(page, tr("%%SVC_LBL_BLOCKED_PLAYERS"), _page_blocks, _blocks)
+	var card := _panel(tr("%%SVC_LBL_BLOCKED_PLAYERS"))
+	_blocks = _list_box()
+	card.body.add_child(_scroll(_blocks))
+	card.body.add_child(_pager(_page_blocks))
+	page.add_child(card)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -225,11 +225,14 @@ func _apply_friends(result: Dictionary) -> void:
 ## Rebuild the visible contact rows from the cache, honouring the live filter.
 func _render_roster(error: String = "") -> void:
 	_clear(_roster)
+	_roster_rows.clear()
+	_roster_card.set_count("" if error != "" else str(_friends_cache.size()))
 	if error != "":
-		_roster.add_child(_empty_label(error))
+		_roster.add_child(_empty_state(error, ""))
 		return
 	if _friends_cache.is_empty():
-		_roster.add_child(_empty_label(tr("%%SVC_MSG_NO_CONTACTS")))
+		_roster.add_child(_empty_state(tr("%%SVC_SOC_NO_CONTACTS"), tr("%%SVC_SOC_NO_CONTACTS_TEXT"),
+				tr("%%SVC_ACT_ADD_CONTACT"), func() -> void: goto_segment(2)))
 		return
 	var needle: String = _filter.text.strip_edges().to_lower() if _filter != null else ""
 	var shown: int = 0
@@ -240,11 +243,15 @@ func _render_roster(error: String = "") -> void:
 		var status: String = str(friend.get("status", ""))
 		var subtitle: String = ServiceTypes.presence(status) if status != "" else ""
 		var row: Button = _contact_button(friend, subtitle, status)
+		row.custom_minimum_size.y = 72
+		var friend_id: String = str(friend.get("playerId", ""))
+		ServiceStyle.apply_tile(row, friend_id == _selected_id)
 		row.pressed.connect(func() -> void: _render_detail(friend))
 		_roster.add_child(row)
+		_roster_rows[friend_id] = row
 		shown += 1
 	if shown == 0:
-		_roster.add_child(_empty_label(tr("%%SVC_MSG_NO_MATCH")))
+		_roster.add_child(_empty_state(tr("%%SVC_MSG_NO_MATCH"), ""))
 
 
 func _sorted_friends() -> Array:
@@ -264,11 +271,13 @@ func _find_friend(player_id: String) -> Dictionary:
 func _render_detail_placeholder() -> void:
 	_clear(_detail_box)
 	_selected_id = ""
-	_detail_box.add_child(_empty_label(tr("%%SVC_MSG_SELECT_CONTACT")))
+	_light_selected()
+	_detail_box.add_child(_empty_state("", tr("%%SVC_MSG_SELECT_CONTACT")))
 
 
 func _render_detail(profile: Dictionary) -> void:
 	_selected_id = str(profile.get("playerId", ""))
+	_light_selected()
 	_clear(_detail_box)
 	var status: String = str(profile.get("status", ""))
 	_detail_box.add_child(_detail_hero(profile, status))
@@ -280,19 +289,16 @@ func _render_detail(profile: Dictionary) -> void:
 ## La fiche : grand avatar badgé, nom, type/rôle et pilule de présence.
 func _detail_hero(profile: Dictionary, status: String) -> Control:
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel",
-			ServiceStyle.flat(ServiceStyle.PANEL, ServiceStyle.RADIUS, ServiceStyle.BORDER, 1, 20.0, 16.0))
-	var row := _row(16)
+	ServiceStyle.apply_card(card, 22.0)
+	var row := _row(20)
 	card.add_child(row)
-	row.add_child(_avatar_initial(str(profile.get("displayName", "?")), 72.0, status))
+	row.add_child(_avatar_initial(str(profile.get("displayName", "?")), 80.0, status))
 
 	var identity := VBoxContainer.new()
 	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	identity.add_theme_constant_override("separation", 4)
 	identity.alignment = BoxContainer.ALIGNMENT_CENTER
-	var name_label := _label(str(profile.get("displayName", "—")), ServiceStyle.TEXT)
-	ServiceStyle.font_of(name_label, 24, true)
-	identity.add_child(name_label)
+	identity.add_child(_title_lg(str(profile.get("displayName", "—")), 28))
 	var sub_parts := PackedStringArray()
 	if str(profile.get("entityType", "")) != "":
 		sub_parts.append(str(profile.get("entityType")))
@@ -317,17 +323,7 @@ func _detail_info(profile: Dictionary) -> Control:
 		[tr("%%SVC_LBL_FRIEND_SINCE"), ServiceTypes.dash(profile.get("friendsSince"))],
 		[tr("%%SVC_LBL_IDENTIFIER"), ServiceTypes.dash(profile.get("playerId"))],
 	]
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 18)
-	grid.add_theme_constant_override("v_separation", 6)
-	for entry: Array in entries:
-		grid.add_child(_label(str(entry[0]), ServiceStyle.MUTED))
-		var value := _label(str(entry[1]), ServiceStyle.TEXT)
-		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		grid.add_child(value)
-	return _sheet_card(tr("%%SVC_LBL_INFORMATION"), grid)
+	return _sheet_card(tr("%%SVC_LBL_INFORMATION"), _kv_grid(entries))
 
 
 func _detail_bio(profile: Dictionary) -> Control:
@@ -345,12 +341,15 @@ func _detail_actions(profile: Dictionary) -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 10)
 	column.add_child(_compose_box(profile, player_id))
-	var row := _row()
+	var row := _actions_bar()
 	# Ouvre la messagerie privée avec ce contact : ChatNetwork épingle ce correspondant comme
 	# la conversation en cours et révèle le journal (fiche → "Message").
 	_action_button(row, tr("%%SVC_ACT_MESSAGE"), func() -> void: _message_player(profile, player_id))
-	_action_button(row, tr("%%SVC_ACT_REMOVE"), func() -> void: _remove_friend(player_id))
-	_action_button(row, tr("%%SVC_ACT_BLOCK"), func() -> void: _block_player(player_id))
+	row.add_child(_spacer())
+	ServiceStyle.apply_button_kind(_action_button(row, tr("%%SVC_ACT_REMOVE"),
+			func() -> void: _remove_friend(player_id)), ServiceStyle.ButtonKind.GHOST)
+	ServiceStyle.apply_button_kind(_action_button(row, tr("%%SVC_ACT_BLOCK"),
+			func() -> void: _block_player(player_id)), ServiceStyle.ButtonKind.DANGER)
 	column.add_child(row)
 	return column
 
@@ -362,10 +361,9 @@ func _detail_actions(profile: Dictionary) -> Control:
 ## away from whoever they were writing to in the message box. Enter sends, like the chat input.
 func _compose_box(profile: Dictionary, player_id: String) -> Control:
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel",
-			ServiceStyle.flat(ServiceStyle.PANEL, ServiceStyle.RADIUS, ServiceStyle.BORDER, 1, 16.0, 12.0))
+	ServiceStyle.apply_card(card, 18.0)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 8)
+	column.add_theme_constant_override("separation", 10)
 	card.add_child(column)
 	column.add_child(_label(tr("%%SVC_LBL_MESSAGE_TO") % str(profile.get("displayName", "—")),
 			ServiceStyle.TEXT))
@@ -375,7 +373,7 @@ func _compose_box(profile: Dictionary, player_id: String) -> Control:
 	var field := _field(tr("%%SVC_PLH_MESSAGE"), 220.0)
 	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(field)
-	var send := _action_button(row, tr("%%SVC_ACT_SEND_MESSAGE"),
+	var send := _primary_button(row, tr("%%SVC_ACT_SEND_MESSAGE"),
 			func() -> void: _send_dm(player_id, field))
 	field.text_submitted.connect(func(_text: String) -> void: _send_dm(player_id, field))
 	send.tooltip_text = tr("%%SVC_TIP_SEND_MESSAGE")
@@ -411,8 +409,8 @@ func _apply_requests(result: Dictionary) -> void:
 	_clear(_outgoing)
 	if not bool(result.get("ok", false)):
 		var error: String = tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))
-		_incoming.add_child(_empty_label(error))
-		_outgoing.add_child(_empty_label(error))
+		_incoming.add_child(_empty_state(error, ""))
+		_outgoing.add_child(_empty_state(error, ""))
 		return
 	_fill_requests(_incoming, _page_requests.rows(result), true)
 	_fill_requests(_outgoing, ServicePage.items_of(result, "outgoing"), false)
@@ -420,7 +418,10 @@ func _apply_requests(result: Dictionary) -> void:
 
 func _fill_requests(box: VBoxContainer, source: Variant, incoming: bool) -> void:
 	if not (source is Array) or (source as Array).is_empty():
-		box.add_child(_empty_label(tr("%%SVC_MSG_NO_INCOMING") if incoming else tr("%%SVC_MSG_NO_OUTGOING")))
+		if incoming:
+			box.add_child(_empty_state(tr("%%SVC_SOC_NO_REQUESTS"), tr("%%SVC_SOC_NO_REQUESTS_TEXT")))
+		else:
+			box.add_child(_empty_state(tr("%%SVC_SOC_NO_SENT"), tr("%%SVC_SOC_NO_SENT_TEXT")))
 		return
 	for request: Dictionary in source:
 		var profile: Dictionary = request.get("player", {}) if request.get("player") is Dictionary else {}
@@ -465,20 +466,20 @@ func _load_search() -> void:
 func _fill_search(result: Dictionary) -> void:
 	_clear(_results)
 	if not bool(result.get("ok", false)):
-		_results.add_child(_empty_label(HttpClient.describe_error(result)))
+		_results.add_child(_empty_state(HttpClient.describe_error(result), ""))
 		return
 	var count: int = 0
 	for profile: Dictionary in _page_search.rows(result):
 		_results.add_child(_add_contact_card(profile))
 		count += 1
 	if count == 0:
-		_results.add_child(_empty_label(tr("%%SVC_MSG_NO_RESULTS")))
+		_results.add_child(_empty_state(tr("%%SVC_SOC_NO_RESULTS"), tr("%%SVC_SOC_NO_RESULTS_TEXT")))
 
 
 func _apply_suggestions(result: Dictionary) -> void:
 	_clear(_suggestions)
 	if not bool(result.get("ok", false)):
-		_suggestions.add_child(_empty_label(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))))
+		_suggestions.add_child(_empty_state(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", "")), ""))
 		return
 	var count: int = 0
 	for suggestion: Dictionary in _page_suggestions.rows(result):
@@ -486,7 +487,7 @@ func _apply_suggestions(result: Dictionary) -> void:
 		_suggestions.add_child(_add_contact_card(suggestion, tr("%%SVC_FMT_MET_TIMES") % encounters))
 		count += 1
 	if count == 0:
-		_suggestions.add_child(_empty_label(tr("%%SVC_MSG_NO_SUGGESTIONS")))
+		_suggestions.add_child(_empty_state(tr("%%SVC_SOC_NO_SUGGESTIONS"), tr("%%SVC_SOC_NO_SUGGESTIONS_TEXT")))
 
 
 func _add_contact_card(profile: Dictionary, subtitle: String = "") -> Control:
@@ -511,7 +512,7 @@ func _add_friend(player_id: String) -> void:
 func _apply_blocks(result: Dictionary) -> void:
 	_clear(_blocks)
 	if not bool(result.get("ok", false)):
-		_blocks.add_child(_empty_label(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))))
+		_blocks.add_child(_empty_state(tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", "")), ""))
 		return
 	var count: int = 0
 	for block: Dictionary in _page_blocks.rows(result):
@@ -521,7 +522,7 @@ func _apply_blocks(result: Dictionary) -> void:
 				"", [[tr("%%SVC_ACT_UNBLOCK"), func() -> void: _unblock(player_id)]]))
 		count += 1
 	if count == 0:
-		_blocks.add_child(_empty_label(tr("%%SVC_MSG_NO_BLOCKED")))
+		_blocks.add_child(_empty_state(tr("%%SVC_SOC_NO_BLOCKED"), tr("%%SVC_SOC_NO_BLOCKED_TEXT")))
 
 
 func _remove_friend(player_id: String) -> void:
@@ -549,22 +550,30 @@ func _unblock(player_id: String) -> void:
 # Petits utilitaires locaux
 # ---------------------------------------------------------------------------------------------
 
-func _empty_label(text: String) -> Label:
-	var label := _label(text, ServiceStyle.MUTED)
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	return label
+## A column of rows that fills its scroll's height, so an empty state centres in the panel.
+static func _list_box(separation: int = 10) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", separation)
+	return box
+
+
+## Light the roster row of the contact on show, and only it.
+func _light_selected() -> void:
+	for id: String in _roster_rows:
+		var row: Button = _roster_rows[id]
+		if is_instance_valid(row):
+			ServiceStyle.apply_tile(row, id == _selected_id)
 
 
 ## Une carte à en-tête (caption) et corps, pour la fiche contact.
 func _sheet_card(caption: String, body: Control) -> Control:
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel",
-			ServiceStyle.flat(ServiceStyle.PANEL_ALT, ServiceStyle.RADIUS, ServiceStyle.BORDER, 1, 18.0, 14.0))
+	ServiceStyle.apply_card(card, 20.0)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
-	var header := _label(caption.to_upper(), ServiceStyle.MUTED)
-	ServiceStyle.font_of(header, 12, true)
-	box.add_child(header)
+	box.add_theme_constant_override("separation", 12)
+	box.add_child(_subheading(caption))
 	box.add_child(body)
 	card.add_child(box)
 	return card

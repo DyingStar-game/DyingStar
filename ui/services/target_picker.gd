@@ -17,6 +17,9 @@ extends VBoxContainer
 
 ## A row was picked (or re-picked). [param kind] is KIND_PLAYER or KIND_CORPORATION.
 signal picked(target_id: String, kind: String)
+## The pick was dropped (the chip's ×, or the host clearing it): a host showing the choice elsewhere
+## (the bank's transfer summary) forgets it too.
+signal cleared
 
 enum Mask { PLAYERS, CORPORATIONS, EITHER }
 
@@ -45,6 +48,8 @@ var _chip_row: HBoxContainer
 var _chip: Label
 var _picked_id: String = ""
 var _picked_kind: String = ""
+## The picked row's name, as its row showed it.
+var _picked_name: String = ""
 ## True when the host asked for the collapsed form; false keeps the body open for good.
 var _collapsible: bool = false
 var _open: bool = true
@@ -165,12 +170,19 @@ func picked_kind() -> String:
 	return _picked_kind
 
 
+## The picked row's name (a player's display name, a corporation's), "" when nothing is picked.
+func picked_name() -> String:
+	return _picked_name
+
+
 ## Drop the current pick (chip and ids); the open source stays.
 func clear_pick() -> void:
 	_picked_id = ""
 	_picked_kind = ""
+	_picked_name = ""
 	_chip.text = ""
 	_chip_row.visible = false
+	cleared.emit()
 
 
 ## The expander's state: body shown or hidden, button worded for the action it offers next. The
@@ -223,7 +235,7 @@ func _first_visible_source() -> String:
 func _add_source(id: String, label: String) -> void:
 	var button := Button.new()
 	button.text = label
-	ServiceStyle.apply_segment(button, false)
+	ServiceStyle.apply_choice(button, false)
 	button.pressed.connect(func() -> void: _show_source(id))
 	_source_row.add_child(button)
 	_source_buttons[id] = button
@@ -241,7 +253,7 @@ func _sync_source_ui() -> void:
 	for key: String in _source_buttons:
 		var button := _source_buttons[key] as Button
 		button.set_pressed_no_signal(key == _source)
-		ServiceStyle.apply_segment(button, key == _source)
+		ServiceStyle.apply_choice(button, key == _source)
 	_search_row.visible = _source == SRC_PLAYERS or _source == SRC_CORPS
 
 
@@ -375,6 +387,7 @@ func set_pick(target_id: String, kind: String, display: String) -> void:
 		return
 	_picked_id = target_id
 	_picked_kind = kind
+	_picked_name = display
 	_chip.text = "%s : %s (%s)" % [tr("%%SVC_LBL_SELECTED"), display, target_id]
 	_chip_row.visible = true
 	picked.emit(target_id, kind)

@@ -638,6 +638,36 @@ static func zone_line(zone: Variant) -> String:
 	return zone_kind_label(kind)
 
 
+## How far the step under way of a list row's `progress` is (0..1): its measure, else 0.
+static func progress_ratio(progress: Variant) -> float:
+	if not (progress is Dictionary) or not ((progress as Dictionary).get("current") is Dictionary):
+		return 1.0 if progress is Dictionary and int((progress as Dictionary).get("steps", 0)) > 0 else 0.0
+	var current: Dictionary = (progress as Dictionary).get("current")
+	var target: int = num(current.get("targetQuantity"))
+	return clampf(float(num(current.get("currentProgress"))) / float(target), 0.0, 1.0) if target > 0 else 0.0
+
+
+## A list row's route, "M0001 → F0001", from its `progress` ends (their village, else their name);
+## "" when it names no two ends.
+static func progress_route(progress: Variant) -> String:
+	if not (progress is Dictionary):
+		return ""
+	var from := _place_short((progress as Dictionary).get("from"))
+	var to := _place_short((progress as Dictionary).get("to"))
+	return "%s → %s" % [from, to] if from != "" and to != "" else ""
+
+
+## A mission location's short name: its village, else its name, else "".
+static func _place_short(location: Variant) -> String:
+	if not (location is Dictionary):
+		return ""
+	for key: String in ["village", "name"]:
+		var value: Variant = (location as Dictionary).get(key)
+		if value != null and str(value) != "":
+			return str(value)
+	return ""
+
+
 ## The rows of a mission service listing {missions: [{assignment, mission}]} ([param data], the
 ## answer's `data`): the dictionaries only, [] for anything else.
 static func mission_rows(data: Variant) -> Array:
