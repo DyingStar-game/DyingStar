@@ -10,6 +10,13 @@ signal shadow_distance_changed(distance: float)
 ## No audio bus is involved: a bus mute is applied after the effect chain, so AudioEffectCapture
 ## would keep feeding the voice client and the others would still hear us.
 signal microphone_muted_changed(muted: bool)
+## Emitted when the voice mode changes (VOICE_PUSH_TO_TALK / VOICE_OPEN_MIC).
+signal voice_mode_changed(mode: String)
+
+## Voice modes: the microphone sends only while the push-to-talk key is held (the default: a poor
+## headset would otherwise fill everybody's ears with its noise, playtest 2026-11-08), or always.
+const VOICE_PUSH_TO_TALK := "push_to_talk"
+const VOICE_OPEN_MIC := "open_mic"
 
 # user:// is writable in an exported build (res:// is packed read-only), so settings actually
 # persist between sessions there.
@@ -124,6 +131,7 @@ func initialize_settings():
 		config.set_value("audio", key, 100.0)
 	# HUD mic toggle, remembered between sessions like every other audio setting.
 	config.set_value("audio", "microphone_muted", false)
+	config.set_value("audio", "voice_mode", VOICE_PUSH_TO_TALK)
 
 ## Settings > General > Play hints: the keys of the moment on the left of the screen (PlayHintsPanel).
 ## On by default: they are for the player who does not know the keys yet, and go away once learnt.
@@ -280,6 +288,20 @@ func set_microphone_muted(muted: bool) -> void:
 	config.set_value("audio", "microphone_muted", muted)
 	save_settings()
 	microphone_muted_changed.emit(muted)
+
+## The voice mode: VOICE_PUSH_TO_TALK (default) or VOICE_OPEN_MIC.
+func voice_mode() -> String:
+	var mode := str(config.get_value("audio", "voice_mode", VOICE_PUSH_TO_TALK))
+	return mode if mode in [VOICE_PUSH_TO_TALK, VOICE_OPEN_MIC] else VOICE_PUSH_TO_TALK
+
+
+func set_voice_mode(mode: String) -> void:
+	if mode == voice_mode() or not mode in [VOICE_PUSH_TO_TALK, VOICE_OPEN_MIC]:
+		return
+	config.set_value("audio", "voice_mode", mode)
+	save_settings()
+	voice_mode_changed.emit(mode)
+
 
 func is_microphone_muted() -> bool:
 	return bool(config.get_value("audio", "microphone_muted", false))

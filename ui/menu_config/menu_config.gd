@@ -49,6 +49,7 @@ const ACTION_GROUPS : Dictionary = {
 		"%%KM_SECTION_AUDIO": {
 			"toggle_speaker": "%%ACT_TOGGLE_SPEAKER",
 			"toggle_microphone": "%%ACT_TOGGLE_MICROPHONE",
+			"voice_push_to_talk": "%%ACT_PUSH_TO_TALK",
 		},
 		"%%KM_SECTION_GALLERY": {
 			"screenshot": "%%ACT_SCREENSHOT",

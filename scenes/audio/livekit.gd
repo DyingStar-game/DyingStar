@@ -98,6 +98,8 @@ var _mic_pending: PackedFloat32Array = PackedFloat32Array()
 # bus does not, because a bus mute is applied after the effect chain, so AudioEffectCapture keeps
 # producing frames and _process keeps pushing them to LiveKit.
 var _mic_enabled: bool = true
+## The key held to talk in push-to-talk (SettingsManager.voice_mode).
+const PUSH_TO_TALK_ACTION := &"voice_push_to_talk"
 # Set by shutdown() so it stays idempotent (reachable from _exit_tree AND from the network client).
 var _shut_down: bool = false
 
@@ -466,7 +468,7 @@ func _process(delta: float) -> void:
 	var available := _mic_capture.get_frames_available()
 	if available > 0:
 		var frames: PackedVector2Array = _mic_capture.get_buffer(available)
-		if _mic_enabled:
+		if _sending():
 			# Mix down stereo to mono float32 PCM and accumulate.
 			var base := _mic_pending.size()
 			_mic_pending.resize(base + frames.size())
@@ -477,7 +479,8 @@ func _process(delta: float) -> void:
 				if absf(mono) > _debug_mic_peak:
 					_debug_mic_peak = absf(mono)
 
-	if not _mic_enabled:
+	if not _sending():
+		_mic_pending.clear()  # let go of the key: what was not sent yet goes with it
 		ClientPerf.scope_end("livekit_mic", _mic_token)
 		return  # nothing accumulated, and above all no capture_frame() -> we emit nothing at all
 
@@ -607,6 +610,19 @@ func set_microphone_enabled(enabled: bool) -> void:
 
 func is_microphone_enabled() -> bool:
 	return _mic_enabled
+
+
+## Whether the microphone sends now: not muted, and in push-to-talk only while its key is held -- never
+## while a text field has the keyboard (typing a V in the chat is no talking).
+func _sending() -> bool:
+	if not _mic_enabled:
+		return false
+	if SettingsManager.voice_mode() == SettingsManager.VOICE_OPEN_MIC:
+		return true
+	var focus: Control = get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return false
+	return InputMap.has_action(PUSH_TO_TALK_ACTION) and Input.is_action_pressed(PUSH_TO_TALK_ACTION)
 
 func _on_microphone_muted_changed(muted: bool) -> void:
 	set_microphone_enabled(not muted)

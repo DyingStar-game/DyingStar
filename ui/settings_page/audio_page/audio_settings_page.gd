@@ -21,6 +21,7 @@ var menu_music : HSlider
 
 func _ready() -> void:
 	menu_music = _menu_music_row()
+	_voice_mode_row()  # before the microphone row's signals are connected: duplicate() copies them
 	general.value = SettingsManager.get_audio_volume("general")
 	music.value = SettingsManager.get_audio_volume("music")
 	menu_music.value = SettingsManager.get_audio_volume("menu_music")
@@ -57,6 +58,25 @@ func _menu_music_row() -> HSlider:
 	(row.get_node("Label") as Label).text = "%%MENU_AUDIO_MENU_MUSIC"
 	music_row.add_sibling(row)
 	return row.get_node("HSlider") as HSlider
+
+
+## The voice mode line, under the microphone's: push to talk (the default) or an open microphone
+## (SettingsManager.voice_mode). Built from the microphone row, so it looks like the others.
+func _voice_mode_row() -> void:
+	var mic_row: Node = microphone_device.get_parent()
+	var row: Node = mic_row.duplicate()
+	row.name = "VoiceMode"
+	(row.get_node("Label") as Label).text = "%%SET_VOICE_MODE"
+	var modes := row.get_node("OptionButton") as OptionButton
+	modes.clear()
+	for mode: Array in [[SettingsManager.VOICE_PUSH_TO_TALK, "%%SET_VOICE_PUSH_TO_TALK"],
+			[SettingsManager.VOICE_OPEN_MIC, "%%SET_VOICE_OPEN_MIC"]]:
+		modes.add_item(tr(mode[1]))
+		modes.set_item_metadata(modes.item_count - 1, mode[0])
+		if mode[0] == SettingsManager.voice_mode():
+			modes.select(modes.item_count - 1)
+	modes.item_selected.connect(func(i: int) -> void: SettingsManager.set_voice_mode(str(modes.get_item_metadata(i))))
+	mic_row.add_sibling(row)
 
 
 ## Section headings over the lines, as on the other pages: each before the row it names.

@@ -48,3 +48,11 @@ func test_stocking_a_depot_is_a_dev_tool_not_an_admin_one() -> void:
 	assert_eq(SpawnCatalog.action_of("stock_ore"), "stock_ore", "a wheel entry that is an action")
 	assert_false(PlayerServer.ADMIN_ACTIONS.has("stock_ore"), "any player of a dev build")
 	assert_eq(PlayerServer.DEV_TOOL_OF_ACTION.get("stock_ore"), &"spawn_wheel", "off with the spawn wheel")
+
+
+func test_voice_is_push_to_talk_unless_the_player_opens_the_microphone() -> void:
+	assert_true(InputMap.has_action(&"voice_push_to_talk"), "a key to hold")
+	var saved := SettingsManager.voice_mode()
+	SettingsManager.config.set_value("audio", "voice_mode", "nonsense")
+	assert_eq(SettingsManager.voice_mode(), SettingsManager.VOICE_PUSH_TO_TALK, "anything unknown: push to talk")
+	SettingsManager.config.set_value("audio", "voice_mode", saved)
