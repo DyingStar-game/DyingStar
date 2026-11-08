@@ -26,6 +26,8 @@ extends Node3D
 @export var shelves_spawned: bool = false
 
 ## Where each networked shelf of a depot stands, in the depot's local frame: [{name, position, rotation}].
+## Where the board of crates to collect hangs (depot frame): over the buffer rack, facing the room.
+const PICKUP_BOARD_AT := Vector3(-5.0, 3.6, 8.2)
 const SHELVES_LAYOUT := "res://scenes/_universe/structures/industrial/cargo_depot_shelves.json"
 ## The scene every shelf of SHELVES_LAYOUT is spawned from.
 const SHELF_SCENE := "scenes/_universe/props/furniture/metal_shelf.tscn"
@@ -110,6 +112,12 @@ func _ready() -> void:
 		# with 2 400 crates (2026-10-23). They stay monitorable, so the player's probe still sees them.
 		for area: Area3D in find_children("*", "Area3D", true, true):
 			area.set_deferred(&"monitoring", false)
+		# Over the buffer rack: where each transporter's crates wait (TransportReservations).
+		var board := PickupBoard.new().setup(self)
+		board.name = "PickupBoard"
+		board.position = PICKUP_BOARD_AT
+		board.rotation.y = PI / 2.0  # a Label3D faces +Z: turned to face the aisle (+X)
+		add_child(board)
 	# DIAGNOSTIC: confirm the depot exists on the server and its reception_area is monitoring.
 	var _ra := get_node_or_null("reception_area")
 	print("[cargo_depot] _ready on %s  reception_area=%s monitoring=%s mask=%s" % [

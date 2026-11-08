@@ -11,10 +11,12 @@ extends RefCounted
 ##     hands (`carrier_id`) — the load of a transport mission.
 ## The crate's `content` carries those marks, replicated and persisted with it (see CrateContent).
 ##
-## A crate stays its miner's: stealing one is pointless. A player may only deposit their OWN crates,
-## or the crates of a player sharing one of their missions (the same mission id): anybody else's is
-## left on the counter by the storekeepers, and counts nothing when shelved by hand (may_deposit).
-## Anybody may carry a crate away, but only its owner or a partner LOADS it (becomes its carrier).
+## A crate stays its miner's until it is shelved: a player may only deposit their OWN crates, or the
+## crates of a player sharing one of their missions (the same mission id): anybody else's is left on
+## the counter by the storekeepers, and counts nothing when shelved by hand (may_deposit).
+## Shelved, it becomes the property of the depot's owner (WarehouseOwner): nobody takes it off a shelf
+## but the storekeepers and the players it is reserved for, the takers of a transport mission from this
+## depot and their partners (TransportReservations, `reserved_for`); they load it (become its carrier).
 ## Who deposits is the player who put the crate down (`dropped_by`, noted at every drop): the
 ## storekeeper who shelves it afterwards acts on their behalf.
 
@@ -102,11 +104,19 @@ static func on_stored(crate: Node, shelf: Node, player: Node = null) -> void:
 		crate.remove_meta(DELIVERING_META)
 	if not delivered:
 		return
+	var owner: Dictionary = await WarehouseOwner.owner_of(depot_uuid)
+	if not is_instance_valid(crate):
+		return
 	var c: Dictionary = (crate.get("content") as Dictionary).duplicate()
 	c["delivered_to"] = depot_uuid
 	c.erase("carrier_id")
+	c.erase("reserved_for")
+	# The warehouse's now: its owner on the plate.
+	c["owner"] = str(owner.get("name", CrateContent.OWNER_ARES))
+	c["owner_type"] = str(owner.get("type", ""))
+	c["owner_id"] = str(owner.get("id", ""))
 	c["move_seq"] = int(c.get("move_seq", 0)) + 1
-	_update(crate, c)
+	update(crate, c)
 
 
 ## The goods of [param crate] into [param depot_uuid]'s stock: true when they are there.
@@ -130,8 +140,8 @@ static func _deliver(crate: Node, shelf: Node, depot_uuid: String, depositor: St
 	return ok and is_instance_valid(crate)
 
 
-## [param crate] is being taken off [param shelf] by [param player]. Its owner or a mission partner
-## loads it (the goods follow them); anybody else just carries it away, still its owner's.
+## [param crate] is being taken off [param shelf] by [param player], who may (may_take): the goods leave
+## the warehouse into their hands — the load of their transport.
 static func on_taken(crate: Node, shelf: Node, player: Node) -> void:
 	if player == null or bool(player.get("is_npc")):
 		return  # a storekeeper tidying the depot: the goods stay in the warehouse
@@ -142,7 +152,7 @@ static func on_taken(crate: Node, shelf: Node, player: Node) -> void:
 	if from == "" or from != depot_uuid_of(shelf):
 		return
 	var carrier := str(player.get("client_uuid"))
-	if carrier == "" or not await may_deposit(crate, carrier) or not is_instance_valid(crate):
+	if carrier == "" or not may_take(crate, player):
 		return
 	var c: Dictionary = (crate.get("content") as Dictionary).duplicate()
 	var good := CrateContent.good_type(c)
@@ -157,8 +167,24 @@ static func on_taken(crate: Node, shelf: Node, player: Node) -> void:
 		return
 	c["carrier_id"] = carrier
 	c.erase("delivered_to")
+	c.erase("reserved_for")
 	c["move_seq"] = int(c.get("move_seq", 0)) + 1
-	_update(crate, c)
+	update(crate, c)
+
+
+## Whether [param player] may take [param crate]: anything not shelved in a warehouse; a shelved one
+## (the warehouse's) only for a storekeeper or the players it is reserved for (reserved_for.ids). Both
+## sides answer it: the server for the grab, the client for the prompt (Player.horizon_id is the id
+## the services know on both).
+static func may_take(crate: Node, player: Node) -> bool:
+	var content: Variant = crate.get("content") if crate != null else null
+	if not (content is Dictionary) or str((content as Dictionary).get("delivered_to", "")) == "":
+		return true
+	if player == null or bool(player.get("is_npc")):
+		return true
+	var id := str(player.call("horizon_id")) if player.has_method("horizon_id") else str(player.get("client_uuid"))
+	var reserved: Variant = (content as Dictionary).get("reserved_for")
+	return reserved is Dictionary and id in ((reserved as Dictionary).get("ids", []) as Array)
 
 
 ## The uuid of the cargo depot [param shelf] belongs to, "" for a shelf anywhere else.
@@ -188,7 +214,7 @@ static func warehouse(depot_uuid: String) -> Dictionary:
 
 
 ## Set the crate's new content here and on every client (and in persistence).
-static func _update(crate: Node, content: Dictionary) -> void:
+static func update(crate: Node, content: Dictionary) -> void:
 	crate.set("content", content)
 	var sync := PropSync.of(crate)
 	if sync != null:

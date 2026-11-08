@@ -779,6 +779,7 @@ func _process_impl() -> void:
 			_perf_cull_usec += Time.get_ticks_usec() - _tq
 			_perf_sweeps += 1
 		ScreenLock.release_away(get_tree())  # screens whose user walked away are free again
+		TransportReservations.tick(get_tree())  # crates kept for the transports out of each warehouse
 
 
 ## [Perf/nodes]: how many nodes process / physics-process, by script (or class when scriptless),

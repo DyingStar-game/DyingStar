@@ -103,3 +103,70 @@ func test_a_flagged_app_blinks_until_it_is_opened() -> void:
 	assert_true(terminal.has_pending())
 	terminal.flag_app("")
 	assert_true(terminal.has_pending(), "nothing to flag changes nothing")
+
+
+func test_a_shelved_crate_is_taken_only_by_whom_it_is_kept_for() -> void:
+	var crate := _crate("kira")
+	var stranger := _player("orin")
+	assert_true(WarehouseDelivery.may_take(crate, stranger), "not shelved: anybody carries it")
+	crate.content["delivered_to"] = "depot-1"
+	assert_false(WarehouseDelivery.may_take(crate, stranger), "shelved: the warehouse's")
+	assert_false(WarehouseDelivery.may_take(crate, _player("kira")), "even for its miner")
+	assert_true(WarehouseDelivery.may_take(crate, _player("npc", true)), "a storekeeper tidies it")
+	crate.content["reserved_for"] = {"mission": "m1", "name": "player-orin", "ids": ["orin"]}
+	assert_true(WarehouseDelivery.may_take(crate, stranger), "kept for orin's transport")
+
+
+func test_a_warehouse_of_the_federation_is_ares() -> void:
+	var ares := WarehouseOwner.owner_from_poi({"ownerType": "political", "ownerId": "fed-1"})
+	assert_eq(ares["name"], CrateContent.OWNER_ARES)
+	assert_eq(ares["type"], "political")
+
+
+func test_a_transport_out_of_a_warehouse_asks_for_its_crates() -> void:
+	var detail := {
+		"objectives": [{"type": "transport", "status": "in_progress", "targetQuantity": 90, "currentProgress": 40,
+			"locationFrom": {"warehouseId": "depot-M"},
+			"params": {"via": "warehouse", "goodType": "ore.gold", "deliverGoodType": "ingot.gold"}}],
+		"assignments": [{"playerId": "kira", "status": "active"}, {"playerId": "orin", "status": "active"}],
+		"players": {"kira": "player-kira"},
+	}
+	var need: Dictionary = await TransportReservations.need_of(detail)
+	assert_eq(need["depot"], "depot-M")
+	assert_eq(need["good"], "ore.gold")
+	assert_eq(need["kg"], 50.0, "what is left to deliver")
+	assert_eq(need["ids"], ["kira", "orin"], "the taker and their partner")
+	assert_eq(need["name"], "player-kira")
+	detail["objectives"][0]["params"]["via"] = "zone"
+	assert_true((await TransportReservations.need_of(detail)).is_empty(), "not loaded from a warehouse")
+
+
+func test_shelves_are_lettered_by_aisle_and_numbered_along_it() -> void:
+	var at := func(n: String, x: float, z: float, yaw: float) -> Dictionary:
+		return {"name": n, "position": {"x": x, "y": 0.0, "z": z}, "rotation": {"x": 0.0, "y": yaw, "z": 0.0}}
+	var labels := ShelfLabels.labels_for([
+		at.call("wall", -7.6, 0.0, PI), at.call("l1", -6.8, 0.0, 0.0), at.call("l2", -6.8, 1.0, 0.0),
+		at.call("r1", -3.6, 0.0, PI), at.call("shelf_cargo_temp_zone", -5.4, 8.0, 0.0)])
+	assert_eq(labels["wall"], "A01", "a row against the wall is an aisle of its own")
+	assert_eq(labels["l1"], "B01", "across the walk: one aisle, the left row first")
+	assert_eq(labels["r1"], "B02")
+	assert_eq(labels["l2"], "B03", "then along it")
+	assert_false(labels.has("shelf_cargo_temp_zone"), "the buffer rack has no label")
+	assert_eq(ShelfLabels.label_of("shelf_cargo_row1_1").length(), 3, "the depot's own layout is labelled")
+
+
+func test_the_depot_board_says_who_collects_what_where() -> void:
+	var shelf := Node3D.new()
+	shelf.name = "shelf_cargo_row1_1"
+	add_child_autofree(shelf)
+	var crates: Array = []
+	for i: int in range(3):
+		var crate := CrateDouble.new()
+		crate.content = CrateContent.crushed("gold", 0.02, 0.04, 108.0, "kira", "kira")
+		if i < 2:
+			crate.content["reserved_for"] = {"mission": "m1", "name": "player-orin", "ids": ["orin"]}
+		shelf.add_child(crate)
+		crates.append(crate)
+	var text := PickupBoard.board_text(crates)
+	assert_string_contains(text, "player-orin  ·  %s  ·  2 × " % ShelfLabels.label_of("shelf_cargo_row1_1"))
+	assert_eq(text.count("\n"), 1, "the title and one line: the third crate is kept for nobody")

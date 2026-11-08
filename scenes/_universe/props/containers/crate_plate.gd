@@ -228,6 +228,9 @@ static func build_layout(content: Dictionary) -> Control:
 			"%d %%" % roundi(float(content.get("purity", 0.0)) * 100.0)))
 	col.add_child(_rule(1))
 	col.add_child(_row(ICON_OWNER, "%%PLATE_OWNER", str(content.get("owner", CrateContent.OWNER_ARES))))
+	var reserved: Variant = content.get("reserved_for")
+	if reserved is Dictionary:  # kept for a transport: whose to take (TransportReservations)
+		col.add_child(_row(ICON_OWNER, "%%PLATE_RESERVED", str((reserved as Dictionary).get("name", ""))))
 	return root
 
 

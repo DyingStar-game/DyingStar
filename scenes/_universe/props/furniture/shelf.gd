@@ -116,6 +116,27 @@ func _export_to_npc_service() -> void:
   ]
 }""" % [JSON.stringify(scenename), ",\n".join(slot_lines)])
 
+## CLIENT: the shelf's label (ShelfLabels: "A12") on a small sign at the top of its front, read from
+## the aisle. None for a shelf outside the depot's rows (the buffer rack, a shelf elsewhere).
+func _add_label() -> void:
+	var label_text := ShelfLabels.label_of(str(name))
+	if label_text == "":
+		return
+	var sign := Label3D.new()
+	sign.name = "ShelfSign"
+	sign.text = label_text
+	sign.font = AresBrand.font()
+	sign.font_size = 64
+	sign.pixel_size = 0.003
+	sign.outline_size = 8
+	sign.modulate = Color(1.0, 0.73, 0.03)
+	sign.double_sided = false
+	sign.position = Vector3(0.3, 3.3, 0.0)
+	sign.rotation.y = PI / 2.0  # a Label3D faces +Z: turned to the shelf's front (+X), the aisle
+	sign.visibility_range_end = SIGN_READ_M
+	add_child(sign)
+
+
 ## CLIENT: the model of this shelf is drawn up to DRAW_END_M (the crates on it keep their own rule).
 func limit_draw_distance() -> void:
 	for mesh: Node in find_children("*", "MeshInstance3D", true, false):
@@ -141,6 +162,7 @@ func _ready() -> void:
 		child_entered_tree.connect(_client_on_child_entered_tree)
 		limit_draw_distance()
 		child_exiting_tree.connect(_client_on_child_exiting_tree)
+		_add_label()
 
 ## Client: a stored crate is out of the physics space — body and interact area — unless the camera
 ## is within _REACH_M of it. The server owns every collision it takes part in; the client only needs
@@ -366,6 +388,8 @@ func apply_prop_data(data: Dictionary) -> void:
 ## shelf's front (+X, the aisle, what the NPC service is told) -- square on, it showed its side
 ## (playtest 2026-11-07).
 const SLOT_YAW := PI / 2.0
+## How far (m) a shelf's sign is read from.
+const SIGN_READ_M := 14.0
 
 
 func _put_on_slot(idx: int, body: RigidBody3D) -> void:

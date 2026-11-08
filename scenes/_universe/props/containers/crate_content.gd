@@ -18,6 +18,8 @@ extends RefCounted
 ##   owner       who the goods belong to, for the plate: the player who extracted them (their login)
 ##   miner_id    service identity of the player who extracted it: the one the inventory credits
 ##   carrier_id  the player who took it off a warehouse shelf last (a transport), holding its goods
+##   owner_type, owner_id  once shelved: the warehouse's owner (WarehouseOwner), `owner` its name
+##   reserved_for  shelved, kept for a transport: {mission, name, ids} — who may take it off the shelf
 
 const KIND_CRUSHED := "crushed"
 const KIND_INGOT := "ingot"
@@ -87,6 +89,11 @@ static func refined(crushed_content: Dictionary) -> Dictionary:
 ## anything (a small partial crate of ingots still counts).
 static func units_of_mass(mass_kg: float) -> int:
 	return maxi(1, roundi(mass_kg)) if mass_kg > 0.0 else 0
+
+
+## The metal a crate holds, in game kg: its ore without the barren rock (what refining it gives).
+static func metal_kg(content: Dictionary) -> float:
+	return game_mass(str(content.get("mineral", "")), float(content.get("ore_m3", 0.0)), 0.0)
 
 
 ## Game mass (kg) of [param ore_m3] of [param mineral] plus [param gangue_kg] of barren rock.
