@@ -68,3 +68,18 @@ func test_the_screen_sends_the_destination_picked_in_its_tree() -> void:
 	var sent: TeleportDestination = screen._typed_destination()
 	assert_not_null(sent, "the button sends something")
 	assert_eq(sent.label, (row.get_metadata(0) as TeleportDestination).label, "named after the row picked")
+
+
+func test_a_watcher_sees_the_teleporter_as_its_user_does() -> void:
+	var user := TeleporterUI.new()
+	add_child_autofree(user)
+	user.load_systems(TeleportCatalog.systems(), "tarsis")
+	user._filter.text = "M00"
+	user._apply_filter()
+	user._lon.text = "12.5"
+	user._lat.text = "-3.25"
+	var watcher := TeleporterUI.new()
+	add_child_autofree(watcher)
+	watcher.load_systems(TeleportCatalog.systems(), "tarsis")
+	watcher.apply_view_state(user.view_state())
+	assert_eq(watcher.view_state(), user.view_state(), "same body, filter, fields and message")
