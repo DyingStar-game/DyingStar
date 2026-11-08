@@ -16,6 +16,11 @@ class_name LavaSettings
 ## (centerline, _cum_lengths, feature_id, half_width_m) so GradeGeom reads it
 ## as any line, with road_type = [constant LAVA_TYPE].
 
+## Test branch: only simulated lava; ignore authored QGIS ribbons and carving.
+const AUTHORED_FLOWS_ENABLED := false
+const SIMULATED_CRATERS := true
+const RUNTIME_POLICY := "simulated_lava_4"
+
 const LAVA_TYPE := "lava_river"
 const STATES: Array[String] = ["active", "cooling", "solid"]
 

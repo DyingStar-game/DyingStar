@@ -1,0 +1,90 @@
+Godot Engine v4.7.stable.mono.double.custom_build.5b4e0cb0f - https://godotengine.org
+
+WARNING: HDR output requested, but it is not supported by this display server.
+   at: window_request_hdr_output (servers/display/display_server.cpp:1307)
+OBS.[97m[1m[engine][22m[39m [92minformation[39m [38;2;165;42;42m Ready for obs [39m[0m
+[CPerf] machine gpu='' driver= cpu='13th Gen Intel(R) Core(TM) i7-13700' x24 ram_phys=31.84 GiB ram_avail=36.90 GiB | window=(0, 0) vsync=1 max_fps=144 refresh=-1Hz | v=4.7-stable (custom_build)
+[CConf] loaded client.ini (10 keys) | broker_url=ws://127.0.0.1:9001 channel=dev compression=zstd debug_perf=false horizon_url=https://192.168.49.2:30101 path=/market scheme=http tiles_url=https://planettech.dyingstar-game.space tls_verify=false url=http://service.dyingstar.local
+[CConf] WARNING duplicate keys, last one wins: path (in [mission]) path (in [economie]) path (in [inventory]) path (in [market])
+[CPerf] os=Windows 10.0.26200 (Windows) arch=x86_64 | exe=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/runtime/godot/Godot_v4.7-stable_mono_win64.exe | cwd_ini=client.ini | user_dir=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/rnd-viscous-lava/.godot/gut-user/Godot/app_userdata/DyingStar/ | log=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/rnd-viscous-lava/.godot/gut-user/Godot/app_userdata/DyingStar/logs/godot.log
+[CPerf] features=editor,debug,windows,x86_64,double | args=-s addons/gut/gut_cmdln.gd -gconfig= -gtest=res://test/unit/test_volcano_relief.gd,res://test/unit/test_volcano_cpu_budget.gd -gexit | session=/ | gpu_vendor= type=0 api=
+[CPerf] window mode=1 size=(0, 0) pos=(0, 0) on_screen=-1 | screens:
+[CPerf] render method=forward_plus | viewport=(1920.0, 1920.0) scaling3d=0 x1.00 msaa3d=0 ssaa=2 taa=false debanding=true vrs=0 | shadow_atlas=2048 dir_shadow=4096 occlusion=true aniso=3 picking=true
+[CPerf] graphics preset=medium detected=medium renderer=forward_plus adapter="" upscale_mode=0 render_scale=1.0 fsr_sharpness=0.9 aa_msaa=0 aa_screen=2 aa_taa=false shadows=true shadow_distance=250.0 shadow_sun_res=4096 shadow_light_res=2048 shadow_filter=2 ssao=0 ssil=0 ssr=0 glow=2 anisotropic=3 debanding=true wind_dust=1 atmosphere_quality=1 ground_quality=1 mesh_lod=2.0 terrain_distance=0.8 structures_distance=0.75 foliage_distance=0.75
+[CPerf] physics engine=Jolt Physics ticks=60 separate_thread=false | worker_threads=-1 | time_scale=1.00 | mem_boot avail=36.90 GiB phys=31.84 GiB
+[CPerf] settings.ini { "fullscreen": false, "v_sync": false, "max_fps": 144, "fov": 100.0, "dev_mode": false, "upscale_mode": 0, "render_scale": 1.0, "fsr_sharpness": 0.9, "aa_msaa": 0, "aa_screen": 2, "aa_taa": false, "shadows": true, "shadow_distance": 250.0, "shadow_sun_res": 4096, "shadow_light_res": 2048, "shadow_filter": 2, "ssao": 0, "ssil": 0, "ssr": 0, "glow": 2, "anisotropic": 3, "debanding": true, "wind_dust": 1, "atmosphere_quality": 1, "ground_quality": 1, "mesh_lod": 2.0, "terrain_distance": 0.8, "structures_distance": 0.75, "foliage_distance": 0.75, "show_debug": true, "vehicle_hud": true, "cargo_debug": false, "celestial_gizmos": false, "movement_debug": false, "surface_debug": false, "music_debug": false, "star_map_debug": false, "safety_net_debug": false, "notification_debug": false, "language": "auto", "general": 100.0, "music": 100.0, "menu_music": 100.0, "sfx": 100.0, "voip": 100.0, "ui": 100.0, "microphone_muted": false }
+[CPerf] performance logging OFF — to report a performance problem, set `debug_perf=true` in client.ini and restart the game.
+---  GUT  ---
+[1m[INFO]:  [0musing [C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/rnd-viscous-lava/.godot/gut-user/Godot/app_userdata/DyingStar] for temporary output.
+Godot version:  4.7.0
+GUT version:  9.6.0
+[4m
+
+res://test/unit/test_volcano_relief.gd
+[0mPlanetData: built detail Texture2DArray with 12 layers (512x512)
+* test_every_type_has_a_rim_a_floor_and_a_foot
+PlanetData: auto-loaded 120 BiomeDefinitions from res://scenes/planet/biomes/
+* test_flank_exponent_shapes_the_cone
+* test_lod_drops_the_crater_then_the_cone_never_fades_them
+* test_lobes_and_gullies_move_the_flank
+* test_core_is_zero_at_the_foot_and_deepest_in_the_crater
+* test_mask_fades_the_cracks_from_the_foot
+* test_native_set_is_bit_identical_to_the_gdscript_reference
+* test_the_sampler_sees_the_volcano_and_forgets_it
+* test_frame_path_equals_the_gameplay_path_over_a_whole_chunk
+* test_mesh_and_collision_stand_on_the_same_volcano
+* test_native_and_gdscript_paths_build_the_same_planet_surface
+* test_each_volcano_is_owned_by_one_chunk_per_level
+* test_debug_injection_builds_a_volcano
+* test_lake_shore_radius_matches_the_exporter
+* test_a_flow_starting_by_a_lake_starts_on_its_shore
+* test_a_flow_leaving_the_lake_tilts_the_rim
+[1m16/16 passed.
+[0m[4m
+
+res://test/unit/test_volcano_cpu_budget.gd
+[0m* test_silent_puffs_match_a_full_update_through_an_activity
+* test_silent_puffs_come_back_when_the_clock_jumps_back
+* test_a_new_profile_forgets_the_silent_puffs
+* test_a_budgeted_flight_lands_like_a_full_one
+* test_a_stone_over_budget_changes_nothing_until_its_frame
+* test_a_late_stone_is_never_later_than_the_limit
+[1m6/6 passed.
+[0m
+
+
+
+[33m==============================================[0m
+[33m= 1 Orphans[0m
+[33m==============================================[0m
+res://test/unit/test_volcano_relief.gd
+    - Outside Tests
+SCRIPT ERROR: Error calling GDScript utility function "inst_to_dict()": Not a script with an instance.
+   at: GutStringUtils._get_obj_filename (res://addons/gut/strutils.gd:86)
+   GDScript backtrace (most recent call first):
+       [0] _get_obj_filename (res://addons/gut/strutils.gd:86)
+       [1] type2str (res://addons/gut/strutils.gd:98)
+       [2] get_orphan_list_text (res://addons/gut/orphan_counter.gd:113)
+       [3] log_all (res://addons/gut/orphan_counter.gd:189)
+       [4] _log_end_run (res://addons/gut/gut.gd:397)
+       [5] _end_run (res://addons/gut/gut.gd:469)
+       [6] _test_the_scripts (res://addons/gut/gut.gd:874)
+[33m        * [<Node#410639142414>][0m
+
+
+[33m==============================================
+[0m[33m= Run Summary
+[0m[33m==============================================
+[0m
+Totals
+------
+Scripts               2
+Tests                22
+Passing Tests        22
+Asserts             347
+Orphans               1
+Time              3.251s
+
+
+[32m---- All tests passed! ----
+[0m

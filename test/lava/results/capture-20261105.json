@@ -1,0 +1,19 @@
+{
+	"budget_frames": 0,
+	"capture_error": 0,
+	"elapsed_s": 159.999999999995,
+	"fps": 120.0,
+	"frozen_cells": 0,
+	"grid": [
+		48,
+		72
+	],
+	"heat_proxy": 748867.271375622,
+	"injected_m3": 663.999999999979,
+	"limited_cells": 0,
+	"max_depth_m": 1.70040464730996,
+	"mesh_ms_p95": 4.683,
+	"solver_ms_p95": 1.278,
+	"volume_m3": 664.0,
+	"wet_cells": 458
+}

@@ -80,6 +80,8 @@ jobs:
       - name: Volcano activity, lifecycle and Tarsis III integration
         run: |
           "$GODOT" --headless --path . res://test/volcano/test_tarsis_volcano_vfx.tscn -- --volcano-view
+          "$GODOT" --headless --path . res://test/lava/test_planet_integration.tscn -- --volcano-view --lava-long-test
+          "$GODOT" --headless --path . --script res://test/lava/test_sleep_week.gd
 
       # The whole suite still carries known failures (test_collision_shape, a few road tests): it
       # reports, it does not block, until they are fixed. The C# twins above do block.
@@ -142,6 +144,62 @@ jobs:
         run: |
           & $env:GODOT --headless --path . -s addons/gut/gut_cmdln.gd "-gtest=$($env:NATIVE_TESTS)" -gexit
           exit $LASTEXITCODE
+
+      - name: Lava dormant deposits through one week (C# against reference)
+        run: |
+          & $env:GODOT --headless --path . --script res://test/lava/test_sleep_week.gd
+          exit $LASTEXITCODE
+
+  lava-lockstep:
+    name: Lava integer replay (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            archive: linux_x86_64
+            executable: Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64
+          - os: windows-latest
+            platform: win64
+            archive: win64
+            executable: Godot_v4.7-stable_mono_win64/Godot_v4.7-stable_mono_win64_console.exe
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Cache existing game engine
+        id: lava-engine
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../godot
+          key: godot-${{ env.GODOT_VERSION }}-stable-mono-${{ matrix.platform }}
+      - name: Download game engine when absent
+        if: steps.lava-engine.outputs.cache-hit != 'true'
+        run: |
+          $lavaEngineRoot = Join-Path $env:GITHUB_WORKSPACE '..' 'godot'
+          New-Item -ItemType Directory -Force -Path $lavaEngineRoot | Out-Null
+          $lavaArchive = Join-Path $env:RUNNER_TEMP 'lava-godot.zip'
+          Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/$($env:GODOT_VERSION)-stable/Godot_v$($env:GODOT_VERSION)-stable_mono_${{ matrix.archive }}.zip" -OutFile $lavaArchive
+          Expand-Archive -LiteralPath $lavaArchive -DestinationPath $lavaEngineRoot -Force
+      - name: Integer physics and concurrent client/server golden replay
+        run: |
+          $lavaEngine = Join-Path $env:GITHUB_WORKSPACE '..' 'godot' '${{ matrix.executable }}'
+          if ($IsLinux) { & chmod +x $lavaEngine }
+          python test/lava/check_replay.py --godot $lavaEngine --project .godot/lava-replay --output .godot/lava-evidence
+          exit $LASTEXITCODE
+      - name: Retain per-platform replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lava-replay-${{ matrix.platform }}
+          path: .godot/lava-evidence/
 
   scene-lint:
     name: Check Area3D monitoring

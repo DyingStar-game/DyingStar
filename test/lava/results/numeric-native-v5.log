@@ -1,0 +1,62 @@
+Godot Engine v4.7.stable.mono.double.custom_build.5b4e0cb0f - https://godotengine.org
+
+WARNING: HDR output requested, but it is not supported by this display server.
+   at: window_request_hdr_output (servers/display/display_server.cpp:1307)
+OBS.[97m[1m[engine][22m[39m [92minformation[39m [38;2;165;42;42m Ready for obs [39m[0m
+[CPerf] machine gpu='' driver= cpu='13th Gen Intel(R) Core(TM) i7-13700' x24 ram_phys=31.84 GiB ram_avail=36.90 GiB | window=(0, 0) vsync=1 max_fps=144 refresh=-1Hz | v=4.7-stable (custom_build)
+[CConf] loaded client.ini (10 keys) | broker_url=ws://127.0.0.1:9001 channel=dev compression=zstd debug_perf=false horizon_url=https://192.168.49.2:30101 path=/market scheme=http tiles_url=https://planettech.dyingstar-game.space tls_verify=false url=http://service.dyingstar.local
+[CConf] WARNING duplicate keys, last one wins: path (in [mission]) path (in [economie]) path (in [inventory]) path (in [market])
+[CPerf] os=Windows 10.0.26200 (Windows) arch=x86_64 | exe=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/runtime/godot/Godot_v4.7-stable_mono_win64.exe | cwd_ini=client.ini | user_dir=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/rnd-viscous-lava/.godot/native-test-user/Godot/app_userdata/DyingStar/ | log=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/rnd-viscous-lava/.godot/native-test-user/Godot/app_userdata/DyingStar/logs/godot.log
+[CPerf] features=editor,debug,windows,x86_64,double | args=--script res://test/lava/test_solver.gd | session=/ | gpu_vendor= type=0 api=
+[CPerf] window mode=1 size=(0, 0) pos=(0, 0) on_screen=-1 | screens:
+[CPerf] render method=forward_plus | viewport=(1920.0, 1920.0) scaling3d=0 x1.00 msaa3d=0 ssaa=2 taa=false debanding=true vrs=0 | shadow_atlas=2048 dir_shadow=4096 occlusion=true aniso=3 picking=true
+[CPerf] graphics preset=medium detected=medium renderer=forward_plus adapter="" upscale_mode=0 render_scale=1.0 fsr_sharpness=0.9 aa_msaa=0 aa_screen=2 aa_taa=false shadows=true shadow_distance=250.0 shadow_sun_res=4096 shadow_light_res=2048 shadow_filter=2 ssao=0 ssil=0 ssr=0 glow=2 anisotropic=3 debanding=true wind_dust=1 atmosphere_quality=1 ground_quality=1 mesh_lod=2.0 terrain_distance=0.8 structures_distance=0.75 foliage_distance=0.75
+[CPerf] physics engine=Jolt Physics ticks=60 separate_thread=false | worker_threads=-1 | time_scale=1.00 | mem_boot avail=36.90 GiB phys=31.84 GiB
+[CPerf] settings.ini { "fullscreen": false, "v_sync": false, "max_fps": 144, "fov": 100.0, "dev_mode": false, "upscale_mode": 0, "render_scale": 1.0, "fsr_sharpness": 0.9, "aa_msaa": 0, "aa_screen": 2, "aa_taa": false, "shadows": true, "shadow_distance": 250.0, "shadow_sun_res": 4096, "shadow_light_res": 2048, "shadow_filter": 2, "ssao": 0, "ssil": 0, "ssr": 0, "glow": 2, "anisotropic": 3, "debanding": true, "wind_dust": 1, "atmosphere_quality": 1, "ground_quality": 1, "mesh_lod": 2.0, "terrain_distance": 0.8, "structures_distance": 0.75, "foliage_distance": 0.75, "show_debug": true, "vehicle_hud": true, "cargo_debug": false, "celestial_gizmos": false, "movement_debug": false, "surface_debug": false, "music_debug": false, "star_map_debug": false, "safety_net_debug": false, "notification_debug": false, "language": "auto", "general": 100.0, "music": 100.0, "menu_music": 100.0, "sfx": 100.0, "voip": 100.0, "ui": 100.0, "microphone_muted": false }
+[CPerf] performance logging OFF — to report a performance problem, set `debug_perf=true` in client.ini and restart the game.
+PASS: reject oversized grid atomically
+PASS: reject missing tick without changing state
+PASS: reject reordered source cells atomically
+PASS: reject duplicate source cells
+PASS: reject invalid source volume and temperature
+PASS: source remainder is distributed without losing a volume quantum
+PASS: canonical source accepted
+PASS: exact volume conservation over 500 ticks
+PASS: exact heat conservation without cooling
+PASS: nonnegative integer volume and thermal energy
+PASS: centre of mass travels downhill
+PASS: duplicate network tick is rejected
+PASS: checkpoint restores every authoritative bit
+PASS: late join checkpoint replays exactly for 100 further ticks
+PASS: wrong model version cannot overwrite live state
+PASS: truncated checkpoint is rejected
+PASS: continuous terrain barrier blocks lava
+PASS: sub-solidus deposit remains immobile
+PASS: yield stress can arrest flow
+PASS: simultaneous fluxes preserve exact mirror symmetry
+PASS: integer cooling removes heat and retains all volume
+PASS: versioned viscosity table stiffens colder lava
+PASS: limiter survives maximum supported depth and low viscosity
+PASS: client adapter loads canonical server state
+PASS: presentation arrays and display time cannot affect authoritative state
+PASS: client presentation changes do not affect the next tick
+PASS: variable timesteps are unavailable to the authoritative model
+PASS: planet gravity is part of the canonical checkpoint
+PASS: maximum planetary relief, gravity and depth remain positive without overflow
+PASS: 8m cells conserve maximum-depth volume and heat at maximum relief/gravity without overflow
+PASS: large-cell checkpoint restores including its derived wet index
+PASS: reordered sparse traversal cannot change a physical bit
+PASS: polar field accepts integer radial geometry
+PASS: polar fluxes conserve exact litres across unequal cell areas
+PASS: a filled crater overflows in every direction, including the angular seam
+PASS: polar geometry is canonical in late-join checkpoints
+PASS: polar traversal order cannot affect the next tick
+PASS: deposits are already black before progressive despawn starts
+PASS: partial cooling and fade timers survive a checkpoint
+PASS: both peers account for every removed litre throughout despawn
+PASS: completed cleanup frees the wet index and retains a complete removal ledger
+PASS: a new eruption can reuse a fully despawned field
+PASS: maximum 512m depth, 8km relief and 64m cells do not overflow signed integers
+PASS: wide multiply/divide preserves an exact result when the direct product would overflow
+PASS: concurrent worker-thread server and client replay every authoritative bit identically
+LAVA_TESTS 45/45 passed

@@ -1,0 +1,20 @@
+{
+	"capture_error": 0,
+	"cell_mm": 2000,
+	"client_sha256": "48e25103da20296185be7e9b3ae36cd3d695b0fef4a7986660ebf0afddc9bea8",
+	"comparisons": 8,
+	"fps": 117.0,
+	"gpu_ms": 3.9449999332428,
+	"gravity_milli": 7770,
+	"grid": [
+		32,
+		48
+	],
+	"mismatches": 0,
+	"planet": "tarsis_3",
+	"server_sha256": "48e25103da20296185be7e9b3ae36cd3d695b0fef4a7986660ebf0afddc9bea8",
+	"step_and_upload_ms_p95": 4.416,
+	"terrain_build_ms": 138.827,
+	"tick": 720,
+	"volcano": "@-39.562632,24.416774"
+}

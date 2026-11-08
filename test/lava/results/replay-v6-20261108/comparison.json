@@ -1,0 +1,11 @@
+{
+  "concurrent_processes": 2,
+  "ticks_per_peer": 2000,
+  "matching_checkpoints": 20,
+  "binary_identical": true,
+  "final_sha256": "743f84c5bf21667af70625e61491ba7d4355f163c4b3d5b41edd43ea8a518961",
+  "os": "Windows",
+  "engine": "4.7-stable (custom_build)",
+  "server_frame_batches": 2000,
+  "client_frame_batches": 802
+}

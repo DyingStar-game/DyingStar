@@ -643,6 +643,7 @@ var _grade_pending: Dictionary = {}
 ## the file's key matches this planet — see grade_bake_key(). Loaded once.
 var _grade_baked: Dictionary = {}
 var _grade_bake_tried: bool = false
+var _lava_bake_exclusions: Variant = null
 ## The whole bake file as read (lines + bridges), {} when absent/unreadable.
 var _grade_bake_doc: Dictionary = {}
 var _grade_bake_doc_read: bool = false
@@ -2439,11 +2440,13 @@ func get_whole_roads() -> Array:
 func get_whole_lava() -> Array:
 	if _debug_lava_active():
 		return [_debug_lava_whole()]
-	return _whole_lines(get_chunk_lava)
+	return _whole_lines(get_chunk_lava) if LavaSettings.AUTHORED_FLOWS_ENABLED else []
 
 
 ## Lava flow records of the pack tile (nside, ipix).
 func get_chunk_lava(nside: int, ipix: int) -> Array:
+	if not LavaSettings.AUTHORED_FLOWS_ENABLED:
+		return []
 	return get_chunk_modifiers(nside, ipix).get("lava_flows", [])
 
 
@@ -2468,6 +2471,8 @@ func get_lava_for_chunk(hp_nside: int, hp_ipix: int) -> Array:
 
 ## Does this planet carry a lava flow (the pack's lava part, or the debug one)?
 func has_lava() -> bool:
+	if not LavaSettings.AUTHORED_FLOWS_ENABLED and not _debug_lava_active():
+		return false
 	if _has_lava >= 0:
 		return _has_lava == 1
 	var found := _debug_lava_active()
@@ -2537,6 +2542,8 @@ func fumarole_fingerprint() -> String:
 
 ## Fingerprint of the lava flows ("" without any) — the chunk cache key.
 func lava_fingerprint() -> String:
+	if not LavaSettings.AUTHORED_FLOWS_ENABLED and not _debug_lava_active():
+		return ""
 	if _debug_lava_active():
 		return "dbg%08x" % (hash(str([debug_lava_points, debug_lava_style])) & 0xFFFFFFFF)
 	var pack = _ensure_modifier_pack()
@@ -2802,8 +2809,15 @@ func warm_bridge_plans() -> void:
 	# AVANT _ensure_bridge_plans, donc hors du verrou : fetch_now bloque, et le tenir sous
 	# _bridge_plans_mutex ferait attendre là tout worker demandant un plan.
 	# Baked plans need no tile: nothing to fetch.
-	if _baked_bridges().is_empty():
+	var baked := _baked_bridges()
+	if baked.is_empty():
 		_prefetch_bridge_span_tiles(get_bridge_spans())
+	elif not (baked.get("rebuild", {}) as Dictionary).is_empty():
+		var changed: Array = []
+		for span: Dictionary in baked.get("spans", []):
+			if (baked.rebuild as Dictionary).has(bridge_span_key(span)):
+				changed.append(span)
+		_prefetch_bridge_span_tiles(changed)
 	_ensure_bridge_plans()
 
 
@@ -2980,6 +2994,10 @@ func _build_bridge_plans() -> void:
 			if s.get("truncated", false):
 				continue
 			var plan: Dictionary = plans.get(bridge_span_key(s), {})
+			if (baked.get("rebuild", {}) as Dictionary).has(bridge_span_key(s)):
+				if not _plan_one_span(s, profile, built):
+					skipped += 1
+				continue
 			if plan.is_empty():
 				skipped += 1
 				continue
@@ -3552,6 +3570,7 @@ func clear_grade_profiles() -> void:
 	_carve_pieces_cache.clear()
 	_grade_baked.clear()
 	_grade_bake_tried = false
+	_lava_bake_exclusions = null
 	_grade_built = false
 	_has_railways = -1
 	_has_profiled_lines = -1
@@ -3876,10 +3895,10 @@ func grade_bake_key() -> String:
 	var elev := chunk_data_version
 	if remote_source != null and str(remote_source.version) != "":
 		elev = str(remote_source.version)
-	var key := "v%d|%s|n%d|r%.3f|mh%.4f|ho%.4f|ex%.4f|tr%d|dv%s|mt%s|vr%d|pz%s|dbg%d|gs%s" % [
+	var key := "v%d|%s|n%d|r%.3f|mh%.4f|ho%.4f|ex%.4f|tr%d|dv%s|mt%s|vr%s|pz%s|dbg%d|gs%s" % [
 		GRADE_BAKE_VERSION, planet_name, export_nside, radius, max_height, height_offset,
 		terrain_exaggeration, chunk_heightmap_res, elev, mountain_fingerprint(),
-		VolcanoRelief.ALGO_VERSION, populate_fingerprint(),
+		str(VolcanoRelief.ALGO_VERSION) + LavaSettings.RUNTIME_POLICY, populate_fingerprint(),
 		int(debug_mountain_enabled or debug_volcano_enabled or debug_rock_enabled),
 		GradeSettings.signature()]
 	# Rocky terrain's algorithm, only where there is some: the bakes of the
@@ -3922,6 +3941,12 @@ func _ensure_grade_bake() -> void:
 		return
 	var key := grade_bake_key()
 	if str(doc.get("key", "")) != key:
+		if preload("res://scenes/planet/lava/lava_terrain_cache.gd").legacy_matches(str(doc.get("key", "")), key):
+			_grade_baked = (doc.get("lines", {}) as Dictionary).duplicate()
+			for fid: int in _lava_cache_exclusions().lines:
+				_grade_baked.erase(fid)
+			print("[LAVA CACHE] reusing ", _grade_baked.size(), " unaffected line profiles; local invalidations=", _lava_cache_exclusions().lines.size())
+			return
 		push_warning("[PlanetData] '%s': the baked line profiles (%s) were made for other data — "
 				% [planet_name, GRADE_BAKE_FILE]
 				+ "every railway and graded road is profiled at run time (minutes on a long line). "
@@ -3988,6 +4013,17 @@ func _baked_bridges() -> Dictionary:
 		return _bridge_baked
 	var key := bridge_bake_key()
 	if str(b.get("key", "")) != key:
+		if preload("res://scenes/planet/lava/lava_terrain_cache.gd").legacy_matches(str(b.get("key", "")), key):
+			# Crossing positions depend on cracks/footprints, not rim tilt. Only
+			# deck/ramp elevations near a changed cone need fresh terrain samples.
+			_bridge_baked = b.duplicate()
+			var rebuild := {}
+			for span: Dictionary in b.get("spans", []):
+				if preload("res://scenes/planet/lava/lava_terrain_cache.gd").span_affected(span, _lava_cache_exclusions().volcanoes, radius):
+					rebuild[bridge_span_key(span)] = true
+			_bridge_baked["rebuild"] = rebuild
+			print("[LAVA CACHE] reusing bridge crossings; local deck invalidations=", rebuild.size())
+			return _bridge_baked
 		push_warning("[PlanetData] '%s': the baked chasm crossings (%s) were made for other data — "
 				% [planet_name, GRADE_BAKE_FILE]
 				+ "they are found and planned at run time (a minute on a line round the planet). "
@@ -3997,6 +4033,12 @@ func _baked_bridges() -> Dictionary:
 		return _bridge_baked
 	_bridge_baked = b
 	return _bridge_baked
+
+
+func _lava_cache_exclusions() -> Dictionary:
+	if _lava_bake_exclusions == null:
+		_lava_bake_exclusions = preload("res://scenes/planet/lava/lava_terrain_cache.gd").exclusions(self)
+	return _lava_bake_exclusions
 
 
 ## The baked profile of [param road], or {} when the bake has none for this

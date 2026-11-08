@@ -1,0 +1,48 @@
+Godot Engine v4.7.stable.mono.double.custom_build.5b4e0cb0f - https://godotengine.org
+
+PASS: reject oversized grid atomically
+PASS: reject missing tick without changing state
+PASS: reject reordered source cells atomically
+PASS: reject duplicate source cells
+PASS: reject invalid source volume and temperature
+PASS: source remainder is distributed without losing a volume quantum
+PASS: canonical source accepted
+PASS: exact volume conservation over 500 ticks
+PASS: exact heat conservation without cooling
+PASS: nonnegative integer volume and thermal energy
+PASS: centre of mass travels downhill
+PASS: duplicate network tick is rejected
+PASS: checkpoint restores every authoritative bit
+PASS: late join checkpoint replays exactly for 100 further ticks
+PASS: wrong model version cannot overwrite live state
+PASS: truncated checkpoint is rejected
+PASS: continuous terrain barrier blocks lava
+PASS: sub-solidus deposit remains immobile
+PASS: yield stress can arrest flow
+PASS: simultaneous fluxes preserve exact mirror symmetry
+PASS: integer cooling removes heat and retains all volume
+PASS: versioned viscosity table stiffens colder lava
+PASS: limiter survives maximum supported depth and low viscosity
+PASS: client adapter loads canonical server state
+PASS: presentation arrays and display time cannot affect authoritative state
+PASS: client presentation changes do not affect the next tick
+PASS: variable timesteps are unavailable to the authoritative model
+PASS: planet gravity is part of the canonical checkpoint
+PASS: maximum planetary relief, gravity and depth remain positive without overflow
+PASS: 8m cells conserve maximum-depth volume and heat at maximum relief/gravity without overflow
+PASS: large-cell checkpoint restores including its derived wet index
+PASS: reordered sparse traversal cannot change a physical bit
+PASS: polar field accepts integer radial geometry
+PASS: polar fluxes conserve exact litres across unequal cell areas
+PASS: a filled crater overflows in every direction, including the angular seam
+PASS: polar geometry is canonical in late-join checkpoints
+PASS: polar traversal order cannot affect the next tick
+PASS: deposits are already black before progressive despawn starts
+PASS: partial cooling and fade timers survive a checkpoint
+PASS: both peers account for every removed litre throughout despawn
+PASS: completed cleanup frees the wet index and retains a complete removal ledger
+PASS: a new eruption can reuse a fully despawned field
+PASS: maximum 512m depth, 8km relief and 64m cells do not overflow signed integers
+PASS: wide multiply/divide preserves an exact result when the direct product would overflow
+PASS: concurrent worker-thread server and client replay every authoritative bit identically
+LAVA_TESTS 45/45 passed

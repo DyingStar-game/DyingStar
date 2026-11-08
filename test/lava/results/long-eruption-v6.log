@@ -1,0 +1,138 @@
+Godot Engine v4.7.stable.mono.double.custom_build.5b4e0cb0f - https://godotengine.org
+WARNING: HDR output requested, but it is not supported by this display server.
+WARNING: [PlanetData] heights.pack missing in res://assets/qgis/export/tarsis_3_chunks — planet has no elevation tiles (re-run tools/planettech/qgis/export_elevation.py)
+WARNING: [PlanetData] 'tarsis_3': 1 line(s) left without a profile; their bed follows the terrain until the elevation tiles under them are available.
+LAVA_PLANET PASS compiled integer accelerator matches the model version
+LAVA_PLANET PASS native and reference states stay byte-identical through pressure, overflow, reheating and complete cleanup
+LAVA_PLANET PASS cache compatibility accepts only the explicit lava policy migration
+LAVA_PLANET PASS unaffected infrastructure profiles survive the removal of QGIS spillways
+LAVA_PLANET PASS infrastructure profiles near changed volcanoes are invalidated
+LAVA_PLANET PASS QGIS lava ribbons, carving and grading are disabled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.562632,24.416774 crater=300.0 tilt=0.0 result=ok
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.754773,25.066777 crater=125.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.797218,24.368911 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.937666,23.998367 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.889854,22.758238 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-40.595084,21.610745 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-41.527422,18.930272 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-42.349194,15.565488 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-43.275556,15.057483 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-46.467021,13.491633 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-49.592744,10.652783 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS a shipped active Tarsis III volcano yields a real-terrain patch
+LAVA_PLANET PASS canonical terrain installed on both peers
+LAVA_PLANET PASS no initial deposit exists before the eruption
+LAVA_PLANET PASS source is inside the crater, with all 360 degrees represented
+LAVA_PLANET PASS shared gravity is Tarsis III 7.77 m/s²
+LAVA_PLANET PASS headless runtimes instantiate no visual nodes
+LAVA_PLANET PASS 300 ticks on actual terrain remain bit-identical, including emission shutdown
+LAVA_PLANET PASS mass ledger at tick 300
+LAVA_LONG tick=300 wet=2588 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 600
+LAVA_LONG tick=600 wet=2685 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 900
+LAVA_LONG tick=900 wet=2767 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 1200
+LAVA_LONG tick=1200 wet=2850 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 1500
+LAVA_LONG tick=1500 wet=2929 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 1800
+LAVA_LONG tick=1800 wet=2989 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 2100
+LAVA_LONG tick=2100 wet=3042 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 2400
+LAVA_LONG tick=2400 wet=3094 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 2700
+LAVA_LONG tick=2700 wet=3136 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 3000
+LAVA_LONG tick=3000 wet=3166 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 3300
+LAVA_LONG tick=3300 wet=3196 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 3600
+LAVA_LONG tick=3600 wet=3217 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 3900
+LAVA_LONG tick=3900 wet=3233 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 4200
+LAVA_LONG tick=4200 wet=3256 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 4500
+LAVA_LONG tick=4500 wet=3269 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 4800
+LAVA_LONG tick=4800 wet=3282 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 5100
+LAVA_LONG tick=5100 wet=3296 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 5400
+LAVA_LONG tick=5400 wet=3305 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 5700
+LAVA_LONG tick=5700 wet=3319 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 6000
+LAVA_LONG tick=6000 wet=3330 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 6300
+LAVA_LONG tick=6300 wet=3339 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 6600
+LAVA_LONG tick=6600 wet=3347 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 6900
+LAVA_LONG tick=6900 wet=3357 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 7200
+LAVA_LONG tick=7200 wet=3364 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 7500
+LAVA_LONG tick=7500 wet=3374 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 7800
+LAVA_LONG tick=7800 wet=3381 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 8100
+LAVA_LONG tick=8100 wet=3391 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 8400
+LAVA_LONG tick=8400 wet=3395 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 8700
+LAVA_LONG tick=8700 wet=3408 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 9000
+LAVA_LONG tick=9000 wet=3410 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 9300
+LAVA_LONG tick=9300 wet=3414 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 9600
+LAVA_LONG tick=9600 wet=3418 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 9900
+LAVA_LONG tick=9900 wet=3418 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 10200
+LAVA_LONG tick=10200 wet=3418 removed_m3=0.0
+LAVA_PLANET PASS mass ledger at tick 10500
+LAVA_LONG tick=10500 wet=3418 removed_m3=1171476.693
+LAVA_PLANET PASS mass ledger at tick 10800
+LAVA_LONG tick=10800 wet=3418 removed_m3=2417726.709
+LAVA_PLANET PASS mass ledger at tick 11100
+LAVA_LONG tick=11100 wet=3418 removed_m3=3663976.681
+LAVA_PLANET PASS mass ledger at tick 11400
+LAVA_LONG tick=11400 wet=3418 removed_m3=4910226.695
+LAVA_PLANET PASS mass ledger at tick 11700
+LAVA_LONG tick=11700 wet=3418 removed_m3=6156476.708
+LAVA_PLANET PASS mass ledger at tick 12000
+LAVA_LONG tick=12000 wet=3416 removed_m3=7402726.695
+LAVA_PLANET PASS mass ledger at tick 12300
+LAVA_LONG tick=12300 wet=0 removed_m3=7477500.0
+LAVA_PLANET PASS 15min eruption and complete cleanup remain bit-identical
+LAVA_PLANET PASS lava overflows and travels down every angular sector
+LAVA_PLANET PASS lava is black before its disappearance phase
+LAVA_PLANET PASS all lava despawns with a complete removal ledger
+LAVA_PLANET PASS a cleaned-up field can be restored without recreating a deposit
+LAVA_LONG_RESULT {"bit_identical":true,"black_before_fade":true,"both_peers_tick_ms_p50":4.029,"both_peers_tick_ms_p95":9.939,"eruption_seconds":900,"failures":0,"front_distance_m":2991.111,"geometry":"polar","grid":[96,96],"injected_m3":7477500.0,"native_backend":true,"peak_active_m3":7477500.0,"peak_wet_cells":3418,"remaining_m3":0,"removed_m3":7477500.0,"sha256":"a9e37021eabd1796a9889f0b7ca42e8caed8b0d231350c37e01cc3ffe0c5349f","sides_reached":96,"simulated_seconds":1230,"ticks_per_peer":12300,"wall_seconds":65.757053}
+LAVA_PLANET PASS missing tick is rejected by the game runtime
+LAVA_PLANET PASS patch up follows the planet's spherical up
+LAVA_PLANET PASS coarse terrain above the physical height range still receives lava coverage
+LAVA_PLANET PASS terrain coverage is limited to the horizontal field footprint
+LAVA_PLANET PASS retiring lava removes its terrain pass and weak mesh registry
+LAVA_PLANET PASS completed cleanup despawns lava mesh, textures and smoke holder
+LAVA_PLANET PASS a fresh eruption recreates visuals after complete despawn
+LAVA_PLANET PASS authority enforces the two-patch budget
+LAVA_PLANET PASS retiring a patch makes its slot reusable
+LAVA_PLANET PASS unload clears both physics registries
+LAVA_PLANET_RESULT failures=0

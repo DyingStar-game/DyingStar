@@ -1,0 +1,39 @@
+Godot Engine v4.7.stable.mono.double.custom_build.5b4e0cb0f - https://godotengine.org
+Vulkan 1.4.357 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4080
+
+PASS: both terrain and lava submit real meshes
+PASS: turning off source stops volume injection
+PASS: pause freezes both physics and surface animation
+PASS: terrain scenario resets cleanly: 0
+PASS: terrain scenario resets cleanly: 1
+PASS: terrain scenario resets cleanly: 2
+PASS: quality resize rebuilds compatible meshes: 0
+PASS: quality resize rebuilds compatible meshes: 1
+PASS: quality resize rebuilds compatible meshes: 2
+PASS: rheology preset restarts without losing source accounting: 0
+PASS: rheology preset restarts without losing source accounting: 1
+PASS: rheology preset restarts without losing source accounting: 2
+PASS: GPU produces a thermal-view image
+PASS: a new snapshot cannot flash forward then regress at the next render frame
+PASS: GPU renders genuinely distinct previous, intermediate and current surfaces
+PASS: visual interpolation preserves physical volume, heat and clock
+PASS: fissure displacement integrates velocity increments even after long runtimes
+PASS: GPU texture allocations stay bounded and are reused
+PASS: simulation never rebuilds or replaces its mesh
+PASS: reset clears accumulated visual displacement
+PASS: display advances on frames with no physics step
+PASS: pause also freezes sub-tick interpolation
+PASS: lateral smoke uses a bounded edge-only pool
+PASS: smoke cannot change any authoritative bit
+PASS: pause freezes smoke as well as lava
+PASS: smoke toggle immediately releases active puffs
+PASS: expired smoke slots disappear instead of looping
+PASS: GPU shows lava even when a coarse terrain triangle hides the physical surface
+PASS: terrain overlay leaves dry ground untouched
+PASS: terrain overlay reuses existing state textures without allocating another simulation
+PASS: terrain LOD presentation cannot alter the physical state
+PASS: terrain lava remains stable at astronomical coordinates
+PASS: terrain lava preserves foreground depth occlusion
+PASS: lava covers reversed HEALPix triangle winding just like the terrain shader
+PASS: terrain coverage cannot project onto the opposite hemisphere
+LAVA_RENDER_TESTS 35/35 passed

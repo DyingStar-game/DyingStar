@@ -451,6 +451,8 @@ var _server_feature_nodes: Dictionary = {}
 ## key -> {"node": Node3D, "chunks": {chunk key: true}} — refcounted by the
 ## chunks that own the summit, so overlapping LODs never draw two lakes.
 var _volcano_nodes: Dictionary = {}
+## Canonical, bounded lava patches installed by authority; independent of chunk LOD.
+var lava_runtime: Node3D
 ## A volcano's lake and plume show on chunks of this LOD or finer.
 const VOLCANO_FEATURE_MAX_LOD := 4
 ## GPU bisection switches (client.ini, measurement only — they CHANGE WHAT YOU
@@ -613,7 +615,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# Volcanoes: their fingerprint is in _mt; the relief ALGORITHM is keyed
 		# here, only when the planet has one (byte-identical key otherwise).
 		if data.volcano_fingerprint() != "" or data.debug_volcano_enabled:
-			_mt += "_vr%d" % VolcanoRelief.ALGO_VERSION
+			_mt += "_vr%d_%s" % [VolcanoRelief.ALGO_VERSION, LavaSettings.RUNTIME_POLICY]
 		# Rocky terrain: same rule, its algorithm keyed only where it is.
 		if data.rocky_fingerprint() != "" or data.debug_rock_enabled:
 			_mt += "_rk%d" % RockFieldRelief.ALGO_VERSION
@@ -928,6 +930,11 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	warm_terrain_pads()
 
 	_initialized = true
+	if not Engine.is_editor_hint() and lava_runtime == null:
+		lava_runtime = load("res://scenes/planet/lava/lava_planet_runtime.gd").new()
+		lava_runtime.name = "ViscousLavaRuntime"
+		lava_runtime.setup(planet_data, is_server)
+		add_child(lava_runtime)
 
 	# Server: zone-driven collision residency.  No chunks are loaded at boot;
 	# the safety-net mesh attached above keeps the planet "solid" everywhere
@@ -1763,6 +1770,8 @@ func quiesce_stargrot() -> void:
 ## Standalone planet tests also need to drain native workers before closing their world.
 func quiesce_offline() -> void:
 	assert(Globals.is_offline_planet_tool())
+	if lava_runtime != null:
+		lava_runtime.process_mode = Node.PROCESS_MODE_DISABLED
 	set_process(false)
 	set_physics_process(false)
 	var pending: Array[int] = []
@@ -4517,6 +4526,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		_set_far_air(mi, AtmosphereLod.chunk_params(planet_data.atmosphere_profile, _atmosphere_lod.level))
 	_chunks_node.add_child(mi)
 	info["mesh_instance"] = mi
+	if is_instance_valid(lava_runtime):
+		lava_runtime.register_terrain_mesh(mi)
 	_perf_end("asm:mesh", _tk)
 	_tk = _perf_begin()
 

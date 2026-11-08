@@ -1,0 +1,14 @@
+{
+  "model": 6,
+  "week_ticks_per_peer": 6048000,
+  "week_bit_identical": true,
+  "week_conserves_mass": true,
+  "week_hot_reactivation_cells": 5,
+  "cleanup_cycle_bit_identical": true,
+  "capture_default_eruption_seconds": 600.0,
+  "capture_canonical_bytes": 665240,
+  "capture_sha256": "d487d4ce674cd2c074250592fa049d6b57a60ffb3e66c3c8cacf7a05650616c1",
+  "benchmark_sleep_matches_full_scan": true,
+  "numerical_tests": 51,
+  "gpu_tests_per_renderer": 40
+}

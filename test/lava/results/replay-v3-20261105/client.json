@@ -1,0 +1,94 @@
+{
+	"canonical_bytes": 73816,
+	"cpu": "13th Gen Intel(R) Core(TM) i7-13700",
+	"duration_ms": 1476.699,
+	"engine": "4.7-stable (custom_build)",
+	"final_sha256": "ce79188d66bc5b2bcf0de61e1bce5ac954c54ad9db71600aa8bb5081cd0e1083",
+	"frame_batches": 802,
+	"hashes": [
+		{
+			"sha256": "efd1ed19d7c0e5772dd80af0a69071903e451603c3e2687f3da90b3d2d5208ba",
+			"tick": 100
+		},
+		{
+			"sha256": "3d41a73df1ca5c161775b3ea9e117e134254cc11525f8db12a0eca6a2534d20d",
+			"tick": 200
+		},
+		{
+			"sha256": "9846219378b55189592c12e01768dc0c2dbf9c01331defb0c2fb34028b83d972",
+			"tick": 300
+		},
+		{
+			"sha256": "9fcbe9d3563250dba9bb9b927e0438ed036717e36ca5b0d7917795ab03f9e5af",
+			"tick": 400
+		},
+		{
+			"sha256": "4cc69da55b2bafa5a2ba61591d8bd3c41613877204f4a798df577919ee2d1bdf",
+			"tick": 500
+		},
+		{
+			"sha256": "0c7c143f61a8dc7f176049eafd62d216763c54122fe3fafb882ea48b0fc34e7e",
+			"tick": 600
+		},
+		{
+			"sha256": "e1d6adbe5f3eb099c729222552e91b920153107be94f78831e50b677702d95e4",
+			"tick": 700
+		},
+		{
+			"sha256": "fe92e7064121a6cdf8682f758063f01406fb19b45f3af2e674b1578765cbd69b",
+			"tick": 800
+		},
+		{
+			"sha256": "4edfdf0ac8b723c64db7900f80934cbec0b12139615203e24d511c71c93d1b7e",
+			"tick": 900
+		},
+		{
+			"sha256": "0c18e5e0b3f7bb81f88f290dd6d18b8e946c0dd41917f92f5caa09442d830a6e",
+			"tick": 1000
+		},
+		{
+			"sha256": "e0f7031086f9bd209ee766ae988fb056d4be8c768bb3e1432de842f846e0dd2d",
+			"tick": 1100
+		},
+		{
+			"sha256": "7d987ad7b2de8ba30c9df950cd53af563434ffa2c6e25ddfaf0f41f437c91e7c",
+			"tick": 1200
+		},
+		{
+			"sha256": "b6cac4f35d5d3ad8c657b51d46e67fa4e39fe2636af25697dbdcbbf3baac4bcc",
+			"tick": 1300
+		},
+		{
+			"sha256": "383212eb71e4d69a88875ee6141fe2ada3336301bd5e08be4b157b59163dfc81",
+			"tick": 1400
+		},
+		{
+			"sha256": "8aa266e20d6fc5b936b092820190e72e4c3e59c5eb9759924ef24dd7c2f223a4",
+			"tick": 1500
+		},
+		{
+			"sha256": "d2ce4b695e8561e2ec083bef80dfcb8c711248de5bb05643bcf9538308db86ea",
+			"tick": 1600
+		},
+		{
+			"sha256": "049f38a93d4b9c91150187b07d9df761a8c45fda07a02c3c45289d148195ccd9",
+			"tick": 1700
+		},
+		{
+			"sha256": "e75e2be723068ddc0ebbe6d8a7f90f7e76776b0be870243a1a90766c6a76e1af",
+			"tick": 1800
+		},
+		{
+			"sha256": "d5b8fa6bf0729a3efa601964c2e035e1956059c19cf0815d63940fb05597cc94",
+			"tick": 1900
+		},
+		{
+			"sha256": "ce79188d66bc5b2bcf0de61e1bce5ac954c54ad9db71600aa8bb5081cd0e1083",
+			"tick": 2000
+		}
+	],
+	"os": "Windows",
+	"role": "client",
+	"schema": 3,
+	"ticks": 2000
+}

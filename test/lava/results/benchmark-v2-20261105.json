@@ -1,0 +1,198 @@
+{
+  "cpu": "13th Gen Intel(R) Core(TM) i7-13700",
+  "engine": {
+    "build": "custom_build",
+    "hash": "5b4e0cb0fd279832bbdd69fed5354d4e5ad26f88",
+    "hex": 263936,
+    "major": 4,
+    "minor": 7,
+    "patch": 0,
+    "status": "stable",
+    "string": "4.7-stable (custom_build)",
+    "timestamp": 0
+  },
+  "os": "Windows",
+  "results": [
+    {
+      "cpu_ms_per_second_at_10hz_median": 6.73,
+      "grid": [
+        32,
+        48
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": false,
+      "initial_occupancy_percent": 10,
+      "role": "server",
+      "step_ms_max": 0.791,
+      "step_ms_median": 0.673,
+      "step_ms_p95": 0.731,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 35.64,
+      "grid": [
+        32,
+        48
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": false,
+      "initial_occupancy_percent": 100,
+      "role": "server",
+      "step_ms_max": 4.667,
+      "step_ms_median": 3.564,
+      "step_ms_p95": 3.851,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 8.41,
+      "grid": [
+        32,
+        48
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": true,
+      "initial_occupancy_percent": 10,
+      "role": "client",
+      "step_ms_max": 1.139,
+      "step_ms_median": 0.841,
+      "step_ms_p95": 0.909,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 37.88,
+      "grid": [
+        32,
+        48
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": true,
+      "initial_occupancy_percent": 100,
+      "role": "client",
+      "step_ms_max": 10.438,
+      "step_ms_median": 3.788,
+      "step_ms_p95": 4.272,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 14.12,
+      "grid": [
+        48,
+        72
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": false,
+      "initial_occupancy_percent": 10,
+      "role": "server",
+      "step_ms_max": 1.875,
+      "step_ms_median": 1.412,
+      "step_ms_p95": 1.501,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 80.28,
+      "grid": [
+        48,
+        72
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": false,
+      "initial_occupancy_percent": 100,
+      "role": "server",
+      "step_ms_max": 8.782,
+      "step_ms_median": 8.028,
+      "step_ms_p95": 8.284,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 17.49,
+      "grid": [
+        48,
+        72
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": true,
+      "initial_occupancy_percent": 10,
+      "role": "client",
+      "step_ms_max": 1.916,
+      "step_ms_median": 1.749,
+      "step_ms_p95": 1.87,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 85.47,
+      "grid": [
+        48,
+        72
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": true,
+      "initial_occupancy_percent": 100,
+      "role": "client",
+      "step_ms_max": 10.647,
+      "step_ms_median": 8.547,
+      "step_ms_p95": 9.198,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 24.02,
+      "grid": [
+        64,
+        96
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": false,
+      "initial_occupancy_percent": 10,
+      "role": "server",
+      "step_ms_max": 4.361,
+      "step_ms_median": 2.402,
+      "step_ms_p95": 3.226,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 143.85,
+      "grid": [
+        64,
+        96
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": false,
+      "initial_occupancy_percent": 100,
+      "role": "server",
+      "step_ms_max": 25.498,
+      "step_ms_median": 14.385,
+      "step_ms_p95": 16.9,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 29.84,
+      "grid": [
+        64,
+        96
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": true,
+      "initial_occupancy_percent": 10,
+      "role": "client",
+      "step_ms_max": 4.956,
+      "step_ms_median": 2.984,
+      "step_ms_p95": 3.185,
+      "steps": 160
+    },
+    {
+      "cpu_ms_per_second_at_10hz_median": 153.57,
+      "grid": [
+        64,
+        96
+      ],
+      "includes_gpu_upload_or_smoke": false,
+      "includes_presentation_conversion": true,
+      "initial_occupancy_percent": 100,
+      "role": "client",
+      "step_ms_max": 20.185,
+      "step_ms_median": 15.357,
+      "step_ms_p95": 17.474,
+      "steps": 160
+    }
+  ],
+  "schema": 2
+}

@@ -1,0 +1,225 @@
+Godot Engine v4.7.stable.mono.double.custom_build.5b4e0cb0f - https://godotengine.org
+
+WARNING: HDR output requested, but it is not supported by this display server.
+   at: window_request_hdr_output (servers/display/display_server.cpp:1307)
+OBS.[97m[1m[engine][22m[39m [92minformation[39m [38;2;165;42;42m Ready for obs [39m[0m
+[CPerf] machine gpu='' driver= cpu='13th Gen Intel(R) Core(TM) i7-13700' x24 ram_phys=31.84 GiB ram_avail=36.90 GiB | window=(0, 0) vsync=1 max_fps=144 refresh=-1Hz | v=4.7-stable (custom_build)
+[CConf] loaded client.ini (10 keys) | broker_url=ws://127.0.0.1:9001 channel=dev compression=zstd debug_perf=false horizon_url=https://192.168.49.2:30101 path=/market scheme=http tiles_url=https://planettech.dyingstar-game.space tls_verify=false url=http://service.dyingstar.local
+[CConf] WARNING duplicate keys, last one wins: path (in [mission]) path (in [economie]) path (in [inventory]) path (in [market])
+[CPerf] os=Windows 10.0.26200 (Windows) arch=x86_64 | exe=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/runtime/godot/Godot_v4.7-stable_mono_win64.exe | cwd_ini=client.ini | user_dir=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/rnd-viscous-lava/.godot/game-user/Godot/app_userdata/DyingStar/ | log=C:/Users/Nasa Artemis/Documents/Codex/2026-10-03/hz/outputs/rnd-viscous-lava/.godot/game-user/Godot/app_userdata/DyingStar/logs/godot.log
+[CPerf] features=editor,debug,windows,x86_64,double | args=res://test/lava/test_planet_integration.tscn | session=/ | gpu_vendor= type=0 api=
+[CPerf] window mode=1 size=(0, 0) pos=(0, 0) on_screen=-1 | screens:
+[CPerf] render method=forward_plus | viewport=(1920.0, 1920.0) scaling3d=0 x1.00 msaa3d=0 ssaa=2 taa=false debanding=true vrs=0 | shadow_atlas=2048 dir_shadow=4096 occlusion=true aniso=3 picking=true
+[CPerf] graphics preset=medium detected=medium renderer=forward_plus adapter="" upscale_mode=0 render_scale=1.0 fsr_sharpness=0.9 aa_msaa=0 aa_screen=2 aa_taa=false shadows=true shadow_distance=250.0 shadow_sun_res=4096 shadow_light_res=2048 shadow_filter=2 ssao=0 ssil=0 ssr=0 glow=2 anisotropic=3 debanding=true wind_dust=1 atmosphere_quality=1 ground_quality=1 mesh_lod=2.0 terrain_distance=0.8 structures_distance=0.75 foliage_distance=0.75
+[CPerf] physics engine=Jolt Physics ticks=60 separate_thread=false | worker_threads=-1 | time_scale=1.00 | mem_boot avail=36.90 GiB phys=31.84 GiB
+[CPerf] settings.ini { "fullscreen": false, "v_sync": false, "max_fps": 144, "fov": 100.0, "dev_mode": false, "upscale_mode": 0, "render_scale": 1.0, "fsr_sharpness": 0.9, "aa_msaa": 0, "aa_screen": 2, "aa_taa": false, "shadows": true, "shadow_distance": 250.0, "shadow_sun_res": 4096, "shadow_light_res": 2048, "shadow_filter": 2, "ssao": 0, "ssil": 0, "ssr": 0, "glow": 2, "anisotropic": 3, "debanding": true, "wind_dust": 1, "atmosphere_quality": 1, "ground_quality": 1, "mesh_lod": 2.0, "terrain_distance": 0.8, "structures_distance": 0.75, "foliage_distance": 0.75, "show_debug": true, "vehicle_hud": true, "cargo_debug": false, "celestial_gizmos": false, "movement_debug": false, "surface_debug": false, "music_debug": false, "star_map_debug": false, "safety_net_debug": false, "notification_debug": false, "language": "auto", "general": 100.0, "music": 100.0, "menu_music": 100.0, "sfx": 100.0, "voip": 100.0, "ui": 100.0, "microphone_muted": false }
+[CPerf] performance logging OFF — to report a performance problem, set `debug_perf=true` in client.ini and restart the game.
+WARNING: [PlanetData] heights.pack missing in res://assets/qgis/export/tarsis_3_chunks — planet has no elevation tiles (re-run tools/planettech/qgis/export_elevation.py)
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] apply_chunk_manifest (res://scenes/planet/planet_data.gd:1739)
+       [1] _ready (res://test/lava/test_planet_integration.gd:15)
+[PlanetData] chunk manifest applied: radius=6356000 export_nside=1024 nside_min=1 pyramid=true tile_res=32 height_offset=-1700.0 max_height=10700.0 data_version=af187a067b584b4d
+[BiomeQuery] Loaded via ResourceLoader: res://assets/qgis/export/tarsis_3_roads_buffered.json
+[BiomeQuery] Loaded 132 zone(s) from res://assets/qgis/export/tarsis_3_roads_buffered.json (1 part(s))
+[BiomeQuery]   zone[0]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=11770 bbox=(-39.918507,24.500870)→(-39.543560,24.691370)
+[BiomeQuery]   zone[1]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=10855 bbox=(-40.275089,24.251487)→(-39.928443,24.494039)
+[BiomeQuery]   zone[2]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=14608 bbox=(-40.510894,23.910033)→(-40.285008,24.244667)
+[BiomeQuery]   zone[3]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15237 bbox=(-40.719312,23.539024)→(-40.517401,23.898144)
+[BiomeQuery]   zone[4]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=12779 bbox=(-40.877320,23.144282)→(-40.725823,23.527128)
+[BiomeQuery]   zone[5]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=7601 bbox=(-40.940209,22.730712)→(-40.878545,23.134043)
+[BiomeQuery]   zone[6]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8007 bbox=(-41.006268,22.296287)→(-40.941434,22.720471)
+[BiomeQuery]   zone[7]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=7831 bbox=(-41.071090,21.870000)→(-41.007493,22.286045)
+[BiomeQuery]   zone[8]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8273 bbox=(-41.139530,21.419917)→(-41.072294,21.859896)
+[BiomeQuery]   zone[9]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=7801 bbox=(-41.204148,20.994969)→(-41.140735,21.409812)
+[BiomeQuery]   zone[10]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=14039 bbox=(-41.391683,20.612215)→(-41.205353,20.984862)
+[BiomeQuery]   zone[11]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=16245 bbox=(-41.627385,20.243376)→(-41.397690,20.602592)
+[BiomeQuery]   zone[12]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15985 bbox=(-41.860115,19.879187)→(-41.634000,20.232802)
+[BiomeQuery]   zone[13]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15815 bbox=(-42.091124,19.517692)→(-41.867515,19.867385)
+[BiomeQuery]   zone[14]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=16908 bbox=(-42.303950,19.138827)→(-42.096341,19.509306)
+[BiomeQuery]   zone[15]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18073 bbox=(-42.455797,18.740547)→(-42.307831,19.128011)
+[BiomeQuery]   zone[16]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18439 bbox=(-42.610709,18.334228)→(-42.459679,18.729728)
+[BiomeQuery]   zone[17]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18055 bbox=(-42.762371,17.936434)→(-42.614540,18.323543)
+[BiomeQuery]   zone[18]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18470 bbox=(-42.915646,17.530325)→(-42.766203,17.925746)
+[BiomeQuery]   zone[19]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18621 bbox=(-43.064716,17.123448)→(-42.919297,17.519684)
+[BiomeQuery]   zone[20]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18257 bbox=(-43.211024,16.724110)→(-43.068368,17.112804)
+[BiomeQuery]   zone[21]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=17835 bbox=(-43.354075,16.333661)→(-43.214623,16.713609)
+[BiomeQuery]   zone[22]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18419 bbox=(-43.501900,15.930183)→(-43.357675,16.323159)
+[BiomeQuery]   zone[23]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15293 bbox=(-43.816112,15.639921)→(-43.508517,15.921944)
+[BiomeQuery]   zone[24]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15421 bbox=(-44.135430,15.347184)→(-43.825385,15.631453)
+[BiomeQuery]   zone[25]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15545 bbox=(-44.455626,15.053642)→(-44.143360,15.339947)
+[BiomeQuery]   zone[26]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=13068 bbox=(-44.753445,14.736340)→(-44.464912,15.045162)
+[BiomeQuery]   zone[27]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8797 bbox=(-45.003054,14.388842)→(-44.758963,14.728504)
+[BiomeQuery]   zone[28]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8867 bbox=(-45.249386,14.045905)→(-45.010897,14.377769)
+[BiomeQuery]   zone[29]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=10718 bbox=(-45.542856,13.649030)→(-45.257489,14.034471)
+[BiomeQuery]   zone[30]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8859 bbox=(-45.829140,13.334666)→(-45.549303,13.641912)
+[BiomeQuery]   zone[31]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8841 bbox=(-46.117947,13.017534)→(-45.838092,13.324799)
+[BiomeQuery]   zone[32]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=11396 bbox=(-46.460445,12.709117)→(-46.125319,13.009400)
+[BiomeQuery]   zone[33]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=12995 bbox=(-46.819089,12.488860)→(-46.470374,12.703171)
+[BiomeQuery]   zone[34]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=13273 bbox=(-47.185285,12.263965)→(-46.829020,12.482912)
+[BiomeQuery]   zone[35]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=17688 bbox=(-47.589390,12.096433)→(-47.191937,12.260031)
+[BiomeQuery]   zone[36]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18215 bbox=(-47.995031,11.949199)→(-47.599867,12.092880)
+[BiomeQuery]   zone[37]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18129 bbox=(-48.399571,11.802366)→(-48.005502,11.945648)
+[BiomeQuery]   zone[38]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=17893 bbox=(-48.800655,11.656786)→(-48.410034,11.798818)
+[BiomeQuery]   zone[39]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18046 bbox=(-49.204477,11.509484)→(-48.811113,11.653240)
+[BiomeQuery]   zone[40]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18625 bbox=(-49.606527,11.333058)→(-49.214753,11.505195)
+[BiomeQuery]   zone[41]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18411 bbox=(-50.004635,11.158362)→(-49.616798,11.328771)
+[BiomeQuery]   zone[42]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18195 bbox=(-50.399150,10.985243)→(-50.014901,11.154077)
+[BiomeQuery]   zone[43]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=17710 bbox=(-50.762483,10.743235)→(-50.409411,10.980960)
+[BiomeQuery]   zone[44]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=12683 bbox=(-50.964754,10.374052)→(-50.768237,10.732409)
+[BiomeQuery]   zone[45]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=13015 bbox=(-51.171891,9.995990)→(-50.970510,10.363224)
+[BiomeQuery]   zone[46]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=18373 bbox=(-51.461571,9.467270)→(-51.176848,9.986619)
+[BiomeQuery]   zone[47]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=124 bbox=(-176.302168,-57.989532)→(177.467619,50.215241)
+[BiomeQuery]   zone[48]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4038 bbox=(-39.533172,24.697429)→(-39.412247,24.779248)
+[BiomeQuery]   zone[49]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=155697 bbox=(-39.411650,24.779593)→(-34.709314,27.974447)
+[BiomeQuery]   zone[50]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3885 bbox=(-40.935035,23.143476)→(-40.879399,23.249137)
+[BiomeQuery]   zone[51]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2753 bbox=(-41.011322,23.201996)→(-40.934711,23.227633)
+[BiomeQuery]   zone[52]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8009 bbox=(-39.565120,24.701979)→(-39.519009,24.854732)
+[BiomeQuery]   zone[53]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=12964 bbox=(-39.534071,24.696512)→(-39.407896,24.785770)
+[BiomeQuery]   zone[54]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=616 bbox=(-39.413165,24.779841)→(-39.410337,24.785185)
+[BiomeQuery]   zone[55]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=182 bbox=(-39.558626,24.852401)→(-39.555249,24.856440)
+[BiomeQuery]   zone[56]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4776 bbox=(-39.688948,24.855125)→(-39.558102,24.869874)
+[BiomeQuery]   zone[57]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=7285 bbox=(-41.097119,23.112139)→(-40.885518,23.140061)
+[BiomeQuery]   zone[58]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4755 bbox=(-40.720276,23.009451)→(-40.665239,23.166500)
+[BiomeQuery]   zone[59]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3448 bbox=(-40.874259,23.141796)→(-40.725982,23.176024)
+[BiomeQuery]   zone[60]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=12177 bbox=(-41.201073,20.680735)→(-41.115513,20.992698)
+[BiomeQuery]   zone[61]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=6526 bbox=(-41.147769,20.879380)→(-40.854207,20.967752)
+[BiomeQuery]   zone[62]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15785 bbox=(-41.199704,20.989724)→(-40.836342,21.292179)
+[BiomeQuery]   zone[63]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=13225 bbox=(-41.355204,20.993641)→(-41.206690,21.268165)
+[BiomeQuery]   zone[64]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=1534 bbox=(-41.359965,21.039054)→(-41.330883,21.064800)
+[BiomeQuery]   zone[65]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=5033 bbox=(-40.301074,24.250180)→(-40.234756,24.357242)
+[BiomeQuery]   zone[66]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2285 bbox=(-40.342248,24.258299)→(-40.300749,24.298444)
+[BiomeQuery]   zone[67]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3143 bbox=(-40.277472,24.169666)→(-40.256023,24.241457)
+[BiomeQuery]   zone[68]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2886 bbox=(-40.585150,23.906843)→(-40.520841,23.997343)
+[BiomeQuery]   zone[69]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4329 bbox=(-40.678965,23.858860)→(-40.572849,23.928460)
+[BiomeQuery]   zone[70]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=90 bbox=(-40.672783,23.857538)→(-40.671357,23.860256)
+[BiomeQuery]   zone[71]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4640 bbox=(-40.512461,23.839014)→(-40.401076,23.901180)
+[BiomeQuery]   zone[72]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2514 bbox=(-40.746363,23.546099)→(-40.715095,23.623810)
+[BiomeQuery]   zone[73]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3885 bbox=(-40.856657,23.623050)→(-40.745842,23.631661)
+[BiomeQuery]   zone[74]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4912 bbox=(-40.975871,23.552849)→(-40.861318,23.632775)
+[BiomeQuery]   zone[75]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=1235 bbox=(-40.785314,23.526060)→(-40.726275,23.541459)
+[BiomeQuery]   zone[76]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4581 bbox=(-40.873469,23.473123)→(-40.789215,23.542380)
+[BiomeQuery]   zone[77]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3517 bbox=(-40.975923,23.471831)→(-40.879189,23.553225)
+[BiomeQuery]   zone[78]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=11304 bbox=(-42.382040,19.138699)→(-42.303880,19.392774)
+[BiomeQuery]   zone[79]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=12220 bbox=(-42.301797,19.136129)→(-41.966027,19.182129)
+[BiomeQuery]   zone[80]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=10010 bbox=(-42.255495,18.923888)→(-42.097540,19.144796)
+[BiomeQuery]   zone[81]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=15238 bbox=(-42.726115,19.058163)→(-42.304134,19.199682)
+[BiomeQuery]   zone[82]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=35 bbox=(-43.653340,15.940167)→(-43.497849,16.226978)
+[BiomeQuery]   zone[83]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2585 bbox=(-39.967376,24.501757)→(-39.924022,24.557241)
+[BiomeQuery]   zone[84]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2780 bbox=(-40.042206,24.503558)→(-39.969961,24.558950)
+[BiomeQuery]   zone[85]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=13573 bbox=(-39.967068,24.559225)→(-39.692202,24.758836)
+[BiomeQuery]   zone[86]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=46 bbox=(-39.908085,24.468200)→(-39.801243,24.508471)
+[BiomeQuery]   zone[87]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3357 bbox=(-39.936442,24.396185)→(-39.907746,24.492471)
+[BiomeQuery]   zone[88]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2425 bbox=(-44.467320,14.906784)→(-44.414361,15.043256)
+[BiomeQuery]   zone[89]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=85 bbox=(-44.415962,14.904391)→(-44.412542,14.907108)
+[BiomeQuery]   zone[90]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=6771 bbox=(-45.424667,14.042921)→(-45.260196,14.065125)
+[BiomeQuery]   zone[91]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=16276 bbox=(-45.847080,13.647992)→(-45.544226,13.861168)
+[BiomeQuery]   zone[92]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=13498 bbox=(-45.733973,13.999987)→(-45.429420,14.106679)
+[BiomeQuery]   zone[93]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3085 bbox=(-45.650828,13.929956)→(-45.600454,14.017595)
+[BiomeQuery]   zone[94]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=42 bbox=(-45.781662,13.861883)→(-45.600954,13.927314)
+[BiomeQuery]   zone[95]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=11011 bbox=(-45.832489,13.285937)→(-45.563015,13.329519)
+[BiomeQuery]   zone[96]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=10717 bbox=(-45.538981,13.470311)→(-45.299928,13.646824)
+[BiomeQuery]   zone[97]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=7917 bbox=(-46.490410,12.711770)→(-46.465234,12.896310)
+[BiomeQuery]   zone[98]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=5081 bbox=(-46.638603,12.707468)→(-46.471515,12.731969)
+[BiomeQuery]   zone[99]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3372 bbox=(-46.459556,12.661759)→(-46.388364,12.703728)
+[BiomeQuery]   zone[100]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=6209 bbox=(-46.383007,12.643723)→(-46.240011,12.660859)
+[BiomeQuery]   zone[101]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=7663 bbox=(-46.383007,12.663687)→(-46.194829,12.806267)
+[BiomeQuery]   zone[102]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=59 bbox=(-46.192945,12.806116)→(-46.192039,12.806936)
+[BiomeQuery]   zone[103]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=5600 bbox=(-46.469398,12.552160)→(-46.387170,12.662083)
+[BiomeQuery]   zone[104]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=7690 bbox=(-47.238741,12.263735)→(-47.185850,12.504896)
+[BiomeQuery]   zone[105]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=10719 bbox=(-47.445557,12.263492)→(-47.186108,12.309008)
+[BiomeQuery]   zone[106]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8059 bbox=(-47.589030,12.088030)→(-47.398869,12.095416)
+[BiomeQuery]   zone[107]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3659 bbox=(-47.213558,12.171593)→(-47.184694,12.254550)
+[BiomeQuery]   zone[108]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8043 bbox=(-47.181260,12.254519)→(-46.995234,12.307476)
+[BiomeQuery]   zone[109]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=35 bbox=(-47.055755,12.162023)→(-46.960728,12.254843)
+[BiomeQuery]   zone[110]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=52 bbox=(-49.137815,11.658034)→(-48.800191,11.919458)
+[BiomeQuery]   zone[111]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=1952 bbox=(-39.408285,24.774487)→(-39.374364,24.782706)
+[BiomeQuery]   zone[112]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=828 bbox=(-39.722036,24.757671)→(-39.676773,24.863799)
+[BiomeQuery]   zone[113]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=6465 bbox=(-39.692527,24.691310)→(-39.545930,24.757995)
+[BiomeQuery]   zone[114]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=6083 bbox=(-39.606580,24.578135)→(-39.529950,24.693105)
+[BiomeQuery]   zone[115]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=10529 bbox=(-39.606808,24.449476)→(-39.488033,24.578460)
+[BiomeQuery]   zone[116]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=9933 bbox=(-43.046439,17.530030)→(-42.915440,17.722111)
+[BiomeQuery]   zone[117]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=19469 bbox=(-43.499724,17.683390)→(-43.048255,17.858605)
+[BiomeQuery]   zone[118]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=1189 bbox=(-43.753480,15.874982)→(-43.511243,15.919506)
+[BiomeQuery]   zone[119]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=6144 bbox=(-43.498382,15.939116)→(-43.319223,16.038308)
+[BiomeQuery]   zone[120]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2470 bbox=(-43.502818,15.858053)→(-43.472277,15.920521)
+[BiomeQuery]   zone[121]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=9769 bbox=(-44.450414,15.058365)→(-44.425194,15.280674)
+[BiomeQuery]   zone[122]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=3281 bbox=(-44.428479,15.280349)→(-44.415723,15.398642)
+[BiomeQuery]   zone[123]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=48 bbox=(-44.655038,15.005771)→(-44.467306,15.070389)
+[BiomeQuery]   zone[124]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=6951 bbox=(-44.450572,14.957427)→(-44.289103,15.058571)
+[BiomeQuery]   zone[125]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=12579 bbox=(-49.208752,11.288891)→(-48.947960,11.504353)
+[BiomeQuery]   zone[126]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=100 bbox=(-48.948468,11.287117)→(-48.944749,11.289503)
+[BiomeQuery]   zone[127]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=16592 bbox=(-49.649094,11.512617)→(-49.209552,11.740513)
+[BiomeQuery]   zone[128]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=4149 bbox=(-49.466080,11.740084)→(-49.344766,11.791736)
+[BiomeQuery]   zone[129]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=8682 bbox=(-50.455341,10.987143)→(-50.404245,11.185941)
+[BiomeQuery]   zone[130]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=2334 bbox=(-50.399079,10.926221)→(-50.365490,10.985475)
+[BiomeQuery]   zone[131]: type= idx=-1 density=1.0 tree= depth=0 radius=0.0 intensity=0.0 verts=1925 bbox=(-50.365814,10.959040)→(-50.301913,10.978827)
+PlanetData: loaded road query with 132 zone(s)
+PlanetData: auto-loaded 120 BiomeDefinitions from res://scenes/planet/biomes/
+[PlanetData] terrainmodifier.pack opened: res://assets/qgis/export/tarsis_3_chunks/terrainmodifier.pack (levels [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192])
+[PlanetData] grade_profiles.pack lu pour 'tarsis_3' en 263 ms
+[LAVA CACHE] reusing 134 unaffected line profiles; local invalidations=1
+[PlanetData] 131 line profile(s) on 'tarsis_3' — 4053 cutting(s), 683 tunnel(s), 2029 viaduct(s) — 575 ms — 131 baked — 1 skipped (terrain tiles not available)
+WARNING: [PlanetData] 'tarsis_3': 1 line(s) left without a profile; their bed follows the terrain until the elevation tiles under them are available.
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] _build_grade_profiles (res://scenes/planet/planet_data.gd:3855)
+       [1] _ensure_grade_profiles (res://scenes/planet/planet_data.gd:3683)
+       [2] warm_grade_profiles (res://scenes/planet/planet_data.gd:3550)
+       [3] _ready (res://test/lava/test_planet_integration.gd:19)
+LAVA_PLANET PASS compiled integer accelerator matches the model version
+LAVA_PLANET PASS native and reference states stay byte-identical through pressure, overflow, reheating and complete cleanup
+LAVA_PLANET PASS cache compatibility accepts only the explicit lava policy migration
+LAVA_PLANET PASS unaffected infrastructure profiles survive the removal of QGIS spillways
+LAVA_PLANET PASS infrastructure profiles near changed volcanoes are invalidated
+LAVA_PLANET PASS QGIS lava ribbons, carving and grading are disabled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=1 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=2 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=3 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=4 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=5 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=6 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=7 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=8 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260399 hits=4096 (per-chunk .r32 missing/unreadable at sample time)
+[PlanetData][DBG] height fallback → equirect map: export_ipix=3260410 hits=8192 (per-chunk .r32 missing/unreadable at sample time)
+LAVA_SITE @-39.562632,24.416774 crater=300.0 tilt=0.0 result=ok
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.754773,25.066777 crater=125.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.797218,24.368911 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.937666,23.998367 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-39.889854,22.758238 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-40.595084,21.610745 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-41.527422,18.930272 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-42.349194,15.565488 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-43.275556,15.057483 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-46.467021,13.491633 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS QGIS spillway tilt is removed from decoded volcano
+LAVA_SITE @-49.592744,10.652783 crater=300.0 tilt=0.0 result=not sampled
+LAVA_PLANET PASS a shipped active Tarsis III volcano yields a real-terrain patch
+LAVA_PLANET PASS canonical terrain installed on both peers
+LAVA_PLANET PASS no initial deposit exists before the eruption
+LAVA_PLANET PASS source is inside the crater, with all 360 degrees represented
+LAVA_PLANET PASS shared gravity is Tarsis III 7.77 m/s²
+LAVA_PLANET PASS headless runtimes instantiate no visual nodes
+LAVA_PLANET PASS 300 ticks on actual terrain remain bit-identical, including emission shutdown
+LAVA_PLANET PASS missing tick is rejected by the game runtime
+LAVA_PLANET PASS patch up follows the planet's spherical up
+LAVA_PLANET PASS coarse terrain above the physical height range still receives lava coverage
+LAVA_PLANET PASS terrain coverage is limited to the horizontal field footprint
+LAVA_PLANET PASS retiring lava removes its terrain pass and weak mesh registry
+LAVA_PLANET PASS completed cleanup despawns lava mesh, textures and smoke holder
+LAVA_PLANET PASS a fresh eruption recreates visuals after complete despawn
+LAVA_PLANET PASS authority enforces the two-patch budget
+LAVA_PLANET PASS retiring a patch makes its slot reusable
+LAVA_PLANET PASS unload clears both physics registries
+LAVA_PLANET_RESULT failures=0

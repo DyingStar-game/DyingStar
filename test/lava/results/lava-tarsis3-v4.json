@@ -1,0 +1,31 @@
+{
+	"authored_lava_enabled": false,
+	"boundary_volume_q": 0,
+	"camera_in_patch": "(333.916942278201, 1558.25910869586, 173.979262993808)",
+	"capture_error": 0,
+	"cell_mm": 4000,
+	"client_sha256": "85394bec9f929679f660681d4ef420252729c2382935116bcb000c03f505269a",
+	"comparisons": 8,
+	"eruption_seconds": 900.0,
+	"fps": 119.0,
+	"gpu_ms": 2.3199999332428,
+	"gravity_milli": 7770,
+	"grid": [
+		128,
+		256
+	],
+	"injected_m3": 3571.0,
+	"mismatches": 0,
+	"overlay_matrix": "[X: (0.2424855267491, 0.00001371878616, -0.97015502324577), Y: (-0.93763237531503, 0.2567570671276, -0.23435301841692), Z: (0.24909094338875, 0.96647597398581, 0.06227273584704), O: (333.916942278201, 1558.25910869586, 173.979262993808)]",
+	"planet": "tarsis_3",
+	"runtime_processing": true,
+	"server_sha256": "85394bec9f929679f660681d4ef420252729c2382935116bcb000c03f505269a",
+	"simulated_seconds": 912.0,
+	"source_radius_from_summit_m": 320.0,
+	"step_and_upload_ms_p95": 9.099,
+	"terrain_build_ms": 2508.865,
+	"terrain_lava_overlays": 11,
+	"tick": 9120,
+	"volcano": "@-39.562632,24.416774",
+	"wet_cells": 969
+}
