@@ -35,6 +35,8 @@ static var _running: bool = false
 static var _seen_ms: Dictionary = {}
 ## Depot node instance ids reconciled once since they woke (their first count is logged).
 static var _reported: Dictionary = {}
+## Depot node instance id -> the last reason it was left alone, said once until it changes.
+static var _said: Dictionary = {}
 
 
 ## SERVER, from the server's loop: reconcile every REFRESH_S.
@@ -51,6 +53,7 @@ static func tick(tree: SceneTree) -> void:
 		if not live.has(id):
 			_seen_ms.erase(id)  # gone to sleep: its grace starts over when it wakes again
 			_reported.erase(id)
+			_said.erase(id)
 	for depot: Node in depots:
 		if is_instance_valid(depot) and _settled(depot):
 			await reconcile(depot)
@@ -61,15 +64,31 @@ static func _settled(depot: Node) -> bool:
 	var id := depot.get_instance_id()
 	if not _seen_ms.has(id):
 		_seen_ms[id] = Time.get_ticks_msec()
-	return Time.get_ticks_msec() - int(_seen_ms[id]) >= int(WAKE_GRACE_S * 1000.0) \
-			and not _moving(depot)
+	if Time.get_ticks_msec() - int(_seen_ms[id]) < int(WAKE_GRACE_S * 1000.0):
+		return false
+	var why := _moving_reason(depot)
+	_say(depot, why)
+	return why == ""
+
+
+## Log once why [param depot] is left alone ([param why]), until the reason changes.
+static func _say(depot: Node, why: String) -> void:
+	var id := depot.get_instance_id()
+	if why != "" and str(_said.get(id, "")) != why:
+		print("[Stock] %s: left alone, %s" % [depot.name, why])
+	_said[id] = why
 
 
 ## Whether a crate of [param depot] is being shelved or taken right now (its goods and its marks not yet
 ## agreeing): the stock and the crates may disagree for a moment.
 static func _moving(depot: Node) -> bool:
+	return _moving_reason(depot) != ""
+
+
+## Why [param depot] is moving (see _moving), "" when it is not.
+static func _moving_reason(depot: Node) -> String:
 	if Time.get_ticks_msec() < int(depot.get_meta(HOLD_META, 0)):
-		return true
+		return "crates on their way"
 	var depot_uuid := _uuid_of(depot)
 	for shelf: Node in depot.get_children():
 		if not (shelf is Shelf):
@@ -79,15 +98,15 @@ static func _moving(depot: Node) -> bool:
 			if not (content is Dictionary) or (content as Dictionary).is_empty():
 				continue
 			if crate.has_meta(WarehouseDelivery.DELIVERING_META):
-				return true
+				return "%s being shelved" % crate.name
 			if str((content as Dictionary).get("delivered_to", "")) == depot_uuid:
 				crate.remove_meta(UNMARKED_META)
 				continue
 			if not crate.has_meta(UNMARKED_META):
 				crate.set_meta(UNMARKED_META, Time.get_ticks_msec())
 			if Time.get_ticks_msec() - int(crate.get_meta(UNMARKED_META)) < int(UNMARKED_S * 1000.0):
-				return true
-	return false
+				return "%s not marked as this warehouse's yet" % crate.name
+	return ""
 
 
 ## Match [param depot]'s crates to its warehouse stock, good by good.
@@ -95,7 +114,10 @@ static func reconcile(depot: Node) -> void:
 	var depot_uuid := _uuid_of(depot)
 	var result: Dictionary = await MissionHeartbeat.inventory_internal(HTTPClient.METHOD_GET,
 			"/holders/warehouse/%s" % depot_uuid.uri_encode(), null)
-	if not bool(result.get("ok", false)) or not is_instance_valid(depot):
+	if not is_instance_valid(depot):
+		return
+	if not bool(result.get("ok", false)):
+		_say(depot, "its stock could not be read: %s" % str(result.get("error", result.get("status", "?"))))
 		return
 	var stock := stock_of(result.get("data"))
 	for good: String in [MissionHeartbeat.good_type_for_mineral(SpawnCatalog.TEST_MINERAL),
