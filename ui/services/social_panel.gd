@@ -20,6 +20,7 @@ func _build() -> void:
 	var labels := PackedStringArray()
 	for section: Dictionary in SECTIONS:
 		labels.append(tr(str(section["title"])))
+	add_chrome(_app_bar(tr("%%SVC_APP_SOCIAL"), ServiceAppIcon.Kind.CONTACTS))
 	_mount_bar(labels)
 	for i: int in range(SECTIONS.size()):
 		mount_segment(i, str(SECTIONS[i]["path"]))

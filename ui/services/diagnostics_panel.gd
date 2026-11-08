@@ -24,7 +24,7 @@ var _links_timer: Timer
 
 
 func _build() -> void:
-	var bar := _app_bar(tr("%%SVC_APP_DIAGNOSTICS"), ServiceAppIcon.Kind.DIAGNOSTICS)
+	var bar := _app_bar(tr("%%SVC_APP_DIAGNOSTICS"), ServiceAppIcon.Kind.DIAGNOSTICS, false)
 	_action_button(bar, tr("%%SVC_ACT_TEST"), func() -> void: refresh())
 	add_chrome(bar)
 

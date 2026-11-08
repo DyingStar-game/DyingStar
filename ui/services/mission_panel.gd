@@ -86,10 +86,17 @@ var _filter_status: OptionButton
 var _kind: OptionButton
 var _category: OptionButton
 var _visibility: OptionButton
-var _browse: ItemList
+var _browse: MissionCards
 var _page_browse: ServicePage
-var _mine: ItemList
+var _mine: MissionCards
 var _page_mine: ServicePage
+## Each list segment's master-detail parts ([method _card_master_detail]), by segment index.
+var _views: Dictionary = {}
+## The rows the last loads brought, kept for the chart's roles ([method _classify_mission_pois]).
+var _mine_rows: Array = []
+var _created_rows: Array = []
+## Each contract box's share popover (the mock-up's `shareOpen` dialog), by contract box.
+var _popovers: Dictionary = {}
 ## Invitations to join a mission somebody else took (My missions, over the list).
 var _invites_box: VBoxContainer
 ## The "My missions" segment's contract box, and the mission it is to show once the list has it
@@ -99,8 +106,9 @@ var _focus_id: String = ""
 ## The "My missions" tabs (MINE_TABS) and the one shown.
 var _mine_tabs: HBoxContainer
 var _mine_tab: int = 0
-var _created_status: OptionButton
-var _created: ItemList
+## The status the "My contracts" chips ask the service for ("" = all).
+var _created_filter: String = "active"
+var _created: MissionCards
 var _page_created: ServicePage
 ## Segment 3 — the creation document.
 var _create_title: LineEdit
@@ -208,7 +216,6 @@ func _load_goods() -> void:
 
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_MISSIONS"), ServiceAppIcon.Kind.MISSIONS)
-	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
 	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
@@ -247,41 +254,220 @@ func _preload_builder_data() -> void:
 # Master-detail shell and document card
 # ---------------------------------------------------------------------------------------------
 
-## Split a segment page into a fixed left column (caller fills) and the right contract column.
-## Returns [left, contract]: the contract VBox is where a rendered mission document lands.
-func _master_detail(page: VBoxContainer) -> Array:
-	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var columns := _row(18)
-	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+## The list column's width (px): the mock-up's 400 px list, scaled to the tablet's 1920.
+const LIST_WIDTH: float = 480.0
 
-	var left := VBoxContainer.new()
-	left.add_theme_constant_override("separation", 10)
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	left.custom_minimum_size = Vector2(320, 0)
+
+## A column of mission cards with one selected at a time (the mock-up's mission list). A card is a
+## panel sized to its content with a flat button over it: a [Button] cannot grow with what it holds.
+class MissionCards extends VBoxContainer:
+	## A card was picked: its meta (a mission, or a {mission, assignment} entry).
+	signal picked(meta: Variant)
+	var _metas: Array = []
+	var _cards: Array[PanelContainer] = []
+	var _selected: int = -1
+
+	func _init() -> void:
+		add_theme_constant_override("separation", 10)
+		size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	## Drop every card.
+	func clear_cards() -> void:
+		for child: Node in get_children():
+			remove_child(child)
+			child.queue_free()
+		_metas.clear()
+		_cards.clear()
+		_selected = -1
+
+	## Add a card showing [param content]; picking it hands back [param meta].
+	func add_card(content: Control, meta: Variant) -> void:
+		var card := PanelContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(content)
+		var hit := Button.new()
+		hit.focus_mode = Control.FOCUS_NONE
+		hit.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		for state: String in ["normal", "pressed", "focus", "disabled"]:
+			hit.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+		hit.add_theme_stylebox_override("hover", ServiceStyle.flat(Color.TRANSPARENT, ServiceStyle.RADIUS,
+				ServiceStyle.LINE_HOVER, 1))
+		card.add_child(hit)
+		var index: int = _metas.size()
+		hit.pressed.connect(func() -> void: select(index))
+		_metas.append(meta)
+		_cards.append(card)
+		_paint(card, false)
+		add_child(card)
+
+	## Select card [param index]: lit amber, and announced.
+	func select(index: int) -> void:
+		if index < 0 or index >= _metas.size():
+			return
+		_selected = index
+		for i: int in range(_cards.size()):
+			_paint(_cards[i], i == index)
+		picked.emit(_metas[index])
+
+	## Select the first card whose meta passes [param test] (meta -> bool). False when none does.
+	func select_where(test: Callable) -> bool:
+		for i: int in range(_metas.size()):
+			if test.call(_metas[i]):
+				select(i)
+				return true
+		return false
+
+	func selected_meta() -> Variant:
+		return _metas[_selected] if _selected >= 0 and _selected < _metas.size() else null
+
+	func card_count() -> int:
+		return _metas.size()
+
+	static func _paint(card: PanelContainer, on: bool) -> void:
+		card.add_theme_stylebox_override("panel", ServiceStyle.flat(ServiceStyle.SELECTED_BG, ServiceStyle.RADIUS,
+				ServiceStyle.ACCENT, 1, 18.0, 16.0) if on else ServiceStyle.flat(ServiceStyle.SURFACE_2,
+				ServiceStyle.RADIUS, Color("#222A38"), 1, 18.0, 16.0))
+
+
+## Lay a list segment out as the mock-up's two panels: the list on the left (its caption, room for
+## filters over the cards, the cards, an empty state, the pager) and the contract on the right, with
+## the share popover floating over its bottom-right corner. Returns the parts by name: `left` (Card),
+## `top` (where filters go), `list` (MissionCards), `scroll`, `empty`, `contract`, `detail` (Card).
+func _card_master_detail(page: VBoxContainer, title: String, paged: ServicePage) -> Dictionary:
+	_frameless(page)
+	var columns := _columns()
+	page.add_child(columns)
+
+	var left := _panel(title)
+	_fixed(left, LIST_WIDTH)
 	columns.add_child(left)
+	var top := VBoxContainer.new()
+	top.add_theme_constant_override("separation", 12)
+	left.body.add_child(top)
+	var list := MissionCards.new()
+	var scroll := _scroll(list)
+	left.body.add_child(scroll)
+	var empty := VBoxContainer.new()
+	empty.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	empty.visible = false
+	left.body.add_child(empty)
+	left.body.add_child(_pager(paged))
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var detail := _panel("", "", 32.0)
+	columns.add_child(detail)
+	var stack := Control.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	detail.body.add_child(stack)
+	var detail_scroll := ScrollContainer.new()
+	detail_scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	stack.add_child(detail_scroll)
 	var contract := VBoxContainer.new()
 	contract.add_theme_constant_override("separation", 14)
 	contract.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(contract)
-	columns.add_child(_titled(tr("%%SVC_LBL_MISSION"), scroll, true))
+	detail_scroll.add_child(contract)
+	contract.add_child(_empty_state("", tr("%%SVC_MSG_SELECT_MISSION_DETAIL")))
 
-	page.add_child(columns)
-	contract.add_child(_label(tr("%%SVC_MSG_SELECT_MISSION_DETAIL"), DIM))
-	return [left, contract]
+	# The share popover: hidden until the footer's Share asks for it, grown up and left from the
+	# panel's bottom-right corner so it sits over the footer's end, as in the mock-up.
+	var popover := PanelContainer.new()
+	popover.visible = false
+	popover.anchor_left = 1.0
+	popover.anchor_top = 1.0
+	popover.anchor_right = 1.0
+	popover.anchor_bottom = 1.0
+	popover.offset_left = -440.0
+	popover.offset_right = -4.0
+	popover.offset_top = -96.0
+	popover.offset_bottom = -96.0
+	popover.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	popover.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var pop_style := ServiceStyle.flat(ServiceStyle.SURFACE, ServiceStyle.RADIUS + 2, ServiceStyle.LINE_2, 1, 22.0, 20.0)
+	pop_style.shadow_color = Color(0, 0, 0, 0.5)
+	pop_style.shadow_size = 18
+	pop_style.shadow_offset = Vector2(0, 8)
+	popover.add_theme_stylebox_override("panel", pop_style)
+	stack.add_child(popover)
+	_popovers[contract] = popover
+
+	return {"left": left, "top": top, "list": list, "scroll": scroll, "empty": empty,
+		"contract": contract, "detail": detail}
+
+
+## Show the list's empty state ([param title] and [param text], an optional action) instead of its
+## cards, or the cards again when [param title] is "".
+func _set_list_empty(view: Dictionary, title: String, text: String = "", action: String = "",
+		handler: Callable = Callable()) -> void:
+	var empty: VBoxContainer = view["empty"]
+	_clear(empty)
+	var nothing: bool = title != ""
+	empty.visible = nothing
+	(view["scroll"] as Control).visible = not nothing
+	if nothing:
+		empty.add_child(_empty_state(title, text, action, handler))
+
+
+## One mission's card: its category tag and reward, its title, where it happens, and — for one the
+## player holds, outside "In progress" — the assignment's status. [param owned] tints the title
+## amber: a contract the player raised, seen in the catalogue. [param progress] is the row's
+## `progress` (GET /api/me/missions): when it is there the card names the route and shows the step
+## under way over a bar ("Étape 2/4"), as the mock-up's cards do.
+func _mission_card(mission: Dictionary, status_text: String = "", owned: bool = false,
+		progress: Dictionary = {}) -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var top := _row(8)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(_tag(ServiceTypes.mission_category_label(mission.get("category"))))
+	top.add_child(_spacer())
+	var rewards: Variant = mission.get("rewards")
+	if rewards == null:
+		rewards = mission.get("reward")
+	top.add_child(ServiceStyle.label(ServiceTypes.rewards_text(rewards), ServiceStyle.ACCENT,
+			ServiceStyle.SIZE_SMALL, true))
+	box.add_child(top)
+	var title := ServiceStyle.label(str(ServiceTypes.dash(mission.get("title"))),
+			ServiceStyle.ACCENT if owned else ServiceStyle.TEXT, 17, true)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.max_lines_visible = 2
+	box.add_child(title)
+	var zones: Variant = mission.get("zones")
+	var route := ServiceTypes.progress_route(progress)
+	var where := ServiceStyle.label(route if route != "" else ServiceTypes.zones_text(zones if zones is Array else []),
+			ServiceStyle.MUTED, ServiceStyle.SIZE_CAPTION)
+	where.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	box.add_child(where)
+	if int(progress.get("steps", 0)) > 0:
+		var steps := _row(10)
+		steps.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var bar := _progress_bar(ServiceTypes.progress_ratio(progress), 5.0)
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		steps.add_child(bar)
+		steps.add_child(ServiceStyle.label(tr("%%SVC_FMT_MISSION_STEP_SHORT") % [int(progress.get("step", 0)),
+				int(progress.get("steps", 0))], ServiceStyle.MUTED, ServiceStyle.SIZE_CAPTION))
+		box.add_child(steps)
+	if status_text != "":
+		box.add_child(ServiceStyle.label(status_text, ServiceStyle.HINT, ServiceStyle.SIZE_CAPTION, true))
+	return box
+
+
+## A status enum label with its first letter up ("en cours" -> "En cours"), for a chip.
+static func _cap(text: String) -> String:
+	return text.left(1).to_upper() + text.substr(1) if text != "" else text
 
 
 ## The document shell both the read contract and the creation form live in.
-func _document_card() -> PanelContainer:
+##
+## [param framed] = false for the read contract, which already sits in its own detail panel.
+func _document_card(framed: bool = true) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel",
-			ServiceStyle.flat(ServiceStyle.PANEL, 14, ServiceStyle.BORDER_STRONG, 1, 22.0, 18.0))
+			ServiceStyle.flat(ServiceStyle.SURFACE_2, ServiceStyle.RADIUS_PANEL, ServiceStyle.LINE, 1, 30.0, 26.0)
+			if framed else StyleBoxEmpty.new())
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return card
 
@@ -293,7 +479,7 @@ func _rule() -> Control:
 	rule.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rule.add_theme_stylebox_override("panel",
-			ServiceStyle.flat(ServiceStyle.BORDER_STRONG, 0, Color.TRANSPARENT, 0))
+			ServiceStyle.flat(ServiceStyle.LINE, 0, Color.TRANSPARENT, 0))
 	return rule
 
 
@@ -303,8 +489,8 @@ func _status_pill(status: String) -> Control:
 	var pill := PanelContainer.new()
 	pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	ServiceStyle.apply_pill(pill, colour)
-	var label := _label(ServiceTypes.mission_status_label(status), colour)
-	ServiceStyle.font_of(label, 13, true)
+	var label := _label(ServiceTypes.mission_status_label(status).capitalize(), colour)
+	ServiceStyle.font_of(label, ServiceStyle.SIZE_SMALL, true)
 	pill.add_child(label)
 	return pill
 
@@ -326,31 +512,27 @@ func _status_colour(status: String) -> Color:
 # ---------------------------------------------------------------------------------------------
 
 func _build_browse_page(page: VBoxContainer) -> void:
-	var parts := _master_detail(page)
-	var left: VBoxContainer = parts[0]
-	var contract: VBoxContainer = parts[1]
-	# The filters are the segment's controls: they run from the column, beside the contract.
-	var side := _side_page(0)
-	var filters := _row()
-	_filter_status = _option_enum(STATUS_ENTRIES, 140.0)
-	_kind = _option_enum(KIND_ENTRIES, 140.0)
-	_category = _option_enum(CATEGORY_ENTRIES, 140.0)
-	_visibility = _option_enum(VISIBILITY_ENTRIES, 140.0)
-	filters.add_child(_label(tr("%%SVC_LBL_STATUS"), DIM))
-	filters.add_child(_filter_status)
-	filters.add_child(_label(tr("%%SVC_LBL_TYPE"), DIM))
-	filters.add_child(_kind)
-	filters.add_child(_label(tr("%%SVC_LBL_CATEGORY"), DIM))
-	filters.add_child(_category)
-	filters.add_child(_label(tr("%%SVC_LBL_VISIBILITY"), DIM))
-	filters.add_child(_visibility)
-	_action_button(filters, tr("%%SVC_ACT_BROWSE"), func() -> void: _browse_missions())
-	side.add_child(filters)
 	_page_browse = ServicePage.new()
 	_page_browse.rows_key = "missions"
 	_page_browse.load_requested.connect(_load_browse)
-	_browse = _paged_list(left, tr("%%SVC_LBL_AVAILABLE_MISSIONS"), _page_browse, 240.0)
-	_browse.item_selected.connect(func(_i: int) -> void: _open_selected(_browse, contract))
+	var view := _card_master_detail(page, tr("%%SVC_LBL_AVAILABLE_MISSIONS"), _page_browse)
+	_views[0] = view
+	# The filters ride over the list, two by two: the column beside the contract stays free.
+	var top: VBoxContainer = view["top"]
+	_filter_status = _option_enum(STATUS_ENTRIES, 0.0)
+	_kind = _option_enum(KIND_ENTRIES, 0.0)
+	_category = _option_enum(CATEGORY_ENTRIES, 0.0)
+	_visibility = _option_enum(VISIBILITY_ENTRIES, 0.0)
+	top.add_child(_field_row([_form_field(tr("%%SVC_LBL_STATUS"), _filter_status),
+			_form_field(tr("%%SVC_LBL_TYPE"), _kind)], 12))
+	top.add_child(_field_row([_form_field(tr("%%SVC_LBL_CATEGORY"), _category),
+			_form_field(tr("%%SVC_LBL_VISIBILITY"), _visibility)], 12))
+	var browse := _button(tr("%%SVC_ACT_BROWSE"))
+	browse.pressed.connect(func() -> void: _browse_missions())
+	top.add_child(browse)
+	_browse = view["list"]
+	var contract: VBoxContainer = view["contract"]
+	_browse.picked.connect(func(meta: Variant) -> void: _open_mission_meta(meta, contract))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -366,22 +548,27 @@ const MINE_TABS: Array = [
 
 
 func _build_mine_page(page: VBoxContainer) -> void:
-	var parts := _master_detail(page)
-	var left: VBoxContainer = parts[0]
-	var contract: VBoxContainer = parts[1]
 	_page_mine = ServicePage.new()
 	_page_mine.rows_key = "missions"
 	_page_mine.load_requested.connect(_load_mine)
-	# Invitations to join a mission somebody else took, over the list: Join / Decline.
-	_invites_box = VBoxContainer.new()
-	_invites_box.add_theme_constant_override("separation", 6)
-	left.add_child(_invites_box)
-	_mine_tabs = _row(6)
-	left.add_child(_mine_tabs)
+	var view := _card_master_detail(page, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine)
+	_views[1] = view
+	var top: VBoxContainer = view["top"]
+	# The status groove first, as in the mock-up: In progress / Done / Stopped.
+	_mine_tabs = _row(4)
+	var groove := PanelContainer.new()
+	groove.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ServiceStyle.apply_segment_groove(groove)
+	groove.add_child(_mine_tabs)
+	top.add_child(groove)
 	_show_mine_tabs()
-	_mine = _paged_list(left, tr("%%SVC_LBL_MY_MISSIONS"), _page_mine, 320.0)
-	_mine.item_selected.connect(func(_i: int) -> void: _open_mine(contract))
-	_mine_contract = contract
+	# Invitations to join a mission somebody else took, under the groove: Join / Decline.
+	_invites_box = VBoxContainer.new()
+	_invites_box.add_theme_constant_override("separation", 8)
+	top.add_child(_invites_box)
+	_mine = view["list"]
+	_mine_contract = view["contract"]
+	_mine.picked.connect(func(meta: Variant) -> void: _open_mission_meta(meta, _mine_contract))
 
 
 ## The three tabs over "My missions", the chosen one lit.
@@ -392,6 +579,7 @@ func _show_mine_tabs() -> void:
 		var tab := Button.new()
 		tab.text = tr(str(MINE_TABS[i][0]))
 		tab.focus_mode = Control.FOCUS_NONE
+		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ServiceStyle.apply_segment(tab, i == _mine_tab)
 		tab.pressed.connect(_set_mine_tab.bind(i))
 		_mine_tabs.add_child(tab)
@@ -403,7 +591,7 @@ func _set_mine_tab(index: int) -> void:
 	_mine_tab = index
 	_show_mine_tabs()
 	_page_mine.offset = 0
-	_clear(_mine_contract)
+	_reset_contract(_mine_contract)
 	_load_mine()
 
 
@@ -418,15 +606,10 @@ func focus_mission(mission_id: String) -> void:
 func _select_focus() -> void:
 	if _focus_id == "" or _mine == null:
 		return
-	for i: int in range(_mine.item_count):
-		var entry: Variant = _mine.get_item_metadata(i)
-		var mission: Variant = (entry as Dictionary).get("mission") if entry is Dictionary else null
-		if mission is Dictionary and str((mission as Dictionary).get("id", "")) == _focus_id:
-			_focus_id = ""
-			_mine.select(i)
-			_mine.ensure_current_is_visible()
-			_open_mine(_mine_contract)
-			return
+	var wanted: String = _focus_id
+	# Selecting the card opens its contract (MissionCards.picked).
+	if _mine.select_where(func(meta: Variant) -> bool: return _entry_id(meta) == wanted):
+		_focus_id = ""
 
 
 # ---------------------------------------------------------------------------------------------
@@ -434,24 +617,34 @@ func _select_focus() -> void:
 # ---------------------------------------------------------------------------------------------
 
 func _build_created_page(page: VBoxContainer) -> void:
-	var parts := _master_detail(page)
-	var left: VBoxContainer = parts[0]
-	var contract: VBoxContainer = parts[1]
-	var side := _side_page(2)
-	var filters := _row()
-	_created_status = _option_enum(STATUS_ENTRIES, 140.0)
-	# The contracts that are still running, and not the ones that are over: a list of what has been
-	# done is a list of what is not to do. The dropdown still has the rest.
-	_select_enum_value(_created_status, "active")
-	filters.add_child(_label(tr("%%SVC_LBL_STATUS"), DIM))
-	filters.add_child(_created_status)
-	_action_button(filters, tr("%%SVC_ACT_BROWSE"), func() -> void: _created_missions())
-	side.add_child(filters)
 	_page_created = ServicePage.new()
 	_page_created.rows_key = "missions"
 	_page_created.load_requested.connect(_load_created)
-	_created = _paged_list(left, tr("%%SVC_TAB_MY_CREATIONS"), _page_created, 240.0)
-	_created.item_selected.connect(func(_i: int) -> void: _open_selected(_created, contract))
+	var view := _card_master_detail(page, tr("%%SVC_LBL_ISSUED_CONTRACTS"), _page_created)
+	_views[2] = view
+	# The statuses the service filters on, one chip each. It opens on the running ones: a list of
+	# what has been done is a list of what is not to do.
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 8)
+	flow.add_theme_constant_override("v_separation", 8)
+	for entry: Array in STATUS_ENTRIES:
+		var chip := Button.new()
+		chip.text = _cap(tr(str(entry[1])))
+		chip.focus_mode = Control.FOCUS_NONE
+		chip.set_meta(&"status", str(entry[0]))
+		ServiceStyle.apply_choice(chip, str(entry[0]) == _created_filter)
+		var status: String = str(entry[0])
+		chip.pressed.connect(func() -> void:
+			_created_filter = status
+			for other: Node in flow.get_children():
+				ServiceStyle.apply_choice(other as Button, str(other.get_meta(&"status")) == status)
+			_created_missions())
+		flow.add_child(chip)
+	(view["top"] as VBoxContainer).add_child(flow)
+	_created = view["list"]
+	var contract: VBoxContainer = view["contract"]
+	_created.picked.connect(func(meta: Variant) -> void: _open_mission_meta(meta, contract))
+
 
 
 # ---------------------------------------------------------------------------------------------
@@ -538,7 +731,7 @@ func _build_create_page(side: VBoxContainer) -> void:
 	create.add_child(_rule())
 	var submit := _row()
 	_action_button(submit, tr("%%SVC_ACT_VALIDATE"), func() -> void: _validate_spec())
-	_action_button(submit, tr("%%SVC_ACT_CREATE_MISSION"), func() -> void: _create())
+	_primary_button(submit, tr("%%SVC_ACT_CREATE_MISSION"), func() -> void: _create())
 	create.add_child(submit)
 
 	card.add_child(create)
@@ -580,11 +773,17 @@ func refresh() -> void:
 
 ## The id of the mission selected in "My missions", "" when none is.
 func _selected_mine_id() -> String:
-	if _mine == null or _mine.get_selected_items().is_empty():
+	return _entry_id(_mine.selected_meta()) if _mine != null else ""
+
+
+## The mission id of a list meta: a mission dict, or a {mission, assignment} entry of My missions.
+static func _entry_id(meta: Variant) -> String:
+	if not (meta is Dictionary):
 		return ""
-	var entry: Variant = _mine.get_item_metadata(_mine.get_selected_items()[0])
-	var mission: Variant = (entry as Dictionary).get("mission") if entry is Dictionary else null
-	return str((mission as Dictionary).get("id", "")) if mission is Dictionary else ""
+	var mission: Variant = (meta as Dictionary).get("mission")
+	if mission is Dictionary:
+		return str((mission as Dictionary).get("id", ""))
+	return str((meta as Dictionary).get("id", ""))
 
 
 ## The catalogue feeds every dynamic dropdown; on failure the hardcoded lists stay in place.
@@ -612,7 +811,7 @@ func _load_browse() -> void:
 			_enum_value(_filter_status), _enum_value(_kind), _enum_value(_category),
 			"", "", _enum_value(_visibility), _page_browse.limit, at)
 	if _land(_page_browse, at, result):
-		_fill_missions_list(_page_browse, _browse, result, tr("%%SVC_MSG_NO_MISSIONS"))
+		_fill_missions_list(_page_browse, 0, result, tr("%%SVC_MSG_NO_MISSIONS"))
 
 
 func _created_missions() -> void:
@@ -624,10 +823,9 @@ func _created_missions() -> void:
 ## null and records the creator under createdBy, and a corporation-issued one names the corporation.
 func _load_created() -> void:
 	var at: int = _page_created.offset
-	var result: Dictionary = await PlayerServices.missions_created(
-			_enum_value(_created_status), _page_created.limit, at)
+	var result: Dictionary = await PlayerServices.missions_created(_created_filter, _page_created.limit, at)
 	if _land(_page_created, at, result):
-		_fill_missions_list(_page_created, _created, result, tr("%%SVC_MSG_NO_CREATED"), true)
+		_fill_missions_list(_page_created, 2, result, tr("%%SVC_MSG_NO_CREATED"), true)
 
 
 func _load_mine() -> void:
@@ -677,52 +875,41 @@ static func _clear_children(box: Node) -> void:
 		child.queue_free()
 
 
-## Shared loader for the two mission-dict lists (browse + created).
-## [param own] marks every row as the player's contract: true for "My contracts", where the server
-## has already done the selecting. The ids are recorded because the CATALOGUE needs them later and
-## has no way to ask for them — see [method _mark_mine].
-func _fill_missions_list(page: ServicePage, list: ItemList, result: Dictionary,
+## Shared loader for the two mission-dict lists (browse + created), into segment [param segment]'s
+## cards. [param own] marks every row as the player's contract: true for "My contracts", where the
+## server has already done the selecting. The ids are recorded because the CATALOGUE needs them later
+## and has no way to ask for them: a card of the catalogue whose contract the player raised gets its
+## title in amber ([method _is_mine], or seen in "My contracts").
+func _fill_missions_list(page: ServicePage, segment: int, result: Dictionary,
 		empty_text: String, own: bool = false) -> void:
+	var view: Dictionary = _views[segment]
+	var list: MissionCards = view["list"]
+	list.clear_cards()
+	(view["left"] as ServicePanel.Card).set_count("")
 	if not bool(result.get("ok", false)):
-		_fill_list(list, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
+		_set_list_empty(view, tr("%%SVC_MSG_ERROR_PREFIX"), str(result.get("error", "")))
 		return
-	var lines := PackedStringArray()
-	var metadata: Array = []
-	for mission: Dictionary in page.rows(result):
-		lines.append(ServiceTypes.mission_line(mission))
-		metadata.append(mission)
+	var rows: Array = page.rows(result)
+	if own:
+		_created_rows = rows
+	for mission: Dictionary in rows:
 		if own:
 			_record_mine(mission)
-	if lines.is_empty():
-		lines.append(empty_text)
-	_fill_list(list, lines, metadata)
-	_mark_mine(list)
-	_say(tr("%%SVC_FMT_MISSION_COUNT") % page.total, DIM)
+		list.add_card(_mission_card(mission, "", own or _is_mine(mission) or _mine_ids.has(str(mission.get("id", "")))),
+				mission)
+	(view["left"] as ServicePanel.Card).set_count(str(page.total) if page.total > 0 else "")
+	if rows.is_empty():
+		if own:
+			_set_list_empty(view, empty_text, tr("%%SVC_EMPTY_CREATED_TEXT"), tr("%%SVC_ACT_CREATE_CONTRACT"),
+					func() -> void: goto_segment(3))
+		else:
+			_set_list_empty(view, empty_text)
+	else:
+		_set_list_empty(view, "")
 	if own:
 		# The contracts the player raised name their own places: the chart tells them apart from
 		# the ones the player took on.
 		_classify_mission_pois()
-
-
-## Colour the rows whose contract this player raised, so one line says "yours" without opening it.
-##
-## Two answers, because the catalogue cannot be relied on to carry the owner: a row is the player's
-## when its own fields say so ([method _is_mine] — createdBy or issuerId) OR when it has been seen in
-## "My contracts", where the server already filtered by it. Only the second needs no field at all,
-## and without it the marker could sit dark over the player's own contract simply because the list
-## shape says nothing about who raised it — a marker that never lights reads as a broken one.
-##
-## A colour rather than a prefix or an icon: the line already carries title, kind, status and reward,
-## so the marker must stay out of the text, and tinting a row is how the bank's own list already marks
-## money coming in. No artwork, so nothing new to credit.
-func _mark_mine(list: ItemList) -> void:
-	for i: int in range(list.item_count):
-		var meta: Variant = list.get_item_metadata(i)
-		if not (meta is Dictionary):
-			continue
-		var row := meta as Dictionary
-		if _is_mine(row) or _mine_ids.has(str(row.get("id", ""))):
-			list.set_item_custom_fg_color(i, ServiceStyle.ACCENT)
 
 
 ## Ids of contracts the player raised, learned whenever a list of them has been read.
@@ -730,18 +917,34 @@ func _record_mine(mission: Dictionary) -> void:
 	_mine_ids[str(mission.get("id", ""))] = true
 
 
+## The empty titles of "My missions", by tab (MINE_TABS order).
+const MINE_EMPTY: Array = ["%%SVC_HOME_NO_MISSIONS", "%%SVC_MISSIONS_NONE_DONE", "%%SVC_MISSIONS_NONE_STOPPED"]
+
+
 func _apply_mine(page: ServicePage, result: Dictionary) -> void:
+	var view: Dictionary = _views[1]
+	_mine.clear_cards()
+	(view["left"] as ServicePanel.Card).set_count("")
 	if not bool(result.get("ok", false)):
-		_fill_list(_mine, PackedStringArray([tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))]))
+		_mine_rows = []
+		_set_list_empty(view, tr("%%SVC_MSG_ERROR_PREFIX"), str(result.get("error", "")))
 		return
-	var lines := PackedStringArray()
-	var metadata: Array = []
-	for entry: Dictionary in page.rows(result):
-		lines.append(ServiceTypes.player_mission_line(entry))
-		metadata.append(entry)
-	if lines.is_empty():
-		lines.append(tr("%%SVC_MSG_NO_ASSIGNMENTS"))
-	_fill_list(_mine, lines, metadata)
+	_mine_rows = page.rows(result)
+	for entry: Dictionary in _mine_rows:
+		var mission: Dictionary = entry.get("mission") if entry.get("mission") is Dictionary else {}
+		var assignment: Variant = entry.get("assignment")
+		# In progress says it in its tab; Done and Stopped name which end each one had.
+		var status := ServiceTypes.mission_status_label((assignment as Dictionary).get("status")) \
+				if assignment is Dictionary and _mine_tab != 0 else ""
+		var progress: Dictionary = entry.get("progress") if entry.get("progress") is Dictionary else {}
+		_mine.add_card(_mission_card(mission, _cap(status), false, progress), entry)
+	(view["left"] as ServicePanel.Card).set_count(str(page.total) if page.total > 0 else "")
+	if _mine_rows.is_empty():
+		# No button: a mission is taken at a town hall's kiosk, not from the DataPad.
+		_set_list_empty(view, tr(str(MINE_EMPTY[_mine_tab])),
+				tr("%%SVC_HOME_NO_MISSIONS_TEXT") if _mine_tab == 0 else tr("%%SVC_MISSIONS_NONE_DONE_TEXT"))
+	else:
+		_set_list_empty(view, "")
 	_classify_mission_pois()
 	_select_focus()
 
@@ -751,29 +954,22 @@ func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 # ---------------------------------------------------------------------------------------------
 
 ## Selection handlers: the mission id of the picked row, rendered in that segment's contract box.
-func _open_selected(list: ItemList, contract: VBoxContainer) -> void:
-	var meta: Variant = _selected_meta(list)
-	if not (meta is Dictionary):
-		return
-	var mission_id := str((meta as Dictionary).get("id", ""))
+func _open_mission_meta(meta: Variant, contract: VBoxContainer) -> void:
+	var mission_id := _entry_id(meta)
 	if mission_id != "":
 		await _open_contract(contract, mission_id)
 
 
-func _open_mine(contract: VBoxContainer) -> void:
-	var meta: Variant = _selected_meta(_mine)
-	if not (meta is Dictionary):
-		return
-	var mission: Variant = (meta as Dictionary).get("mission")
-	if not (mission is Dictionary):
-		return
-	var mission_id := str((mission as Dictionary).get("id", ""))
-	if mission_id != "":
-		await _open_contract(contract, mission_id)
+## Empty a contract box back to its "select a mission" line, its share popover closed.
+func _reset_contract(box: VBoxContainer) -> void:
+	_close_popover(box)
+	_clear_contract(box)
+	box.add_child(_empty_state("", tr("%%SVC_MSG_SELECT_MISSION_DETAIL")))
 
 
 ## Load one mission and render it as a document in [param box].
 func _open_contract(box: VBoxContainer, mission_id: String) -> void:
+	_close_popover(box)
 	_clear_contract(box)
 	var result: Dictionary = await PlayerServices.mission_get(mission_id)
 	if not bool(result.get("ok", false)):
@@ -838,8 +1034,7 @@ func _classify_mission_pois() -> void:
 	var created: Array = []
 	var accepted: Array = []
 	var closed: Array = []
-	for i: int in range(_mine.item_count):
-		var entry: Variant = _mine.get_item_metadata(i)
+	for entry: Variant in _mine_rows:
 		if not (entry is Dictionary):
 			continue
 		var mission: Variant = (entry as Dictionary).get("mission")
@@ -857,8 +1052,7 @@ func _classify_mission_pois() -> void:
 	if _mine_tab != 0:
 		# Done or Stopped on show: the missions held are not in the list, keep what is known of them.
 		accepted = MissionPoiCache.accepted_ids()
-	for i: int in range(_created.item_count):
-		var mission: Variant = _created.get_item_metadata(i)
+	for mission: Variant in _created_rows:
 		if not (mission is Dictionary):
 			continue
 		var ids: Array = _poi_ids_of(mission as Dictionary)
@@ -895,69 +1089,70 @@ func _fetch_contract_pois(ids: Array) -> void:
 ## the contract re-renders in place after a mutation.
 func _contract_document(mission_id: String, mission: Dictionary, data: Dictionary,
 		contract: VBoxContainer) -> Control:
-	var card := _document_card()
+	var card := _document_card(false)
 	var doc := VBoxContainer.new()
-	doc.add_theme_constant_override("separation", 12)
+	doc.add_theme_constant_override("separation", 22)
 	doc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	# Header: title + status stamp, then the rule.
-	var header := _row(12)
+	# Header: the type tag over the title, the status stamp at the end.
+	var header := _row(16)
+	var heading := VBoxContainer.new()
+	heading.add_theme_constant_override("separation", 10)
+	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var tags := _row(10)
+	tags.add_child(_tag(ServiceTypes.mission_kind_label(mission.get("kind"))))
+	tags.add_child(_tag("·", ServiceStyle.LINE_HOVER))
+	tags.add_child(_tag(ServiceTypes.mission_category_label(mission.get("category")), ServiceStyle.MUTED))
+	heading.add_child(tags)
 	var title := _label(ServiceTypes.dash(mission.get("title")), ServiceStyle.TEXT)
-	ServiceStyle.font_of(title, 22, true)
+	ServiceStyle.font_of(title, 26, true)
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
-	header.add_child(_status_pill(str(mission.get("status", ""))))
+	heading.add_child(title)
+	header.add_child(heading)
+	var stamp := _status_pill(str(mission.get("status", "")))
+	stamp.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	header.add_child(stamp)
 	doc.add_child(header)
-	doc.add_child(_rule())
 
-	# Metadata block: the existing FMT labels, read-only.
+	# The four facts, as cards: reward, issuer, crew, zone.
 	var rewards: Variant = mission.get("rewards")
 	if rewards == null:
 		rewards = mission.get("reward")
 	var assignment: Dictionary = data.get("assignment") if data.get("assignment") is Dictionary else {}
-	var meta := VBoxContainer.new()
-	meta.add_theme_constant_override("separation", 3)
-	meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_TYPE") % [
-			ServiceTypes.mission_kind_label(mission.get("kind")),
-			ServiceTypes.mission_category_label(mission.get("category"))], ServiceStyle.TEXT))
-	meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_STATUS") %
-			ServiceTypes.mission_status_label(mission.get("status")), ServiceStyle.TEXT))
-	meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ISSUER") %
-			ServiceTypes.issuer_type_label(mission.get("issuerType")), ServiceStyle.TEXT))
-	meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_REWARD") %
-			ServiceTypes.rewards_text(rewards), ServiceStyle.TEXT))
-	# Who funded the escrow — the field is absent on missions created before escrowPayerType
-	# existed, so an old contract simply shows no line.
+	var facts := GridContainer.new()
+	facts.columns = 4
+	facts.add_theme_constant_override("h_separation", 14)
+	facts.add_theme_constant_override("v_separation", 14)
+	facts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_REWARD"), ServiceTypes.rewards_text(rewards),
+			tr("%%SVC_MISSION_REWARD_WHEN"), ServiceStyle.ACCENT, 20))
+	# Who funded the escrow — absent on missions created before escrowPayerType existed.
+	var payer := ""
 	var payer_type: Variant = mission.get("escrowPayerType")
 	if payer_type is String and str(payer_type) != "":
-		var payer := ServiceTypes.escrow_payer_label(payer_type)
-		var payer_id: Variant = mission.get("escrowPayerId")
-		if payer_id != null and str(payer_id) != "":
-			payer = "%s (%s)" % [payer, str(payer_id)]
-		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ESCROW") % payer, ServiceStyle.TEXT))
-	meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_SLOTS") %
-			ServiceTypes.num(mission.get("maxAssignees")), ServiceStyle.TEXT))
-	# Availability zones — an empty list is the service's "global" mission. The field is absent
-	# on payloads from before zones existed, so those contracts simply show no line.
+		payer = tr("%%SVC_FMT_MISSION_DETAIL_ESCROW") % ServiceTypes.escrow_payer_label(payer_type)
+	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_ISSUER"),
+			ServiceTypes.issuer_type_label(mission.get("issuerType")), payer, ServiceStyle.TEXT, 18))
+	# Who takes part (a shared mission): its participants are shown to its participants only.
+	var participants: Variant = data.get("participants")
+	var taken: int = (participants as Array).size() if participants is Array else 0
+	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_CREW"),
+			tr("%%SVC_FMT_MISSION_CREW") % [taken, ServiceTypes.num(mission.get("maxAssignees"))],
+			ServiceTypes.participants_text(participants), ServiceStyle.TEXT, 18))
+	# Availability zones — an empty list is the service's "global" mission.
 	var zones: Variant = mission.get("zones")
-	if zones is Array:
-		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ZONES") %
-				ServiceTypes.zones_text(zones), ServiceStyle.TEXT))
+	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_ZONE"),
+			ServiceTypes.zones_text(zones if zones is Array else []), "", ServiceStyle.TEXT, 18))
+	doc.add_child(facts)
 	if not assignment.is_empty():
-		meta.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ASSIGNMENT") %
-				ServiceTypes.assignment_line(assignment), ServiceStyle.TEXT))
-	# Who takes part (a shared mission): shown to its participants only.
-	var participants := ServiceTypes.participants_text(data.get("participants"))
-	if participants != "":
-		meta.add_child(_label(tr("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, ServiceStyle.TEXT))
-	doc.add_child(meta)
+		doc.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ASSIGNMENT") %
+				ServiceTypes.assignment_line(assignment), DIM))
 
 	# Description.
 	var described: Variant = mission.get("description")
 	var description := "" if described == null else str(described).strip_edges()  # null: none, not "<null>"
 	if description != "":
-		var body := _label(description, ServiceStyle.TEXT)
+		var body := _label(description, ServiceStyle.TEXT_2)
 		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		doc.add_child(_titled(tr("%%SVC_LBL_DESCRIPTION"), body))
@@ -976,24 +1171,37 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 				list.add_child(line)
 		doc.add_child(_titled(tr("%%SVC_LBL_PREREQUISITES"), list))
 
-	# Numbered objectives.
-	var objectives := VBoxContainer.new()
-	objectives.add_theme_constant_override("separation", 8)
-	objectives.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# The objectives, as a timeline: done, the one under way, those to come.
 	var items: Variant = data.get("objectives")
-	var index := 0
-	for objective: Variant in (items if items is Array else []):
-		if objective is Dictionary:
-			index += 1
-			objectives.add_child(_objective_clause(mission_id, contract, mission,
-					objective, index))
-	if index == 0:
+	var clauses: Array = (items as Array).filter(func(o: Variant) -> bool: return o is Dictionary) \
+			if items is Array else []
+	var current: int = clauses.size()
+	for i: int in range(clauses.size()):
+		if str((clauses[i] as Dictionary).get("status", "")) != "completed":
+			current = i
+			break
+	var objectives := VBoxContainer.new()
+	objectives.add_theme_constant_override("separation", 6)
+	objectives.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for i: int in range(clauses.size()):
+		objectives.add_child(_objective_clause(mission_id, contract, mission, clauses[i], i + 1,
+				i < current, i == current))
+	if clauses.is_empty():
 		objectives.add_child(_label(tr("%%SVC_MSG_NO_OBJECTIVES"), DIM))
-	doc.add_child(_titled(tr("%%SVC_LBL_OBJECTIVES"), objectives))
+	var objectives_head := _row(12)
+	objectives_head.add_child(_subheading(tr("%%SVC_LBL_OBJECTIVES")))
+	if not clauses.is_empty():
+		objectives_head.add_child(_label(tr("%%SVC_FMT_MISSION_STEP_OF") % [
+				mini(current + 1, clauses.size()), clauses.size()], DIM))
+	var objectives_box := VBoxContainer.new()
+	objectives_box.add_theme_constant_override("separation", 10)
+	objectives_box.add_child(objectives_head)
+	objectives_box.add_child(objectives)
+	doc.add_child(objectives_box)
 
 	doc.add_child(_rule())
-	doc.add_child(_contract_actions(mission_id, mission, assignment, contract,
-			items if items is Array else []))
+	doc.add_child(_contract_actions(mission_id, mission, assignment, contract, clauses,
+			clauses[current] if current < clauses.size() else {}))
 	card.add_child(doc)
 	return card
 
@@ -1078,29 +1286,53 @@ func _poi_link(text: String, poi_id: String) -> Button:
 	return button
 
 
-## One numbered objective clause: the sentence, where it happens, its progress, the evaluation badge,
-## and — on my own contracts — the issuer confirmation button.
+## One numbered objective clause of the timeline: its disc (a tick once done, amber while it is the
+## step under way), the sentence, where it happens, and — on the step under way — its measure over a
+## progress bar, the evaluation badge and, on my own contracts, the issuer confirmation button.
 func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dictionary,
-		objective: Dictionary, index: int) -> Control:
+		objective: Dictionary, index: int, done: bool = false, current: bool = false) -> Control:
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel",
-			ServiceStyle.flat(ServiceStyle.PANEL_ALT, ServiceStyle.RADIUS, ServiceStyle.BORDER, 1, 14.0, 10.0))
+	card.add_theme_stylebox_override("panel", ServiceStyle.flat(
+			Color("#1A1F2B") if current else Color.TRANSPARENT, ServiceStyle.RADIUS,
+			Color("#3A3220") if current else Color.TRANSPARENT, 1, 18.0, 14.0))
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var line := _row(18)
+	card.add_child(line)
+
+	var disc := PanelContainer.new()
+	disc.custom_minimum_size = Vector2(38, 38)
+	disc.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	var disc_bg: Color = ServiceStyle.ACCENT if current else (ServiceStyle.GOOD_SOFT if done else Color("#141922"))
+	disc.add_theme_stylebox_override("panel", ServiceStyle.flat(disc_bg, 19,
+			ServiceStyle.ACCENT if current else ServiceStyle.LINE_2, 1))
+	var number := _label("✓" if done else str(index),
+			ServiceStyle.ON_ACCENT if current else (ServiceStyle.GOOD if done else ServiceStyle.MUTED))
+	ServiceStyle.font_of(number, ServiceStyle.SIZE_SMALL, true)
+	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	number.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	disc.add_child(number)
+	line.add_child(disc)
+
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	card.add_child(box)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(box)
 
-	var line := _row(8)
-	var number := _label("%d." % index, ACCENT)
-	ServiceStyle.font_of(number, 14, true)
-	number.custom_minimum_size = Vector2(26, 0)
-	line.add_child(number)
-	var sentence := _label(ServiceTypes.dash(objective.get("title")), ServiceStyle.TEXT)
-	ServiceStyle.font_of(sentence, 15)
+	var top := _row(12)
+	var sentence := _label(ServiceTypes.dash(objective.get("title")),
+			ServiceStyle.TEXT if current else ServiceStyle.TEXT_2)
+	ServiceStyle.font_of(sentence, 17, true)
 	sentence.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sentence.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(sentence)
-	box.add_child(line)
+	top.add_child(sentence)
+	if current:
+		var now := PanelContainer.new()
+		now.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		now.add_theme_stylebox_override("panel", ServiceStyle.flat(Color("#3A2C0E"), 5,
+				Color.TRANSPARENT, 0, 10.0, 3.0))
+		now.add_child(_tag(tr("%%SVC_MISSION_CURRENT_STEP"), ServiceStyle.ACCENT))
+		top.add_child(now)
+	box.add_child(top)
 
 	# Where this clause happens, as a word that takes you there. A clause you cannot locate is a
 	# sentence about somewhere you have never seen, which is the difference between a contract you
@@ -1111,38 +1343,54 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 	var poi := _objective_poi(objective)
 	if not poi.is_empty():
 		var where := _row(4)
-		var indent := Control.new()
-		indent.custom_minimum_size = Vector2(26, 0)
-		where.add_child(indent)
 		where.add_child(_label(tr("%%SVC_LBL_AT"), DIM))
 		var poi_name := str(poi["name"])
 		var poi_id := str(poi["id"])
 		if MissionPoiCache.is_closed(poi_id):
 			where.add_child(_label(
-					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), ServiceStyle.TEXT))
+					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), ServiceStyle.TEXT_2))
 		else:
 			where.add_child(_poi_link(
 					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), poi_id))
 		box.add_child(where)
 
-	var footer := _row(10)
-	footer.add_child(_label(_objective_progress(objective), DIM))
 	var step := ServiceTypes.transport_step_text(objective)
-	if step != "":
+	if step != "" and current:
 		box.add_child(_label(step, ServiceStyle.ACCENT))
+	# The measure: on the step under way, over its bar; on the others, a quiet line.
+	var target: int = ServiceTypes.num(objective.get("targetQuantity"))
+	if current and target > 0:
+		var measure := VBoxContainer.new()
+		measure.add_theme_constant_override("separation", 6)
+		measure.custom_minimum_size = Vector2(420, 0)
+		measure.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		var figures := _row(10)
+		var progress := _label(_objective_progress(objective), ServiceStyle.TEXT_2)
+		progress.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		figures.add_child(progress)
+		measure.add_child(figures)
+		measure.add_child(_progress_bar(
+				float(ServiceTypes.num(objective.get("currentProgress"))) / float(target)))
+		box.add_child(measure)
+	elif not done:
+		box.add_child(_label(_objective_progress(objective), DIM))
+
+	var footer := _row(10)
 	var entry := _kind_entry("objectiveKinds", str(objective.get("type", "")))
 	var evaluation := str(entry.get("evaluation", ""))
-	if evaluation != "":
-		var badge := _label(ServiceTypes.evaluation_label(evaluation), DIM)
-		ServiceStyle.font_of(badge, 11)
+	if evaluation != "" and not done:
+		var badge := _label(ServiceTypes.evaluation_label(evaluation), ServiceStyle.HINT)
+		ServiceStyle.font_of(badge, 12)
 		footer.add_child(badge)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer.add_child(spacer)
 	if _can_confirm(mission, objective):
-		_action_button(footer, tr("%%SVC_ACT_CONFIRM_OBJECTIVE"),
+		var confirm := _action_button(footer, tr("%%SVC_ACT_CONFIRM_OBJECTIVE"),
 				func() -> void: _confirm(mission_id, str(objective.get("id", "")), contract))
-	box.add_child(footer)
+		ServiceStyle.apply_button(confirm, true)
+	if footer.get_child_count() > 1:
+		box.add_child(footer)
 	return card
 
 
@@ -1193,10 +1441,13 @@ func _confirm(mission_id: String, objective_id: String, contract: VBoxContainer)
 
 
 ## Footer: contextual lifecycle actions + the group share line.
+##
+## [param current] is the objective under way ({} when none): its place is the one the primary button
+## shows on the chart.
 func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dictionary,
-		contract: VBoxContainer, _objectives: Array) -> Control:
+		contract: VBoxContainer, _objectives: Array, current: Dictionary = {}) -> Control:
 	var actions := VBoxContainer.new()
-	actions.add_theme_constant_override("separation", 8)
+	actions.add_theme_constant_override("separation", 14)
 	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var status := str(mission.get("status", ""))
 	var assignment_status := str(assignment.get("status", ""))
@@ -1205,36 +1456,42 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 	# completed, full), exactly like the panel before the rework.
 	if status == "available":
 		var accept := _row()
-		_action_button(accept, tr("%%SVC_ACT_ACCEPT"),
-				func() -> void: _accept(mission_id, contract))
+		var spacer := Control.new()
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		accept.add_child(spacer)
+		ServiceStyle.apply_button(_action_button(accept, tr("%%SVC_ACT_ACCEPT"),
+				func() -> void: _accept(mission_id, contract)), true)
 		actions.add_child(accept)
 
 	if assignment_status == "active":
-		var lifecycle := _row()
-		_action_button(lifecycle, tr("%%SVC_ACT_ABANDON"),
-				func() -> void: _abandon(mission_id, contract))
+		var lifecycle := _row(12)
+		ServiceStyle.apply_button_kind(_action_button(lifecycle, tr("%%SVC_ACT_ABANDON"),
+				func() -> void: _abandon(mission_id, contract)), ServiceStyle.ButtonKind.DANGER)
+		var spacer := Control.new()
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lifecycle.add_child(spacer)
 		# The DataPad only CONSULTS a mission that is turned in at a town hall (autoComplete false):
 		# the kiosk there validates it, the game server checking it is the right village. Progress is
 		# measured by the service (goods put into a warehouse...), never reported by hand.
 		if mission.get("autoComplete") == false:
 			lifecycle.add_child(_label(tr("%%SVC_LBL_TURN_IN_AT_TOWN_HALL"), DIM))
-		else:
-			_action_button(lifecycle, tr("%%SVC_ACT_COMPLETE"),
-					func() -> void: _complete(mission_id, contract))
-		actions.add_child(lifecycle)
+		# Where the step under way happens, on the chart: the way there.
+		var poi := _objective_poi(current) if not current.is_empty() else {}
+		if not poi.is_empty() and not MissionPoiCache.is_closed(str(poi["id"])):
+			var poi_id := str(poi["id"])
+			var poi_name: String = str(poi["name"]) if str(poi["name"]) != "" else tr("%%SVC_LBL_POI")
+			var go := _action_button(lifecycle, tr("%%SVC_FMT_MISSION_SHOW_ON_CHART") % poi_name,
+					func() -> void: focus_poi_requested.emit(poi_id))
+			ServiceStyle.apply_button(go, mission.get("autoComplete") == false)
 		# Share the mission I took: my group may join it, or one player I pick. Their crates then
-		# count for it too, the reward is split equally, and any of us turns it in.
-		var share := _row()
-		share.add_child(_label(tr("%%SVC_LBL_SHARE_TAKEN"), DIM))
-		_action_button(share, tr("%%SVC_ACT_SHARE_GROUP"),
-				func() -> void: _invite_group(mission_id, contract))
-		var picker := ServiceTargetPicker.new()
-		picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
-		adopt_field(picker.search_field())
-		share.add_child(picker)
-		_action_button(share, tr("%%SVC_ACT_INVITE"),
-				func() -> void: _invite_player(mission_id, contract, picker))
-		actions.add_child(share)
+		# count for it too, the reward is split equally, and any of us turns it in. The choice is a
+		# popover, opened from here: it is not on screen until asked for (the mock-up's Share).
+		_action_button(lifecycle, tr("%%SVC_ACT_SHARE_OPEN"),
+				func() -> void: _toggle_share(mission_id, contract))
+		if mission.get("autoComplete") != false:
+			ServiceStyle.apply_button(_action_button(lifecycle, tr("%%SVC_ACT_COMPLETE"),
+					func() -> void: _complete(mission_id, contract)), true)
+		actions.add_child(lifecycle)
 
 	# The share line is the CREATOR's business: handing a contract to a group is a decision about
 	# who may take it, and that is not the taker's to make. It also names the group rather than
@@ -1329,6 +1586,65 @@ func _share(mission_id: String, contract: VBoxContainer) -> void:
 			str((group as Dictionary).get("id", "")))
 	if _report(result, tr("%%SVC_MSG_MISSION_SHARED")):
 		await _open_contract(contract, mission_id)
+
+
+## Open the share popover of [param contract] for mission [param mission_id], or close it when it is
+## open: "with my group", or one player picked, then Invite. An invite that lands reopens the
+## contract, which closes it.
+func _toggle_share(mission_id: String, contract: VBoxContainer) -> void:
+	var popover: PanelContainer = _popovers.get(contract)
+	if popover == null:
+		return
+	if popover.visible:
+		_close_popover(contract)
+		return
+	_close_popover(contract)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 14)
+	box.add_child(ServiceStyle.label(tr("%%SVC_LBL_SHARE_MISSION"), ServiceStyle.TEXT, 17, true))
+	var group := Button.new()
+	group.custom_minimum_size = Vector2(0, 52)
+	ServiceStyle.apply_button(group)
+	var group_row := _row(10)
+	group_row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	group_row.offset_left = 18.0
+	group_row.offset_right = -18.0
+	group_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var group_label := ServiceStyle.label(tr("%%SVC_ACT_SHARE_GROUP"), ServiceStyle.TEXT, ServiceStyle.SIZE_BODY, true)
+	group_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	group_row.add_child(group_label)
+	group_row.add_child(_spacer())
+	var all := ServiceStyle.label(tr("%%SVC_LBL_SHARE_ALL_MEMBERS"), ServiceStyle.MUTED, ServiceStyle.SIZE_CAPTION)
+	all.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	group_row.add_child(all)
+	group.add_child(group_row)
+	group.pressed.connect(func() -> void: _invite_group(mission_id, contract))
+	box.add_child(group)
+	var picker := ServiceTargetPicker.new()
+	picker.setup(ServiceTargetPicker.Mask.PLAYERS, true)
+	adopt_field(picker.search_field())
+	var player_row := _row(8)
+	player_row.add_child(picker)
+	_primary_button(player_row, tr("%%SVC_ACT_INVITE"),
+			func() -> void: _invite_player(mission_id, contract, picker))
+	box.add_child(_form_field(tr("%%SVC_LBL_SHARE_ONE_PLAYER"), player_row))
+	popover.add_child(box)
+	popover.visible = true
+
+
+## Close [param contract]'s share popover and empty it (its picker's field leaves the keyboard registry).
+func _close_popover(contract: VBoxContainer) -> void:
+	var popover: PanelContainer = _popovers.get(contract)
+	if popover == null:
+		return
+	popover.visible = false
+	var kept: Array[LineEdit] = []
+	for field: LineEdit in _fields:
+		if field != null and popover.is_ancestor_of(field):
+			continue
+		kept.append(field)
+	_fields = kept
+	_clear(popover)
 
 
 ## Share the mission I took with my group: each member may join it.

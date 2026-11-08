@@ -9,7 +9,12 @@ extends ServicePanel
 ## (edit, invite, kick, disband) appear only when the token says the group is ours.
 
 var _summary: Label
-var _create_shortcut: HBoxContainer
+var _description: Label
+## No squad: the panel that says so, with the ways out (invitations, create).
+var _none_card: ServicePanel.Card
+## In a squad: the squad's panel (name, actions, members) and the owner's panel (edit, invite).
+var _squad_columns: HBoxContainer
+var _owner_card: ServicePanel.Card
 var _actions: HBoxContainer
 var _disband_button: Button
 var _members: VBoxContainer
@@ -22,9 +27,10 @@ var _invite_box: VBoxContainer
 var _invitees: VBoxContainer
 var _page_invitees: ServicePage
 var _invitations: VBoxContainer
+var _invitations_card: ServicePanel.Card
 var _page_invitations: ServicePage
 var _create_name: LineEdit
-var _create_description: LineEdit
+var _create_description: TextEdit
 var _create_max: LineEdit
 
 ## The current group (empty until /api/me/groups returns one), its id and whether the player
@@ -36,16 +42,13 @@ var _is_owner: bool = false
 
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_SQUAD"), ServiceAppIcon.Kind.SQUAD)
-	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
 	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
 			tr("%%SVC_TAB_MY_SQUAD"), tr("%%SVC_TAB_INVITATIONS"), tr("%%SVC_TAB_CREATE")]))
 	_build_squad_page(pages[0])
 	_build_invitations_page(pages[1])
-	# The create form is the whole of the third segment: it goes to the column, which then takes
-	# the card.
-	_build_create_page(_side_page(2))
+	_build_create_page(pages[2])
 	add_chrome(_status_line())
 
 
@@ -53,54 +56,98 @@ func _build() -> void:
 # Tab 0 — my group
 # ---------------------------------------------------------------------------------------------
 
+## The owner's panel width (px): editing and inviting, beside the squad.
+const OWNER_WIDTH: float = 620.0
+## The create form's width (px): the mock-up's 720, scaled.
+const CREATE_WIDTH: float = 900.0
+
+
+## My squad, in the mock-up's panels: with none, one panel that says so and offers the invitations
+## and the create form; with one, the squad (name, Leave / Disband, members) beside the owner's panel
+## (edit it, invite a contact).
 func _build_squad_page(page: VBoxContainer) -> void:
-	var side := _side_page(0)
-	_summary = _label(tr("%%SVC_MSG_NO_GROUP"), DIM)
-	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	page.add_child(_titled(tr("%%SVC_LBL_GROUP"), _summary))
+	_frameless(page)
+	_none_card = _panel()
+	page.add_child(_none_card)
 
-	# No group: the straight path to creation. What you CAN do with the group — create, leave,
-	# disband, edit it — is the column's half; the members and the contacts it can invite stay.
-	_create_shortcut = _row()
-	_action_button(_create_shortcut, tr("%%SVC_ACT_CREATE_GROUP"), func() -> void: goto_segment(2))
-	side.add_child(_create_shortcut)
-
-	_actions = _row()
-	_action_button(_actions, tr("%%SVC_ACT_LEAVE"), func() -> void: _leave())
+	_squad_columns = _columns()
+	var squad := _panel(tr("%%SVC_TAB_SQUAD"))
+	_summary = _title_lg("—", 28)
+	squad.body.add_child(_summary)
+	_description = _label("", ServiceStyle.MUTED)
+	_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	squad.body.add_child(_description)
+	_actions = _actions_bar()
+	ServiceStyle.apply_button_kind(_action_button(_actions, tr("%%SVC_ACT_LEAVE"), func() -> void: _leave()),
+			ServiceStyle.ButtonKind.GHOST)
+	_actions.add_child(_spacer())
 	_disband_button = _action_button(_actions, tr("%%SVC_ACT_DISBAND"), func() -> void: _disband())
-	side.add_child(_actions)
-
+	ServiceStyle.apply_button_kind(_disband_button, ServiceStyle.ButtonKind.DANGER)
+	squad.body.add_child(_actions)
 	# Members as contact cards — same face as the Contacts app, with the kick on each row.
-	var members_scroll := _card_list(160.0)
-	_members = members_scroll[1]
+	squad.body.add_child(_subheading(tr("%%SVC_LBL_MEMBERS")))
+	_members = _list_box()
 	_page_members = ServicePage.new()
 	_page_members.load_requested.connect(_load_members)
-	_paged_box(page, tr("%%SVC_LBL_MEMBERS"), _page_members, members_scroll[0])
+	squad.body.add_child(_scroll(_members))
+	squad.body.add_child(_pager(_page_members))
+	_squad_columns.add_child(squad)
 
-	# Edit (owner): refilled on every refresh, PATCH only sends what is filled in.
-	var edit := VBoxContainer.new()
-	edit.add_theme_constant_override("separation", 8)
-	_edit_name = _field(tr("%%SVC_PH_GROUP_NAME"), 260.0)
-	_edit_description = _field(tr("%%SVC_PH_GROUP_DESCRIPTION"), 360.0)
-	_edit_max = _number_field(tr("%%SVC_PH_MAX_MEMBERS"), 140.0)
-	edit.add_child(_label(tr("%%SVC_LBL_NAME"), DIM))
-	edit.add_child(_edit_name)
-	edit.add_child(_label(tr("%%SVC_LBL_DESCRIPTION"), DIM))
-	edit.add_child(_edit_description)
-	edit.add_child(_label(tr("%%SVC_LBL_MAX_MEMBERS"), DIM))
-	edit.add_child(_edit_max)
-	_action_button(edit, tr("%%SVC_ACT_SAVE"), func() -> void: _save_group())
-	_edit_box = _titled(tr("%%SVC_TAB_EDIT"), edit)
-	side.add_child(_edit_box)
-
-	# Invite (owner, while there is room): the contact list, one tap per invite.
-	var invitees_scroll := _card_list(160.0)
-	_invitees = invitees_scroll[1]
+	# The owner's panel: edit (refilled on every refresh, PATCH sends what is filled in), then invite.
+	_owner_card = _panel(tr("%%SVC_TAB_EDIT"))
+	_fixed(_owner_card, OWNER_WIDTH)
+	_edit_box = VBoxContainer.new()
+	_edit_box.add_theme_constant_override("separation", 16)
+	_edit_name = _field(tr("%%SVC_PH_GROUP_NAME"), 0.0)
+	_edit_description = _field(tr("%%SVC_PH_GROUP_DESCRIPTION"), 0.0)
+	_edit_max = _number_field(tr("%%SVC_PH_MAX_MEMBERS"), 0.0)
+	_edit_box.add_child(_form_field(tr("%%SVC_LBL_NAME"), _edit_name))
+	_edit_box.add_child(_form_field(tr("%%SVC_LBL_DESCRIPTION"), _edit_description))
+	_edit_box.add_child(_form_field(tr("%%SVC_LBL_MAX_MEMBERS"), _edit_max, tr("%%SVC_SQ_MAX_HINT")))
+	var save_row := _actions_bar()
+	save_row.add_child(_spacer())
+	_primary_button(save_row, tr("%%SVC_ACT_SAVE"), func() -> void: _save_group())
+	_edit_box.add_child(save_row)
+	_owner_card.body.add_child(_edit_box)
+	# Invite (while there is room): the contact list, one tap per invite.
+	_invite_box = VBoxContainer.new()
+	_invite_box.add_theme_constant_override("separation", 12)
+	_invite_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_invite_box.add_child(_subheading(tr("%%SVC_LBL_INVITE_CONTACTS")))
+	_invitees = _list_box()
 	_page_invitees = ServicePage.new()
 	_page_invitees.limit = 100
 	_page_invitees.load_requested.connect(_load_invitees)
-	_invite_box = _paged_box(page, tr("%%SVC_LBL_INVITE_CONTACTS"), _page_invitees,
-			invitees_scroll[0])
+	_invite_box.add_child(_scroll(_invitees))
+	_invite_box.add_child(_pager(_page_invitees))
+	_owner_card.body.add_child(_invite_box)
+	_squad_columns.add_child(_owner_card)
+	page.add_child(_squad_columns)
+	_show_no_squad(tr("%%SVC_SQ_NONE"), tr("%%SVC_SQ_NONE_TEXT"))
+
+
+## The no-squad panel: [param title] over [param text] (the reason, or an error), with the two ways
+## out — the invitations received and the create form.
+func _show_no_squad(title: String, text: String) -> void:
+	_clear(_none_card.body)
+	var empty: Control = _empty_state(title, text)
+	var box := empty.get_child(0) as VBoxContainer
+	var icon := ServiceAppIcon.new()
+	icon.kind = ServiceAppIcon.Kind.SQUAD
+	icon.colour = ServiceStyle.LINE_HOVER
+	icon.custom_minimum_size = Vector2(56, 56)
+	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(icon)
+	box.move_child(icon, 0)
+	var ways := _row(12)
+	ways.alignment = BoxContainer.ALIGNMENT_CENTER
+	_action_button(ways, tr("%%SVC_SQ_SEE_INVITES"), func() -> void: goto_segment(1))
+	_primary_button(ways, tr("%%SVC_SQ_CREATE_ONE"), func() -> void: goto_segment(2))
+	box.add_child(ways)
+	_none_card.body.add_child(empty)
+	# No squad: only this panel shows, never the squad's own columns beside it.
+	_none_card.visible = true
+	_squad_columns.visible = false
 
 
 # ---------------------------------------------------------------------------------------------
@@ -109,31 +156,43 @@ func _build_squad_page(page: VBoxContainer) -> void:
 
 ## Received invitations as cards — the group's name in the header, accept / decline on each row.
 func _build_invitations_page(page: VBoxContainer) -> void:
-	var scroll := _card_list(260.0)
-	_invitations = scroll[1]
+	_frameless(page)
+	_invitations_card = _panel(tr("%%SVC_TAB_INVITATIONS"))
+	_invitations = _list_box()
 	_page_invitations = ServicePage.new()
 	_page_invitations.load_requested.connect(_load_invitations)
-	_paged_box(page, tr("%%SVC_LBL_PENDING_REQUESTS"), _page_invitations, scroll[0])
+	_invitations_card.body.add_child(_scroll(_invitations))
+	_invitations_card.body.add_child(_pager(_page_invitations))
+	page.add_child(_invitations_card)
 
 
 # ---------------------------------------------------------------------------------------------
 # Tab 2 — create
 # ---------------------------------------------------------------------------------------------
 
-func _build_create_page(side: VBoxContainer) -> void:
-	var create := VBoxContainer.new()
-	create.add_theme_constant_override("separation", 8)
-	_create_name = _field(tr("%%SVC_PH_GROUP_NAME"), 260.0)
-	_create_description = _field(tr("%%SVC_PH_GROUP_DESCRIPTION"), 360.0)
-	_create_max = _number_field(tr("%%SVC_PH_MAX_MEMBERS"), 140.0)
-	create.add_child(_label(tr("%%SVC_LBL_NAME"), DIM))
-	create.add_child(_create_name)
-	create.add_child(_label(tr("%%SVC_LBL_DESCRIPTION"), DIM))
-	create.add_child(_create_description)
-	create.add_child(_label(tr("%%SVC_LBL_MAX_MEMBERS"), DIM))
-	create.add_child(_create_max)
-	_action_button(create, tr("%%SVC_ACT_CREATE_GROUP"), func() -> void: _create_group())
-	side.add_child(_titled(tr("%%SVC_TAB_CREATE"), create))
+## The create form, one panel (the mock-up's "New squad"): name, description, member cap, then
+## Cancel / Create.
+func _build_create_page(page: VBoxContainer) -> void:
+	_frameless(page)
+	var card := _panel(tr("%%SVC_SQ_NEW"))
+	_fixed(card, CREATE_WIDTH)
+	_create_name = _field(tr("%%SVC_SQ_NAME_PH"), 0.0)
+	_create_description = _textarea(tr("%%SVC_SQ_DESCRIPTION_PH"), 130.0)
+	_create_max = _number_field(tr("%%SVC_SQ_MAX_PH"), 0.0)
+	card.body.add_child(_form_field(tr("%%SVC_LBL_NAME"), _create_name))
+	card.body.add_child(_form_field(tr("%%SVC_SQ_DESCRIPTION_OPT"), _create_description))
+	var max_field := _form_field(tr("%%SVC_LBL_MAX_MEMBERS"), _create_max, tr("%%SVC_SQ_MAX_HINT"))
+	max_field.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	max_field.custom_minimum_size.x = 300.0
+	card.body.add_child(max_field)
+	card.body.add_child(_spacer_v())
+	var actions := _actions_bar()
+	actions.add_child(_spacer())
+	ServiceStyle.apply_button_kind(_action_button(actions, tr("%%SVC_ACT_CANCEL"), func() -> void: goto_segment(0)),
+			ServiceStyle.ButtonKind.GHOST)
+	_primary_button(actions, tr("%%SVC_SQ_CREATE"), func() -> void: _create_group())
+	card.body.add_child(actions)
+	page.add_child(card)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -181,12 +240,12 @@ func _apply_group(result: Dictionary) -> void:
 	_group_id = ""
 	_is_owner = false
 	if not bool(result.get("ok", false)):
-		_summary.text = tr("%%SVC_MSG_ERROR_PREFIX") + " " + HttpClient.describe_error(result)
+		_show_no_squad(tr("%%SVC_MSG_ERROR_PREFIX") + " " + HttpClient.describe_error(result), "")
 		_set_group_ui(false, false)
 		return
 	var data: Variant = result.get("data")
 	if not (data is Dictionary):
-		_summary.text = tr("%%SVC_MSG_NO_GROUP")
+		_show_no_squad(tr("%%SVC_SQ_NONE"), tr("%%SVC_SQ_NONE_TEXT"))
 		_set_group_ui(false, false)
 		return
 	_group = data
@@ -203,8 +262,9 @@ func _apply_group(result: Dictionary) -> void:
 ## Toggle the owner-only blocks and the "create" entry. With no group, the lists that will
 ## not be reloaded are emptied right away.
 func _set_group_ui(in_group: bool, owner: bool) -> void:
-	_create_shortcut.visible = not in_group
-	_actions.visible = in_group
+	_none_card.visible = not in_group
+	_squad_columns.visible = in_group
+	_owner_card.visible = owner
 	_disband_button.visible = owner
 	_edit_box.visible = owner
 	_invite_box.visible = owner
@@ -219,6 +279,9 @@ func _set_group_ui(in_group: bool, owner: bool) -> void:
 ## the members are known (and the invite disappears when the group is full).
 func _render_summary() -> void:
 	_summary.text = ServiceTypes.group_line(_group)
+	var described: Variant = _group.get("description")
+	_description.text = "" if described == null else str(described)
+	_description.visible = _description.text != ""
 	var full: bool = ServiceTypes.num(_group.get("memberCount")) \
 			>= ServiceTypes.num(_group.get("maxMembers"), 10)
 	_invite_box.visible = _is_owner and not full
@@ -234,7 +297,7 @@ func _apply_members(result: Dictionary) -> void:
 		_members.add_child(_member_card(member))
 		count += 1
 	if count == 0:
-		_members.add_child(_note_label(tr("%%SVC_MSG_NO_MEMBERS"), DIM))
+		_members.add_child(_empty_state(tr("%%SVC_MSG_NO_MEMBERS"), ""))
 	# /api/me/groups has no memberCount: the total of the list we just received IS the count.
 	_group["memberCount"] = _page_members.total
 	_render_summary()
@@ -250,20 +313,21 @@ func _apply_invitees(result: Dictionary) -> void:
 		_invitees.add_child(_invitee_card(friend))
 		count += 1
 	if count == 0:
-		_invitees.add_child(_note_label(tr("%%SVC_MSG_NO_CONTACTS"), DIM))
+		_invitees.add_child(_empty_state(tr("%%SVC_SOC_NO_CONTACTS"), ""))
 
 
 func _apply_invitations(result: Dictionary) -> void:
 	_clear(_invitations)
 	if not bool(result.get("ok", false)):
-		_invitations.add_child(_note_label(HttpClient.describe_error(result), WARN))
+		_invitations.add_child(_empty_state(HttpClient.describe_error(result), ""))
 		return
 	var count := 0
 	for invitation: Dictionary in _page_invitations.rows(result):
 		_invitations.add_child(_invitation_card(invitation))
 		count += 1
+	_invitations_card.set_count(str(_page_invitations.total) if count > 0 else "")
 	if count == 0:
-		_invitations.add_child(_note_label(tr("%%SVC_MSG_NO_PENDING"), DIM))
+		_invitations.add_child(_empty_state(tr("%%SVC_SQ_NO_INVITES"), tr("%%SVC_SQ_NO_INVITES_TEXT")))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -393,18 +457,20 @@ func _invitation_card(invitation: Dictionary) -> Control:
 # Local helpers
 # ---------------------------------------------------------------------------------------------
 
-## A bounded scroll around a card box: cards grow, the page does not. Returns [scroll, box].
-func _card_list(min_height: float) -> Array:
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, min_height)
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+## A column of rows that fills its scroll's height, so an empty state centres in the panel.
+static func _list_box(separation: int = 10) -> VBoxContainer:
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(box)
-	return [scroll, box]
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", separation)
+	return box
+
+
+## A vertical spacer: pushes a form's action bar to the panel's foot.
+static func _spacer_v() -> Control:
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	return spacer
 
 
 ## An autowrap note inside a card box (empty states and errors): a VBox gives it full width.

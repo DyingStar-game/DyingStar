@@ -26,7 +26,6 @@ var _message: LineEdit
 
 func _build() -> void:
 	var bar := _app_bar(tr("%%SVC_APP_REPORTS"), ServiceAppIcon.Kind.REPORTS)
-	_action_button(bar, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
 	add_chrome(bar)
 
 	var pages := _segments_pages(PackedStringArray([
@@ -57,7 +56,7 @@ func _build_report_page(side: VBoxContainer) -> void:
 	form.add_child(_reason)
 	form.add_child(_label(tr("%%SVC_LBL_MESSAGE"), DIM))
 	form.add_child(_message)
-	_action_button(form, tr("%%SVC_ACT_SEND_REPORT"), func() -> void: _create_report())
+	_primary_button(form, tr("%%SVC_ACT_SEND_REPORT"), func() -> void: _create_report())
 	side.add_child(_titled(tr("%%SVC_LBL_NEW_REPORT"), form))
 
 
@@ -65,6 +64,7 @@ func _build_history_page(page: VBoxContainer) -> void:
 	_page_reports = ServicePage.new()
 	_page_reports.load_requested.connect(_load_reports)
 	_reports = _paged_list(page, tr("%%SVC_LBL_MY_REPORTS"), _page_reports, 280.0)
+	_empty_for(_reports, "", tr("%%SVC_TAB_REPORT"), func() -> void: goto_segment(0))
 
 
 func refresh() -> void:
