@@ -8,7 +8,7 @@ extends OreProcessor
 
 ## Why the belt is refused, for the screen.
 const BLOCKED_NOT_CRUSHED := "not_crushed"
-const BLOCKED_TOO_MANY := "too_many"
+const BLOCKED_MIXED_OWNERS := "mixed_owners"
 const BLOCKED_OTHER_MINERAL := "other_mineral"
 const BLOCKED_OTHER_OWNER := "other_owner"
 ## The network type of a hauling crate (its PropSync): what tells a crate from anything else.
@@ -18,7 +18,7 @@ const COUNT_FONT_PX := 140
 ## What the screen says for each refusal: [text key, pictograms].
 const REFUSALS := {
 	BLOCKED_NOT_CRUSHED: ["%%HUD_REFINERY_CRUSHED_ONLY", [ICON_INGOT]],
-	BLOCKED_TOO_MANY: ["%%HUD_REFINERY_ONE_CRATE", [ICON_CRATE, ICON_ORE]],
+	BLOCKED_MIXED_OWNERS: ["%%HUD_REFINERY_ONE_CRATE", [ICON_CRATE, ICON_ORE]],
 	BLOCKED_OTHER_MINERAL: ["%%HUD_REFINERY_OTHER_MINERAL", [ICON_ORE]],
 	BLOCKED_OTHER_OWNER: ["%%HUD_REFINERY_OTHER_OWNER", [ICON_CRATE]],
 }
@@ -36,13 +36,14 @@ func _accepts(body: Node) -> bool:
 	return CrateContent.is_crushed(crate_content_of(body))
 
 
-## One crate at a time, and only crushed ore: two crates, ingots or an empty crate stop the belt.
+## Crates of crushed ore of ONE mineral and ONE owner, as many as the belt holds (playtest 2026-11-08):
+## ingots or an empty crate, crates of two owners or two minerals, or one the stock cannot take stop
+## the belt, and the screen says which.
 func _belt_blocked(bodies: Array) -> bool:
-	var crates := 0
+	var first: Dictionary = {}
 	for body: Node in bodies:
 		if not is_crate(body):
 			continue  # not a crate (a rock, a player's foot...) — the belt ignores it
-		crates += 1
 		if not _accepts(body):
 			_blocked_reason = BLOCKED_NOT_CRUSHED  # ingots, or an empty crate
 			return true
@@ -50,8 +51,17 @@ func _belt_blocked(bodies: Array) -> bool:
 		if reason != "":
 			_blocked_reason = reason
 			return true
-	_blocked_reason = BLOCKED_TOO_MANY if crates > 1 else ""
-	return crates > 1
+		var content := crate_content_of(body)
+		if first.is_empty():
+			first = content
+		elif str(content.get("mineral", "")) != str(first.get("mineral", "")):
+			_blocked_reason = BLOCKED_OTHER_MINERAL
+			return true
+		elif CrateContent.holder_of(content) != CrateContent.holder_of(first):
+			_blocked_reason = BLOCKED_MIXED_OWNERS
+			return true
+	_blocked_reason = ""
+	return false
 
 
 ## Why the stock cannot take [param crate] in, "" when it can: another mineral, or the crate of a player
@@ -154,9 +164,14 @@ func _processing_key() -> String:
 
 func _extra_state() -> Dictionary:
 	var crates: Array = filter_accepted(rock_detector.get_overlapping_bodies())
-	var preview: Dictionary = crate_content_of(crates[0]) if crates.size() == 1 else {}
+	var on_belt_kg := 0.0
+	for crate: Node in crates:
+		on_belt_kg += float(crate_content_of(crate).get("mass_kg", 0.0))
+	# The mineral of the stock, else of the crates waiting: a full crate's metal is reckoned on it.
 	var mineral := str(_stock.get("mineral", ""))
-	return {"preview_mass": float(preview.get("mass_kg", 0.0)),
+	if mineral == "" and not crates.is_empty():
+		mineral = str(crate_content_of(crates[0]).get("mineral", ""))
+	return {"preview_mass": on_belt_kg,
 		"blocked_reason": _blocked_reason, "fill": fill_of(_stock, crate_volume()),
 		# What the screen shows: the metal held in kg against a full crate's, whose it is, whose was refused.
 		"stock_kg": CrateContent.game_mass(mineral, float(_stock.get("ore_m3", 0.0)), 0.0),
@@ -183,7 +198,7 @@ func _client_ui() -> void:
 		_show_screen(true, tr("%%HUD_REFINERY_FULL") + "\n" + whose, true, [ICON_INGOT], true)
 	elif state == "blocked":
 		var reason := str(extra.get("blocked_reason", ""))
-		var shown: Array = REFUSALS.get(reason, REFUSALS[BLOCKED_TOO_MANY])
+		var shown: Array = REFUSALS.get(reason, REFUSALS[BLOCKED_MIXED_OWNERS])
 		var message: String = tr(shown[0])
 		if reason == BLOCKED_OTHER_OWNER:
 			message = tr("%%HUD_REFINERY_OTHER_OWNER") % [str(extra.get("refused_owner", "")), owner]

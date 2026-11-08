@@ -1390,7 +1390,9 @@ Déposez uniquement de la roche fracturée.",
 %%HUD_REFINERY_PLACE,"PLACE ONE CRATE
 OF CRUSHED ORE","POSEZ UNE CAISSE
 DE MINERAI CONCASSÉ",
-%%HUD_REFINERY_ONE_CRATE,"ONE CRATE OF CRUSHED ORE AT A TIME","UNE SEULE CAISSE DE MINERAI CONCASSÉ À LA FOIS",
+%%HUD_REFINERY_ONE_CRATE,"CRATES OF DIFFERENT OWNERS.
+One owner at a time.","CAISSES DE PROPRIÉTAIRES DIFFÉRENTS.
+Un seul propriétaire à la fois.",
 %%HUD_REFINERY_CRUSHED_ONLY,"CRUSHED ORE ONLY.
 Ingots are already refined.","MINERAI CONCASSÉ UNIQUEMENT.
 Les lingots sont déjà raffinés.",
@@ -1401,19 +1403,15 @@ Les lingots sont déjà raffinés.",
 %%HUD_CRUSHER_FULL,"CRATE FULL.
 Extract it before crushing more.","CAISSE PLEINE.
 Extrayez-la avant de concasser à nouveau.",
-%%HUD_REFINERY_FULL,"INGOT CRATE FULL.
-Extract it before refining more.","CAISSE DE LINGOTS PLEINE.
-Extrayez-la avant de raffiner à nouveau.",
+%%HUD_REFINERY_FULL,INGOT CRATE FULL: EXTRACT IT.,CAISSE DE LINGOTS PLEINE : EXTRAYEZ-LA.,
 %%HUD_REFINERY_OTHER_MINERAL,"ANOTHER MINERAL.
 Extract the ingots in progress first.","AUTRE MINÉRAL.
 Extrayez d'abord les lingots en cours.",
 %%HUD_REFINERY_OTHER_OWNER,"CRATE OF %s REFUSED.
-The refinery holds the ore of %s: extract it first.","CAISSE DE %s REFUSÉE.
-La raffinerie contient le minerai de %s : extrayez-le d'abord.",
-%%HUD_REFINERY_HELD_BY,"INGOTS OF %s
-%s","LINGOTS DE %s
-%s",
-%%HUD_REFINERY_HELD,INGOTS INSIDE,LINGOTS DANS LA MACHINE,
+The ore inside is %s's.","CAISSE DE %s REFUSÉE.
+Le minerai en cours est à %s.",
+%%HUD_REFINERY_HELD_BY,INGOTS OF %s: %s,LINGOTS DE %s : %s,
+%%HUD_REFINERY_HELD,INGOTS,LINGOTS,
 %%PLATE_TYPE,TYPE,TYPE,
 %%PLATE_RESERVED,FOR,POUR,
 %%DEPOT_PICKUP_TITLE,TO COLLECT,À RETIRER,
