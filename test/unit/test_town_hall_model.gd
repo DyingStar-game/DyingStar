@@ -1,7 +1,7 @@
 extends GutTest
 ## The town hall's modelled building (assets/_universe/structures/buildings/civic/town_hall.glb, source
 ## in assets_blender/): no CSG placeholder left, collision boxes that are bodies and not walls to look
-## at, the shared materials from the game's library, a glow that follows the photocell (the gold trims
+## at, the shared materials from the game's library, a glow that never goes out (the gold trims
 ## and the ARES mark off by day), the neon sign under the mark and the ground pad under the plaza.
 
 const TOWN_HALL := "res://scenes/_universe/structures/buildings/civic/town_hall.tscn"
@@ -47,16 +47,14 @@ func test_the_shared_materials_come_from_the_library() -> void:
 			% material.resource_path)
 
 
-func test_the_glow_goes_out_by_day_and_comes_back_at_night() -> void:
+## Playtest 2026-11-08: the gold trims and the mark stay lit by day too -- the glow is no longer one of
+## the lights the photocell switches off.
+func test_the_glow_stays_lit_day_and_night() -> void:
 	var hall := _hall()
-	var glow := hall.get_node("Lights/Glow") as EmissiveGlow
+	assert_null(hall.get_node_or_null("Lights/Glow"), "not switched with the building's lights")
+	assert_true(hall.get_node_or_null("Glow") is EmissiveGlow, "a glow of its own")
 	var gold := _mesh(hall, "TH_town_hall_gold_trim")
 	var mark := _mesh(hall, "TH_town_hall_emblem")
-	glow.set_lit(false)
-	for mesh: MeshInstance3D in [gold, mark]:
-		var lit := mesh.get_active_material(0) as BaseMaterial3D
-		assert_eq(lit.emission_energy_multiplier, 0.0, "%s dark by day" % mesh.name)
-	glow.set_lit(true)
 	for mesh: MeshInstance3D in [gold, mark]:
 		var lit := mesh.get_active_material(0) as BaseMaterial3D
 		assert_gt(lit.emission_energy_multiplier, 0.0, "%s glowing at night" % mesh.name)
