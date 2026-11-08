@@ -96,6 +96,8 @@ it. Never work around one silently.
   float32 value ([ADR 0011](docs/adr/0011-double-precision-no-world-positions-in-float32.md)).
 - A screen or plate in the world animates or redraws only near the camera and in its view, and a static
   face is drawn once ([ADR 0027](docs/adr/0027-world-screens-work-only-when-seen.md)).
+- A world screen is held by one player and watched by the others: a screen UI with state of its own
+  implements `view_state()` / `apply_view_state()` ([ADR 0028](docs/adr/0028-one-user-per-screen-the-others-watch.md)).
 - A new `Area3D` does not monitor; it is detected by the player's `AreaDetector`
   ([ADR 0013](docs/adr/0013-named-collision-layers-one-active-monitor.md)).
 

@@ -58,3 +58,4 @@ it names under **In the code** still exist.
 | [0025](0025-dev-tools-off-by-one-table.md) | Dev tools switch in `ENABLED_DEV_TOOLS`; their code stays; builds force them off; the server refuses them. |
 | [0026](0026-shared-materials-linked-by-name-generated-and-checked.md) | Shared materials link by name, are generated from `material.json`, and a pull request checks they are. |
 | [0027](0027-world-screens-work-only-when-seen.md) | A screen in the world animates or redraws only when the camera is near and has it in view; static faces are drawn once. |
+| [0028](0028-one-user-per-screen-the-others-watch.md) | One player uses a world screen at a time; the others watch it through the view contract. |
