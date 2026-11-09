@@ -83,12 +83,21 @@ static func reward_line(of: Dictionary) -> String:
 	return ServiceTypes.rewards_text(rewards)
 
 
-## How long [param of] has left from [param now], or that it has no end.
-static func deadline_line(of: Dictionary, now: float) -> String:
-	var left: int = MissionQuery.seconds_left(of, now)
-	if left < 0:
-		return TranslationServer.translate("%%MISSION_NO_DEADLINE")
-	return TranslationServer.translate("%%MISSION_DEADLINE_IN") % ServiceTypes.duration(left)
+## The time line of [param of] at [param now] (playtest 2026-11-09). Taken ([param assignment]): the time
+## left to the player's own deadline (`deadlineAt`, else the mission's end). Not taken: the time it gives
+## once taken (`assignmentDeadlineHours`, the simulator's tiers), else when the offer ends, else that it
+## has no end.
+static func deadline_line(of: Dictionary, now: float, assignment: Variant = null) -> String:
+	var taken := assignment is Dictionary and not (assignment as Dictionary).is_empty()
+	var left: int = MissionQuery.seconds_left(of, now, assignment)
+	if taken and left >= 0:
+		return TranslationServer.translate("%%MISSION_TIME_LEFT") % ServiceTypes.duration(left)
+	var hours: int = ServiceTypes.num(of.get("assignmentDeadlineHours"), 0)
+	if not taken and hours > 0:
+		return TranslationServer.translate("%%MISSION_TIME_LIMIT") % ServiceTypes.duration(hours * 3600)
+	if left >= 0:
+		return TranslationServer.translate("%%MISSION_DEADLINE_IN") % ServiceTypes.duration(left)
+	return TranslationServer.translate("%%MISSION_NO_DEADLINE")
 
 
 func _build(now: float) -> void:

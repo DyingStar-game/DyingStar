@@ -261,7 +261,7 @@ func _show_sheet_data(mission: Dictionary, data: Dictionary) -> void:
 	_sheet_data = data
 	var full: Dictionary = data.get("mission") if data.get("mission") is Dictionary else mission
 	var objectives: Array = data.get("objectives") if data.get("objectives") is Array else []
-	_fill_sheet(full, objectives)
+	_fill_sheet(full, objectives, data.get("assignment"))
 	var participants := ServiceTypes.participants_text(data.get("participants"))
 	if participants != "":
 		_sheet.add_child(_text(TranslationServer.translate("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, DIM))
@@ -277,7 +277,7 @@ func _close_sheet() -> void:
 	_list_view.visible = true
 
 
-func _fill_sheet(mission: Dictionary, objectives: Array) -> void:
+func _fill_sheet(mission: Dictionary, objectives: Array, assignment: Variant = null) -> void:
 	_clear(_sheet)
 	var giver: MissionGiver = MissionGivers.of_mission(mission)
 	var head := HBoxContainer.new()
@@ -312,7 +312,7 @@ func _fill_sheet(mission: Dictionary, objectives: Array) -> void:
 	var now: float = Time.get_unix_time_from_system()
 	_sheet.add_child(_text(TranslationServer.translate("%%MISSION_REWARD")
 			% MissionTile.reward_line(mission), TEXT))
-	_sheet.add_child(_text(MissionTile.deadline_line(mission, now), DIM))
+	_sheet.add_child(_text(MissionTile.deadline_line(mission, now, assignment), DIM))
 	_sheet.add_child(_text(TranslationServer.translate("%%MISSION_ZONES")
 			% ServiceTypes.zones_text(mission.get("zones")), DIM))
 

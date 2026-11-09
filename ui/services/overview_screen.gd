@@ -201,8 +201,8 @@ func _missions_panel() -> Control:
 	return panel
 
 
-## One mission in progress: its step, title over its route, the next step over a progress bar, and
-## the reward. A button: it opens the contract.
+## One mission in progress: its step, title over its route and its time left, the next step over a
+## progress bar, and the reward. A button: it opens the contract.
 func _mission_row(row: Dictionary) -> Control:
 	var tile := Button.new()
 	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -241,6 +241,9 @@ func _mission_row(row: Dictionary) -> Control:
 	var route: String = str(row.get("route", ""))
 	if route != "":
 		texts.add_child(_quiet(ServiceStyle.label(route, ServiceStyle.MUTED, ServiceStyle.SIZE_CAPTION)))
+	var time_left: String = str(row.get("time", ""))
+	if time_left != "":  # "Time left: 3h12" (playtest 2026-11-09)
+		texts.add_child(_quiet(ServiceStyle.label(time_left, ServiceStyle.ACCENT, ServiceStyle.SIZE_CAPTION)))
 	line.add_child(texts)
 
 	var next := VBoxContainer.new()
@@ -364,8 +367,12 @@ func _fill_missions(missions: Dictionary) -> void:
 		if not (mission is Dictionary):
 			continue
 		# The list row carries its progress (the mission service's summary): no read per mission.
+		# Its time left, to the player's own deadline (the entry's assignment).
+		var time_left := MissionTile.deadline_line(mission, Time.get_unix_time_from_system(), entry.get("assignment"))
 		if entry.get("progress") is Dictionary:
-			_missions_box.add_child(_mission_row(progress_summary(mission, entry.get("progress"))))
+			var summary := progress_summary(mission, entry.get("progress"))
+			summary["time"] = time_left
+			_missions_box.add_child(_mission_row(summary))
 			continue
 		# A service without the summary yet: read the mission whole.
 		var mission_id: String = str((mission as Dictionary).get("id", ""))
@@ -373,7 +380,9 @@ func _fill_missions(missions: Dictionary) -> void:
 		var data: Dictionary = detail.get("data") if detail.get("data") is Dictionary else {}
 		if not is_inside_tree():
 			return
-		_missions_box.add_child(_mission_row(mission_summary(mission, data)))
+		var whole := mission_summary(mission, data)
+		whole["time"] = time_left
+		_missions_box.add_child(_mission_row(whole))
 
 
 ## A row's facts from a mission and its list `progress` (GET /api/me/missions): the same as

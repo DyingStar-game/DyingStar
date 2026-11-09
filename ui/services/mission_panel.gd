@@ -103,6 +103,9 @@ var _invites_box: VBoxContainer
 ## (focus_mission), "" when none.
 var _mine_contract: VBoxContainer
 var _focus_id: String = ""
+## Segments whose list picks its first mission when it next fills: on its first reading and when a tab
+## of it is chosen (playtest 2026-11-09); a later refresh leaves the player's choice alone.
+var _pick_first: Dictionary = {0: true, 1: true, 2: true}
 ## The "My missions" tabs (MINE_TABS) and the one shown.
 var _mine_tabs: HBoxContainer
 var _mine_tab: int = 0
@@ -592,6 +595,7 @@ func _set_mine_tab(index: int) -> void:
 	_show_mine_tabs()
 	_page_mine.offset = 0
 	_reset_contract(_mine_contract)
+	_pick_first[1] = true
 	_load_mine()
 
 
@@ -636,6 +640,7 @@ func _build_created_page(page: VBoxContainer) -> void:
 		var status: String = str(entry[0])
 		chip.pressed.connect(func() -> void:
 			_created_filter = status
+			_pick_first[2] = true  # another tab of contracts: its first one shows
 			for other: Node in flow.get_children():
 				ServiceStyle.apply_choice(other as Button, str(other.get_meta(&"status")) == status)
 			_created_missions())
@@ -895,7 +900,9 @@ func _fill_missions_list(page: ServicePage, segment: int, result: Dictionary,
 	for mission: Dictionary in rows:
 		if own:
 			_record_mine(mission)
-		list.add_card(_mission_card(mission, "", own or _is_mine(mission) or _mine_ids.has(str(mission.get("id", "")))),
+		# Its time: how long it gives once taken (or when the offer ends).
+		var time_line := MissionTile.deadline_line(mission, Time.get_unix_time_from_system())
+		list.add_card(_mission_card(mission, time_line, own or _is_mine(mission) or _mine_ids.has(str(mission.get("id", "")))),
 				mission)
 	(view["left"] as ServicePanel.Card).set_count(str(page.total) if page.total > 0 else "")
 	if rows.is_empty():
@@ -910,6 +917,17 @@ func _fill_missions_list(page: ServicePage, segment: int, result: Dictionary,
 		# The contracts the player raised name their own places: the chart tells them apart from
 		# the ones the player took on.
 		_classify_mission_pois()
+	_pick_first_card(segment, list)
+
+
+## Pick the first card of [param list] (segment [param segment]) when it is to (_pick_first), nothing being
+## selected yet: its contract opens beside it.
+func _pick_first_card(segment: int, list: MissionCards) -> void:
+	if not bool(_pick_first.get(segment, false)) or list.card_count() == 0:
+		return
+	_pick_first[segment] = false
+	if list.selected_meta() == null:
+		list.select(0)
 
 
 ## Ids of contracts the player raised, learned whenever a list of them has been read.
@@ -936,6 +954,8 @@ func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 		# In progress says it in its tab; Done and Stopped name which end each one had.
 		var status := ServiceTypes.mission_status_label((assignment as Dictionary).get("status")) \
 				if assignment is Dictionary and _mine_tab != 0 else ""
+		if _mine_tab == 0:  # in progress: the time left to the player's own deadline
+			status = MissionTile.deadline_line(mission, Time.get_unix_time_from_system(), assignment)
 		var progress: Dictionary = entry.get("progress") if entry.get("progress") is Dictionary else {}
 		_mine.add_card(_mission_card(mission, _cap(status), false, progress), entry)
 	(view["left"] as ServicePanel.Card).set_count(str(page.total) if page.total > 0 else "")
@@ -947,6 +967,7 @@ func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 		_set_list_empty(view, "")
 	_classify_mission_pois()
 	_select_focus()
+	_pick_first_card(1, _mine)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1147,6 +1168,9 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	if not assignment.is_empty():
 		doc.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ASSIGNMENT") %
 				ServiceTypes.assignment_line(assignment), DIM))
+	# Its time: the time left once taken, else the time it gives (playtest 2026-11-09).
+	doc.add_child(_label(MissionTile.deadline_line(mission, Time.get_unix_time_from_system(), assignment),
+			ServiceStyle.ACCENT))
 
 	# Description.
 	var described: Variant = mission.get("description")
