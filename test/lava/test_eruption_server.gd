@@ -31,6 +31,10 @@ func _ready() -> void:
 func _run() -> void:
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest()
+	if "--remote-tiles" in OS.get_cmdline_user_args():
+		# As a game server: elevation from the tile service, POIs spared by the cracks (PlanetTerrain.initialize).
+		data.remote_source = RemoteTileSource.for_planet(data.planet_name)
+		data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(data.planet_name))
 	data.ensure_queries_loaded()
 	data.warm_mountains()
 	var volcano: VolcanoRelief.Volcano = null
@@ -55,8 +59,11 @@ func _run() -> void:
 	profile.events.append(event)
 	VolcanoActivityProfile._profiles[data.planet_name] = profile
 
+	# In the tree, so a player node under it goes through LavaEruptions.viewer_positions as on the server.
+	# Added before its data: Planet._ready then prepares nothing.
 	var planet := Planet.new()
 	planet.uuid = PLANET_UUID
+	add_child(planet)
 	planet.planet_data = data
 	var terrain := PlanetTerrain.new()
 	planet.planet_terrain = terrain
@@ -69,7 +76,14 @@ func _run() -> void:
 
 	var lava := LavaEruptions.new()
 	lava.planets = func() -> Dictionary: return {PLANET_UUID: planet}
-	lava.viewers = func() -> Dictionary: return {PLANET_UUID: PackedVector3Array([summit])}
+	var player := Node3D.new()
+	player.name = "Player"
+	planet.add_child(player)
+	player.position = summit
+	lava.viewers = func() -> Dictionary: return LavaEruptions.viewer_positions([player])
+	var seen: Dictionary = LavaEruptions.viewer_positions([player])
+	check(seen.has(PLANET_UUID) and (seen[PLANET_UUID] as PackedVector3Array).size() == 1,
+		"viewer_positions finds the player on its planet")
 	lava.registry_data = func(uuid: String) -> Dictionary: return _registry.get(uuid, {})
 	lava.spawn_prop = func(d: Dictionary) -> void:
 		_registry[d.uuid] = d.duplicate(true)

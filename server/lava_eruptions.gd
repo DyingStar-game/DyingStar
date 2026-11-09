@@ -32,6 +32,12 @@ const SETTLE_MS := 20000
 const BUILD_BUDGET_USEC := 3000
 ## Empty fields kept (one per volcano sampled).
 const EMPTY_KEEP := 16
+## How often (ms) an eruption still waiting for its terrain tiles says so.
+const WAIT_LOG_MS := 30000
+## How often (ms) an eruption still catching up on its start says how far it is.
+const CATCH_UP_LOG_MS := 10000
+## How often (ms) a planet with players reports its nearest volcano (clock, distance, eruption or calm).
+const REPORT_MS := 300000
 
 ## Distance (m) from a player within which a volcano's eruption is simulated: larger = lava already flowing
 ## when a fast traveller arrives, more volcanoes simulated at once.
@@ -67,6 +73,7 @@ var _volcanoes: Dictionary = {}
 var _empty: Dictionary = {}
 var _settled_at := 0
 var _next_sweep := 0
+var _next_report: Dictionary = {}  # planet uuid -> now_ms of its next nearest-volcano report
 
 
 func _ready() -> void:
@@ -98,6 +105,14 @@ func _process(_delta: float) -> void:
 				if job != null:
 					e.job = job
 					e.state = "build"
+					print("[LAVA] %s: terrain tiles resident after %.1f s, sampling the crater" % [
+						_base_key(e.planet, e.volcano), (now - int(e.since_ms)) / 1000.0])
+				elif now >= int(e.next_wait_log_ms):
+					e.next_wait_log_ms = now + WAIT_LOG_MS
+					var source: Variant = e.planet.planet_data.remote_source
+					print("[LAVA] %s: still waiting for the terrain tiles of the crater (%.0f s): %d/%d pixels missing, download queue %s" % [
+						_base_key(e.planet, e.volcano), (now - int(e.since_ms)) / 1000.0, Builder.last_missing,
+						Builder.last_required, str(source.queue_stats()) if source != null else "none"])
 			"build":
 				if not build_spent:  # one crater at a time
 					build_spent = true
@@ -118,6 +133,9 @@ func _sweep() -> void:
 			continue
 		var profile := VolcanoActivityProfile.for_planet(planet.planet_data.planet_name)
 		var radius_m: float = planet.planet_data.radius
+		if int(now_ms.call()) >= int(_next_report.get(planet_uuid, 0)):
+			_next_report[planet_uuid] = int(now_ms.call()) + REPORT_MS
+			_report_nearest(planet, near[planet_uuid], profile, clock_s)
 		for v: VolcanoRelief.Volcano in _volcanoes_of(planet):
 			var summit := v.c.normalized() * radius_m
 			if not _any_within(near[planet_uuid], summit, activation_radius_m):
@@ -141,11 +159,48 @@ func _sweep() -> void:
 			_begin(uuid, planet, v, window, start_ms, known)
 
 
+## One line: the server's clock, the volcano nearest to a player of [param planet], how far, and whether it
+## erupts now or when next. Tells a wrong clock, a wrong distance and a calm volcano apart.
+func _report_nearest(planet: Planet, points: PackedVector3Array, profile: VolcanoActivityProfile, clock_s: float) -> void:
+	var best: VolcanoRelief.Volcano = null
+	var best_m := INF
+	for v: VolcanoRelief.Volcano in _volcanoes_of(planet):
+		var summit := v.c.normalized() * planet.planet_data.radius
+		for p in points:
+			if p.distance_to(summit) < best_m:
+				best_m = p.distance_to(summit)
+				best = v
+	if best == null:
+		print("[LAVA] %s: %d player position(s), no volcano to report" % [planet.planet_data.planet_name, points.size()])
+		return
+	var key := VolcanoFeatures.key_of(best)
+	var vseed := best.seed ^ int(key.hash())
+	var state := "calm"
+	var window := profile.eruption_window(clock_s, vseed, key)
+	if not window.is_empty():
+		state = "erupting since %s" % Time.get_datetime_string_from_unix_time(int(window.start_unix))
+	else:
+		for minutes in range(1, 121):
+			var ahead := profile.eruption_window(clock_s + minutes * 60.0, vseed, key)
+			if not ahead.is_empty():
+				state = "calm, next eruption %s" % Time.get_datetime_string_from_unix_time(int(ahead.start_unix))
+				break
+	var uuid := LavaFlow.uuid_for(planet.planet_data.planet_name, key)
+	print("[LAVA] %s: clock %s, %d player(s), nearest volcano %s at %.1f km (activation %.0f km): %s; %s" % [
+		planet.planet_data.planet_name, Time.get_datetime_string_from_unix_time(int(clock_s)), points.size(), key,
+		best_m / 1000.0, activation_radius_m / 1000.0, state,
+		"tracked (%s)" % str(_eruptions[uuid].state) if _eruptions.has(uuid) else "not tracked"])
+
+
 func _begin(uuid: String, planet: Planet, v: VolcanoRelief.Volcano, window: Dictionary, start_ms: int,
 		known: Dictionary) -> void:
 	var e := {"planet": planet, "volcano": v, "window": window, "packet": {}, "plan": {"start_unix_ms": start_ms},
-		"key": "", "state": "tiles", "job": null, "published": false, "next_digest_ms": 0, "next_checkpoint_ms": 0}
+		"key": "", "state": "tiles", "job": null, "published": false, "next_digest_ms": 0, "next_checkpoint_ms": 0,
+		"since_ms": int(now_ms.call()), "next_wait_log_ms": int(now_ms.call()) + WAIT_LOG_MS}
 	_eruptions[uuid] = e
+	print("[LAVA] %s: eruption under way since %s (%d min, strength %.2f), a player within %.0f km" % [
+		_base_key(planet, v), Time.get_datetime_string_from_unix_time(int(start_ms / 1000)),
+		roundi(float(window.length_s) / 60.0), float(window.strength), activation_radius_m / 1000.0])
 	var plan: Variant = known.get("plan")
 	if plan is Dictionary and int((plan as Dictionary).get("start_unix_ms", -1)) == start_ms:
 		var description := LavaFlow.description_from(known)
@@ -204,7 +259,18 @@ func _publish(uuid: String, e: Dictionary, now: int) -> void:
 		return
 	if not e.published:
 		if tick < target - 1:
-			return  # still catching up: clients would start from an old state
+			# Still catching up: clients would start from an old state.
+			if now >= int(e.get("next_catch_up_log_ms", 0)):
+				var rate := 0.0
+				if e.has("catch_up_from"):
+					rate = (tick - int(e.catch_up_from)) * 1000.0 / maxf(1.0, now - int(e.catch_up_since))
+				else:
+					e.catch_up_from = tick
+					e.catch_up_since = now
+				e.next_catch_up_log_ms = now + CATCH_UP_LOG_MS
+				print("[LAVA] %s: catching up the eruption, tick %d/%d (%.0f ticks/s, ~%.0f s left)" % [
+					e.key, tick, target, rate, (target - tick) / rate if rate > 0.0 else -1.0])
+			return
 		var data := LavaFlow.description_fields(e.packet, e.plan)
 		data.merge(_state_fields(runtime, e.key))
 		data.merge({"type": LavaFlow.TYPE, "uuid": uuid, "scenename": LavaFlow.SCENE, "parent_id": e.planet.uuid,
@@ -269,9 +335,11 @@ static func viewer_positions(players: Array) -> Dictionary:
 		var planet := Planet.of(p as Node3D)
 		if planet == null or planet.uuid.is_empty():
 			continue
-		if not out.has(planet.uuid):
-			out[planet.uuid] = PackedVector3Array()
-		(out[planet.uuid] as PackedVector3Array).append(planet.to_local((p as Node3D).global_position))
+		# A packed array read from a Dictionary is a copy: append to a local one and store it back
+		# (appending to out[uuid] in place left every planet with no player, 2026-11-09).
+		var points: PackedVector3Array = out.get(planet.uuid, PackedVector3Array())
+		points.append(planet.to_local((p as Node3D).global_position))
+		out[planet.uuid] = points
 	return out
 
 

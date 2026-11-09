@@ -11,6 +11,9 @@ const OPEN_FULL_TICKS := 1200
 const OPEN_END_TICKS := 2400
 const VISCOSITY_PA_S := 400
 static var _required_tiles := {}
+## Pixels whose tiles were still missing at the last [method terrain_ready] call, and how many it checked.
+static var last_missing := 0
+static var last_required := 0
 
 static func ring_edges(volcano: VolcanoRelief.Volcano) -> PackedInt64Array:
 	var crater := maxi(3000, roundi(volcano.rc * 1000.0))
@@ -43,10 +46,12 @@ static func terrain_ready(data: PlanetData, volcano: VolcanoRelief.Volcano) -> b
 					var rim_dir := (up + (east * cos(a) + north * sin(a)) * (volcano.rc / data.radius)).normalized()
 					tiles[HEALPix.vec2pix_nest(finest, rim_dir)] = true
 		_required_tiles[key] = tiles
-	var ready := true
+	var missing := 0
 	for ip: int in _required_tiles[key]:
-		if not TileResidency.request_chunk_tiles(data, finest, ip): ready = false
-	return ready
+		if not TileResidency.request_chunk_tiles(data, finest, ip): missing += 1
+	last_missing = missing
+	last_required = (_required_tiles[key] as Dictionary).size()
+	return missing == 0
 
 ## Whole build in one call (tests, offline preview). A server uses [method start_build] and steps it.
 static func build(data: PlanetData, volcano: VolcanoRelief.Volcano) -> Dictionary:
