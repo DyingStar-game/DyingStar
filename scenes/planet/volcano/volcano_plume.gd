@@ -52,6 +52,13 @@ var _light_elapsed := 0.0
 var _last_eye := Vector3.INF
 var _last_forward := Vector3.INF
 var _last_fov := -1.0
+## WorkerThreadPool task running model.update (-1: none). The model is the worker's until it is joined;
+## the main thread reads the snapshot below (~10 ms per update during a 40 min eruption on a Xeon E5).
+var _task := -1
+var _snap_a := PackedVector4Array()
+var _snap_b := PackedVector4Array()
+var _snap_c := PackedVector4Array()
+var _snap_active := PackedInt32Array()
 
 
 ## [param centre]: the vent in the planet's frame (the parent's).
@@ -133,6 +140,22 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	_alive.erase(self)
+	_join_model(true)
+
+
+## Joins the model's worker update when it is done (or now with [param wait]), then snapshots its puffs for
+## the main thread. True when a new snapshot was taken.
+func _join_model(wait: bool) -> bool:
+	if _task < 0 or (not wait and not WorkerThreadPool.is_task_completed(_task)):
+		return false
+	WorkerThreadPool.wait_for_task_completion(_task)
+	_task = -1
+	# Copy on write: the next worker update writes its own buffers, these stay as they are.
+	_snap_a = model.a
+	_snap_b = model.b
+	_snap_c = model.c
+	_snap_active = model.active_indices.duplicate()
+	return true
 
 
 static func _billow_texture() -> NoiseTexture3D:
@@ -165,8 +188,9 @@ func _relief(x: float, z: float) -> float:
 
 
 func _process(delta: float) -> void:
+	var fresh := _join_model(false)
 	_wind_tick -= delta
-	if _wind_tick <= 0.0:
+	if _wind_tick <= 0.0 and _task < 0:  # the wind history is the model's: never while a worker updates it
 		_wind_tick = 0.5
 		_update_wind(clock())
 	var viewport := get_viewport()
@@ -195,17 +219,19 @@ func _process(delta: float) -> void:
 	_light_elapsed += delta
 	# Actual time budgets, independent of monitor refresh/FPS. Sleeping volcanoes still wake at 5 Hz.
 	var interval := 1.0 / 30.0 if _dist < 20000.0 else (1.0 / 15.0 if _dist < 80000.0 else 1.0 / 8.0)
-	if model.active_indices.is_empty() and model.activity(t) <= 0.0:
+	if _snap_active.is_empty() and model.activity(t) <= 0.0:
 		interval = 0.2
-	var changed := _model_elapsed >= interval or _relight > 12
-	if changed:
+	if (_model_elapsed >= interval or _relight > 12) and _task < 0:
 		if _light_elapsed >= 0.1 or _relight > 12:
 			_light()
 			_light_elapsed = 0.0
-		model.update(t, _relight)
-		_update_smoke_bounds()
+		# Puffs and their lighting on a worker; drawn from the next frame that finds it done.
+		_task = WorkerThreadPool.add_task(model.update.bind(t, _relight), false, "volcano plume")
 		_relight = 12
 		_model_elapsed = fmod(_model_elapsed, interval)
+	var changed := fresh
+	if changed:
+		_update_smoke_bounds()
 	var fwd: Vector3 = global_basis.inverse() * -cam.global_basis.z
 	if changed or cam.fov != _last_fov or not eye.is_equal_approx(_last_eye) or not fwd.is_equal_approx(_last_forward):
 		var shown := _compact(eye, fwd, cam.fov)
@@ -237,10 +263,10 @@ func _process(delta: float) -> void:
 func _update_smoke_bounds() -> void:
 	var low := Vector3.ZERO
 	var high := Vector3.ZERO
-	for i in model.active_indices:
-		if model.b[i].x <= 0.03:
+	for i in _snap_active:
+		if _snap_b[i].x <= 0.03:
 			continue
-		var puff := model.a[i]
+		var puff := _snap_a[i]
 		var centre := Vector3(puff.x, puff.y, puff.z)
 		var radius := Vector3.ONE * puff.w
 		low = low.min(centre - radius)
@@ -295,17 +321,17 @@ func _compact(eye: Vector3, fwd: Vector3, fov_deg: float) -> int:
 	# Half-angle of the corner of the screen, with a margin for the turn of the next frame.
 	var half := deg_to_rad(fov_deg) * 0.5 * 1.95 + 0.05
 	var n := 0
-	for i in model.active_indices:
-		if model.b[i].x <= 0.03:
+	for i in _snap_active:
+		if _snap_b[i].x <= 0.03:
 			continue
-		var s: Vector4 = model.a[i]
+		var s: Vector4 = _snap_a[i]
 		var to := Vector3(s.x, s.y, s.z) - eye
 		var d := to.length()
 		if d > s.w and acos(clampf(fwd.dot(to / d), -1.0, 1.0)) > half + asin(s.w / d):
 			continue
 		_a[n] = s
-		_b[n] = model.b[i]
-		_c[n] = model.c[i]
+		_b[n] = _snap_b[i]
+		_c[n] = _snap_c[i]
 		n += 1
 	return n
 
