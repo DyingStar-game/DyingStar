@@ -48,9 +48,13 @@ const MAX_HEIGHTS := 150000
 ## Heights a frame may read from the planet for new stones (each costs 0.15 to 0.3 ms). A stone over budget
 ## is born on a later frame, from the cells already read, so a single flight no longer makes a hitch.
 const MAX_READS_PER_FRAME := 8
-## A stone is never born later than this (s), whatever the reads cost: it would appear too far from the vent.
+## A stone is never born later than this (s): it would appear too far from the vent. Later, it is not thrown.
 const MAX_BIRTH_LAG_S := 1.0
+## Main-thread time (us) a frame may spend reading heights for new stones. Reads slow down several times while
+## the terrain streams (cold caches, workers busy): 8 reads then cost up to ~16 ms (2026-11-09, near a volcano).
+const READ_BUDGET_USEC := 1500
 const NO_READ_LIMIT := 1 << 30
+const NO_DEADLINE := 1 << 62
 static var _shared_meshes: Array[ArrayMesh] = []
 static var _shared_flying_mesh: ArrayMesh
 static var _shared_cracks: NoiseTexture3D
@@ -113,6 +117,7 @@ var _feet := Vector3.ZERO
 var _has_player := false
 var _heights := {}
 var _reads_left := NO_READ_LIMIT
+var _read_deadline := NO_DEADLINE
 var _latest_landing := -INF
 var _latest_trail_end := -INF
 var _suspended := false
@@ -304,15 +309,15 @@ func update(t: float, eye: Vector3, feet: Vector3, has_player: bool) -> void:
 	_feet = feet
 	_has_player = has_player
 	_reads_left = MAX_READS_PER_FRAME
+	_read_deadline = Time.get_ticks_usec() + READ_BUDGET_USEC
 	while float(_next_c) * dt <= t:
 		if t - float(_next_c) * dt > MAX_BIRTH_LAG_S:
-			_reads_left = NO_READ_LIMIT
-		elif _reads_left > MAX_READS_PER_FRAME:
-			# Caught up with the limit: the rest can wait, this frame has paid enough.
-			_reads_left = 0
-		if not _born(_next_c, t):
+			# Too late to leave the vent: not thrown. Reading all its heights now made the long frames longer.
+			_skip(_next_c)
+		elif not _born(_next_c, t):
 			break
 		_next_c += 1
+	_read_deadline = NO_DEADLINE
 	_promote_due(t, eye)
 	_instances.visible = t < _latest_landing
 	_trails.visible = t < _latest_trail_end
@@ -368,6 +373,13 @@ func _born(c: int, t: float) -> bool:
 	_write(i, v0, birth, radius, flight, seed_v, 1.0)
 	_register(i, v0, birth, radius, flight, t)
 	return true
+
+
+## Slot [param c] throws nothing: its previous flight, if any, is cleared like an idle slot's.
+func _skip(c: int) -> void:
+	var i := posmod(c, COUNT)
+	_token[i] += 1
+	_clear_slot(i, float(c) * (PERIOD / float(COUNT)))
 
 
 ## First time the arc from the vent reaches the ground, or -1 when the frame's height reads ran out: the
@@ -769,5 +781,7 @@ func _height_at(ix: int, iz: int, cell: float) -> float:
 		_heights.clear()
 	var h: float = relief.call(float(ix) * cell, float(iz) * cell)
 	_reads_left -= 1
+	if Time.get_ticks_usec() > _read_deadline:
+		_reads_left = 0  # the frame's time for reads is spent, whatever their count
 	_heights[key] = h
 	return h
