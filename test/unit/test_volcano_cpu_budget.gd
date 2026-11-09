@@ -1,6 +1,7 @@
 extends GutTest
 ## The volcano's CPU savings must change nothing: the puffs skipped by VolcanoPlumeModel and the stones
-## delayed by VolcanoStoneField's read budget end up exactly where the full computation puts them.
+## delayed by VolcanoStoneField's read budget end up exactly where the full computation puts them; a stone
+## too late is dropped rather than paid for.
 ##
 ## Run with:
 ##     godot --headless -s addons/gut/gut_cmdln.gd \
@@ -114,14 +115,46 @@ func test_a_stone_over_budget_changes_nothing_until_its_frame() -> void:
 func test_a_late_stone_is_never_later_than_the_limit() -> void:
 	var model := VolcanoPlumeModel.new()
 	model.profile = _profile()
-	var field: VolcanoStoneField = autofree(VolcanoStoneField.new(model, _rough))
+	var reads := [0]
+	var counted := func(x: float, z: float) -> float:
+		reads[0] += 1
+		return _rough(x, z)
+	var field: VolcanoStoneField = autofree(VolcanoStoneField.new(model, counted))
 	field.rebuild_on_jump = false
 	var dt := VolcanoStoneField.PERIOD / float(VolcanoStoneField.COUNT)
 	var t := START + 50.0
 	field.update(t, Vector3.ZERO, Vector3.ZERO, false)
 	# A long frame: three seconds of stones are due at once, every height still to read.
 	t += 3.0
+	reads[0] = 0
 	field.update(t, Vector3.ZERO, Vector3.ZERO, false)
-	assert_gt(field.in_flight(t), 0, "the burst throws stones")
 	assert_gte(float(field._next_c) * dt, t - VolcanoStoneField.MAX_BIRTH_LAG_S - dt * 2.0, "caught up with the limit")
 	assert_lt(float(field._next_c) * dt, t - VolcanoStoneField.MAX_BIRTH_LAG_S + 0.5, "and no further in that frame")
+	# The two late seconds are dropped, not read: one bilinear sample (4 heights) may cross the budget.
+	assert_lte(reads[0], VolcanoStoneField.MAX_READS_PER_FRAME + 3, "the frame stays within its read budget")
+	for k in 60:
+		t += 1.0 / 30.0
+		field.update(t, Vector3.ZERO, Vector3.ZERO, false)
+	assert_gt(field.in_flight(t), 0, "the burst throws stones again")
+
+
+func test_slow_heights_stop_at_the_frame_time_budget() -> void:
+	var model := VolcanoPlumeModel.new()
+	model.profile = _profile()
+	var reads := [0]
+	# Heights at 1 ms each, as when the terrain streams: the time budget, not the count, ends the frame's reads.
+	var slow := func(x: float, z: float) -> float:
+		reads[0] += 1
+		OS.delay_usec(1000)
+		return _rough(x, z)
+	var field: VolcanoStoneField = autofree(VolcanoStoneField.new(model, slow))
+	field.rebuild_on_jump = false
+	var t := START + 50.0
+	field.update(t, Vector3.ZERO, Vector3.ZERO, false)
+	t += 0.5
+	reads[0] = 0
+	var started := Time.get_ticks_usec()
+	field.update(t, Vector3.ZERO, Vector3.ZERO, false)
+	var spent := Time.get_ticks_usec() - started
+	assert_lt(reads[0], VolcanoStoneField.MAX_READS_PER_FRAME, "fewer reads than the count budget")
+	assert_lt(spent, VolcanoStoneField.READ_BUDGET_USEC + 5000, "the frame stops near its time budget (%d us)" % spent)

@@ -122,6 +122,8 @@ func _read_packets() -> void:
 ## a healthy link.
 func _accept_incoming(delta: float) -> void:
 	if peer.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+		if _peer_handshake_sent:  # a link that was up: say why it ended (1009 = a message over inbound_buffer_size)
+			print("Horizon link closed (code %d %s)" % [peer.get_close_code(), peer.get_close_reason()])
 		_peer_handshake_sent = false
 		if _candidate == null and ServerNetwork.tcp_server.is_connection_available():
 			# Nobody to protect: take it straight away, no probation.
@@ -165,6 +167,9 @@ func _drain_extra() -> void:
 func _accept_stream() -> WebSocketPeer:
 	var fresh := WebSocketPeer.new()
 	fresh.outbound_buffer_size = 1000000000  # 1 GB — must be set before accept_stream
+	# Godot's default is 64 KiB, and a message larger than the inbound buffer closes the connection. A lava_flow
+	# prop carries its checkpoint (~260 KB): Horizon's snapshot of one dropped the server every 10 s (2026-11-09).
+	fresh.inbound_buffer_size = 16 * 1024 * 1024
 	fresh.max_queued_packets = 1000000
 	fresh.accept_stream(ServerNetwork.tcp_server.take_connection())
 	fresh.set_no_delay(true)

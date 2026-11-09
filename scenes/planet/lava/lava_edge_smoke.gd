@@ -5,6 +5,10 @@ extends MultiMeshInstance3D
 const SHADER = preload("res://assets/_universe/environment/terrain/lava_edge_smoke.gdshader")
 const CAPACITY := 96
 var smoke_enabled := true
+## The lava runtime scans the edges on its tick worker: advance() then only raises scan_wanted.
+var deferred_scan := false
+## A scan is due and waits for the runtime's next worker job.
+var scan_wanted := false
 var clock := 0.0
 var active_count := 0
 var edge_count := 0
@@ -39,6 +43,7 @@ func reset() -> void:
 	_sequence = 0
 	active_count = 0
 	edge_count = 0
+	scan_wanted = false
 	_edges.clear()
 	_heat.clear()
 	_expiry.resize(CAPACITY)
@@ -55,6 +60,7 @@ func set_smoke_enabled(enabled: bool) -> void:
 		reset()
 
 
+## [param sim] is null while a worker job owns the solver: the smoke then ages without scanning it.
 func advance(delta: float, sim) -> void:
 	if not smoke_enabled:
 		return
@@ -67,8 +73,11 @@ func advance(delta: float, sim) -> void:
 			multimesh.set_instance_custom_data(i, Color(0, 0, 0, 0))
 	_scan_clock -= delta
 	if _scan_clock <= 0.0:
-		_scan_clock = 0.5
-		_scan_edges(sim)
+		if deferred_scan and _scan_clock > -1.0 or sim == null:
+			scan_wanted = true  # the next worker job scans (apply_edges); synchronous after 1 s without one
+		else:
+			_scan_clock = 0.5
+			_scan_edges(sim)
 	_birth_clock = minf(_birth_clock + delta, 0.5)
 	while _birth_clock >= 0.125:
 		_birth_clock -= 0.125
@@ -76,8 +85,27 @@ func advance(delta: float, sim) -> void:
 
 
 func _scan_edges(sim) -> void:
-	_edges.clear()
-	_heat.clear()
+	apply_edges(edges_of(sim))
+
+
+## Main thread: the edges found by [method edges_of] (on a worker) become the smoke's birth places.
+func apply_edges(found: Array) -> void:
+	scan_wanted = false
+	_scan_clock = 0.5
+	_edges = found[0]
+	_heat = found[1]
+	edge_count = _edges.size()
+	if not _edges.is_empty():
+		var bounds := AABB(_edges[0], Vector3.ZERO)
+		for point in _edges: bounds = bounds.expand(point)
+		custom_aabb = bounds.grow(16.0)
+
+
+## [edges, heat] of the hot lava fronts of [param sim]. Reads the solver only: a worker that owns it may
+## call it (~3 ms over 3 000 wet cells, too much for the main thread twice a second).
+static func edges_of(sim) -> Array:
+	var edges := PackedVector3Array()
+	var heat := PackedFloat32Array()
 	var depths: PackedFloat64Array = sim.depth
 	var temperatures: PackedFloat64Array = sim.temperature
 	var positions: PackedVector2Array = sim.positions
@@ -89,14 +117,10 @@ func _scan_edges(sim) -> void:
 			if j < 0 or depths[j] >= 0.004: continue
 			var point := positions[i].lerp(positions[j], 0.4)
 			var y: float = maxf(sim.bed[i] + depths[i], sim.bed[j]) + 0.25
-			_edges.append(Vector3(point.x, y, point.y))
-			_heat.append(clampf((temperatures[i] - 850.0) / 350.0, 0.1, 1.0))
+			edges.append(Vector3(point.x, y, point.y))
+			heat.append(clampf((temperatures[i] - 850.0) / 350.0, 0.1, 1.0))
 			break
-	edge_count = _edges.size()
-	if not _edges.is_empty():
-		var bounds := AABB(_edges[0], Vector3.ZERO)
-		for point in _edges: bounds = bounds.expand(point)
-		custom_aabb = bounds.grow(16.0)
+	return [edges, heat]
 
 
 
