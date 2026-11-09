@@ -394,3 +394,12 @@ func test_the_raised_wrist_is_a_whitelisted_player_property() -> void:
 func test_the_wrist_screen_reads_the_tablet_clock() -> void:
 	var pattern := RegEx.create_from_string("^\\d\\d:\\d\\d$")
 	assert_not_null(pattern.search(TerminalUI.clock_text()))
+
+
+func test_f4_opens_straight_on_my_missions_and_closes_them() -> void:
+	_wrist.toggle_missions()
+	_run(1.0)
+	assert_eq(_tablet.current_app(), WristDatapad.MISSIONS_APP, "the missions app, once the arm is up")
+	_wrist.toggle_missions()
+	_run(1.0)
+	assert_eq(_tablet.current_app(), "", "pressed again on them: the DataPad closes")

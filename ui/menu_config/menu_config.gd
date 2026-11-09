@@ -41,6 +41,7 @@ const ACTION_GROUPS : Dictionary = {
 		},
 		"%%KM_SECTION_SERVICES": {
 			"toggle_services": "%%ACT_SERVICES",
+			"datapad_missions": "%%ACT_DATAPAD_MISSIONS",
 		},
 		"%%KM_SECTION_CHAT": {
 			"toggle_chat": "%%ACT_TOGGLE_CHAT",
