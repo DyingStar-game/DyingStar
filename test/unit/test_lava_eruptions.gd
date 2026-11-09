@@ -1,7 +1,7 @@
 extends GutTest
 ## Volcano eruptions driving the simulated lava: the 40-minute eruption schedule (VolcanoActivityProfile),
-## the integer eruption plan every peer derives its crater commands from (LavaPlanetPatch), the LavaFlow prop
-## codec, and the lava runtime driving a patch on the shared clock.
+## the integer eruption plan the authority derives its crater commands from (LavaPlanetPatch), the LavaFlow
+## prop's grid and summary codecs (LavaSummary), and the lava runtime driving a patch on the shared clock.
 ##
 ## Run with:
 ##     godot --headless -s addons/gut/gut_cmdln.gd \
@@ -10,6 +10,8 @@ extends GutTest
 const Builder = preload("res://scenes/planet/lava/lava_planet_patch.gd")
 const Core = preload("res://scenes/planet/lava/lava_fixed_core.gd")
 const Runtime = preload("res://scenes/planet/lava/lava_planet_runtime.gd")
+const Summary = preload("res://scenes/planet/lava/lava_summary.gd")
+const SummaryView = preload("res://scenes/planet/lava/lava_summary_view.gd")
 const SEED := 1234567
 const KEY := "test@1,2"
 
@@ -153,16 +155,54 @@ func test_commands_are_bounded_by_the_room_left_in_each_cell() -> void:
 	assert_true(core.advance_tick(1, commands), "the tick is accepted")
 
 
-func test_checkpoint_codec_round_trips_byte_for_byte() -> void:
+func test_grid_codec_round_trips_to_the_centimetre() -> void:
+	var core := _core()
+	var grid := Summary.decode_grid(Summary.encode_grid(core))
+	assert_eq([grid.width, grid.height, grid.crater_rows], [16, 8, 4])
+	assert_eq(grid.radial_edges_mm, core.radial_edges_mm)
+	for i in core.terrain_q.size():
+		assert_almost_eq(float(grid.bed[i]), core.terrain_q[i] / 1000.0, 0.0051, "ground of cell %d" % i)
+	assert_true(Summary.decode_grid(PackedByteArray([1, 2, 3, 4, 5])).is_empty(), "malformed bytes are refused")
+
+
+func test_summary_rebuilds_exactly_the_wet_cells() -> void:
 	var core := _core()
 	assert_true(core.advance_tick(1, core.disc_commands(0, 0, 50000, 400000, 12000)))
-	var bytes := core.checkpoint()
-	var text := LavaFlow.encode_checkpoint(bytes)
-	assert_lt(text.length(), bytes.size(), "compressed")
-	assert_eq(LavaFlow.decode_checkpoint(text), bytes)
-	assert_true(LavaFlow.decode_checkpoint("12:abc").is_empty(), "malformed text is refused")
-	assert_true(LavaFlow.decode_checkpoint(str(bytes.size() + 1) + text.substr(text.find(":"))).is_empty(),
-		"a wrong size is refused")
+	for tick in range(2, 40):
+		assert_true(core.advance_tick(tick))
+	var summary := Summary.new(40.0, 2)
+	summary.grow(core)
+	assert_gt(summary.seeds.size(), 0, "seeds on the lava")
+	var grid := Summary.decode_grid(Summary.encode_grid(core))
+	var view = SummaryView.from_grid(Summary.encode_grid(core))
+	var fields := Summary.reconstruct(summary.encode(core), view.positions, grid.bed)
+	assert_false(fields.is_empty())
+	assert_eq(int(fields.tick), 39)
+	for i in core.volume_q.size():
+		assert_eq(fields.wet[i] == 1, core.volume_q[i] > 0, "cell %d wet as in the simulation" % i)
+		if core.volume_q[i] > 0:
+			assert_gt(float(fields.depth[i]), 0.0, "a wet cell has lava")
+	view.apply(fields)
+	assert_eq(view.wet_indices.size(), core.wet_indices.size(), "the view shows the same cells")
+	assert_true(Summary.reconstruct(PackedByteArray([9, 9, 9, 9, 9]), view.positions, grid.bed).is_empty(),
+		"malformed bytes are refused")
+
+
+func test_authority_runtime_encodes_a_summary_on_request() -> void:
+	var plan := Builder.eruption_plan({"start_unix": 100.0, "length_s": 6.0, "strength": 1.0}, {"source_rate_q": 20000})
+	var clock := [100000 + 3000]
+	var runtime := _runtime(clock)
+	var description := _description(plan)
+	assert_true(runtime.install_patch(description))
+	_drive(runtime, description.key)
+	assert_eq(runtime.latest_summary(description.key), [], "nothing before it is asked")
+	runtime.request_summary(description.key)
+	clock[0] += 1000
+	_drive(runtime, description.key)
+	var latest: Array = runtime.latest_summary(description.key)
+	# By the first worker job after the request, at the tick it reached (later ones go on to the clock).
+	assert_between(int(latest[0]), 31, runtime.patch_tick(description.key), "encoded after the request")
+	assert_gt((latest[1] as PackedByteArray).size(), 0)
 
 
 func test_frame_round_trips_through_json() -> void:

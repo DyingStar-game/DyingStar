@@ -25,7 +25,8 @@
 				"source_rate_q",
 				"crater_rows",
 				"field_radius_m",
-				"plan"
+				"plan",
+				"grid"
 			]
 		},
 		{
@@ -33,18 +34,8 @@
 			"distance": 25000.0,
 			"frequency": 1.0,
 			"properties": [
-				"checkpoint",
-				"checkpoint_tick",
-				"schema"
-			]
-		},
-		{
-			"zone": 1,
-			"distance": 25000.0,
-			"frequency": 1.0,
-			"properties": [
-				"tick",
-				"digest"
+				"summary",
+				"summary_tick"
 			]
 		}
 	]
