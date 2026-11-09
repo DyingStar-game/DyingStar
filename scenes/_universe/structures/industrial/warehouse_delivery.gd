@@ -111,6 +111,14 @@ static func on_stored(crate: Node, shelf: Node, player: Node = null) -> void:
 	c["delivered_to"] = depot_uuid
 	c.erase("carrier_id")
 	c.erase("reserved_for")
+	# A mission's crate put back on a shelf (its taker's, or a storekeeper given it) stays its mission's: kept
+	# for the same players, not swapped for another (playtest 2026-11-09). TransportReservations lifts the
+	# mark if this is not the warehouse the mission loads from -- a delivery at its end.
+	var mission := CrateContent.mission_of(c)
+	if not mission.is_empty():
+		c["reserved_for"] = {"mission": mission.get("id", ""), "title": mission.get("title", ""),
+				"name": mission.get("name", ""), "ids": mission.get("ids", [])}
+	c.erase("for_mission")
 	# The warehouse's now: its owner on the plate.
 	c["owner"] = WarehouseOwner.plate_owner(owner)
 	c["owner_type"] = str(owner.get("type", ""))
@@ -167,6 +175,11 @@ static func on_taken(crate: Node, shelf: Node, player: Node) -> void:
 		return
 	c["carrier_id"] = carrier
 	c.erase("delivered_to")
+	# Kept for a transport: it goes on as that mission's load until it is delivered (its plate says so, and
+	# TransportReservations counts it as on its way instead of keeping another crate for it).
+	var mission := CrateContent.mission_of(c)
+	if not mission.is_empty():
+		c["for_mission"] = mission
 	c.erase("reserved_for")
 	c["move_seq"] = int(c.get("move_seq", 0)) + 1
 	update(crate, c)

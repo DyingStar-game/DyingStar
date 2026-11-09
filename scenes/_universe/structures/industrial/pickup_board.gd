@@ -83,6 +83,12 @@ func _compose(crates: Array) -> String:
 
 ## The board for [param crates] (TransportReservations.crates_of): its title, then a line per player and
 ## shelf holding crates kept for them. Pure, for the tests.
+## Where a crate is, as the board says it: the shelf's label, or the buffer rack's name.
+static func shelf_name(shelf: Node) -> String:
+	var label := ShelfLabels.label_for(shelf)
+	return label if label != "" else TranslationServer.translate("%%DEPOT_BUFFER")
+
+
 static func board_text(crates: Array) -> String:
 	var counts: Dictionary = {}  # [name, shelf, mineral] -> count
 	var order: Array = []
@@ -91,7 +97,7 @@ static func board_text(crates: Array) -> String:
 		var reserved: Variant = content.get("reserved_for")
 		if not (reserved is Dictionary):
 			continue
-		var key := [str((reserved as Dictionary).get("name", "")), ShelfLabels.label_for(crate.get_parent()),
+		var key := [str((reserved as Dictionary).get("name", "")), shelf_name(crate.get_parent()),
 				str(content.get("mineral", ""))]
 		if not counts.has(key):
 			counts[key] = 0

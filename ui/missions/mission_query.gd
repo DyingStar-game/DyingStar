@@ -72,9 +72,12 @@ static func time_of(mission: Dictionary, field: String) -> float:
 	return float(Time.get_unix_time_from_datetime_string(str(value).substr(0, 19)))
 
 
-## How long [param mission] has left from [param now] (Unix s), in seconds; -1 when it has no end.
-static func seconds_left(mission: Dictionary, now: float) -> int:
-	var end: float = time_of(mission, "expiresAt")
+## How long [param mission] has left from [param now] (Unix s), in seconds; -1 when it has no end. Once
+## taken, the player's own deadline ([param assignment]'s `deadlineAt`) comes first.
+static func seconds_left(mission: Dictionary, now: float, assignment: Variant = null) -> int:
+	var end: float = time_of(assignment, "deadlineAt") if assignment is Dictionary else INF
+	if is_inf(end):
+		end = time_of(mission, "expiresAt")
 	return -1 if is_inf(end) else maxi(int(end - now), 0)
 
 

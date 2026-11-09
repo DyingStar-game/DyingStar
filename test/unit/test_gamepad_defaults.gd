@@ -6,7 +6,7 @@ extends GutTest
 ## (toggle_services, F3) is there for now too: the pad has no button left to give it (Guide and Misc
 ## are the system's), and its way in on the pad is still to be chosen (a long press, a wheel entry).
 const KEYBOARD_ONLY : Array[String] = [
-	"toggle_services",
+	"toggle_services", "datapad_missions",
 	"toggle_chat", "write_in_chat", "toggle_speaker", "toggle_microphone", "voice_push_to_talk", "game_record", "screenshot",
 	"screenshot_debug", "spawn_wheel", "god_mode", "god_mode_land", "zapette", "debug_time_forward", "debug_time_back",
 	"debug_toggle_moon_lights", "debug_isolate_light", "debug_light_probe", "toggle_debug", "walk_speed_up", "walk_speed_down",

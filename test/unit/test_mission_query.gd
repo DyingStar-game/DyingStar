@@ -63,3 +63,20 @@ func test_time_left() -> void:
 	assert_eq(MissionQuery.seconds_left(MISSIONS[0], end - 3600.0), 3600)
 	assert_eq(MissionQuery.seconds_left(MISSIONS[0], end + 10.0), 0, "over, not negative")
 	assert_eq(MissionQuery.seconds_left(MISSIONS[2], end), -1, "no end")
+
+
+func test_once_taken_the_players_own_deadline_comes_first() -> void:
+	var end: float = MissionQuery.time_of(MISSIONS[0], "expiresAt")
+	var assignment := {"deadlineAt": "2026-11-05T08:00:00.000Z"}
+	assert_eq(MissionQuery.seconds_left(MISSIONS[0], end - 3 * 3600.0, assignment), 3600, "2 h before the mission's end")
+	assert_eq(MissionQuery.seconds_left(MISSIONS[2], end, {}), -1, "no deadline of their own: the mission's")
+
+
+func test_not_taken_it_says_its_time_limit_taken_the_time_left() -> void:
+	var tiered := {"id": "d", "expiresAt": null, "assignmentDeadlineHours": 4}
+	assert_eq(MissionTile.deadline_line(tiered, 0.0),
+			TranslationServer.translate("%%MISSION_TIME_LIMIT") % ServiceTypes.duration(4 * 3600), "not taken: its limit")
+	var now: float = MissionQuery.time_of({"t": "2026-11-05T06:00:00.000Z"}, "t")
+	assert_eq(MissionTile.deadline_line(tiered, now, {"deadlineAt": "2026-11-05T09:00:00.000Z"}),
+			TranslationServer.translate("%%MISSION_TIME_LEFT") % ServiceTypes.duration(3 * 3600), "taken: what is left")
+	assert_eq(MissionTile.deadline_line(MISSIONS[2], 0.0), TranslationServer.translate("%%MISSION_NO_DEADLINE"))

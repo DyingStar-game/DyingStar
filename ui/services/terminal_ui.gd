@@ -262,6 +262,11 @@ func open_navigation() -> void:
 		_opened_for_navigation = true  # after _show_navigation, which leaves the tab it replaces
 
 
+## The app on show (`missions`...), NAVIGATION for the chart, "" on the overview or closed.
+func current_app() -> String:
+	return _active_id if visible else ""
+
+
 func close() -> void:
 	_close_armed = false
 	release_fields()

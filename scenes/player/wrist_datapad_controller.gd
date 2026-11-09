@@ -36,6 +36,9 @@ const PARALLAX: float = 0.1
 const PARALLAX_RATE: float = 6.0
 ## How far (m) the ray through the cursor looks for the wrist's screen.
 const REACH_M: float = 2.0
+## The app and segment F4 opens: the missions, on the player's own.
+const MISSIONS_APP := "missions"
+const MY_MISSIONS_SEGMENT := 1
 ## How far (rad) the body may turn under the reader before the held orientation lets go (_steady_body):
 ## a tenth of a milliradian, 0.03 mm at the wrist -- far below what a vehicle that actually turns does.
 const STEADY_RAD: float = 1e-4
@@ -78,6 +81,15 @@ func toggle() -> void:
 			_lower()
 		Phase.OPEN:
 			_terminal.close()  # the tablet hides, and that lowers the arm (_on_terminal_visibility_changed)
+
+
+## Bring the DataPad up straight on My missions (F4, `datapad_missions`): the app, on its segment of the
+## player's own missions. Already showing them, it closes, as F3 does.
+func toggle_missions() -> void:
+	if phase == Phase.OPEN and _terminal.current_app() == MISSIONS_APP:
+		close()
+		return
+	open_with(_terminal.open_app.bind(MISSIONS_APP, MY_MISSIONS_SEGMENT))
 
 
 ## Bring the DataPad up, on its chart if `navigation` (F2). Already open, F2 only switches to the chart.

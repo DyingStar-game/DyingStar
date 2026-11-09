@@ -197,7 +197,8 @@ static func build_layout(content: Dictionary) -> Control:
 	paper.set_content_margin_all(26)
 	root.add_theme_stylebox_override("panel", paper)
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 9)
+	# A mission's band takes a line: the rows close up to keep the plate square.
+	col.add_theme_constant_override("separation", 9 if CrateContent.mission_of(content).is_empty() else 5)
 	root.add_child(col)
 
 	var logo := AresBrand.logo_control(AresBrand.Subsidiary.CORP, 50)
@@ -205,9 +206,11 @@ static func build_layout(content: Dictionary) -> Control:
 	col.add_child(logo)
 	col.add_child(_rule(3))
 
+	# A mission's crate gives the band below the room of a smaller picto (the plate is PX square).
+	var mission := CrateContent.mission_of(content)
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 22)
-	head.add_child(_framed(_icon(ICON_INGOT if ingot else ICON_ORE, 118)))
+	head.add_child(_framed(_icon(ICON_INGOT if ingot else ICON_ORE, 118 if mission.is_empty() else 84)))
 	var title := VBoxContainer.new()
 	title.alignment = BoxContainer.ALIGNMENT_CENTER
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -218,6 +221,9 @@ static func build_layout(content: Dictionary) -> Control:
 	title.add_child(kind)
 	head.add_child(title)
 	col.add_child(head)
+	# Kept for a transport, or taken for it and on its way: said at a glance, in a band of ink.
+	if not mission.is_empty():
+		col.add_child(_mission_band(str(mission.get("title", "")), str(mission.get("name", ""))))
 
 	col.add_child(_rule(3))
 	col.add_child(_row(ICON_MASS, "%%PLATE_MASS", "%.1f kg" % float(content.get("mass_kg", 0.0))))
@@ -229,10 +235,35 @@ static func build_layout(content: Dictionary) -> Control:
 			"%d %%" % roundi(float(content.get("purity", 0.0)) * 100.0)))
 	col.add_child(_rule(1))
 	col.add_child(_row(ICON_OWNER, "%%PLATE_OWNER", str(content.get("owner", CrateContent.OWNER_ARES))))
-	var reserved: Variant = content.get("reserved_for")
-	if reserved is Dictionary:  # kept for a transport: whose to take (TransportReservations)
-		col.add_child(_row(ICON_OWNER, "%%PLATE_RESERVED", str((reserved as Dictionary).get("name", ""))))
 	return root
+
+
+## The band of a mission's crate, paper on ink, on two lines: "MISSION" and whose load it is ("FOR
+## player-orin"), then the mission's name.
+static func _mission_band(title: String, player_name: String) -> Control:
+	var band := PanelContainer.new()
+	var box := StyleBoxFlat.new()
+	box.bg_color = INK
+	box.set_corner_radius_all(8)
+	box.set_content_margin_all(8)
+	band.add_theme_stylebox_override("panel", box)
+	var lines := VBoxContainer.new()
+	lines.add_theme_constant_override("separation", 0)
+	var top := HBoxContainer.new()
+	top.add_child(AresBrand.screen_label(tr_key("%%PLATE_MISSION"), 26, PAPER))
+	if player_name != "":
+		var whose := AresBrand.screen_label(tr_key("%%PLATE_RESERVED") + " " + player_name, 17, PAPER)
+		whose.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		whose.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		whose.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		whose.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		top.add_child(whose)
+	lines.add_child(top)
+	var name_line := AresBrand.screen_label(title, 19, PAPER)
+	name_line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	lines.add_child(name_line)
+	band.add_child(lines)
+	return band
 
 
 static func _row(icon: Texture2D, key: String, value: String) -> Control:
@@ -288,6 +319,12 @@ static func _tag(key: String) -> Control:
 	tag.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	tag.add_child(AresBrand.screen_label(key, 20, PAPER))
 	return tag
+
+
+## [param key] in the language of the game: the plate is drawn into a texture, where a Label's own
+## auto-translation is not to be relied on.
+static func tr_key(key: String) -> String:
+	return TranslationServer.translate(key)
 
 
 static func _rule(px: int) -> Control:

@@ -18,6 +18,9 @@ const WAKE_GRACE_S := 20.0
 const CRATE_TYPE := "crate_container"
 ## The SpawnCatalog entry of the crate a warehouse is stocked with (CargoDepot.FILL_CATALOG_KEY too).
 const CRATE_CATALOG_KEY := "hauling_box"
+## The least a stocked crate is filled to (of a full one): its weight is drawn between that and full, so
+## the crates of a warehouse do not all weigh the same (playtest 2026-11-09).
+const MIN_FILL := 0.6
 ## Depot meta: ticks msec until which crates just spawned there are on their way through Horizon --
 ## counted by nobody yet, so the depot is not reconciled before (hold_off).
 const HOLD_META := &"stock_hold_until_ms"
@@ -30,6 +33,7 @@ const UNMARKED_META := &"stock_unmarked_since_ms"
 const UNMARKED_S := 60.0
 
 static var _next_ms: int = 0
+static var _rng := RandomNumberGenerator.new()
 static var _running: bool = false
 ## Depot node instance id -> ticks msec it was first seen awake.
 static var _seen_ms: Dictionary = {}
@@ -67,14 +71,15 @@ static func _settled(depot: Node) -> bool:
 	if Time.get_ticks_msec() - int(_seen_ms[id]) < int(WAKE_GRACE_S * 1000.0):
 		return false
 	var why := _moving_reason(depot)
-	_say(depot, why)
+	if why != "":
+		_say(depot, why)
 	return why == ""
 
 
 ## Log once why [param depot] is left alone ([param why]), until the reason changes.
 static func _say(depot: Node, why: String) -> void:
 	var id := depot.get_instance_id()
-	if why != "" and str(_said.get(id, "")) != why:
+	if str(_said.get(id, "")) != why:
 		print("[Stock] %s: left alone, %s" % [depot.name, why])
 	_said[id] = why
 
@@ -126,17 +131,26 @@ static func reconcile(depot: Node) -> void:
 		var sum := 0
 		for crate: Node in crates:
 			sum += int((crate.get("content") as Dictionary).get("units", 0))
-		var per_crate := int(_new_content(good, {}).get("units", 0))
-		var change := change_for(int(stock.get(good, 0)), sum, per_crate)
+		var full := int(_new_content(good, {}).get("units", 0))
+		var units: Array = []
+		var kept: Array = []
+		for crate: Node in crates:
+			var content: Dictionary = crate.get("content")
+			units.append(int(content.get("units", 0)))
+			kept.append(content.get("reserved_for") is Dictionary)
+		var have := int(stock.get(good, 0))
+		var taken := take_plan(units, kept, sum - have)
+		var fills := fills_for(have - sum, full, _rng)
 		if not _reported.has(depot.get_instance_id()):
-			print("[Stock] %s: %s stock %d, crates %d kg (%d) -> %+d crate(s)" % [depot.name, good,
-					int(stock.get(good, 0)), sum, crates.size(), change])
-		if change < 0:
-			_take(crates, -change, good, depot.name)
-		elif change > 0:
-			await _add(depot, good, change)
+			print("[Stock] %s: %s stock %d, crates %d kg (%d) -> -%d / +%d crate(s)" % [depot.name, good,
+					have, sum, crates.size(), taken.size(), fills.size()])
+		if not taken.is_empty():
+			_take(crates, taken, good, depot.name)
+		elif not fills.is_empty():
+			await _add(depot, good, fills)
 	if is_instance_valid(depot):
 		_reported[depot.get_instance_id()] = true
+		_said.erase(depot.get_instance_id())  # reconciled: a later reason is said again
 
 
 ## The quantity of each good a warehouse holds, from service-inventory's holder view.
@@ -149,18 +163,35 @@ static func stock_of(view: Variant) -> Dictionary:
 	return out
 
 
-## How many crates to take (negative) or add (positive) so crates holding [param crate_units] in all match a
-## stock of [param stock], each new crate worth [param per_crate]: only whole crates, and a crate is taken
-## only when the stock is short of it by a whole crate -- what is left under a crate's worth stays as it is,
-## so the two directions never fight. Pure, for the tests.
-static func change_for(stock: int, crate_units: int, per_crate: int) -> int:
-	if per_crate <= 0:
-		return 0
-	if crate_units - stock >= per_crate:
-		return -int(float(crate_units - stock) / float(per_crate))
-	if stock - crate_units >= per_crate:
-		return int(float(stock - crate_units) / float(per_crate))
-	return 0
+## Which crates to take (indices in [param units], their weights) when they hold [param excess] more than
+## the stock: the last first, each only when the excess covers its whole weight, never one [param kept] for
+## a transport. What is left under a crate stays as it is, so taking and stocking never fight. Pure.
+static func take_plan(units: Array, kept: Array, excess: int) -> Array[int]:
+	var out: Array[int] = []
+	for i: int in range(units.size() - 1, -1, -1):
+		if excess <= 0:
+			break
+		if i < kept.size() and bool(kept[i]):
+			continue
+		if int(units[i]) > 0 and int(units[i]) <= excess:
+			out.append(i)
+			excess -= int(units[i])
+	return out
+
+
+## The fills (of a full crate, worth [param full] units) of the crates to stock for [param missing] units:
+## each drawn by [param rng] between MIN_FILL and full, the last cut to what is missing, and none once less
+## than the lightest crate is missing. Pure but for the draw.
+static func fills_for(missing: int, full: int, rng: RandomNumberGenerator) -> Array[float]:
+	var out: Array[float] = []
+	if full <= 0:
+		return out
+	var least := ceili(full * MIN_FILL)
+	while missing >= least:
+		var fill := minf(rng.randf_range(MIN_FILL, 1.0), float(missing) / float(full))
+		out.append(fill)
+		missing -= roundi(full * fill)
+	return out
 
 
 ## The shelved crates of [param good] in [param depot], those that may go first (not kept for a transport),
@@ -173,14 +204,12 @@ static func crates_of_good(depot: Node, good: String) -> Array:
 	return out
 
 
-## Take [param count] crates of [crates] off their shelves for good, never one kept for a transport.
-static func _take(crates: Array, count: int, good: String, depot_name: String) -> void:
+## Take the crates of [param crates] at [param indices] (take_plan) off their shelves for good.
+static func _take(crates: Array, indices: Array[int], good: String, depot_name: String) -> void:
 	var taken := 0
-	for i: int in range(crates.size() - 1, -1, -1):
-		if taken >= count:
-			break
+	for i: int in indices:
 		var crate: Node = crates[i]
-		if (crate.get("content") as Dictionary).get("reserved_for") is Dictionary:
+		if not is_instance_valid(crate):
 			continue
 		var shelf := crate.get_parent()
 		if shelf != null and shelf.has_method("release_cargo"):
@@ -193,9 +222,10 @@ static func _take(crates: Array, count: int, good: String, depot_name: String) -
 	print("[Stock] %s: %d crate(s) of %s taken off the shelves (consumed)" % [depot_name, taken, good])
 
 
-## Put [param count] crates of [param good] on free slots of [param depot]'s shelves, as if delivered: the
-## stock already holds their goods, so nothing is credited.
-static func _add(depot: Node, good: String, count: int) -> void:
+## Put a crate of [param good] per fill of [param fills] on free slots of [param depot]'s shelves, as if
+## delivered: the stock already holds their goods, so nothing is credited.
+static func _add(depot: Node, good: String, fills: Array[float]) -> void:
+	var count := fills.size()
 	var owner: Dictionary = await WarehouseOwner.owner_of(depot)
 	if not is_instance_valid(depot):
 		return
@@ -206,7 +236,7 @@ static func _add(depot: Node, good: String, count: int) -> void:
 		if not (shelf is Shelf) or (shelf as Shelf).uuid == "" or ShelfLabels.label_for(shelf) == "":
 			continue
 		for idx: int in (shelf as Shelf).reserve_free_slots(count - batch.size()):
-			batch.append(crate_spawn(shelf as Shelf, idx, _new_content(good, owner), _uuid_of(depot)))
+			batch.append(crate_spawn(shelf as Shelf, idx, _new_content(good, owner, fills[batch.size()]), _uuid_of(depot)))
 	hold_off(depot)
 	NetworkOrchestrator.spawn_props_authoritative(batch, false)
 	print("[Stock] %s: %d crate(s) of %s put on the shelves (stock)" % [depot.name, batch.size(), good])
@@ -231,10 +261,10 @@ static func crate_spawn(shelf: Shelf, idx: int, content: Dictionary, depot_uuid:
 
 
 ## A crate of [param good] as the gold chain packs it (SpawnCatalog's test crate), its owner the warehouse's.
-static func _new_content(good: String, owner: Dictionary) -> Dictionary:
+static func _new_content(good: String, owner: Dictionary, fill: float = 1.0) -> Dictionary:
 	var kind := CrateContent.KIND_INGOT if good.begins_with(CrateContent.INGOT_GOOD_PREFIX) else CrateContent.KIND_CRUSHED
 	var plate := WarehouseOwner.plate_owner(owner) if not owner.is_empty() else CrateContent.OWNER_ARES
-	var content := SpawnCatalog.test_crate({"crate": kind}, "", plate)
+	var content := SpawnCatalog.test_crate({"crate": kind}, "", plate, fill)
 	if not owner.is_empty():
 		content["owner_type"] = str(owner.get("type", ""))
 		content["owner_id"] = str(owner.get("id", ""))

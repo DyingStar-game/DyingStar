@@ -5,16 +5,17 @@ extends GutTest
 const PAGE : PackedScene = preload("res://ui/menu_config/MenuConfig.tscn")
 
 
-func test_general_is_cut_into_four_titled_sections() -> void:
+func test_general_is_cut_into_five_titled_sections() -> void:
 	var sections : Array = MenuConfig.sections_of(MenuConfig.ACTION_GROUPS["%%KM_GROUP_GENERAL"])
 	var titles : Array = sections.map(func(s: Array) -> String: return s[0])
-	assert_eq(titles, ["", "%%KM_SECTION_STAR_MAP", "%%KM_SECTION_CHAT", "%%KM_SECTION_AUDIO",
-			"%%KM_SECTION_GALLERY"], "pause on its own first, then the four")
+	assert_eq(titles, ["", "%%KM_SECTION_STAR_MAP", "%%KM_SECTION_SERVICES", "%%KM_SECTION_CHAT",
+			"%%KM_SECTION_AUDIO", "%%KM_SECTION_GALLERY"], "pause on its own first, then the five")
+	assert_true((sections[2][1] as Dictionary).has("datapad_missions"), "F4 with the DataPad, to be changed")
 	assert_true((sections[1][1] as Dictionary).has("star_map"), "the chart under its title")
 	for gesture: String in ["star_map_select", "star_map_reset", "star_map_orbit", "star_map_zoom_step_in",
 			"star_map_zoom_step_out", "star_map_orbit_left"]:
 		assert_true((sections[1][1] as Dictionary).has(gesture), "%s with the chart, to be changed" % gesture)
-	assert_true((sections[4][1] as Dictionary).has("screenshot"), "the captures under theirs")
+	assert_true((sections[5][1] as Dictionary).has("screenshot"), "the captures under theirs")
 
 
 func test_a_family_without_sections_is_one_untitled_section() -> void:
@@ -33,7 +34,7 @@ func test_the_titles_show_on_their_tab_and_give_way_to_a_search() -> void:
 	var page : MenuConfig = PAGE.instantiate()
 	add_child_autofree(page)
 	var general : Dictionary = page._groups[0]
-	assert_eq((general["sections"] as Array).size(), 4, "four titles in General")
+	assert_eq((general["sections"] as Array).size(), 5, "five titles in General")
 	var star_map_title : Label = general["sections"][0]["header"]
 	assert_eq(star_map_title.text, "%%KM_SECTION_STAR_MAP")
 	assert_true(star_map_title.visible, "shown on the General tab")

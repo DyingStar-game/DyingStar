@@ -735,6 +735,12 @@ func _process(_delta: float) -> void:
 		player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 		player.interact_label.show()
 
+	# The DataPad up on the wrist (F3, F2): no prompt over it, nothing in the world is to be used meanwhile
+	# (playtest 2026-11-09: a truck bed's "carry" showed through the tablet).
+	if _wrist != null and _wrist.is_up():
+		player.interact_label.hide()
+		player.can_interact = false
+
 	var dir_vect = Vector3.ZERO
 
 
@@ -1235,6 +1241,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if InputCombo.pressed(event, "toggle_services") and _wrist != null:
 		_wrist.toggle()  # wrist up, view in, tablet on -- or all of it back
+		return
+	if InputCombo.pressed(event, "datapad_missions") and _wrist != null:
+		_wrist.toggle_missions()  # F4: the DataPad straight on My missions (playtest 2026-11-09)
 		return
 	if _star_map_open() or _services_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y. We only ASK: the server owns the gate

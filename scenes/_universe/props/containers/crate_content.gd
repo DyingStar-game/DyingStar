@@ -19,7 +19,9 @@ extends RefCounted
 ##   miner_id    service identity of the player who extracted it: the one the inventory credits
 ##   carrier_id  the player who took it off a warehouse shelf last (a transport), holding its goods
 ##   owner_type, owner_id  once shelved: the warehouse's owner (WarehouseOwner), `owner` its name
-##   reserved_for  shelved, kept for a transport: {mission, name, ids} — who may take it off the shelf
+##   reserved_for  shelved, kept for a transport: {mission, title, name, ids} — who may take it off the shelf
+##   for_mission  taken off a shelf for a transport, until it is delivered: {id, title, name, ids} — the plate
+##               says MISSION, and TransportReservations counts it as on its way
 
 const KIND_CRUSHED := "crushed"
 const KIND_INGOT := "ingot"
@@ -92,6 +94,19 @@ static func units_of_mass(mass_kg: float) -> int:
 
 
 ## The metal a crate holds, in game kg: its ore without the barren rock (what refining it gives).
+## The mission [param content] is kept or carried for: {id, title, name, ids}, {} for none. A shelved crate kept
+## for a transport (reserved_for) or one taken for it and not delivered yet (for_mission).
+static func mission_of(content: Dictionary) -> Dictionary:
+	var carried: Variant = content.get("for_mission")
+	if carried is Dictionary:
+		return carried
+	var kept: Variant = content.get("reserved_for")
+	if kept is Dictionary:
+		return {"id": str((kept as Dictionary).get("mission", "")), "title": str((kept as Dictionary).get("title", "")),
+				"name": str((kept as Dictionary).get("name", "")), "ids": (kept as Dictionary).get("ids", [])}
+	return {}
+
+
 static func metal_kg(content: Dictionary) -> float:
 	return game_mass(str(content.get("mineral", "")), float(content.get("ore_m3", 0.0)), 0.0)
 
