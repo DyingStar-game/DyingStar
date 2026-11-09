@@ -11,20 +11,19 @@ extends Node
 ##      field is kept per volcano, the relief does not change between eruptions;
 ##   2. the integer plan of the eruption is set and the patch installed in the planet's lava runtime, which
 ##      runs its ticks on the shared clock, catching up when the eruption started before anyone came near;
-##   3. once caught up, the LavaFlow prop is created (or updated: one per volcano), then every
-##      [constant DIGEST_MS] its tick and state digest, every [constant CHECKPOINT_MS] its checkpoint;
+##   3. once caught up, the LavaFlow prop is created (or updated: one per volcano) with the field's grid (once,
+##      ~20 KB) and a LavaSummary of the lava (~3 KB: wet mask + Voronoi seeds), the summary again every
+##      LavaSummary.INTERVAL_MS. Clients only draw it: they do not simulate;
 ##   4. when the eruption is over and its deposit has cooled and gone, the prop is deleted.
-## A LavaFlow already known for that eruption (another server, or this one before a restart) is adopted from
-## its checkpoint instead of sampled again; one left over from a finished eruption is deleted.
+## A LavaFlow already known for that eruption (another server, or this one before a restart) is simulated again
+## from the start of its plan, then updated; one left over from a finished eruption is deleted.
 ##
-## Every peer runs the same integer simulation from the same checkpoint and plan: two servers adopting the same
-## eruption publish the same states.
+## The simulation is deterministic: two servers simulating the same eruption reach the same states.
 
 const Builder = preload("res://scenes/planet/lava/lava_planet_patch.gd")
 const Core = preload("res://scenes/planet/lava/lava_fixed_core.gd")
+const Summary = preload("res://scenes/planet/lava/lava_summary.gd")
 const SWEEP_MS := 1000
-const DIGEST_MS := 5000
-const CHECKPOINT_MS := 60000
 ## How long after receiving zones (or booting) the objects of those zones may still be on their way (ms): a
 ## persisted LavaFlow must be found before a new one is made.
 const SETTLE_MS := 20000
@@ -65,7 +64,7 @@ var now_ms: Callable = func() -> int: return Time.get_ticks_msec()
 var clock_ms: Callable = func() -> int: return int(Globals.reference_time() * 1000.0)
 
 ## prop uuid -> {planet, volcano, window, packet, plan, key, state ("tiles" | "build" | "run"), job,
-## published, next_digest_ms, next_checkpoint_ms}
+## published, next_summary_ms, sent_tick}
 var _eruptions: Dictionary = {}
 ## planet uuid -> Array of the volcanoes that can erupt.
 var _volcanoes: Dictionary = {}
@@ -195,7 +194,7 @@ func _report_nearest(planet: Planet, points: PackedVector3Array, profile: Volcan
 func _begin(uuid: String, planet: Planet, v: VolcanoRelief.Volcano, window: Dictionary, start_ms: int,
 		known: Dictionary) -> void:
 	var e := {"planet": planet, "volcano": v, "window": window, "packet": {}, "plan": {"start_unix_ms": start_ms},
-		"key": "", "state": "tiles", "job": null, "published": false, "next_digest_ms": 0, "next_checkpoint_ms": 0,
+		"key": "", "state": "tiles", "job": null, "published": false, "next_summary_ms": 0, "sent_tick": -1,
 		"since_ms": int(now_ms.call()), "next_wait_log_ms": int(now_ms.call()) + WAIT_LOG_MS}
 	_eruptions[uuid] = e
 	print("[LAVA] %s: eruption under way since %s (%d min, strength %.2f), a player within %.0f km" % [
@@ -203,15 +202,8 @@ func _begin(uuid: String, planet: Planet, v: VolcanoRelief.Volcano, window: Dict
 		roundi(float(window.length_s) / 60.0), float(window.strength), activation_radius_m / 1000.0])
 	var plan: Variant = known.get("plan")
 	if plan is Dictionary and int((plan as Dictionary).get("start_unix_ms", -1)) == start_ms:
-		var description := LavaFlow.description_from(known)
-		if not description.is_empty() and _runtime_of(planet).install_patch(description):
-			e.key = description.key
-			e.plan = description.plan
-			e.state = "run"
-			e.published = true
-			print("[LAVA] %s: eruption adopted from its LavaFlow at tick %d" % [
-				description.volcano_key, int(known.get("checkpoint_tick", 0))])
-			return
+		# Its prop exists (another server, or this one before a restart): simulated again, then updated.
+		print("[LAVA] %s: its LavaFlow exists, simulating the eruption again from its start" % _base_key(planet, v))
 	var cached: Dictionary = _empty.get(_base_key(planet, v), {})
 	if not cached.is_empty():
 		_built(e, cached)
@@ -230,8 +222,14 @@ func _built(e: Dictionary, packet: Dictionary) -> void:
 	if not _empty.has(base):
 		if _empty.size() >= EMPTY_KEEP:
 			_empty.erase(_empty.keys()[0])
+		# The grid a client draws on (cells and ground), the same for every eruption of this volcano.
+		var core := Core.new()
+		if core.restore(packet.checkpoint):
+			packet = packet.duplicate()
+			packet.grid = Marshalls.raw_to_base64(Summary.encode_grid(core))
 		_empty[base] = packet
-		print("[LAVA] %s sampled in %.0f ms (field %.0f m)" % [base, float(packet.build_ms), float(packet.field_radius_m)])
+		print("[LAVA] %s sampled in %.0f ms (field %.0f m, grid %d B)" % [base, float(packet.build_ms),
+			float(packet.field_radius_m), str(packet.get("grid", "")).length()])
 	var description: Dictionary = packet.duplicate()
 	description.key = base
 	description.plan = Builder.eruption_plan(e.window, packet)
@@ -246,7 +244,7 @@ func _built(e: Dictionary, packet: Dictionary) -> void:
 	e.state = "run"
 
 
-## Prop, digests and checkpoints of a running eruption; its end once the deposit is gone.
+## Prop and summaries of a running eruption; its end once the deposit is gone.
 func _publish(uuid: String, e: Dictionary, now: int) -> void:
 	var runtime := _runtime_of(e.planet)
 	if runtime == null or not runtime.patches.has(e.key):
@@ -271,39 +269,30 @@ func _publish(uuid: String, e: Dictionary, now: int) -> void:
 				print("[LAVA] %s: catching up the eruption, tick %d/%d (%.0f ticks/s, ~%.0f s left)" % [
 					e.key, tick, target, rate, (target - tick) / rate if rate > 0.0 else -1.0])
 			return
-		var data := LavaFlow.description_fields(e.packet, e.plan)
-		data.merge(_state_fields(runtime, e.key))
-		data.merge({"type": LavaFlow.TYPE, "uuid": uuid, "scenename": LavaFlow.SCENE, "parent_id": e.planet.uuid,
-			"position": _vec(e.packet.frame.origin), "rotation": _vec(Vector3.ZERO)})
-		if (registry_data.call(uuid) as Dictionary).is_empty():
-			spawn_prop.call(data)
-		else:
-			update_prop.call(uuid, _flat(data), LavaFlow.TYPE)
-		e.published = true
-		e.next_digest_ms = now + DIGEST_MS
-		e.next_checkpoint_ms = now + CHECKPOINT_MS
-		print("[LAVA] %s: eruption published at tick %d (%d s, strength %.2f)" % [
-			e.key, tick, int(e.plan.eruption_ticks) / 10, int(e.plan.strength_milli) / 1000.0])
+	# A summary is encoded by the patch's next worker job: asked every interval, sent once it is there.
+	if now >= int(e.next_summary_ms):
+		e.next_summary_ms = now + Summary.INTERVAL_MS
+		runtime.request_summary(e.key)
+	var latest: Array = runtime.latest_summary(e.key)
+	if latest.is_empty() or int(latest[0]) <= int(e.sent_tick) or (not e.published and int(latest[0]) < target - 1):
 		return
-	if now >= e.next_checkpoint_ms:
-		e.next_checkpoint_ms = now + CHECKPOINT_MS
-		update_prop.call(uuid, _state_fields(runtime, e.key), LavaFlow.TYPE)
-	elif now >= e.next_digest_ms:
-		e.next_digest_ms = now + DIGEST_MS
-		var digest: Array = runtime.latest_digest(e.key)
-		if not digest.is_empty():
-			update_prop.call(uuid, {"tick": digest[0], "digest": digest[1]}, LavaFlow.TYPE)
-
-
-## Checkpoint, its tick and the latest digest of a patch: what a client starts from.
-func _state_fields(runtime: Node3D, key: String) -> Dictionary:
-	var checkpoint: PackedByteArray = runtime.patch_checkpoint(key)
-	var fields := {"checkpoint": LavaFlow.encode_checkpoint(checkpoint), "checkpoint_tick": runtime.patch_tick(key),
-		"schema": Core.SCHEMA}
-	var digest: Array = runtime.latest_digest(key)
-	if not digest.is_empty():
-		fields.merge({"tick": digest[0], "digest": digest[1]})
-	return fields
+	e.sent_tick = int(latest[0])
+	var fields := {"summary": Marshalls.raw_to_base64(latest[1]), "summary_tick": int(latest[0])}
+	if e.published:
+		update_prop.call(uuid, fields, LavaFlow.TYPE)
+		return
+	var data := LavaFlow.description_fields(e.packet, e.plan)
+	data.merge(fields)
+	data.merge({"type": LavaFlow.TYPE, "uuid": uuid, "scenename": LavaFlow.SCENE, "parent_id": e.planet.uuid,
+		"position": _vec(e.packet.frame.origin), "rotation": _vec(Vector3.ZERO), "grid": str(e.packet.get("grid", ""))})
+	if (registry_data.call(uuid) as Dictionary).is_empty():
+		spawn_prop.call(data)
+	else:
+		update_prop.call(uuid, _flat(data), LavaFlow.TYPE)
+	e.published = true
+	print("[LAVA] %s: eruption published at tick %d (%d s, strength %.2f; grid %d B, summary %d B)" % [
+		e.key, tick, int(e.plan.eruption_ticks) / 10, int(e.plan.strength_milli) / 1000.0, str(data.grid).length(),
+		str(fields.summary).length()])
 
 
 ## Ends the eruption [param uuid]: its patch goes, and its prop too when [param delete] is set.

@@ -130,15 +130,37 @@ Le prop `lava_flow` (un par volcan, uuid stable) porte, par canal GORC (25 km) :
 | Zone | Champs | Rythme |
 |---|---|---|
 | 0 | `position` (sommet), `rotation`, `parent_id` (planète) | à la création |
-| 6 | description du champ (`frame` en 12 nombres, source, `patch_key`) et `plan` | à chaque éruption |
-| 2 | `checkpoint` (`<taille>:<base64 deflate>`, ~100-200 Ko), `checkpoint_tick`, `schema` | 60 s |
-| 1 | `tick`, `digest` (SHA-256 de l’état à un tick multiple de 50) | 5 s |
+| 6 | description du champ (`frame` en 12 nombres, source, `patch_key`), `plan` et `grid` | à chaque éruption |
+| 2 | `summary` (base64, ~3-6 Ko) et `summary_tick` | 3 s |
 
-Le runtime de chaque `PlanetTerrain` avance les zones munies d’un plan sur l’horloge partagée
-(`Globals.reference_time`), sur un travailleur, quelques ticks par image en rattrapage. Un client arrivé en
-cours d’éruption reçoit le dernier checkpoint (≤ 60 s) et rattrape. Il compare ses empreintes à celles de
-l’autorité ; un écart arrête la zone jusqu’au checkpoint suivant, qui la remplace. Le serveur supprime le
-prop une fois le dépôt disparu ; un prop persisté d’une éruption finie est supprimé à l’approche d’un joueur.
+Seul le serveur simule. Le runtime de son `PlanetTerrain` avance les zones munies d’un plan sur l’horloge
+partagée (`Globals.reference_time`), sur un travailleur, en rattrapant le début de l’éruption si besoin.
+Le même travailleur fait pousser un `LavaSummary` (`scenes/planet/lava/lava_summary.gd`) et l’encode à la
+demande de `server/lava_eruptions.gd` :
+
+- `grid` (une fois, ~17 Ko compressé, 23 Ko en base64) : secteurs, anneaux, rangées du cratère, bords des anneaux en mm et sol
+  de chaque cellule au centimètre (écarts le long des secteurs, entiers variables) ;
+- `summary` : le **masque exact** des cellules mouillées (1 bit par cellule) et des **germes de Voronoï**,
+  des cellules ajoutées au fil de l’avancée de la lave et jamais déplacées : sur les flancs, une cellule
+  mouillée à plus de 150 m de tout germe ; dans le cratère, une cellule à plus de 6 secteurs des germes de
+  son anneau (le cratère n’est pas symétrique : un même anneau central peut porter 0,3 m et 34 m). Chaque germe porte épaisseur (cm), température (pas de 5 °C),
+  âge de surface (s), effacement et écoulement (0,1 m/s).
+
+Le client ne simule pas. Il reconstruit sur un travailleur chaque cellule mouillée à partir des 4 germes
+les plus proches de sa zone (cratère ou flancs, jamais mélangés : un bassin de 140 m ne doit pas épaissir
+les coulées voisines). Sur les flancs, la distance est en mètres ; dans le cratère, elle se compte sur la
+grille polaire (secteurs, anneaux), et l’épaisseur retenue est la plus petite entre l’épaisseur interpolée
+et le **niveau** interpolé au-dessus du sol de la cellule (un bassin est plat, une pellicule suit la paroi).
+Le rendu interpole ensuite entre deux résumés. Mesure sur une éruption de 40 min à force 1,6
+(`test/lava/lava_summary_probe.tscn`) : masque exact, épaisseur à ~1 % dans le cratère, 1-5 cm sur les
+flancs, lueur à ~0,02 et croûte à ~0,01 près (échelle 0-1), résumé de 3 à 5 Ko contre ~150 Ko de checkpoint
+auparavant. Au début d’une éruption (dôme de 34 m à la bouche), l’écart d’épaisseur est de 7 %
+(`test/lava/test_eruption_server.tscn`). La reconstruction coûte ~0,5 s de GDScript, sur un travailleur.
+
+Un client arrivé en cours d’éruption affiche le dernier résumé, sans rattrapage. Un serveur qui reprend une
+éruption (redémarrage, passage de zone) la resimule depuis le début de son plan puis met le prop à jour. Le
+serveur supprime le prop une fois le dépôt disparu ; un prop persisté d’une éruption finie est supprimé à
+l’approche d’un joueur. Checkpoints et empreintes restent l’outil des tests et de l’aperçu hors ligne.
 
 L’aperçu `test/volcano/viscous_lava_preview.gd` reste une autorité locale hors ligne, avec les mêmes
 commandes entières. Collision et dégâts ne sont pas raccordés.

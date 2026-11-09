@@ -15,13 +15,14 @@ Le serveur de jeu (`server/lava_eruptions.gd`) simule l’éruption des volcans 
 (50 km, `[lava]` de `server.ini`). Il échantillonne le cratère une fois, quelques anneaux par image, puis
 publie un prop `lava_flow` (`scenes/planet/lava/lava_flow.gd`) :
 
-- le **plan entier** de l’éruption et la description du champ (zone 6) ;
-- le **checkpoint** compressé, renouvelé chaque minute (zone 2) ;
-- le **tick et l’empreinte** de l’état, toutes les 5 s (zone 1).
+- le **plan entier** de l’éruption, la description du champ et sa **grille** (cellules et sol, ~20 Ko,
+  zone 6) ;
+- un **résumé** de la lave toutes les 3 s (~3 Ko, zone 2) : masque exact des cellules mouillées et germes de
+  Voronoï portant épaisseur, chaleur et écoulement (`LavaSummary`).
 
-Chaque client à moins de 25 km restaure le checkpoint, puis calcule lui-même chaque tick : les commandes de
-source sont une fonction entière du tick et du plan (`LavaPlanetPatch.eruption_commands`). Une empreinte
-différente arrête la zone jusqu’au checkpoint suivant. Le prop est supprimé quand le dépôt a disparu.
+Les clients à moins de 25 km ne simulent pas : ils reconstruisent la lave depuis le dernier résumé, sur un
+travailleur, et l’affichent avec le même rendu (voir [NETWORK](NETWORK.md)). Le prop est supprimé quand le
+dépôt a disparu.
 Pas encore de collision ni de dégâts : la lave est visuelle.
 
 `--authored-lava` rétablit les coulées QGIS, leur nivellement et les lacs statiques (comparaison, debug).

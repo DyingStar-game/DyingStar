@@ -1,8 +1,9 @@
 extends Node
 ## LavaEruptions (the game server's lava authority) end to end on Tarsis III, without network: a dated
-## 20 s eruption of a real volcano near a viewer is sampled, caught up, published as a LavaFlow prop; a
-## replica installs it from the prop data alone and reaches the same state; the digests agree; the prop is
-## deleted once the deposit is gone. Hooks stand for server.gd (registry, spawn, update, delete).
+## 20 s eruption of a real volcano near a viewer is sampled, caught up, published as a LavaFlow prop (grid +
+## summary, no checkpoint); a client replica draws it from the prop data alone, covering exactly the
+## authority's cells; summaries keep flowing; the prop is deleted once the deposit is gone. Hooks stand for
+## server.gd (registry, spawn, update, delete).
 ##
 ##   godot --headless --path . res://test/lava/test_eruption_server.tscn -- --volcano-view
 
@@ -110,40 +111,60 @@ func _run() -> void:
 	var prop: Dictionary = _registry[uuid]
 	check(prop.type == LavaFlow.TYPE and prop.parent_id == PLANET_UUID and prop.scenename == LavaFlow.SCENE,
 		"prop type, scene and planet")
-	check(int(prop.checkpoint_tick) >= 99, "published once caught up (tick %d)" % int(prop.checkpoint_tick))
+	var first_tick := int(prop.summary_tick)  # prop is the registry's dictionary: later updates change it
+	check(first_tick >= 99, "published once caught up (tick %d)" % first_tick)
+	check(not prop.has("checkpoint") and str(prop.summary).length() < 8000 and str(prop.grid).length() < 60000,
+		"no checkpoint on the wire: summary %d B, grid %d B (base64)" % [str(prop.summary).length(),
+			str(prop.grid).length()])
 
-	# The replica: the prop's data through JSON (what Horizon carries), nothing else.
+	# The replica: the prop's data through JSON (what Horizon carries), nothing else. It draws, never simulates.
 	var wire: Dictionary = JSON.parse_string(JSON.stringify(prop))
 	var description := LavaFlow.description_from(wire)
 	check(not description.is_empty(), "the prop data describes the patch")
-	# A client runtime: its worker jobs also pack the textures and scan the smoke edges.
 	var replica: Node3D = Runtime.new()
 	replica.setup(data, false)
 	replica.clock_ms = func() -> int: return _clock[0]
 	add_child(replica)
-	check(replica.install_patch(description), "the replica installs it")
 	var patch_key := str(description.key)
-	await _frames_until(_caught_up.bind([authority, replica], patch_key), 600)
-	check(replica.patch_checkpoint(patch_key) == authority.patch_checkpoint(patch_key),
-		"replica and authority hold the same state at tick %d" % replica.patch_tick(patch_key))
+	check(replica.install_summary(description, description.grid), "the replica installs it")
+	replica.apply_summary(patch_key, LavaFlow.decode_bytes(wire.summary))
+	await _frames_until(func() -> bool: return _shown(replica, patch_key) > 0, 600)
+	var shown: Dictionary = replica.patches[patch_key]
+	check(_shown(replica, patch_key) > 0 and not shown.surface.has_prepared(),
+		"the client uploads the textures its worker rebuilt (%d)" % _shown(replica, patch_key))
+	check(shown.smoke != null and shown.smoke.edge_count > 0, "the client's smoke edges come from the summary (%d)" % (
+		shown.smoke.edge_count if shown.smoke else 0))
 
-	# 15 more seconds: digests flow and agree.
+	# 15 more seconds: summaries flow, the replica follows. A fresh one, at the authority's own tick, is compared.
 	for n in 150:
 		_clock[0] += 100
 		_wall[0] += 100
 		await get_tree().process_frame
-	await _frames_until(_caught_up.bind([authority, replica], patch_key), 600)
-	var digest: Array = authority.latest_digest(patch_key)
-	check(not digest.is_empty(), "the authority records digests")
-	if not digest.is_empty():
-		replica.expect_digest(patch_key, digest[0], digest[1])
-	check(not replica.is_diverged(patch_key), "the replica's digest matches")
-	var shown: Dictionary = replica.patches[patch_key]
-	check(shown.surface != null and shown.surface.publications > 0 and not shown.surface.has_prepared(),
-		"the client uploads the textures its worker packed (%d)" % (shown.surface.publications if shown.surface else 0))
-	check(shown.smoke != null and shown.smoke.edge_count > 0 and not shown.smoke.scan_wanted,
-		"the client's smoke edges come from its worker (%d)" % (shown.smoke.edge_count if shown.smoke else 0))
-	check(_updates > 0 and (_registry[uuid] as Dictionary).has("digest"), "digests are published")
+	await _frames_until(_caught_up.bind([authority], patch_key), 600)
+	check(_updates > 0 and int((_registry[uuid] as Dictionary).summary_tick) > first_tick,
+		"summaries are published (tick %d)" % int((_registry[uuid] as Dictionary).summary_tick))
+	authority.request_summary(patch_key)
+	_clock[0] += 100
+	await _frames_until(_fresh_summary.bind(authority, patch_key), 600)
+	var latest: Array = authority.latest_summary(patch_key)
+	var before := int(shown.surface.publications)
+	replica.apply_summary(patch_key, latest[1])
+	await _frames_until(func() -> bool: return int(shown.surface.publications) > before, 600)
+	var truth = authority.patches[patch_key].solver
+	var view = shown.solver
+	var mask_diff := 0
+	var depth_err := 0.0
+	var depth_sum := 0.0
+	for i: int in truth.volume_q.size():
+		var wet: bool = truth.volume_q[i] > 0
+		if wet != (view.volume_q[i] > 0):
+			mask_diff += 1
+		if wet:
+			depth_err += absf(truth.volume_q[i] * 1000.0 / truth.areas_q[i] - view.depth[i])
+			depth_sum += truth.volume_q[i] * 1000.0 / truth.areas_q[i]
+	check(int(latest[0]) == truth.tick and mask_diff == 0, "the replica's lava covers exactly the authority's cells")
+	check(depth_err <= depth_sum * 0.1, "the replica's depths are within 10 %% of the authority's (%.1f %%)" % (
+		100.0 * depth_err / maxf(depth_sum, 0.001)))
 
 	# Past the eruption and its ~302 s cleanup: the prop is deleted, the patch removed.
 	_clock[0] += 420000
@@ -168,6 +189,19 @@ func _caught_up(runtimes: Array, key: String) -> bool:
 		if runtime.patch_tick(key) < runtime.target_tick(key):
 			return false
 	return true
+
+
+## True once [param runtime] has encoded a summary at its patch's own tick, the clock reached.
+func _fresh_summary(runtime: Node3D, key: String) -> bool:
+	var latest: Array = runtime.latest_summary(key)
+	return not latest.is_empty() and int(latest[0]) == runtime.patch_tick(key) \
+		and runtime.patch_tick(key) >= runtime.target_tick(key)
+
+
+## Textures a replica's summary patch has uploaded (0 before the first summary is drawn).
+func _shown(runtime: Node3D, key: String) -> int:
+	var entry: Dictionary = runtime.patches.get(key, {})
+	return int(entry.surface.publications) if entry.get("surface") != null else 0
 
 
 func _quit() -> void:

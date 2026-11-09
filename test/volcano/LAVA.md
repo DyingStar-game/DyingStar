@@ -127,9 +127,11 @@ comptabiliser le retrait ; le repos vise les dépôts stables pendant les longue
 éruptions. Les résultats v2/v3/v4/v5 sont conservés comme archives.
 
 `test/lava/test_eruption_server.tscn` vérifie l’autorité du serveur sans réseau :
-échantillonnage, rattrapage, publication du prop, réplica construit depuis les
-seules données du prop (via JSON) identique à l’autorité, empreintes concordantes
-et suppression du prop après le nettoyage.
+échantillonnage, rattrapage, publication du prop (grille et résumé, sans
+checkpoint), réplica client dessiné depuis les seules données du prop (via JSON)
+couvrant exactement les cellules de l’autorité, résumés suivants et suppression
+du prop après le nettoyage. `test/lava/lava_summary_probe.tscn` mesure l’écart
+entre résumé et simulation sur une éruption complète.
 Le contrat de checkpoint v6 et les vérifications reproductibles sont dans
 [README](../lava/README.md) et [NETWORK](../lava/NETWORK.md).
 
