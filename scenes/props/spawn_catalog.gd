@@ -122,12 +122,12 @@ const TEST_GANGUE_KG_M3 := 2700.0
 
 
 ## The `content` of a test crate for [param entry] ({} when it is no crate), mined by [param miner_id]
-## whose name is [param miner_name].
-static func test_crate(entry: Dictionary, miner_id: String, miner_name: String = "") -> Dictionary:
+## whose name is [param miner_name], filled to [param fill] of the crate (1: full).
+static func test_crate(entry: Dictionary, miner_id: String, miner_name: String = "", fill: float = 1.0) -> Dictionary:
 	var kind := str(entry.get("crate", ""))
 	if kind == "":
 		return {}
-	var crate_m3 := CrateContent.crate_volume()
+	var crate_m3 := CrateContent.crate_volume() * clampf(fill, 0.0, 1.0)
 	var gangue_m3 := crate_m3 * (1.0 - TEST_PURITY)
 	var crushed := CrateContent.crushed(TEST_MINERAL, crate_m3 * TEST_PURITY, gangue_m3,
 		gangue_m3 * TEST_GANGUE_KG_M3, miner_id, miner_name)

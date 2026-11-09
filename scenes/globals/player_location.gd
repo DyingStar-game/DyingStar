@@ -32,7 +32,7 @@ static func local_player() -> Node3D:
 	if agent == null or not "player_entity" in agent:
 		return null
 	var entity: Variant = agent.player_entity
-	if entity is Node3D and is_instance_valid(entity):
+	if is_instance_valid(entity) and entity is Node3D:
 		return entity as Node3D
 	return null
 
@@ -72,6 +72,6 @@ static func find_by_uuid(uuid: String) -> Planet:
 	if agent == null or not "props_list" in agent or not agent.props_list.has("planets"):
 		return null
 	var body: Variant = agent.props_list["planets"].get(uuid)
-	if body is Planet and is_instance_valid(body):
+	if is_instance_valid(body) and body is Planet:
 		return body as Planet
 	return null

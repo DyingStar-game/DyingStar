@@ -474,7 +474,7 @@ func _perf_tick(delta: float) -> void:
 			continue
 		for body_uuid in props_list[ptype].keys():
 			var b = props_list[ptype][body_uuid]
-			if b is RigidBody3D and is_instance_valid(b):
+			if is_instance_valid(b) and b is RigidBody3D:
 				total += 1
 				if not (b as RigidBody3D).freeze:
 					unfrozen += 1
@@ -1032,7 +1032,9 @@ func _cull_wake_near_players() -> void:
 			if at == null:
 				continue  # already woken by another player in this same pass
 			var rb = at.get("body")
-			if rb is RigidBody3D and is_instance_valid(rb):
+			# Validity FIRST: `is` on a freed body is an error, not false (a crate the stock took away
+			# while frozen, playtest 2026-11-09), and it aborted the whole wake pass.
+			if is_instance_valid(rb) and rb is RigidBody3D:
 				_unfreeze_culled_body(rb)
 			else:
 				_cull_forget(id)
@@ -3187,7 +3189,7 @@ func _stream_sweep() -> void:
 	var t0: int = Time.get_ticks_usec()
 	for puuid in props_list["planets"]:
 		var planet = props_list["planets"][puuid]
-		if planet is Planet and is_instance_valid(planet):
+		if is_instance_valid(planet) and planet is Planet:
 			_stream_connect_planet(planet as Planet)
 	_stream_check_nside()
 	# 1) moved roots: new chunk / cell.
@@ -4046,7 +4048,7 @@ func _pin_prewarm_positions(pins_by_planet: Dictionary) -> void:
 			if entry["until"] < now:
 				continue
 			live.append(entry)
-			if planet_node is Planet and is_instance_valid(planet_node):
+			if is_instance_valid(planet_node) and planet_node is Planet:
 				_pin_pos_to_planet_chunk(planet_node as Planet, entry["pos"], pins_by_planet)
 		if live.is_empty():
 			_prewarm_pins.erase(planet_uuid)

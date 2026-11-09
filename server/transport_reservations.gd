@@ -16,6 +16,8 @@ extends RefCounted
 const REFRESH_S: float = 10.0
 ## The group a cargo depot joins on the server (CargoDepot._ready).
 const DEPOTS_GROUP := &"cargo_depots"
+## The network type of a hauling crate.
+const CRATE_TYPE := "crate_container"
 
 static var _next_ms: int = 0
 static var _running: bool = false
@@ -56,8 +58,42 @@ static func _refresh(tree: SceneTree) -> void:
 				var need := await need_of(detail["data"])
 				if not need.is_empty():
 					wanted[mission_id] = need
+	var on_way := on_their_way(wanted, checked)
 	for depot: Node in live_depots(tree):
-		apply(depot, wanted, checked)
+		apply(depot, wanted, checked, on_way)
+
+
+## The metal (kg) each mission of [param wanted] already has on its way: the crates taken off a shelf for it
+## and not delivered yet (`for_mission`), wherever they are -- in hands, in a truck, on the ground. Without
+## them, a crate taken left the need uncovered and another was kept for it on the next refresh (playtest
+## 2026-11-09). A crate of a mission [param checked] says nobody holds any more loses its mark.
+static func on_their_way(wanted: Dictionary, checked: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for crate: Node in _all_crates():
+		var content: Variant = crate.get("content")
+		if not (content is Dictionary) or not ((content as Dictionary).get("for_mission") is Dictionary):
+			continue
+		var mission := str(((content as Dictionary)["for_mission"] as Dictionary).get("id", ""))
+		if wanted.has(mission):
+			out[mission] = float(out.get(mission, 0.0)) + CrateContent.metal_kg(content)
+		elif checked.has(mission):
+			var c: Dictionary = (content as Dictionary).duplicate()
+			c.erase("for_mission")
+			WarehouseDelivery.update(crate, c)
+	return out
+
+
+## Every hauling crate this server holds.
+static func _all_crates() -> Array:
+	var agent: Variant = NetworkOrchestrator.network_agent
+	var lists: Variant = agent.get("props_list") if agent != null else null
+	if not (lists is Dictionary) or not ((lists as Dictionary).get(CRATE_TYPE) is Dictionary):
+		return []
+	var out: Array = []
+	for node: Variant in ((lists as Dictionary)[CRATE_TYPE] as Dictionary).values():
+		if is_instance_valid(node):
+			out.append(node)
+	return out
 
 
 ## What a mission's detail asks of a warehouse: the first transport objective not done that loads from
@@ -87,7 +123,10 @@ static func need_of(detail: Dictionary) -> Dictionary:
 		var left := ServiceTypes.num(objective.get("targetQuantity"), 1) - ServiceTypes.num(objective.get("currentProgress"), 0)
 		if ids.is_empty() or left <= 0:
 			return {}
-		return {"depot": depot, "good": str(params.get("goodType", "")), "kg": float(left), "name": name, "ids": ids}
+		var mission: Variant = detail.get("mission")
+		var title := str((mission as Dictionary).get("title", "")) if mission is Dictionary else str(detail.get("title", ""))
+		return {"depot": depot, "good": str(params.get("goodType", "")), "kg": float(left), "name": name,
+				"ids": ids, "title": title}
 	return {}
 
 
@@ -111,10 +150,10 @@ static func _source_depot(objective: Dictionary, params: Dictionary) -> String:
 ## Bring the marks on [param depot]'s shelved crates in line with [param wanted] (mission id -> need):
 ## lift those of missions [param checked] says are no longer held, then reserve, per need on this depot,
 ## crates of its good until their metal covers what is left (shelf order, the board's).
-static func apply(depot: Node, wanted: Dictionary, checked: Dictionary) -> void:
+static func apply(depot: Node, wanted: Dictionary, checked: Dictionary, on_way: Dictionary = {}) -> void:
 	var depot_uuid := _uuid_of(depot)
 	var crates: Array = crates_of(depot)
-	var held_kg: Dictionary = {}
+	var held_kg: Dictionary = on_way.duplicate()  # what is already on its way counts as covered
 	for crate: Node in crates:
 		var content: Dictionary = crate.get("content")
 		var reserved: Variant = content.get("reserved_for")
@@ -137,7 +176,7 @@ static func apply(depot: Node, wanted: Dictionary, checked: Dictionary) -> void:
 			var content: Dictionary = crate.get("content")
 			if content.get("reserved_for") is Dictionary or CrateContent.good_type(content) != str(need["good"]):
 				continue
-			_mark(crate, {"mission": mission, "name": need["name"], "ids": need["ids"]})
+			_mark(crate, {"mission": mission, "title": need.get("title", ""), "name": need["name"], "ids": need["ids"]})
 			held_kg[mission] = float(held_kg.get(mission, 0.0)) + CrateContent.metal_kg(content)
 
 
@@ -152,8 +191,14 @@ static func crates_of(depot: Node) -> Array:
 			var content: Variant = crate.get("content")
 			if content is Dictionary and str((content as Dictionary).get("delivered_to", "")) == depot_uuid:
 				out.append(crate)
+	# The aisles first, the buffer rack (no label) last: a crate waiting there for a storekeeper is kept
+	# for a transport only when the aisles have none (playtest 2026-11-09).
 	out.sort_custom(func(a: Node, b: Node) -> bool:
-		return ShelfLabels.label_for(a.get_parent()) < ShelfLabels.label_for(b.get_parent()))
+		var la := ShelfLabels.label_for(a.get_parent())
+		var lb := ShelfLabels.label_for(b.get_parent())
+		if (la == "") != (lb == ""):
+			return lb == ""
+		return la < lb)
 	return out
 
 

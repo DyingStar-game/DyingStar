@@ -360,7 +360,9 @@ func server_stock_ore(count: int) -> int:
 			continue
 		var shelf := child as Shelf
 		for idx in shelf.reserve_free_slots(count - batch.size()):
-			var content := SpawnCatalog.test_crate({"crate": CrateContent.KIND_CRUSHED}, "", WarehouseOwner.plate_owner(owner))
+			var fill := randf_range(StockReconciler.MIN_FILL, 1.0)  # crates of different weights
+			var content := SpawnCatalog.test_crate({"crate": CrateContent.KIND_CRUSHED}, "",
+					WarehouseOwner.plate_owner(owner), fill)
 			content["owner_type"] = str(owner["type"])
 			content["owner_id"] = str(owner["id"])
 			units += int(content.get("units", 0))
