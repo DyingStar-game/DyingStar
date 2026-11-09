@@ -116,8 +116,9 @@ func _run() -> void:
 	var wire: Dictionary = JSON.parse_string(JSON.stringify(prop))
 	var description := LavaFlow.description_from(wire)
 	check(not description.is_empty(), "the prop data describes the patch")
+	# A client runtime: its worker jobs also pack the textures and scan the smoke edges.
 	var replica: Node3D = Runtime.new()
-	replica.setup(data, true)
+	replica.setup(data, false)
 	replica.clock_ms = func() -> int: return _clock[0]
 	add_child(replica)
 	check(replica.install_patch(description), "the replica installs it")
@@ -137,6 +138,11 @@ func _run() -> void:
 	if not digest.is_empty():
 		replica.expect_digest(patch_key, digest[0], digest[1])
 	check(not replica.is_diverged(patch_key), "the replica's digest matches")
+	var shown: Dictionary = replica.patches[patch_key]
+	check(shown.surface != null and shown.surface.publications > 0 and not shown.surface.has_prepared(),
+		"the client uploads the textures its worker packed (%d)" % (shown.surface.publications if shown.surface else 0))
+	check(shown.smoke != null and shown.smoke.edge_count > 0 and not shown.smoke.scan_wanted,
+		"the client's smoke edges come from its worker (%d)" % (shown.smoke.edge_count if shown.smoke else 0))
 	check(_updates > 0 and (_registry[uuid] as Dictionary).has("digest"), "digests are published")
 
 	# Past the eruption and its ~302 s cleanup: the prop is deleted, the patch removed.

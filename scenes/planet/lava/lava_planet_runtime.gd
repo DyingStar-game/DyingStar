@@ -10,6 +10,7 @@ extends Node3D
 
 const Core = preload("res://scenes/planet/lava/lava_fixed_core.gd")
 const Builder = preload("res://scenes/planet/lava/lava_planet_patch.gd")
+const Smoke = preload("res://scenes/planet/lava/lava_edge_smoke.gd")
 ## Ticks between two recorded state digests (5 s): the authority publishes them, replicas compare.
 const DIGEST_TICKS := 50
 ## Digests a replica keeps to compare with the authority's late ones.
@@ -44,6 +45,11 @@ class DriveJob:
 	var cpu_usec := 0
 	## tick -> SHA-256 hex of the state at that tick, for ticks multiple of DIGEST_TICKS.
 	var digests: Dictionary = {}
+	## Client: the patch's surface, whose next textures this job packs after its ticks (upload on the main thread).
+	var surface: RefCounted
+	## Client: the edge-smoke scan is due; [member edges] receives it (LavaEdgeSmoke.edges_of).
+	var scan_edges := false
+	var edges: Array = []
 
 	func run() -> void:
 		var started := Time.get_ticks_usec()
@@ -52,6 +58,10 @@ class DriveJob:
 			ok = solver.advance_tick(next, Builder.eruption_commands(solver, packet, plan, next))
 			if ok and next % DIGEST_TICKS == 0:
 				digests[next] = solver.state_digest()
+		if ok and surface != null and not solver.visual_dirty.is_empty():
+			surface.prepare(solver, 0.1, true)
+		if ok and scan_edges:
+			edges = Smoke.edges_of(solver)
 		cpu_usec = Time.get_ticks_usec() - started
 
 
@@ -176,8 +186,9 @@ func _create_visuals(entry: Dictionary) -> void:
 	mesh.custom_aabb = surface.bounds
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	holder.add_child(mesh)
-	var smoke = load("res://scenes/planet/lava/lava_edge_smoke.gd").new()
+	var smoke = Smoke.new()
 	smoke.name = "LavaEdgeSmoke"
+	smoke.deferred_scan = not entry.plan.is_empty()  # driven patches scan on their tick worker
 	holder.add_child(smoke)
 	smoke.set_smoke_enabled(smoke_enabled)
 	entry.merge({"holder": holder, "surface": surface, "mesh": mesh, "smoke": smoke, "overlay": overlay}, true)
@@ -210,8 +221,11 @@ func publish_patch(key: String) -> void:
 		elif entry.retired:
 			_create_visuals(entry)
 			_refresh_terrain_overlays()
-		elif not entry.solver.visual_dirty.is_empty():
-			entry.surface.publish(entry.solver, 0.1, true)
+		elif entry.surface.has_prepared() or not entry.solver.visual_dirty.is_empty():
+			if entry.surface.has_prepared():
+				entry.surface.upload()  # packed by the worker job (DriveJob.surface)
+			else:
+				entry.surface.publish(entry.solver, 0.1, true)
 			entry.mesh.custom_aabb = entry.surface.bounds
 			entry.since_tick = 0.0
 		last_visual_ms = (Time.get_ticks_usec() - started) / 1000.0
@@ -256,8 +270,8 @@ func _process(delta: float) -> void:
 		if not paused:
 			entry.since_tick = minf(float(entry.since_tick) + delta, 0.1)
 			entry.surface.set_interpolation(float(entry.since_tick) * 10.0)
-			if not physics_pending:
-				entry.smoke.advance(delta, entry.solver)
+			# Smoke ages every frame; it reads the solver only when no worker job holds it.
+			entry.smoke.advance(delta, null if physics_pending else entry.solver)
 
 
 ## Joins the finished worker jobs, then starts one job per driven patch that lags its target tick.
@@ -287,6 +301,9 @@ func _drive() -> void:
 		job.packet = entry.description
 		job.plan = entry.plan
 		job.to_tick = mini(target, tick + catch_up_ticks)
+		if not server_mode and not entry.retired:
+			job.surface = entry.surface
+			job.scan_edges = entry.smoke.scan_wanted
 		_jobs.append({"key": key, "job": job, "task": WorkerThreadPool.add_task(job.run, false, "lava " + key)})
 	physics_pending = not _jobs.is_empty()
 
@@ -310,6 +327,8 @@ func _after_job(key: String, job: DriveJob) -> void:
 		entry.digests.erase(entry.digests.keys().min())
 	for tick: int in entry.expected.keys():
 		if tick < int(job.solver.tick): entry.expected.erase(tick)
+	if not job.edges.is_empty() and job.surface != null and job.surface == entry.surface:
+		entry.smoke.apply_edges(job.edges)
 	publish_patch(key)
 
 

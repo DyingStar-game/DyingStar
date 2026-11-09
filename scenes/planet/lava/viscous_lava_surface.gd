@@ -13,6 +13,8 @@ var _state_textures: Array[ImageTexture] = []
 var _phase_textures: Array[ImageTexture] = []
 var _state_image: Image
 var _phase_image: Image
+var _state_bytes := PackedByteArray() # Packed by prepare(), sent by upload().
+var _phase_bytes := PackedByteArray()
 var _material: ShaderMaterial
 var _materials: Array[ShaderMaterial] = []
 var _alpha := 1.0
@@ -66,11 +68,34 @@ func configure(sim, material: ShaderMaterial) -> void:
 	_build_mesh(sim)
 
 
-func publish(sim, dt: float, only_dirty: bool = false) -> void:
+## Packs the solver's state into the next textures' bytes. Touches no resource, material or node, so a
+## worker may call it while it owns [param sim]; [method upload] then sends the bytes from the main thread.
+## Packing ~3 000 wet cells costs ~10 ms of GDScript: on the main thread it was the client's lava cost.
+func prepare(sim, dt: float, only_dirty: bool = false) -> void:
 	_pack(sim, dt, only_dirty)
+	_state_bytes = _state.to_byte_array()
+	_phase_bytes = _phase.to_byte_array()
+
+
+## True when [method prepare] packed bytes [method upload] has not sent yet.
+func has_prepared() -> bool:
+	return not _state_bytes.is_empty()
+
+
+func publish(sim, dt: float, only_dirty: bool = false) -> void:
+	prepare(sim, dt, only_dirty)
+	upload()
+
+
+## Main thread: the prepared bytes become the current textures; the previous ones stay for interpolation.
+func upload() -> void:
+	if not has_prepared():
+		return
 	_current = 1 - _current
-	_state_image.set_data(_nx, _nz, false, Image.FORMAT_RGBAF, _state.to_byte_array())
-	_phase_image.set_data(_nx, _nz, false, Image.FORMAT_RGBAF, _phase.to_byte_array())
+	_state_image.set_data(_nx, _nz, false, Image.FORMAT_RGBAF, _state_bytes)
+	_phase_image.set_data(_nx, _nz, false, Image.FORMAT_RGBAF, _phase_bytes)
+	_state_bytes = PackedByteArray()
+	_phase_bytes = PackedByteArray()
 	_state_textures[_current].update(_state_image)
 	_phase_textures[_current].update(_phase_image)
 	_bind()
