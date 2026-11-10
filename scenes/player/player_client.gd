@@ -94,6 +94,9 @@ var _animator = null  # the puppet's CharacterAnimator (untyped, like in setup),
 ## A refusal said where the prompts are, for FLASH_PROMPT_S (_flash_prompt), and until when (ms).
 var _flash_text: String = ""
 var _flash_until_ms: int = 0
+## Whether the prompt shown this frame is "put the tool down": about nothing under the crosshair, so
+## it has no line (_prompt_target).
+var _drop_tool_prompt_shown: bool = false
 ## The 3D screen (its Gui3D) under the crosshair, and where on it (_point_screen); null when none.
 var _pointed_gui: Node3D = null
 ## The view of the screen we hold, as last shared, and when to look for a change again (ScreenLock).
@@ -499,6 +502,7 @@ func setup() -> void:
 ## HUD prompts / mouse capture / input sampling. Runs on this role's own child node, so the engine
 ## calls it only on a client (never the dedicated server). Reaches the shared body through `player`.
 func _process(_delta: float) -> void:
+	_drop_tool_prompt_shown = false  # said again below, on foot; seated or lying it must not linger
 	if player.remote_player:
 		_lod_elapsed += _delta
 		if _lod_elapsed >= REMOTE_LOD_INTERVAL:
@@ -719,9 +723,13 @@ func _process(_delta: float) -> void:
 			player.interact_label.text = tr("%%HUD_TOOL_OWNED")
 			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
 			player.interact_label.show()
-		elif player._carry_prompt == "drop_tool":
+		elif player._carry_prompt == "drop_tool" and player._aimed_carriable() == null:
+			# Only with nothing to take under the crosshair, as the server decides it: its word is a
+			# tenth of a second late, and the look reaching an object showed "put the tool down" with
+			# a line to that object for an instant (playtest 2026-11-10).
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_DROP_TOOL"))
 			player.interact_label.show()
+			_drop_tool_prompt_shown = true
 		elif player._carry_prompt == "stand":
 			# Crouched or prone at a vehicle part: no key to press, only why — a part is fitted or
 			# taken out standing.
@@ -1414,8 +1422,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var target_uuid := str(aim.uuid) if aim != null else ""
 		player.client_send_action_to_server({"action": "action", "target_uuid": target_uuid})
 		# Reaching for something, or putting the load down: the clothes rustle on the key, for the owner
-		# (the others hear the pick-up from the replicated `carrying`).
-		if aim != null or player._owner_carrying:
+		# (the others hear the pick-up from the replicated `carrying`). Only for what can be taken: a
+		# piece still too heavy rustled as if grabbed and stayed on the ground (playtest 2026-11-10).
+		if (aim != null and aim.interact()) or player._owner_carrying:
 			_play_clothes_sfx(false)
 		_predict_carry_stow(aim)
 
@@ -1549,6 +1558,8 @@ func _toggle_door(handle: VehicleDoorHandle) -> void:
 func _prompt_target() -> Variant:
 	if is_instance_valid(player.lying_on) and _aimed_from_bed() == null:
 		return PROMPT_LEADER.NO_LINE  # getting up: about nothing under the crosshair
+	if _drop_tool_prompt_shown:
+		return PROMPT_LEADER.NO_LINE  # putting the tool down: about nothing under the crosshair
 	if not player._owner_carrying:
 		return null
 	if player._carry_prompt in ["install", "cargo"] and _placement_marker != null:

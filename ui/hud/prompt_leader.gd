@@ -131,7 +131,17 @@ func _track_anchor() -> void:
 		_anchor_node = null
 		return
 	var hit := _ray.get_collider() as Node3D
-	if hit != _anchor_node:
+	# The look meets a prop's area, a child of the prop: the prop is what says where it is aimed at.
+	var prop: Node3D = hit
+	var parent: Node3D = hit.get_parent() as Node3D if hit != null else null
+	if hit != null and not hit.has_method("aim_point") and parent != null and parent.has_method("aim_point"):
+		prop = parent
+	if prop != null and prop.is_in_group("carriable") and prop.has_method("aim_point"):
+		# A rock piece: its middle as it stands, asked each frame -- cut while looked at, it is the same
+		# body, smaller, and the point kept from the first look stayed off it (playtest 2026-11-10).
+		_anchor_node = prop
+		_anchor_local = prop.to_local(prop.aim_point())
+	elif hit != _anchor_node:
 		_anchor_node = hit
 		_anchor_local = anchor_of(hit, hit.to_local(_ray.get_collision_point())) if hit != null else Vector3.ZERO
 

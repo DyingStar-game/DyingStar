@@ -17,6 +17,10 @@ signal aiming_changed(aiming: bool)
 
 const PERFORATOR_SCENE := preload("res://scenes/_universe/props/tools/hammerdrill.tscn")
 const PERFORATION_DURATION := 5.0
+## How far past aim_rock_distance the aim ray reaches (m).
+const AIM_RAY_EXTRA_M := 2.0
+## A point the ray gives farther than its own length plus this (m) is a stray one: ignored.
+const AIM_STRAY_MARGIN_M := 0.5
 ## Brief "rejected" jab when perforating off a fault: the bit lunges and snaps back.
 const REJECT_DURATION := 0.3
 
@@ -29,9 +33,11 @@ const REJECT_DURATION := 0.3
 @export var aim_rock_distance: float = 2.0
 ## Roll correction (deg) to keep the tool upright while aiming (model-dependent).
 @export var aim_roll_deg: float = 0.0
-## Orient the tool toward the aimed rock (look_at). Uncheck to keep it on the camera
-## pitch only (no pointing at the rock).
-@export var orient_tool_at_rock: bool = true
+## Orient the tool toward the aimed rock (look_at) while it works. Off: it stays on the camera pitch,
+## straight ahead, its tip brought onto the rock by the reach alone -- what players have always seen:
+## the look_at never ran at a planet's coordinates (see EquipmentMount), and when it did, on a stray
+## point, the tool turned round (playtest 2026-11-10).
+@export var orient_tool_at_rock: bool = false
 
 @export_group("Perforation")
 ## Jackhammer rate while perforating: back-and-forth jabs per second (higher = faster hammering).
@@ -183,7 +189,7 @@ func setup(camera_pivot: Node3D, camera: Camera3D) -> void:
 	# Aim raycast from the camera center (the crosshair direction). Created here so it exists on EVERY
 	# instance (remote players reconstruct the aim too). Hits rocks (bodies on `prop`; the caller
 	# filters to the "miningrock" group).
-	_rock_ray = Globals.make_camera_ray(_camera, aim_rock_distance + 2.0, 1 << (Globals.LAYER_PROP - 1))
+	_rock_ray = Globals.make_camera_ray(_camera, aim_rock_distance + AIM_RAY_EXTRA_M, 1 << (Globals.LAYER_PROP - 1))
 	_equipment_mount = EquipmentMount.new()
 	_equipment_mount.name = "EquipmentMount"
 	add_child(_equipment_mount)
@@ -457,8 +463,12 @@ func _aim_point() -> Vector3:
 	var fwd: Vector3 = -_camera.global_transform.basis.z
 	# Read the auto-updated ray (see _is_looking_at_rock): no force_raycast_update() in _process.
 	if _rock_ray != null and _rock_ray.is_colliding():
-		return _rock_ray.get_collision_point()
-	return origin + fwd * (aim_rock_distance + 2.0)
+		var hit: Vector3 = _rock_ray.get_collision_point()
+		# Only a point the ray can reach: one frame gave a point hundreds of km away, and the tool
+		# turned to it (playtest 2026-11-10).
+		if origin.distance_to(hit) <= aim_rock_distance + AIM_RAY_EXTRA_M + AIM_STRAY_MARGIN_M:
+			return hit
+	return origin + fwd * (aim_rock_distance + AIM_RAY_EXTRA_M)
 
 ## Capture the rock under the crosshair + the aim point (in the rock's local space)
 ## when a perforation starts, so we can fracture exactly there at the end.

@@ -61,14 +61,17 @@ static func blocked(ray: RayCast3D, from: Vector3, to: Vector3, exceptions: Arra
 ## (or a body of it, or one it hangs from: a part on its truck) -- or nothing, or something beyond it. A
 ## wall, the side of the bed it lies in, bodywork in front: not seen.
 static func first_hit_is(ray: RayCast3D, from: Vector3, target: Node3D, exceptions: Array) -> bool:
-	var to: Vector3 = from + (target.global_position - from) * 1.05  # a touch past: a thin target is crossed
+	# Toward the point the target is aimed at when it names one (a rock piece: the middle of the piece,
+	# not its origin, which is the uncut rock's and can lie off it), else its origin.
+	var at: Vector3 = target.aim_point() if target.has_method("aim_point") else target.global_position
+	var to: Vector3 = from + (at - from) * 1.05  # a touch past: a thin target is crossed
 	_cast(ray, from, to, exceptions)
 	if not ray.is_colliding():
 		return true
 	var c: Object = ray.get_collider()
 	if c == target or (c is Node and (target.is_ancestor_of(c) or (c as Node).is_ancestor_of(target))):
 		return true
-	return hit_distance(ray, from, to) > from.distance_to(target.global_position)
+	return hit_distance(ray, from, to) > from.distance_to(at)
 
 
 ## How far from [param from] the segment to [param to] enters the shape the ray last hit: in that

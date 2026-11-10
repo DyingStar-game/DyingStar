@@ -27,6 +27,8 @@ var aim_smooth: float = 18.0
 ## When false, the mount ignores pitch_source and keeps its rest orientation (a stowed
 ## item that must NOT follow the camera). Aim mode (aim_target) still overrides this.
 var follow_pitch: bool = true
+## Nearer than this (m) the target gives no direction to look in: the mount keeps its turn.
+const MIN_AIM_DISTANCE_M: float = 0.001
 var _smoothed_aim: Vector3 = Vector3.ZERO
 var _aim_init: bool = false
 
@@ -64,7 +66,10 @@ func _process(delta: float) -> void:
 		else:
 			_smoothed_aim = aim_target
 			_aim_init = true
-		if not global_position.is_equal_approx(_smoothed_aim):
+		# A real distance, not is_equal_approx: its tolerance grows with the coordinates, and a planet
+		# sits tens of millions of km from the origin -- a point within hundreds of km counted as "the
+		# same", so the mount never turned to its target, then froze on a stray one (playtest 2026-11-10).
+		if global_position.distance_squared_to(_smoothed_aim) > MIN_AIM_DISTANCE_M * MIN_AIM_DISTANCE_M:
 			look_at(_smoothed_aim, aim_up)
 			if aim_roll_deg != 0.0:
 				rotate_object_local(Vector3(0, 0, 1), deg_to_rad(aim_roll_deg))
