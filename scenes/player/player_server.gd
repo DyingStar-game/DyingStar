@@ -1559,6 +1559,11 @@ func _hold_until_ground(delta: float) -> bool:
 			cave_body.to_local(player.global_position)):
 		_ground_seen = true
 		return false
+	# Down a village mine the ground is its rock, built around the people near it (MineCells).
+	var mine := MineSite.mine_at(player.global_position)
+	if mine != null and mine.rock_ready_at(player.global_position):
+		_ground_seen = true
+		return false
 	var terrain: PlanetTerrain = null
 	var body: Planet = Planet.of(player.get_parent())
 	# In orbit (a station) the nearest body is hundreds of kilometres down: its terrain will never be
@@ -1569,7 +1574,7 @@ func _hold_until_ground(delta: float) -> bool:
 		# Not on a celestial body at all (EVA, a body in transit, a station): nothing to wait for.
 		_ground_seen = true
 		return false
-	if terrain.has_collision_under(player.global_position):
+	if mine == null and terrain.has_collision_under(player.global_position):
 		_ground_seen = true
 		return false
 	_ground_wait += delta
@@ -3365,6 +3370,8 @@ func _catch_if_below_surface(area: Area3D) -> void:
 	var local_body: Vector3 = planet_basis.inverse() * local_world
 	if CavePlanetRegistry.contains(pdata, local_body):
 		return
+	if MineSite.contains_point(player.global_position):
+		return  # down a village mine's shaft or galleries: under the ground on purpose
 	var dir: Vector3 = local_body.normalized()
 	var player_dist: float = local_body.length()
 	var surface_dist: float = pdata.crack_aware_surface_dist(dir)

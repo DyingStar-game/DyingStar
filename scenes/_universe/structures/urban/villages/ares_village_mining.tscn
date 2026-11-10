@@ -13,6 +13,7 @@
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn" id="cont_l"]
 [ext_resource type="PackedScene" uid="uid://dbhjkpit6n4ns" path="res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn" id="cont_s"]
 [ext_resource type="PackedScene" uid="uid://qaosfxypu3rx" path="res://scenes/_universe/structures/industrial/mines/mine_portal.tscn" id="mvp_1"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/mines/shaft/mine_site.tscn" id="mine_shaft"]
 [ext_resource type="PackedScene" uid="uid://b0nvj345w1pd6" path="res://scenes/_universe/structures/industrial/mines/spoil_heap.tscn" id="mvp_2"]
 [ext_resource type="PackedScene" uid="uid://c3ma5g7nd8jwu" path="res://scenes/_universe/structures/industrial/mines/crusher.tscn" id="mvp_3"]
 [ext_resource type="PackedScene" uid="uid://h3h1hxblnq5y" path="res://scenes/_universe/structures/industrial/mines/changing_rooms.tscn" id="mvp_4"]
@@ -395,6 +396,9 @@ transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 290, 0, -20)
 
 [node name="CaveEntrance" parent="." unique_id=112533181 instance=ExtResource("mvp_1")]
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -230, 0, -28)
+
+[node name="MineShaft" parent="." unique_id=1730418827 instance=ExtResource("mine_shaft")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -280, 0, -28)
 
 [node name="Sterile" parent="." unique_id=286279557 instance=ExtResource("mvp_2")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -190.6034479771948, 0, -103.01884492269193)

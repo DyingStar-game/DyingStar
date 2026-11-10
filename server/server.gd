@@ -1191,6 +1191,10 @@ func _ground_missing_under(body: Node3D) -> bool:
 		node = node.get_parent()
 	if planet == null or planet.planet_terrain == null:
 		return false
+	# Down a village mine the ground is its rock, built around the people near it (MineCells).
+	var mine := MineSite.mine_at(body.global_position)
+	if mine != null:
+		return not mine.rock_ready_at(body.global_position)
 	return not planet.planet_terrain.has_collision_under(body.global_position)
 
 
@@ -2663,6 +2667,8 @@ func update_generic_object(event: Dictionary) -> void:
 const STREAM_ALWAYS_TYPES: Array[String] = []
 ## Horizon type of a networked cave (CaveSite): registered with its planet's terrain from its data.
 const CAVE_TYPE := "cave"
+## Horizon type of a village mine (MineSite): its shaft's hole is opened in its planet's terrain from its data.
+const MINE_TYPE := "mine"
 
 var prop_registry := PropRegistry.new()
 var _stream_load_factor: float = SettingsManager._server_ini_number("streaming", "load_factor", 1.2)
@@ -3500,6 +3506,7 @@ func _stream_register_poi_zone(uuid: String) -> void:
 ## from under whoever stands there for the length of a chunk build, once per building.
 func _stream_register_pads(uuid: String) -> void:
 	_stream_register_cave(uuid)
+	_stream_register_mine(uuid)
 	var e: Dictionary = prop_registry.get_entry(uuid)
 	if e.is_empty() or int(e["kind"]) != PropRegistry.KIND_GROUND or prop_registry.live.has(uuid):
 		return
@@ -3551,6 +3558,22 @@ func _stream_register_cave(uuid: String) -> void:
 	# Not fitted to this relief yet: nothing to cut until its node fits it (CaveSite).
 	if site != null and not site.needs_fit((planet as Planet).planet_data):
 		(planet as Planet).planet_terrain.register_cave_site(site)
+
+
+## A village mine (MineSite), from its DATA: the hole of its shaft is cut into the collision chunks before its
+## node is built, and stays cut while it sleeps — under the id its live node registers, so nothing is rebuilt then.
+func _stream_register_mine(uuid: String) -> void:
+	var e: Dictionary = prop_registry.get_entry(uuid)
+	if e.is_empty() or str(e["type"]) != MINE_TYPE or not (e.get("pos") is Vector3):
+		return
+	var planet = props_list["planets"].get(e["world"])
+	if not (planet is Planet) or (planet as Planet).planet_terrain == null:
+		return
+	var terrain: PlanetTerrain = (planet as Planet).planet_terrain
+	var od: Dictionary = e["event"]["data"].get("object_data", {})
+	var to_terrain: Transform3D = terrain.global_transform.affine_inverse() * (planet as Planet).global_transform
+	var item := Transform3D(Basis.from_euler(_stream_vec(od.get("rotation", {}))), e["pos"])
+	terrain.register_mine_hole(MineSite.hole_from_data(uuid, to_terrain * item))
 
 
 ## The notch a vehicle lift cuts under itself (VehicleLift.notch_length_m), from its DATA: a lift that
