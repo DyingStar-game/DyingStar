@@ -2,35 +2,70 @@ class_name StockBoard
 extends PickupBoard
 
 ## CLIENT: the screen facing the pickup board in a depot's buffer room, by the buffer rack: what the
-## warehouse holds (playtest 2026-11-08) -- a line per good, its crates and kilograms, and under it the
-## shelves it is on. The crates are the truth (StockReconciler keeps the stock equal to them), so it reads
-## the crates shelved in its depot, all replicated: nothing of its own on the wire. When the list is longer
-## than the screen it scrolls a line every REFRESH_S. Same screen, same rules as the pickup board (ADR 0027).
+## warehouse holds (playtest 2026-11-08) -- a row per good with its picto, its crates, its weight, and the
+## shelves it is on in tags. The crates are the truth (StockReconciler keeps the stock equal to them), so
+## it reads the crates shelved in its depot, all replicated. The same screen and rules as the pickup board.
 
-## Kept apart from the scrolling lines: the screen's title.
-const TITLE_KEY := "%%DEPOT_STOCK_TITLE"
-
-## The first body line shown (the list scrolls).
-var _first := 0
+## Shelves named on a row; the rest is counted ("+4").
+const SHELVES_SHOWN := 7
+const CHIP := Color(0.2, 0.22, 0.26)
 
 
-func _compose(crates: Array) -> String:
-	var body := stock_lines(crates)
-	var shown := window(body, _first, MAX_LINES)
-	if body.size() > MAX_LINES:
-		_first = (_first + 1) % (body.size() + 1)
-	else:
-		_first = 0
-	var lines := PackedStringArray([TranslationServer.translate(TITLE_KEY)])
-	lines.append_array(shown)
-	return "\n".join(lines)
+func _title_key() -> String:
+	return "%%DEPOT_STOCK_TITLE"
 
 
-## The lines of [param crates] (TransportReservations.crates_of): per good, "Ingots · Gold — 2 crates —
-## 30 kg", then the shelves it is on. "Empty warehouse" when there is none. Pure, for the tests.
-static func stock_lines(crates: Array) -> PackedStringArray:
-	var goods: Dictionary = {}  # good type -> {"name", "crates", "kg", "shelves": Array}
-	var order: Array = []
+func _empty_key() -> String:
+	return "%%DEPOT_STOCK_NONE"
+
+
+func _rows(crates: Array) -> Array:
+	return stock_rows(crates)
+
+
+## The header's corner: the weight of everything in stock.
+func _count_text(rows: Array) -> String:
+	var kg := 0
+	for row: Dictionary in rows:
+		kg += int(row.get("kg", 0))
+	return ServiceTypes.quantity_text(kg, "kg") if kg > 0 else ""
+
+
+## One row: the good's picto, its name over its shelves, its crates, its weight.
+func _row(row: Dictionary) -> Control:
+	var parts := WallScreen.card(ROW_PX)
+	var line: HBoxContainer = parts[1]
+	line.add_child(WallScreen.icon(PickupBoard.good_icon(str(row.get("kind", ""))), 56.0, AMBER))
+	var texts := VBoxContainer.new()
+	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	texts.alignment = BoxContainer.ALIGNMENT_CENTER
+	texts.add_theme_constant_override("separation", 4)
+	texts.add_child(AresBrand.screen_label(str(row.get("name", "")), 30, WallScreen.TEXT))
+	var shelves := HBoxContainer.new()
+	shelves.add_theme_constant_override("separation", 6)
+	var names: Array = row.get("shelves", [])
+	for shelf: String in names.slice(0, SHELVES_SHOWN):
+		shelves.add_child(WallScreen.chip(shelf, 20, CHIP, WallScreen.TEXT))
+	if names.size() > SHELVES_SHOWN:
+		shelves.add_child(AresBrand.screen_label("+%d" % (names.size() - SHELVES_SHOWN), 20, WallScreen.DIM))
+	texts.add_child(shelves)
+	line.add_child(texts)
+	var crates := AresBrand.screen_label(TranslationServer.translate("%%DEPOT_STOCK_CRATES")
+			% int(row.get("crates", 0)), 26, WallScreen.DIM)
+	crates.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	line.add_child(crates)
+	var weight := AresBrand.screen_label(ServiceTypes.quantity_text(int(row.get("kg", 0)), "kg"), 40, AMBER)
+	weight.custom_minimum_size = Vector2(190, 0)
+	weight.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	weight.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	line.add_child(weight)
+	return parts[0]
+
+
+## The rows for [param crates] (TransportReservations.crates_of): one per good -- {good, kind, name, crates,
+## kg, shelves (sorted)}, sorted by good. Pure, for the tests.
+static func stock_rows(crates: Array) -> Array:
+	var goods: Dictionary = {}
 	for crate: Node in crates:
 		var content: Variant = crate.get("content")
 		if not (content is Dictionary):
@@ -39,44 +74,24 @@ static func stock_lines(crates: Array) -> PackedStringArray:
 		if good == "":
 			continue
 		if not goods.has(good):
-			goods[good] = {"name": good_name(content), "crates": 0, "kg": 0, "shelves": []}
-			order.append(good)
-		var entry: Dictionary = goods[good]
-		entry["crates"] += 1
-		entry["kg"] += int((content as Dictionary).get("units", 0))
-		var shelf := ShelfLabels.label_for(crate.get_parent())
-		if shelf != "" and not (entry["shelves"] as Array).has(shelf):
-			(entry["shelves"] as Array).append(shelf)
-	var lines := PackedStringArray()
-	if order.is_empty():
-		lines.append(TranslationServer.translate("%%DEPOT_STOCK_NONE"))
-		return lines
+			goods[good] = {"good": good, "kind": str((content as Dictionary).get("kind", "")),
+					"name": good_name(content), "crates": 0, "kg": 0, "shelves": []}
+		var row: Dictionary = goods[good]
+		row["crates"] += 1
+		row["kg"] += int((content as Dictionary).get("units", 0))
+		var shelf := PickupBoard.shelf_name(crate.get_parent())
+		if not (row["shelves"] as Array).has(shelf):
+			(row["shelves"] as Array).append(shelf)
+	var order: Array = goods.keys()
 	order.sort()
+	var rows: Array = []
 	for good: String in order:
-		var entry: Dictionary = goods[good]
-		lines.append("%s  —  %s  —  %d kg" % [entry["name"],
-				TranslationServer.translate("%%DEPOT_STOCK_CRATES") % entry["crates"], entry["kg"]])
-		var shelves: Array = entry["shelves"]
-		shelves.sort()
-		if not shelves.is_empty():
-			lines.append("    " + ", ".join(PackedStringArray(shelves)))
-	return lines
+		(goods[good]["shelves"] as Array).sort()
+		rows.append(goods[good])
+	return rows
 
 
 ## What a crate holds, as the board names it: "Ingots · Gold", "Crushed ore · Gold".
 static func good_name(content: Dictionary) -> String:
 	var kind := "%%SPAWN_CRATE_INGOT" if CrateContent.is_ingot(content) else "%%SPAWN_CRATE_CRUSHED"
 	return "%s · %s" % [TranslationServer.translate(kind), TranslationServer.translate(CrateContent.content_key(content))]
-
-
-## [param count] lines of [param lines] from [param first] on, going round with a blank line between the
-## end and the start; all of them when they fit. Pure, for the tests.
-static func window(lines: PackedStringArray, first: int, count: int) -> PackedStringArray:
-	if lines.size() <= count:
-		return lines
-	var ring := lines.duplicate()
-	ring.append("")
-	var out := PackedStringArray()
-	for i: int in range(count):
-		out.append(ring[(first + i) % ring.size()])
-	return out
