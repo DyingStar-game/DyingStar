@@ -1158,12 +1158,11 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_REWARD"), ServiceTypes.rewards_text(rewards),
 			tr("%%SVC_MISSION_REWARD_WHEN"), ServiceStyle.ACCENT, 20))
 	# Who funded the escrow — absent on missions created before escrowPayerType existed.
-	var payer := ""
-	var payer_type: Variant = mission.get("escrowPayerType")
-	if payer_type is String and str(payer_type) != "":
-		payer = tr("%%SVC_FMT_MISSION_DETAIL_ESCROW") % ServiceTypes.escrow_payer_label(payer_type)
-	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_ISSUER"),
-			ServiceTypes.issuer_type_label(mission.get("issuerType")), payer, ServiceStyle.TEXT, 18))
+	var payer := ServiceTypes.escrow_payer_text(mission)
+	if payer != "":
+		payer = tr("%%SVC_FMT_MISSION_DETAIL_ESCROW") % payer
+	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_ISSUER"), ServiceTypes.issuer_text(mission), payer,
+			ServiceStyle.TEXT, 18))
 	# Who takes part (a shared mission): its participants are shown to its participants only.
 	var participants: Variant = data.get("participants")
 	var taken: int = (participants as Array).size() if participants is Array else 0

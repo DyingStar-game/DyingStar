@@ -99,12 +99,21 @@ const MISSION_CATEGORY_KEYS: Dictionary = {
 	"combat": "%%SVC_ENUM_CATEGORY_COMBAT",
 	"reception": "%%SVC_ENUM_CATEGORY_RECEPTION",
 }
+## What an entity that issues missions is, as its simulator says it (`payload.issuer.kind`): a lore
+## corporation such as ARES, a federation, an organisation. Not the issuer TYPE below, whose
+## `corporation` is a group made by players. A kind not listed shows the entity's name alone.
+const ENTITY_KIND_KEYS: Dictionary = {
+	"corporation": "%%ENTITY_KIND_CORPORATION",
+	"federation": "%%ENTITY_KIND_FEDERATION",
+	"organisation": "%%ENTITY_KIND_ORGANISATION",
+}
 const ISSUER_TYPE_KEYS: Dictionary = {
 	"system": "%%SVC_ENUM_ISSUER_SYSTEM",
 	"corporation": "%%SVC_ENUM_ISSUER_CORPORATION",
 	"city": "%%SVC_ENUM_ISSUER_CITY",
 	"player": "%%SVC_ENUM_ISSUER_PLAYER",
 	"npc": "%%SVC_ENUM_ISSUER_NPC",
+	"politics": "%%SVC_ENUM_PAYER_POLITICS",  # an entity that did not say who it is (issuer_text)
 }
 ## Availability zone kinds — the `MissionZone` discriminator, as the service validates them. Only
 ## `system` and `poi` exist in that union; `scene` and `area` are kept in the table so a zone an
@@ -293,6 +302,44 @@ static func mission_category_label(value: Variant) -> String:
 
 static func issuer_type_label(value: Variant) -> String:
 	return _enum(value, ISSUER_TYPE_KEYS)
+
+
+## Who orders [param mission], as its issuer says it: {name, kind} from the payload of its first
+## objective that carries one (the simulator's missions), {} when none does.
+static func mission_issuer(mission: Dictionary) -> Dictionary:
+	var objectives: Variant = mission.get("objectives")
+	for objective: Variant in (objectives if objectives is Array else []):
+		var payload: Variant = objective.get("payload") if objective is Dictionary else null
+		var issuer: Variant = payload.get("issuer") if payload is Dictionary else null
+		if issuer is Dictionary and str(issuer.get("name", "")) != "":
+			return issuer
+	return {}
+
+
+## An entity as a player reads it: its name and what it is ("ARES · Corporation"), the name alone for
+## a kind the game does not know, "" for no name.
+static func entity_text(entity: Dictionary) -> String:
+	var name := str(entity.get("name", ""))
+	var kind := str(entity.get("kind", ""))
+	if name == "" or not ENTITY_KIND_KEYS.has(kind):
+		return name
+	return "%s · %s" % [name, TranslationServer.translate(str(ENTITY_KIND_KEYS[kind]))]
+
+
+## Who issues [param mission]: the entity that says who it is, else the mission's issuer type.
+static func issuer_text(mission: Dictionary) -> String:
+	var named := entity_text(mission_issuer(mission))
+	return named if named != "" else issuer_type_label(mission.get("issuerType"))
+
+
+## Who funds [param mission]'s escrow: the issuing entity by its name when it pays from its own
+## treasury (payer type `politics`), else the payer's type. "" when the mission does not say.
+static func escrow_payer_text(mission: Dictionary) -> String:
+	var payer_type := str(mission.get("escrowPayerType", "") if mission.get("escrowPayerType") != null else "")
+	if payer_type == "":
+		return ""
+	var name := str(mission_issuer(mission).get("name", ""))
+	return name if payer_type == "politics" and name != "" else escrow_payer_label(payer_type)
 
 
 static func escrow_payer_label(value: Variant) -> String:
