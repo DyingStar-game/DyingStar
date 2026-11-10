@@ -78,20 +78,19 @@ func test_blocks_fill_the_layer_and_keep_to_their_cells() -> void:
     for block: Dictionary in blocks:
         volume += float(block.volume)
         largest = maxf(largest, float(block.size))
-        triangles += ((block.wall as PackedVector3Array).size() + (block.crack as PackedVector3Array).size()) / 3
+        triangles += ((block.wall as PackedInt32Array).size() + (block.crack as PackedInt32Array).size()) / 3
         rocks += 1 if float(block.volume) >= MineFracture.DUST_M3 else 0
         var i := int(block.index)
         var sign := 1.0 if sides[i] == 1 else -1.0
-        for part: String in ["wall", "crack"]:
-            for vertex: Vector3 in block[part]:
-                var local := inverse * vertex
-                worst_fault = minf(worst_fault, sign * (Vector2(local.x, local.y).dot(normal) - offset))
-                for j in points.size():
-                    if j == i or sides[j] != sides[i]:
-                        continue
-                    var between := points[i].distance_to(points[j])
-                    var past := (local.distance_squared_to(points[i]) - local.distance_squared_to(points[j])) / (2.0 * between)
-                    worst_cell = maxf(worst_cell, past)
+        for vertex: Vector3 in block.vertices:
+            var local := inverse * vertex
+            worst_fault = minf(worst_fault, sign * (Vector2(local.x, local.y).dot(normal) - offset))
+            for j in points.size():
+                if j == i or sides[j] != sides[i]:
+                    continue
+                var between := points[i].distance_to(points[j])
+                var past := (local.distance_squared_to(points[i]) - local.distance_squared_to(points[j])) / (2.0 * between)
+                worst_cell = maxf(worst_cell, past)
     for block: Dictionary in shut:
         shut_volume += float(block.volume)
     gut.p("layer of %.2f m: %d blocks (%d rocks), %.2f m³, largest %.2f m, %d triangles, %.1f ms"
@@ -117,11 +116,81 @@ func test_blocks_of_a_layer_are_the_same_every_time() -> void:
     assert_eq(first.size(), again.size())
     for index in first.size():
         assert_eq(first[index].centroid, again[index].centroid, "block %d" % index)
-        assert_eq(first[index].wall, again[index].wall, "block %d" % index)
+        assert_eq(first[index].vertices, again[index].vertices, "block %d" % index)
     var hull := MineFracture.hull_points(first[0])
     assert_gt(hull.size(), 3, "a hull to collide with")
-    assert_lt(hull.size(), (first[0].wall as PackedVector3Array).size() + (first[0].crack as PackedVector3Array).size(),
-        "shared corners counted once")
+
+
+func test_a_block_is_a_closed_surface() -> void:
+    if not MineMesher.warm():
+        pending("native mesher missing")
+        return
+    var from := float(_mine._dug[0])
+    var blocks := MineFracture.build(MineFracture.plan(_mine, 0, 0, from, from + _mine.layer_m, MineFracture.BODY_GAP_M))
+    for block: Dictionary in blocks:
+        if float(block.volume) <= 0.0:
+            continue
+        # Every edge shared by exactly two triangles, once each way: what CSG needs to carve it.
+        var edges := {}
+        var indices: PackedInt32Array = (block.wall as PackedInt32Array).duplicate()
+        indices.append_array(block.crack)
+        for k in range(0, indices.size(), 3):
+            for e in 3:
+                var a := indices[k + e]
+                var b := indices[k + (e + 1) % 3]
+                var directed := "%d>%d" % [a, b]
+                edges[directed] = int(edges.get(directed, 0)) + 1
+        var open := 0
+        for directed: String in edges:
+            var ends := directed.split(">")
+            if int(edges[directed]) != 1 or int(edges.get("%s>%s" % [ends[1], ends[0]], 0)) != 1:
+                open += 1
+        assert_eq(open, 0, "block %d watertight and consistently wound" % int(block.index))
+
+
+func test_a_rock_rebuilds_its_block_without_the_mine() -> void:
+    if not MineMesher.warm():
+        pending("native mesher missing")
+        return
+    var from := float(_mine._dug[0])
+    var ref := MineFracture.layer_ref(_mine, 0, 2, from, from + _mine.layer_m)
+    assert_eq(ref.style, MineLayout.STYLE_STRAIGHT)
+    assert_true((ref.near as Dictionary).has(0), "its own gallery")
+    var here := MineFracture.build(MineFracture.plan_from(_mine.layout(), ref, 0.0))
+    # Far from the mine: only the ref, the plan generated again from the seed.
+    var portable: Dictionary = JSON.parse_string(JSON.stringify(ref))
+    MineFracture._layouts.clear()
+    var blocks: Variant = MineFracture.blocks_for(portable, 0.0)
+    await wait_until(func() -> bool: return MineFracture.blocks_for(portable, 0.0) != null, 20.0)
+    blocks = MineFracture.blocks_for(portable, 0.0)
+    assert_eq((blocks as Array).size(), here.size(), "the same blocks")
+    for index in here.size():
+        assert_true((blocks[index].centroid as Vector3).is_equal_approx(here[index].centroid), "block %d" % index)
+
+    var rock: MineRock = load("res://" + MineRock.SCENE).instantiate()
+    var block_ref := portable.duplicate(true)
+    block_ref.index = 3
+    rock.apply_prop_data({"mine_block": block_ref, "mineral_id": "gold"})
+    add_child_autofree(rock)
+    await wait_until(func() -> bool: return rock._shaped, 5.0)
+    assert_true(rock._shaped, "shaped from its block")
+    assert_true(rock.is_in_group("miningrock"), "a mining rock: the tool aims at it")
+    assert_gt((rock.get_node("CollisionShape3D").shape as ConvexPolygonShape3D).points.size(), 3, "its hull")
+    assert_almost_eq(rock.longest_side(), float(blocks[3].size), 0.3, "measured on its block")
+    assert_eq(rock._split_data().mine_block, block_ref, "its halves are the same block")
+    # Cut in two through its middle, as a perforation does: CSG carves the block (a closed surface).
+    await wait_frames(2)
+    var whole: AABB = rock._piece_aabb()
+    rock.fractures = [{"fractured": true, "rotation_x": 0.0, "rotation_y": 0.0, "rotation_z": 0.0,
+        "plane_offset": whole.get_center().x, "keep_side": 1,
+        "cut_position": {"x": rock.position.x, "y": rock.position.y, "z": rock.position.z},
+        "cut_rotation": {"x": rock.rotation.x, "y": rock.rotation.y, "z": rock.rotation.z}}]
+    await rock._apply_cuts()
+    await wait_frames(2)
+    var half: AABB = rock._piece_aabb()
+    gut.p("block %.2f m across x, cut: %.2f m" % [whole.size.x, half.size.x])
+    assert_lt(half.size.x, whole.size.x * 0.7, "the cut took half of it")
+    assert_gt(half.size.x, 0.05, "and left the other half")
 
 
 func test_a_drilled_face_cracks_then_shuts_or_falls() -> void:

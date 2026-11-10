@@ -154,11 +154,14 @@ public partial class CaveNetworkMesher
     private static GDict EmptyFragment(int index, int side) => new()
     {
         ["index"] = index, ["side"] = side,
-        ["wall"] = Array.Empty<Vector3>(), ["wall_normals"] = Array.Empty<Vector3>(),
-        ["crack"] = Array.Empty<Vector3>(), ["crack_normals"] = Array.Empty<Vector3>(),
+        ["vertices"] = Array.Empty<Vector3>(), ["normals"] = Array.Empty<Vector3>(),
+        ["wall"] = Array.Empty<int>(), ["crack"] = Array.Empty<int>(),
         ["centroid"] = Vector3.Zero, ["volume"] = 0.0, ["size"] = 0.0,
     };
 
+    /// <summary>One block, as an INDEXED closed surface: every crossing of a lattice edge is one vertex, shared by
+    /// all the triangles round it, so the block is a watertight 2-manifold (a consistent tetrahedral split leaves no
+    /// crack) that CSG can carve (RockMining cuts it with planes).</summary>
     private static GDict Fragment(int i, Vector3[] seeds, int[] sides, Vector2 normal, double offset, double halfGap,
         Lattice lattice, Vector3I low, Vector3I high, Transform3D frame)
     {
@@ -170,29 +173,52 @@ public partial class CaveNetworkMesher
         int sx = x1 - x0 + 1, sy = y1 - y0 + 1, sz = z1 - z0 + 1;
         double step = lattice.Step;
         var field = new double[sx * sy * sz];
+        Vector3 At(int x, int y, int z) => lattice.Origin + new Vector3((x0 + x) * step, (y0 + y) * step, (z0 + z) * step);
         for (int z = 0; z < sz; z++)
         for (int y = 0; y < sy; y++)
         for (int x = 0; x < sx; x++)
         {
             int gx = x0 + x, gy = y0 + y, gz = z0 + z;
-            var p = lattice.Origin + new Vector3(gx * step, gy * step, gz * step);
             double layer = lattice.Slab[gx + lattice.Nx * (gy + lattice.Ny * gz)];
-            // A sample on the box's rim reads as outside, so the block closes even where the box cuts it.
-            bool rim = gx == 0 || gy == 0 || gz == 0 || gx == lattice.Nx - 1 || gy == lattice.Ny - 1 || gz == lattice.Nz - 1;
-            double crack = CrackTerm(p, i, seeds, sides, normal, offset) + halfGap;
-            field[x + sx * (y + sy * z)] = rim ? Math.Max(Math.Max(layer, crack), step) : Math.Max(layer, crack);
+            // The box's own rim reads as outside, so the block closes even where the box (or its margin) cuts it.
+            bool rim = x == 0 || y == 0 || z == 0 || x == sx - 1 || y == sy - 1 || z == sz - 1;
+            double crack = CrackTerm(At(x, y, z), i, seeds, sides, normal, offset) + halfGap;
+            double value = rim ? Math.Max(Math.Max(layer, crack), step) : Math.Max(layer, crack);
+            // Never exactly on the surface: a crossing at a sample would give a zero-length edge.
+            field[x + sx * (y + sy * z)] = Math.Abs(value) < 1e-7 ? 1e-7 : value;
         }
-        var wall = new List<Vector3>();
-        var wallNormals = new List<Vector3>();
-        var crackFaces = new List<Vector3>();
-        var crackNormals = new List<Vector3>();
-        var positions = new Vector3[8];
+        Vector3 FieldGradient(int x, int y, int z)
+        {
+            int xa = Math.Max(x - 1, 0), xb = Math.Min(x + 1, sx - 1);
+            int ya = Math.Max(y - 1, 0), yb = Math.Min(y + 1, sy - 1);
+            int za = Math.Max(z - 1, 0), zb = Math.Min(z + 1, sz - 1);
+            double F(int ax, int ay, int az) => field[ax + sx * (ay + sy * az)];
+            return new Vector3((F(xb, y, z) - F(xa, y, z)) / Math.Max(xb - xa, 1),
+                (F(x, yb, z) - F(x, ya, z)) / Math.Max(yb - ya, 1), (F(x, y, zb) - F(x, y, za)) / Math.Max(zb - za, 1));
+        }
+        long total = (long)sx * sy * sz;
+        var vertexOf = new Dictionary<long, int>();
+        var vertices = new List<Vector3>();
+        var normals = new List<Vector3>();
+        int Vertex(int a, int b)
+        {
+            int lo = Math.Min(a, b), hi = Math.Max(a, b);
+            long key = lo * total + hi;
+            if (vertexOf.TryGetValue(key, out int found)) return found;
+            // Always interpolated from the same end, so the crossing is the same whichever tetrahedron asks.
+            int lx = lo % sx, ly = lo / sx % sy, lz = lo / (sx * sy);
+            int hx = hi % sx, hy = hi / sx % sy, hz = hi / (sx * sy);
+            double t = field[lo] / (field[lo] - field[hi]);
+            vertices.Add(At(lx, ly, lz).Lerp(At(hx, hy, hz), t));
+            normals.Add(FieldGradient(lx, ly, lz).Lerp(FieldGradient(hx, hy, hz), t));
+            vertexOf[key] = vertices.Count - 1;
+            return vertices.Count - 1;
+        }
+        var wall = new List<int>();
+        var crackFaces = new List<int>();
+        var corners = new int[8];
         var densities = new double[8];
-        double volume = 0;
-        var moment = Vector3.Zero;
-        var lowest = new Vector3(double.MaxValue, double.MaxValue, double.MaxValue);
-        var highest = -lowest;
-        var reference = seeds[i];
+        var positions = new Vector3[8];
         for (int z = 0; z < sz - 1; z++)
         for (int y = 0; y < sy - 1; y++)
         for (int x = 0; x < sx - 1; x++)
@@ -201,62 +227,76 @@ public partial class CaveNetworkMesher
             for (int c = 0; c < 8; c++)
             {
                 var corner = Corners[c];
-                densities[c] = field[(x + corner.X) + sx * ((y + corner.Y) + sy * (z + corner.Z))];
+                corners[c] = (x + corner.X) + sx * ((y + corner.Y) + sy * (z + corner.Z));
+                densities[c] = field[corners[c]];
+                positions[c] = At(x + corner.X, y + corner.Y, z + corner.Z);
                 positive |= densities[c] > 0;
                 negative |= densities[c] <= 0;
-                positions[c] = lattice.Origin + new Vector3((x0 + x + corner.X) * step, (y0 + y + corner.Y) * step,
-                    (z0 + z + corner.Z) * step);
             }
             if (!positive || !negative) continue;
             for (int t = 0; t < 6; t++)
             {
-                foreach (var (a, b, c) in Tetra(positions, densities, t))
+                foreach (var (a, b, c) in Tetra(positions, densities, corners, t, Vertex, vertices))
                 {
-                    var centre = (a + b + c) / 3.0;
+                    var centre = (vertices[a] + vertices[b] + vertices[c]) / 3.0;
                     bool isCrack = CrackTerm(centre, i, seeds, sides, normal, offset) + halfGap >= lattice.At(centre);
-                    var flat = (c - a).Cross(b - a);
-                    if (flat.LengthSquared() < 1e-14) continue;
-                    flat = flat.Normalized();
                     var target = isCrack ? crackFaces : wall;
-                    var normals = isCrack ? crackNormals : wallNormals;
-                    foreach (var v in new[] { a, b, c })
-                    {
-                        target.Add(frame * v);
-                        var n = isCrack ? flat : lattice.Gradient(v);
-                        if (n.LengthSquared() < 1e-12 || n.Dot(flat) <= 0) n = flat;
-                        normals.Add((frame.Basis * n.Normalized()).Normalized());
-                        lowest = lowest.Min(v);
-                        highest = highest.Max(v);
-                    }
-                    // Divergence theorem: (a, c, b) is wound with its normal out of the block.
-                    var ra = a - reference;
-                    var rb = b - reference;
-                    var rc = c - reference;
-                    double tetra = ra.Dot(rc.Cross(rb)) / 6.0;
-                    volume += tetra;
-                    moment += (ra + rb + rc) * (tetra / 4.0);
+                    target.Add(a);
+                    target.Add(b);
+                    target.Add(c);
                 }
             }
         }
-        if (wall.Count + crackFaces.Count == 0 || volume <= 1e-9) return EmptyFragment(i, sides[i]);
-        var centroid = reference + moment / volume;
+        if (wall.Count + crackFaces.Count == 0) return EmptyFragment(i, sides[i]);
+        // Divergence theorem on the closed surface: (a, c, b) is wound with its normal out of the block.
+        double volume = 0;
+        var moment = Vector3.Zero;
+        var reference = seeds[i];
+        foreach (var list in new[] { wall, crackFaces })
+        {
+            for (int k = 0; k < list.Count; k += 3)
+            {
+                var ra = vertices[list[k]] - reference;
+                var rb = vertices[list[k + 1]] - reference;
+                var rc = vertices[list[k + 2]] - reference;
+                double tetra = ra.Dot(rc.Cross(rb)) / 6.0;
+                volume += tetra;
+                moment += (ra + rb + rc) * (tetra / 4.0);
+            }
+        }
+        if (volume <= 1e-9) return EmptyFragment(i, sides[i]);
+        var lowest = new Vector3(double.MaxValue, double.MaxValue, double.MaxValue);
+        var highest = -lowest;
+        var outVertices = new Vector3[vertices.Count];
+        var outNormals = new Vector3[vertices.Count];
+        for (int k = 0; k < vertices.Count; k++)
+        {
+            lowest = lowest.Min(vertices[k]);
+            highest = highest.Max(vertices[k]);
+            outVertices[k] = frame * vertices[k];
+            var n = normals[k];
+            outNormals[k] = n.LengthSquared() > 1e-18 ? (frame.Basis * n).Normalized() : frame.Basis.Y;
+        }
         var extent = highest - lowest;
         return new GDict
         {
             ["index"] = i, ["side"] = sides[i],
-            ["wall"] = wall.ToArray(), ["wall_normals"] = wallNormals.ToArray(),
-            ["crack"] = crackFaces.ToArray(), ["crack_normals"] = crackNormals.ToArray(),
-            ["centroid"] = frame * centroid, ["volume"] = volume,
+            ["vertices"] = outVertices, ["normals"] = outNormals,
+            ["wall"] = wall.ToArray(), ["crack"] = crackFaces.ToArray(),
+            ["centroid"] = frame * (reference + moment / volume), ["volume"] = volume,
             ["size"] = Math.Max(extent.X, Math.Max(extent.Y, extent.Z)),
         };
     }
 
-    /// <summary>The triangles of tetrahedron [tetra] of a cube, wound as BuildRegion's: -(b-a)×(c-a) points out of
-    /// the solid (density <= 0), into the air.</summary>
-    private static IEnumerable<(Vector3, Vector3, Vector3)> Tetra(Vector3[] p, double[] d, int tetra)
+    /// <summary>The triangles (vertex indices) of tetrahedron [tetra] of a cube, wound as BuildRegion's:
+    /// -(b-a)×(c-a) points out of the solid (density <= 0), into the air. [vertex] maps a lattice edge (two sample
+    /// indices) to its shared crossing vertex.</summary>
+    private static List<(int, int, int)> Tetra(Vector3[] p, double[] d, int[] sample, int tetra, Func<int, int, int> vertex,
+        List<Vector3> vertices)
     {
-        var ins = new int[4];
-        var outs = new int[4];
+        var result = new List<(int, int, int)>(2);
+        Span<int> ins = stackalloc int[4];
+        Span<int> outs = stackalloc int[4];
         int ni = 0, no = 0;
         var air = Vector3.Zero;
         for (int k = 0; k < 4; k++)
@@ -264,25 +304,29 @@ public partial class CaveNetworkMesher
             int v = Tetrahedra[tetra, k];
             if (d[v] > 0) { ins[ni++] = v; air += p[v]; } else outs[no++] = v;
         }
-        if (ni == 0 || ni == 4) yield break;
+        if (ni == 0 || ni == 4) return result;
         air /= ni;
-        Vector3 Cross(int a, int b) => p[a].Lerp(p[b], d[a] / (d[a] - d[b]));
-        (Vector3, Vector3, Vector3) Wind(Vector3 a, Vector3 b, Vector3 c)
-            => -(b - a).Cross(c - a).Dot(air - a) < 0 ? (a, c, b) : (a, b, c);
+        int Cross(int a, int b) => vertex(sample[a], sample[b]);
+        (int, int, int) Wind(int a, int b, int c)
+        {
+            var pa = vertices[a];
+            return -(vertices[b] - pa).Cross(vertices[c] - pa).Dot(air - pa) < 0 ? (a, c, b) : (a, b, c);
+        }
         if (ni == 1 || ni == 3)
         {
             int centre = ni == 1 ? ins[0] : outs[0];
-            var other = ni == 1 ? outs : ins;
-            yield return Wind(Cross(centre, other[0]), Cross(centre, other[1]), Cross(centre, other[2]));
+            int o0 = ni == 1 ? outs[0] : ins[0], o1 = ni == 1 ? outs[1] : ins[1], o2 = ni == 1 ? outs[2] : ins[2];
+            result.Add(Wind(Cross(centre, o0), Cross(centre, o1), Cross(centre, o2)));
         }
         else
         {
-            var a = Cross(ins[0], outs[0]);
-            var b = Cross(ins[0], outs[1]);
-            var c = Cross(ins[1], outs[1]);
-            var e = Cross(ins[1], outs[0]);
-            yield return Wind(a, b, c);
-            yield return Wind(a, c, e);
+            int a = Cross(ins[0], outs[0]);
+            int b = Cross(ins[0], outs[1]);
+            int c = Cross(ins[1], outs[1]);
+            int e = Cross(ins[1], outs[0]);
+            result.Add(Wind(a, b, c));
+            result.Add(Wind(a, c, e));
         }
+        return result;
     }
 }

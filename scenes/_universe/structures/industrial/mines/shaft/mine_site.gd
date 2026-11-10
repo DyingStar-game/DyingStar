@@ -147,10 +147,7 @@ var _faces: Dictionary = {}
 var _bounds := AABB()
 ## How far each gallery's rock is meshed: _dug, plus the layer a client shows open while it is being drilled.
 var _cells_dug: Dictionary = {}
-## Blocks of the layers broken lately (MineFracture.key -> Array), oldest first in _fracture_order.
-var _fracture_cache: Dictionary = {}
-var _fracture_order: Array[String] = []
-## Layers being broken on a worker: key -> {task, result, waiters}.
+## Layers waited for (MineFracture.blocks_for): ref_key -> {ref, gap, waiters}.
 var _fracture_jobs: Dictionary = {}
 ## CLIENT: the layer drilled at a face, by gallery id: {step, from, to, hit, state, progress, deadline, node, blocks,
 ## onsets, tilts, cracked, gone}. state: "drilling", "done" (drilled, the server's answer awaited), "falling" (the
@@ -196,9 +193,7 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
     _live.erase(self)
-    for key: String in _fracture_jobs:
-        WorkerThreadPool.wait_for_task_completion(_fracture_jobs[key].task)
-    _fracture_jobs.clear()
+    _fracture_jobs.clear()  # the builds are shared (MineFracture): they finish for whoever asks next
     if _measuring >= 0:
         WorkerThreadPool.wait_for_task_completion(_measuring)
         _measuring = -1
@@ -429,7 +424,12 @@ func _register_hole() -> void:
 ## The frame of gallery [param id]'s face [param distance] m along it: origin on the floor there, -Z along the
 ## gallery (level), +Y up.
 func face_frame(id: int, distance: float) -> Transform3D:
-    var gallery: Dictionary = _layout.galleries[id]
+    return face_frame_in(_layout, id, distance)
+
+
+## [method face_frame] in the plan [param layout].
+static func face_frame_in(layout: Dictionary, id: int, distance: float) -> Transform3D:
+    var gallery: Dictionary = layout.galleries[id]
     var forward := MineLayout.direction_at(gallery, distance)
     forward = Vector3(forward.x, 0.0, forward.z).normalized()
     var back := -forward
@@ -439,11 +439,16 @@ func face_frame(id: int, distance: float) -> Transform3D:
 ## The fault of layer [param step] of gallery [param id]'s face, seeded: [normal in the face's XY plane, offset].
 ## Through the gallery's axis, at any tilt, within 0.6 m of the face's middle.
 func fault_of(id: int, step: int) -> Array:
+    return fault_in(seed, _layout, id, step)
+
+
+## [method fault_of] for the mine of seed [param mine_seed] and plan [param layout].
+static func fault_in(mine_seed: int, layout: Dictionary, id: int, step: int) -> Array:
     var rng := RandomNumberGenerator.new()
-    rng.seed = ("%d|fault|%d|%d" % [seed, id, step]).hash()
+    rng.seed = ("%d|fault|%d|%d" % [mine_seed, id, step]).hash()
     var angle := rng.randf_range(0.0, PI)
     var normal := Vector2(cos(angle), sin(angle))
-    var center := Vector2(0.0, float(_layout.settings.gallery_height_m) * 0.45)
+    var center := Vector2(0.0, float(layout.settings.gallery_height_m) * 0.45)
     return [normal, center.dot(normal) + rng.randf_range(-0.6, 0.6)]
 
 
@@ -529,8 +534,9 @@ func server_break_face(id: int) -> void:
     _persist({"faces": faces, "face_step": face_step})
     if is_inside_tree() and to > from:
         var purity := layer_purity(id, step)
+        var ref := MineFracture.layer_ref(self, id, step, from, to)
         fragments_for(id, step, from, to, MineFracture.BODY_GAP_M,
-            func(blocks: Array) -> void: _spawn_fragments(id, step, from, to, purity, blocks))
+            func(blocks: Array) -> void: _spawn_fragments(id, step, ref, purity, blocks))
     _refresh()
 
 
@@ -542,36 +548,37 @@ func layer_purity(id: int, step: int) -> float:
 
 
 ## SERVER: the blocks of layer [param step] of gallery [param id] (it stood from [param from] to [param to] m along
-## the gallery) become rocks, each where it stood in the wall (MineRock keeps them still until the new rock is built
-## round them). Gold, at one purity for the layer; the dust stays dust.
-func _spawn_fragments(id: int, step: int, from: float, to: float, purity: float, blocks: Array) -> void:
+## the gallery) become mining rocks (MineRock), each where it stood in the wall, kept still until the new rock is
+## built round it. Minable like any rock, cut until carried. Gold, at one purity for the layer (their ore_seed);
+## the dust stays dust.
+func _spawn_fragments(id: int, step: int, ref: Dictionary, purity: float, blocks: Array) -> void:
     if not is_inside_tree() or blocks.is_empty():
         return
     var host := _host_rock()
     var density := RockMining.INERT_DENSITY_DEFAULT
     if MineralRegistry.has_mineral(StringName(host)):
         density = MineralRegistry.get_mineral(StringName(host)).density_kg_m3
+    var layer := "%s|layer|%d|%d" % [uuid, id, step]
     var rocks: Array = []
     for block: Dictionary in blocks:
         if float(block.volume) < MineFracture.DUST_M3:
             continue
         var at: Vector3 = block.centroid
+        var block_ref := ref.duplicate(true)
+        block_ref.index = int(block.index)
         rocks.append({
             "type": MineRock.TYPE,
-            "uuid": PropSpawn.stable_uuid("%s|layer|%d|%d#%d" % [uuid, id, step, int(block.index)]),
+            "uuid": PropSpawn.stable_uuid("%s#%d" % [layer, int(block.index)]),
             "position": {"x": at.x, "y": at.y, "z": at.z},
             "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
             "scenename": MineRock.SCENE,
             "parent_id": uuid,
-            "gallery": id,
-            "step": step,
-            "index": int(block.index),
-            "from_m": from,
-            "to_m": to,
+            "mine_block": block_ref,
+            "ore_seed": gold_seed(layer, int(block.index), purity),
             "mineral_id": "gold",
-            "purity": purity,
             "host_rock_id": host,
             "inert_density": density,
+            "ground_color": "",
         })
     print("[MineSite] %s: layer %d of gallery %d broke into %d rocks (%d blocks, gold %.0f %%)"
             % [name, step, id, rocks.size(), blocks.size(), purity * 100.0])
@@ -580,41 +587,33 @@ func _spawn_fragments(id: int, step: int, from: float, to: float, purity: float,
 
 
 ## The blocks of layer [param step] of gallery [param id], standing from [param from_m] to [param to_m] along it, with
-## [param gap] (m) between them (MineFracture): given to [param done] (an Array of blocks, [] when they cannot be
-## built) at once when known, else once a worker made them. Several callers of one layer share one build.
+## [param gap] (m) between them (MineFracture.blocks_for, shared with the rocks): given to [param done] (an Array of
+## blocks, [] when they cannot be built) at once when known, else once a worker made them.
 func fragments_for(id: int, step: int, from_m: float, to_m: float, gap: float, done: Callable) -> void:
-    var key := MineFracture.key(id, step, from_m, to_m, gap)
-    if _fracture_cache.has(key):
-        done.call(_fracture_cache[key])
-        return
-    if _fracture_jobs.has(key):
-        (_fracture_jobs[key].waiters as Array).append(done)
-        return
-    var layer_plan := MineFracture.plan(self, id, step, from_m, to_m, gap)
-    if layer_plan.is_empty():
+    if _layout.is_empty():
         done.call([])
         return
-    var result: Array = [[]]
-    var task := WorkerThreadPool.add_task(func(): result[0] = MineFracture.build(layer_plan))
-    _fracture_jobs[key] = {"task": task, "result": result, "waiters": [done]}
+    var ref := MineFracture.layer_ref(self, id, step, from_m, to_m)
+    var blocks: Variant = MineFracture.blocks_for(ref, gap)
+    if blocks != null:
+        done.call(blocks)
+        return
+    var key := MineFracture.ref_key(ref, gap)
+    if not _fracture_jobs.has(key):
+        _fracture_jobs[key] = {"ref": ref, "gap": gap, "waiters": []}
+    (_fracture_jobs[key].waiters as Array).append(done)
     set_process(true)
 
 
 func _collect_fractures() -> void:
     for key: String in _fracture_jobs.keys():
         var job: Dictionary = _fracture_jobs[key]
-        if not WorkerThreadPool.is_task_completed(job.task):
+        var blocks: Variant = MineFracture.blocks_for(job.ref, float(job.gap))
+        if blocks == null:
             continue
-        WorkerThreadPool.wait_for_task_completion(job.task)
         _fracture_jobs.erase(key)
-        var blocks: Array = job.result[0]
-        if blocks.is_empty():
+        if (blocks as Array).is_empty():
             push_warning("[MineSite] %s: layer %s could not be broken (native mesher missing?)" % [name, key])
-        else:
-            _fracture_cache[key] = blocks
-            _fracture_order.append(key)
-            while _fracture_order.size() > 8:
-                _fracture_cache.erase(_fracture_order.pop_front())
         for waiter: Callable in job.waiters:
             if waiter.is_valid():
                 waiter.call(blocks)

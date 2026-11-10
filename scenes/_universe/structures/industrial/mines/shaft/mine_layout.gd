@@ -302,6 +302,31 @@ static func graph_near(layout: Dictionary, dug_m: Dictionary, box: AABB) -> Dict
     return full
 
 
+## The galleries dug as [param dug_m] says whose rock may reach [param box] (mine frame), with how far each is dug:
+## all a piece of the mine there depends on (MineFracture.layer_ref). As generous as [method graph_near]'s test.
+static func galleries_near(layout: Dictionary, dug_m: Dictionary, box: AABB) -> Dictionary:
+    var s: Dictionary = layout.settings
+    var relief := maxf(float(s.gallery_width_m) * 0.5, float(s.gallery_height_m)) \
+        + absf(float(s.wall_roughness_m)) * 1.6 + 3.0
+    var reach := box.grow(2.0 + relief)
+    var out := {}
+    for gallery: Dictionary in layout.galleries:
+        var id := int(gallery.id)
+        if not dug_m.has(id):
+            continue
+        var dug := float(dug_m[id])
+        var points: PackedVector3Array = gallery.points
+        var lengths: PackedFloat64Array = gallery.lengths
+        for index in range(1, points.size()):
+            if lengths[index - 1] >= dug:
+                break
+            var b := points[index] if lengths[index] <= dug else point_at(gallery, dug)
+            if AABB(points[index - 1], Vector3.ZERO).expand(b).intersects(reach):
+                out[id] = dug
+                break
+    return out
+
+
 ## The box holding every volume of [param volumes] with its wall relief.
 static func bounds(volumes: Array) -> AABB:
     var box := AABB()
