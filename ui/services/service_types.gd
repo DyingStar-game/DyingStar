@@ -101,7 +101,8 @@ const MISSION_CATEGORY_KEYS: Dictionary = {
 }
 ## What an entity that issues missions is, as its simulator says it (`payload.issuer.kind`): a lore
 ## corporation such as ARES, a federation, an organisation. Not the issuer TYPE below, whose
-## `corporation` is a group made by players. A kind not listed shows the entity's name alone.
+## `corporation` is a corporation of the social service (of players or of NPCs), which ARES is not. A kind
+## not listed shows the entity's name alone.
 const ENTITY_KIND_KEYS: Dictionary = {
 	"corporation": "%%ENTITY_KIND_CORPORATION",
 	"federation": "%%ENTITY_KIND_FEDERATION",

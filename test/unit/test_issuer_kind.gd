@@ -33,7 +33,7 @@ func test_politics_is_never_shown_raw() -> void:
 	assert_eq(ServiceTypes.escrow_payer_text({}), "", "a mission that does not say who pays")
 
 
-func test_a_players_corporation_keeps_its_own_type() -> void:
+func test_a_corporation_of_social_keeps_its_own_type() -> void:
 	var mission := {"issuerType": "corporation", "escrowPayerType": "corporation", "objectives": []}
 	assert_eq(ServiceTypes.issuer_text(mission), TranslationServer.translate("%%SVC_ENUM_ISSUER_CORPORATION"))
 	assert_true(ServiceTypes.ENTITY_KIND_KEYS.has("corporation") and ServiceTypes.ISSUER_TYPE_KEYS.has("corporation"),
