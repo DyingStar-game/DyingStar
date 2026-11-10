@@ -100,6 +100,15 @@
 			"license": "unknown"
 		},
 		{
+			"asset": "leberch_ambient.mp3",
+			"path": "res://assets/_universe/audio/music/leberch_ambient.mp3",
+			"author": "leberch",
+			"source": "Pixabay",
+			"id": "",
+			"url": "https://pixabay.com/music/ambient-ambient-ambient-music-604092/",
+			"license": "Pixabay Content License"
+		},
+		{
 			"asset": "lodestar_alan_mihaly.mp3",
 			"path": "res://assets/_universe/audio/music/lodestar_alan_mihaly.mp3",
 			"author": "Alan Mihàly",
@@ -107,6 +116,15 @@
 			"id": "1123047331693068420",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "meditative_hang_drum.ogg",
+			"path": "res://assets/_universe/audio/music/meditative_hang_drum.ogg",
+			"author": "Siarhei_Korbut",
+			"source": "Pixabay",
+			"id": "",
+			"url": "https://pixabay.com/music/meditationspiritual-meditative-hang-drum-389564/",
+			"license": "Pixabay Content License"
 		},
 		{
 			"asset": "meloncholia.ogg",
