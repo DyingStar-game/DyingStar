@@ -18,6 +18,9 @@ const LIFT_SCENE := "scenes/_universe/structures/industrial/vehicle_lift/vehicle
 ## How long (s) a drilled layer's blocks wait for the server once the drilling ended, or for their rocks once the
 ## layer fell, before the client lets them go.
 const FRACTURE_WAIT_S := 4.0
+## Deeper than this (m) under the collar, a body under the ground near a mine is put back on its floor
+## (mine_near); shallower, it sank through the ground round the collar and goes back on the surface.
+const RESCUE_DEPTH_M := 8.0
 ## Blocks within this distance (m) of the drill shake while it hammers.
 const SHAKE_RADIUS_M := 1.6
 
@@ -252,13 +255,15 @@ static func mine_at(global_point: Vector3) -> MineSite:
     return null
 
 
-## The live mine whose rock [param global_point] is in or near (within [param margin_m] of its dug air), or null:
-## who fell through a mine's floor belongs back in the mine, not on the ground above it.
+## The live mine whose rock [param global_point] is in or near (within [param margin_m] of its dug air) and deep
+## under its collar (RESCUE_DEPTH_M), or null: who fell through a mine's floor belongs back in the mine, not on the
+## ground above it. Someone who sank through the ground round the collar is not down the mine.
 static func mine_near(global_point: Vector3, margin_m: float) -> MineSite:
     for mine in _live:
         if not is_instance_valid(mine) or mine._layout.is_empty() or not mine.is_inside_tree():
             continue
-        if mine._bounds.grow(margin_m).has_point(mine.global_transform.affine_inverse() * global_point):
+        var local := mine.global_transform.affine_inverse() * global_point
+        if local.y < -RESCUE_DEPTH_M and mine._bounds.grow(margin_m).has_point(local):
             return mine
     return null
 

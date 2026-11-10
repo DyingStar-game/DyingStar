@@ -3868,6 +3868,11 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 const _SURFACE_CATCH_MARGIN := 3.0
 ## How high above the ground the caught truck is released, in metres.
 const _SURFACE_CATCH_DROP := 4.0
+## Under the ground this close (m) to a village mine's dug air, a truck that fell through its rock goes back on the
+## mine's floor instead of the ground above.
+const _MINE_RESCUE_MARGIN_M := 40.0
+## How high (m) over the mine's floor such a truck's wheels are released: a gallery has a roof.
+const _MINE_RESCUE_DROP_M := 0.5
 var _catch_logged_ms: int = -100000
 
 func _catch_if_below_surface() -> void:
@@ -3892,6 +3897,10 @@ func _catch_if_below_surface() -> void:
 	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
 	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
 		return  # at or above the ground — the collision handles it
+	# Under the relief on purpose, as the player's net knows: driving through a cave, or down a village mine
+	# (its lift, a station, a gallery). Only asked once the cheap test says "under".
+	if CavePlanetRegistry.contains(pdata, local_body) or MineSite.contains_point(global_position):
+		return
 	surface_dist = pdata.carved_surface_dist(dir)
 	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
 		return
@@ -3904,6 +3913,17 @@ func _catch_if_below_surface() -> void:
 			return  # on the collision, under the theoretical crest
 		surface_dist = ground
 	var up_world: Vector3 = (planet_basis * dir).normalized()
+	# Fell through a village mine's rock: back on the mine's floor (back from the faces), not on the ground
+	# hundreds of metres above it.
+	var mine := MineSite.mine_near(global_position, _MINE_RESCUE_MARGIN_M)
+	if mine != null:
+		var floor_at := mine.floor_near_global(global_position, clearance + _MINE_RESCUE_DROP_M)
+		print("🚚 Vehicle %s fell through the rock of mine %s at %s: put back on its floor at %s"
+				% [uuid, mine.name, mine.to_local(global_position), mine.to_local(floor_at)])
+		global_position = floor_at
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		return
 	# One line a second at most: with no ground at all the net fires every tick (fall, catch, fall),
 	# and a print per tick is a known server-cost trap.
 	var now_ms: int = Time.get_ticks_msec()
