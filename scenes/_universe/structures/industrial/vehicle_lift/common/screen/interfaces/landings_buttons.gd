@@ -20,6 +20,14 @@ func setup(_p_vehicle_lift: VehicleLift, _screen: Control) -> void:
 		push_error("vehicle_lift ou screen non présents dans %s" % name)
 		return
 
+	# A stop's landing (VehicleLift.stop_depths) is a copy of the upper one: its button calls the platform
+	# to that stop, through its own landing, not the lift's upper landing.
+	var own := _own_landing()
+	if own != null and own.stop_index >= 0:
+		if not call_button.pressed.is_connected(own._on_call_button_triggered):
+			call_button.pressed.connect(own._on_call_button_triggered.bind({"landing": "stop"}))
+		return
+
 	match screen.landing:
 		screen.LandingList.LOWER_LANDING:
 
@@ -42,3 +50,13 @@ func setup(_p_vehicle_lift: VehicleLift, _screen: Control) -> void:
 						}))
 		_:
 			pass
+
+
+## The landing this screen stands on, or null.
+func _own_landing() -> LiftLanding:
+	var node: Node = get_parent()
+	while node != null and not node is VehicleLift:
+		if node is LiftLanding:
+			return node as LiftLanding
+		node = node.get_parent()
+	return null

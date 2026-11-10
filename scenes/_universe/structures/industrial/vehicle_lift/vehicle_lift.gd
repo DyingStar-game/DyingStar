@@ -73,6 +73,18 @@ extends Node3D
 		if _sync != null:
 			_sync.server_prop_update({"notch_width_m": notch_width_m})
 
+## Depths (m under the upper landing) where the platform also stops, each with a landing of its own (a
+## mine shaft's levels). Empty = a plain two-landing lift. With stops, the platform's down and up buttons
+## go to the next stop, and each stop's kiosk calls the platform to it.
+@export var stop_depths: PackedFloat32Array = PackedFloat32Array():
+	set(value):
+		stop_depths = value
+		_update_visuals()
+		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
+			return
+		if _sync != null:
+			_sync.server_prop_update({"stop_depths": Array(stop_depths)})
+
 
 @export_group("Lift Dynamics")
 ## Cruising speed of the platform (m/s). Higher = shorter trips; the screens' ETA follows.
@@ -172,6 +184,10 @@ const NOTCH_FLOOR_BELOW_LANDING_M := 0.74
 ## Name of the TerrainNotch child the lift keeps in step with its dimensions.
 const NOTCH_NODE_NAME := "TerrainNotch"
 const LOWER_LANDING_INITIAL_POSITION: Vector3 = Vector3(0.0,0.0,0.0)
+## Name of the landing of stop i (stop_depths): this prefix and i. Derived, never saved with the scene.
+const STOP_LANDING_PREFIX := "StopLanding"
+## A stop this close (m) to the platform is where it already is.
+const STOP_REACHED_M := 0.5
 
 const LIFT_DIR: String = "res://scenes/_universe/structures/industrial/vehicle_lift/"
 const BASE_SCENE: PackedScene = preload(LIFT_DIR + "base/base.tscn")
@@ -499,6 +515,8 @@ func _update_visuals() -> void:
 	if lower_landing:
 		lower_landing.position = LOWER_LANDING_INITIAL_POSITION + Vector3(0, -descent_depth, guide_z_offset)
 
+	_update_stop_landings()
+
 	if rail_head:
 		rail_head.position = Vector3(0, 0, guide_z_offset)
 
@@ -552,6 +570,81 @@ func _update_visuals() -> void:
 	_update_platform_movement()
 
 
+## One landing per stop (stop_depths), the upper landing's scene at each depth: built when a stop appears,
+## moved with the guide, freed when the stop goes.
+func _update_stop_landings() -> void:
+	var index := 0
+	while true:
+		var extra := get_node_or_null(STOP_LANDING_PREFIX + str(index))
+		if extra == null:
+			break
+		if index >= stop_depths.size():
+			extra.name = "%sGone%d" % [STOP_LANDING_PREFIX, extra.get_instance_id()]
+			extra.queue_free()
+		index += 1
+	for stop in stop_depths.size():
+		var landing := get_node_or_null(STOP_LANDING_PREFIX + str(stop)) as Node3D
+		if landing == null:
+			landing = UPPER_LANDING_SCENE.instantiate()
+			landing.name = STOP_LANDING_PREFIX + str(stop)
+			landing.set("is_upper", false)
+			landing.set("stop_index", stop)
+			add_child(landing)
+		landing.position = Vector3(0.0, -stop_depths[stop], guide_z_offset)
+
+
+## Every landing of the lift: the upper one, the lower one, then the stops'.
+func _landings() -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	for landing_name in ["Upper Landing", "Lower Landing"]:
+		var landing := get_node_or_null(landing_name) as Node3D
+		if landing != null:
+			out.append(landing)
+	for stop in stop_depths.size():
+		var landing := get_node_or_null(STOP_LANDING_PREFIX + str(stop)) as Node3D
+		if landing != null:
+			out.append(landing)
+	return out
+
+
+## The next stop (as a ratio, %) going down ([param down]) or up from where the platform is: a stop landing,
+## or the end of the run.
+func next_stop_ratio(down: bool) -> float:
+	if descent_depth <= 0.0:
+		return 0.0
+	var here := platform_progress_ratio / 100.0 * descent_depth
+	var best := descent_depth if down else 0.0
+	for depth in stop_depths:
+		if down and depth > here + STOP_REACHED_M and depth < best:
+			best = depth
+		elif not down and depth < here - STOP_REACHED_M and depth > best:
+			best = depth
+	return best / descent_depth * 100.0
+
+
+## SERVER: send the platform to stop [param index] (a stop landing's call button).
+func call_to_stop(index: int) -> void:
+	if index < 0 or index >= stop_depths.size() or descent_depth <= 0.0:
+		return
+	_go_to_ratio(stop_depths[index] / descent_depth * 100.0)
+
+
+## SERVER: start the platform towards [param ratio] (%) unless it is moving or already there.
+func _go_to_ratio(ratio: float) -> void:
+	if _is_moving or _current_speed > 0.0:
+		return
+	if absf(ratio - platform_progress_ratio) / 100.0 * descent_depth < STOP_REACHED_M * 0.2:
+		return
+	_target_ratio = clampf(ratio, 0.0, 100.0)
+	_is_moving = true
+	set_physics_process(true)
+	if _sync != null:
+		_sync.server_prop_update({
+			"is_moving": _is_moving,
+			"target_ratio": _target_ratio
+		})
+
+
 func _update_platform_movement() -> void:
 	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
 		return
@@ -603,13 +696,8 @@ func _process(_delta: float) -> void:
 		if _is_moving:
 			eta = ceili(_travel_time)
 
-			var upper_landing: Node3D = get_node_or_null("Upper Landing")
-			var lower_landing: Node3D = get_node_or_null("Lower Landing")
-
-			if upper_landing:
-				upper_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
-			if lower_landing:
-				lower_landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
+			for landing in _landings():
+				landing.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
 			if platform_system:
 				platform_system.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
 
@@ -618,38 +706,18 @@ func _process(_delta: float) -> void:
 		base.update_animated_axis_rotation(platform_progress_ratio, descent_depth)
 
 
+## Down to the next stop (the lower landing when there is none on the way).
 func move_down() -> void:
 	if platform_progress_ratio >= 100.0:
 		return
-
-	if not _is_moving and _current_speed <= 0.0:
-		_target_ratio = 100.0
-		_is_moving = true
-		set_physics_process(true)
-
-			## INFO seulement serveur
-		if _sync != null:
-			_sync.server_prop_update({
-				"is_moving": _is_moving,
-				"target_ratio": _target_ratio
-			})
+	_go_to_ratio(next_stop_ratio(true))
 
 
+## Up to the next stop (the upper landing when there is none on the way).
 func move_up() -> void:
 	if platform_progress_ratio <= 0.0:
 		return
-
-	if not _is_moving and _current_speed <= 0.0:
-		_target_ratio = 0.0
-		_is_moving = true
-		set_physics_process(true)
-
-			## INFO seulement serveur
-		if _sync != null:
-			_sync.server_prop_update({
-				"is_moving": _is_moving,
-				"target_ratio": _target_ratio
-			})
+	_go_to_ratio(next_stop_ratio(false))
 
 
 func stop_movement() -> void:
@@ -670,31 +738,20 @@ func _on_lift_started() -> void:
 
 	_travel_time = compute_travel_time(distance_to_target, max_speed, acceleration)
 
-	var upper_landing: Node3D = get_node_or_null("Upper Landing")
-	var lower_landing: Node3D = get_node_or_null("Lower Landing")
-
-	if upper_landing:
-		upper_landing.start_beacons()
-	if lower_landing:
-		lower_landing.start_beacons()
+	for landing in _landings():
+		landing.start_beacons()
 	_sound_running(true)
 
 
 func _on_lift_stopped() -> void:
 	_travel_time = 0.0
 
-	var upper_landing: Node3D = get_node_or_null("Upper Landing")
-	var lower_landing: Node3D = get_node_or_null("Lower Landing")
 	var platform: Node3D = get_node_or_null("Platform System")
-
-	if upper_landing:
-		upper_landing.stop_beacons()
-		upper_landing.update_interface_lift_progress(platform_progress_ratio, 0, "Stopped")
+	for landing in _landings():
+		landing.stop_beacons()
+		landing.update_interface_lift_progress(platform_progress_ratio, 0, "Stopped")
 	if platform:
 		platform.update_interface_lift_progress(platform_progress_ratio, 0, "Stopped")
-	if lower_landing:
-		lower_landing.stop_beacons()
-		lower_landing.update_interface_lift_progress(platform_progress_ratio, 0, "Stopped")
 	_sound_running(false)
 
 
@@ -773,6 +830,8 @@ func apply_prop_data(_data: Dictionary) -> void:
 		notch_length_m = _data["notch_length_m"]
 	if "descent_depth" in _data:
 		descent_depth = _data["descent_depth"]
+	if "stop_depths" in _data and _data["stop_depths"] != null:
+		stop_depths = PackedFloat32Array(_data["stop_depths"])
 	if "guide_z_offset" in _data:
 		guide_z_offset = _data["guide_z_offset"]
 	if "max_speed" in _data:

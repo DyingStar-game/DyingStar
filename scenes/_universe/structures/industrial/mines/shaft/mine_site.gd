@@ -12,6 +12,8 @@ extends Node3D
 ## The ground opens under the shaft through PlanetTerrain.register_mine_hole; the server also opens it from the
 ## stored data before this node exists (server.gd), under the same id, so nothing is rebuilt when it comes.
 
+const LIFT_SCENE := "scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift.tscn"
+
 ## Every live mine, for MineSite.contains_point (the below-surface rescue must not pull anyone out of one).
 static var _live: Array[MineSite] = []
 
@@ -56,6 +58,14 @@ static var _live: Array[MineSite] = []
 ## Rock (m) kept over a gallery: it stops before the ground above gets thinner than this.
 @export_range(5.0, 200.0, 1.0, "suffix:m") var min_cover_m: float = 30.0
 
+@export_group("Lift")
+## Speed (m/s) of the shaft's vehicle lift: 10 m/s takes a kilometre in under two minutes.
+@export_range(0.5, 10.0, 0.1, "suffix:m/s") var lift_speed_m_s: float = 10.0
+## How far (m) the lift's origin stands back from the shaft's rim, in the rock: its rails run in the wall.
+@export_range(0.0, 10.0, 0.1, "suffix:m") var lift_setback_m: float = 1.0
+## Distance (m) from the lift's origin out to its guide (VehicleLift.guide_z_offset): the bridges' length.
+@export_range(0.0, 10.0, 0.1, "suffix:m") var lift_guide_m: float = 2.0
+
 @export_group("Rendering")
 ## Material of the rock walls (triplanar in the mine's frame).
 @export var wall_material: Material = preload("res://scenes/planet/cave/libraries/gabarits/rock_wall.tres")
@@ -77,6 +87,7 @@ var style: String = ""
 var faces: Dictionary = {}
 var face_step: Dictionary = {}
 var gallery_max_m: Dictionary = {}
+var lift_spawned: bool = false
 
 ## Set by the server (sleep, zone hand-over) or the client (out of range) before freeing this node while the mine
 ## stays in the world: its hole stays open, as TerrainPad.keep_on_exit.
@@ -111,6 +122,8 @@ func apply_prop_data(data: Dictionary) -> void:
         seed = int(data.seed)
     if data.has("style") and data.style != null:
         style = str(data.style)
+    if data.has("lift_spawned") and data.lift_spawned != null:
+        lift_spawned = bool(data.lift_spawned)
     if is_inside_tree():
         _refresh.call_deferred()
 
@@ -223,6 +236,8 @@ func _refresh() -> void:
     _register_hole()
     if server and gallery_max_m.is_empty():
         _measure_limits()
+    if server and not lift_spawned:
+        _spawn_lift()
 
 
 ## A stable seed from the mine's uuid (never 0).
@@ -299,6 +314,47 @@ func _register_hole() -> void:
         return
     _hole_signature = hole.signature()
     terrain.register_mine_hole(hole)
+
+
+## Where the lift stands in the mine frame: on the rim at -Z, set back into the rock, facing the shaft.
+func lift_origin() -> Vector3:
+    return Vector3(0.0, 0.0, -(shaft_radius_m + lift_setback_m))
+
+
+## The lift's stops: every level but the bottom one (its lower landing), as depths under the rim.
+static func lift_stops(plan: Dictionary) -> PackedFloat32Array:
+    var stops := PackedFloat32Array()
+    for level: Dictionary in plan.levels:
+        var depth := -float(level.y)
+        if depth < float(plan.depth) - 1.0:
+            stops.append(depth)
+    return stops
+
+
+## SERVER: spawn the shaft's vehicle lift under this mine, once: down to the bottom, a stop at each level.
+## Its uuid is drawn from ours, so a lost lift_spawned flag upserts the same lift instead of piling copies.
+func _spawn_lift() -> void:
+    if lift_spawned or uuid.is_empty() or _layout.is_empty():
+        return
+    lift_spawned = true
+    var lift_uuid := PropSpawn.stable_uuid("%s|lift" % uuid)
+    NetworkOrchestrator.protected_prop_uuids[lift_uuid] = true  # world infrastructure
+    var origin := lift_origin()
+    NetworkOrchestrator.spawn_prop_authoritative({
+        "type": "vehicle_lift",
+        "uuid": lift_uuid,
+        "position": {"x": origin.x, "y": origin.y, "z": origin.z},
+        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "scenename": LIFT_SCENE,
+        "parent_id": uuid,
+        "name": "MineLift",
+        "descent_depth": float(_layout.depth),
+        "stop_depths": Array(lift_stops(_layout)),
+        "guide_z_offset": lift_guide_m,
+        "max_speed": lift_speed_m_s,
+        "notch_length_m": 0.0,
+    })
+    _persist({"lift_spawned": true})
 
 
 ## The hole of the mine [param uuid] from its stored data (server.gd, before its node exists): same id and same

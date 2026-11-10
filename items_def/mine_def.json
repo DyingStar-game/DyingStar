@@ -22,7 +22,8 @@
 				"style",
 				"faces",
 				"face_step",
-				"gallery_max_m"
+				"gallery_max_m",
+				"lift_spawned"
 			]
 		}
 	]

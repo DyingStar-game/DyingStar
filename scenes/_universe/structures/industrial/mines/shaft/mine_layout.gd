@@ -48,7 +48,7 @@ const DEFAULTS := {
     "wall_frequency": 0.35,
     "station_width_m": 24.0,
     "station_length_m": 20.0,
-    "station_height_m": 8.0,
+    "station_height_m": 10.0,
     "straight_fan_deg": 70.0,
     "straight_grade": 0.02,
     "chaotic_spread_deg": 110.0,

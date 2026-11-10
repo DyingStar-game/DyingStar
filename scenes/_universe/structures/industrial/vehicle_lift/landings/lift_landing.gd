@@ -14,6 +14,9 @@ extends StaticBody3D
 @export_file("*.json") var railing_json_path: String = ""
 ## The kiosk screen of this landing (a lift_base_interface): it shows the platform's progress.
 @export var landing_interface: Control
+## Which stop of the lift (VehicleLift.stop_depths) this landing serves: its call button brings the
+## platform to that depth. -1 = an end of the run (upper or lower landing, see is_upper).
+@export var stop_index: int = -1
 
 
 @onready var beacon_left: Node3D = %"Beacon Left"
@@ -74,6 +77,9 @@ func update_screen(data: Dictionary):
 	if vehicle_lift == null or not vehicle_lift is VehicleLift:
 		return
 
+	if stop_index >= 0:
+		vehicle_lift.call_to_stop(stop_index)
+		return
 	if action.get("landing") != ("upper" if is_upper else "lower"):
 		return
 	if is_upper:

@@ -28,7 +28,7 @@ use_collision = true
 collision_mask = 0
 
 [node name="Ring" type="CSGCylinder3D" parent="Collar"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.4, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.8, 0)
 radius = 24.0
 height = 1.6
 sides = 48
@@ -42,15 +42,21 @@ sides = 48
 material = ExtResource("4_grey")
 
 [node name="Parapet" type="CSGCylinder3D" parent="Collar"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
-radius = 24.0
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+radius = 19.4
 height = 1.1
 sides = 48
 material = ExtResource("5_dark")
 
 [node name="Inside" type="CSGCylinder3D" parent="Collar/Parapet"]
 operation = 2
-radius = 23.6
+radius = 19.0
 height = 1.4
 sides = 48
 material = ExtResource("5_dark")
+
+[node name="LiftGap" type="CSGBox3D" parent="Collar"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -19.25)
+operation = 2
+size = Vector3(16, 6, 14.5)
+material = ExtResource("4_grey")
