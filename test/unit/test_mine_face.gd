@@ -80,12 +80,11 @@ func test_a_layer_falls_and_the_gallery_moves_on() -> void:
     var gallery: Dictionary = _mine._layout.galleries[0]
     var initial := float(gallery.initial_m)
     _mine.server_break_face(0)
-    assert_almost_eq(float(_mine.faces["0"]), 1.5, 1.0e-6, "moved on by a layer")
+    assert_almost_eq(float(_mine.faces["0"]), _mine.layer_m, 1.0e-6, "moved on by a layer")
     assert_eq(int(_mine.face_step["0"]), 1, "next layer")
-    _mine._dug = MineLayout.dug(_mine._layout, _mine.faces, _mine.gallery_max_m)
-    _mine.server_break_face(0)
-    _mine._dug = MineLayout.dug(_mine._layout, _mine.faces, _mine.gallery_max_m)
-    _mine.server_break_face(0)
+    for layer in 20:
+        _mine._dug = MineLayout.dug(_mine._layout, _mine.faces, _mine.gallery_max_m)
+        _mine.server_break_face(0)
     _mine._dug = MineLayout.dug(_mine._layout, _mine.faces, _mine.gallery_max_m)
     assert_almost_eq(float(_mine._dug[0]), initial + 4.0, 1.0e-6, "never past its limit")
     assert_false(MineLayout.face_open(_mine._layout, 0, _mine.faces, _mine.gallery_max_m), "the face is closed")
@@ -130,15 +129,3 @@ func test_gold_purity_close_to_the_layer_draw() -> void:
             var ore_seed := MineSite.gold_seed("mine|layer|3|7", index, target)
             var richness := float(absi(ore_seed.hash()) % 1000) / 1000.0
             assert_almost_eq(richness, target, 0.0101, "rock %d near %.2f" % [index, target])
-
-
-func test_debris_sizes_up_to_two_metres() -> void:
-    var rng := RandomNumberGenerator.new()
-    rng.seed = 5
-    var sizes := {}
-    for draw in 400:
-        var pick: Array = MineSite._pick_debris(rng)
-        assert_lte(float(pick[1]), 2.0)
-        assert_true(ResourceLoader.exists("res://" + MineSite.DEBRIS_DIR + str(pick[0])), str(pick[0]))
-        sizes[pick[1]] = true
-    assert_eq(sizes.size(), MineSite.DEBRIS.size(), "every size drops")

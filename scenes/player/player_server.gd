@@ -531,7 +531,7 @@ func server_action_received(data: Dictionary) -> void:
 			var del_type: String = str(data.get("type", ""))
 			var del_uuid: String = str(data.get("uuid", ""))
 			var deletable := ["miningrock", "box", "mining_depot", "crate_container", "vehicle",
-					"vehicle_component", "food", "tool"]
+					"vehicle_component", "food", "tool", "mine_rock"]
 			if del_uuid == "" or not (del_type in deletable):
 				print("🗑️ Admin delete refused: type=%s uuid=%s" % [del_type, del_uuid])
 			elif NetworkOrchestrator.protected_prop_uuids.has(del_uuid):

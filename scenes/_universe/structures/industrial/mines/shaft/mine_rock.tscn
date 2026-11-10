@@ -1,0 +1,15 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/mines/shaft/mine_rock.gd" id="1_rock"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
+
+[node name="MineRock" type="RigidBody3D"]
+collision_layer = 8
+collision_mask = 13
+mass = 500.0
+script = ExtResource("1_rock")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_sync")
+type_name = "mine_rock"
+metadata/_custom_type_script = "uid://crq5yq1gfb42p"

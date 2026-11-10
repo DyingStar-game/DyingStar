@@ -270,6 +270,38 @@ static func graph(layout: Dictionary, dug_m: Dictionary) -> Dictionary:
         "volumes": volumes, "bounds": bounds(volumes)}
 
 
+## [method graph] cut down to the volumes that may reach [param box] (mine frame), for meshing a small piece of the
+## mine (MineFracture): the same densities inside the box, from a few volumes. A gallery is kept whole when any of its
+## segments reaches the box: the mesher joins consecutive segments as one feature, by their order.
+static func graph_near(layout: Dictionary, dug_m: Dictionary, box: AABB) -> Dictionary:
+    var full := graph(layout, dug_m)
+    var reach := box.grow(2.0)
+    var kept: Array[Dictionary] = []
+    var run: Array[Dictionary] = []
+    var run_hits := false
+    for volume: Dictionary in full.volumes:
+        var tunnel := str(volume.kind) == "tunnel"
+        var hits := bounds([volume]).intersects(reach)
+        if tunnel and bool(volume.get("continues_a", false)):
+            run.append(volume)
+            run_hits = run_hits or hits
+            continue
+        if run_hits:
+            kept.append_array(run)
+        run = []
+        run_hits = false
+        if tunnel:
+            run.append(volume)
+            run_hits = hits
+        elif hits:
+            kept.append(volume)
+    if run_hits:
+        kept.append_array(run)
+    full.volumes = kept
+    full.bounds = bounds(kept) if not kept.is_empty() else box
+    return full
+
+
 ## The box holding every volume of [param volumes] with its wall relief.
 static func bounds(volumes: Array) -> AABB:
     var box := AABB()

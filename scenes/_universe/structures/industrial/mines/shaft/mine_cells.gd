@@ -104,13 +104,40 @@ func stats() -> Dictionary:
     return {"built": _built.size(), "tasks": _tasks.size(), "cells": _cells.size()}
 
 
-## Are the cells round [param point] (mine frame) built with the latest rock?
+## Are the cells round [param point] (mine frame) built with the latest rock? Not while a graph that reshapes them
+## is still being configured.
 func ready_at(point: Vector3) -> bool:
     var cell := Vector3i((point / CELL_M).floor())
+    if _pending(cell):
+        return false
     if not _cells.has(cell):
         return true
     var built: Variant = _built.get(cell)
     return built != null and int(built.version) >= int(_changed.get(cell, 0))
+
+
+## Are the cells [param cells] (Vector3i keys) that are wanted now built with the latest rock, no graph reshaping
+## them still being configured?
+func current(cells: Dictionary) -> bool:
+    for cell: Vector3i in cells:
+        if _pending(cell):
+            return false
+        if not _cells.has(cell) or not _wanted.has(cell):
+            continue
+        var built: Variant = _built.get(cell)
+        if built == null or int(built.version) < int(_changed.get(cell, 0)):
+            return false
+    return true
+
+
+## Does a graph given but not configured yet reshape [param cell]?
+func _pending(cell: Vector3i) -> bool:
+    for job: Dictionary in [_configuring, _queued]:
+        if job.is_empty():
+            continue
+        if bool(job.all) or (job.changed as Dictionary).has(cell):
+            return true
+    return false
 
 
 func _process(delta: float) -> void:

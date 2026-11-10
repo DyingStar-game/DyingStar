@@ -11,7 +11,7 @@ static var _script: Script
 ## Loads the native mesher once; false when the C# assembly is missing or stale (no mine is meshed then).
 static func warm() -> bool:
     if _script == null:
-        _script = NativeScript.load_usable(MESHER_PATH, ["Configure", "BuildRegion"])
+        _script = NativeScript.load_usable(MESHER_PATH, ["Configure", "BuildRegion", "BuildFragments"])
     return _script != null
 
 

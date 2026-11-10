@@ -15,15 +15,11 @@ extends Node3D
 ## Horizon type of a mine.
 const TYPE := "mine"
 const LIFT_SCENE := "scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift.tscn"
-const DEBRIS_DIR := "scenes/_universe/environment/terrain/rocks/"
-## The rocks a fallen layer drops: scene, size (m) across, how often (weight).
-const DEBRIS := [
-    ["rock_mining_debris_040.tscn", 0.4, 0.3],
-    ["rock_mining_debris_070.tscn", 0.7, 0.3],
-    ["rock_mining_debris_100.tscn", 1.0, 0.2],
-    ["rock_mining_debris_140.tscn", 1.4, 0.12],
-    ["rock_mining_debris_200.tscn", 2.0, 0.08],
-]
+## How long (s) a drilled layer's blocks wait for the server once the drilling ended, or for their rocks once the
+## layer fell, before the client lets them go.
+const FRACTURE_WAIT_S := 4.0
+## Blocks within this distance (m) of the drill shake while it hammers.
+const SHAKE_RADIUS_M := 1.6
 
 ## Every live mine, for MineSite.contains_point (the below-surface rescue must not pull anyone out of one).
 static var _live: Array[MineSite] = []
@@ -72,14 +68,24 @@ static var _live: Array[MineSite] = []
 @export_group("Face")
 ## Time (s) a player holds the mining tool on a face's fault before a layer of rock falls.
 @export_range(1.0, 120.0, 0.5, "suffix:s") var face_seconds: float = 20.0
-## Thickness (m) of a fallen layer: how far the gallery moves on each time. Lower = more layers to mine.
-@export_range(0.5, 5.0, 0.1, "suffix:m") var layer_m: float = 1.5
+## Thickness (m) of a fallen layer: how far the gallery moves on each time, and how deep its blocks go. Lower =
+## thinner blocks and more layers to mine.
+@export_range(0.3, 3.0, 0.05, "suffix:m") var layer_m: float = 0.8
 ## How close (m) to the fault the tool must hit; higher = easier to aim.
 @export_range(0.02, 1.0, 0.01, "suffix:m") var fault_tolerance_m: float = 0.15
-## Fewest rocks a fallen layer drops.
-@export_range(1, 20) var debris_min: int = 4
-## Most rocks a fallen layer drops.
-@export_range(1, 20) var debris_max: int = 10
+## Fewest blocks a layer breaks into. More blocks = smaller ones (a 6 × 4.5 m face in 25 blocks: about 0.9 m
+## across), and more rigid bodies in the gallery.
+@export_range(4, 80) var fragment_min: int = 20
+## Most blocks a layer breaks into.
+@export_range(4, 80) var fragment_max: int = 30
+## How far (m) a cracked block comes out of the wall while the face is drilled: wider = cracks seen from further.
+@export_range(0.0, 0.2, 0.005, "suffix:m") var crack_open_m: float = 0.03
+## Largest tilt (degrees) of a cracked block as it comes out: higher = a more broken-looking face.
+@export_range(0.0, 10.0, 0.1, "suffix:°") var crack_tilt_deg: float = 1.5
+## Sound of a block cracking while the face is drilled (empty = silent).
+@export var sfx_crack: AudioStream
+## Loudness of that sound in decibels (0 = the sample's own level).
+@export_range(-40.0, 12.0, 0.5) var sfx_crack_db: float = -6.0
 ## Lowest gold purity (0..1) a fallen layer may get; drawn once per layer, all its rocks carry it.
 @export_range(0.0, 1.0, 0.01) var gold_min: float = 0.02
 ## Highest gold purity (0..1) a fallen layer may get.
@@ -102,6 +108,8 @@ static var _live: Array[MineSite] = []
 @export var wall_material: Material = preload("res://scenes/planet/cave/libraries/gabarits/rock_wall.tres")
 ## Material of the floors.
 @export var floor_material: Material = preload("res://scenes/planet/cave/libraries/gabarits/rock_floor.tres")
+## Material of the fresh rock inside the cracks of a broken layer, and of its blocks' broken sides.
+@export var crack_material: Material = preload("res://scenes/_universe/structures/industrial/mines/shaft/mine_crack.tres")
 ## Distance (m) around the player within which the rock is built. Higher = seen further down the galleries, more
 ## cells in memory and more building.
 @export_range(40.0, 600.0, 1.0, "suffix:m") var view_radius_m: float = 160.0
@@ -137,6 +145,17 @@ var _measure_result: Array = []
 var _faces: Dictionary = {}
 ## The box holding the mine's air as dug now (mine frame, with a margin): what contains_global looks at first.
 var _bounds := AABB()
+## How far each gallery's rock is meshed: _dug, plus the layer a client shows open while it is being drilled.
+var _cells_dug: Dictionary = {}
+## Blocks of the layers broken lately (MineFracture.key -> Array), oldest first in _fracture_order.
+var _fracture_cache: Dictionary = {}
+var _fracture_order: Array[String] = []
+## Layers being broken on a worker: key -> {task, result, waiters}.
+var _fracture_jobs: Dictionary = {}
+## CLIENT: the layer drilled at a face, by gallery id: {step, from, to, hit, state, progress, deadline, node, blocks,
+## onsets, tilts, cracked, gone}. state: "drilling", "done" (drilled, the server's answer awaited), "falling" (the
+## layer fell, its rocks awaited) or "closing" (let go before the end: the wall shuts again).
+var _previews: Dictionary = {}
 
 ## The PropSync child's uuid on the node itself: what makes the mine a networked parent (PropSpawn.find_net_parent).
 var uuid: String:
@@ -162,7 +181,7 @@ func apply_prop_data(data: Dictionary) -> void:
         lift_spawned = bool(data.lift_spawned)
     if is_inside_tree() and not _layout.is_empty() and not GameOrchestrator.is_server():
         for key: String in face_step:
-            if int(face_step[key]) > int(before.get(key, face_step[key])):
+            if int(face_step[key]) > int(before.get(key, 0)):
                 _layer_fell(int(key))  # where the old face stood, before the refresh moves it
     if is_inside_tree():
         _refresh.call_deferred()
@@ -177,6 +196,9 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
     _live.erase(self)
+    for key: String in _fracture_jobs:
+        WorkerThreadPool.wait_for_task_completion(_fracture_jobs[key].task)
+    _fracture_jobs.clear()
     if _measuring >= 0:
         WorkerThreadPool.wait_for_task_completion(_measuring)
         _measuring = -1
@@ -279,14 +301,8 @@ func _refresh() -> void:
                 _layout_key = "%d|%s|%s" % [seed, style, settings]
     var previous := _dug
     _dug = MineLayout.dug(_layout, faces, gallery_max_m)
-    var graph := MineLayout.graph(_layout, _dug)
-    _bounds = (graph.bounds as AABB).grow(5.0)
-    _ensure_cells()
-    if _cells != null:
-        if fresh:
-            _cells.set_graph(graph)
-        elif previous != _dug:
-            _cells.set_graph(graph, _changed_cells(previous, _dug))
+    _bounds = (MineLayout.graph(_layout, _dug).bounds as AABB).grow(5.0)
+    _sync_cells(fresh)
     if not server and (fresh or previous != _dug):
         _rebuild_lights()
     _update_faces()
@@ -322,6 +338,23 @@ func _changed_cells(before: Dictionary, after: Dictionary) -> Dictionary:
             continue
         out.merge(MineLayout.face_cells(_layout, _layout.galleries[id], from, to, MineCells.CELL_M))
     return out
+
+
+## Mesh the rock as dug, plus the layers a client shows open while they are drilled. [param fresh]: a new plan,
+## every cell again.
+func _sync_cells(fresh: bool = false) -> void:
+    var wanted := _dug.duplicate()
+    for id: int in _previews:
+        var preview: Dictionary = _previews[id]
+        if str(preview.state) != "closing" and wanted.has(id):
+            wanted[id] = maxf(float(wanted[id]), float(preview.to))
+    _ensure_cells()
+    if _cells != null:
+        if fresh:
+            _cells.set_graph(MineLayout.graph(_layout, wanted))
+        elif wanted != _cells_dug:
+            _cells.set_graph(MineLayout.graph(_layout, wanted), _changed_cells(_cells_dug, wanted))
+    _cells_dug = wanted
 
 
 func _ensure_cells() -> void:
@@ -472,59 +505,305 @@ func server_break_face(id: int) -> void:
     var step := int(face_step.get(key, 0))
     faces[key] = minf(float(faces.get(key, 0.0)) + layer_m, reach - float(gallery.initial_m))
     face_step[key] = step + 1
+    var to := minf(float(gallery.initial_m) + float(faces[key]), reach)
     _persist({"faces": faces, "face_step": face_step})
-    _spawn_debris(id, from, step)
+    if is_inside_tree() and to > from:
+        var purity := layer_purity(id, step)
+        fragments_for(id, step, from, to, MineFracture.BODY_GAP_M,
+            func(blocks: Array) -> void: _spawn_fragments(id, step, from, to, purity, blocks))
     _refresh()
 
 
-## SERVER: the rocks of layer [param step] of gallery [param id], dropped just in front of the face that stood
-## [param from] m along it (open air: the new rock is still being built). Gold, at one purity for the layer.
-func _spawn_debris(id: int, from: float, step: int) -> void:
+## The gold purity (0..1) of layer [param step] of gallery [param id]: drawn once, every block of the layer carries it.
+func layer_purity(id: int, step: int) -> float:
     var rng := RandomNumberGenerator.new()
     rng.seed = ("%d|debris|%d|%d" % [seed, id, step]).hash()
-    var purity := rng.randf_range(minf(gold_min, gold_max), maxf(gold_min, gold_max))
-    var count := rng.randi_range(debris_min, maxi(debris_min, debris_max))
-    var frame := face_frame(id, from)
-    var half := float(_layout.settings.gallery_width_m) * 0.5
-    var top := minf(float(_layout.settings.gallery_height_m) - 1.0, 2.8)
+    return rng.randf_range(minf(gold_min, gold_max), maxf(gold_min, gold_max))
+
+
+## SERVER: the blocks of layer [param step] of gallery [param id] (it stood from [param from] to [param to] m along
+## the gallery) become rocks, each where it stood in the wall (MineRock keeps them still until the new rock is built
+## round them). Gold, at one purity for the layer; the dust stays dust.
+func _spawn_fragments(id: int, step: int, from: float, to: float, purity: float, blocks: Array) -> void:
+    if not is_inside_tree() or blocks.is_empty():
+        return
     var host := _host_rock()
     var density := RockMining.INERT_DENSITY_DEFAULT
     if MineralRegistry.has_mineral(StringName(host)):
         density = MineralRegistry.get_mineral(StringName(host)).density_kg_m3
-    var seed_str := "%s|layer|%d|%d" % [uuid, id, step]
-    var placed: Array = []
     var rocks: Array = []
-    for index in count:
-        var pick := _pick_debris(rng)
-        var radius := float(pick[1]) * 0.5
-        var at := Vector3.ZERO
-        for attempt in 10:
-            at = Vector3(rng.randf_range(-half + 0.3 + radius, half - 0.3 - radius), rng.randf_range(0.3 + radius, top),
-                -rng.randf_range(0.2, 1.6))
-            var clear := true
-            for other: Array in placed:
-                if (other[0] as Vector3).distance_to(at) < (radius + float(other[1])) * 0.8:
-                    clear = false
-                    break
-            if clear:
-                break
-        placed.append([at, radius])
-        var position := frame * at
-        var rotation := Vector3(rng.randf_range(-PI, PI), rng.randf_range(-PI, PI), rng.randf_range(-PI, PI))
+    for block: Dictionary in blocks:
+        if float(block.volume) < MineFracture.DUST_M3:
+            continue
+        var at: Vector3 = block.centroid
         rocks.append({
-            "type": "miningrock",
-            "uuid": PropSpawn.stable_uuid("%s#%d" % [seed_str, index]),
-            "position": {"x": position.x, "y": position.y, "z": position.z},
-            "rotation": {"x": rotation.x, "y": rotation.y, "z": rotation.z},
-            "scenename": DEBRIS_DIR + str(pick[0]),
+            "type": MineRock.TYPE,
+            "uuid": PropSpawn.stable_uuid("%s|layer|%d|%d#%d" % [uuid, id, step, int(block.index)]),
+            "position": {"x": at.x, "y": at.y, "z": at.z},
+            "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "scenename": MineRock.SCENE,
             "parent_id": uuid,
-            "ore_seed": gold_seed(seed_str, index, purity),
+            "gallery": id,
+            "step": step,
+            "index": int(block.index),
+            "from_m": from,
+            "to_m": to,
             "mineral_id": "gold",
+            "purity": purity,
             "host_rock_id": host,
             "inert_density": density,
-            "ground_color": "",
         })
-    NetworkOrchestrator.spawn_props_authoritative(rocks)
+    print("[MineSite] %s: layer %d of gallery %d broke into %d rocks (%d blocks, gold %.0f %%)"
+            % [name, step, id, rocks.size(), blocks.size(), purity * 100.0])
+    if not rocks.is_empty():
+        NetworkOrchestrator.spawn_props_authoritative(rocks)
+
+
+## The blocks of layer [param step] of gallery [param id], standing from [param from_m] to [param to_m] along it, with
+## [param gap] (m) between them (MineFracture): given to [param done] (an Array of blocks, [] when they cannot be
+## built) at once when known, else once a worker made them. Several callers of one layer share one build.
+func fragments_for(id: int, step: int, from_m: float, to_m: float, gap: float, done: Callable) -> void:
+    var key := MineFracture.key(id, step, from_m, to_m, gap)
+    if _fracture_cache.has(key):
+        done.call(_fracture_cache[key])
+        return
+    if _fracture_jobs.has(key):
+        (_fracture_jobs[key].waiters as Array).append(done)
+        return
+    var layer_plan := MineFracture.plan(self, id, step, from_m, to_m, gap)
+    if layer_plan.is_empty():
+        done.call([])
+        return
+    var result: Array = [[]]
+    var task := WorkerThreadPool.add_task(func(): result[0] = MineFracture.build(layer_plan))
+    _fracture_jobs[key] = {"task": task, "result": result, "waiters": [done]}
+    set_process(true)
+
+
+func _collect_fractures() -> void:
+    for key: String in _fracture_jobs.keys():
+        var job: Dictionary = _fracture_jobs[key]
+        if not WorkerThreadPool.is_task_completed(job.task):
+            continue
+        WorkerThreadPool.wait_for_task_completion(job.task)
+        _fracture_jobs.erase(key)
+        var blocks: Array = job.result[0]
+        if blocks.is_empty():
+            push_warning("[MineSite] %s: layer %s could not be broken (native mesher missing?)" % [name, key])
+        else:
+            _fracture_cache[key] = blocks
+            _fracture_order.append(key)
+            while _fracture_order.size() > 8:
+                _fracture_cache.erase(_fracture_order.pop_front())
+        for waiter: Callable in job.waiters:
+            if waiter.is_valid():
+                waiter.call(blocks)
+
+
+func _process(delta: float) -> void:
+    _collect_fractures()
+    if not _previews.is_empty():
+        _update_previews(delta)
+    if _fracture_jobs.is_empty() and _previews.is_empty():
+        set_process(false)
+
+
+# ------------------------------------------------------------------------------------------------ the drilled face
+
+## CLIENT: a player started drilling gallery [param id]'s face at [param hit] (world): its layer shows, its blocks
+## crack open as the drilling goes on (fracture_progress).
+func fracture_begin(id: int, hit: Vector3) -> void:
+    if GameOrchestrator.is_server() or not _dug.has(id) or not MineLayout.face_open(_layout, id, faces, gallery_max_m):
+        return
+    var step := int(face_step.get(str(id), 0))
+    var from := float(_dug[id])
+    var reach := minf(float(gallery_max_m.get(str(id), 0.0)), float(_layout.settings.gallery_cap_m))
+    var to := minf(from + layer_m, reach)
+    if to - from < 0.05:
+        return
+    var local_hit := face_frame(id, from).affine_inverse() * (global_transform.affine_inverse() * hit)
+    var preview: Variant = _previews.get(id)
+    if preview != null and int(preview.step) == step and str(preview.state) != "falling":
+        preview.state = "drilling"
+        preview.hit = local_hit
+        preview.progress = 0.0
+        preview.onsets = PackedFloat32Array()
+        _sync_cells()
+        _apply_onsets(id)
+        return
+    if preview != null:
+        _drop_preview(id)
+    _previews[id] = {"step": step, "from": from, "to": to, "hit": local_hit, "state": "drilling", "progress": 0.0,
+        "deadline": 0.0, "node": null, "blocks": [], "onsets": PackedFloat32Array(), "tilts": [], "cracked": {},
+        "gone": {}, "shown": false}
+    set_process(true)
+    _sync_cells()
+    fragments_for(id, step, from, to, 0.0, func(blocks: Array) -> void: _preview_ready(id, step, blocks))
+
+
+## CLIENT: how far (0..1) the drilling of gallery [param id]'s face has gone.
+func fracture_progress(id: int, progress: float) -> void:
+    var preview: Variant = _previews.get(id)
+    if preview != null and str(preview.state) == "drilling":
+        preview.progress = clampf(progress, 0.0, 1.0)
+
+
+## CLIENT: the drilling of gallery [param id]'s face stopped: [param completed] = held to the end (the layer falls
+## once the server says so), else let go (the cracks close).
+func fracture_end(id: int, completed: bool) -> void:
+    var preview: Variant = _previews.get(id)
+    if preview == null or str(preview.state) != "drilling":
+        return
+    if completed:
+        preview.state = "done"
+        preview.progress = 1.0
+        preview.deadline = Time.get_ticks_msec() / 1000.0 + FRACTURE_WAIT_S
+    else:
+        preview.state = "closing"
+        _sync_cells()
+
+
+## CLIENT: rock [param index] of layer [param step] of gallery [param id] is here (MineRock): its block in the wall
+## goes.
+func rock_arrived(id: int, step: int, index: int) -> void:
+    var preview: Variant = _previews.get(id)
+    if preview == null or int(preview.step) != step:
+        return
+    (preview.gone as Dictionary)[index] = true
+    var node: Node3D = preview.node
+    if node != null and is_instance_valid(node):
+        var block := node.get_node_or_null("Block%d" % index) as Node3D
+        if block != null:
+            block.visible = false
+
+
+func _preview_ready(id: int, step: int, blocks: Array) -> void:
+    var preview: Variant = _previews.get(id)
+    if preview == null or int(preview.step) != step or blocks.is_empty():
+        if preview != null and blocks.is_empty():
+            _drop_preview(id)
+        return
+    var node := Node3D.new()
+    node.name = "Fracture%d" % id
+    node.visible = false
+    add_child(node)
+    var rng := RandomNumberGenerator.new()
+    rng.seed = ("%d|tilt|%d|%d" % [seed, id, step]).hash()
+    var tilts: Array = []
+    for block: Dictionary in blocks:
+        var axis := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0))
+        tilts.append([axis.normalized() if axis.length() > 0.01 else Vector3.RIGHT, rng.randf_range(0.3, 1.0)])
+        var mesh := MineFracture.to_mesh(block, wall_material, crack_material)
+        var instance := MeshInstance3D.new()
+        instance.name = "Block%d" % int(block.index)
+        instance.mesh = mesh
+        instance.visible = mesh != null and not (preview.gone as Dictionary).has(int(block.index))
+        node.add_child(instance)
+    preview.node = node
+    preview.blocks = blocks
+    preview.tilts = tilts
+    _apply_onsets(id)
+
+
+func _apply_onsets(id: int) -> void:
+    var preview: Dictionary = _previews[id]
+    var blocks: Array = preview.blocks
+    if blocks.is_empty():
+        return
+    var points := PackedVector3Array()
+    var inverse := face_frame(id, float(preview.from)).affine_inverse()
+    for block: Dictionary in blocks:
+        points.append(inverse * (block.centroid as Vector3))
+    preview.onsets = MineFracture.onsets(points, preview.hit)
+    preview.cracked = {}
+
+
+## The face's rock, round gallery [param id]'s layer, meshed as the cells now want it (no older cell left)?
+func _cells_current(id: int, preview: Dictionary) -> bool:
+    if _cells == null:
+        return false
+    var gallery: Dictionary = _layout.galleries[id]
+    return _cells.current(MineLayout.face_cells(_layout, gallery, float(preview.from), float(preview.to), MineCells.CELL_M))
+
+
+func _update_previews(delta: float) -> void:
+    var now := Time.get_ticks_msec() / 1000.0
+    for id: int in _previews.keys():
+        var preview: Dictionary = _previews[id]
+        var state := str(preview.state)
+        var node: Node3D = preview.node
+        if state == "done" and now > float(preview.deadline):
+            preview.state = "closing"  # the server never let the layer fall: the wall shuts again
+            state = "closing"
+            _sync_cells()
+        if state == "falling" and now > float(preview.deadline):
+            _drop_preview(id)
+            continue
+        if state == "closing":
+            preview.progress = maxf(0.0, float(preview.progress) - delta * 2.0)
+            if node == null or (_cells_current(id, preview) and float(preview.progress) <= 0.0):
+                _drop_preview(id)
+                continue
+        if node == null:
+            continue
+        # The blocks show once the cells round them are open: never a hole, never the wall over them.
+        if not bool(preview.shown) and (state == "falling" or _cells_current(id, preview)):
+            preview.shown = true
+            node.visible = true
+        _pose_blocks(id, preview)
+
+
+## Where each block of a drilled layer stands: shut until the cracks reach it, then out of the wall by up to
+## crack_open_m, tilted, shaking near the drill.
+func _pose_blocks(id: int, preview: Dictionary) -> void:
+    var node: Node3D = preview.node
+    var blocks: Array = preview.blocks
+    var onsets: PackedFloat32Array = preview.onsets
+    if onsets.size() != blocks.size():
+        return
+    var frame := face_frame(id, float(preview.from))
+    var out := frame.basis.z
+    var hit := frame * (preview.hit as Vector3)
+    var drilling := str(preview.state) == "drilling"
+    var progress := float(preview.progress)
+    for index in blocks.size():
+        var block: Dictionary = blocks[index]
+        var instance := node.get_node_or_null("Block%d" % int(block.index)) as Node3D
+        if instance == null:
+            continue
+        var opened := smoothstep(onsets[index], onsets[index] + 0.12, progress)
+        var centroid: Vector3 = block.centroid
+        if opened > 0.05 and not (preview.cracked as Dictionary).has(index):
+            preview.cracked[index] = true
+            if drilling:
+                _crack_puff(centroid, frame.basis)
+        var tilt: Array = preview.tilts[index]
+        var basis := Basis(tilt[0], deg_to_rad(crack_tilt_deg) * float(tilt[1]) * opened)
+        var shift := out * crack_open_m * opened
+        if drilling and opened > 0.0:
+            var near := 1.0 - centroid.distance_to(hit) / SHAKE_RADIUS_M
+            if near > 0.0:
+                shift += Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * 0.004 * near
+        instance.transform = Transform3D(basis, centroid + shift - basis * centroid)
+
+
+func _drop_preview(id: int) -> void:
+    var preview: Variant = _previews.get(id)
+    _previews.erase(id)
+    if preview != null and preview.node != null and is_instance_valid(preview.node):
+        (preview.node as Node).queue_free()
+    _sync_cells()
+
+
+## A wisp of dust where a block cracks ([param at], mine frame), blown out along [param basis]'s +Z (the face's
+## frame: into the gallery), and its sound.
+func _crack_puff(at: Vector3, basis: Basis) -> void:
+    var dust := _dust(12, 1.5, Vector3.ONE * 0.25, 0.3)
+    dust.transform = Transform3D(basis, at)
+    add_child(dust)
+    dust.emitting = true
+    if sfx_crack != null and not Sfx3D.muted():
+        Sfx3D.play(dust, sfx_crack, sfx_crack_db, 3.0, 30.0, Sfx3D.Attenuation.REALISTIC)
 
 
 ## The ore_seed of rock [param index] of a layer ([param seed_str]) whose purity (RockMining.ore_richness: the
@@ -544,18 +823,6 @@ static func gold_seed(seed_str: String, index: int, purity: float) -> String:
     return best
 
 
-static func _pick_debris(rng: RandomNumberGenerator) -> Array:
-    var total := 0.0
-    for entry: Array in DEBRIS:
-        total += float(entry[2])
-    var roll := rng.randf() * total
-    for entry: Array in DEBRIS:
-        roll -= float(entry[2])
-        if roll <= 0.0:
-            return entry
-    return DEBRIS[0]
-
-
 ## The rock the mine is dug in: the planet's mining host rock (granite when unknown).
 func _host_rock() -> String:
     var terrain := _planet_terrain()
@@ -564,18 +831,38 @@ func _host_rock() -> String:
     return "granite"
 
 
-## CLIENT: a layer of gallery [param id] fell: dust where its face stood, and its sound.
+## CLIENT: a layer of gallery [param id] fell: its blocks drilled here wait for their rocks, dust where its face
+## stood, and its sound.
 func _layer_fell(id: int) -> void:
     if not _dug.has(id):
         return
+    var preview: Variant = _previews.get(id)
+    if preview != null and int(preview.step) < int(face_step.get(str(id), 0)):
+        preview.state = "falling"
+        preview.progress = 1.0
+        preview.deadline = Time.get_ticks_msec() / 1000.0 + FRACTURE_WAIT_S
+        for block: Dictionary in preview.blocks:
+            if float(block.volume) < MineFracture.DUST_M3:
+                rock_arrived(id, int(preview.step), int(block.index))  # dust: no rock will come
     var frame := face_frame(id, float(_dug[id]))
+    var dust := _dust(80, 4.0, Vector3(float(_layout.settings.gallery_width_m) * 0.4, 1.5, 0.6), 0.8)
+    dust.transform = frame * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.8, -1.0))
+    add_child(dust)
+    dust.emitting = true
+    if sfx_layer_fall != null and not Sfx3D.muted():
+        Sfx3D.play(dust, sfx_layer_fall, sfx_layer_fall_db, 6.0, 60.0, Sfx3D.Attenuation.REALISTIC)
+
+
+## A one-shot puff of rock dust: [param amount] motes living [param lifetime] s from a box of
+## [param extents] (half sizes, m), each [param mote_m] m across. Freed when done; the caller places and starts it.
+func _dust(amount: int, lifetime: float, extents: Vector3, mote_m: float) -> CPUParticles3D:
     var dust := CPUParticles3D.new()
     dust.one_shot = true
-    dust.amount = 80
-    dust.lifetime = 4.0
+    dust.amount = amount
+    dust.lifetime = lifetime
     dust.explosiveness = 0.9
     dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-    dust.emission_box_extents = Vector3(float(_layout.settings.gallery_width_m) * 0.4, 1.5, 0.6)
+    dust.emission_box_extents = extents
     dust.direction = Vector3.BACK
     dust.spread = 60.0
     dust.initial_velocity_min = 0.5
@@ -586,7 +873,7 @@ func _layer_fell(id: int) -> void:
     dust.scale_amount_min = 0.6
     dust.scale_amount_max = 1.6
     var quad := QuadMesh.new()
-    quad.size = Vector2.ONE * 0.8
+    quad.size = Vector2.ONE * mote_m
     var material := StandardMaterial3D.new()
     material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
     material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -598,12 +885,8 @@ func _layer_fell(id: int) -> void:
     fade.set_color(0, Color(0.55, 0.5, 0.44, 0.55))
     fade.set_color(1, Color(0.55, 0.5, 0.44, 0.0))
     dust.color_ramp = fade
-    dust.transform = frame * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.8, -1.0))
-    add_child(dust)
-    dust.emitting = true
     dust.finished.connect(dust.queue_free)
-    if sfx_layer_fall != null and not Sfx3D.muted():
-        Sfx3D.play(dust, sfx_layer_fall, sfx_layer_fall_db, 6.0, 60.0, Sfx3D.Attenuation.REALISTIC)
+    return dust
 
 
 ## Where the lift stands in the mine frame: on the rim at -Z, set back into the rock, facing the shaft.

@@ -102,6 +102,25 @@ func aim_radius() -> float:
     return maxf(half_width, height)
 
 
+## Mining tool contract (client, drilling player and onlookers alike): the drilling began at [param hit] (world).
+## The layer shows in the wall and cracks open as it goes on (MineSite.fracture_begin).
+func fracture_begin(hit: Vector3) -> void:
+    if mine != null:
+        mine.fracture_begin(gallery, hit)
+
+
+## Mining tool contract: how far (0..1) the drilling has gone.
+func fracture_progress(progress: float) -> void:
+    if mine != null:
+        mine.fracture_progress(gallery, progress)
+
+
+## Mining tool contract: the drilling stopped, [param completed] = held to the end.
+func fracture_end(completed: bool) -> void:
+    if mine != null:
+        mine.fracture_end(gallery, completed)
+
+
 ## Mining tool contract: the action that breaks this face, aimed at [param hit] (world).
 func perforate_request(hit: Vector3) -> Dictionary:
     var frame := Transform3D.IDENTITY
