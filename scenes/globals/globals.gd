@@ -214,15 +214,23 @@ func collision_aabb(body: Node3D, frame_from_body: Transform3D) -> AABB:
 			var shape: Shape3D = col.shape_owner_get_shape(owner_id, i)
 			if shape == null:
 				continue
-			var debug_mesh := shape.get_debug_mesh()
-			if debug_mesh == null:
-				continue
-			var aabb := debug_mesh.get_aabb()
-			for c in 8:
-				var corner := aabb.position + Vector3(
-					aabb.size.x if (c & 1) else 0.0,
-					aabb.size.y if (c & 2) else 0.0,
-					aabb.size.z if (c & 4) else 0.0)
+			# A hull (a rock piece): its own points, so the box is the piece's in THIS frame. The corners
+			# of its own box, turned, gave a box bigger than the piece: set down by it, a turned piece
+			# floated over the floor and took more room than it has (playtest 2026-11-10).
+			var points := PackedVector3Array()
+			if shape is ConvexPolygonShape3D:
+				points = (shape as ConvexPolygonShape3D).points
+			if points.is_empty():
+				var debug_mesh := shape.get_debug_mesh()
+				if debug_mesh == null:
+					continue
+				var aabb := debug_mesh.get_aabb()
+				for c in 8:
+					points.append(aabb.position + Vector3(
+						aabb.size.x if (c & 1) else 0.0,
+						aabb.size.y if (c & 2) else 0.0,
+						aabb.size.z if (c & 4) else 0.0))
+			for corner in points:
 				var point: Vector3 = frame_from_body * (owner_xform * corner)
 				if not started:
 					bounds = AABB(point, Vector3.ZERO)
