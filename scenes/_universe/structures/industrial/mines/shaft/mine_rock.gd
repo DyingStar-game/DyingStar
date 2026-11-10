@@ -17,6 +17,12 @@ const SCENE := "scenes/_universe/structures/industrial/mines/shaft/mine_rock.tsc
 const RELEASE_SPEED_M_S := 0.6
 ## Lightest a block weighs (kg), whatever its volume.
 const MIN_MASS_KG := 20.0
+## A block falls through the players this close (m, past its own size) when it leaves the wall: dropped on the
+## driller, a block of rock pushed them through the gallery's floor. It meets them again once it lies still away
+## from them.
+const SPARE_PLAYERS_M := 2.5
+## Longest (s) a falling block passes through the players.
+const SPARE_MAX_S := 6.0
 ## Distance (m) past which a fallen block is not drawn: several hundred triangles each, and a mined gallery holds
 ## many of them.
 const VISIBLE_M := 120.0
@@ -36,6 +42,9 @@ var _shape_key := ""
 var _shaped := false
 var _released := false
 var _block: Dictionary = {}
+## Server: the players a falling block passes through, and since when (s).
+var _spared: Array[Node] = []
+var _spared_since := 0.0
 
 
 func _ready() -> void:
@@ -132,8 +141,11 @@ func _process(_delta: float) -> void:
         set_process(false)
         _request_shape()
         return
-    if not GameOrchestrator.is_server() or _released:
+    if not GameOrchestrator.is_server():
         set_process(false)
+        return
+    if _released:
+        _unspare_players()
         return
     var site := mine()
     if site == null:
@@ -142,7 +154,7 @@ func _process(_delta: float) -> void:
     if not site.rock_ready_at(global_position) or not site.rock_ready_at(below):
         return
     _released = true
-    set_process(false)
+    _spare_players(float(_block.get("size", 1.0)))
     freeze = false
     # Still where it stood in the wall: it comes out of it, into the gallery. A rock already lying somewhere (a
     # restart) only wakes.
@@ -150,3 +162,33 @@ func _process(_delta: float) -> void:
     if global_position.distance_to(stood) < 0.1:
         var out := site.global_basis * site.face_frame(gallery, from_m).basis.z
         linear_velocity = out.normalized() * RELEASE_SPEED_M_S
+
+
+## Server: pass through the players within reach while falling (see SPARE_PLAYERS_M).
+func _spare_players(size: float) -> void:
+    for player in get_tree().get_nodes_in_group("player"):
+        if player is PhysicsBody3D and (player as Node3D).global_position.distance_to(global_position) < size + SPARE_PLAYERS_M:
+            add_collision_exception_with(player)
+            (player as PhysicsBody3D).add_collision_exception_with(self)
+            _spared.append(player)
+    _spared_since = Time.get_ticks_msec() / 1000.0
+    if _spared.is_empty():
+        set_process(false)
+
+
+## Server: meet the spared players again once lying still clear of them (or after SPARE_MAX_S).
+func _unspare_players() -> void:
+    var late := Time.get_ticks_msec() / 1000.0 - _spared_since > SPARE_MAX_S
+    if not sleeping and not late:
+        return
+    var clear := float(_block.get("size", 1.0)) * 0.5 + 0.8
+    for player: Node in _spared.duplicate():
+        if is_instance_valid(player) and not late \
+                and (player as Node3D).global_position.distance_to(global_position) < clear:
+            continue
+        if is_instance_valid(player):
+            remove_collision_exception_with(player)
+            (player as PhysicsBody3D).remove_collision_exception_with(self)
+        _spared.erase(player)
+    if _spared.is_empty():
+        set_process(false)

@@ -206,3 +206,19 @@ func _on_plane(built: Dictionary, x: float) -> Dictionary:
             if absf(point.x - x) < 1.0e-9:
                 out[point.snapped(Vector3.ONE * 1.0e-6)] = true
     return out
+
+
+func test_who_fell_through_the_rock_goes_back_to_the_floor() -> void:
+    var plan := MineLayout.generate(77, {}, MineLayout.STYLE_STRAIGHT)
+    var dug := MineLayout.dug(plan, {}, {})
+    var gallery: Dictionary = plan.galleries[0]
+    var reach := float(dug[0])
+    # Pushed 8 m through the floor at the face: back on the gallery's floor, clear of the face.
+    var face := MineLayout.point_at(gallery, reach)
+    var floor := MineLayout.floor_near(plan, dug, face + Vector3.DOWN * 8.0)
+    assert_lt(floor.distance_to(MineLayout.point_at(gallery, reach - 3.0)), 0.5, "3 m back from the face, on the floor")
+    assert_true(MineLayout.contains(plan, dug, floor + Vector3.UP * 0.3), "in the mine's air")
+    # Under a station: on its floor.
+    var station: Vector3 = plan.levels[0].station
+    var under := MineLayout.floor_near(plan, dug, station + Vector3(2.0, -10.0, 1.0))
+    assert_almost_eq(under, station + Vector3(2.0, 0.0, 1.0), Vector3.ONE * 1.0e-6)

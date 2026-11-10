@@ -257,6 +257,26 @@ static func mine_at(global_point: Vector3) -> MineSite:
     return null
 
 
+## The live mine whose rock [param global_point] is in or near (within [param margin_m] of its dug air), or null:
+## who fell through a mine's floor belongs back in the mine, not on the ground above it.
+static func mine_near(global_point: Vector3, margin_m: float) -> MineSite:
+    for mine in _live:
+        if not is_instance_valid(mine) or mine._layout.is_empty() or not mine.is_inside_tree():
+            continue
+        if mine._bounds.grow(margin_m).has_point(mine.global_transform.affine_inverse() * global_point):
+            return mine
+    return null
+
+
+## The floor of this mine nearest [param global_point], back from the faces (world), raised by [param lift_m].
+func floor_near_global(global_point: Vector3, lift_m: float) -> Vector3:
+    var local := global_transform.affine_inverse() * global_point
+    var floor := MineLayout.floor_near(_layout, _dug, local)
+    if floor == Vector3.INF:
+        floor = Vector3(0.0, -float(_layout.depth), 0.0)
+    return global_transform * (floor + Vector3.UP * lift_m)
+
+
 ## Is the rock round [param global_point] (and a couple of metres under it) built with the latest geometry? What
 ## a body or a player waits for before falling there (server).
 func rock_ready_at(global_point: Vector3) -> bool:

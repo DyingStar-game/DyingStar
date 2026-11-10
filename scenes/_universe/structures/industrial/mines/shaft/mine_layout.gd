@@ -380,6 +380,38 @@ static func contains(layout: Dictionary, dug_m: Dictionary, point: Vector3) -> b
     return false
 
 
+## The point of the mine's floor nearest [param point] (mine frame), all in the mine frame: on a gallery dug as
+## [param dug_m] says (no closer than [param face_clear_m] to its face, where a fallen layer lies) or a station's.
+## Where to put back someone who fell through the rock of the mine.
+static func floor_near(layout: Dictionary, dug_m: Dictionary, point: Vector3, face_clear_m: float = 3.0) -> Vector3:
+    var s: Dictionary = layout.settings
+    var best := Vector3.INF
+    var best_distance := INF
+    var half := Vector3(float(s.station_width_m) * 0.5 - 1.0, 0.0, float(s.station_length_m) * 0.5 - 1.0)
+    for level: Dictionary in layout.levels:
+        var station: Vector3 = level.station
+        var on := Vector3(clampf(point.x, station.x - half.x, station.x + half.x), station.y,
+            clampf(point.z, station.z - half.z, station.z + half.z))
+        if on.distance_squared_to(point) < best_distance:
+            best_distance = on.distance_squared_to(point)
+            best = on
+    for gallery: Dictionary in layout.galleries:
+        if not dug_m.has(int(gallery.id)):
+            continue
+        var reach := maxf(0.0, float(dug_m[int(gallery.id)]) - face_clear_m)
+        var points: PackedVector3Array = gallery.points
+        var lengths: PackedFloat64Array = gallery.lengths
+        for index in range(1, points.size()):
+            if lengths[index - 1] >= reach:
+                break
+            var b := points[index] if lengths[index] <= reach else point_at(gallery, reach)
+            var on := Geometry3D.get_closest_point_to_segment(point, points[index - 1], b)
+            if on.distance_squared_to(point) < best_distance:
+                best_distance = on.distance_squared_to(point)
+                best = on
+    return best
+
+
 ## SERVER: how far (m along its route) each gallery may ever be dug, by id as a string: before it comes within
 ## the clearance of another gallery's route, of the shaft or of another level's station, crosses itself, or
 ## keeps less than min_cover_m of rock over it. [param cover] maps a mine-frame point to the rock (m) above it,

@@ -228,6 +228,9 @@ func _assemble(cell: Vector3i, built: Dictionary) -> Node3D:
         body.collision_mask = 0
         if not faces.is_empty():
             var shape := ConcavePolygonShape3D.new()
+            # Solid from both sides, as the terrain's chunks: a body pushed a hair past a floor's face (a fallen
+            # block on a player) is caught by it instead of dropping through the rock.
+            shape.backface_collision = true
             shape.set_faces(faces)
             var collision := CollisionShape3D.new()
             collision.shape = shape

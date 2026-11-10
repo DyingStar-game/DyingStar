@@ -52,6 +52,11 @@ const DEV_TOOL_OF_ACTION: Dictionary = {
 const ADMIN_ACTIONS: Array[String] = ["admin_fill_shelves"]
 ## How far (m) from a cargo depot's origin an admin may stand to fill its shelves.
 const _ADMIN_DEPOT_RANGE := 300.0
+## Below the ground this close (m) to a village mine's dug air, a falling player is put back on the mine's floor
+## instead of on the ground above.
+const _MINE_RESCUE_MARGIN_M := 40.0
+## Height (m) over the mine's floor a rescued player's feet (its origin) are set at.
+const _MINE_RESCUE_LIFT_M := 0.3
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
@@ -3401,6 +3406,16 @@ func _catch_if_below_surface(area: Area3D) -> void:
 		if player_dist >= ground - player._SURFACE_CATCH_MARGIN:
 			return  # standing on the collision, under the theoretical crest: nothing fell through
 		surface_dist = ground
+	# Fell through a village mine's rock (a block of a fallen layer pushed them through its floor): back on the
+	# mine's floor, not on the ground hundreds of metres above it.
+	var mine := MineSite.mine_near(player.global_position, _MINE_RESCUE_MARGIN_M)
+	if mine != null:
+		var floor_at := mine.floor_near_global(player.global_position, _MINE_RESCUE_LIFT_M)
+		print("[MineSite] %s: %s fell through the rock at %s, put back on the floor at %s"
+				% [mine.name, player.client_uuid, mine.to_local(player.global_position), mine.to_local(floor_at)])
+		player.global_position = floor_at
+		player.velocity = Vector3.ZERO
+		return
 	player.global_position = planet.global_position + planet_basis * (dir * surface_dist)
 	var up_world: Vector3 = (planet_basis * dir).normalized()
 	var radial: float = player.velocity.dot(up_world)
