@@ -28,6 +28,8 @@ public partial class CaveNetworkMesher
             ["wall"] = Array.Empty<Vector3>(), ["wall_normals"] = Array.Empty<Vector3>(),
             ["floor"] = Array.Empty<Vector3>(), ["floor_normals"] = Array.Empty<Vector3>(),
         };
+        // A box wholly above the cut keeps nothing but slivers lying flat on it, which Jolt refuses as a mesh.
+        if (region.Position.Y >= topY) return result;
         // Every volume reaching the lattice, with its sample range as GLOBAL indices (the same in every box).
         var reach = new List<(int I, int X0, int Y0, int Z0, int X1, int Y1, int Z1)>();
         for (int i = 0; i < _volumes.Length; i++)
@@ -216,7 +218,11 @@ public partial class CaveNetworkMesher
             }
         }
         for (int i = 1; i + 1 < poly.Count; i++)
+        {
+            // A corner of the triangle grazing the cut leaves a sliver of no area: no wall there.
+            if ((poly[i].P - poly[0].P).Cross(poly[i + 1].P - poly[0].P).LengthSquared() < 1e-8) continue;
             Append(points, normals, poly[0], poly[i], poly[i + 1]);
+        }
     }
 
     private static void Append(List<Vector3> points, List<Vector3> normals,

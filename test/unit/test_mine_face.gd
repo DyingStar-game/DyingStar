@@ -110,6 +110,20 @@ func test_a_stale_layer_or_a_miss_drops_nothing() -> void:
     _mine._faces.erase(0)
 
 
+func test_the_server_finds_the_mine_by_its_uuid() -> void:
+    # The mine is a village child, never in NetworkOrchestrator.props_list: the perforation found no mine and
+    # was dropped silently. The live list finds it.
+    var sync := PropSync.new()
+    sync.name = "PropSync"
+    _mine.add_child(sync)
+    _mine.uuid = "b3a53816-14e8-5cb3-ba9a-b5878199ac87"
+    MineSite._live.append(_mine)
+    assert_eq(MineSite.find("b3a53816-14e8-5cb3-ba9a-b5878199ac87"), _mine)
+    assert_null(MineSite.find("another"))
+    assert_null(MineSite.find(""))
+    MineSite._live.erase(_mine)
+
+
 func test_gold_purity_close_to_the_layer_draw() -> void:
     for target: float in [0.02, 0.1, 0.17, 0.3]:
         for index in 6:

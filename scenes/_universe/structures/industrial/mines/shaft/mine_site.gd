@@ -216,6 +216,17 @@ static func contains_point(global_point: Vector3) -> bool:
     return false
 
 
+## The live mine of uuid [param id], or null. The mine is a child of its village: it is not in the server's
+## props_list under its own type, so the live list is what finds it.
+static func find(id: String) -> MineSite:
+    if id.is_empty():
+        return null
+    for mine in _live:
+        if is_instance_valid(mine) and mine.uuid == id:
+            return mine
+    return null
+
+
 ## The live mine whose air holds [param global_point], or null.
 static func mine_at(global_point: Vector3) -> MineSite:
     for mine in _live:
@@ -422,15 +433,29 @@ func _update_faces() -> void:
 ## SERVER: a player held the tool [param face_seconds] on the face of gallery [param id], layer [param step], at
 ## [param hit] (mine frame). A layer falls if it was the current layer's fault, within reach. True when it fell.
 func server_perforate_face(player: Node3D, id: int, step: int, hit: Vector3) -> bool:
+    var who := str(player.get("client_uuid")) if player != null else "?"
     var face: MineFace = _faces.get(id)
-    if face == null or step != face.step or step != int(face_step.get(str(id), 0)):
-        return false  # another player's layer fell meanwhile, or no such face
+    if face == null:
+        push_warning("[MineSite] %s: %s perforated gallery %d, which has no open face" % [name, who, id])
+        return false
+    if step != face.step or step != int(face_step.get(str(id), 0)):
+        # Another player's layer fell meanwhile: not a disagreement, the client sees the new face shortly.
+        print("[MineSite] %s: %s perforated layer %d of gallery %d, already at layer %d"
+                % [name, who, step, id, int(face_step.get(str(id), 0))])
+        return false
     var slack := 0.1  # the client judged the hit on its own copy of the face
     var local := face.transform.affine_inverse() * hit
-    if absf(Vector2(local.x, local.y).dot(face.fault_normal) - face.fault_offset) > face.tolerance_m + slack:
+    var off := absf(Vector2(local.x, local.y).dot(face.fault_normal) - face.fault_offset)
+    if off > face.tolerance_m + slack:
+        push_warning("[MineSite] %s: %s hit gallery %d %.2f m off its fault (tolerance %.2f m)"
+                % [name, who, id, off, face.tolerance_m + slack])
         return false
-    if player != null and (global_transform * hit).distance_to(player.global_position) > 5.0:
-        return false
+    if player != null:
+        var reach := (global_transform * hit).distance_to(player.global_position)
+        if reach > 5.0:
+            push_warning("[MineSite] %s: %s hit gallery %d's face from %.1f m (5 m at most)" % [name, who, id, reach])
+            return false
+    print("[MineSite] %s: %s broke layer %d of gallery %d" % [name, who, step, id])
     server_break_face(id)
     return true
 
