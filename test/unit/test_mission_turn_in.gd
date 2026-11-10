@@ -61,13 +61,34 @@ func test_the_participants_read_as_names() -> void:
 	assert_eq(ServiceTypes.participants_text(null), "")
 
 
-func test_a_warehouse_transport_says_where_to_load_first() -> void:
-	var objective := {"type": "transport", "params": {"via": "warehouse"}, "locationFrom": {"village": "M0001"}}
-	assert_string_contains(ServiceTypes.transport_step_text(objective), "M0001")
-	var before := ServiceTypes.transport_step_text(objective)
+func test_a_warehouse_transport_lists_its_steps_and_ticks_them() -> void:
+	var objective := {"type": "transport", "params": {"via": "warehouse", "goodType": "ore.gold"},
+			"locationFrom": {"village": "M0001"}, "locationTo": {"village": "F0001"}}
+	var steps := ServiceTypes.transport_steps(objective)
+	assert_eq(steps.size(), 2, "the same good: load, deliver")
+	assert_string_contains(steps[0], "M0001")
+	assert_string_contains(steps[1], "F0001")
+	assert_true(steps[0].begins_with("•"), "not loaded yet")
 	objective["state"] = {"loadedAt": "2026-11-06T20:00:00Z"}
-	assert_ne(ServiceTypes.transport_step_text(objective), before, "once loaded, it says so")
-	assert_eq(ServiceTypes.transport_step_text({"type": "deliver_material", "params": {"via": "warehouse"}}), "")
+	assert_true(ServiceTypes.transport_steps(objective)[0].begins_with("✓"), "once loaded, ticked")
+	assert_eq(ServiceTypes.transport_steps({"type": "deliver_material", "params": {"via": "warehouse"}}).size(), 0)
+
+
+func test_a_refining_transport_names_its_refinery_between_the_two() -> void:
+	var objective := {"type": "transport", "params": {"via": "warehouse", "goodType": "ore.gold",
+			"deliverGoodType": "ingot.gold"}, "locationFrom": {"village": "M0001"},
+			"locationTo": {"village": "M0003"}, "payload": {"refineAt": "F0001"}}
+	var steps := ServiceTypes.transport_steps(objective)
+	assert_eq(steps.size(), 3, "load, refine, deliver")
+	assert_string_contains(steps[1], "F0001", "the refinery the simulator names")
+	objective.erase("payload")
+	assert_eq(ServiceTypes.transport_steps(objective)[1].count("%s"), 0, "none named: a factory city")
+
+
+func test_a_running_assignment_says_nothing_a_paid_one_its_reward() -> void:
+	assert_eq(ServiceTypes.assignment_line({"status": "active", "rewardSettled": false}), "")
+	assert_string_contains(ServiceTypes.assignment_line({"status": "completed", "rewardSettled": true,
+			"rewardAmount": 841}), "841")
 
 
 func test_a_quantity_reads_in_its_unit() -> void:

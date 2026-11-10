@@ -12,7 +12,7 @@ extends MeshInstance3D
 ##
 ## Its text is drawn only up close: a depot's shelves hold two hundred crates, and drawing every plate as
 ## they stream in would stall the frame and hold 1 MB of texture each. The text is drawn when the camera
-## comes within RENDER_RANGE_M (a few per frame at most) and dropped past FORGET_RANGE_M; the plate itself,
+## comes within RENDER_RANGE_M (a few per frame at most) and dropped FORGET_MARGIN_M farther; the plate itself,
 ## blank paper beyond that, stays in sight up to DRAW_RANGE_M, backlit at night (playtest 2026-11-08: from
 ## afar the crates had lost their plates).
 
@@ -26,12 +26,15 @@ const BEZEL := Color(0.32, 0.33, 0.34)
 ## The night backlight: a soft cold white, enough to read the plate, not to light the ground.
 const BACKLIGHT := Color(0.85, 0.9, 1.0)
 const BACKLIGHT_ENERGY := 0.35
-## The plate is in sight within this distance (m) of the camera, blank past FORGET_RANGE_M.
+## The plate is in sight within this distance (m) of the camera, blank once its text is dropped.
 const DRAW_RANGE_M := 25.0
 ## Drawn when the camera comes this close (m): a little ahead of being shown.
 const RENDER_RANGE_M := 6.0
-## Its text is dropped past this distance (m), the paper left blank; drawn again on the way back.
-const FORGET_RANGE_M := 8.0
+## The same for a mission's crate: its band is to be found from across an aisle.
+const MISSION_RENDER_RANGE_M := 12.0
+## Its text is dropped this much (m) past the range it is drawn at, the paper left blank; drawn again
+## on the way back.
+const FORGET_MARGIN_M := 2.0
 ## How often a plate looks at the camera distance (s).
 const CHECK_PERIOD_S := 0.5
 ## At most this many plates are drawn in one frame, the rest on the next ones.
@@ -126,6 +129,7 @@ func show_content(content: Dictionary) -> void:
 		return
 	_shown = content.duplicate()
 	_drawn = false
+	_check_s = 0.0  # a plate that changes (kept for a mission) redraws now, its old picture kept meanwhile
 	visible = not content.is_empty()
 	if _top != null:
 		_top.visible = visible
@@ -141,10 +145,21 @@ func _process(delta: float) -> void:
 	if camera == null:
 		return
 	var d := camera.global_position.distance_to(global_position)
-	if not _drawn and d <= RENDER_RANGE_M and _take_render_slot():
-		_render()
-	elif _drawn and d > FORGET_RANGE_M:
+	var reach := render_range(_shown)
+	if not _drawn and d <= reach:
+		if _take_render_slot():
+			_render()
+		else:
+			# No slot this frame: ask again on the next one. Every plate checks on the same beat, and waiting
+			# for the next check drew two plates per half second (playtest 2026-11-10).
+			_check_s = 0.0
+	elif _drawn and d > reach + FORGET_MARGIN_M:
 		_forget()
+
+
+## How near (m) the camera must be for the plate of [param content] to be drawn.
+static func render_range(content: Dictionary) -> float:
+	return RENDER_RANGE_M if CrateContent.mission_of(content).is_empty() else MISSION_RENDER_RANGE_M
 
 
 ## One of this frame's RENDERS_PER_FRAME draws, or false: try again on the next check.

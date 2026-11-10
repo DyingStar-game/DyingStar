@@ -103,6 +103,9 @@ var _invites_box: VBoxContainer
 ## (focus_mission), "" when none.
 var _mine_contract: VBoxContainer
 var _focus_id: String = ""
+## _focus_id is the mission that was open before a refresh (not one asked for from outside): gone from
+## the list, its contract is closed instead of waited for.
+var _refocus: bool = false
 ## Segments whose list picks its first mission when it next fills: on its first reading and when a tab
 ## of it is chosen (playtest 2026-11-09); a later refresh leaves the player's choice alone.
 var _pick_first: Dictionary = {0: true, 1: true, 2: true}
@@ -603,6 +606,7 @@ func _set_mine_tab(index: int) -> void:
 ## when the list already holds it, else as soon as it does (the next refresh brings it).
 func focus_mission(mission_id: String) -> void:
 	_focus_id = mission_id
+	_refocus = false  # asked from outside: a list read before it must not take it for a mission gone
 	goto_segment(1)  # "My missions"
 	_select_focus()
 
@@ -771,6 +775,7 @@ func refresh() -> void:
 	# The mission open in "My missions" opens again on the fresh list: its progress is what changed.
 	if _focus_id == "":
 		_focus_id = _selected_mine_id()
+		_refocus = _focus_id != ""
 	await _load_mine()
 	await _load_created()
 	_end_refresh()
@@ -967,6 +972,11 @@ func _apply_mine(page: ServicePage, result: Dictionary) -> void:
 		_set_list_empty(view, "")
 	_classify_mission_pois()
 	_select_focus()
+	if _refocus and _mine.selected_meta() == null:
+		# The mission that was open left this tab (finished, given up): its contract goes too, and the
+		# first one left opens (playtest 2026-11-10: a finished mission stayed on show).
+		_close_mine_contract()
+	_refocus = false
 	_pick_first_card(1, _mine)
 
 
@@ -1165,9 +1175,10 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 	facts.add_child(_stat_card(tr("%%SVC_MISSION_CAP_ZONE"),
 			ServiceTypes.zones_text(zones if zones is Array else []), "", ServiceStyle.TEXT, 18))
 	doc.add_child(facts)
-	if not assignment.is_empty():
-		doc.add_child(_label(tr("%%SVC_FMT_MISSION_DETAIL_ASSIGNMENT") %
-				ServiceTypes.assignment_line(assignment), DIM))
+	# The reward once it is paid; a running assignment says nothing here (its status is the stamp above).
+	var paid := ServiceTypes.assignment_line(assignment)
+	if paid != "":
+		doc.add_child(_label(paid, DIM))
 	# Its time: the time left once taken, else the time it gives (playtest 2026-11-09).
 	doc.add_child(_label(MissionTile.deadline_line(mission, Time.get_unix_time_from_system(), assignment),
 			ServiceStyle.ACCENT))
@@ -1378,9 +1389,9 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), poi_id))
 		box.add_child(where)
 
-	var step := ServiceTypes.transport_step_text(objective)
-	if step != "" and current:
-		box.add_child(_label(step, ServiceStyle.ACCENT))
+	if current:
+		for step: String in ServiceTypes.transport_steps(objective):
+			box.add_child(_label(step, ServiceStyle.ACCENT))
 	# The measure: on the step under way, over its bar; on the others, a quiet line.
 	var target: int = ServiceTypes.num(objective.get("targetQuantity"))
 	if current and target > 0:
@@ -1568,7 +1579,7 @@ func _accept(mission_id: String, contract: VBoxContainer) -> void:
 func _abandon(mission_id: String, contract: VBoxContainer) -> void:
 	if _report(await PlayerServices.mission_abandon(mission_id), tr("%%SVC_MSG_MISSION_ABANDONED")):
 		_close_contract_pois(mission_id)
-		await _open_contract(contract, mission_id)
+		await _after_ended(mission_id, contract)
 
 
 func _complete(mission_id: String, contract: VBoxContainer) -> void:
@@ -1578,8 +1589,27 @@ func _complete(mission_id: String, contract: VBoxContainer) -> void:
 			_say(tr("%%SVC_MSG_MISSION_COMPLETED") + " " + ServiceTypes.settlement_text(
 					(result.get("data") as Dictionary).get("settlement")), GOOD)
 		_close_contract_pois(mission_id)
+		await _after_ended(mission_id, contract)
+
+
+## A mission the player just gave up or finished: in My missions it leaves the sheet with the list, and the
+## first one left opens (playtest 2026-11-10: it stayed on show); elsewhere (the browse) its sheet is read
+## again, back on offer.
+func _after_ended(mission_id: String, contract: VBoxContainer) -> void:
+	if contract != _mine_contract:
 		await _open_contract(contract, mission_id)
 		refresh()
+		return
+	_close_mine_contract()
+	refresh()
+
+
+## The mission open in "My missions" is over or left the tab: its contract goes, and the first one
+## left opens.
+func _close_mine_contract() -> void:
+	_focus_id = ""
+	_reset_contract(_mine_contract)
+	_pick_first[1] = true
 
 
 ## The contract is over: the place it named is gone with it. The service sweeps the point, and the

@@ -366,6 +366,12 @@ func _apply_accounts(result: Dictionary, _my_ids: Dictionary) -> void:
 	_update_summary()
 
 
+## Mission id -> its title, read once per mission for the transactions that pay one.
+static var _mission_titles: Dictionary = {}
+## The missions whose title could not be read: asked once per panel, not held against them for good.
+var _untitled_missions: Dictionary = {}
+
+
 func _apply_transactions(result: Dictionary) -> void:
 	if not bool(result.get("ok", false)):
 		_transactions.set_rows([])
@@ -374,8 +380,38 @@ func _apply_transactions(result: Dictionary) -> void:
 				tr("%%SVC_MSG_ERROR_PREFIX") + " " + str(result.get("error", ""))
 		_transactions_empty.visible = true
 		return
-	var rows: Array = []
+	_show_transactions(result)
+	_name_missions(_page_transactions.offset, result)  # on its own: the list is up already
+
+
+## The titles of the missions the page's transactions pay (playtest 2026-11-10: the list said
+## "mission_reward"), read once the list is up; it is then put up again, named -- unless the player
+## turned the page meanwhile ([param at], the offset the page was read at).
+func _name_missions(at: int, result: Dictionary) -> void:
+	var named := false
 	for transaction: Dictionary in _page_transactions.rows(result):
+		var mission_id := ServiceTypes.transaction_mission_id(transaction)
+		if mission_id == "" or _mission_titles.has(mission_id) or _untitled_missions.has(mission_id):
+			continue
+		var read: Dictionary = await PlayerServices.mission_get(mission_id)
+		if not is_inside_tree():
+			return
+		var data: Variant = read.get("data")
+		var mission: Variant = (data as Dictionary).get("mission") if data is Dictionary else null
+		var title := str((mission as Dictionary).get("title", "")) if mission is Dictionary else ""
+		if title == "":
+			_untitled_missions[mission_id] = true
+			continue
+		_mission_titles[mission_id] = title
+		named = true
+	if named and _page_transactions.offset == at:
+		_show_transactions(result)
+
+
+func _show_transactions(result: Dictionary) -> void:
+	var transactions: Array = _page_transactions.rows(result)
+	var rows: Array = []
+	for transaction: Dictionary in transactions:
 		var amount: int = ServiceTypes.num(transaction.get("amount"))
 		var incoming: bool = _my_account_ids.has(str(transaction.get("toAccountId", "")))
 		var outgoing: bool = _my_account_ids.has(str(transaction.get("fromAccountId", "")))
@@ -389,8 +425,9 @@ func _apply_transactions(result: Dictionary) -> void:
 			colour = WARN
 		rows.append({
 			"thumb": sign if sign != "" else "·",
-			"name": ServiceTypes.dash(transaction.get("type")),
-			"sub": ServiceTypes.dash(transaction.get("createdAt")),
+			"name": _transaction_name(transaction),
+			"sub": "%s · %s" % [ServiceTypes.transaction_type_label(transaction.get("type")),
+					ServiceTypes.date_time_text(transaction.get("createdAt"))],
 			"value": sign + _money(amount, transaction.get("currency")),
 			"value_colour": colour,
 			"meta": transaction,
@@ -402,6 +439,16 @@ func _apply_transactions(result: Dictionary) -> void:
 	_transactions_card.set_count("%d" % _page_transactions.total)
 	if _transactions.selected_meta() == null:
 		_show_no_detail()
+
+
+## What a transaction is, as its line names it: the mission it pays, else its memo, else its type.
+func _transaction_name(transaction: Dictionary) -> String:
+	var title := str(_mission_titles.get(ServiceTypes.transaction_mission_id(transaction), ""))
+	if title != "":
+		return title
+	var details: Variant = transaction.get("details")
+	var memo := str((details as Dictionary).get("memo", "")) if details is Dictionary else ""
+	return memo if memo != "" and memo != "<null>" else ServiceTypes.transaction_type_label(transaction.get("type"))
 
 
 ## What the caller owes, settled debts included — the list is the whole history, the status is in
@@ -506,14 +553,17 @@ func _open_txn_detail(meta: Variant) -> void:
 	var sign: String = "+" if incoming and not outgoing else ("−" if outgoing and not incoming else "")
 	var head := VBoxContainer.new()
 	head.add_theme_constant_override("separation", 6)
-	head.add_child(_tag("#%d · %s" % [ServiceTypes.num(txn.get("id")), ServiceTypes.dash(txn.get("type"))]))
+	head.add_child(_tag("#%d · %s" % [ServiceTypes.num(txn.get("id")), ServiceTypes.transaction_type_label(txn.get("type"))]))
+	var title := _transaction_name(txn)
+	if title != ServiceTypes.transaction_type_label(txn.get("type")):
+		head.add_child(_big(title, ServiceStyle.TEXT, 22))
 	head.add_child(_big(sign + _money(ServiceTypes.num(txn.get("amount")), txn.get("currency")),
 			GOOD if sign == "+" else (WARN if sign == "−" else ServiceStyle.TEXT), 34))
 	_txn_detail.add_child(head)
 	var details: Variant = txn.get("details")
 	var memo: Variant = (details as Dictionary).get("memo") if details is Dictionary else null
 	_txn_detail.add_child(_kv_grid([
-		[tr("%%SVC_TXN_CAP_DATE"), ServiceTypes.dash(txn.get("createdAt"))],
+		[tr("%%SVC_TXN_CAP_DATE"), ServiceTypes.date_time_text(txn.get("createdAt"))],
 		[tr("%%SVC_TXN_CAP_FROM"), _account_text(txn.get("fromAccountId"))],
 		[tr("%%SVC_TXN_CAP_TO"), _account_text(txn.get("toAccountId"))],
 		[tr("%%SVC_LBL_MEMO"), ServiceTypes.dash(memo)],
