@@ -64,6 +64,9 @@ func build(client: bool) -> void:
     # normal_fade (they face across the projection).
     _decal.size = Vector3(span, half_width + 1.6, span)
     _decal.normal_fade = 0.5
+    _decal.distance_fade_enabled = true
+    _decal.distance_fade_begin = 40.0
+    _decal.distance_fade_length = 10.0
     # The decal projects along its -Y: here along the gallery, into the face. Its X runs along the crack line,
     # so its Z (X × Y) is the fault's normal and the crack drawn across the texture lies on the fault plane.
     var along := Vector3(-fault_normal.y, fault_normal.x, 0.0)

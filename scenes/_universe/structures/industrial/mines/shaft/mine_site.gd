@@ -135,6 +135,8 @@ var _measuring := -1
 var _measure_result: Array = []
 ## The open faces, by gallery id.
 var _faces: Dictionary = {}
+## The box holding the mine's air as dug now (mine frame, with a margin): what contains_global looks at first.
+var _bounds := AABB()
 
 ## The PropSync child's uuid on the node itself: what makes the mine a networked parent (PropSpawn.find_net_parent).
 var uuid: String:
@@ -235,7 +237,7 @@ func contains_global(global_point: Vector3) -> bool:
     if _layout.is_empty():
         return false
     var local := global_transform.affine_inverse() * global_point
-    if local.y > 10.0 or local.y < -float(_layout.depth) - 10.0:
+    if not _bounds.has_point(local):
         return false
     return MineLayout.contains(_layout, _dug, local)
 
@@ -252,19 +254,24 @@ func _refresh() -> void:
     var wanted := style
     if force_style == MineLayout.STYLE_STRAIGHT or force_style == MineLayout.STYLE_CHAOTIC:
         wanted = force_style
-    var key := "%d|%s|%s" % [seed, wanted, layout_settings()]
+    var settings := layout_settings()
+    var key := "%d|%s|%s" % [seed, wanted, settings]
     var fresh := key != _layout_key
     if fresh:
         _layout_key = key
-        _layout = MineLayout.generate(seed, layout_settings(), wanted)
+        _layout = MineLayout.generate(seed, settings, wanted)
         if server and style != str(_layout.style):
             style = str(_layout.style)
             _persist({"style": style})
+            if wanted.is_empty():
+                # The same plan as forcing the style drawn (the seed draws it first either way): not a new mine.
+                _layout_key = "%d|%s|%s" % [seed, style, settings]
     var previous := _dug
     _dug = MineLayout.dug(_layout, faces, gallery_max_m)
+    var graph := MineLayout.graph(_layout, _dug)
+    _bounds = (graph.bounds as AABB).grow(5.0)
     _ensure_cells()
     if _cells != null:
-        var graph := MineLayout.graph(_layout, _dug)
         if fresh:
             _cells.set_graph(graph)
         elif previous != _dug:

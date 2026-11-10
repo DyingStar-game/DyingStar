@@ -3385,13 +3385,13 @@ func _catch_if_below_surface(area: Area3D) -> void:
 	var local_body: Vector3 = planet_basis.inverse() * local_world
 	if CavePlanetRegistry.contains(pdata, local_body):
 		return
-	if MineSite.contains_point(player.global_position):
-		return  # down a village mine's shaft or galleries: under the ground on purpose
 	var dir: Vector3 = local_body.normalized()
 	var player_dist: float = local_body.length()
 	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
 	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
 		return  # at/near or above the surface — the collision handles it
+	if MineSite.contains_point(player.global_position):
+		return  # down a village mine's shaft or galleries: under the ground on purpose
 	# Under the RAW relief — but a cutting or a tunnel of a profiled line is
 	# ground carved away on purpose, and the body is standing on its floor.
 	# The dearer carved test only runs here, where the raw one has spoken.
