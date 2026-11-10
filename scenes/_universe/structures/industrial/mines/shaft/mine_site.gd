@@ -12,7 +12,18 @@ extends Node3D
 ## The ground opens under the shaft through PlanetTerrain.register_mine_hole; the server also opens it from the
 ## stored data before this node exists (server.gd), under the same id, so nothing is rebuilt when it comes.
 
+## Horizon type of a mine.
+const TYPE := "mine"
 const LIFT_SCENE := "scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift.tscn"
+const DEBRIS_DIR := "scenes/_universe/environment/terrain/rocks/"
+## The rocks a fallen layer drops: scene, size (m) across, how often (weight).
+const DEBRIS := [
+    ["rock_mining_debris_040.tscn", 0.4, 0.3],
+    ["rock_mining_debris_070.tscn", 0.7, 0.3],
+    ["rock_mining_debris_100.tscn", 1.0, 0.2],
+    ["rock_mining_debris_140.tscn", 1.4, 0.12],
+    ["rock_mining_debris_200.tscn", 2.0, 0.08],
+]
 
 ## Every live mine, for MineSite.contains_point (the below-surface rescue must not pull anyone out of one).
 static var _live: Array[MineSite] = []
@@ -58,6 +69,26 @@ static var _live: Array[MineSite] = []
 ## Rock (m) kept over a gallery: it stops before the ground above gets thinner than this.
 @export_range(5.0, 200.0, 1.0, "suffix:m") var min_cover_m: float = 30.0
 
+@export_group("Face")
+## Time (s) a player holds the mining tool on a face's fault before a layer of rock falls.
+@export_range(1.0, 120.0, 0.5, "suffix:s") var face_seconds: float = 20.0
+## Thickness (m) of a fallen layer: how far the gallery moves on each time. Lower = more layers to mine.
+@export_range(0.5, 5.0, 0.1, "suffix:m") var layer_m: float = 1.5
+## How close (m) to the fault the tool must hit; higher = easier to aim.
+@export_range(0.02, 1.0, 0.01, "suffix:m") var fault_tolerance_m: float = 0.15
+## Fewest rocks a fallen layer drops.
+@export_range(1, 20) var debris_min: int = 4
+## Most rocks a fallen layer drops.
+@export_range(1, 20) var debris_max: int = 10
+## Lowest gold purity (0..1) a fallen layer may get; drawn once per layer, all its rocks carry it.
+@export_range(0.0, 1.0, 0.01) var gold_min: float = 0.02
+## Highest gold purity (0..1) a fallen layer may get.
+@export_range(0.0, 1.0, 0.01) var gold_max: float = 0.30
+## Sound of a layer falling, heard round the face (empty = silent).
+@export var sfx_layer_fall: AudioStream
+## Loudness of that sound in decibels (0 = the sample's own level).
+@export_range(-40.0, 12.0, 0.5) var sfx_layer_fall_db: float = 0.0
+
 @export_group("Lift")
 ## Speed (m/s) of the shaft's vehicle lift: 10 m/s takes a kilometre in under two minutes.
 @export_range(0.5, 10.0, 0.1, "suffix:m/s") var lift_speed_m_s: float = 10.0
@@ -102,6 +133,8 @@ var _terrain: PlanetTerrain = null
 var _hole_signature := ""
 var _measuring := -1
 var _measure_result: Array = []
+## The open faces, by gallery id.
+var _faces: Dictionary = {}
 
 ## The PropSync child's uuid on the node itself: what makes the mine a networked parent (PropSpawn.find_net_parent).
 var uuid: String:
@@ -115,6 +148,7 @@ var uuid: String:
 
 
 func apply_prop_data(data: Dictionary) -> void:
+    var before := face_step.duplicate()
     for field: String in ["faces", "face_step", "gallery_max_m"]:
         if data.get(field) is Dictionary:
             set(field, (data[field] as Dictionary).duplicate())
@@ -124,6 +158,10 @@ func apply_prop_data(data: Dictionary) -> void:
         style = str(data.style)
     if data.has("lift_spawned") and data.lift_spawned != null:
         lift_spawned = bool(data.lift_spawned)
+    if is_inside_tree() and not _layout.is_empty() and not GameOrchestrator.is_server():
+        for key: String in face_step:
+            if int(face_step[key]) > int(before.get(key, face_step[key])):
+                _layer_fell(int(key))  # where the old face stood, before the refresh moves it
     if is_inside_tree():
         _refresh.call_deferred()
 
@@ -233,6 +271,7 @@ func _refresh() -> void:
             _cells.set_graph(graph, _changed_cells(previous, _dug))
     if not server and (fresh or previous != _dug):
         _rebuild_lights()
+    _update_faces()
     _register_hole()
     if server and gallery_max_m.is_empty():
         _measure_limits()
@@ -314,6 +353,225 @@ func _register_hole() -> void:
         return
     _hole_signature = hole.signature()
     terrain.register_mine_hole(hole)
+
+
+## The frame of gallery [param id]'s face [param distance] m along it: origin on the floor there, -Z along the
+## gallery (level), +Y up.
+func face_frame(id: int, distance: float) -> Transform3D:
+    var gallery: Dictionary = _layout.galleries[id]
+    var forward := MineLayout.direction_at(gallery, distance)
+    forward = Vector3(forward.x, 0.0, forward.z).normalized()
+    var back := -forward
+    return Transform3D(Basis(Vector3.UP.cross(back), Vector3.UP, back), MineLayout.point_at(gallery, distance))
+
+
+## The fault of layer [param step] of gallery [param id]'s face, seeded: [normal in the face's XY plane, offset].
+## Through the gallery's axis, at any tilt, within 0.6 m of the face's middle.
+func fault_of(id: int, step: int) -> Array:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = ("%d|fault|%d|%d" % [seed, id, step]).hash()
+    var angle := rng.randf_range(0.0, PI)
+    var normal := Vector2(cos(angle), sin(angle))
+    var center := Vector2(0.0, float(_layout.settings.gallery_height_m) * 0.45)
+    return [normal, center.dot(normal) + rng.randf_range(-0.6, 0.6)]
+
+
+## One MineFace per gallery whose face can still move on, kept at its dug end with the current fault.
+func _update_faces() -> void:
+    var open := {}
+    if not _layout.is_empty() and not gallery_max_m.is_empty():
+        for id: int in _dug:
+            if MineLayout.face_open(_layout, id, faces, gallery_max_m):
+                open[id] = true
+    for id: int in _faces.keys():
+        if not open.has(id):
+            (_faces[id] as Node).queue_free()
+            _faces.erase(id)
+    var client: bool = not GameOrchestrator.is_server()
+    for id: int in open:
+        var step := int(face_step.get(str(id), 0))
+        var frame := face_frame(id, float(_dug[id]))
+        var face: MineFace = _faces.get(id)
+        if face != null and face.step == step and face.transform.is_equal_approx(frame):
+            continue
+        if face == null:
+            face = MineFace.new()
+            face.name = "Face%d" % id
+            add_child(face)
+            _faces[id] = face
+        var fault := fault_of(id, step)
+        face.mine = self
+        face.gallery = id
+        face.step = step
+        face.half_width = float(_layout.settings.gallery_width_m) * 0.5
+        face.height = float(_layout.settings.gallery_height_m)
+        face.fault_normal = fault[0]
+        face.fault_offset = fault[1]
+        face.tolerance_m = fault_tolerance_m
+        face.transform = frame
+        face.build(client)
+
+
+## SERVER: a player held the tool [param face_seconds] on the face of gallery [param id], layer [param step], at
+## [param hit] (mine frame). A layer falls if it was the current layer's fault, within reach. True when it fell.
+func server_perforate_face(player: Node3D, id: int, step: int, hit: Vector3) -> bool:
+    var face: MineFace = _faces.get(id)
+    if face == null or step != face.step or step != int(face_step.get(str(id), 0)):
+        return false  # another player's layer fell meanwhile, or no such face
+    var slack := 0.1  # the client judged the hit on its own copy of the face
+    var local := face.transform.affine_inverse() * hit
+    if absf(Vector2(local.x, local.y).dot(face.fault_normal) - face.fault_offset) > face.tolerance_m + slack:
+        return false
+    if player != null and (global_transform * hit).distance_to(player.global_position) > 5.0:
+        return false
+    server_break_face(id)
+    return true
+
+
+## SERVER: layer [member face_step] of gallery [param id]'s face falls: the gallery moves on by layer_m (never past
+## its limit) and the layer's rocks drop in front of the old face.
+func server_break_face(id: int) -> void:
+    if not MineLayout.face_open(_layout, id, faces, gallery_max_m):
+        return
+    var key := str(id)
+    var gallery: Dictionary = _layout.galleries[id]
+    var reach := minf(float(gallery_max_m[key]), float(_layout.settings.gallery_cap_m))
+    var from := float(_dug.get(id, gallery.initial_m))
+    var step := int(face_step.get(key, 0))
+    faces[key] = minf(float(faces.get(key, 0.0)) + layer_m, reach - float(gallery.initial_m))
+    face_step[key] = step + 1
+    _persist({"faces": faces, "face_step": face_step})
+    _spawn_debris(id, from, step)
+    _refresh()
+
+
+## SERVER: the rocks of layer [param step] of gallery [param id], dropped just in front of the face that stood
+## [param from] m along it (open air: the new rock is still being built). Gold, at one purity for the layer.
+func _spawn_debris(id: int, from: float, step: int) -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = ("%d|debris|%d|%d" % [seed, id, step]).hash()
+    var purity := rng.randf_range(minf(gold_min, gold_max), maxf(gold_min, gold_max))
+    var count := rng.randi_range(debris_min, maxi(debris_min, debris_max))
+    var frame := face_frame(id, from)
+    var half := float(_layout.settings.gallery_width_m) * 0.5
+    var top := minf(float(_layout.settings.gallery_height_m) - 1.0, 2.8)
+    var host := _host_rock()
+    var density := RockMining.INERT_DENSITY_DEFAULT
+    if MineralRegistry.has_mineral(StringName(host)):
+        density = MineralRegistry.get_mineral(StringName(host)).density_kg_m3
+    var seed_str := "%s|layer|%d|%d" % [uuid, id, step]
+    var placed: Array = []
+    var rocks: Array = []
+    for index in count:
+        var pick := _pick_debris(rng)
+        var radius := float(pick[1]) * 0.5
+        var at := Vector3.ZERO
+        for attempt in 10:
+            at = Vector3(rng.randf_range(-half + 0.3 + radius, half - 0.3 - radius), rng.randf_range(0.3 + radius, top),
+                -rng.randf_range(0.2, 1.6))
+            var clear := true
+            for other: Array in placed:
+                if (other[0] as Vector3).distance_to(at) < (radius + float(other[1])) * 0.8:
+                    clear = false
+                    break
+            if clear:
+                break
+        placed.append([at, radius])
+        var position := frame * at
+        var rotation := Vector3(rng.randf_range(-PI, PI), rng.randf_range(-PI, PI), rng.randf_range(-PI, PI))
+        rocks.append({
+            "type": "miningrock",
+            "uuid": PropSpawn.stable_uuid("%s#%d" % [seed_str, index]),
+            "position": {"x": position.x, "y": position.y, "z": position.z},
+            "rotation": {"x": rotation.x, "y": rotation.y, "z": rotation.z},
+            "scenename": DEBRIS_DIR + str(pick[0]),
+            "parent_id": uuid,
+            "ore_seed": gold_seed(seed_str, index, purity),
+            "mineral_id": "gold",
+            "host_rock_id": host,
+            "inert_density": density,
+            "ground_color": "",
+        })
+    NetworkOrchestrator.spawn_props_authoritative(rocks)
+
+
+## The ore_seed of rock [param index] of a layer ([param seed_str]) whose purity (RockMining.ore_richness: the
+## seed's hash, modulo 1000) is within 0.01 of [param purity]. Candidates are digests, not "…|k": Godot's string
+## hash of "…|0", "…|1"… are consecutive integers, so counting k only walks a few thousandths of purity.
+static func gold_seed(seed_str: String, index: int, purity: float) -> String:
+    var best := ""
+    var best_err := INF
+    for k in 512:
+        var candidate := "%s|ore%d|%s" % [seed_str, index, ("%d|%d" % [index, k]).sha256_text().substr(0, 12)]
+        var err := absf(float(absi(candidate.hash()) % 1000) / 1000.0 - purity)
+        if err < best_err:
+            best_err = err
+            best = candidate
+        if err <= 0.01:
+            break
+    return best
+
+
+static func _pick_debris(rng: RandomNumberGenerator) -> Array:
+    var total := 0.0
+    for entry: Array in DEBRIS:
+        total += float(entry[2])
+    var roll := rng.randf() * total
+    for entry: Array in DEBRIS:
+        roll -= float(entry[2])
+        if roll <= 0.0:
+            return entry
+    return DEBRIS[0]
+
+
+## The rock the mine is dug in: the planet's mining host rock (granite when unknown).
+func _host_rock() -> String:
+    var terrain := _planet_terrain()
+    if terrain != null and terrain.planet_data != null and not terrain.planet_data.mining_zone_host_rock.is_empty():
+        return terrain.planet_data.mining_zone_host_rock
+    return "granite"
+
+
+## CLIENT: a layer of gallery [param id] fell: dust where its face stood, and its sound.
+func _layer_fell(id: int) -> void:
+    if not _dug.has(id):
+        return
+    var frame := face_frame(id, float(_dug[id]))
+    var dust := CPUParticles3D.new()
+    dust.one_shot = true
+    dust.amount = 80
+    dust.lifetime = 4.0
+    dust.explosiveness = 0.9
+    dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+    dust.emission_box_extents = Vector3(float(_layout.settings.gallery_width_m) * 0.4, 1.5, 0.6)
+    dust.direction = Vector3.BACK
+    dust.spread = 60.0
+    dust.initial_velocity_min = 0.5
+    dust.initial_velocity_max = 2.5
+    dust.gravity = Vector3(0.0, -0.4, 0.0)
+    dust.damping_min = 0.6
+    dust.damping_max = 1.2
+    dust.scale_amount_min = 0.6
+    dust.scale_amount_max = 1.6
+    var quad := QuadMesh.new()
+    quad.size = Vector2.ONE * 0.8
+    var material := StandardMaterial3D.new()
+    material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+    material.vertex_color_use_as_albedo = true
+    quad.material = material
+    dust.mesh = quad
+    var fade := Gradient.new()
+    fade.set_color(0, Color(0.55, 0.5, 0.44, 0.55))
+    fade.set_color(1, Color(0.55, 0.5, 0.44, 0.0))
+    dust.color_ramp = fade
+    dust.transform = frame * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.8, -1.0))
+    add_child(dust)
+    dust.emitting = true
+    dust.finished.connect(dust.queue_free)
+    if sfx_layer_fall != null and not Sfx3D.muted():
+        Sfx3D.play(dust, sfx_layer_fall, sfx_layer_fall_db, 6.0, 60.0, Sfx3D.Attenuation.REALISTIC)
 
 
 ## Where the lift stands in the mine frame: on the rim at -Z, set back into the rock, facing the shaft.

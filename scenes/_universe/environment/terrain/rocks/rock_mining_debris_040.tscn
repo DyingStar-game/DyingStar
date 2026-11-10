@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" uid="uid://dtijoobxv67w2" path="res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn" id="1_small"]
+
+[node name="RockMiningDebris040" instance=ExtResource("1_small")]
+
+[node name="CSGMesh3D" parent="." index="1"]
+transform = Transform3D(0.26, 0, 0, 0, 0.26, 0, 0, 0, 0.26, 0, 0, 0)
+
+[node name="CollisionShape3D" parent="Area3D" index="0"]
+transform = Transform3D(0.6318, 0, 0, 0, 0.6318, 0, 0, 0, 0.6318, 0.00244, 0.09050, -0.02217)

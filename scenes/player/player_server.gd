@@ -515,6 +515,13 @@ func server_action_received(data: Dictionary) -> void:
 				rock.server_perforate(
 					Vector3(h.get("x", 0.0), h.get("y", 0.0), h.get("z", 0.0)),
 					Vector3(dd.get("x", 0.0), dd.get("y", 0.0), dd.get("z", 0.0)))
+		"perforate_mine_face":
+			# Authoritative layer fall: the mine checks the layer, the fault and the reach (MineSite).
+			var mine := _find_mine(str(data.get("uuid", "")))
+			if mine != null and player.owns_mining_tool:
+				var mh: Dictionary = data.get("hit", {})
+				mine.server_perforate_face(player, int(data.get("gallery", -1)), int(data.get("step", -1)),
+						Vector3(mh.get("x", 0.0), mh.get("y", 0.0), mh.get("z", 0.0)))
 		"delete_prop":
 			# Admin cleanup tool (dev tool "zapette", refused at the top while it is off): permanently
 			# remove a player-spawned prop.
@@ -965,6 +972,14 @@ func _find_mining_rock(rock_uuid: String) -> Node:
 		if "uuid" in r and str(r.uuid) == rock_uuid:
 			return r
 	return null
+
+## The live village mine of [param mine_uuid], or null.
+func _find_mine(mine_uuid: String) -> MineSite:
+	if mine_uuid == "":
+		return null
+	var mines: Dictionary = NetworkOrchestrator.props_list.get(MineSite.TYPE, {})
+	var mine = mines.get(mine_uuid)
+	return mine as MineSite if is_instance_valid(mine) else null
 
 ## Find a player-spawned prop by uuid for the admin cleanup tool (server-side). Looks in the
 ## prop registry (any type) first, then the "carriable" group (rocks/boxes), so it works
