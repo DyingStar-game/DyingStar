@@ -54,6 +54,8 @@ func test_the_prompt_of_a_player_without_a_tool_names_the_building() -> void:
 
 func test_money_earned_chimes_and_the_rest_beeps() -> void:
 	assert_true(ChatNetwork.is_gain("mission.completed"), "a mission paid")
+	assert_true(ChatNetwork.is_gain("mission.ready"), "a mission done, ready to hand in")
+	assert_false(ChatNetwork.is_gain("mission.expired"), "no good news")
 	assert_true(ChatNetwork.is_gain("warehouse.sale"), "goods sold")
 	assert_false(ChatNetwork.is_gain("mission.invited"))
 	assert_false(ChatNetwork.is_gain("friend_request"))

@@ -38,6 +38,25 @@ func test_a_giant_screen_is_heard_from_further() -> void:
 	assert_gt(hum.size_m, 10.0)
 
 
+func test_the_sounds_are_loud_enough_to_be_heard() -> void:
+	# Two Freesound files came nearly silent (the hum at -59 dB mean, the chime 18 dB under the beep):
+	# heard by nobody, they looked like a bug in the code that plays them.
+	for path: String in ["res://assets/_universe/audio/sfx/ui/success-bell.ogg",
+			"res://assets/_universe/audio/sfx/ui/screen-fan-hum.ogg"]:
+		assert_gt(_peak_db(load(path) as AudioStreamOggVorbis), -15.0, "%s is no whisper" % path.get_file())
+
+
+## The peak (dB) of the first seconds of [param stream], decoded here.
+func _peak_db(stream: AudioStreamOggVorbis) -> float:
+	var playback := stream.instantiate_playback() as AudioStreamPlaybackOggVorbis
+	playback.start(0.0)
+	var peak: float = 0.0
+	for _i: int in 200:
+		for frame: Vector2 in playback.mix_audio(1.0, 1024):
+			peak = maxf(peak, maxf(absf(frame.x), absf(frame.y)))
+	return linear_to_db(maxf(peak, 0.000001))
+
+
 func test_the_sound_loops_and_has_its_credit() -> void:
 	var stream := ScreenHum.STREAM as AudioStreamOggVorbis
 	assert_not_null(stream, "an Ogg: an MP3 loop ticks at every turn")

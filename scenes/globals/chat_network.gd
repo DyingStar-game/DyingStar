@@ -28,12 +28,12 @@ extends Node
 const NOTIFICATION_UNKNOWN_NAME: String = "%%NOTIF_UNKNOWN_NAME"
 
 
-## The notification types that are money earned: a mission paid, goods sold. They chime once
-## (WristDatapadModel.chime) where the others beep until read.
-const GAIN_TYPES: Array[String] = ["mission.completed", "warehouse.sale"]
+## The notification types that are good news of a job: a mission done and ready to hand in, a mission
+## paid, goods sold. They chime once (WristDatapadModel.chime) where the others beep until read.
+const GAIN_TYPES: Array[String] = ["mission.ready", "mission.completed", "warehouse.sale"]
 
 
-## Whether a notification of [param type] is money earned (GAIN_TYPES). Pure.
+## Whether a notification of [param type] is good news of a job (GAIN_TYPES). Pure.
 static func is_gain(type: String) -> bool:
 	return GAIN_TYPES.has(type)
 
