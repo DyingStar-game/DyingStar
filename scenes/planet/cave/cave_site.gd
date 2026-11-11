@@ -29,6 +29,8 @@ var _data: Dictionary = {}
 var _terrain: PlanetTerrain = null
 var _placement_id := ""
 var _signature := ""
+## The definition this client last reported as waiting for a fit to its relief (logged once each).
+var _waiting_logged := ""
 
 ## The PropSync child's uuid on the node itself: what makes the cave a networked parent (PropSpawn.find_net_parent),
 ## so a prop placed under it — its Discovery — keeps it as parent_id instead of being sent to the world root.
@@ -77,6 +79,13 @@ func _register() -> void:
             _unregister()  # a re-import replaced a fitted definition: the old cut goes until the fit
         if terrain.is_server and not _refused(site, terrain.planet_data):
             terrain.request_cave_fit(self)
+        elif not terrain.is_server and _waiting_logged != site.signature():
+            # A client never fits: it waits for the server's. A fit it still finds stale means the server's relief
+            # is not this one (other data, other code), and the ground over this cave stays whole here.
+            _waiting_logged = site.signature()
+            print("[CaveSite] '%s' not cut on this client: fitted on relief %s / version %s, this one is %s / %s" % [
+                site.placement_id, site.terrain_relief_signature, site.terrain_version,
+                terrain.planet_data.relief_signature, terrain.planet_data.chunk_data_version])
         return
     var signature := site.signature()
     if terrain == _terrain and site.placement_id == _placement_id and signature == _signature:

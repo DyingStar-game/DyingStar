@@ -5,6 +5,10 @@ extends RefCounted
 ## No collapsed vertices, LOD-dependent holes or separate physics approximation.
 
 
+## Mesh meta: the number of the chunk's triangles the cave openings clipped (absent: none reached it).
+const CUT_META := &"stargrot_clipped_triangles"
+
+
 static func _pieces(poly: Array, half_width: float, length_m: float, outline: PackedVector2Array = PackedVector2Array(),
         axis: Vector2 = Vector2.ZERO, capped: bool = false, parts: Array = []) -> Array:
     var kept: Array = []
@@ -494,6 +498,7 @@ static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlac
         var snap := _snap(opening, data, cell_m, bored[opening_index])
         var output := ArrayMesh.new()
         var surface_map: Dictionary = {}
+        var clipped := 0
         for surface_index in result.get_surface_count():
             var arrays := result.surface_get_arrays(surface_index)
             var positions: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -530,6 +535,8 @@ static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlac
                             if not rocks.is_empty() else Color(0, 0, 0, 0)])
                 var cut := _overlaps(poly, float(opening.width) * 0.5, float(opening.length),
                     float(opening.get("back", 0.0)), axis)
+                if cut:
+                    clipped += 1
                 var pieces: Array = _pieces(poly, float(opening.width) * 0.5, float(opening.length),
                     opening.get("polygon", PackedVector2Array()), axis, opening.has("axis"), opening.get("parts", [])) \
                     if cut else [poly]
@@ -574,6 +581,8 @@ static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlac
             output.surface_set_material(output.get_surface_count() - 1, result.surface_get_material(surface_index))
         for key in result.get_meta_list():
             output.set_meta(key, result.get_meta(key))
+        # How many of the chunk's triangles the openings clipped (debug_cave_chunks reads it).
+        output.set_meta(CUT_META, int(output.get_meta(CUT_META, 0)) + clipped)
         # The prebuilt road mesh still spans the old, uncut terrain. Let the
         # native road splitter rebuild it from the clipped surfaces instead.
         if output.has_meta("roads_mesh"):

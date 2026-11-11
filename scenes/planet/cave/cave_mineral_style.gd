@@ -26,6 +26,10 @@ extends Resource
 @export var crystal_material: Material
 ## Cheaper opaque crystal material used when the ground quality setting is low (no screen copy).
 @export var crystal_material_low: Material
+## Rock (rocks.json slug) whose colour and fluorescence the crystals of a cave dug in another rock take: cave rock
+## -> crystal rock. For the colourless corundums (milky, white), whose own crystals would be as pale as their
+## walls: they grow rubies. A rock not listed keeps crystals of its own colour; the walls always keep theirs.
+@export var crystal_rock_overrides: Dictionary[String, String] = {}
 
 @export_group("Glow lights")
 ## Most fluorescence lights per cave (0..16): each lights the walls around a crystal cluster in its glow
@@ -42,17 +46,3 @@ extends Resource
 @export_range(5.0, 200.0, 1.0) var glow_light_fade_begin_m: float = 30.0
 ## Rocks glowing weaker than this (0..1 fluorescence strength) get no glow light at all (blue, green caves).
 @export_range(0.0, 1.0, 0.01) var glow_light_min_strength: float = 0.05
-
-@export_group("Inclusion lights")
-## Most AreaLight3D per cave throwing the ruby inclusions' red light on the rock around them (0..32), set on
-## the inclusions nearest the surface. 0 = the inclusions glow but light nothing. Each costs GPU time on the
-## pixels it reaches (an area light costs more than a point light).
-@export_range(0, 32, 1) var inclusion_light_count: int = 10
-## Energy of an inclusion light: higher = redder rock around the inclusions.
-@export_range(0.0, 16.0, 0.05) var inclusion_light_energy: float = 0.3
-## Reach of an inclusion light (m): larger reddens more rock around it, at a higher GPU cost.
-@export_range(0.5, 20.0, 0.25) var inclusion_light_range_m: float = 3.0
-## Smallest distance between two inclusion lights (m): lower packs them, higher spreads them through the cave.
-@export_range(0.5, 40.0, 0.5) var inclusion_light_spacing_m: float = 4.0
-## Distance from the camera (m) where an inclusion light starts fading out; it is gone 10 m further.
-@export_range(5.0, 200.0, 1.0) var inclusion_light_fade_begin_m: float = 25.0

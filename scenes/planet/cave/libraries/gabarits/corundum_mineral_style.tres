@@ -14,4 +14,8 @@ translucent_floor_material = ExtResource("5")
 translucent_decor_material = ExtResource("6")
 crystal_material = ExtResource("2")
 crystal_material_low = ExtResource("3")
-glow_light_energy = 0.5
+crystal_rock_overrides = Dictionary[String, String]({
+"corundum_milky": "corundum_red",
+"corundum_white": "corundum_red"
+})
+glow_light_energy = 0.2

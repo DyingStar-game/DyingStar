@@ -5,6 +5,11 @@ render_mode blend_mix, cull_back;
 
 #include "res://scenes/planet/cave/cave_crystal.gdshaderinc"
 
+void vertex() {
+	v_inner_a = crystal_inner_facet(NORMAL, COLOR, INSTANCE_ID, 1.0, MODELVIEW_NORMAL_MATRIX);
+	v_inner_b = crystal_inner_facet(NORMAL, COLOR, INSTANCE_ID, 2.0, MODELVIEW_NORMAL_MATRIX);
+}
+
 void fragment() {
 	float ndv = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
 	float fresnel = pow(1.0 - ndv, 4.0);
@@ -17,9 +22,13 @@ void fragment() {
 	// No reflection of the environment: in a cave it is the daytime sky (no probe stops it), a grey sheen
 	// that hid the rock seen through the crystal. The glints on the facets come from light().
 	SPECULAR = 0.0;
+	// Underground: the sky's ambient light does not reach the crystals either.
+	AO = 0.0;
+	AO_LIGHT_AFFECT = 0.0;
 	EMISSION = v_glow * ambient_glow + crystal_color * (fresnel * rim_strength * 2.0 + 0.03 * (1.0 - ndv));
 }
 
 void light() {
-	crystal_light(v_hue, v_glow, ALBEDO, NORMAL, VIEW, LIGHT, LIGHT_COLOR, ATTENUATION, DIFFUSE_LIGHT, SPECULAR_LIGHT);
+	crystal_light(v_hue, v_glow, ALBEDO, NORMAL, v_inner_a, v_inner_b, VIEW, LIGHT, LIGHT_COLOR, ATTENUATION,
+			SPECULAR_AMOUNT, DIFFUSE_LIGHT, SPECULAR_LIGHT);
 }

@@ -16,12 +16,6 @@ const GlobalsDefs := preload("res://scenes/globals/globals.gd")
 const CRYSTAL_SEEDS := {"floor": 7101, "wall": 7102, "ceiling": 7103}
 ## Group of every crystal MultiMesh drawn, so a change of the ground quality setting swaps their material live.
 const CRYSTAL_GROUP := &"cave_mineral_crystals"
-## Surface vertices sampled per surface to find the inclusions worth a light (add_inclusion_lights).
-const INCLUSION_SAMPLES := 6000
-## cave_corundum_rock.gdshader's INCLUSION_*: inclusions reach deep into the rock, lobes and glow around them.
-const INCLUSION_FLATTEN := 0.4
-const INCLUSION_EXTENT := 1.6
-const INCLUSION_GLOW_REACH := 1.15
 ## Wall tint when the catalogue has no colour for the rock.
 const FALLBACK_TINT := Color(0.72, 0.66, 0.58)
 
@@ -39,6 +33,8 @@ var crystals := false
 
 # One tinted copy per (shared material, rock), never per cave.
 static var _tinted := {}
+# The crystal rock of each override (crystal_mineral), by slug.
+static var _crystal_rocks := {}
 static var _watching_quality := false
 
 
@@ -110,14 +106,29 @@ func surface_material(key: String, base: Material, style: CaveMineralStyle) -> M
 
 
 ## Gives the cave surface or rocks [param instance] this rock's colour and fluorescence (instance uniforms of
-## the milky corundum), on the fluorescent layer too so the UV torch makes its clouds glow.
-func dress_surface(instance: GeometryInstance3D, style: CaveMineralStyle) -> void:
+## the milky corundum), on the fluorescent layer too so the UV torch makes its clouds glow. [param open_air_source]
+## says where its share of open sky is read (cave_corundum_rock.gdshader): 0 none (underground), 1 its vertex
+## colour (an entrance's ground cover), 2 its MultiMesh custom data (rocks around and before the mouth).
+func dress_surface(instance: GeometryInstance3D, style: CaveMineralStyle, open_air_source: int = 0) -> void:
     if style == null:
         return
+    instance.set_instance_shader_parameter(&"open_air_source", float(open_air_source))
     instance.set_instance_shader_parameter(&"wall_tint", Vector3(wall_tint.r, wall_tint.g, wall_tint.b))
     instance.set_instance_shader_parameter(&"tint_strength", style.wall_tint_strength)
     instance.set_instance_shader_parameter(&"glow", Vector4(glow_color.r, glow_color.g, glow_color.b, glow_strength))
     instance.layers |= GlobalsDefs.RENDER_MASK_FLUORESCENT
+
+
+## The mineral the crystals of this cave are made of: the rock [member CaveMineralStyle.crystal_rock_overrides]
+## gives this one (rubies in a colourless corundum), else this very rock.
+func crystal_mineral(style: CaveMineralStyle) -> CaveMineral:
+    if style == null or not style.crystal_rock_overrides.has(slug):
+        return self
+    var rock: String = style.crystal_rock_overrides[slug]
+    if not _crystal_rocks.has(rock):
+        _crystal_rocks[rock] = for_slug(rock)
+    var crystal: CaveMineral = _crystal_rocks[rock]
+    return self if crystal == null else crystal
 
 
 ## The crystal material for this machine's ground quality: the refracting one, or the opaque one on
@@ -159,8 +170,10 @@ static func _ground_quality() -> int:
     return int(settings.render.effective("ground_quality"))
 
 
-## Paints a crystal MultiMesh with this rock: its hue and glow ride instance uniforms, the material is shared.
+## Paints a crystal MultiMesh with this cave's crystal rock ([method crystal_mineral]): its hue and glow ride
+## instance uniforms, the material is shared.
 func dress_crystals(instance: GeometryInstance3D, style: CaveMineralStyle) -> void:
+    var crystal := crystal_mineral(style)
     instance.material_override = crystal_material(style)
     # The material follows the ground quality setting, also for the caves already built when it changes.
     instance.set_meta(&"mineral_style", style)
@@ -172,16 +185,19 @@ func dress_crystals(instance: GeometryInstance3D, style: CaveMineralStyle) -> vo
     # every layer, still lights them.
     instance.layers = GlobalsDefs.RENDER_MASK_FLUORESCENT
     instance.set_instance_shader_parameter(&"crystal_color",
-        Vector3(crystal_color.r, crystal_color.g, crystal_color.b))
+        Vector3(crystal.crystal_color.r, crystal.crystal_color.g, crystal.crystal_color.b))
     instance.set_instance_shader_parameter(&"glow",
-        Vector4(glow_color.r, glow_color.g, glow_color.b, glow_strength))
+        Vector4(crystal.glow_color.r, crystal.glow_color.g, crystal.glow_color.b, crystal.glow_strength))
 
 
-## Soft lights in the fluorescence colour over the crystal clusters at [param transforms] (cave-local),
-## spread at least [member CaveMineralStyle.glow_light_spacing_m] apart, in their seeded order. None for a
-## rock glowing weaker than the style's threshold.
+## Soft lights in the crystals' fluorescence colour ([method crystal_mineral]) over the crystal clusters at
+## [param transforms] (cave-local), spread at least [member CaveMineralStyle.glow_light_spacing_m] apart, in their
+## seeded order. None for crystals glowing weaker than the style's threshold.
 func add_glow_lights(root: Node3D, transforms: Array, style: CaveMineralStyle) -> int:
-    if style == null or glow_strength < style.glow_light_min_strength or style.glow_light_count <= 0:
+    if style == null:
+        return 0
+    var crystal := crystal_mineral(style)
+    if crystal.glow_strength < style.glow_light_min_strength or style.glow_light_count <= 0:
         return 0
     var kept: Array[Vector3] = []
     for transform: Transform3D in transforms:
@@ -200,8 +216,8 @@ func add_glow_lights(root: Node3D, transforms: Array, style: CaveMineralStyle) -
         var light := OmniLight3D.new()
         light.name = "CrystalGlow%d" % (kept.size() - 1)
         light.position = point
-        light.light_color = glow_color
-        light.light_energy = style.glow_light_energy * glow_strength
+        light.light_color = crystal.glow_color
+        light.light_energy = style.glow_light_energy * crystal.glow_strength
         light.light_specular = 0.25
         light.omni_range = style.glow_light_range_m
         light.shadow_enabled = false
@@ -212,114 +228,3 @@ func add_glow_lights(root: Node3D, transforms: Array, style: CaveMineralStyle) -
         root.add_child(light)
     return kept.size()
 
-
-## AreaLight3D on the ruby inclusions of the milky corundum (cave_corundum_rock.gdshader) that cut the cave's
-## surface, so their red falls on the rock around them; at most
-## [member CaveMineralStyle.inclusion_light_count], spread apart, none in a rock that does not fluoresce.
-## [param data] is the cave (CaveGenerator), [param texture_origin] the shift its surface was drawn with
-## (CavePreviewBuilder.instantiate): the shader lays the inclusions out in those shifted coordinates.
-func add_inclusion_lights(root: Node3D, data: Dictionary, texture_origin: Vector3, style: CaveMineralStyle) -> int:
-    if style == null or glow_strength <= 0.0 or style.inclusion_light_count <= 0:
-        return 0
-    # Nearest surface vertex of every inclusion that a vertex comes within its size of (measured as the shader
-    # does, depth flattened along the surface normal). Only the vertex's own cell is looked at: that misses the
-    # inclusions centred in a neighbour cell, but a sample of the vertices (a cave has ~200 000) still finds far
-    # more than the few lights there are room for, and every light found lands on an inclusion drawn.
-    var found: Array = []
-    var colour := Color(1.0, 0.08, 0.05)
-    for key in ["wall", "floor"]:
-        var material := (style.translucent_wall_material if key == "wall"
-            else style.translucent_floor_material) as ShaderMaterial
-        if material == null:
-            continue
-        var spacing := float(_shader_value(material, &"spot_spacing_m", 4.0))
-        var chance := float(_shader_value(material, &"spot_chance", 0.6))
-        var reach := INCLUSION_EXTENT * (1.0 + 0.5 * float(_shader_value(material, &"spot_raggedness", 0.4))) \
-            * INCLUSION_GLOW_REACH
-        var size_max := minf(float(_shader_value(material, &"spot_size_m", 1.0)),
-            spacing * (1.0 - INCLUSION_FLATTEN) / reach)
-        if key == "wall":
-            colour = _shader_value(material, &"spot_color", colour)
-        var layout := {}
-        var nearest := {}
-        var surface: Dictionary = data[key]
-        var vertices: PackedVector3Array = surface.vertices
-        var normals: PackedVector3Array = surface.normals
-        var stride := maxi(1, ceili(vertices.size() / float(INCLUSION_SAMPLES)))
-        for index in range(0, vertices.size(), stride):
-            var point: Vector3 = vertices[index] + texture_origin
-            var cell := Vector3i((point / spacing).floor())
-            if not layout.has(cell):
-                layout[cell] = _inclusion(Vector3(cell), chance, spacing, size_max)
-            var inclusion: Variant = layout[cell]
-            if inclusion == null:
-                continue
-            var normal: Vector3 = normals[index]
-            var offset: Vector3 = point - inclusion[0]
-            var distance := (offset - normal * offset.dot(normal) * INCLUSION_FLATTEN).length()
-            if distance > inclusion[1]:
-                continue
-            var best: Variant = nearest.get(cell)
-            if best == null or distance < best[0]:
-                nearest[cell] = [distance, vertices[index], normals[index], inclusion[1]]
-        found.append_array(nearest.values())
-    found.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
-    var kept: Array[Vector3] = []
-    for entry: Array in found:
-        if kept.size() >= style.inclusion_light_count:
-            break
-        var at: Vector3 = entry[1]
-        var near := false
-        for other in kept:
-            if other.distance_to(at) < style.inclusion_light_spacing_m:
-                near = true
-                break
-        if near:
-            continue
-        kept.append(at)
-        var normal: Vector3 = (entry[2] as Vector3).normalized()
-        var light := AreaLight3D.new()
-        light.name = "InclusionLight%d" % (kept.size() - 1)
-        # Just off the rock, shining out of it (a light shines along its -Z).
-        light.position = at + normal * 0.03
-        var up := Vector3.UP if absf(normal.y) < 0.9 else Vector3.RIGHT
-        light.basis = Basis.looking_at(normal, up)
-        light.area_size = Vector2.ONE * float(entry[3])
-        light.area_range = style.inclusion_light_range_m
-        light.light_color = colour
-        light.light_energy = style.inclusion_light_energy
-        light.light_specular = 0.6
-        light.shadow_enabled = false
-        light.light_cull_mask = GlobalsDefs.RENDER_MASK_LOCAL_LIT
-        light.distance_fade_enabled = true
-        light.distance_fade_begin = style.inclusion_light_fade_begin_m
-        light.distance_fade_length = 10.0
-        root.add_child(light)
-    return kept.size()
-
-
-## The inclusion of grid [param cell] as the shader lays it out ([centre, size]), or null if the cell has none.
-static func _inclusion(cell: Vector3, chance: float, spacing: float, size_max: float) -> Variant:
-    if _hash13(cell + Vector3.ONE * 13.7) > chance:
-        return null
-    var centre := cell + Vector3(_hash13(cell + Vector3.ONE * 3.1), _hash13(cell + Vector3.ONE * 7.9),
-        _hash13(cell + Vector3.ONE * 11.3))
-    return [centre * spacing, size_max * (0.5 + 0.5 * _hash13(cell + Vector3.ONE * 29.3))]
-
-
-## The shader's hash13 (cave_corundum_rock.gdshader), in double precision where the GPU rounds to float: they
-## differ by ~1e-3 at most, so about one inclusion in a thousand gets a light it does not show (or none).
-static func _hash13(p: Vector3) -> float:
-    p *= 0.1031
-    p -= p.floor()
-    p += Vector3.ONE * p.dot(Vector3(p.z, p.y, p.x) + Vector3.ONE * 31.32)
-    var h := (p.x + p.y) * p.z
-    return h - floorf(h)
-
-
-## A shader parameter of [param material], or [param fallback] (the shader's default) when the material does not
-## set it: the renderer cannot tell the defaults when headless (dedicated server, tests), so the corundum rock
-## materials set the layout parameters explicitly.
-static func _shader_value(material: ShaderMaterial, param: StringName, fallback: Variant) -> Variant:
-    var value: Variant = material.get_shader_parameter(param)
-    return fallback if value == null else value

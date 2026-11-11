@@ -1,7 +1,7 @@
 extends GutTest
 ## A cave shows the rock it is dug in (CaveMineral): the rock comes from the planet's zones at the site
-## (PlanetData.rock_at), tints the walls, grows clear crystals where the rock has a crystal habit and lights
-## them in its fluorescence colour.
+## (PlanetData.rock_at), tints the walls, grows clear crystals where the rock has a crystal habit (rubies in a
+## colourless corundum, CaveMineralStyle.crystal_rock_overrides) and lights them in their fluorescence colour.
 
 
 class ZoneAt extends PlanetData:
@@ -143,39 +143,35 @@ func test_crystals_follow_the_ground_quality_setting() -> void:
         "a cave already built takes the material of the new quality")
 
 
-func test_inclusion_lights_sit_on_inclusions_the_shader_draws() -> void:
-    var style := _library.mineral_style
-    var ruby := CaveMineral.for_slug("corundum_pink")
-    var root := Node3D.new()
-    var origin := Vector3(12.5, -3.0, 7.25)
-    var started := Time.get_ticks_usec()
-    var count := ruby.add_inclusion_lights(root, _data, origin, style)
-    gut.p("inclusion lights: %d in %.1f ms (%d vertices)" % [count, (Time.get_ticks_usec() - started) / 1000.0,
-        _data.wall.vertices.size() + _data.floor.vertices.size()])
-    assert_between(count, 1, style.inclusion_light_count)
-    var material := style.translucent_wall_material as ShaderMaterial
-    var spacing: float = CaveMineral._shader_value(material, &"spot_spacing_m", 0.0)
-    var lights := root.get_children()
-    for light: AreaLight3D in lights:
-        assert_false(light.shadow_enabled)
-        assert_eq(light.light_cull_mask, Globals.RENDER_MASK_LOCAL_LIT, "the crystals keep their own light")
-        # The inclusion it lights, in the shader's (shifted) coordinates: centred within one spacing.
-        var shifted := light.position + origin
-        var first := (shifted / spacing).floor() - Vector3.ONE
-        var nearest := INF
-        for corner in 27:
-            var cell := first + Vector3(corner % 3, (corner / 3) % 3, corner / 9)
-            var inclusion: Variant = CaveMineral._inclusion(cell, CaveMineral._shader_value(material,
-                &"spot_chance", 0.0), spacing, 1.0)
-            if inclusion != null:
-                nearest = minf(nearest, shifted.distance_to(inclusion[0]))
-        assert_lt(nearest, spacing, "an inclusion right there")
-        for other: AreaLight3D in lights:
-            if other != light:
-                assert_gte(other.position.distance_to(light.position), style.inclusion_light_spacing_m - 0.1)
-    root.free()
-    var sapphire := Node3D.new()
-    assert_eq(CaveMineral.for_slug("corundum_blue").add_inclusion_lights(sapphire, _data, origin, style), 0,
-        "iron quenches the glow: no inclusion light")
-    sapphire.free()
+func test_a_colourless_corundum_grows_rubies() -> void:
+    var milky := CaveMineral.for_slug("corundum_milky")
+    var ruby := CaveMineral.for_slug("corundum_red")
+    var preview := CavePreviewBuilder.instantiate(_data, _library, true, false, Vector3.ZERO, milky)
+    var crystals := _crystals(preview)
+    assert_gt(crystals.size(), 0, "crystals in the chambers")
+    for instance: MultiMeshInstance3D in crystals:
+        var hue: Vector3 = instance.get_instance_shader_parameter(&"crystal_color")
+        assert_almost_eq(hue, Vector3(ruby.crystal_color.r, ruby.crystal_color.g, ruby.crystal_color.b),
+            Vector3.ONE * 1e-5, "ruby crystals in the milky rock")
+        assert_gt(hue.x, hue.z, "red")
+        var glow: Vector4 = instance.get_instance_shader_parameter(&"glow")
+        assert_almost_eq(glow.w, ruby.glow_strength, 1e-5, "the ruby's chromium fluorescence")
+    var lights := preview.find_children("CrystalGlow*", "OmniLight3D", false, false)
+    assert_gt(lights.size(), 0, "the rubies light the walls around them")
+    for light: OmniLight3D in lights:
+        assert_eq(light.light_color, ruby.glow_color, "in the ruby's red")
+    var surface := preview.get_node("CaveSurface") as MeshInstance3D
+    var wall_glow: Vector4 = surface.get_instance_shader_parameter(&"glow")
+    assert_almost_eq(wall_glow.w, milky.glow_strength, 1e-5, "the walls keep the milky rock's own glow")
+    preview.free()
 
+
+func test_only_the_listed_rocks_change_their_crystals() -> void:
+    var style := _library.mineral_style
+    var milky := CaveMineral.for_slug("corundum_milky")
+    assert_eq(milky.crystal_mineral(style).slug, "corundum_red")
+    assert_eq(CaveMineral.for_slug("corundum_white").crystal_mineral(style).slug, "corundum_red")
+    var sapphire := CaveMineral.for_slug("corundum_blue")
+    assert_eq(sapphire.crystal_mineral(style), sapphire, "a coloured corundum keeps crystals of its colour")
+    assert_eq(milky.crystal_mineral(null), milky, "no style, no override")
+    assert_eq(milky.crystal_mineral(CaveMineralStyle.new()), milky, "a style without overrides changes nothing")

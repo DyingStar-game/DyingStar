@@ -459,3 +459,45 @@ func test_unfitted_v8_sites_ask_for_a_refit_and_fits_change_the_signature() -> v
     assert_string_contains(raw.validation_error(data), "recaler")
     assert_ne(raw.signature(), fitted, "cache identity follows the fitted entrance")
     assert_eq(site.validation_error(data), "")
+
+
+func test_rocks_in_the_open_air_keep_the_daylight_and_the_network_does_not() -> void:
+    var case := _fitted("slope", "ramp", 6.0, 9.0)
+    var library := CaveAssetLibrary.default_for("rock", true)
+    var mineral := CaveMineral.for_slug("corundum_milky")
+    var entrance := CaveEntrance.build(case.data, case.site, case.cave)
+    var mouth := CavePreviewBuilder.instantiate(entrance, library, true, false, Vector3.ZERO, mineral)
+    var surface := mouth.get_node("CaveSurface") as MeshInstance3D
+    assert_eq(surface.get_instance_shader_parameter(&"open_air_source"), 1.0, "an entrance reads its ground cover")
+    var rocks := mouth.find_children("Decor_*", "MultiMeshInstance3D", false, false)
+    assert_gt(rocks.size(), 0)
+    for decor: MultiMeshInstance3D in rocks:
+        assert_eq(decor.get_instance_shader_parameter(&"open_air_source"), 2.0, "%s reads its own share" % decor.name)
+        assert_true(decor.multimesh.use_custom_data)
+    mouth.free()
+    # The shares themselves (a headless renderer keeps no MultiMesh custom data to read back).
+    var cover := CavePreviewBuilder.open_cover_grid(entrance)
+    assert_false(cover.is_empty(), "the entrance's ground cover")
+    var outside := CaveDecorationRule.new()
+    outside.support = "entrance_ground"
+    var porch := CaveDecorationRule.new()
+    porch.support = "floor"
+    var rim := Vector3.ZERO
+    var best := -1.0
+    var floor_colors: PackedColorArray = entrance.floor.colors
+    for index in floor_colors.size():
+        if floor_colors[index].r > best:
+            best = floor_colors[index].r
+            rim = entrance.floor.vertices[index]
+    var at := [Transform3D(Basis.IDENTITY, rim), Transform3D(Basis.IDENTITY, Vector3(0.0, -500.0, 0.0))]
+    assert_eq(CavePreviewBuilder.open_air_shares(outside, at, cover), PackedFloat32Array([1.0, 1.0]),
+        "the rocks around the mouth stand on the planet's ground")
+    var shares := CavePreviewBuilder.open_air_shares(porch, at, cover)
+    assert_almost_eq(shares[0], best, 1e-5, "a rock on the rim takes its ground cover")
+    assert_eq(shares[1], 0.0, "a rock deep down is underground")
+    var network := CavePreviewBuilder.instantiate(case.cave, library, true, false, Vector3.ZERO, mineral)
+    var walls := network.get_node("CaveSurface") as MeshInstance3D
+    assert_eq(walls.get_instance_shader_parameter(&"open_air_source"), 0.0, "the network is underground")
+    for decor: MultiMeshInstance3D in network.find_children("Decor_*", "MultiMeshInstance3D", false, false):
+        assert_false(decor.multimesh.use_custom_data, "%s underground" % decor.name)
+    network.free()

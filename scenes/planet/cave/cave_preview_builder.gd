@@ -4,6 +4,8 @@ class_name CavePreviewBuilder
 ## Planetary registration and server residency remain outside this preview builder.
 
 const GlobalsDefs := preload("res://scenes/globals/globals.gd")
+## Cell (m) of the ground cover lookup of an entrance's rocks (open_cover_grid).
+const OPEN_COVER_CELL_M := 2.0
 
 
 ## [param mineral]: the rock the cave is dug in (CaveMineral, client side), which tints its walls and grows
@@ -45,10 +47,10 @@ static func instantiate(data: Dictionary, library: CaveAssetLibrary, visual: boo
         # Triplanar textures share the site's coordinates with the entrance, while geometry and physics stay put.
         instance.position = -texture_origin
         if mineral != null and library != null:
-            mineral.dress_surface(instance, library.mineral_style)
+            # An entrance's surfaces carry their ground cover, their share of open sky; a network has none.
+            var covered: bool = (data.wall as Dictionary).has("colors") or (data.floor as Dictionary).has("colors")
+            mineral.dress_surface(instance, library.mineral_style, 1 if covered else 0)
         root.add_child(instance)
-        if mineral != null and library != null:
-            mineral.add_inclusion_lights(root, data, texture_origin, library.mineral_style)
     if physics:
         var body := StaticBody3D.new()
         body.name = "CaveCollision"
@@ -74,6 +76,7 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
     var style := library.mineral_style
     var grows_crystals := mineral != null and mineral.crystals and style != null
     var crystal_placements: Array = []
+    var open_cover := {}  # an entrance's ground cover by cell, built for its first rock (open_cover_grid)
     for rule in library.decoration_rules():
         if rule == null or rule.mesh == null:
             continue
@@ -86,10 +89,21 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
         if visual:
             var multimesh := MultiMesh.new()
             multimesh.transform_format = MultiMesh.TRANSFORM_3D
+            # The rocks of an entrance carry their share of open sky (cave_corundum_rock.gdshader).
+            var open_air := not rule.mineral_crystal and mineral != null and rule.material != null \
+                and data.has("rock_supports")
+            multimesh.use_custom_data = open_air
             multimesh.mesh = rule.mesh
             multimesh.instance_count = placements.size()
+            var skies := PackedFloat32Array()
+            if open_air:
+                if open_cover.is_empty():
+                    open_cover = open_cover_grid(data)
+                skies = open_air_shares(rule, placements, open_cover)
             for index in placements.size():
                 multimesh.set_instance_transform(index, placements[index])
+                if open_air:
+                    multimesh.set_instance_custom_data(index, Color(skies[index], 0.0, 0.0, 0.0))
             var instance := MultiMeshInstance3D.new()
             instance.name = "Decor_" + rule.rule_name.validate_node_name()
             instance.multimesh = multimesh
@@ -99,7 +113,7 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
                 crystal_placements.append_array(placements)
             elif mineral != null and rule.material != null:
                 instance.material_override = mineral.surface_material("decor", rule.material, style)
-                mineral.dress_surface(instance, style)
+                mineral.dress_surface(instance, style, 2 if open_air else 0)
             root.add_child(instance)
         if physics and rule.collision_shape:
             var body := StaticBody3D.new()
@@ -114,6 +128,53 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
             root.add_child(body)
     if visual and grows_crystals:
         mineral.add_glow_lights(root, crystal_placements, style)
+
+
+## Share of open sky (0 underground .. 1 in the open air) of each of [param placements] of [param rule] in an
+## entrance whose ground cover is [param cover] (open_cover_grid): the rocks set around the mouth (entrance_* supports)
+## stand on the planet's ground, the others take the cover of the entrance surface they stand on.
+static func open_air_shares(rule: CaveDecorationRule, placements: Array, cover: Dictionary) -> PackedFloat32Array:
+    var skies := PackedFloat32Array()
+    for transform: Transform3D in placements:
+        skies.append(1.0 if rule.support.begins_with("entrance_") else _open_air_at(cover, transform.origin))
+    return skies
+
+
+## The ground cover of an entrance's surfaces (CaveEntrance.ground_cover, its share of open sky) on a grid of
+## OPEN_COVER_CELL_M: cell -> [[vertex, cover], ...], the covered vertices only.
+static func open_cover_grid(data: Dictionary) -> Dictionary:
+    var grid := {}
+    for key in ["wall", "floor"]:
+        var surface: Dictionary = data[key]
+        if not surface.has("colors"):
+            continue
+        var vertices: PackedVector3Array = surface.vertices
+        var colors: PackedColorArray = surface.colors
+        for index in vertices.size():
+            if colors[index].r <= 0.0:
+                continue
+            var cell := Vector3i((vertices[index] / OPEN_COVER_CELL_M).floor())
+            if not grid.has(cell):
+                grid[cell] = []
+            (grid[cell] as Array).append([vertices[index], colors[index].r])
+    return grid
+
+
+## Share of open sky of a rock standing at [param point]: the ground cover of the nearest covered vertex within
+## one cell, 0 (underground) when there is none.
+static func _open_air_at(grid: Dictionary, point: Vector3) -> float:
+    var centre := Vector3i((point / OPEN_COVER_CELL_M).floor())
+    var best := OPEN_COVER_CELL_M * OPEN_COVER_CELL_M
+    var cover := 0.0
+    for dx in range(-1, 2):
+        for dy in range(-1, 2):
+            for dz in range(-1, 2):
+                for entry: Array in grid.get(centre + Vector3i(dx, dy, dz), []):
+                    var distance := (entry[0] as Vector3).distance_squared_to(point)
+                    if distance < best:
+                        best = distance
+                        cover = entry[1]
+    return cover
 
 
 ## Snapshot mesh bounds on the main thread; geometry workers receive plain immutable values only.
