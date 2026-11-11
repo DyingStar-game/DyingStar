@@ -4,9 +4,14 @@ extends WallScreen
 
 ## The materials market on a town hall's wall, like a stock exchange's board (playtest 2026-11-10): a row
 ## per resource the federation trades -- its name in the player's language, the curve of its price over the last day, the
-## price now and how it moved (green up, red down), the supply and demand behind it. The prices are the
-## universe simulator's (GET /api/market), read every REFRESH_S while the screen is seen; a WallScreen, so
-## drawn only when what it shows changed (ADR 0027).
+## price now and how it moved, the supply and demand behind it. The prices are the universe simulator's
+## (GET /api/market), read every REFRESH_S while the screen is seen; a WallScreen, so drawn only when what
+## it shows changed (ADR 0027).
+##
+## Two things are told apart (playtest 2026-11-11: a flooded ore read all green, a bargain to sell):
+##  - the MARKET's state, for who sells -- the price's colour and a word by the supply and demand:
+##    "Shortage" in green (asked for more than there is, it pays well), "Saturated" in red;
+##  - the TREND over a day -- the curve, the arrow and its percentage: green up, red down.
 
 const REFRESH_S := 60.0
 const READ_RANGE_M := 45.0
@@ -18,6 +23,11 @@ const UP := Color(0.25, 0.85, 0.4)
 const DOWN := Color(0.95, 0.3, 0.25)
 ## A price that moved less than this (%) reads as flat.
 const FLAT_PCT := 0.05
+## A demand within this share of the supply, either way, reads as a balanced market.
+const BALANCE_BAND := 0.1
+
+## What a market is for who sells into it (state_of).
+enum State { SHORTAGE, BALANCED, SATURATED }
 
 var _list: VBoxContainer = null
 var _stamp: Label = null
@@ -75,6 +85,7 @@ func show_rows(rows: Array, currency: String) -> void:
 func _row(row: Dictionary, currency: String) -> Control:
 	var change: float = float(row.get("change_pct", 0.0))
 	var colour := trend_colour(change)
+	var state: State = state_of(int(row.get("supply", 0)), int(row.get("demand", 0)))
 	var parts := WallScreen.card(ROW_PX, 28)
 	var line: HBoxContainer = parts[1]
 	# The resource by its name in the player's language, never its code (playtest 2026-11-10).
@@ -89,17 +100,21 @@ func _row(row: Dictionary, currency: String) -> Control:
 	curve.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	curve.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	line.add_child(curve)
-	var book := AresBrand.screen_label(TranslationServer.translate("%%MARKET_SUPPLY_DEMAND") % [
-			ServiceTypes.quantity_text(int(row.get("supply", 0)), row.get("unit")),
-			ServiceTypes.quantity_text(int(row.get("demand", 0)), row.get("unit"))], 22, WallScreen.DIM)
+	# The market's state in a word, over the supply and demand it comes from.
+	var book := VBoxContainer.new()
 	book.custom_minimum_size = Vector2(330, 0)
-	book.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	book.alignment = BoxContainer.ALIGNMENT_CENTER
+	book.add_theme_constant_override("separation", 0)
+	book.add_child(AresBrand.screen_label(state_key(state), 26, state_colour(state)))
+	book.add_child(AresBrand.screen_label(TranslationServer.translate("%%MARKET_SUPPLY_DEMAND") % [
+			ServiceTypes.quantity_text(int(row.get("supply", 0)), row.get("unit")),
+			ServiceTypes.quantity_text(int(row.get("demand", 0)), row.get("unit"))], 22, WallScreen.DIM))
 	line.add_child(book)
 	var price := VBoxContainer.new()
 	price.custom_minimum_size = Vector2(250, 0)
 	price.alignment = BoxContainer.ALIGNMENT_CENTER
 	price.add_theme_constant_override("separation", 0)
-	var figure := AresBrand.screen_label("%.2f" % float(row.get("price", 0.0)), 44, colour)
+	var figure := AresBrand.screen_label("%.2f" % float(row.get("price", 0.0)), 44, state_colour(state))
 	figure.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	price.add_child(figure)
 	var per := AresBrand.screen_label("%s / %s" % [currency, str(row.get("unit", ""))], 20, WallScreen.DIM)
@@ -150,6 +165,38 @@ static func trend_colour(pct: float) -> Color:
 	if absf(pct) < FLAT_PCT:
 		return WallScreen.TEXT
 	return UP if pct > 0.0 else DOWN
+
+
+## What the market of a resource is for who sells: asked for more than there is ([param demand] over
+## [param supply] by more than BALANCE_BAND), flooded, or balanced. Pure.
+static func state_of(supply: int, demand: int) -> State:
+	var have: float = maxf(float(supply), 1.0)
+	var need: float = maxf(float(demand), 0.0)
+	if need > have * (1.0 + BALANCE_BAND):
+		return State.SHORTAGE
+	if need < have / (1.0 + BALANCE_BAND):
+		return State.SATURATED
+	return State.BALANCED
+
+
+## A state's word (a translation key).
+static func state_key(state: State) -> String:
+	match state:
+		State.SHORTAGE:
+			return "%%MARKET_STATE_SHORTAGE"
+		State.SATURATED:
+			return "%%MARKET_STATE_SATURATED"
+	return "%%MARKET_STATE_BALANCED"
+
+
+## A state's colour, for who sells: a shortage pays (green), a flooded market does not (red).
+static func state_colour(state: State) -> Color:
+	match state:
+		State.SHORTAGE:
+			return UP
+		State.SATURATED:
+			return DOWN
+	return WallScreen.TEXT
 
 
 ## The curve of a price: its points joined, scaled to the control.
