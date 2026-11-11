@@ -1,17 +1,21 @@
 class_name CaveAmbience
 extends AudioStreamPlayer
 
-## CLIENT, own player only: the air of a cave, a low loop that rises as the player goes in and dies away as
-## they come out. PlaceWatcher tells how far inside they are (hear), every time it looks.
+## CLIENT, own player only: the air of a cave or of a mine, a low loop that rises as the player goes in and
+## dies away as they come out. PlaceWatcher tells how far inside they are (hear), every time it looks.
 ##
 ## Not positional: a cave is all around. The level follows the distance to the nearest way out -- nothing at
-## the mouth, full FULL_DEPTH_M inside -- and moves slowly (FADE_S), so a step across the porch is no switch.
+## the mouth, full FULL_DEPTH_M inside -- or how far underground a mine says they are, and moves slowly
+## (FADE_S), so a step across the porch is no switch. Down there the weather is not heard any more
+## (buried_at, WeatherAudio): the wind stays at the mouth.
 
 const STREAM: AudioStream = preload("res://assets/_universe/audio/sfx/environment/cave-ambience.ogg")
 ## How far (m) from the nearest opening the ambience is at its full level.
-const FULL_DEPTH_M := 30.0
+const FULL_DEPTH_M := 15.0
 ## Its full level (dB): a presence under the footsteps, never a music.
-const FULL_DB := -24.0
+const FULL_DB := -17.0
+## How far (m) from the nearest opening the weather outside is no longer heard.
+const BURIED_M := 8.0
 ## Seconds from silence to full, and back.
 const FADE_S := 4.0
 ## Under this share of the full level it is stopped.
@@ -39,6 +43,12 @@ static func level_at(depth_m: float) -> float:
 	return smoothstep(0.0, FULL_DEPTH_M, depth_m) if depth_m > 0.0 else 0.0
 
 
+## How much of the weather's sound the rock takes off, 0 (open air) .. 1 (none left): by the depth in a
+## cave ([param depth_m], negative outside) or how far underground a mine is ([param mine], 0..1). Pure.
+static func buried_at(depth_m: float, mine: float = 0.0) -> float:
+	return maxf(clampf(depth_m / BURIED_M, 0.0, 1.0), clampf(mine, 0.0, 1.0))
+
+
 func _init() -> void:
 	stream = STREAM
 	bus = Sfx3D.SFX_BUS
@@ -46,9 +56,13 @@ func _init() -> void:
 	set_process(false)
 
 
-## The player stands [param depth_m] inside a cave (negative: in none).
-func hear(depth_m: float) -> void:
-	_goal = level_at(depth_m)
+## The player stands [param depth_m] inside a cave (negative: in none), or [param mine] (0..1) underground
+## in a mine.
+func hear(depth_m: float, mine: float = 0.0) -> void:
+	var goal: float = maxf(level_at(depth_m), clampf(mine, 0.0, 1.0))
+	if (goal > 0.0) != (_goal > 0.0):
+		print("[Cave] ambience %s (depth %.0f m, mine %.2f)" % ["on" if goal > 0.0 else "off", depth_m, mine])
+	_goal = goal
 	if not is_equal_approx(_goal, _level):
 		set_process(true)
 

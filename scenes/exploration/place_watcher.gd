@@ -17,6 +17,8 @@ var _input_locked: Callable
 var _dialog: PlaceNameDialog = null
 var _banner: PlaceBanner = null
 var _ambience: CaveAmbience = null
+## How much of the weather's sound the rock around takes off, 0..1 (CaveAmbience.buried_at).
+var _buried: float = 0.0
 var _elapsed := 0.0
 ## The cave stood in at the last check, "" outside.
 var _place_id := ""
@@ -41,6 +43,12 @@ func setup(player: Node3D, screens: Node, notify: Callable, input_locked: Callab
 	add_child(_ambience)
 
 
+## How much of the weather's sound the rock around the player takes off, 0 (open air) .. 1 (deep in a cave
+## or a mine): the wind is not heard down there (WeatherListener).
+func buried() -> float:
+	return _buried
+
+
 ## The name dialog has the keyboard (PlayerClient._modal_open).
 func is_open() -> bool:
 	return _dialog != null and _dialog.visible
@@ -62,8 +70,11 @@ func _check() -> void:
 			_notify.call(TranslationServer.translate("%%PLACE_NAME_SENT"))
 	var site := _site_here()
 	var place_id := site.placement_id if site != null else ""
+	var depth: float = _depth_in(site)
+	var mine: float = MineSite.underground_at(_player.global_position)
+	_buried = CaveAmbience.buried_at(depth, mine)
 	if _ambience != null:
-		_ambience.hear(_depth_in(site))
+		_ambience.hear(depth, mine)
 	if place_id != _place_id:
 		_asked.erase(_place_id)  # a new visit asks again
 		_place_id = place_id

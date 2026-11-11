@@ -539,6 +539,7 @@ func _process(_delta: float) -> void:
 	_update_thruster(player.thrusting or (player.floating and not _in_god_mode()
 			and not is_instance_valid(player._seat_node)
 			and (player.input_direction != Vector2.ZERO or _vertical_sent != 0.0 or _roll_sent)), _delta)
+	_weather_listener_of().buried = _places.buried() if _places != null else 0.0
 	_weather_listener_of().update(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process

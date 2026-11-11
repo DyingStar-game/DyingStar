@@ -32,6 +32,8 @@ const SILENT_DB: float = -80.0
 const BUS: StringName = &"WeatherAmbience"
 const OPEN_CUTOFF_HZ: float = 20000.0
 const SHELTERED_CUTOFF_HZ: float = 600.0
+## What being deep in a cave or a mine takes off the mix (dB), on top of a full shelter: nothing is left.
+const BURIED_DB: float = -60.0
 
 ## The loops and their windows. Empty = default_layers (the strong wind).
 @export var layers: Array[WeatherAudioLayer] = []
@@ -42,6 +44,8 @@ var _targets: PackedFloat32Array = PackedFloat32Array()
 var _gains: PackedFloat32Array = PackedFloat32Array()
 var _shelter: float = 0.0
 var _shelter_now: float = 0.0
+var _buried: float = 0.0
+var _buried_now: float = 0.0
 var _lowpass: AudioEffectLowPassFilter = null
 var _cutoff_hz: float = -1.0
 var _sync: AudioStreamSynchronized = null
@@ -82,9 +86,11 @@ func _ready() -> void:
 
 
 ## The weather at the listener (Planet.weather_at, {} for none) and how sheltered they are
-## (0 open, 1 walled in: ShelterProbe). Sets the targets; _process ramps the gains.
-func update(sample: Dictionary, shelter: float) -> void:
-	_shelter = clampf(shelter, 0.0, 1.0)
+## (0 open, 1 walled in: ShelterProbe), and how much rock is around them ([param buried], 0..1: a cave, a
+## mine -- the weather stays at the mouth). Sets the targets; _process ramps the gains.
+func update(sample: Dictionary, shelter: float, buried: float = 0.0) -> void:
+	_buried = clampf(buried, 0.0, 1.0)
+	_shelter = maxf(clampf(shelter, 0.0, 1.0), _buried)
 	var air: float = air_factor(sample)
 	for i in layers.size():
 		var layer: WeatherAudioLayer = layers[i]
@@ -97,6 +103,7 @@ func _process(delta: float) -> void:
 		return
 	var step: float = clampf(delta / SMOOTH_S, 0.0, 1.0)
 	_shelter_now = lerpf(_shelter_now, _shelter, step)
+	_buried_now = lerpf(_buried_now, _buried, step)
 	var cutoff: float = cutoff_for(_shelter_now)
 	if _lowpass != null and absf(cutoff - _cutoff_hz) > 1.0:
 		_cutoff_hz = cutoff
@@ -105,7 +112,7 @@ func _process(delta: float) -> void:
 		var gain: float = lerpf(_gains[i], _targets[i], step)
 		_gains[i] = gain
 		var db: float = SILENT_DB if gain <= 1e-4 else linear_to_db(gain) + layers[i].volume_db
-		db += sheltered_db * _shelter_now
+		db += sheltered_db * _shelter_now + BURIED_DB * _buried_now
 		_sync.set_sync_stream_volume(i, maxf(db, SILENT_DB))
 
 

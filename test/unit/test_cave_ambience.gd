@@ -24,6 +24,31 @@ func test_it_rises_as_the_player_goes_in() -> void:
 	assert_eq(CaveAmbience.level_at(CaveAmbience.FULL_DEPTH_M * 3.0), 1.0, "never more than its full level")
 
 
+func test_the_weather_stays_at_the_mouth() -> void:
+	assert_eq(CaveAmbience.buried_at(-1.0), 0.0, "outside: the wind is heard")
+	assert_eq(CaveAmbience.buried_at(0.0), 0.0, "at the mouth too")
+	assert_almost_eq(CaveAmbience.buried_at(CaveAmbience.BURIED_M * 0.5), 0.5, 0.001)
+	assert_eq(CaveAmbience.buried_at(CaveAmbience.BURIED_M * 4.0), 1.0, "deep in: none of it")
+	assert_eq(CaveAmbience.buried_at(-1.0, 0.8), 0.8, "a mine says how far underground")
+	# A storm heard in the open is not heard down there.
+	var weather := WeatherAudio.new()
+	weather.layers = WeatherAudio.default_layers()
+	add_child_autofree(weather)
+	weather.update({}, 0.0, 1.0)
+	weather._process(10.0)
+	assert_almost_eq(weather._buried_now, 1.0, 0.001)
+	assert_almost_eq(weather._shelter_now, 1.0, 0.001, "and what is left of it is muffled like behind a wall")
+
+
+func test_a_mine_has_the_caves_air() -> void:
+	var air := CaveAmbience.new()
+	add_child_autofree(air)
+	air.hear(-1.0, 1.0)
+	air._process(CaveAmbience.FADE_S * 2.0)
+	assert_true(air.playing, "deep in a mine, in no cave")
+	assert_almost_eq(air.volume_db, CaveAmbience.FULL_DB, 0.01)
+
+
 func test_it_fades_in_and_dies_away() -> void:
 	var air := CaveAmbience.new()
 	add_child_autofree(air)
