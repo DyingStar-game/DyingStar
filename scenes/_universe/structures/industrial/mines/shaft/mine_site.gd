@@ -98,6 +98,20 @@ static var _live: Array[MineSite] = []
 ## Loudness of that sound in decibels (0 = the sample's own level).
 @export_range(-40.0, 12.0, 0.5) var sfx_layer_fall_db: float = 0.0
 
+@export_group("Dust cloud")
+## Time (s) the dust of a fallen layer takes to clear from the gallery: the view comes back slowly, then the gallery
+## clears towards the end. Higher = the dust hangs longer.
+@export_range(5.0, 180.0, 1.0, "suffix:s") var dust_clear_s: float = 40.0
+## How far (m) up the gallery from the face the dust spreads (never past the station). Higher = more of the gallery
+## blinded.
+@export_range(5.0, 120.0, 1.0, "suffix:m") var dust_reach_m: float = 40.0
+## Time (s) the dust takes to rush nine tenths of the way up the gallery: lower = a faster blast.
+@export_range(0.5, 30.0, 0.5, "suffix:s") var dust_spread_s: float = 6.0
+## How far (m) one sees in the dust at its thickest, a second after the fall: lower = nothing at all to be seen.
+@export_range(0.1, 10.0, 0.1, "suffix:m") var dust_visibility_m: float = 0.8
+## Colour of the dust (it takes the brightness of the light behind it: dark in the dark, pale in a lamp's light).
+@export var dust_color: Color = Color(0.62, 0.6, 0.56)
+
 @export_group("Lift")
 ## Speed (m/s) of the shaft's vehicle lift: 10 m/s takes a kilometre in under two minutes.
 @export_range(0.5, 10.0, 0.1, "suffix:m/s") var lift_speed_m_s: float = 10.0
@@ -900,8 +914,26 @@ func _layer_fell(id: int) -> void:
     dust.transform = frame * Transform3D(Basis.IDENTITY, Vector3(0.0, 1.8, -1.0))
     add_child(dust)
     dust.emitting = true
+    _raise_dust_cloud(id)
     if sfx_layer_fall != null and not Sfx3D.muted():
         Sfx3D.play(dust, sfx_layer_fall, sfx_layer_fall_db, 6.0, 60.0, Sfx3D.Attenuation.REALISTIC)
+
+
+## CLIENT: the dust of a fallen layer of gallery [param id] rushes up the gallery from the face and clears in
+## dust_clear_s (MineDustCloud).
+func _raise_dust_cloud(id: int) -> void:
+    if dust_clear_s <= 0.0 or not _dug.has(id):
+        return
+    var width := float(_layout.settings.gallery_width_m)
+    var height := float(_layout.settings.gallery_height_m)
+    var path := MineDustCloud.gallery_path(_layout, id, float(_dug[id]), dust_reach_m, height * 0.5)
+    var cloud := MineDustCloud.new()
+    cloud.name = "DustCloud%d" % id
+    cloud.clear_s = dust_clear_s
+    cloud.spread_s = dust_spread_s
+    cloud.visibility_m = dust_visibility_m
+    add_child(cloud)
+    cloud.setup(path, maxf(width, height) * 0.5 + 1.0, dust_color)
 
 
 ## A one-shot puff of rock dust: [param amount] motes living [param lifetime] s from a box of
