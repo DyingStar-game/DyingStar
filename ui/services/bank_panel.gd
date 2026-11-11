@@ -446,6 +446,9 @@ func _transaction_name(transaction: Dictionary) -> String:
 	var title := str(_mission_titles.get(ServiceTypes.transaction_mission_id(transaction), ""))
 	if title != "":
 		return title
+	var sale_at := ServiceTypes.transaction_sale_village(transaction)
+	if sale_at != "":
+		return tr("%%SVC_TX_SALE_AT") % sale_at
 	var details: Variant = transaction.get("details")
 	var memo := str((details as Dictionary).get("memo", "")) if details is Dictionary else ""
 	return memo if memo != "" and memo != "<null>" else ServiceTypes.transaction_type_label(transaction.get("type"))

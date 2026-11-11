@@ -2829,6 +2829,8 @@ func _on_mission_accepted(mission_id: String, title: String) -> void:
 static func app_of_notification(type: String) -> String:
 	if type.begins_with("mission."):
 		return "missions"
+	if type.begins_with("warehouse."):
+		return "economy"  # a sale: the money is in the bank
 	return "social" if type != "" else ""
 
 

@@ -70,6 +70,9 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 			return TranslationServer.translate("%%NOTIF_MISSION_INVITED") % [who, str(data.get("title", ""))]
 		"mission.completed":
 			return TranslationServer.translate("%%NOTIF_MISSION_COMPLETED")
+		"warehouse.sale":
+			# The federation bought goods the player shelved without a mission (services ADR 0016).
+			return sale_text(data)
 		"place_name_approved":
 			# ARES (the admins) approved the name a discoverer proposed (Discovery): the place, not a who.
 			return TranslationServer.translate("%%NOTIF_PLACE_NAME_APPROVED") % str(data.get("name", ""))
@@ -83,6 +86,16 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 			if type == "":
 				return TranslationServer.translate("%%NOTIF_GENERIC_BARE")
 			return TranslationServer.translate("%%NOTIF_GENERIC") % type
+
+
+## "Sold at M0001: 120 kg of Crushed gold ore, +1500 credits", in the player's language.
+static func sale_text(data: Dictionary) -> String:
+	var name := ServiceTypes.localised_name(data, TranslationServer.get_locale())
+	if name == "":
+		name = str(data.get("goodType", ""))
+	return TranslationServer.translate("%%NOTIF_WAREHOUSE_SALE") % [str(data.get("village", "")),
+			ServiceTypes.quantity_text(int(float(data.get("quantity", 0))), data.get("unit")), name,
+			int(float(data.get("amount", 0))), str(data.get("currency", ""))]
 
 
 ## The player [param data] concerns, as a name to print: the one the caller resolved, else the id

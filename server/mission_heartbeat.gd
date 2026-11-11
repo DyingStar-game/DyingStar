@@ -62,6 +62,16 @@ const INI_KEY_URL: String = "url"
 const ENV_INVENTORY_URL: String = "INVENTORY_API_URL"
 const INI_KEY_INVENTORY_URL: String = "inventory_url"
 const DEFAULT_INVENTORY_URL: String = "http://service-inventory:3000"
+## The universe simulator's internal API: it buys the goods a player shelves that no mission of theirs
+## counted (services ADR 0016). `[mission] usim_url` in server.ini, or USIM_API_URL.
+const ENV_USIM_URL: String = "USIM_API_URL"
+const INI_KEY_USIM_URL: String = "usim_url"
+const DEFAULT_USIM_URL: String = "http://service-universesimulator:9600"
+## A call keyed on a move (a goods move, the sale that follows it) is tried this many times, this long
+## apart (s): the services answer a key they have seen with what they did the first time, so an attempt
+## whose answer was lost costs nothing to ask again.
+const KEYED_ATTEMPTS: int = 3
+const KEYED_RETRY_S: float = 2.0
 ## The holder kind this node writes under. Only a player can be the server's own actor: a crate of
 ## ore credited to a corporation is the corporation's good, not the miner stepping on the pedal.
 const PLAYER_HOLDER: String = "player"
@@ -70,6 +80,7 @@ const MINERAL_GOOD_PREFIX: String = "ore."
 
 var _url: String = ""
 var _inventory_url: String = ""
+var _usim_url: String = ""
 var _http: HTTPRequest = null
 var _client: HttpClient = null
 var _timer: Timer = null
@@ -116,6 +127,7 @@ func _ready() -> void:
 func _load_config() -> void:
 	_url = OS.get_environment(ENV_URL).strip_edges()
 	_inventory_url = OS.get_environment(ENV_INVENTORY_URL).strip_edges()
+	_usim_url = OS.get_environment(ENV_USIM_URL).strip_edges()
 	var config := ConfigFile.new()
 	var loaded: bool = config.load("server.ini") == OK
 	if _url == "":
@@ -124,8 +136,12 @@ func _load_config() -> void:
 	if _inventory_url == "":
 		_inventory_url = str(config.get_value(INI_SECTION, INI_KEY_INVENTORY_URL,
 				DEFAULT_INVENTORY_URL)).strip_edges() if loaded else DEFAULT_INVENTORY_URL
+	if _usim_url == "":
+		_usim_url = str(config.get_value(INI_SECTION, INI_KEY_USIM_URL, DEFAULT_USIM_URL)).strip_edges() \
+				if loaded else DEFAULT_USIM_URL
 	_url = _url.rstrip("/")
 	_inventory_url = _inventory_url.rstrip("/")
+	_usim_url = _usim_url.rstrip("/")
 
 
 ## True when a flush may run: this process is the game server, with an url to call and a service
@@ -208,12 +224,67 @@ func credit_mined(player_id: String, good_type: String, units: int) -> void:
 ## `{"holderType": "warehouse", "holderId": <cargo depot uuid>}` (see WarehouseDelivery). Mandatory on a
 ## negative delta: the service answers 422 DESTINATION_REQUIRED rather than voiding the goods.
 ## True when the inventory accepted it (the caller may wait for that: WarehouseDelivery does).
+## [param sell]: the goods are the player's own (WarehouseDelivery.is_sellable) -- what their missions do
+## not count of a drop into a warehouse is sold to the federation (services ADR 0016).
 func drop_carried(player_id: String, good_type: String, units: int, destination: Dictionary,
-		move_key: String = "") -> bool:
+		move_key: String = "", sell: bool = false) -> bool:
 	if not await _carried_delta(player_id, good_type, -units, {"to": destination}):
 		return false
-	_report_goods_move(player_id, good_type, units, "drop", destination, move_key)
+	if not sell:
+		_report_goods_move(player_id, good_type, units, "drop", destination, move_key)
+		return true
+	var counted: int = await _report_goods_move(player_id, good_type, units, "drop", destination, move_key)
+	var surplus := sale_quantity(units, counted)
+	if surplus > 0:
+		_sell(player_id, good_type, surplus, str(destination.get("holderId", "")), move_key)
 	return true
+
+
+## What of a drop of [param units] is sold: what the player's missions did not count ([param counted],
+## -1 when the mission service did not answer: nothing is sold on a guess). Pure, for the tests.
+static func sale_quantity(units: int, counted: int) -> int:
+	return maxi(units - counted, 0) if counted >= 0 else 0
+
+
+## Sell [param units] of [param good_type] shelved in [param warehouse_id] to the federation, for
+## [param player_id]: it pays them at the market price and tells them. Keyed on the drop, paid once.
+## Detached, said once on failure.
+func _sell(player_id: String, good_type: String, units: int, warehouse_id: String, move_key: String) -> void:
+	if move_key == "" or warehouse_id == "" or _usim_url == "" or not _is_active():
+		return
+	var result := await _keyed_post(true, _usim_url, "/warehouse-sales", {
+		"idempotencyKey": (move_key + ":sale").right(100), "warehouseId": warehouse_id,
+		"goodType": good_type, "quantity": units, "playerId": player_id,
+	})
+	if bool(result.get("ok", false)):
+		var data: Variant = result.get("data")
+		print("[Warehouse] sold %d x %s for %s: %s" % [units, good_type, player_id,
+				str((data as Dictionary).get("amount", "?")) if data is Dictionary else "?"])
+	else:
+		# The goods are in the warehouse and the simulator may hold the sale, recorded and not paid, under
+		# its key (services ADR 0017): said in full, it is money owed to a player.
+		push_warning("[Warehouse] sale of %d x %s for %s NOT paid after %d tries (%s), key %s" % [units, good_type,
+				player_id, KEYED_ATTEMPTS, str(result.get("error", "ERROR")), (move_key + ":sale").right(100)])
+
+
+## POST [param body] to [param path], a call keyed on a move: tried again while it fails for a reason
+## another try may cure (worth_retrying).
+func _keyed_post(active: bool, base_url: String, path: String, body: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for attempt: int in KEYED_ATTEMPTS:
+		result = await _internal(active, base_url, HTTPClient.METHOD_POST, path, body)
+		if bool(result.get("ok", false)) or not worth_retrying(result) or attempt == KEYED_ATTEMPTS - 1:
+			break
+		await get_tree().create_timer(KEYED_RETRY_S).timeout
+	return result
+
+
+## Whether a failed call ([param result], an HttpClient answer) may pass on another try: the service was
+## not reached, answered a server error (one of its own calls failed), or is still at it. A request it
+## refused (4xx) will be refused again. Pure, for the tests.
+static func worth_retrying(result: Dictionary) -> bool:
+	var status := int(result.get("status", 0))
+	return status == 0 or status >= 500 or str(result.get("error", "")) == "SALE_IN_PROGRESS"
 
 
 ## Goods move from a stock the player has access to into their hands. The service re-reads
@@ -231,16 +302,23 @@ func load_carried(player_id: String, good_type: String, units: int, source: Dict
 ## crate shelved in a cargo depot or taken off a shelf: what its `via: warehouse` objectives count.
 ## Only after the inventory accepted the move, and only for a warehouse with a [param move_key]
 ## (unique per move, so a retry counts once). Detached, said once on failure, like the rest.
+## Returns how much of the move the player's missions counted, -1 when it was not told or not answered.
 func _report_goods_move(player_id: String, good_type: String, units: int, direction: String,
-		holder: Dictionary, move_key: String) -> void:
+		holder: Dictionary, move_key: String) -> int:
 	if move_key == "" or str(holder.get("holderType", "")) != "warehouse" or not _is_active():
-		return
-	var result := await mission_internal(HTTPClient.METHOD_POST, "/missions/goods-moves", {
+		return -1
+	var result := await _keyed_post(_is_active(), _url, "/missions/goods-moves", {
 		"playerId": player_id, "goodType": good_type, "quantity": units, "direction": direction,
 		"warehouseId": str(holder.get("holderId", "")), "key": move_key,
 	})
 	if not bool(result.get("ok", false)):
 		_note_error(str(result.get("error", "ERROR")), "goods-moves", false)
+		return -1
+	var answer: Variant = result.get("data")
+	# A mission service that does not say (an older one), or could not tell (null: inventory was down):
+	# not told, so nothing is sold on a guess.
+	var counted: Variant = (answer as Dictionary).get("counted") if answer is Dictionary else null
+	return int(counted) if counted != null else -1
 
 
 ## One call to the mission service's internal API ([param path] under /api/internal) under the game

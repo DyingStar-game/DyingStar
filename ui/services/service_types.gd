@@ -829,6 +829,12 @@ static func transaction_mission_id(transaction: Dictionary) -> String:
 	return reference.trim_prefix("mission:") if reference.begins_with("mission:") else ""
 
 
+## The village of an off-mission sale (its `reference` "sale:<village>:<resource>"), "" for none.
+static func transaction_sale_village(transaction: Dictionary) -> String:
+	var reference := str(transaction.get("reference", "") if transaction.get("reference") != null else "")
+	return reference.get_slice(":", 1) if reference.begins_with("sale:") else ""
+
+
 ## The name of [param item] ({name, nameFr}, as the services give a resource) in [param locale]: the
 ## French one for a French player when there is one, else `name`.
 static func localised_name(item: Dictionary, locale: String) -> String:

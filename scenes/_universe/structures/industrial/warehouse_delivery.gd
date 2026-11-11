@@ -143,9 +143,17 @@ static func _deliver(crate: Node, shelf: Node, depot_uuid: String, depositor: St
 	if holder == "" or good == "" or units <= 0:
 		return true  # nothing anybody holds (the admin fill): shelved, nothing to move
 	var ok: bool = await MissionHeartbeat.drop_carried(holder, good, units, warehouse(depot_uuid),
-			move_key(c, _crate_id(crate), "drop", depot_uuid))
+			move_key(c, _crate_id(crate), "drop", depot_uuid), is_sellable(c))
 	print("[Warehouse] %d x %s from %s into %s: %s" % [units, good, holder, depot_uuid, "ok" if ok else "refused"])
 	return ok and is_instance_valid(crate)
+
+
+## Whether a crate of [param content] holds the player's own goods, which the federation buys when no
+## mission of theirs counts them (services ADR 0016): mined by them, never taken off a warehouse's shelf
+## (a transport's load, `carrier_id`), no mission's crate. Pure, for the tests.
+static func is_sellable(content: Dictionary) -> bool:
+	return str(content.get("miner_id", "")) != "" and str(content.get("carrier_id", "")) == "" \
+			and CrateContent.mission_of(content).is_empty()
 
 
 ## [param crate] is being taken off [param shelf] by [param player], who may (may_take): the goods leave
