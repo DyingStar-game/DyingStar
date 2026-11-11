@@ -134,7 +134,7 @@ func after_each() -> void:
 func test_the_repair_opens_on_the_machines_own_screen() -> void:
 	var repair := MachineRepair.new()
 	add_child_autofree(repair)
-	repair.setup(func(_text: String) -> void: pass)
+	repair.setup(func(_text: String, _gain: bool) -> void: pass)
 	assert_false(repair.is_open())
 	var breakdown := _broken_screen()
 	var host: FakeScreen = breakdown.host()
@@ -157,7 +157,7 @@ func test_the_controller_survives_the_player_changing_frame() -> void:
 	add_child_autofree(holder)
 	var repair := MachineRepair.new()
 	holder.add_child(repair)
-	repair.setup(func(_text: String) -> void: pass)
+	repair.setup(func(_text: String, _gain: bool) -> void: pass)
 	holder.remove_child(repair)
 	holder.add_child(repair)
 	MachineRepair.open_for(_broken_screen())

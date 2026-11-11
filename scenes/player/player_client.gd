@@ -394,7 +394,7 @@ func setup() -> void:
 	_repairs = MachineRepair.new()
 	_repairs.name = "MachineRepair"
 	add_child(_repairs)
-	_repairs.setup(func(text: String) -> void: _notifications.push(text))
+	_repairs.setup(_push_notice)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -2790,6 +2790,14 @@ func _on_notification(envelope: Dictionary) -> void:
 	if str(envelope.get("type", "")).begins_with("mission."):
 		PlayerServices.changed.emit("missions")
 
+
+
+## Show [param text] as a notification; [param gain]: money earned or a paid job done, which chimes once
+## instead of beeping until read (ChatNetwork.is_gain).
+func _push_notice(text: String, gain: bool = false) -> void:
+	_gain_pushed = gain
+	_notifications.push(text)
+	_gain_pushed = false
 
 
 ## A notification landed: the wrist DataPad beeps, and while it is unread blinks and beeps again every

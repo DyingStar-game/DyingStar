@@ -24,7 +24,8 @@ var _machine: MachineBreakdown = null
 var _panel: GaugeRepairPanel = null
 
 
-## [param notify] shows a line to the player.
+## [param notify] shows a line to the player: func(text, gain) -- gain when it is good news that pays (the
+## repair done), which chimes once where the rest beeps until read.
 func setup(notify: Callable) -> void:
 	_notify = notify
 	_current = self
@@ -140,8 +141,8 @@ func _on_result(event: Dictionary) -> void:
 	print("[Repair] the server answered: %s" % ("repaired" if bool(event.get("ok", false)) else str(event.get("error", "ERROR"))))
 	_leave()
 	if bool(event.get("ok", false)):
-		_notify.call(TranslationServer.translate("%%REPAIR_DONE"))
+		_notify.call(TranslationServer.translate("%%REPAIR_DONE"), true)
 		# The mission is paid: the DataPad and the chart read the missions again.
 		PlayerServices.changed.emit("missions")
 	else:
-		_notify.call(TranslationServer.translate("%%REPAIR_FAILED") % str(event.get("error", "ERROR")))
+		_notify.call(TranslationServer.translate("%%REPAIR_FAILED") % str(event.get("error", "ERROR")), false)
