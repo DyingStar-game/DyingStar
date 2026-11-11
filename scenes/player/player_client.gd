@@ -107,6 +107,8 @@ var _pointed_at: Vector3 = Vector3.ZERO
 var _conversation_text: Label = null
 ## Social notifications at the top of the screen (null on a remote avatar — see setup()).
 var _notifications: NotificationStack = null
+## Whether the notification being pushed is money earned (ChatNetwork.is_gain): it chimes, it does not beep.
+var _gain_pushed: bool = false
 
 ## Remote LOD state (see _refresh_remote_lod): far avatars tick at half rate and cast no shadow.
 var _lod_elapsed: float = REMOTE_LOD_INTERVAL  # evaluate on the first frame, then every interval
@@ -1371,7 +1373,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if InputCombo.pressed(event, "toggle_tool"):
 		if not player.owns_mining_tool:
 			# Nobody starts with one any more: say where to get it (the server would refuse anyway).
-			_flash_prompt(tr("%%HUD_NO_MINING_TOOL"))
+			_flash_prompt(tr("%%HUD_NO_MINING_TOOL") % tr("%%MAP_MARKER_CHANGING_ROOMS"))
 		else:
 			if player.admin_cleanup_tool != null:
 				player.admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
@@ -2747,7 +2749,9 @@ func _on_notification(envelope: Dictionary) -> void:
 	var text: String = ChatNetwork.notification_text(envelope, names)
 	if text == "":
 		return
+	_gain_pushed = ChatNetwork.is_gain(str(envelope.get("type", "")))
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
+	_gain_pushed = false
 	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
 	# A mission's news changed it on the service: the DataPad, open on it, reads it again.
 	if str(envelope.get("type", "")).begins_with("mission."):
@@ -2760,6 +2764,12 @@ func _on_notification(envelope: Dictionary) -> void:
 ## up before the eyes -- the one beep is enough.
 func _on_notification_pushed() -> void:
 	if _wrist_model == null:
+		return
+	# Money earned: one chime, and the light alone says it is unread -- no beep coming back.
+	if _gain_pushed:
+		_wrist_model.chime()
+		if _wrist == null or not _wrist.is_up():
+			_wrist_model.set_notified(true, true)
 		return
 	if _wrist != null and _wrist.is_up():
 		_wrist_model.beep()
