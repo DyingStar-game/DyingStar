@@ -1,0 +1,114 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/vehicle_lift/landings/lift_landing.gd" id="1_a53nl"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/truck_elevator/truck_elevator_piece.gd" id="2_etwll"]
+[ext_resource type="PackedScene" path="res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_kiosk.glb" id="3_jfyjq"]
+[ext_resource type="Material" path="res://assets/_universe/_shared/materials/mat_metal_yellow_hauling/mat_metal_yellow_hauling.tres" id="4_ttorr"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/beacon/beacon.tscn" id="5_q1ady"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/beacon/beacon.gd" id="6_nbx1f"]
+[ext_resource type="Script" path="res://scenes/common/ambient_loop_3d.gd" id="7_k6lwy"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/alarm.tres" id="8_sy7mp"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="9_xbwuh"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/lift_base_interface.gd" id="10_p5h6m"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/landings_buttons.tscn" id="11_xcskh"]
+[ext_resource type="Script" path="res://scenes/interactables/gui_3d.gd" id="12_pvetd"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_qtfvf"]
+material = ExtResource("4_ttorr")
+top_radius = 0.035
+bottom_radius = 0.05
+height = 1.8
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_pvmts"]
+material = ExtResource("4_ttorr")
+top_radius = 0.035
+bottom_radius = 0.05
+height = 1.8
+
+[sub_resource type="QuadMesh" id="QuadMesh_2paut"]
+size = Vector2(0.36, 0.216)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_vbvyt"]
+resource_local_to_scene = true
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_s3y6t"]
+size = Vector3(0.36, 0.216, 0.03)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_3l8o5"]
+size = Vector3(0.36, 0.216, 0.02)
+
+[node name="Level Landing" type="StaticBody3D" unique_id=51599954 node_paths=PackedStringArray("landing_interface")]
+collision_mask = 0
+script = ExtResource("1_a53nl")
+landing_interface = NodePath("Screen Display Interface/Level Landing Interface")
+
+[node name="Kiosk" type="Node3D" parent="." unique_id=993457282]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.765, 0, 23.91)
+script = ExtResource("2_etwll")
+
+[node name="Model" type="Node3D" parent="Kiosk" unique_id=811235669 instance=ExtResource("3_jfyjq")]
+
+[node name="Beacon Left Post" type="MeshInstance3D" parent="." unique_id=998180333]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.2, 0.9, 8.6)
+mesh = SubResource("CylinderMesh_qtfvf")
+
+[node name="Beacon Left" type="StaticBody3D" parent="." unique_id=573036365 instance=ExtResource("5_q1ady")]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.2, 1.8, 8.6)
+collision_mask = 0
+script = ExtResource("6_nbx1f")
+
+[node name="Beacon Right Post" type="MeshInstance3D" parent="." unique_id=367036295]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.1, 0.9, 8.6)
+mesh = SubResource("CylinderMesh_pvmts")
+
+[node name="Beacon Right" type="StaticBody3D" parent="." unique_id=1469111690 instance=ExtResource("5_q1ady")]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.1, 1.8, 8.6)
+collision_mask = 0
+script = ExtResource("6_nbx1f")
+
+[node name="Departure Alarm" type="Node3D" parent="." unique_id=1876134225]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.050000000000000266, 1.8, 8.6)
+script = ExtResource("7_k6lwy")
+sound = ExtResource("8_sy7mp")
+autoplay = false
+
+[node name="Screen Display Interface" type="SubViewport" parent="." unique_id=1015032102]
+disable_3d = true
+size = Vector2i(500, 300)
+
+[node name="Level Landing Interface" type="Control" parent="Screen Display Interface" unique_id=1238492079 instance=ExtResource("9_xbwuh")]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("10_p5h6m")
+button_group_scene = ExtResource("11_xcskh")
+landing = 1
+
+[node name="Screen Display" type="StaticBody3D" parent="." unique_id=522045472 node_paths=PackedStringArray("node_viewport", "node_quad", "node_area")]
+transform = Transform3D(0, 0.258969313954337, -0.9658855493432026, 0, 0.9658855493432026, 0.258969313954337, 1, 0, 0, 6.4915117167598515, 1.178884539709315, 9.999)
+collision_layer = 32
+collision_mask = 0
+script = ExtResource("12_pvetd")
+node_viewport = NodePath("../Screen Display Interface")
+node_quad = NodePath("Screen Display Visual")
+node_area = NodePath("Screen Display Visual/TouchScreen")
+
+[node name="Screen Display Visual" type="MeshInstance3D" parent="Screen Display" unique_id=1724261417]
+mesh = SubResource("QuadMesh_2paut")
+surface_material_override/0 = SubResource("StandardMaterial3D_vbvyt")
+
+[node name="TouchScreen" type="Area3D" parent="Screen Display/Screen Display Visual" unique_id=1281242334]
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Screen Display/Screen Display Visual/TouchScreen" unique_id=424691836]
+shape = SubResource("BoxShape3D_s3y6t")
+
+[node name="Collider" type="CollisionShape3D" parent="Screen Display" unique_id=1046453378]
+shape = SubResource("BoxShape3D_3l8o5")

@@ -1,0 +1,51 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/vehicle_lift/platform/platform_system.gd" id="1_8a4cu"]
+[ext_resource type="Script" path="res://scenes/globals/prop_sync.gd" id="2_xd4xe"]
+[ext_resource type="Script" path="res://scenes/common/ambient_loop_3d.gd" id="3_yk2qv"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/rolling.tres" id="4_t3n00"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_tae0s"]
+size = Vector3(1.3, 1.3, 0.3)
+
+[node name="Platform System" type="AnimatableBody3D" unique_id=1917775624]
+collision_layer = 4
+collision_mask = 0
+input_ray_pickable = false
+axis_lock_linear_x = true
+axis_lock_linear_z = true
+axis_lock_angular_x = true
+axis_lock_angular_y = true
+axis_lock_angular_z = true
+sync_to_physics = false
+script = ExtResource("1_8a4cu")
+platform_scene_path = "scenes/_universe/structures/industrial/truck_elevator/platform.tscn"
+platform_offset = Vector3(0, 0, 0)
+platform_railing_json = ""
+
+[node name="Cart" type="StaticBody3D" parent="." unique_id=1129145227]
+collision_layer = 0
+collision_mask = 0
+input_ray_pickable = false
+
+[node name="Cart Collider" type="CollisionShape3D" parent="Cart" unique_id=54536957]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.65, -0.4)
+shape = SubResource("BoxShape3D_tae0s")
+
+[node name="Spring" type="Generic6DOFJoint3D" parent="." unique_id=1053628261]
+node_a = NodePath("../Cart")
+linear_limit_y/upper_distance = 0.15
+linear_limit_y/lower_distance = -0.15
+linear_spring_y/enabled = true
+linear_spring_y/stiffness = 1500000.0
+linear_spring_y/damping = 15000.0
+
+[node name="PropSync" type="Node" parent="." unique_id=799279594]
+script = ExtResource("2_xd4xe")
+type_name = "vehicle_lift_platformsystem"
+smooth_transform = true
+
+[node name="RollingNoise" type="Node3D" parent="." unique_id=992998718]
+script = ExtResource("3_yk2qv")
+sound = ExtResource("4_t3n00")
+autoplay = false

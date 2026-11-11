@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift.gd" id="1_tpeqb"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/truck_elevator/truck_elevator_model.tres" id="2_0hyoh"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/rolling.tres" id="3_l6oyf"]
+[ext_resource type="Resource" path="res://scenes/_universe/structures/industrial/vehicle_lift/sounds/alarm.tres" id="4_cm8si"]
+[ext_resource type="Script" path="res://scenes/globals/prop_sync.gd" id="5_ag8vo"]
+[ext_resource type="Script" path="res://scenes/common/map_marker.gd" id="6_f6d45"]
+[ext_resource type="Texture2D" path="res://assets/textures/map_markers/vehicle_lift.png" id="7_qi8e2"]
+
+[node name="Truck Elevator" type="Node3D" unique_id=112490619]
+script = ExtResource("1_tpeqb")
+model = ExtResource("2_0hyoh")
+stop_depths = PackedFloat32Array()
+sound_rolling = ExtResource("3_l6oyf")
+sound_alarm = ExtResource("4_cm8si")
+
+[node name="PropSync" type="Node" parent="." unique_id=306406131]
+script = ExtResource("5_ag8vo")
+type_name = "vehicle_lift"
+
+[node name="MapMarker" type="Node3D" parent="." unique_id=1502620305]
+script = ExtResource("6_f6d45")
+icon = ExtResource("7_qi8e2")
+label = "%%MAP_MARKER_VEHICLE_LIFT"
+importance = 1
+max_view_m = 5000.0
