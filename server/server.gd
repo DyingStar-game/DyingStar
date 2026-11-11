@@ -2268,6 +2268,10 @@ func _register_player(spawned_entity_instance: Node, player_uuid: String, adopte
 	MissionHeartbeat.on_player_live(player_uuid, spawned_entity_instance)
 	if arriving:
 		_wake_in_bed(spawned_entity_instance, player_uuid)
+		# Back in the game with the tool on the belt: the last `tools` kept with them is replayed at
+		# login, and a player who left with it out woke up with it in hand (playtest 2026-11-10).
+		if bool(spawned_entity_instance.get("owns_mining_tool")):
+			spawned_entity_instance.server_stow_tools()
 	# Updates wired and seat settled: the posture this server holds, sent even at its defaults.
 	spawned_entity_instance.server_publish_spawn_state()
 	players_list_creationdate[player_uuid] = Time.get_ticks_msec() + 500

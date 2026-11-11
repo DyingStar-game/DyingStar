@@ -69,7 +69,9 @@ static func of_mission(mission: Dictionary) -> MissionGiver:
 		neutral.name_key = creator
 		neutral.faction = "player:" + str(mission.get("createdBy", ""))  # one giver filter per player
 	else:
-		neutral.name_key = ServiceTypes.issuer_type_label(mission.get("issuerType", "system"))
+		# The entity that says who it is (the simulator's issuer), else the issuer type.
+		var named := ServiceTypes.entity_text(ServiceTypes.mission_issuer(mission))
+		neutral.name_key = named if named != "" else ServiceTypes.issuer_type_label(mission.get("issuerType", "system"))
 	return neutral
 
 

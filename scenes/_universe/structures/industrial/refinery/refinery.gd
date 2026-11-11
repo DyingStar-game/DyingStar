@@ -106,6 +106,12 @@ static func add_to_stock(stock: Dictionary, content: Dictionary) -> void:
 		stock["carrier_id"] = str(content.get("carrier_id", ""))
 		stock["ore_m3"] = 0.0
 	stock["ore_m3"] = float(stock["ore_m3"]) + float(content.get("ore_m3", 0.0))
+	# A mission's ore: as much of the ingots drawn from this stock is that mission's (take_crate). Fed
+	# with the player's own ore as well, every ingot came out marked (review 2026-11-10).
+	if content.get("for_mission") is Dictionary:
+		if not stock.has("for_mission"):
+			stock["for_mission"] = content["for_mission"]
+		stock["mission_m3"] = float(stock.get("mission_m3", 0.0)) + float(content.get("ore_m3", 0.0))
 
 
 ## How full the next crate of ingots is, 0..1+.
@@ -141,11 +147,20 @@ static func take_crate(stock: Dictionary, crate_m3: float) -> Dictionary:
 	var taken := minf(ore, crate_m3)
 	var source := stock.duplicate()
 	source["ore_m3"] = taken
+	# The mission's share goes out first, and only it carries the mission's mark.
+	var mission_left := float(stock.get("mission_m3", 0.0))
+	if mission_left <= 1e-9:
+		source.erase("for_mission")
 	var out := CrateContent.refined(source)
 	if ore - taken <= 1e-9:
 		stock.clear()
+		return out
+	stock["ore_m3"] = ore - taken
+	if mission_left - taken <= 1e-9:
+		stock.erase("for_mission")
+		stock.erase("mission_m3")
 	else:
-		stock["ore_m3"] = ore - taken
+		stock["mission_m3"] = mission_left - taken
 	return out
 
 

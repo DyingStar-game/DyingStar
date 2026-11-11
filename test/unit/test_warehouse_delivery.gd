@@ -170,9 +170,11 @@ func test_the_depot_board_says_who_collects_what_where() -> void:
 			crate.content["reserved_for"] = {"mission": "m1", "name": "player-orin", "ids": ["orin"]}
 		shelf.add_child(crate)
 		crates.append(crate)
-	var text := PickupBoard.board_text(crates)
-	assert_string_contains(text, "player-orin  ·  %s  ·  2 × " % ShelfLabels.label_of("shelf_cargo_row1_1"))
-	assert_eq(text.count("\n"), 1, "the title and one line: the third crate is kept for nobody")
+	var rows := PickupBoard.pickup_rows(crates)
+	assert_eq(rows.size(), 1, "one row: the third crate is kept for nobody")
+	assert_eq(str(rows[0]["name"]), "player-orin")
+	assert_eq(str(rows[0]["shelf"]), ShelfLabels.label_of("shelf_cargo_row1_1"))
+	assert_eq(int(rows[0]["count"]), 2)
 
 
 func test_the_stock_board_lists_each_good_its_crates_kg_and_shelves() -> void:
@@ -186,20 +188,31 @@ func test_the_stock_board_lists_each_good_its_crates_kg_and_shelves() -> void:
 		crate.content = CrateContent.refined(crushed) if i == 0 else crushed
 		shelf.add_child(crate)
 		crates.append(crate)
-	var lines := StockBoard.stock_lines(crates)
-	assert_eq(lines.size(), 4, "two goods, each with its shelves under it")
-	var kg := int((crates[1] as CrateDouble).content["units"]) * 2
-	assert_string_contains(" | ".join(lines), "%d kg" % kg, "the crushed ore's two crates summed")
-	assert_string_contains(lines[1], ShelfLabels.label_of("shelf_cargo_row1_1"), "where it is")
-	assert_eq(StockBoard.stock_lines([]).size(), 1, "an empty warehouse says so")
+	var rows := StockBoard.stock_rows(crates)
+	assert_eq(rows.size(), 2, "two goods")
+	var ore: Dictionary = rows.filter(func(r: Dictionary) -> bool: return str(r["kind"]) == CrateContent.KIND_CRUSHED)[0]
+	assert_eq(int(ore["crates"]), 2)
+	assert_eq(int(ore["kg"]), int((crates[1] as CrateDouble).content["units"]) * 2, "its two crates summed")
+	assert_eq(ore["shelves"], [ShelfLabels.label_of("shelf_cargo_row1_1")], "where it is")
+	assert_eq(StockBoard.stock_rows([]).size(), 0, "an empty warehouse: no row")
 
 
-func test_the_stock_board_scrolls_a_long_list_round() -> void:
-	var lines := PackedStringArray(["a", "b", "c"])
-	assert_eq(StockBoard.window(lines, 5, 4), lines, "it fits: all of it, no scrolling")
-	assert_eq(StockBoard.window(lines, 0, 2), PackedStringArray(["a", "b"]))
-	assert_eq(StockBoard.window(lines, 2, 2), PackedStringArray(["c", ""]), "a blank line before it starts over")
-	assert_eq(StockBoard.window(lines, 3, 2), PackedStringArray(["", "a"]))
+func test_a_long_list_turns_in_pages() -> void:
+	var rows := ["a", "b", "c"]
+	assert_eq(WallScreen.page_count(3, 2), 2)
+	assert_eq(WallScreen.page_of(rows, 0, 2), ["a", "b"])
+	assert_eq(WallScreen.page_of(rows, 1, 2), ["c"])
+	assert_eq(WallScreen.page_of(rows, 2, 2), ["a", "b"], "past the last page: the first again")
+	assert_eq(WallScreen.page_of([], 0, 2), [], "nothing: one empty page")
+
+
+func test_a_board_builds_its_rows_as_controls() -> void:
+	var board: StockBoard = autofree(StockBoard.new())
+	board.setup(null)
+	board.show_rows([{"good": "ore.gold", "kind": "crushed", "name": "Crushed ore · Gold", "crates": 3,
+			"kg": 52, "shelves": ["A01", "B02"]}])
+	assert_eq(board._list.get_child_count(), 1, "its row")
+	assert_eq(board._viewport.render_target_update_mode, SubViewport.UPDATE_DISABLED, "drawn only when seen")
 
 
 func test_a_shelf_is_labelled_by_where_it_stands_when_its_name_is_late() -> void:

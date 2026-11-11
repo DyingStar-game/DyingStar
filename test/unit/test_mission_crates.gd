@@ -86,3 +86,28 @@ func test_the_buffer_rack_is_named_and_kept_last() -> void:
 	assert_eq(ordered[1], crates[0], "the buffer rack's last")
 	assert_eq(PickupBoard.shelf_name(crates[0].get_parent()), TranslationServer.translate("%%DEPOT_BUFFER"),
 			"the board names the buffer rack")
+
+
+func test_a_missions_ore_gives_a_missions_ingots() -> void:
+	var crate_m3: float = CrateContent.crate_volume()
+	var ore := _crushed()
+	ore["ore_m3"] = crate_m3
+	ore["for_mission"] = {"id": "m1", "title": "Haul", "name": "kira", "ids": ["k"]}
+	var own := _crushed()
+	own["ore_m3"] = crate_m3
+	var stock: Dictionary = {}
+	Refinery.add_to_stock(stock, ore)
+	Refinery.add_to_stock(stock, own)
+	var ingots := Refinery.take_crate(stock, crate_m3)
+	assert_eq(str(CrateContent.mission_of(ingots).get("id", "")), "m1", "the mark goes through the refinery")
+	assert_eq(CrateContent.mission_of(Refinery.take_crate(stock, crate_m3)), {},
+			"the player's own ore, fed into the same stock: not the mission's")
+	assert_true(stock.is_empty(), "nothing left")
+	assert_eq(CrateContent.mission_of(CrateContent.refined(_crushed())), {}, "no mission in: none out")
+
+
+func test_a_missions_plate_is_drawn_from_farther() -> void:
+	var content := _crushed()
+	assert_eq(CratePlate.render_range(content), CratePlate.RENDER_RANGE_M)
+	content["for_mission"] = {"id": "m1"}
+	assert_eq(CratePlate.render_range(content), CratePlate.MISSION_RENDER_RANGE_M)

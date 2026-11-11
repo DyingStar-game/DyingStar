@@ -1,6 +1,6 @@
 extends GutTest
 ## A small prop lying on the floor is in reach of a standing player. The interact ray starts at the
-## eye (1.62 m) and is 1.5 m long, so a ration or a tool on its side (10 cm high) was out of reach
+## eye (1.62 m) and was 1.5 m long (2 m since), so a ration or a tool on its side (10 cm high) was out of reach
 ## standing — and a crouched player may not lift anything: no prompt, no way to take it. Their aim
 ## volume (the layer-32 Area3D the ray looks for) is a sphere, the same whichever side they land on.
 

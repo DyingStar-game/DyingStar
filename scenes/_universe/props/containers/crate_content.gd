@@ -72,7 +72,7 @@ static func crushed(mineral: String, ore_m3: float, gangue_m3: float, gangue_kg:
 static func refined(crushed_content: Dictionary) -> Dictionary:
 	var mineral := str(crushed_content.get("mineral", ""))
 	var ore_m3 := float(crushed_content.get("ore_m3", 0.0))
-	return {
+	var out := {
 		"kind": KIND_INGOT,
 		"mineral": mineral,
 		"ore_m3": ore_m3,
@@ -85,6 +85,10 @@ static func refined(crushed_content: Dictionary) -> Dictionary:
 		"miner_id": str(crushed_content.get("miner_id", "")),
 		"carrier_id": str(crushed_content.get("carrier_id", "")),
 	}
+	# A mission's ore gives a mission's ingots: the load keeps its mark through the refinery.
+	if crushed_content.get("for_mission") is Dictionary:
+		out["for_mission"] = crushed_content["for_mission"]
+	return out
 
 
 ## A crate's goods as inventory units: its game mass in whole kilograms, at least 1 when it holds

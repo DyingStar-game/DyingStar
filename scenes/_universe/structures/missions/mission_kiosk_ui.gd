@@ -306,8 +306,7 @@ func _fill_sheet(mission: Dictionary, objectives: Array, assignment: Variant = n
 		for objective: Variant in objectives:
 			if objective is Dictionary:
 				_sheet.add_child(_text("•  " + objective_line(objective) + progress_suffix(objective), TEXT))
-				var step := ServiceTypes.transport_step_text(objective)
-				if step != "":
+				for step: String in ServiceTypes.transport_steps(objective):
 					_sheet.add_child(_text("     " + step, _accent))
 	var now: float = Time.get_unix_time_from_system()
 	_sheet.add_child(_text(TranslationServer.translate("%%MISSION_REWARD")

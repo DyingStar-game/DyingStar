@@ -99,12 +99,22 @@ const MISSION_CATEGORY_KEYS: Dictionary = {
 	"combat": "%%SVC_ENUM_CATEGORY_COMBAT",
 	"reception": "%%SVC_ENUM_CATEGORY_RECEPTION",
 }
+## What an entity that issues missions is, as its simulator says it (`payload.issuer.kind`): a lore
+## corporation such as ARES, a federation, an organisation. Not the issuer TYPE below, whose
+## `corporation` is a corporation of the social service (of players or of NPCs), which ARES is not. A kind
+## not listed shows the entity's name alone.
+const ENTITY_KIND_KEYS: Dictionary = {
+	"corporation": "%%ENTITY_KIND_CORPORATION",
+	"federation": "%%ENTITY_KIND_FEDERATION",
+	"organisation": "%%ENTITY_KIND_ORGANISATION",
+}
 const ISSUER_TYPE_KEYS: Dictionary = {
 	"system": "%%SVC_ENUM_ISSUER_SYSTEM",
 	"corporation": "%%SVC_ENUM_ISSUER_CORPORATION",
 	"city": "%%SVC_ENUM_ISSUER_CITY",
 	"player": "%%SVC_ENUM_ISSUER_PLAYER",
 	"npc": "%%SVC_ENUM_ISSUER_NPC",
+	"politics": "%%SVC_ENUM_PAYER_POLITICS",  # an entity that did not say who it is (issuer_text)
 }
 ## Availability zone kinds — the `MissionZone` discriminator, as the service validates them. Only
 ## `system` and `poi` exist in that union; `scene` and `area` are kept in the table so a zone an
@@ -293,6 +303,44 @@ static func mission_category_label(value: Variant) -> String:
 
 static func issuer_type_label(value: Variant) -> String:
 	return _enum(value, ISSUER_TYPE_KEYS)
+
+
+## Who orders [param mission], as its issuer says it: {name, kind} from the payload of its first
+## objective that carries one (the simulator's missions), {} when none does.
+static func mission_issuer(mission: Dictionary) -> Dictionary:
+	var objectives: Variant = mission.get("objectives")
+	for objective: Variant in (objectives if objectives is Array else []):
+		var payload: Variant = objective.get("payload") if objective is Dictionary else null
+		var issuer: Variant = payload.get("issuer") if payload is Dictionary else null
+		if issuer is Dictionary and str(issuer.get("name", "")) != "":
+			return issuer
+	return {}
+
+
+## An entity as a player reads it: its name and what it is ("ARES · Corporation"), the name alone for
+## a kind the game does not know, "" for no name.
+static func entity_text(entity: Dictionary) -> String:
+	var name := str(entity.get("name", ""))
+	var kind := str(entity.get("kind", ""))
+	if name == "" or not ENTITY_KIND_KEYS.has(kind):
+		return name
+	return "%s · %s" % [name, TranslationServer.translate(str(ENTITY_KIND_KEYS[kind]))]
+
+
+## Who issues [param mission]: the entity that says who it is, else the mission's issuer type.
+static func issuer_text(mission: Dictionary) -> String:
+	var named := entity_text(mission_issuer(mission))
+	return named if named != "" else issuer_type_label(mission.get("issuerType"))
+
+
+## Who funds [param mission]'s escrow: the issuing entity by its name when it pays from its own
+## treasury (payer type `politics`), else the payer's type. "" when the mission does not say.
+static func escrow_payer_text(mission: Dictionary) -> String:
+	var payer_type := str(mission.get("escrowPayerType", "") if mission.get("escrowPayerType") != null else "")
+	if payer_type == "":
+		return ""
+	var name := str(mission_issuer(mission).get("name", ""))
+	return name if payer_type == "politics" and name != "" else escrow_payer_label(payer_type)
 
 
 static func escrow_payer_label(value: Variant) -> String:
@@ -680,20 +728,38 @@ static func is_active_assignment(assignment: Variant) -> bool:
 	return assignment is Dictionary and str(assignment.get("status", "")) == "active"
 
 
-## The first step of a transport measured on the warehouses: the goods must first be taken off a
-## shelf of the source warehouse, or the delivery counts nothing. "" for any other objective; else
-## that step, done or still to do, naming the source village (`locationFrom.village`).
-static func transport_step_text(objective: Variant) -> String:
+## The steps of a warehouse transport, one line each, the done ones ticked: take the crates at the
+## source warehouse, have them refined when the mission delivers another good than it loads (at the
+## village the simulator names, `payload.refineAt`), deliver at the destination's warehouse. Empty for
+## any other objective.
+static func transport_steps(objective: Variant) -> PackedStringArray:
+	var lines := PackedStringArray()
 	if not (objective is Dictionary) or str(objective.get("type", "")) != "transport":
-		return ""
+		return lines
 	var params: Variant = objective.get("params")
 	if not (params is Dictionary) or str(params.get("via", "")) != "warehouse":
-		return ""
-	var source: Variant = objective.get("locationFrom")
-	var village := str(source.get("village", "")) if source is Dictionary else ""
+		return lines
 	var state: Variant = objective.get("state")
 	var loaded: bool = state is Dictionary and state.get("loadedAt") != null
-	return TranslationServer.translate("%%MISSION_STEP_LOADED" if loaded else "%%MISSION_STEP_LOAD") % village
+	var delivered: bool = num(objective.get("currentProgress"), 0) > 0
+	var steps: Array = [["%%MISSION_STEP_LOAD", _village_of(objective.get("locationFrom")), loaded or delivered]]
+	var deliver_good := str(params.get("deliverGoodType", ""))
+	if deliver_good != "" and deliver_good != str(params.get("goodType", "")):
+		var payload: Variant = objective.get("payload")
+		var refinery := str(payload.get("refineAt", "")) if payload is Dictionary else ""
+		steps.append(["%%MISSION_STEP_REFINE" if refinery != "" else "%%MISSION_STEP_REFINE_ANY", refinery, delivered])
+	steps.append(["%%MISSION_STEP_DELIVER", _village_of(objective.get("locationTo")), false])
+	for i: int in range(steps.size()):
+		var step: Array = steps[i]
+		var sentence := TranslationServer.translate(str(step[0]))
+		if sentence.contains("%s"):
+			sentence = sentence % str(step[1])
+		lines.append("%s %d. %s" % ["✓" if bool(step[2]) else "•", i + 1, sentence])
+	return lines
+
+
+static func _village_of(location: Variant) -> String:
+	return str((location as Dictionary).get("village", "")) if location is Dictionary else ""
 
 
 ## The participants of a mission (GET /api/missions/:id `participants`: [{playerId, name}]) as one
@@ -729,9 +795,72 @@ static func mission_line(mission: Dictionary) -> String:
 			mission_status_label(mission.get("status")), rewards_text(rewards)]
 
 
+## The economy's transaction types and their names' keys (each key written out: the localisation test
+## finds what the code uses by reading it).
+const TRANSACTION_TYPE_KEYS: Dictionary = {
+	"transfer": "%%SVC_TX_TRANSFER",
+	"deposit": "%%SVC_TX_DEPOSIT",
+	"withdrawal": "%%SVC_TX_WITHDRAWAL",
+	"tax": "%%SVC_TX_TAX",
+	"fee": "%%SVC_TX_FEE",
+	"mission_reward": "%%SVC_TX_MISSION_REWARD",
+	"salary": "%%SVC_TX_SALARY",
+	"prime": "%%SVC_TX_PRIME",
+	"donation": "%%SVC_TX_DONATION",
+	"corporation_fund": "%%SVC_TX_CORPORATION_FUND",
+	"issuance": "%%SVC_TX_ISSUANCE",
+	"system": "%%SVC_TX_SYSTEM",
+}
+
+
+## A transaction's type in the player's language ("mission_reward" -> "Mission reward"); an unknown
+## type as it is.
+static func transaction_type_label(type: Variant) -> String:
+	var raw := str(type if type != null else "")
+	if raw == "":
+		return "—"
+	var key := str(TRANSACTION_TYPE_KEYS.get(raw.to_lower(), ""))
+	return TranslationServer.translate(key) if key != "" else raw
+
+
+## The mission a transaction pays or holds back for (its `reference` "mission:<id>"), "" for none.
+static func transaction_mission_id(transaction: Dictionary) -> String:
+	var reference := str(transaction.get("reference", "") if transaction.get("reference") != null else "")
+	return reference.trim_prefix("mission:") if reference.begins_with("mission:") else ""
+
+
+## The village of an off-mission sale (its `reference` "sale:<village>:<resource>"), "" for none.
+static func transaction_sale_village(transaction: Dictionary) -> String:
+	var reference := str(transaction.get("reference", "") if transaction.get("reference") != null else "")
+	return reference.get_slice(":", 1) if reference.begins_with("sale:") else ""
+
+
+## The name of [param item] ({name, nameFr}, as the services give a resource) in [param locale]: the
+## French one for a French player when there is one, else `name`.
+static func localised_name(item: Dictionary, locale: String) -> String:
+	var french: Variant = item.get("nameFr")
+	if locale.begins_with("fr") and french != null and str(french) != "":
+		return str(french)
+	return str(item.get("name", ""))
+
+
+## An ISO date of the services ("2026-11-08T14:26:06.102Z", UTC) as a player reads it, in their own
+## time zone: "08/11/2026 15:26". "—" when there is none. [param bias_min]: minutes ahead of UTC,
+## the system's as it is now by default (a date of last summer reads with today's offset).
+static func date_time_text(iso: Variant, bias_min: int = int(Time.get_time_zone_from_system().get("bias", 0))) -> String:
+	var text_value := str(iso if iso != null else "")
+	if text_value.length() < 19:
+		return "—"
+	var utc := Time.get_unix_time_from_datetime_string(text_value.substr(0, 19))
+	var local := utc + bias_min * 60
+	var d := Time.get_datetime_dict_from_unix_time(local)
+	return "%02d/%02d/%04d %02d:%02d" % [d["day"], d["month"], d["year"], d["hour"], d["minute"]]
+
+
 static func assignment_line(assignment: Dictionary) -> String:
-	return text("%%SVC_FMT_ASSIGNMENT") % [mission_status_label(assignment.get("status")),
-			dash(assignment.get("rewardAmount")), str(bool(assignment.get("rewardSettled", false)))]
+	if not bool(assignment.get("rewardSettled", false)):
+		return ""
+	return text("%%SVC_FMT_REWARD_PAID") % dash(assignment.get("rewardAmount"))
 
 
 ## A quantity in its unit, as a player reads it: kilograms past 1 000 in tonnes, litres past 1 000 in

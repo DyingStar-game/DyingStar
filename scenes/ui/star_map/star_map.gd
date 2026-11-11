@@ -617,7 +617,9 @@ func host_in(slot: Control) -> void:
 ## Something the player owns changed in a service: its points of interest, or its missions (which name points).
 func _on_services_changed(area: String) -> void:
 	if area == "missions":
-		# A mission was taken, turned in, given up: which points are live contracts changed.
+		# A mission was taken, turned in, given up: which points are live contracts changed, and the
+		# zone of an inspection that is over goes (it stayed on the chart, playtest 2026-11-11).
+		MissionSites.refresh()  # not awaited: the zones are drawn again when the answer comes
 		await MissionPoiCache.refresh_accepted()
 		if is_instance_valid(self) and is_open():
 			_push_service_pois()
@@ -637,6 +639,7 @@ func _on_services_changed(area: String) -> void:
 ## waits on a round trip.
 func _on_open_changed(open: bool) -> void:
 	if open:
+		MissionSites.refresh()  # not awaited: the zones are drawn when the answer comes
 		var ok: bool = await MissionPoiCache.ensure_loaded()
 		if ok and is_instance_valid(self):
 			_push_service_pois()
@@ -3308,6 +3311,8 @@ func _frame_poi(poi_index: int) -> void:
 func focus_service_poi(poi_id: String) -> bool:
 	if poi_id == "" or not is_instance_valid(_camera):
 		return false
+	if await _focus_mission_site(poi_id):
+		return true
 	# The list is fetched when the chart opens, and that fetch is an await: asking a moment after the
 	# chart came up would otherwise find it empty and fall through to a fetch of its own for a point
 	# the list already holds.
@@ -3338,6 +3343,31 @@ func focus_service_poi(poi_id: String) -> bool:
 			return true
 		await get_tree().process_frame
 	return false
+
+
+## Go to the zone of one of the player's missions whose point of interest is [param poi_id] (an
+## inspection's, MissionSites): framed from above, at the height a place is shown from. False when no
+## held mission has such a zone.
+##
+## Before the service's points: a zone is drawn by MissionSites, not by the points' layer, and its
+## point is private -- asked for as a point, it was never found (playtest 2026-11-11).
+func _focus_mission_site(poi_id: String) -> bool:
+	var site: Dictionary = MissionSites.site_of_poi(poi_id)
+	if site.is_empty():
+		await MissionSites.refresh()  # the mission may have been taken a moment ago
+		if not is_instance_valid(self):
+			return false
+		site = MissionSites.site_of_poi(poi_id)
+	if site.is_empty():
+		return false
+	var key := str(site.get("scene", ""))
+	var body := _index_of_key(key)
+	var at: Vector3 = site["position"]
+	if body < 0 or at.is_zero_approx():
+		return false
+	_cam.select(body, key)
+	_frame_on_surface(body, at.normalized(), PLACE_FOCUS_ALTITUDE_M)
+	return true
 
 
 ## How many frames [method focus_service_poi] waits for the camera's travel to bring its body big

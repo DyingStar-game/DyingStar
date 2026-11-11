@@ -156,8 +156,10 @@ var stand_body_height: float = 1.8
 ## PUT DOWN is a separate thing entirely — the placement disc on the aim ray (see CarryPlacement).
 @export var carry_mount_offset: Vector3 = Vector3(0.0, 1.271, -0.301)
 ## Reach (m) of the interaction ray — how far you can grab / interact with an object. Applied to the
-## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length).
-@export var interact_ray_length: float = 1.5
+## InteractRay in _ready; the carry grab distance follows it (it reads interact_ray's length). From the
+## eye, 1.62 m up: at 1.5 m a crate on the ground was in reach 0.9 m from the feet and a low rock piece
+## 0.3 m, once pieces were aimed at by their own shape (playtest 2026-11-10); 2 m gives about 1.3 m.
+@export var interact_ray_length: float = 2.0
 
 @export_subgroup("Camera")
 ## Look sensitivity: mouse look turns 0.001 rad per pixel × this. Higher = faster look. The right-stick
