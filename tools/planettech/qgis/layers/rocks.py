@@ -18,6 +18,14 @@ Each :class:`Rock` carries three kinds of data, consumed in three places:
   minerals    distinct sub-minerals trapped in the rock (emery) — mined as their
               own items, not as ppm.
 
+  fluorescence the glow of the clear crystal under UV (and, faintly, in the dark of
+              a cave): hex colour, strength 0..1 and the activating ion.  Cr3+
+              lights corundum red; iron quenches it, so the iron-rich rocks
+              have little or none.  None = the rock does not fluoresce.
+  crystal_habit how a free-growing crystal of the rock looks ("hexagonal": the
+              barrel prisms of corundum).  A cave whose rock has a habit grows
+              crystals (CaveMineral); None = no crystals.
+
 ``surface=False`` marks rocks that cannot exist at the surface (oxidised by
 the atmosphere): they are only offered to underground biomes.
 
@@ -50,6 +58,13 @@ class Mineral:
 
 
 @dataclass(frozen=True)
+class Fluorescence:
+    color: str              # "#rrggbb" of the emitted light
+    strength: float         # 0..1 — how bright the crystal glows
+    activator: str = ""     # ion responsible: "Cr3+"
+
+
+@dataclass(frozen=True)
 class Rock:
     slug: str
     label: str
@@ -62,18 +77,28 @@ class Rock:
     purity: Optional[float] = None       # host-crystal fraction when known (white: > 0.995)
     surface: bool = True                 # False → underground only
     description: str = ""
+    fluorescence: Optional[Fluorescence] = None  # UV glow, see module doc
+    crystal_habit: Optional[str] = None  # "hexagonal" → caves grow crystals
 
 
 # ============================================================
 # Corundum family — Al2O3 + trace impurities
 # ============================================================
 _AL2O3 = "Al2O3"
+_HEX = "hexagonal"   # corundum's barrel prisms (crystal_habit)
+
+# Fluorescence (UV, 365 nm): Cr3+ glows red and is the only strong activator in
+# corundum; Fe quenches it, so the iron-rich rocks (blue, grey-blue, green,
+# black, emery) glow none.  Strengths are relative: pink (Cr, little Fe) is the
+# reference, ruby red is dimmed by its Fe3+, the milky and white rocks only show
+# the faint chalky blue-white of pure Al2O3 lattice defects.
 
 ROCKS = [
     Rock("corundum_white", "White corundum", _AL2O3,
          colors=("#FAFAFA", "#D9D9D9"),   # white → very light grey
          purity=0.995,
-         description="Anhydrous crystallised aluminium oxide of very high purity (> 99.5 %)."),
+         description="Anhydrous crystallised aluminium oxide of very high purity (> 99.5 %).",
+         fluorescence=Fluorescence("#B8C8FF", 0.08), crystal_habit=_HEX),
 
     # The planet-wide default ground of the corundum planets (PlanetData.
     # corundum_default_rock): the milky white ↔ iron yellow the plateau always
@@ -81,38 +106,44 @@ ROCKS = [
     Rock("corundum_milky", "Milky corundum (iron traces)", _AL2O3,
          colors=("#E7E0D1", "#D0AD69"),   # milky white → iron yellow
          impurities=(Impurity("Fe", 100, 1500, ("Fe3+",), optional=True),),
-         description="Translucent Al2O3 with traces of Fe3+ — milky white stained iron-yellow."),
+         description="Translucent Al2O3 with traces of Fe3+ — milky white stained iron-yellow.",
+         fluorescence=Fluorescence("#9FB4FF", 0.15), crystal_habit=_HEX),
 
     Rock("corundum_blue", "Blue corundum", _AL2O3,
          colors=("#82C8E5", "#0F52BA"),
          core_colors=("#5C9FD1", "#081F6B"),   # deep: Fe2+ intact, a purer sapphire
          impurities=(Impurity("Ti", 50, 100, ("Ti4+",)),
                      Impurity("Fe", 100, 3000, ("Fe2+",))),
-         description="Al2O3 coloured by the Fe2+/Ti4+ charge-transfer pair."),
+         description="Al2O3 coloured by the Fe2+/Ti4+ charge-transfer pair.",
+         crystal_habit=_HEX),
 
     Rock("corundum_grey_blue", "Grey-blue corundum", _AL2O3,
          colors=("#7393B3", "#263855"),
          core_colors=("#5F86B8", "#1B3466"),   # deep: less Fe3+ grey, more Fe2+/Ti blue
          impurities=(Impurity("Ti", 50, 200, ("Ti4+",)),
                      Impurity("Fe", 400, 15000, ("Fe2+", "Fe3+"))),
-         description="Al2O3 with Fe2+/Ti4+ plus Fe3+ — more iron, duller blue."),
+         description="Al2O3 with Fe2+/Ti4+ plus Fe3+ — more iron, duller blue.",
+         crystal_habit=_HEX),
 
     Rock("corundum_black", "Black corundum", _AL2O3,
          colors=("#082567", "#111111"),
          impurities=(Impurity("Ti", 100, 400, ("Ti4+",)),
                      Impurity("Fe", 20000, 50000, ("Fe2+", "Fe3+"))),
-         description="Al2O3 saturated with iron and titanium — near-opaque."),
+         description="Al2O3 saturated with iron and titanium — near-opaque.",
+         crystal_habit=_HEX),
 
     Rock("corundum_yellow", "Yellow corundum", _AL2O3,
          colors=("#FCE698", "#D4AF37"),
          impurities=(Impurity("Fe", 300, 6000, ("Fe3+",)),),
-         description="Al2O3 coloured by Fe3+ alone."),
+         description="Al2O3 coloured by Fe3+ alone.",
+         fluorescence=Fluorescence("#FFB347", 0.3), crystal_habit=_HEX),
 
     Rock("corundum_green", "Green corundum", _AL2O3,
          colors=("#A2B997", "#2E4732"),       # shallow: Fe3+ pulls it yellow-green
          core_colors=("#8CBAB0", "#1E4A48"),  # deep: Fe2+ pulls it blue-green
          impurities=(Impurity("Fe", 1000, 8000, ("Fe2+", "Fe3+")),),
-         description="Al2O3 with both Fe2+ and Fe3+ — mixed blue/yellow absorption reads green."),
+         description="Al2O3 with both Fe2+ and Fe3+ — mixed blue/yellow absorption reads green.",
+         crystal_habit=_HEX),
 
     Rock("emery", "Emery (brown corundum)", _AL2O3,
          colors=("#654321", "#2B1B17"),
@@ -126,25 +157,29 @@ ROCKS = [
          colors=("#FFC0CB", "#C71585"),
          impurities=(Impurity("Cr", 100, 1000, ("Cr3+",)),
                      Impurity("Fe", 0, 1500, ("Fe3+",), optional=True)),
-         description="Al2O3 lightly coloured by Cr3+, optional Fe3+."),
+         description="Al2O3 lightly coloured by Cr3+, optional Fe3+.",
+         fluorescence=Fluorescence("#FF2A3C", 0.9, "Cr3+"), crystal_habit=_HEX),
 
     Rock("corundum_red", "Red corundum", _AL2O3,
          colors=("#B84A39", "#4A1512"),
          impurities=(Impurity("Cr", 1500, 4500, ("Cr3+",)),
                      Impurity("Fe", 3000, 6000, ("Fe3+",))),
-         description="Al2O3 with high Cr3+ and Fe3+ — ruby range."),
+         description="Al2O3 with high Cr3+ and Fe3+ — ruby range.",
+         fluorescence=Fluorescence("#FF1A1A", 0.55, "Cr3+"), crystal_habit=_HEX),
 
     Rock("corundum_orange", "Orange corundum", _AL2O3,
          colors=("#F4A460", "#C04000"),
          impurities=(Impurity("Cr", 50, 250, ("Cr3+",)),
                      Impurity("Fe", 2500, 5000, ("Fe3+",))),
-         description="Al2O3 with a little Cr3+ over dominant Fe3+."),
+         description="Al2O3 with a little Cr3+ over dominant Fe3+.",
+         fluorescence=Fluorescence("#FF5A2A", 0.45, "Cr3+"), crystal_habit=_HEX),
 
     Rock("corundum_chameleon", "Chameleon corundum (grey-blue / purple)", _AL2O3,
          colors=("#B4C4D9", "#3A325E"),
          night_colors=("#D1C0D4", "#5E2750"),
          impurities=(Impurity("V", 100, 3500, ("V3+",)),),
-         description="Al2O3 coloured by V3+ — grey-blue in daylight, purple-mauve at night."),
+         description="Al2O3 coloured by V3+ — grey-blue in daylight, purple-mauve at night.",
+         fluorescence=Fluorescence("#FF3050", 0.12), crystal_habit=_HEX),
 
     Rock("hercynite_oxidised", "Oxidised hercynite", "FeAl2O4",
          colors=("#233D2E", "#0E1A13"),   # very dark green

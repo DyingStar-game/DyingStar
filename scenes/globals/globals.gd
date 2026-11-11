@@ -55,6 +55,12 @@ const RENDER_MASK_OWN_BODY := 1 << 18
 ## Layer 18: the double of the local player's body that the mirrors show (MirrorDouble, head and all,
 ## where first person hides ours). Only the mirrors' cameras see it; our own camera leaves it out.
 const RENDER_MASK_MIRROR_DOUBLE := 1 << 17
+## Layer 17: what fluoresces — the clear crystals of the caves (CaveMineral), alone, and only on this layer.
+## The players' UV torch (Torch/UvBeam, a NEGATIVE light masked to this layer) reaches nothing else, so it
+## darkens no surface; the crystal shader reads its negative colour in light() as UV and lights its
+## fluorescence. The lights masked to RENDER_MASK_LOCAL_LIT (sun, moons, the crystals' own glow) skip them;
+## a light with the default mask (the torch, lamps) lights them.
+const RENDER_MASK_FLUORESCENT := 1 << 16
 ## What the per-player sun and moon lights reach: the local layer, the local player's own body, and its
 ## double in the mirrors.
 const RENDER_MASK_LOCAL_LIT := RENDER_MASK_LOCAL | RENDER_MASK_OWN_BODY | RENDER_MASK_MIRROR_DOUBLE

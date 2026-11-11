@@ -65,3 +65,21 @@ func test_tint_stays_between_the_two_colours_and_is_deterministic() -> void:
 
 func test_unknown_rock_returns_the_fallback() -> void:
 	assert_eq(RockCatalogue.tint(Vector3.UP, RADIUS, "nope", Color.RED), Color.RED)
+
+
+func test_chromium_fluoresces_red_and_iron_quenches_it() -> void:
+	var pink := RockCatalogue.fluorescence_of("corundum_pink")
+	assert_false(pink.is_empty(), "pink corundum fluoresces")
+	var c: Color = pink["color"]
+	assert_gt(c.r, c.g, "Cr3+ glows red")
+	assert_gt(c.r, c.b, "Cr3+ glows red")
+	assert_gt(float(pink["strength"]), float(RockCatalogue.fluorescence_of("corundum_red")["strength"]),
+		"the ruby's iron dims it")
+	assert_eq(RockCatalogue.fluorescence_of("corundum_blue"), {}, "Fe-Ti sapphire does not glow")
+	assert_eq(RockCatalogue.fluorescence_of("kryptonite"), {})
+
+
+func test_crystal_habit() -> void:
+	assert_eq(RockCatalogue.crystal_habit_of("corundum_red"), "hexagonal")
+	assert_eq(RockCatalogue.crystal_habit_of("emery"), "", "emery is massive, no free crystals")
+	assert_eq(RockCatalogue.crystal_habit_of("kryptonite"), "")

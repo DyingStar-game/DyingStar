@@ -426,6 +426,14 @@ func server_action_received(data: Dictionary) -> void:
 			# see the torch (replicated as a state, not the action — a missed event can't desync it).
 			player.flashlight.visible = not player.flashlight.visible
 			player.server_send_properties_to_client({"flashlight": player.flashlight.visible})
+		"torch_uv":
+			# The UV mode the owner asks for (a state, not a toggle); switching it on lights the torch too.
+			player.torch_uv = bool(data.get("on", false))
+			if player.torch_uv:
+				player.flashlight.visible = true
+			player.apply_torch_mode()
+			player.server_send_properties_to_client({"torch_uv": player.torch_uv,
+				"flashlight": player.flashlight.visible})
 		"datapad":
 			# The wrist raised to read the DataPad (or lowered): the state the owner asks for, replicated as
 			# a state so every avatar, a late joiner included, holds the same arm up (WristRaise).

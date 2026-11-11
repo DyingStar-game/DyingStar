@@ -1188,6 +1188,36 @@ func _hide_stale_in_caves(desired: Dictionary, local_cam: Vector3) -> void:
 			_stargrot_hidden[key] = true
 
 
+## client.ini [debug] debug_cave_chunks: every 3 s, the terrain chunks drawn over the mouth of each cave cut
+## within 400 m of the camera, to tell a stale chunk left on screen from a wanted one built without the cut.
+var _debug_cave_chunks: bool = ClientConfig.get_bool("debug_cave_chunks", false)
+var _debug_cave_chunks_ms: int = 0
+
+
+func _log_cave_chunks(desired: Dictionary, local_cam: Vector3) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _debug_cave_chunks_ms < 3000:
+		return
+	_debug_cave_chunks_ms = now
+	for site: CavePlacement in planet_data.stargrot_cut_sites:
+		var mouth := site.surface_transform().origin
+		var away := mouth.distance_to(local_cam)
+		if away > 400.0:
+			continue
+		var found := PackedStringArray()
+		for key: String in _active_chunks:
+			var shown: MeshInstance3D = (_active_chunks[key] as Dictionary).get("mesh_instance")
+			if not is_instance_valid(shown) or shown.mesh == null:
+				continue
+			if not (shown.transform * shown.mesh.get_aabb()).grow(2.0).has_point(mouth):
+				continue
+			found.append("%s %s %s clipped=%d" % [key, "wanted" if desired.has(key) else "STALE",
+				"shown" if shown.visible else "hidden", int(shown.mesh.get_meta(CaveTerrainCut.CUT_META, 0))])
+		print("[CaveChunks] '%s' mouth %.0f m away, inside rock=%s: %s" % [site.placement_id, away,
+			str(CavePlanetRegistry.inside_rock(planet_data, local_cam)),
+			", ".join(found) if not found.is_empty() else "no chunk over the mouth"])
+
+
 ## Both server zone/pins and client LOD publish their native desired leaves to shared subscribers.
 func _publish_residency(effective: Dictionary) -> void:
 	var diff: Array = residency_diff(_residency_keys, effective)
@@ -2462,6 +2492,8 @@ func _update_terrain() -> void:
 	_perf_end("steps:remove", _tks)
 	if stargrot_registry != null and not is_server:
 		_hide_stale_in_caves(desired, local_cam)
+		if _debug_cave_chunks:
+			_log_cave_chunks(desired, local_cam)
 	_tks = _perf_begin()
 
 	# Step 3 — Re-queue chunks whose LOD quality changed (same key, different lod).

@@ -92,6 +92,15 @@ shadow_enabled = true
 spot_range = 25.0
 spot_angle = 41.4246
 
+[node name="UvBeam" type="SpotLight3D" parent="CameraPivot/Camera3D/Torch" unique_id=1849302217]
+visible = false
+light_energy = 4.0
+light_negative = true
+light_cull_mask = 65536
+light_specular = 0.0
+spot_range = 14.0
+spot_angle = 30.0
+
 [node name="AreaDetector" type="Area3D" parent="." unique_id=972717439 groups=["active_monitor"]]
 collision_layer = 0
 monitorable = false
