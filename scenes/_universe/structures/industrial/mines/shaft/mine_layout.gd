@@ -4,9 +4,10 @@ extends RefCounted
 ## volumes CaveNetworkMesher turns into rock walls. Pure data, no node: built the same on the server and on every
 ## client from the mine's seed, on any thread.
 ##
-## Frame: the shaft's axis is the Y axis, the ground at y = 0, everything below it. The vehicle lift stands on the
-## rim at -Z, facing +Z, and runs down the shaft wall on that side; every level opens a station (a chamber dug
-## into that wall, level with the lift's stop) from which its galleries leave, away from the shaft.
+## Frame: the shaft's axis is the Y axis, the ground at y = 0, everything below it. Every level opens a station (a
+## chamber dug into the shaft's wall at -Z) from which its galleries leave, away from the shaft. The vehicle lift (a
+## truck elevator, MineSite) stands against the opposite wall at +Z, its platform facing the stations: at each level
+## a landing bridges the shaft from the platform to the station, level with its floor.
 ##
 ## A gallery's WHOLE route (up to the cap) is drawn here; what is dug of it is a distance along it, its initial
 ## length plus what players mined (MineSite "faces"). The face never computes a path: the rock just gets out of the
@@ -27,6 +28,12 @@ const HUB_CLEAR_M := 25.0
 const SELF_CLEAR_M := 30.0
 ## Spatial hash cell (m) of the route checks.
 const HASH_M := 16.0
+## Depth (m) under the ground from which the shaft has its flat side (shaft_flat_m): above, it stays round under its
+## round collar.
+const SHAFT_FLAT_TOP_M := 12.0
+## How far (m) a station reaches past the shaft's flat side, into the shaft: its rounded plan is wide there, so the
+## shaft's flat cuts its floor along a straight edge wider than the lift's platform.
+const STATION_PAST_FLAT_M := 1.0
 
 ## Every tunable of a mine, with its default. MineSite passes its exports under these keys (see its tooltips).
 const DEFAULTS := {
@@ -35,7 +42,11 @@ const DEFAULTS := {
     "first_level_m": 40.0,
     "level_spacing_min_m": 60.0,
     "level_spacing_max_m": 90.0,
-    "shaft_radius_m": 20.0,
+    # The truck elevator (MineSite) stands against the +Z wall at this radius, its platform hanging to the flat side.
+    "shaft_radius_m": 8.5,
+    # Distance (m) from the shaft's axis to its flat side on the stations' (-Z) side, under SHAFT_FLAT_TOP_M: the
+    # front of the lift's platform runs down it, and every station's floor meets it along a straight edge.
+    "shaft_flat_m": 5.5,
     "shaft_roughness_m": 0.5,
     "galleries_min": 2,
     "galleries_max": 6,
@@ -89,8 +100,8 @@ static func generate(seed: int, settings: Dictionary = {}, style: String = "") -
     heights.append(-depth)
     var half_length := float(s.station_length_m) * 0.5
     for index in heights.size():
-        # The station overlaps the shaft by 3 m: its open side is the lift's landing.
-        var center := Vector3(0.0, heights[index], -(radius + half_length - 3.0))
+        # The station opens on the shaft's flat side (its floor meets the lift's platform there), a little past it.
+        var center := Vector3(0.0, heights[index], -(float(s.shaft_flat_m) - STATION_PAST_FLAT_M + half_length))
         layout.levels.append({"index": index, "y": heights[index], "station": center,
             "hub": center - Vector3(0.0, 0.0, half_length - 2.0)})
     for level: Dictionary in layout.levels:
@@ -239,8 +250,10 @@ static func graph(layout: Dictionary, dug_m: Dictionary) -> Dictionary:
     var freq := float(s.wall_frequency)
     var volumes: Array[Dictionary] = []
     # The shaft rises 4 m above the ground: the surface is cut at y = 0 (BuildRegion's top), an open rim.
+    # Under the collar, flat on the stations' side (CaveNetworkMesher clip_z): the lift's platform runs down it.
     volumes.append({"kind": "shaft", "a": Vector3(0.0, -depth + radius, 0.0), "b": Vector3(0.0, 4.0, 0.0),
-        "size": Vector3(radius, 0.0, 0.0), "amp": float(s.shaft_roughness_m), "freq": freq * 0.5})
+        "size": Vector3(radius, 0.0, 0.0), "amp": float(s.shaft_roughness_m), "freq": freq * 0.5,
+        "clip_z": -float(s.shaft_flat_m), "clip_top": -SHAFT_FLAT_TOP_M})
     # Its foot: a flat floor over the round end of the shaft.
     var foot := Vector3(0.0, -depth, 0.0)
     volumes.append({"kind": "room", "a": foot, "b": foot, "size": Vector3(radius + 1.0, radius + 6.0, radius + 1.0),

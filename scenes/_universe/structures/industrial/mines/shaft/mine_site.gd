@@ -14,7 +14,21 @@ extends Node3D
 
 ## Horizon type of a mine.
 const TYPE := "mine"
-const LIFT_SCENE := "scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift.tscn"
+## The shaft's lift: the truck elevator (a concrete tower against the wall, its platform hanging in the shaft).
+const LIFT_SCENE := "scenes/_universe/structures/industrial/truck_elevator/truck_elevator.tscn"
+## Depth (m) of the elevator's tower behind the face of its rails (the lift's origin).
+const LIFT_TOWER_DEPTH_M := 6.93
+## Height (m) of the elevator's platform, at the bottom, above the shaft's floor: it stops level with the top of its
+## pit, whose ramp goes down to the floor.
+const LIFT_PIT_M := 2.10
+## Distance (m) from the face of the elevator's rails (the lift's origin) to the front of its platform's deck.
+const LIFT_PLATFORM_FRONT_M := 8.0
+## Gap (m) between the front of the platform and the shaft's flat side it runs down (the stations' floor edge).
+const LIFT_FRONT_GAP_M := 0.07
+## Width (m) of the collar's ring round the hole, and of its gap at +Z for the road on top of the lift's tower (the
+## road, 7 m, and the stairs either side).
+const COLLAR_WIDTH_M := 4.0
+const LIFT_ROAD_GAP_M := 10.5
 ## How long (s) a drilled layer's blocks wait for the server once the drilling ended, or for their rocks once the
 ## layer fell, before the client lets them go.
 const FRACTURE_WAIT_S := 4.0
@@ -32,8 +46,10 @@ static var _live: Array[MineSite] = []
 @export_range(50.0, 1000.0, 1.0, "suffix:m") var depth_min_m: float = 250.0
 ## Deepest shaft (m) a seed may draw. Deeper mines get more levels (one every level_spacing m).
 @export_range(50.0, 1000.0, 1.0, "suffix:m") var depth_max_m: float = 1000.0
-## Radius (m) of the shaft and of the hole in the ground. Raising it widens the shaft and its collar.
-@export_range(5.0, 40.0, 0.5, "suffix:m") var shaft_radius_m: float = 20.0
+## Radius (m) of the shaft and of the hole in the ground. 8.5 m: the lift's tower (6.9 m deep) stands against the +Z
+## wall, its back a metre in the rock, and its platform (8 m) reaches the shaft's flat side at -Z, where the stations
+## open (MineLayout shaft_flat_m). Raising it sinks the tower deeper in the rock; lowering it leaves its back in the air.
+@export_range(5.0, 40.0, 0.5, "suffix:m") var shaft_radius_m: float = 8.5
 ## Relief (m) of the shaft wall: higher = rougher rock, 0 = a smooth cylinder.
 @export_range(0.0, 2.0, 0.05, "suffix:m") var shaft_roughness_m: float = 0.5
 ## Depth (m) of the first level under the ground.
@@ -115,10 +131,6 @@ static var _live: Array[MineSite] = []
 @export_group("Lift")
 ## Speed (m/s) of the shaft's vehicle lift: 10 m/s takes a kilometre in under two minutes.
 @export_range(0.5, 10.0, 0.1, "suffix:m/s") var lift_speed_m_s: float = 10.0
-## How far (m) the lift's origin stands back from the shaft's rim, in the rock: its rails run in the wall.
-@export_range(0.0, 10.0, 0.1, "suffix:m") var lift_setback_m: float = 1.0
-## Distance (m) from the lift's origin out to its guide (VehicleLift.guide_z_offset): the bridges' length.
-@export_range(0.0, 10.0, 0.1, "suffix:m") var lift_guide_m: float = 2.0
 
 @export_group("Rendering")
 ## Material of the rock walls (triplanar in the mine's frame).
@@ -212,7 +224,26 @@ func _enter_tree() -> void:
     if not _live.has(self):
         _live.append(self)
     set_notify_transform(true)
+    _fit_collar()
     _refresh.call_deferred()
+
+
+## The concrete collar round the hole, at the shaft's radius: a ring over the cut edge, a low parapet inside, and a
+## gap at +Z where the road on top of the lift's tower comes in.
+func _fit_collar() -> void:
+    var ring := get_node_or_null("Collar/Ring") as CSGCylinder3D
+    if ring == null:
+        return
+    var radius := shaft_radius_m
+    ring.radius = radius + COLLAR_WIDTH_M
+    (get_node("Collar/Ring/Bore") as CSGCylinder3D).radius = radius - 1.0
+    (get_node("Collar/Parapet") as CSGCylinder3D).radius = radius - 0.6
+    (get_node("Collar/Parapet/Inside") as CSGCylinder3D).radius = radius - 1.0
+    var gap := get_node("Collar/LiftGap") as CSGBox3D
+    var from := radius - 2.0
+    var to := radius + COLLAR_WIDTH_M + 1.0
+    gap.size = Vector3(LIFT_ROAD_GAP_M, 6.0, to - from)
+    gap.position = Vector3(0.0, 0.0, (from + to) * 0.5)
 
 
 func _exit_tree() -> void:
@@ -972,9 +1003,16 @@ func _dust(amount: int, lifetime: float, extents: Vector3, mote_m: float) -> CPU
     return dust
 
 
-## Where the lift stands in the mine frame: on the rim at -Z, set back into the rock, facing the shaft.
+## Where the lift stands in the mine frame (the face of its rails, at the ground): its platform's front just short of
+## the shaft's flat side at -Z, where the stations open (lift_basis), its tower's back in the +Z wall.
 func lift_origin() -> Vector3:
-    return Vector3(0.0, 0.0, -(shaft_radius_m + lift_setback_m))
+    var settings: Dictionary = _layout.settings if not _layout.is_empty() else MineLayout.DEFAULTS
+    return Vector3(0.0, 0.0, -float(settings.shaft_flat_m) + LIFT_PLATFORM_FRONT_M + LIFT_FRONT_GAP_M)
+
+
+## The lift's orientation in the mine frame: turned half a turn, its +Z (where its platform goes) towards -Z.
+static func lift_basis() -> Basis:
+    return Basis(Vector3.UP, PI)
 
 
 ## The lift's stops: every level but the bottom one (its lower landing), as depths under the rim.
@@ -1000,13 +1038,14 @@ func _spawn_lift() -> void:
         "type": "vehicle_lift",
         "uuid": lift_uuid,
         "position": {"x": origin.x, "y": origin.y, "z": origin.z},
-        "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "rotation": {"x": 0.0, "y": PI, "z": 0.0},
         "scenename": LIFT_SCENE,
         "parent_id": uuid,
         "name": "MineLift",
-        "descent_depth": float(_layout.depth),
+        # The platform's last stop is level with the top of the pit, whose ramp goes down to the shaft's floor.
+        "descent_depth": float(_layout.depth) - LIFT_PIT_M,
         "stop_depths": Array(lift_stops(_layout)),
-        "guide_z_offset": lift_guide_m,
+        "guide_z_offset": 0.0,
         "max_speed": lift_speed_m_s,
         "notch_length_m": 0.0,
     })
