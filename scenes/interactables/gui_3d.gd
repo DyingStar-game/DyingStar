@@ -19,6 +19,9 @@ extends Node3D
 @export var render_when_seen: bool = true
 ## How far (m) from the camera the screen keeps rendering.
 @export var render_range_m: float = 15.0
+## Whether the screen hums like a machine's fan, heard from a few metres (ScreenHum). A vehicle's screen
+## and the wrist DataPad never do, whatever this says; turn it off for a screen that must be silent.
+@export var hums: bool = true
 
 var _frame: Array = []  # uv_frame: [origin, du, dv] in the mesh's frame, P(u, v) = origin + u du + v dv
 
@@ -50,6 +53,8 @@ func _ready() -> void:
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.cull_mode = BaseMaterial3D.CULL_BACK
 		node_quad.material_override = mat
+	if hums and node_quad != null:
+		ScreenHum.attach(self, to_local(node_quad.global_position) if is_inside_tree() else Vector3.ZERO)
 	set_process(render_when_seen and node_viewport != null)
 	if render_when_seen and node_viewport != null and GameOrchestrator.is_server():
 		node_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED  # nobody looks
