@@ -485,7 +485,7 @@ func _register_hole() -> void:
     if _terrain != null and _terrain != terrain and is_instance_valid(_terrain):
         _terrain.unregister_mine_hole(uuid)
     _terrain = terrain
-    var frame := terrain.global_transform.affine_inverse() * global_transform
+    var frame := frame_in(terrain)
     var hole := MinePlacement.make(uuid, frame, shaft_radius_m, float(_layout.depth))
     if hole.signature() == _hole_signature:
         return
@@ -1067,7 +1067,7 @@ func _measure_limits() -> void:
     if terrain == null or terrain.planet_data == null:
         return
     var data := terrain.planet_data
-    var frame := terrain.global_transform.affine_inverse() * global_transform
+    var frame := frame_in(terrain)
     var tiles := {}
     for gallery: Dictionary in _layout.galleries:
         for point: Vector3 in gallery.points:
@@ -1153,6 +1153,25 @@ func _mineral() -> CaveMineral:
     # Not found is asked again next time: the planet's zones may not be read yet.
     _mineral_known = _mineral_value != null
     return _mineral_value
+
+
+## This mine's frame in [param terrain]'s, composed from the local transforms up to their common Planet: exact and
+## steady. Through the global transforms (~1e10 m from the origin) it moved by fractions of a millimetre each time a
+## client re-placed the spinning planet, and every move re-cut the ground over the hole (a chunk rebuilt every 2 s,
+## the ground there hardly ever shown).
+func frame_in(terrain: PlanetTerrain) -> Transform3D:
+    return _up_to_planet(terrain).affine_inverse() * _up_to_planet(self)
+
+
+## [param node]'s transform in its nearest Planet ancestor's frame (its global one when it has none).
+static func _up_to_planet(node: Node3D) -> Transform3D:
+    var out := Transform3D.IDENTITY
+    var at: Node = node
+    while at != null and not at is Planet:
+        if at is Node3D:
+            out = (at as Node3D).transform * out
+        at = at.get_parent()
+    return out if at is Planet else node.global_transform
 
 
 ## The terrain of the body this mine belongs to: its nearest Planet ancestor's.

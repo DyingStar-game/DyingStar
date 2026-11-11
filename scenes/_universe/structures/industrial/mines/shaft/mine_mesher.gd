@@ -42,9 +42,29 @@ static func open_sky(depth_m: float) -> float:
     return 1.0 - smoothstep(SKY_OPEN_M, SKY_OPEN_M + SKY_FADE_M, depth_m)
 
 
+## Each vertex's share of open sky ([method open_sky]) as its colour, for vertices between [param bottom] and
+## [param top] (m, mine frame). Only a cell round the collar is worked out vertex by vertex: everywhere deeper (nearly
+## all of a mine) the array is filled at once; a GDScript loop over a cell's vertices cost milliseconds a cell on the
+## client's main thread.
+static func sky_colours(vertices: PackedVector3Array, bottom: float, top: float) -> PackedColorArray:
+    var colours := PackedColorArray()
+    colours.resize(vertices.size())
+    if open_sky(-top) <= 0.0:
+        colours.fill(Color(0, 0, 0, 1))
+    elif open_sky(-bottom) >= 1.0:
+        colours.fill(Color(1, 1, 1, 1))
+    else:
+        for index in vertices.size():
+            var sky := open_sky(-vertices[index].y)
+            colours[index] = Color(sky, sky, sky, 1.0)
+    return colours
+
+
 ## The visible mesh of a built cell, or null when it holds no surface: wall then floor surface. Each vertex's colour
-## carries its share of open sky in red ([method open_sky]; the collar is at y = 0 in the mine frame).
-static func to_mesh(built: Dictionary, wall_material: Material, floor_material: Material) -> ArrayMesh:
+## carries its share of open sky in red ([method open_sky]; the collar is at y = 0 in the mine frame); [param bottom]
+## and [param top] (m) bound the cell's height, so a deep one skips the work (sky_colours).
+static func to_mesh(built: Dictionary, wall_material: Material, floor_material: Material, bottom := -INF,
+        top := INF) -> ArrayMesh:
     var mesh := ArrayMesh.new()
     for part: Array in [["wall", wall_material], ["floor", floor_material]]:
         var vertices: PackedVector3Array = built.get(part[0], PackedVector3Array())
@@ -54,12 +74,7 @@ static func to_mesh(built: Dictionary, wall_material: Material, floor_material: 
         arrays.resize(Mesh.ARRAY_MAX)
         arrays[Mesh.ARRAY_VERTEX] = vertices
         arrays[Mesh.ARRAY_NORMAL] = built.get(part[0] + "_normals", PackedVector3Array())
-        var colours := PackedColorArray()
-        colours.resize(vertices.size())
-        for index in vertices.size():
-            var sky := open_sky(-vertices[index].y)
-            colours[index] = Color(sky, sky, sky, 1.0)
-        arrays[Mesh.ARRAY_COLOR] = colours
+        arrays[Mesh.ARRAY_COLOR] = sky_colours(vertices, bottom, top)
         mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
         if part[1] != null:
             mesh.surface_set_material(mesh.get_surface_count() - 1, part[1])

@@ -240,7 +240,8 @@ func _assemble(cell: Vector3i, built: Dictionary) -> Node3D:
         node = body
     else:
         var instance := MeshInstance3D.new()
-        instance.mesh = MineMesher.to_mesh(built, wall_material, floor_material)
+        var bottom := float(cell.y) * CELL_M - 1.0
+        instance.mesh = MineMesher.to_mesh(built, wall_material, floor_material, bottom, bottom + CELL_M + 2.0)
         if dress.is_valid():
             dress.call(instance)
         node = instance
