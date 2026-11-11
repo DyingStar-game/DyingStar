@@ -51,7 +51,7 @@ func build_screen(size_m: Vector2, px: Vector2i, range_m: float) -> Control:
 		set_process(false)
 		return null
 	_range_m = range_m
-	ScreenHum.attach(self)
+	ScreenHum.attach(self, Vector3.ZERO, maxf(size_m.x, size_m.y))
 	_box = AABB(Vector3(-size_m.x * 0.5, -size_m.y * 0.5, -DEPTH_M), Vector3(size_m.x, size_m.y, DEPTH_M))
 	var frame := _add_frame(size_m)
 

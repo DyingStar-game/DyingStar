@@ -4,6 +4,8 @@ extends Node
 ## entering it a banner names it (PlaceBanner) and, if they discovered it and it has no name yet, they are
 ## asked for one (PlaceNameDialog). The server decides who discovered what (server/discoveries.gd); this only
 ## reads the Discovery it replicates, which arrives about a second after the first entry.
+##
+## It also tells the cave's ambience how deep the player stands in it (CaveAmbience).
 
 const INTERVAL_S := 0.25
 ## The words for a place with no approved name, per kind.
@@ -14,6 +16,7 @@ var _notify: Callable
 var _input_locked: Callable
 var _dialog: PlaceNameDialog = null
 var _banner: PlaceBanner = null
+var _ambience: CaveAmbience = null
 var _elapsed := 0.0
 ## The cave stood in at the last check, "" outside.
 var _place_id := ""
@@ -34,6 +37,8 @@ func setup(player: Node3D, screens: Node, notify: Callable, input_locked: Callab
 	screens.add_child(_dialog)
 	_banner = PlaceBanner.new()
 	screens.add_child(_banner)
+	_ambience = CaveAmbience.new()
+	add_child(_ambience)
 
 
 ## The name dialog has the keyboard (PlayerClient._modal_open).
@@ -57,6 +62,8 @@ func _check() -> void:
 			_notify.call(TranslationServer.translate("%%PLACE_NAME_SENT"))
 	var site := _site_here()
 	var place_id := site.placement_id if site != null else ""
+	if _ambience != null:
+		_ambience.hear(_depth_in(site))
 	if place_id != _place_id:
 		_asked.erase(_place_id)  # a new visit asks again
 		_place_id = place_id
@@ -85,6 +92,17 @@ func _site_here() -> CavePlacement:
 	if planet == null or planet.planet_data == null or planet.planet_data.stargrot_plans.is_empty():
 		return null
 	return CavePlanetRegistry.site_at(planet.planet_data, planet.to_local(_player.global_position))
+
+
+## How far (m) the player stands from the nearest opening of [param site], the cave they are in; -1 in none.
+func _depth_in(site: CavePlacement) -> float:
+	var planet := Planet.of(_player.get_parent()) if site != null else null
+	if planet == null:
+		return -1.0
+	var mouths := PackedVector3Array()
+	for opening: Dictionary in site.openings():
+		mouths.append((opening.frame as Transform3D).origin)
+	return CaveAmbience.depth_from(mouths, planet.to_local(_player.global_position))
 
 
 ## The banner's two lines for a place of kind [param kind] and its [param discovery] (null: none yet).

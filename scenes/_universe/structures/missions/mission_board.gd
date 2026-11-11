@@ -48,6 +48,9 @@ func _ready() -> void:
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_texture = _viewport.get_texture()
 	_screen.material_override = material
+	# It hums as every screen of the world does, from further: it is as wide as the hall.
+	var face: AABB = _screen.get_aabb()
+	ScreenHum.attach(self, _screen.position, maxf(face.size.x, face.size.y))
 	_build()
 	_feed = MissionFeed.near(self)
 	_feed.updated.connect(show_missions)
