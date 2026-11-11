@@ -1,0 +1,30 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 3000.0,
+			"frequency": 1.0,
+			"properties": [
+				"position",
+				"rotation",
+				"parent_id"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 3000.0,
+			"frequency": 2.0,
+			"properties": [
+				"scenename",
+				"name",
+				"terrain_settled",
+				"seed",
+				"style",
+				"faces",
+				"face_step",
+				"gallery_max_m",
+				"lift_spawned"
+			]
+		}
+	]
+}

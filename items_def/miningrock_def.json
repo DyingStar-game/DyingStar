@@ -37,7 +37,8 @@
 				"ore_seed",
 				"mineral_id",
 				"host_rock_id",
-				"ground_color"
+				"ground_color",
+				"mine_block"
 			]
 		}
 	]

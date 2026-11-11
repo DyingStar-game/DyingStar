@@ -51,6 +51,19 @@ var stargrot_cut_sites: Array[CavePlacement]:
 		_stargrot_mutex.unlock()
 		return out
 var _stargrot_cut_sites: Array[CavePlacement] = []
+## The holes village mines open in the ground (MinePlacement, PlanetTerrain.register_mine_hole), cut with the caves'
+## openings. Same publication rule as stargrot_cut_sites: swapped under the lock, never edited in place.
+var mine_holes: Array[CavePlacement]:
+	set(value):
+		_stargrot_mutex.lock()
+		_mine_holes = value
+		_stargrot_mutex.unlock()
+	get:
+		_stargrot_mutex.lock()
+		var out := _mine_holes
+		_stargrot_mutex.unlock()
+		return out
+var _mine_holes: Array[CavePlacement] = []
 ## Finest-level pixels reached by the caves registered at run time, and those pixels lifted to coarser levels on
 ## demand (nside -> {ipix: true}): such caves are in no cache key, so their chunks stay out of the disk cache.
 var _stargrot_runtime_pixels: Dictionary = {}
@@ -60,11 +73,18 @@ var _stargrot_mutex := Mutex.new()
 
 
 func stargrot_placements() -> Array[CavePlacement]:
-	if not stargrot_cut_sites.is_empty():
-		return stargrot_cut_sites
+	var holes := mine_holes
+	var sites := stargrot_cut_sites
+	if not sites.is_empty():
+		if holes.is_empty():
+			return sites
+		var both: Array[CavePlacement] = sites.duplicate()
+		both.append_array(holes)
+		return both
 	var result: Array[CavePlacement] = []
 	for plan: Dictionary in stargrot_plans:
 		result.append(plan.placement)
+	result.append_array(holes)
 	return result
 
 

@@ -228,6 +228,11 @@ func signature() -> String:
     return str(authored).sha256_text().substr(0, 16)
 
 
+## Is the ground round this site's openings refined from the relief (CaveRefine)? A mine's hole opens in a flat pad.
+func refines_ground() -> bool:
+    return true
+
+
 ## Pins an entrance fit (CavePortal.fit) in this placement.
 func apply_fit(fit: Dictionary) -> void:
     network_offset = fit.offset

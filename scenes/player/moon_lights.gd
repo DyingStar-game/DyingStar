@@ -188,6 +188,7 @@ func _apply_moon(moon: Node3D, full_fraction: float, is_brightest: bool) -> void
 	var brightest: float = maxf(extinction.r, maxf(extinction.g, extinction.b))
 	var energy: float = (
 		sun.sun_energy * full_fraction * _phase(moon, to_moon) * brightest * moon_light_gain
+		* (1.0 - sun.underground)  # down a mine, no moonlight either
 	)
 	light.visible = energy > 0.0
 	if not light.visible:

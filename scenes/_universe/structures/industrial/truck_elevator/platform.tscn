@@ -1,0 +1,141 @@
+[gd_scene format=3 uid="uid://b74rf54ask8ta"]
+
+[ext_resource type="Script" uid="uid://cfh0yil7uqamp" path="res://scenes/_universe/structures/industrial/vehicle_lift/platform/platform.gd" id="1_33yc6"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_200t1"]
+[ext_resource type="Script" uid="uid://dyyxspysst76j" path="res://scenes/_universe/structures/industrial/truck_elevator/truck_elevator_piece.gd" id="3_xnk8m"]
+[ext_resource type="PackedScene" uid="uid://72xx2qx3n0dp" path="res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_platform.glb" id="4_5tuas"]
+[ext_resource type="Script" uid="uid://cd7somsqfow41" path="res://scenes/_universe/structures/industrial/truck_elevator/truck_elevator_ramp.gd" id="5_x6y1a"]
+[ext_resource type="PackedScene" uid="uid://ohu8dtiwci63" path="res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_ramp.glb" id="6_l2hfg"]
+[ext_resource type="Script" uid="uid://dkb1yb41vrq8q" path="res://scenes/_universe/structures/industrial/vehicle_lift/platform/platform_area_detection.gd" id="7_xewt5"]
+[ext_resource type="PackedScene" uid="uid://b2nf01fos6i0i" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/lift_base_interface.tscn" id="8_dc5st"]
+[ext_resource type="PackedScene" uid="uid://bl2utlkoofibq" path="res://scenes/_universe/structures/industrial/vehicle_lift/common/screen/interfaces/platform_buttons.tscn" id="10_fotoy"]
+[ext_resource type="Script" uid="uid://gmxncvkf487h" path="res://scenes/interactables/gui_3d.gd" id="11_ct5gu"]
+
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_u7ho7"]
+rough = true
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_use0q"]
+size = Vector3(9, 0.3, 8.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_u1f1b"]
+size = Vector3(0.12, 1.1, 7.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gc5qe"]
+size = Vector3(0.12, 1.1, 7.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_scxrj"]
+size = Vector3(9, 0.2, 1.35)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gq4r5"]
+size = Vector3(8.8, 4, 9)
+
+[sub_resource type="QuadMesh" id="QuadMesh_5t1kf"]
+size = Vector2(0.36, 0.216)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j8abk"]
+resource_local_to_scene = true
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_c3afs"]
+size = Vector3(0.36, 0.216, 0.03)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_r075x"]
+size = Vector3(0.36, 0.216, 0.02)
+
+[node name="Platform" type="RigidBody3D" unique_id=863886707 node_paths=PackedStringArray("_platform_interface")]
+collision_layer = 4
+collision_mask = 4
+input_ray_pickable = false
+axis_lock_linear_x = true
+axis_lock_linear_z = true
+axis_lock_angular_x = true
+axis_lock_angular_y = true
+axis_lock_angular_z = true
+mass = 4000.0
+physics_material_override = SubResource("PhysicsMaterial_u7ho7")
+freeze = true
+linear_damp = 1.0
+angular_damp = 1.0
+script = ExtResource("1_33yc6")
+_platform_interface = NodePath("Screen Display Interface/Platform Interface")
+
+[node name="PropSync" type="Node" parent="." unique_id=1682708775]
+script = ExtResource("2_200t1")
+type_name = "vehicle_lift_platform"
+smooth_transform = true
+
+[node name="Platform Visuals" type="Node3D" parent="." unique_id=603839206]
+script = ExtResource("3_xnk8m")
+
+[node name="Model" parent="Platform Visuals" unique_id=509184391 instance=ExtResource("4_5tuas")]
+
+[node name="Platform Collider 01" type="CollisionShape3D" parent="." unique_id=602386853]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07, -0.15, 3.6)
+shape = SubResource("BoxShape3D_use0q")
+
+[node name="Platform Collider 02" type="CollisionShape3D" parent="." unique_id=493720161]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.55, 3.9)
+shape = SubResource("BoxShape3D_u1f1b")
+
+[node name="Platform Collider 03" type="CollisionShape3D" parent="." unique_id=2080712067]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.37, 0.55, 3.9)
+shape = SubResource("BoxShape3D_gc5qe")
+
+[node name="Ramp" type="AnimatableBody3D" parent="." unique_id=1504594225]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.098, 7.853)
+collision_layer = 4
+collision_mask = 0
+input_ray_pickable = false
+sync_to_physics = false
+script = ExtResource("5_x6y1a")
+
+[node name="Ramp Visuals" type="Node3D" parent="Ramp" unique_id=58874849]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.098, -7.853)
+script = ExtResource("3_xnk8m")
+
+[node name="Model" parent="Ramp/Ramp Visuals" unique_id=1789732731 instance=ExtResource("6_l2hfg")]
+
+[node name="Ramp Collider" type="CollisionShape3D" parent="Ramp" unique_id=1296931190]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.074, 0, 0.572)
+shape = SubResource("BoxShape3D_scxrj")
+
+[node name="Area Detection" type="Area3D" parent="." unique_id=1705260613 groups=["active_monitor"]]
+collision_layer = 0
+collision_mask = 14
+input_ray_pickable = false
+monitorable = false
+script = ExtResource("7_xewt5")
+
+[node name="Collider" type="CollisionShape3D" parent="Area Detection" unique_id=1182003880]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.07, 2, 4.1)
+shape = SubResource("BoxShape3D_gq4r5")
+
+[node name="Screen Display Interface" type="SubViewport" parent="." unique_id=1378167231]
+disable_3d = true
+size = Vector2i(500, 300)
+
+[node name="Platform Interface" parent="Screen Display Interface" unique_id=1238492079 instance=ExtResource("8_dc5st")]
+unique_name_in_owner = true
+button_group_scene = ExtResource("10_fotoy")
+landing = 3
+
+[node name="Screen Display" type="StaticBody3D" parent="." unique_id=278279683 node_paths=PackedStringArray("node_viewport", "node_quad", "node_area")]
+transform = Transform3D(0, -0.258969313954337, 0.9658855493432026, 0, 0.9658855493432026, 0.258969313954337, -1, 0, 0, -4.475511716759852, 1.171884539709315, 4.431)
+collision_layer = 32
+collision_mask = 0
+script = ExtResource("11_ct5gu")
+node_viewport = NodePath("../Screen Display Interface")
+node_quad = NodePath("Screen Display Visual")
+node_area = NodePath("Screen Display Visual/TouchScreen")
+
+[node name="Screen Display Visual" type="MeshInstance3D" parent="Screen Display" unique_id=2000141133]
+mesh = SubResource("QuadMesh_5t1kf")
+surface_material_override/0 = SubResource("StandardMaterial3D_j8abk")
+
+[node name="TouchScreen" type="Area3D" parent="Screen Display/Screen Display Visual" unique_id=1017798622]
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Screen Display/Screen Display Visual/TouchScreen" unique_id=725355330]
+shape = SubResource("BoxShape3D_c3afs")
+
+[node name="Collider" type="CollisionShape3D" parent="Screen Display" unique_id=1733217732]
+shape = SubResource("BoxShape3D_r075x")

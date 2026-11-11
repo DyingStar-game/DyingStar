@@ -158,7 +158,7 @@ const SNAP_MAX_CELL_M := 30.0
 
 
 static func _snap(opening: Dictionary, data: PlanetData, cell_m: float, porches: Array = []) -> Dictionary:
-    if data == null or cell_m > SNAP_MAX_CELL_M or opening.has("axis"):
+    if data == null or cell_m > SNAP_MAX_CELL_M or opening.has("axis") or not bool(opening.get("snap", true)):
         return {}
     var frame: Transform3D = opening.frame
     if frame.basis.y.normalized().dot(frame.origin.normalized()) < 0.999:

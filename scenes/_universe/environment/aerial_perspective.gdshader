@@ -24,6 +24,10 @@ uniform sampler2D aerial_lut : filter_linear, repeat_disable;
 uniform float aerial_lut_distance = 0.0;
 uniform ivec2 lut_tiles = ivec2(32, 18);
 uniform int lut_slices = 32;
+// Share of the sky over the camera (AtmosphereRenderer.set_underground): 1 in the open, 0 down a mine. The light
+// the air scatters in (and the wind's dust) is the sun's and the sky's: none reaches the bottom of a shaft, where it
+// would light the far end of the shaft like daylight. The air still dims what lies behind it.
+uniform float open_sky : hint_range(0.0, 1.0) = 1.0;
 
 
 // One band of the table (0 in-scattered light, 1 transmittance) at [slice], where the pixel is. The cell
@@ -74,6 +78,7 @@ void fragment() {
 		vec3 dust = dust_march(sky_dir, max(dust_range, dust_far_range), FRAGCOORD.xy, dust_t);
 		ALPHA = 1.0 - dust_t;
 		ALBEDO = ALPHA > 1e-4 ? dust / ALPHA : vec3(0.0);
+		ALPHA *= open_sky;
 	} else {
 		// View-space position of the drawn surface, then its distance and its world direction. The
 		// camera is the origin of the atmosphere frame, so this direction and distance are all
@@ -95,7 +100,7 @@ void fragment() {
 		// wind's dust, nearest the eye, over all (dust_layer.gdshaderinc, WeatherSky).
 		float dust_t;
 		vec3 dust = dust_march(world_dir, distance_to_surface, FRAGCOORD.xy, dust_t);
-		ALBEDO = (texture(screen_tex, SCREEN_UV).rgb * transmittance + air) * dust_t + dust;
+		ALBEDO = (texture(screen_tex, SCREEN_UV).rgb * transmittance + air * open_sky) * dust_t + dust * open_sky;
 		ALPHA = 1.0;
 	}
 }

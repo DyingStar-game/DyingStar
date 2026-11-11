@@ -17,12 +17,17 @@ signal aiming_changed(aiming: bool)
 
 const PERFORATOR_SCENE := preload("res://scenes/_universe/props/tools/hammerdrill.tscn")
 const PERFORATION_DURATION := 5.0
+## What the tool can perforate: a mining rock, or a mine gallery's face (MineFace, its own duration).
+const TARGET_GROUPS := ["miningrock", "mineface"]
 ## How far past aim_rock_distance the aim ray reaches (m).
 const AIM_RAY_EXTRA_M := 2.0
 ## A point the ray gives farther than its own length plus this (m) is a stray one: ignored.
 const AIM_STRAY_MARGIN_M := 0.5
 ## Brief "rejected" jab when perforating off a fault: the bit lunges and snaps back.
 const REJECT_DURATION := 0.3
+## A remote drilling stopped this close (s) to its end counts as completed: the onlooker's clock started a little
+## after the driller's.
+const REMOTE_END_SLACK_S := 1.0
 
 @export_group("Aim")
 ## Mouse-sensitivity factor while aiming (1.0 = normal).
@@ -172,6 +177,9 @@ var _target_rock_uuid: String = ""     # rock aimed when the perforation started
 var _target_hit_local: Vector3 = Vector3.ZERO  # aim point, in that rock's local space
 var _target_aim_dir: Vector3 = Vector3.ZERO    # perforation direction, in that rock's local space
 var _target_on_fault: bool = false     # whether that aim point is on a fault (cuttable)
+var _target_duration: float = PERFORATION_DURATION  # how long that target must be perforated
+var _target_request: Dictionary = {}   # a mine face's own action, sent instead of perforate_rock
+var _fracture_face: Node = null        # the mine face whose layer cracks while it is drilled (every instance)
 var _reject_t: float = -1.0            # >=0 while playing the off-fault "rejected" jab
 var _perforator_base: Vector3 = Vector3.ZERO  # rest pos or reach target (the animation jabs on top of this)
 var _tip_gizmo: MeshInstance3D = null  # debug sphere on the bit tip (calibration)
@@ -336,7 +344,7 @@ func update_local(_delta: float) -> void:
 	if is_perforating:
 		if not is_aiming or not Input.is_action_pressed("perforate"):
 			_set_perforating(false)  # released -> cancelled, no effect
-		elif _perforation_t >= PERFORATION_DURATION:
+		elif _perforation_t >= _target_duration:
 			_emit_perforate()  # animation complete -> fracture the targeted rock
 			_set_perforating(false)
 			_play_sfx(sfx_perforate_end, sfx_perforate_end_db, sfx_perforate_end_falloff,
@@ -436,11 +444,21 @@ func _is_owner() -> bool:
 ## the rock's SURFACE (center distance minus its radius), so big variants — whose center is
 ## metres deep — are reachable like the small one (which has a ~0 radius -> unchanged).
 func _is_near_mining_rock() -> bool:
-	for r in get_tree().get_nodes_in_group("miningrock"):
-		if r is Node3D:
-			var radius: float = r.aim_radius() if r.has_method("aim_radius") else 0.0
-			if global_position.distance_to((r as Node3D).global_position) - radius <= aim_rock_distance:
-				return true
+	for group: String in TARGET_GROUPS:
+		for r in get_tree().get_nodes_in_group(group):
+			if r is Node3D:
+				var radius: float = r.aim_radius() if r.has_method("aim_radius") else 0.0
+				if global_position.distance_to((r as Node3D).global_position) - radius <= aim_rock_distance:
+					return true
+	return false
+
+## Is [param node] something the tool perforates (TARGET_GROUPS)?
+static func is_target(node: Object) -> bool:
+	if not node is Node:
+		return false
+	for group: String in TARGET_GROUPS:
+		if (node as Node).is_in_group(group):
+			return true
 	return false
 
 ## True if the camera is currently looking at a mining rock (camera raycast).
@@ -452,8 +470,7 @@ func _is_looking_at_rock() -> bool:
 	# The RayCast3D is enabled, so it auto-updates every physics frame. Do NOT call
 	# force_raycast_update() here: this runs in _process (idle frame) where the Jolt
 	# physics space is inaccessible, which throws "Space state is inaccessible" every frame.
-	var c = _rock_ray.get_collider()
-	return c != null and c.is_in_group("miningrock")
+	return is_target(_rock_ray.get_collider())
 
 ## World point under the crosshair: camera-center raycast hit, else far forward.
 func _aim_point() -> Vector3:
@@ -475,10 +492,20 @@ func _aim_point() -> Vector3:
 func _capture_target() -> void:
 	_target_rock_uuid = ""
 	_target_on_fault = false
+	_target_duration = PERFORATION_DURATION
+	_target_request = {}
 	# Uses the auto-updated ray (no force_raycast_update() in _process — see _is_looking_at_rock).
 	if _rock_ray == null or not _rock_ray.is_colliding():
 		return
 	var rock = _rock_ray.get_collider()
+	if rock != null and rock.is_in_group("mineface"):
+		# A mine gallery's face: its own fault, its own (longer) duration, its own action.
+		var face_hit: Vector3 = _rock_ray.get_collision_point()
+		_target_on_fault = rock.is_on_fault_world(face_hit)
+		_target_duration = rock.perforation_duration()
+		_target_request = rock.perforate_request(face_hit)
+		_target_rock_uuid = str(_target_request.get("uuid", ""))
+		return
 	if rock != null and rock.is_in_group("miningrock") and "uuid" in rock:
 		_target_rock_uuid = str(rock.uuid)
 		var hit_world: Vector3 = _rock_ray.get_collision_point()
@@ -495,6 +522,9 @@ func _capture_target() -> void:
 func _emit_perforate() -> void:
 	if _target_rock_uuid == "":
 		return
+	if not _target_request.is_empty():
+		sync_requested.emit(_target_request)
+		return
 	sync_requested.emit({
 		"action": "perforate_rock",
 		"uuid": _target_rock_uuid,
@@ -506,8 +536,12 @@ func _emit_perforate() -> void:
 func _apply_perforating(active: bool) -> void:
 	if active == is_perforating:
 		return
+	if not active:
+		_end_fracture()
 	is_perforating = active
 	_perforation_t = 0.0
+	if active:
+		_begin_fracture()
 	if not active and _perforator:
 		_perforator.position = _perforator_rest_pos
 		if _bit:
@@ -520,11 +554,36 @@ func _set_perforating(active: bool) -> void:
 	_apply_perforating(active)
 	sync_requested.emit({"action": "update_property", "perforating": active})
 
+## A mine face drilled: its layer starts cracking. The owner aimed it when the drilling began (_capture_target); an
+## onlooker finds it on its own copy of the driller's aim ray (head pitch and yaw are replicated).
+func _begin_fracture() -> void:
+	_fracture_face = null
+	if _rock_ray == null or not _rock_ray.is_colliding():
+		return
+	var face = _rock_ray.get_collider()
+	if face == null or not face.is_in_group("mineface"):
+		return
+	if not _is_owner():
+		_target_duration = face.perforation_duration()
+	_fracture_face = face
+	face.fracture_begin(_rock_ray.get_collision_point())
+
+
+## The drilling stopped: held to the end, the layer is about to fall; let go, its cracks close.
+func _end_fracture() -> void:
+	if _fracture_face != null and is_instance_valid(_fracture_face):
+		var slack := 0.0 if _is_owner() else REMOTE_END_SLACK_S
+		_fracture_face.fracture_end(_perforation_t >= _target_duration - slack)
+	_fracture_face = null
+
+
 ## Advance and apply the jackhammer visual (runs on every instance while perforating).
 func _update_perforation_visual(delta: float) -> void:
 	if not is_perforating or _perforator == null:
 		return
 	_perforation_t += delta
+	if _fracture_face != null and is_instance_valid(_fracture_face):
+		_fracture_face.fracture_progress(_perforation_t / maxf(_target_duration, 0.001))
 	var phase: float = absf(sin(_perforation_t * perforation_hammer_freq * TAU))
 	if animate_bit_only and _bit:
 		# The chisel/bit reciprocates along its local axis; the body only trembles.

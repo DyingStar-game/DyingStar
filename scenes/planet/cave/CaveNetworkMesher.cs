@@ -30,6 +30,11 @@ public partial class CaveNetworkMesher : RefCounted
     private Vector2 _fieldsOrigin;
     private Volume[] _volumes = Array.Empty<Volume>();
     private Shape[] _shapes = Array.Empty<Shape>();
+    /// <summary>A shaft's flat side (graph "clip_z", "clip_top"): under clip_top its air stops at the plane
+    /// z = clip_z, smooth, on the -Z side (a village mine's: the stations' floor meets its lift's platform along a
+    /// straight edge). NaN: a round shaft all the way.</summary>
+    private double[] _clipZ = Array.Empty<double>();
+    private double[] _clipTop = Array.Empty<double>();
     private double _phase;
     /// <summary>A density this far below zero (m) is never next to a surface crossing.</summary>
     private double _far;
@@ -67,10 +72,14 @@ public partial class CaveNetworkMesher : RefCounted
         _volumes=new Volume[source.Count];
         _shapes=new Shape[source.Count];
         _group=new int[source.Count];
+        _clipZ=new double[source.Count];
+        _clipTop=new double[source.Count];
         for (int i=0; i<source.Count; i++)
         {
             var v=source[i].AsGodotDictionary();
             string kind=v["kind"].AsString();
+            _clipZ[i] = v.ContainsKey("clip_z") ? v["clip_z"].AsDouble() : double.NaN;
+            _clipTop[i] = v.ContainsKey("clip_top") ? v["clip_top"].AsDouble() : double.PositiveInfinity;
             bool continues = kind == "tunnel" && i > 0 && v.ContainsKey("continues_a") && v["continues_a"].AsBool();
             _group[i] = continues ? _group[i - 1] : i;
             var a = v["a"].AsVector3();
@@ -431,7 +440,11 @@ public partial class CaveNetworkMesher : RefCounted
             double t = Math.Clamp((p-v.A).Dot(axis) / Math.Max(1e-9, axis.LengthSquared()), 0, 1);
             double pipe = v.Size.X - p.DistanceTo(v.A.Lerp(v.B, t));
             if (pipe < -(Math.Abs(s.Amp) * FbmPeak + _far)) return pipe;
-            return pipe + s.Amp * Fbm(p.X*s.Freq, p.Y*s.Freq, p.Z*s.Freq);
+            double shaft = pipe + s.Amp * Fbm(p.X*s.Freq, p.Y*s.Freq, p.Z*s.Freq);
+            // The flat side: air only past the plane, or above where it starts.
+            if (!double.IsNaN(_clipZ[index]))
+                shaft = Math.Min(shaft, Math.Max(p.Z - _clipZ[index], p.Y - _clipTop[index]));
+            return shaft;
         }
         if (v.Room)
         {

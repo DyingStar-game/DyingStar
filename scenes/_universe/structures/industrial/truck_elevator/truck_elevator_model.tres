@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="VehicleLiftModel" format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/truck_elevator/lower_landing.tscn" id="1_pjaol"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/truck_elevator/platform_system.tscn" id="2_i5dhk"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/truck_elevator/section.tscn" id="3_56g80"]
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift_model.gd" id="4_brf6u"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/truck_elevator/level_landing.tscn" id="5_ge0sf"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/truck_elevator/upper_landing.tscn" id="6_vjet4"]
+
+[resource]
+script = ExtResource("4_brf6u")
+upper_landing_scene = ExtResource("6_vjet4")
+lower_landing_scene = ExtResource("1_pjaol")
+stop_landing_scene = ExtResource("5_ge0sf")
+rail_segment_scene = ExtResource("3_56g80")
+platform_system_scene = ExtResource("2_i5dhk")
+platform_system_offset = Vector3(0, 0, 0)
+segment_height_m = 10.0
+segment_top_m = 11.47
+segment_bottom_m = 9.3
+segment_origin_m = 0.0
+segment_extra = 0
+rail_collider_size = Vector2(6.93, 6.13)
+rail_collider_center = Vector2(-0.075, -3.865)

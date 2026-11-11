@@ -52,6 +52,11 @@ const DEV_TOOL_OF_ACTION: Dictionary = {
 const ADMIN_ACTIONS: Array[String] = ["admin_fill_shelves"]
 ## How far (m) from a cargo depot's origin an admin may stand to fill its shelves.
 const _ADMIN_DEPOT_RANGE := 300.0
+## Below the ground this close (m) to a village mine's dug air, a falling player is put back on the mine's floor
+## instead of on the ground above.
+const _MINE_RESCUE_MARGIN_M := 40.0
+## Height (m) over the mine's floor a rescued player's feet (its origin) are set at.
+const _MINE_RESCUE_LIFT_M := 0.3
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
@@ -519,6 +524,16 @@ func server_action_received(data: Dictionary) -> void:
 				rock.server_perforate(
 					Vector3(h.get("x", 0.0), h.get("y", 0.0), h.get("z", 0.0)),
 					Vector3(dd.get("x", 0.0), dd.get("y", 0.0), dd.get("z", 0.0)))
+		"perforate_mine_face":
+			# Authoritative layer fall: the mine checks the layer, the fault and the reach (MineSite).
+			var mine := MineSite.find(str(data.get("uuid", "")))
+			if mine == null:
+				push_warning("[MineSite] %s perforated a face of mine '%s', not live on this server"
+						% [player.client_uuid, str(data.get("uuid", ""))])
+			elif player.owns_mining_tool:
+				var mh: Dictionary = data.get("hit", {})
+				mine.server_perforate_face(player, int(data.get("gallery", -1)), int(data.get("step", -1)),
+						Vector3(mh.get("x", 0.0), mh.get("y", 0.0), mh.get("z", 0.0)))
 		"delete_prop":
 			# Admin cleanup tool (dev tool "zapette", refused at the top while it is off): permanently
 			# remove a player-spawned prop.
@@ -1574,6 +1589,11 @@ func _hold_until_ground(delta: float) -> bool:
 			cave_body.to_local(player.global_position)):
 		_ground_seen = true
 		return false
+	# Down a village mine the ground is its rock, built around the people near it (MineCells).
+	var mine := MineSite.mine_at(player.global_position)
+	if mine != null and mine.rock_ready_at(player.global_position):
+		_ground_seen = true
+		return false
 	var terrain: PlanetTerrain = null
 	var body: Planet = Planet.of(player.get_parent())
 	# In orbit (a station) the nearest body is hundreds of kilometres down: its terrain will never be
@@ -1584,7 +1604,7 @@ func _hold_until_ground(delta: float) -> bool:
 		# Not on a celestial body at all (EVA, a body in transit, a station): nothing to wait for.
 		_ground_seen = true
 		return false
-	if terrain.has_collision_under(player.global_position):
+	if mine == null and terrain.has_collision_under(player.global_position):
 		_ground_seen = true
 		return false
 	_ground_wait += delta
@@ -3385,6 +3405,8 @@ func _catch_if_below_surface(area: Area3D) -> void:
 	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
 	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
 		return  # at/near or above the surface — the collision handles it
+	if MineSite.contains_point(player.global_position):
+		return  # down a village mine's shaft or galleries: under the ground on purpose
 	# Under the RAW relief — but a cutting or a tunnel of a profiled line is
 	# ground carved away on purpose, and the body is standing on its floor.
 	# The dearer carved test only runs here, where the raw one has spoken.
@@ -3399,6 +3421,16 @@ func _catch_if_below_surface(area: Area3D) -> void:
 		if player_dist >= ground - player._SURFACE_CATCH_MARGIN:
 			return  # standing on the collision, under the theoretical crest: nothing fell through
 		surface_dist = ground
+	# Fell through a village mine's rock (a block of a fallen layer pushed them through its floor): back on the
+	# mine's floor, not on the ground hundreds of metres above it.
+	var mine := MineSite.mine_near(player.global_position, _MINE_RESCUE_MARGIN_M)
+	if mine != null:
+		var floor_at := mine.floor_near_global(player.global_position, _MINE_RESCUE_LIFT_M)
+		print("[MineSite] %s: %s fell through the rock at %s, put back on the floor at %s"
+				% [mine.name, player.client_uuid, mine.to_local(player.global_position), mine.to_local(floor_at)])
+		player.global_position = floor_at
+		player.velocity = Vector3.ZERO
+		return
 	player.global_position = planet.global_position + planet_basis * (dir * surface_dist)
 	var up_world: Vector3 = (planet_basis * dir).normalized()
 	var radial: float = player.velocity.dot(up_world)
