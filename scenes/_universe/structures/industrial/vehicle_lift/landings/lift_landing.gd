@@ -82,10 +82,8 @@ func update_screen(data: Dictionary):
 		return
 	if action.get("landing") != ("upper" if is_upper else "lower"):
 		return
-	if is_upper:
-		vehicle_lift.move_up()
-	else:
-		vehicle_lift.move_down()
+	# Straight here, past every stop on the way (a mine's levels): the platform's buttons go stop by stop.
+	vehicle_lift.call_to_end(is_upper)
 
 
 ## SERVER, screen contract (ScreenTarget): who sent the screen action about to be handled. The

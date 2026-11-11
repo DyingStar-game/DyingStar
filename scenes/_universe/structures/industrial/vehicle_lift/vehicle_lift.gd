@@ -136,7 +136,7 @@ const REST_SPEED_M_S: float = 0.02
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 			return
 		if value == true:
-			move_up()
+			call_to_end(true)
 		debug_move_up = false
 
 ## SERVER, at run time: tick to stop the platform where it is (unticks itself).
@@ -154,7 +154,7 @@ const REST_SPEED_M_S: float = 0.02
 		if Engine.is_editor_hint() or not GameOrchestrator.is_server():
 			return
 		if value == true:
-			move_down()
+			call_to_end(false)
 		debug_move_down = false
 
 ## SERVER, at run time: tick to put the platform back at its starting position (unticks itself).
@@ -613,6 +613,17 @@ func next_stop_ratio(down: bool) -> float:
 	return best / descent_depth * 100.0
 
 
+## SERVER: send the platform straight to the upper landing ([param upper]) or the lower one, past every stop: that
+## landing's call button. (The platform's own up and down buttons go stop by stop: move_up, move_down.)
+func call_to_end(upper: bool) -> void:
+	_go_to_ratio(0.0 if upper else 100.0)
+
+
+## Whether the platform stands at the upper landing (within STOP_REACHED_M).
+func at_top() -> bool:
+	return platform_progress_ratio / 100.0 * descent_depth < STOP_REACHED_M
+
+
 ## SERVER: send the platform to stop [param index] (a stop landing's call button).
 func call_to_stop(index: int) -> void:
 	if index < 0 or index >= stop_depths.size() or descent_depth <= 0.0:
@@ -709,6 +720,11 @@ func move_up() -> void:
 	if platform_progress_ratio <= 0.0:
 		return
 	_go_to_ratio(next_stop_ratio(false))
+
+
+## Whether the platform is travelling (replicated: the server's word on every client too).
+func is_moving() -> bool:
+	return _is_moving
 
 
 func stop_movement() -> void:
