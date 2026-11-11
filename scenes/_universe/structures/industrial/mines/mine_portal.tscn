@@ -22,20 +22,26 @@ apron_m = 10.0
 metadata/_custom_type_script = "uid://custckqbhkkow"
 
 [node name="Ground" type="CSGBox3D" parent="TerrainPad" unique_id=116955709]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0)
-size = Vector3(24, 1, 14)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6000000000058208, 8)
+size = Vector3(30, 1, 30)
 
 [node name="Blockout" type="CSGBox3D" parent="." unique_id=661666813]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.8, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.80000000000291, 8)
 use_collision = true
 collision_mask = 0
-size = Vector3(24, 12, 14)
+size = Vector3(30, 12, 30)
 material = ExtResource("3_placeholder_")
 
 [node name="Tunnel" type="CSGBox3D" parent="Blockout" unique_id=1965280321]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.8, -3.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.051403522, -0.2519138336181639, -0.005652666)
 operation = 2
-size = Vector3(7, 6, 8)
+size = Vector3(29.6, 11.943, 29.6)
+material = ExtResource("3_placeholder_")
+
+[node name="Tunnel2" type="CSGBox3D" parent="Blockout" unique_id=8837979]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.075152755, -2.5427653074264525, -13.554406604498382)
+operation = 2
+size = Vector3(7.820779629397293, 6.930498387421721, 6.415815142096108)
 material = ExtResource("3_placeholder_")
 
 [node name="Frame" type="CSGCombiner3D" parent="." unique_id=922069791]

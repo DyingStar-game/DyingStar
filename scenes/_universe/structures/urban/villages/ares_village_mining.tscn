@@ -12,8 +12,8 @@
 [ext_resource type="PackedScene" uid="uid://nc8eir5a4h68" path="res://scenes/_universe/props/containers/container_standard_b_1200x240x240.tscn" id="cont_b"]
 [ext_resource type="PackedScene" uid="uid://ddr43a2c4deep" path="res://scenes/_universe/props/containers/container_liquid_1200x240x240.tscn" id="cont_l"]
 [ext_resource type="PackedScene" uid="uid://dbhjkpit6n4ns" path="res://scenes/_universe/props/containers/container_benne_1200x240x240.tscn" id="cont_s"]
-[ext_resource type="PackedScene" uid="uid://qaosfxypu3rx" path="res://scenes/_universe/structures/industrial/mines/mine_portal.tscn" id="mvp_1"]
 [ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/mines/shaft/mine_site.tscn" id="mine_shaft"]
+[ext_resource type="PackedScene" uid="uid://qaosfxypu3rx" path="res://scenes/_universe/structures/industrial/mines/mine_portal.tscn" id="mvp_1"]
 [ext_resource type="PackedScene" uid="uid://b0nvj345w1pd6" path="res://scenes/_universe/structures/industrial/mines/spoil_heap.tscn" id="mvp_2"]
 [ext_resource type="PackedScene" uid="uid://c3ma5g7nd8jwu" path="res://scenes/_universe/structures/industrial/mines/crusher.tscn" id="mvp_3"]
 [ext_resource type="PackedScene" uid="uid://h3h1hxblnq5y" path="res://scenes/_universe/structures/industrial/mines/changing_rooms.tscn" id="mvp_4"]
@@ -88,14 +88,14 @@ point_count = 2
 
 [sub_resource type="Curve3D" id="Curve3D_FenceWestNorth"]
 _data = {
-"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -228.2999963728025, 0, -78.97646490517252, 0, 0, 0, 0, 0, 0, -228.3, 0, -39.7),
+"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -228.2999963728025, 0, -78.97646490517252, 0, 0, 0, 0, 0, 0, -228.3, 0, -43.19192308219299),
 "tilts": PackedFloat64Array(0, 0)
 }
 point_count = 2
 
 [sub_resource type="Curve3D" id="Curve3D_FenceWestSouth"]
 _data = {
-"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -229.4, 0, -17.7, 0, 0, 0, 0, 0, 0, -229.4, 0, 22),
+"points": PackedVector3Array(0, 0, 0, 0, 0, 0, -229.4, 0, -13.003965510154256, 0, 0, 0, 0, 0, 0, -229.4, 0, 22),
 "tilts": PackedFloat64Array(0, 0)
 }
 point_count = 2
@@ -398,7 +398,7 @@ transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 290, 0, -20)
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -230, 0, -28)
 
 [node name="MineShaft" parent="." unique_id=1730418827 instance=ExtResource("mine_shaft")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -280, 0, -28)
+transform = Transform3D(6.123233995736766e-17, 0, 1, 0, 1, 0, -1, 0, 6.123233995736766e-17, -235.989754897422, 0, -28)
 
 [node name="Sterile" parent="." unique_id=286279557 instance=ExtResource("mvp_2")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -190.6034479771948, 0, -103.01884492269193)
@@ -644,10 +644,10 @@ metadata/_custom_type_script = "uid://kckyilp3a68r"
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -172.79755921426988, 0, -54.12738413769102)
 
 [node name="Pretreatment2" parent="." unique_id=1889403175 instance=ExtResource("mvp_3")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -151.80375896388495, 0, -54.12738413769102)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -151.80375896388497, 0, -54.12738413769102)
 
 [node name="Pretreatment3" parent="." unique_id=173872845 instance=ExtResource("mvp_3")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -131.09406049580227, 0, -54.12738413769102)
 
 [node name="Pretreatment4" parent="." unique_id=1523255149 instance=ExtResource("mvp_3")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -194.40688863481842, 0, -54.12738413769102)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -194.4068886348184, 0, -54.12738413769102)
