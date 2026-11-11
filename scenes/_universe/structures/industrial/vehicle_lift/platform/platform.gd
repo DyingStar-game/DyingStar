@@ -171,4 +171,6 @@ func apply_prop_data(_data: Dictionary) -> void:
 			_platform_interface.display_new_weight(_weight_on_platform)
 
 func debug_reset_position() -> void:
-	position = Vector3(0.0,0.0,2.425)
+	var system := get_parent()
+	position = system.get("platform_offset") if system != null and "platform_offset" in system \
+			else Vector3(0.0, 0.0, 2.425)

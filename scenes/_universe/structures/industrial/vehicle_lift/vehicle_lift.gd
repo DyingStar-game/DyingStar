@@ -3,6 +3,10 @@ class_name VehicleLift
 extends Node3D
 
 
+## Which lift this is: its parts and measures (VehicleLiftModel). Empty = the first lift (vehicle_lift_model_a).
+## Read when the lift enters the tree: change it before, not on a live lift.
+@export var model: VehicleLiftModel
+
 ## Where the platform stands on its run (%): 0 = at the upper landing, 100 = at the lower one. The
 ## server drives it while the lift moves; set it by hand in the editor to preview a position.
 @export_range(0.0, 100.0, 0.01, "suffix:%") var platform_progress_ratio: float = 0.0:
@@ -163,19 +167,25 @@ const REST_SPEED_M_S: float = 0.02
 			reset_platform()
 		debug_reset_platform = false
 
+## This lift's model: model, or the first lift's when it has none.
+func lift_model() -> VehicleLiftModel:
+	return model if model != null else DEFAULT_MODEL
+
+
 func reset_platform() -> void:
 	var platform_system = get_node_or_null("Platform System")
 	if not platform_system:
 		return
 
-	platform_system.position = PLATFORM_SYSTEM_INITIAL_POSITION
+	platform_system.position = lift_model().platform_system_offset
 	var platform = platform_system.get_node_or_null("Platform")
 	if platform and platform.has_method("debug_reset_position"):
 		platform.debug_reset_position()
 
 
 
-const PLATFORM_SYSTEM_INITIAL_POSITION: Vector3 = Vector3(0.0,-0.175,2.075)
+## The first lift's model, for a lift with none (model).
+const DEFAULT_MODEL := preload("res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift_model_a.tres")
 ## Width of the notch under a lift when its data does not say (see notch_width_m).
 const NOTCH_DEFAULT_WIDTH_M := 24.0
 ## How far under the lower landing's floor the notch's floor is: the lift's origin stands this high
@@ -183,21 +193,13 @@ const NOTCH_DEFAULT_WIDTH_M := 24.0
 const NOTCH_FLOOR_BELOW_LANDING_M := 0.74
 ## Name of the TerrainNotch child the lift keeps in step with its dimensions.
 const NOTCH_NODE_NAME := "TerrainNotch"
-const LOWER_LANDING_INITIAL_POSITION: Vector3 = Vector3(0.0,0.0,0.0)
 ## Name of the landing of stop i (stop_depths): this prefix and i. Derived, never saved with the scene.
 const STOP_LANDING_PREFIX := "StopLanding"
 ## A stop this close (m) to the platform is where it already is.
 const STOP_REACHED_M := 0.5
 
 const LIFT_DIR: String = "res://scenes/_universe/structures/industrial/vehicle_lift/"
-const BASE_SCENE: PackedScene = preload(LIFT_DIR + "base/base.tscn")
-const UPPER_LANDING_SCENE: PackedScene = preload(LIFT_DIR + "landings/upper_landing/upper_landing.tscn")
-const LOWER_LANDING_SCENE: PackedScene = preload(LIFT_DIR + "landings/lower_landing/lower_landing.tscn")
-const RAIL_HEAD_SCENE: PackedScene = preload(LIFT_DIR + "rail/rail_head.tscn")
-const RAIL_SEGMENT_SCENE: PackedScene = preload(LIFT_DIR + "rail/rail_segment.tscn")
-const PLATFORM_SYSTEM_SCENE: PackedScene = preload(LIFT_DIR + "platform/platform_system.tscn")
 const RAILING_LIBRARY_SCENE: PackedScene = preload(LIFT_DIR + "railing/railing_segments.tscn")
-const DYNAMIC_BRIDGES_SCENE: PackedScene = preload(LIFT_DIR + "dynamic_bridge/dynamic_bridges.tscn")
 
 
 var _target_ratio: float = 0.0
@@ -334,37 +336,16 @@ func _ready() -> void:
 		if node_owner:
 			prop_sync.owner = node_owner
 
-	if not has_node("Base"):
-		var base: StaticBody3D = BASE_SCENE.instantiate()
-		base.name = "Base"
-		add_child(base)
-
+	var parts := lift_model()
+	for part: Array in [["Base", parts.base_scene], ["Upper Landing", parts.upper_landing_scene],
+			["Lower Landing", parts.lower_landing_scene], ["Rail Head", parts.rail_head_scene]]:
+		if has_node(part[0]) or part[1] == null:
+			continue
+		var node: Node = (part[1] as PackedScene).instantiate()
+		node.name = part[0]
+		add_child(node)
 		if node_owner:
-			base.owner = node_owner
-
-	if not has_node("Upper Landing"):
-		var upper: StaticBody3D = UPPER_LANDING_SCENE.instantiate()
-		upper.name = "Upper Landing"
-		add_child(upper)
-
-		if node_owner:
-			upper.owner = node_owner
-
-	if not has_node("Lower Landing"):
-		var lower: StaticBody3D = LOWER_LANDING_SCENE.instantiate()
-		lower.name = "Lower Landing"
-		add_child(lower)
-
-		if node_owner:
-			lower.owner = node_owner
-
-	if not has_node("Rail Head"):
-		var rail_head: StaticBody3D = RAIL_HEAD_SCENE.instantiate()
-		rail_head.name = "Rail Head"
-		add_child(rail_head)
-
-		if node_owner:
-			rail_head.owner = node_owner
+			node.owner = node_owner
 
 	if not has_node("Rail Segments"):
 		var rail_segments: StaticBody3D = StaticBody3D.new()
@@ -386,8 +367,8 @@ func _ready() -> void:
 			rail_segments_visuals.owner = node_owner
 			rail_segments_collider.owner = node_owner
 
-	if not has_node("Dynamic Bridges"):
-		var dynamic_bridges: Node3D = DYNAMIC_BRIDGES_SCENE.instantiate()
+	if not has_node("Dynamic Bridges") and parts.dynamic_bridges_scene != null:
+		var dynamic_bridges: Node3D = parts.dynamic_bridges_scene.instantiate()
 		dynamic_bridges.name = "Dynamic Bridges"
 		add_child(dynamic_bridges)
 
@@ -414,12 +395,12 @@ func spawn_platform_system() -> void:
 		"type": "vehicle_lift_platformsystem",
 		"uuid": system_uuid,
 		"position": {
-			"x": PLATFORM_SYSTEM_INITIAL_POSITION.x,
-			"y": PLATFORM_SYSTEM_INITIAL_POSITION.y,
-			"z": PLATFORM_SYSTEM_INITIAL_POSITION.z
+			"x": lift_model().platform_system_offset.x,
+			"y": lift_model().platform_system_offset.y,
+			"z": lift_model().platform_system_offset.z
 		},
 		"rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
-		"scenename": PLATFORM_SYSTEM_SCENE.resource_path.trim_prefix("res://"),
+		"scenename": lift_model().platform_system_scene.resource_path.trim_prefix("res://"),
 		"parent_id": uuid,
 		"name": "Platform System"
 	})
@@ -506,14 +487,14 @@ func _update_visuals() -> void:
 	var rail_segments: Node3D = get_node_or_null("Rail Segments")
 	var dynamic_bridges: Node3D = get_node_or_null("Dynamic Bridges")
 
-	if base:
+	if base and base.has_method("set_axis_length"):
 		base.set_axis_length(guide_z_offset)
 
 	if upper_landing:
 		upper_landing.position = Vector3(0, 0, guide_z_offset)
 
 	if lower_landing:
-		lower_landing.position = LOWER_LANDING_INITIAL_POSITION + Vector3(0, -descent_depth, guide_z_offset)
+		lower_landing.position = lift_model().lower_landing_offset + Vector3(0, -descent_depth, guide_z_offset)
 
 	_update_stop_landings()
 
@@ -529,18 +510,21 @@ func _update_visuals() -> void:
 
 		rail_segments.position = Vector3(0, 0, guide_z_offset)
 
-		var segment_height: float = 3.0
-		var nb_segments: int = ceili(descent_depth / segment_height) + 1
+		var parts := lift_model()
+		var segment_height: float = parts.segment_height_m
+		var nb_segments: int = parts.segment_count(descent_depth)
 
 		var rail_segments_visuals: Node3D = rail_segments.get_node_or_null("Visuals")
 		if rail_segments_visuals:
 			var current_segment_index: int = rail_segments_visuals.get_child_count()
 
 			for segment_index in range(current_segment_index, nb_segments):
-				var segment = RAIL_SEGMENT_SCENE.instantiate()
+				if parts.rail_segment_scene == null:
+					break
+				var segment = parts.rail_segment_scene.instantiate()
 				segment.name = "Rail Segment %d" % segment_index
 
-				var pos: Vector3 = Vector3(0.0, -(segment_index * segment_height + 1.5), 0.0)
+				var pos: Vector3 = Vector3(0.0, parts.segment_y(segment_index), 0.0)
 				segment.position = pos
 				rail_segments_visuals.add_child(segment)
 
@@ -555,12 +539,14 @@ func _update_visuals() -> void:
 
 		var rail_segments_collider: CollisionShape3D = rail_segments.get_node_or_null("Collider")
 
-		if rail_segments_collider and rail_segments_collider.shape:
-			var total_height = nb_segments * segment_height
-			rail_segments_collider.shape.size = Vector3(2.67, total_height, 0.5)
-			rail_segments_collider.position = Vector3(0, -total_height / 2.0, 2.25)
+		if rail_segments_collider and rail_segments_collider.shape is BoxShape3D:
+			var total_height = maxf(nb_segments * segment_height, 0.01)
+			rail_segments_collider.shape.size = Vector3(parts.rail_collider_size.x, total_height,
+					parts.rail_collider_size.y)
+			rail_segments_collider.position = Vector3(parts.rail_collider_center.x,
+					-(parts.segment_top_m + total_height / 2.0), parts.rail_collider_center.y)
 
-	if dynamic_bridges:
+	if dynamic_bridges and dynamic_bridges.has_method("update_length"):
 		dynamic_bridges.update_length(guide_z_offset)
 		dynamic_bridges.update_collider_position(guide_z_offset)
 
@@ -585,7 +571,12 @@ func _update_stop_landings() -> void:
 	for stop in stop_depths.size():
 		var landing := get_node_or_null(STOP_LANDING_PREFIX + str(stop)) as Node3D
 		if landing == null:
-			landing = UPPER_LANDING_SCENE.instantiate()
+			var scene: PackedScene = lift_model().stop_landing_scene
+			if scene == null:
+				scene = lift_model().upper_landing_scene
+			if scene == null:
+				continue
+			landing = scene.instantiate()
 			landing.name = STOP_LANDING_PREFIX + str(stop)
 			landing.set("is_upper", false)
 			landing.set("stop_index", stop)
@@ -653,7 +644,7 @@ func _update_platform_movement() -> void:
 
 	if platform:
 		var target_y: float = lerpf(0.0, -descent_depth, (platform_progress_ratio / 100.0))
-		var target_position: Vector3 = PLATFORM_SYSTEM_INITIAL_POSITION + Vector3(0, target_y, guide_z_offset)
+		var target_position: Vector3 = lift_model().platform_system_offset + Vector3(0, target_y, guide_z_offset)
 
 		### INFO Ne fonctionne pas en ligne: probablement à cause du mouvement combiné (planete, orbite)
 		#if Engine.is_editor_hint():
@@ -701,7 +692,7 @@ func _process(_delta: float) -> void:
 			if platform_system:
 				platform_system.update_interface_lift_progress(platform_progress_ratio, eta, "Going Up" if display_direction < 0.0 else "Going Down")
 
-	if base:
+	if base and base.has_method("update_animated_axis_rotation"):
 		base.set_axis_length(guide_z_offset)
 		base.update_animated_axis_rotation(platform_progress_ratio, descent_depth)
 

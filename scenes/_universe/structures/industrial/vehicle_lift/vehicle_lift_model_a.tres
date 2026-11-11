@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="VehicleLiftModel" load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift_model.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/base/base.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/landings/upper_landing/upper_landing.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/landings/lower_landing/lower_landing.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/rail/rail_head.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/rail/rail_segment.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/dynamic_bridge/dynamic_bridges.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://scenes/_universe/structures/industrial/vehicle_lift/platform/platform_system.tscn" id="8"]
+
+[resource]
+script = ExtResource("1")
+base_scene = ExtResource("2")
+upper_landing_scene = ExtResource("3")
+lower_landing_scene = ExtResource("4")
+rail_head_scene = ExtResource("5")
+rail_segment_scene = ExtResource("6")
+dynamic_bridges_scene = ExtResource("7")
+platform_system_scene = ExtResource("8")
