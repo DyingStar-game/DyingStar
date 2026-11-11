@@ -162,6 +162,10 @@ var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast st
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _last_tap_action: String = ""  # last "tap:<n>:x:y:z" seen (ScreenPoke.tap_action)
+var _last_hold_action: String = ""  # last "hold:<n>:x:y:z" seen (ScreenPoke.hold_action)
+## OWNER: the button is held down on a screen since a tap, and when the others were last told (ms).
+var _tap_holding: bool = false
+var _hold_said_ms: int = 0
 var _last_tap_sound: AudioStream = null  # never the same tap sound twice running
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
@@ -1103,6 +1107,7 @@ func _point_screen(ui_focus: bool) -> bool:
 			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
+	_hold_tap(gui != null)
 	return gui != null or watched
 
 
@@ -1172,6 +1177,8 @@ func _input(event: InputEvent) -> void:
 		_pointed_gui.click_at(_pointed_at, event.is_pressed())
 		if event.is_pressed():
 			_screen_tap(_pointed_at)
+			_tap_holding = true  # until the button is let go, or the crosshair leaves the screen (_hold_tap)
+			_hold_said_ms = Time.get_ticks_msec()
 	if typing or is_instance_valid(_pointed_gui):
 		get_viewport().set_input_as_handled()
 
@@ -1188,6 +1195,25 @@ func _screen_tap(at: Vector3) -> void:
 	var p: Vector3 = player.to_local(at)
 	show_screen_tap(p)
 	player.client_send_action_to_server({"action": "screen_tap", "p": {"x": p.x, "y": p.y, "z": p.z}})
+
+
+## The button kept down on a screen ([param on_screen]: the crosshair is still on one): the finger stays
+## on it and follows the crosshair (ScreenPoke, Player.tap_hold_until_ms), and the others are told now and
+## then. Let go, or off the screen: the arm comes back.
+func _hold_tap(on_screen: bool) -> void:
+	if not _tap_holding:
+		return
+	if not on_screen or not Input.is_action_pressed(&"perforate"):
+		_tap_holding = false
+		player.tap_hold_until_ms = 0
+		return
+	var now: int = Time.get_ticks_msec()
+	var p: Vector3 = player.to_local(_pointed_at)
+	player.tap_point = p
+	player.tap_hold_until_ms = now + int(ScreenPoke.HOLD_KEEP_S * 1000.0)
+	if now - _hold_said_ms >= int(ScreenPoke.HOLD_SAY_S * 1000.0):
+		_hold_said_ms = now
+		player.client_send_action_to_server({"action": "screen_hold", "p": {"x": p.x, "y": p.y, "z": p.z}})
 
 
 ## Play a tap at [param p] (this body's frame): the arm (CharacterAnimator reads tap_serial), and the
@@ -2384,6 +2410,13 @@ func client_channel_data_update(data: Dictionary) -> void:
 			var tapped: Variant = ScreenPoke.parse_tap(action)
 			if player.remote_player and _sfx_live and tapped != null:
 				show_screen_tap(tapped)
+		elif action.begins_with("hold:") and action != _last_hold_action:
+			_last_hold_action = action
+			# Another body keeping its finger on a screen: the arm stays out a little longer, there.
+			var held_at: Variant = ScreenPoke.parse_hold(action)
+			if player.remote_player and _sfx_live and held_at != null:
+				player.tap_point = held_at
+				player.tap_hold_until_ms = Time.get_ticks_msec() + int(ScreenPoke.HOLD_KEEP_S * 1000.0)
 		elif action.begins_with("emote:") and action != _last_emote_action:
 			_last_emote_action = action
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key

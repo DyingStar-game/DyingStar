@@ -10,6 +10,11 @@ extends SkeletonModifier3D
 ## CharacterAnimator drives it from Player.tap_serial / tap_point, on the owner AND on every remote
 ## avatar: the tap is an EVENT, replicated as "tap:<n>:x:y:z" on the `action` field. Points are in the
 ## SKELETON's space, never worked out from world positions (see WristRaise.drive).
+##
+## The button kept down, the finger stays on the screen and follows the crosshair (a regulator dragged):
+## Player.tap_hold_until_ms holds the envelope at its top (held_time). The owner says so again every
+## HOLD_SAY_S ("hold:<n>:x:y:z") and a remote avatar keeps the arm out HOLD_KEEP_S after the last word:
+## nothing says the release, so one lost on the way leaves no arm out for ever.
 
 ## Seconds the hand takes to reach the screen: the tap's sound plays then, on the contact.
 const REACH_S := 0.16
@@ -17,6 +22,10 @@ const REACH_S := 0.16
 const HOLD_S := 0.08
 ## Seconds the arm takes to come back down.
 const BACK_S := 0.3
+## While the button is held: how often (s) the owner says where the finger is, and how long (s) the arm
+## stays out after the last word of it.
+const HOLD_SAY_S := 0.2
+const HOLD_KEEP_S := 0.6
 ## How far (degrees) each joint of the middle, ring and little fingers closes, from straight: a fist,
 ## the index out.
 const FIST_DEG: Array[float] = [80.0, 95.0, 60.0]
@@ -83,10 +92,29 @@ static func envelope(t: float) -> float:
 	return 1.0 - (t - REACH_S - HOLD_S) / BACK_S
 
 
+## The envelope's clock [param t] (s) while the finger is [param held] on the screen: it stops at the
+## top, and runs on (the rest of the hold, then back down) once released. Pure, for the tests.
+static func held_time(t: float, held: bool) -> float:
+	return minf(t, REACH_S) if held else t
+
+
 ## The `action` event of the [param n]-th tap at [param point] (the body's frame): "tap:<n>:x:y:z". The
 ## counter makes every tap a new value, which the delta compression would otherwise drop.
 static func tap_action(n: int, point: Vector3) -> String:
 	return "tap:%d:%.3f:%.3f:%.3f" % [n, point.x, point.y, point.z]
+
+
+## The `action` event of a finger held at [param point], the [param n]-th word of it: "hold:<n>:x:y:z".
+static func hold_action(n: int, point: Vector3) -> String:
+	return "hold:%d:%.3f:%.3f:%.3f" % [n, point.x, point.y, point.z]
+
+
+## The point of a hold_action, null when [param action] is not one.
+static func parse_hold(action: String) -> Variant:
+	var parts: PackedStringArray = action.split(":")
+	if parts.size() != 5 or parts[0] != "hold":
+		return null
+	return Vector3(parts[2].to_float(), parts[3].to_float(), parts[4].to_float())
 
 
 ## The point of a "tap:<n>:x:y:z" event, or null when [param action] is not a tap.
