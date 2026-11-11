@@ -123,6 +123,8 @@ var _use_lut: bool = true
 var _lut_key: String = ""
 ## Which contributor the development switches currently remove. See cycle_light_isolation().
 var _isolation: int = 0
+## How far underground the camera is (PlayerSunLight.underground), 0..1: the sky's ambient and reflection it takes off.
+var _underground: float = 0.0
 ## The dust's cost probe (client.ini debug_dust_probe=true), null when off.
 var _dust_cost: DustCostProbe = DustCostProbe.new() if DustCostProbe.wanted() else null
 
@@ -699,7 +701,7 @@ func is_aerial_enabled() -> bool:
 func set_sky_reflection_enabled(on: bool) -> void:
 	var env := player.get_world_3d().environment
 	if env != null:
-		env.reflected_light_source = (Environment.REFLECTION_SOURCE_SKY if on
+		env.reflected_light_source = (Environment.REFLECTION_SOURCE_SKY if on and _underground <= 0.5
 				else Environment.REFLECTION_SOURCE_DISABLED)
 
 
@@ -709,6 +711,19 @@ func set_sky_ambient_enabled(on: bool) -> void:
 	if env != null:
 		env.ambient_light_source = (Environment.AMBIENT_SOURCE_SKY if on
 				else Environment.AMBIENT_SOURCE_DISABLED)
+
+
+## Down a mine ([param amount] 0 open air .. 1 deep, PlayerSunLight): the sky's ambient fades out with it, and its
+## reflection goes past halfway (the trucks' and the lift's metal would mirror a blue sky 500 m under the ground).
+func set_underground(amount: float) -> void:
+	var was_deep := _underground > 0.5
+	_underground = clampf(amount, 0.0, 1.0)
+	var env := player.get_world_3d().environment if is_instance_valid(player) else null
+	if env == null:
+		return
+	env.ambient_light_energy = 1.0 - _underground
+	if was_deep != (_underground > 0.5):
+		set_sky_reflection_enabled(_isolation != 2)
 
 
 ## Cycles which single contributor is removed: 0 none, 1 aerial, 2 reflection, 3 ambient.

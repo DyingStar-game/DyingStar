@@ -24,6 +24,8 @@ var step_m := 1.0
 ## Materials of the walls and of the floors (client).
 var wall_material: Material = null
 var floor_material: Material = null
+## Client: called with each cell's MeshInstance3D once built (MineSite dresses it as the caves' rock).
+var dress := Callable()
 ## Server: collision bodies instead of meshes.
 var physics := false
 ## Returns the viewers' positions in the mine frame (Array[Vector3]).
@@ -239,6 +241,8 @@ func _assemble(cell: Vector3i, built: Dictionary) -> Node3D:
     else:
         var instance := MeshInstance3D.new()
         instance.mesh = MineMesher.to_mesh(built, wall_material, floor_material)
+        if dress.is_valid():
+            dress.call(instance)
         node = instance
     node.name = "Cell_%d_%d_%d" % [cell.x, cell.y, cell.z]
     add_child(node)

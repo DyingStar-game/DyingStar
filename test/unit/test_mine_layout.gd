@@ -222,3 +222,44 @@ func test_who_fell_through_the_rock_goes_back_to_the_floor() -> void:
     var station: Vector3 = plan.levels[0].station
     var under := MineLayout.floor_near(plan, dug, station + Vector3(2.0, -10.0, 1.0))
     assert_almost_eq(under, station + Vector3(2.0, 0.0, 1.0), Vector3.ONE * 1.0e-6)
+
+
+func test_daylight_fades_down_the_shaft() -> void:
+    assert_eq(MineMesher.open_sky(0.0), 1.0, "the collar is in the open air")
+    assert_eq(MineMesher.open_sky(MineMesher.SKY_OPEN_M), 1.0, "the shaft's first metres too")
+    assert_eq(MineMesher.open_sky(MineMesher.SKY_OPEN_M + MineMesher.SKY_FADE_M), 0.0, "no daylight past the fade")
+    assert_eq(MineMesher.open_sky(500.0), 0.0, "none at a level")
+    var last := 1.0
+    for depth in range(0, 30):
+        var sky := MineMesher.open_sky(float(depth))
+        assert_true(sky <= last, "darker with depth (%d m)" % depth)
+        last = sky
+    # Nowhere near a live mine: in the open air.
+    assert_eq(MineSite.underground_at(Vector3(1.0e6, -500.0, 0.0)), 0.0)
+
+
+func test_cell_vertices_carry_their_open_sky() -> void:
+    var built := {
+        "wall": PackedVector3Array([Vector3(0, -1, 0), Vector3(1, -10, 0), Vector3(0, -200, 1)]),
+        "wall_normals": PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP]),
+    }
+    var mesh := MineMesher.to_mesh(built, null, null)
+    var colours: PackedColorArray = mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+    assert_eq(colours.size(), 3)
+    # Vertex colours are stored on 8 bits.
+    var quantum := 1.0 / 255.0
+    assert_almost_eq(colours[0].r, 1.0, quantum, "near the collar: open sky")
+    assert_almost_eq(colours[1].r, MineMesher.open_sky(10.0), quantum)
+    assert_almost_eq(colours[2].r, 0.0, quantum, "at a level: underground")
+
+
+func test_the_mine_rock_is_the_caves_rock() -> void:
+    var site := load("res://scenes/_universe/structures/industrial/mines/shaft/mine_site.tscn").instantiate() as MineSite
+    var style := site.mineral_style
+    assert_not_null(style, "the caves' mineral style by default")
+    var mineral := CaveMineral.for_slug("granite") if RockCatalogue.has("granite") else CaveMineral.for_slug("corundum_milky")
+    assert_not_null(mineral)
+    assert_eq(mineral.surface_material("wall", site.wall_material, style), style.translucent_wall_material)
+    assert_eq(mineral.surface_material("floor", site.floor_material, style), style.translucent_floor_material)
+    assert_eq(mineral.surface_material("decor", site.crack_material, style), style.translucent_decor_material)
+    site.free()

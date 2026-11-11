@@ -4,6 +4,10 @@ extends RefCounted
 ## rough walls as a StarGrotte network, from the volumes MineLayout.graph lists.
 
 const MESHER_PATH := "res://scenes/planet/cave/CaveNetworkMesher.cs"
+## Depth (m) under the collar down to which the shaft is still in the open air: the sun and the sky light it fully.
+const SKY_OPEN_M := 3.0
+## Depth (m) over which the daylight then fades out: from SKY_OPEN_M + SKY_FADE_M down, only lamps and torches light.
+const SKY_FADE_M := 15.0
 
 static var _script: Script
 
@@ -31,7 +35,15 @@ static func build_cell(mesher: RefCounted, cell: Vector3i, size: float, step: fl
     return mesher.call("BuildRegion", AABB(Vector3(cell) * size, Vector3.ONE * size), step, 0.0)
 
 
-## The visible mesh of a built cell, or null when it holds no surface: wall then floor surface.
+## Share of open sky (1 in the open air .. 0 underground) at [param depth_m] under the collar: what the cave rock's
+## shader lets in of the sun and the sky (cave_corundum_rock.gdshader, open_air_source 1), and what MineSite.underground_at
+## takes off the player's sun and sky.
+static func open_sky(depth_m: float) -> float:
+    return 1.0 - smoothstep(SKY_OPEN_M, SKY_OPEN_M + SKY_FADE_M, depth_m)
+
+
+## The visible mesh of a built cell, or null when it holds no surface: wall then floor surface. Each vertex's colour
+## carries its share of open sky in red ([method open_sky]; the collar is at y = 0 in the mine frame).
 static func to_mesh(built: Dictionary, wall_material: Material, floor_material: Material) -> ArrayMesh:
     var mesh := ArrayMesh.new()
     for part: Array in [["wall", wall_material], ["floor", floor_material]]:
@@ -42,6 +54,12 @@ static func to_mesh(built: Dictionary, wall_material: Material, floor_material: 
         arrays.resize(Mesh.ARRAY_MAX)
         arrays[Mesh.ARRAY_VERTEX] = vertices
         arrays[Mesh.ARRAY_NORMAL] = built.get(part[0] + "_normals", PackedVector3Array())
+        var colours := PackedColorArray()
+        colours.resize(vertices.size())
+        for index in vertices.size():
+            var sky := open_sky(-vertices[index].y)
+            colours[index] = Color(sky, sky, sky, 1.0)
+        arrays[Mesh.ARRAY_COLOR] = colours
         mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
         if part[1] != null:
             mesh.surface_set_material(mesh.get_surface_count() - 1, part[1])

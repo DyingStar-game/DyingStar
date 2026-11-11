@@ -113,6 +113,10 @@ static var _live: Array[MineSite] = []
 @export var floor_material: Material = preload("res://scenes/planet/cave/libraries/gabarits/rock_floor.tres")
 ## Material of the fresh rock inside the cracks of a broken layer, and of its blocks' broken sides.
 @export var crack_material: Material = preload("res://scenes/_universe/structures/industrial/mines/shaft/mine_crack.tres")
+## The caves' rock style (CaveMineralStyle): with it the mine's walls, floor and broken blocks are the StarGrotte's
+## milky rock, tinted toward the planet's rock at the mine (the same as a cave beside it), without crystals, and lit
+## by no sun nor sky past the shaft's first metres. Empty = the three materials above, as they are.
+@export var mineral_style: CaveMineralStyle = preload("res://scenes/planet/cave/libraries/gabarits/corundum_mineral_style.tres")
 ## Distance (m) around the player within which the rock is built. Higher = seen further down the galleries, more
 ## cells in memory and more building.
 @export_range(40.0, 600.0, 1.0, "suffix:m") var view_radius_m: float = 160.0
@@ -156,6 +160,9 @@ var _fracture_jobs: Dictionary = {}
 ## onsets, tilts, cracked, gone}. state: "drilling", "done" (drilled, the server's answer awaited), "falling" (the
 ## layer fell, its rocks awaited) or "closing" (let go before the end: the wall shuts again).
 var _previews: Dictionary = {}
+## Client: the rock the mine is dug in as the caves show it ([method _mineral]), once looked up.
+var _mineral_value: CaveMineral = null
+var _mineral_known := false
 
 ## The PropSync child's uuid on the node itself: what makes the mine a networked parent (PropSpawn.find_net_parent).
 var uuid: String:
@@ -234,6 +241,17 @@ static func contains_point(global_point: Vector3) -> bool:
         if is_instance_valid(mine) and mine.contains_global(global_point):
             return true
     return false
+
+
+## How far underground [param global_point] is, 0 (open air, or not in a mine) .. 1 (deep in a mine's air): the share
+## of the sun, the moons and the sky's ambient a client takes off there (PlayerSunLight). The same curve as the rock's
+## own open sky (MineMesher.open_sky), so the walls and what stands among them darken together.
+static func underground_at(global_point: Vector3) -> float:
+    var mine := mine_at(global_point)
+    if mine == null:
+        return 0.0
+    var local := mine.global_transform.affine_inverse() * global_point
+    return 1.0 - MineMesher.open_sky(-local.y)
 
 
 ## The live mine of uuid [param id], or null. The mine is a child of its village: it is not in the server's
@@ -386,8 +404,12 @@ func _ensure_cells() -> void:
     _cells = MineCells.new()
     _cells.name = "Rock"
     _cells.physics = GameOrchestrator.is_server()
-    _cells.wall_material = wall_material
-    _cells.floor_material = floor_material
+    var mineral := _mineral()
+    _cells.wall_material = mineral.surface_material("wall", wall_material, mineral_style) if mineral else wall_material
+    _cells.floor_material = mineral.surface_material("floor", floor_material, mineral_style) if mineral else floor_material
+    if mineral != null:
+        # Open sky read from the vertex colour (MineMesher.to_mesh): the shaft's top keeps the daylight.
+        _cells.dress = func(instance: GeometryInstance3D) -> void: mineral.dress_surface(instance, mineral_style, 1)
     _cells.view_radius_m = view_radius_m
     _cells.step_m = float(MineLayout.DEFAULTS.cell_m)
     _cells.viewers = _viewers
@@ -714,13 +736,18 @@ func _preview_ready(id: int, step: int, blocks: Array) -> void:
     var rng := RandomNumberGenerator.new()
     rng.seed = ("%d|tilt|%d|%d" % [seed, id, step]).hash()
     var tilts: Array = []
+    var mineral := _mineral()
+    var walls := mineral.surface_material("wall", wall_material, mineral_style) if mineral else wall_material
+    var cracks := mineral.surface_material("decor", crack_material, mineral_style) if mineral else crack_material
     for block: Dictionary in blocks:
         var axis := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0))
         tilts.append([axis.normalized() if axis.length() > 0.01 else Vector3.RIGHT, rng.randf_range(0.3, 1.0)])
-        var mesh := MineFracture.to_mesh(block, wall_material, crack_material)
+        var mesh := MineFracture.to_mesh(block, walls, cracks)
         var instance := MeshInstance3D.new()
         instance.name = "Block%d" % int(block.index)
         instance.mesh = mesh
+        if mineral != null:
+            mineral.dress_surface(instance, mineral_style, 0)  # deep in the rock: no vertex colour, no sky
         instance.visible = mesh != null and not (preview.gone as Dictionary).has(int(block.index))
         node.add_child(instance)
     preview.node = node
@@ -1039,6 +1066,22 @@ func _add_lamp(at: Vector3) -> void:
     lamp.distance_fade_begin = view_radius_m * 0.5
     lamp.distance_fade_length = 20.0
     _lights.add_child(lamp)
+
+
+## CLIENT: the planet's rock at the mine as a cave there shows it (CaveMineral.at), or null on the server, without a
+## style, or where no catalogue rock applies (the mine keeps its own materials then). Kept once found.
+func _mineral() -> CaveMineral:
+    if _mineral_known or GameOrchestrator.is_server() or mineral_style == null:
+        return _mineral_value
+    var terrain := _planet_terrain()
+    if terrain == null or terrain.planet_data == null:
+        return null
+    var data := terrain.planet_data
+    var dir := (terrain.global_transform.affine_inverse() * global_position).normalized()
+    _mineral_value = CaveMineral.for_slug(data.rock_at(dir), dir, data.radius)
+    # Not found is asked again next time: the planet's zones may not be read yet.
+    _mineral_known = _mineral_value != null
+    return _mineral_value
 
 
 ## The terrain of the body this mine belongs to: its nearest Planet ancestor's.
