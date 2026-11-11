@@ -183,6 +183,8 @@ var _cab: CabScreenPointer = null
 var _help: ControlsHelp = null
 ## The place the player stands in — its banner, and its name asked of its discoverer (PlaceWatcher).
 var _places: PlaceWatcher = null
+## The diagnosis and repair of a broken machine (MachineRepair).
+var _repairs: MachineRepair = null
 ## The chart's pad button is down: a short press opens the chart when it comes up, a long one opens the
 ## controls help instead — the pad has no free button to give the help its own.
 var _map_pad_down: bool = false
@@ -383,6 +385,10 @@ func setup() -> void:
 	_places.name = "PlaceWatcher"
 	add_child(_places)
 	_places.setup(player, _screens_root(), func(text: String) -> void: _notifications.push(text), _input_locked)
+	_repairs = MachineRepair.new()
+	_repairs.name = "MachineRepair"
+	add_child(_repairs)
+	_repairs.setup(func(text: String) -> void: _notifications.push(text))
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.

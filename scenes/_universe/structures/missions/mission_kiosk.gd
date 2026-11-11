@@ -19,6 +19,7 @@ var _actor: Node = null
 
 func _ready() -> void:
 	AresBrand.wear(self, brand)
+	MachineBreakdown.attach(self, "kiosk")
 	if GameOrchestrator.is_server():
 		return
 	_ui.setup(brand, MissionFeed.near(self))

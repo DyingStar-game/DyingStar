@@ -43,6 +43,8 @@ const INTERVAL_S: float = 10.0
 ## and before the first, once the planets are there: sites are made once per village, rarely one waits.
 const GROUND_INTERVAL_S: float = 300.0
 const GROUND_FIRST_S: float = 45.0
+## How often the simulator is told the machines loaded and asked which are broken down (s).
+const BREAKDOWN_INTERVAL_S: float = 60.0
 ## Request timeout, shorter than the beat so a hung call can never overlap the next one.
 const TIMEOUT_S: float = 3.0
 ## The schema's `maxItems` on the batch array: a roster larger than this is sent in several calls,
@@ -109,6 +111,8 @@ var _flush_again: bool = false
 var _last_error: String = ""
 ## The dormant reason last said out loud, so a fixed/unchanged credential prints nothing twice.
 var _dormant_noted: String = ""
+## How many machines were broken at the last look, so the line only prints when it changes.
+var _broken_reported: int = -1
 ## How many states the last accepted flush carried, so the line only prints when it changes.
 var _last_reported: int = -1
 
@@ -132,6 +136,11 @@ func _ready() -> void:
 	ground.autostart = true
 	ground.timeout.connect(_lay_inspection_sites)
 	add_child(ground)
+	var breakdowns := Timer.new()
+	breakdowns.wait_time = BREAKDOWN_INTERVAL_S
+	breakdowns.autostart = true
+	breakdowns.timeout.connect(_sync_breakdowns)
+	add_child(breakdowns)
 
 
 func _load_config() -> void:
@@ -340,6 +349,16 @@ func mission_internal(method: HTTPClient.Method, path: String, body: Variant) ->
 ## The same, for the universe simulator's internal API.
 func usim_internal(method: HTTPClient.Method, path: String, body: Variant) -> Dictionary:
 	return await _internal(_usim_url != "" and _is_active(), _usim_url, method, path, body)
+
+
+## Tell the simulator the machines loaded and take which are broken down (services ADR 0020).
+func _sync_breakdowns() -> void:
+	if _usim_url == "" or not _is_active():
+		return
+	var broken: int = await MachineBreakdowns.sync(usim_internal, get_tree())
+	if broken != _broken_reported:
+		_broken_reported = broken
+		print("[Breakdown] %d machine(s) broken down" % broken)
 
 
 ## Lay on the ground the inspection sites the simulator made since the last look (services ADR 0019).

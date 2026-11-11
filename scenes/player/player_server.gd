@@ -469,6 +469,10 @@ func server_action_received(data: Dictionary) -> void:
 				ScreenLock.serve(screen, player, data)  # a claim, or the view its holder now sees
 			elif screen != null and not ScreenLock.claim(screen, player):
 				pass  # another player is using it: theirs until they step away (ScreenLock)
+			elif screen != null and MachineBreakdown.of(screen) != null and MachineBreakdown.of(screen).is_broken():
+				# Broken down (services ADR 0020): the machine answers nothing but its repair.
+				if str(data.get("state", "")) == MachineBreakdown.REPAIR_STATE:
+					MachineBreakdown.of(screen).server_repair(player)
 			elif screen != null:
 				# Hand the ACTOR over when the screen asks for one: WHOSE action this is must never be read
 				# from the payload, which the client wrote. Screens that do not care are untouched.

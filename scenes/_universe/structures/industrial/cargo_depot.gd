@@ -108,6 +108,7 @@ func _ready() -> void:
 		# zone is empty while it is visibly full. Deferred by two physics frames because overlaps are
 		# only resolved once the bodies have been added to the space.
 		_seed_zone_contents.call_deferred()
+		_hang_boards()  # nothing drawn here: they can break down, and the server lists them
 	else:
 		# Every area of the depot feeds server logic only (each handler returns at once on a client),
 		# yet a monitoring area costs its physics query every step: at 8e10 m from the origin each one
@@ -115,24 +116,7 @@ func _ready() -> void:
 		# with 2 400 crates (2026-10-23). They stay monitorable, so the player's probe still sees them.
 		for area: Area3D in find_children("*", "Area3D", true, true):
 			area.set_deferred(&"monitoring", false)
-		# Over the buffer rack: where each transporter's crates wait (TransportReservations).
-		# On the wall of the buffer room, where the scene's PickupBoardAt marker stands (facing +Z).
-		var board := PickupBoard.new().setup(self)
-		board.name = "PickupBoard"
-		var at := get_node_or_null("PickupBoardAt") as Node3D
-		board.transform = at.transform if at != null else Transform3D(Basis(Vector3.UP, PI), PICKUP_BOARD_AT)
-		add_child(board)
-		# Facing it, by the buffer rack: what the warehouse holds (StockBoard), at the scene's StockBoardAt
-		# marker, else the pickup board's place mirrored across the door.
-		var stock := StockBoard.new().setup(self)
-		stock.name = "StockBoard"
-		var stock_at := get_node_or_null("StockBoardAt") as Node3D
-		if stock_at != null:
-			stock.transform = stock_at.transform
-		else:
-			stock.transform = board.transform
-			stock.position.x = -board.position.x
-		add_child(stock)
+		_hang_boards()
 		# Painted on the floor at the mouth of each aisle, its letter read walking in (+Z): only on the
 		# floor, a sign hung over the walk floated in the air (playtest 2026-11-08).
 		for sign_at: Array in ShelfLabels.aisle_signs():
@@ -447,6 +431,30 @@ func _on_reception_area_body_exited(body: Node3D) -> void:
 		return
 	reception_players.erase(body.client_uuid)
 	_send_reception_players()
+
+
+## Hang the depot's two wall screens. On the server too, where they draw nothing: they can break down, and
+## the server lists the machines to the simulator (MachineBreakdown).
+func _hang_boards() -> void:
+	# Over the buffer rack: where each transporter's crates wait (TransportReservations).
+	# On the wall of the buffer room, where the scene's PickupBoardAt marker stands (facing +Z).
+	var board := PickupBoard.new().setup(self)
+	board.name = "PickupBoard"
+	var at := get_node_or_null("PickupBoardAt") as Node3D
+	board.transform = at.transform if at != null else Transform3D(Basis(Vector3.UP, PI), PICKUP_BOARD_AT)
+	add_child(board)
+	# Facing it, by the buffer rack: what the warehouse holds (StockBoard), at the scene's StockBoardAt
+	# marker, else the pickup board's place mirrored across the door.
+	var stock := StockBoard.new().setup(self)
+	stock.name = "StockBoard"
+	var stock_at := get_node_or_null("StockBoardAt") as Node3D
+	if stock_at != null:
+		stock.transform = stock_at.transform
+	else:
+		stock.transform = board.transform
+		stock.position.x = -board.position.x
+	add_child(stock)
+
 
 ## Rebuild `pnj_box_temp_zones` and `pnj_reception_deposited_item` from the bodies currently
 ## overlapping each area, and replicate the result. Idempotent, so it is safe to call again.

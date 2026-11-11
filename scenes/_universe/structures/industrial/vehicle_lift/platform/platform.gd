@@ -36,6 +36,7 @@ var uuid: String:
 
 
 func _ready() -> void:
+	MachineBreakdown.attach(self, "lift")
 	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
 		# The client's platform is a frozen replica, KINEMATIC under its Platform System
 		# (PropNet.apply_ride_freeze_mode), placed by the network alone. The scene's axis locks are

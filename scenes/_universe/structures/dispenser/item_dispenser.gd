@@ -39,6 +39,9 @@ const VEHICLE_CATALOGUE: String = "res://scenes/_universe/vehicles/terminal_item
 @export var brand: AresBrand.Subsidiary = AresBrand.Subsidiary.HAULING
 ## The folder of the items it offers (DispenserCatalog): vehicle component specs, DispenserItem .tres.
 @export_dir var catalogue_dir: String = "res://scenes/_universe/vehicles/specs/"
+## What the machine is when it breaks down, the word the repair mission names it by (services ADR 0020):
+## "dispenser", "terminal" for the vehicle terminal. Empty: it never breaks down.
+@export var breakdown_kind: String = "dispenser"
 ## The screen's title (a translation key).
 @export var title_key: String = "%%DISPENSER_TITLE"
 ## The button's word, and what the screen says while something lies in the hatch (translation keys).
@@ -110,6 +113,7 @@ var _fan: AudioStreamPlayer3D = null
 
 
 func _ready() -> void:
+	MachineBreakdown.attach(self, breakdown_kind)
 	if GameOrchestrator.is_server():
 		set_physics_process(false)  # only while a delivery runs (update_screen)
 		return

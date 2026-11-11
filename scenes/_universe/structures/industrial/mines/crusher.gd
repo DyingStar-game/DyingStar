@@ -138,6 +138,10 @@ static func mineral_id_of(rock: Node) -> String:
 	return "" if id == null else str(id)
 
 
+func _breakdown_kind() -> String:
+	return "crusher"
+
+
 func _title_key() -> String:
 	return "%%SIGN_CRUSHER"
 

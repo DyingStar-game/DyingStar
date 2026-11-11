@@ -19,6 +19,9 @@ const DIM := Color(1.0, 1.0, 1.0, 0.6)
 ## The frame's margin around the face, and its depth (m).
 const FRAME_M := 0.06
 const DEPTH_M := 0.05
+## From how far (m) the crosshair works the screen while its repair is on it: a wall screen hangs
+## higher and further than a console.
+const POINTER_REACH_M := 3.0
 
 ## How often (s) _refresh is called while the screen is seen.
 var refresh_s: float = 2.0
@@ -29,6 +32,9 @@ var _range_m: float = 20.0
 var _dirty: bool = false
 var _check_s: float = randf() * ScreenVisibility.CHECK_S
 var _refresh_left: float = 0.0
+var _size_m := Vector2.ZERO
+## Whether the screen takes the crosshair now (set_interactive).
+var _interactive: bool = false
 
 
 ## Build the screen: [param size_m] on the wall, drawn [param px] wide and high, read from up to
@@ -38,6 +44,9 @@ func build_screen(size_m: Vector2, px: Vector2i, range_m: float) -> Control:
 		set_process(false)
 		_editor_preview(size_m)
 		return null
+	# It can break down (services ADR 0020), on the server too, which lists it to the simulator.
+	_size_m = size_m
+	MachineBreakdown.attach(self, "screen")
 	if GameOrchestrator.is_server():
 		set_process(false)
 		return null
@@ -120,6 +129,107 @@ func redraw() -> void:
 	_dirty = true
 
 
+## SERVER, 3D-screen contract (ScreenTarget): a wall screen is only looked at, it answers nothing --
+## but its repair, which the server takes before this (MachineBreakdown), reaches it by that contract.
+func update_screen(_data: Dictionary) -> void:
+	pass
+
+
+## MachineBreakdown: where the breakdown's cover is drawn.
+func breakdown_viewport() -> SubViewport:
+	return _viewport
+
+
+## MachineBreakdown: the screen takes no click, so its repair is asked from a prompt this wide (m).
+func breakdown_prompt_size() -> Vector2:
+	return _size_m
+
+
+# -- The crosshair as the pointer, while a repair is on the screen ------------------------------------
+# A wall screen is only looked at -- but for its repair's gauges (MachineBreakdown). While they are on
+# it, it answers the crosshair as a Gui3D does (PlayerClient._point_screen: hit, pointer_at, click_at,
+# push_at, pointer_left, release_keyboard), and is drawn every frame it is seen.
+
+## Take the crosshair's pointing and clicks ([param on]), or go back to being looked at only.
+func set_interactive(on: bool) -> void:
+	if _viewport == null or on == _interactive:
+		return
+	_interactive = on
+	_viewport.gui_disable_input = not on
+	if on:
+		add_to_group(ScreenTarget.GROUP)
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	else:
+		remove_from_group(ScreenTarget.GROUP)
+		_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		redraw()
+
+
+## Where the ray from [param from] along [param dir] meets the face, or null. [param _reach] is a
+## console's: a wall screen is worked from POINTER_REACH_M.
+func hit(from: Vector3, dir: Vector3, _reach: float) -> Variant:
+	if not _interactive:
+		return null
+	var normal: Vector3 = global_basis.z.normalized()
+	var facing: float = dir.dot(normal)
+	if is_zero_approx(facing):
+		return null
+	var t: float = (global_position - from).dot(normal) / facing
+	if t < 0.0 or t > POINTER_REACH_M:
+		return null
+	var point: Vector3 = from + dir * t
+	var uv := uv_of(to_local(point), _size_m)
+	return point if uv.x >= 0.0 and uv.x <= 1.0 and uv.y >= 0.0 and uv.y <= 1.0 else null
+
+
+## [param local] (the screen's frame, on its face) as 0..1 across a face of [param size_m], (0, 0) the
+## top-left corner. Pure.
+static func uv_of(local: Vector3, size_m: Vector2) -> Vector2:
+	if size_m.x <= 0.0 or size_m.y <= 0.0:
+		return Vector2(-1.0, -1.0)
+	return Vector2(local.x / size_m.x + 0.5, 0.5 - local.y / size_m.y)
+
+
+func pointer_at(point: Vector3) -> void:
+	_push_at(InputEventMouseMotion.new(), point)
+
+
+func click_at(point: Vector3, pressed: bool) -> void:
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
+	click.pressed = pressed
+	_push_at(click, point)
+
+
+func push_at(input_event: InputEventMouse, point: Vector3) -> void:
+	_push_at(input_event.duplicate(), point)
+
+
+func pointer_left() -> void:
+	if _viewport != null:
+		_viewport.notification(NOTIFICATION_VP_MOUSE_EXIT)
+
+
+func release_keyboard() -> void:
+	if _viewport != null:
+		_viewport.gui_release_focus()
+
+
+func _push_at(input_event: InputEventMouse, point: Vector3) -> void:
+	if _viewport == null or not _interactive:
+		return
+	var at: Vector2 = uv_of(to_local(point), _size_m) * Vector2(_viewport.size)
+	input_event.position = at
+	input_event.global_position = at
+	_viewport.push_input(input_event)
+
+
+## MachineBreakdown: broken down, or repaired -- one more picture.
+func breakdown_changed(_broken: bool) -> void:
+	redraw()
+
+
 ## Read the data again (called every refresh_s while the screen is seen); call redraw() when it changed.
 func _refresh() -> void:
 	pass
@@ -133,12 +243,17 @@ func _process(delta: float) -> void:
 		return
 	_check_s = ScreenVisibility.CHECK_S
 	var camera := get_viewport().get_camera_3d()
-	if not ScreenVisibility.sees_box(camera, global_transform * _box, _range_m):
+	var seen: bool = ScreenVisibility.sees_box(camera, global_transform * _box, _range_m)
+	if _interactive:
+		# The repair's gauges move: drawn every frame, while seen only.
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if seen else SubViewport.UPDATE_DISABLED
+	if not seen:
 		return
 	# Drawn on the check AFTER the one that changed it: the Controls are laid out by then.
 	if _dirty:
 		_dirty = false
-		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		if not _interactive:
+			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_refresh_left -= ScreenVisibility.CHECK_S
 	if _refresh_left <= 0.0:
 		_refresh_left = refresh_s
