@@ -30,10 +30,12 @@ const SERVICE_MISSION: String = "mission"
 const SERVICE_ECONOMIE: String = "economie"
 const SERVICE_INVENTORY: String = "inventory"
 const SERVICE_MARKET: String = "market"
+## The universe simulator: the federation's prices (the town hall's market board).
+const SERVICE_SIMULATOR: String = "universesimulator"
 
 ## Every service behind the gateway, in display order. Drives config loading and the diagnostics.
 const SERVICES: PackedStringArray = [
-	SERVICE_SOCIAL, SERVICE_MISSION, SERVICE_ECONOMIE, SERVICE_INVENTORY, SERVICE_MARKET,
+	SERVICE_SOCIAL, SERVICE_MISSION, SERVICE_ECONOMIE, SERVICE_INVENTORY, SERVICE_MARKET, SERVICE_SIMULATOR,
 ]
 
 ## Scheme used to reach the services. `[services] scheme` in client.ini picks `http` (default) or
@@ -52,6 +54,7 @@ const DEFAULT_BASE: Dictionary = {
 	SERVICE_ECONOMIE: "http://service.dyingstar.local/economie",
 	SERVICE_INVENTORY: "http://service.dyingstar.local/inventory",
 	SERVICE_MARKET: "http://service.dyingstar.local/market",
+	SERVICE_SIMULATOR: "http://service.dyingstar.local/universesimulator",
 }
 
 var _http: HTTPRequest = null
@@ -479,6 +482,15 @@ func my_corporation_request_decline(request_id: int) -> Dictionary:
 	var r: Dictionary = await _http_post(SERVICE_SOCIAL, "/api/me/corporation/requests/%d/decline" % request_id)
 	if _ok(r): changed.emit("corporations")
 	return r
+
+
+# ---------------------------------------------------------------------------------------------
+# Materials market (universe simulator)
+# ---------------------------------------------------------------------------------------------
+
+## The federation's market: each resource with its price now, a day ago, and the curve between.
+func market_prices() -> Dictionary:
+	return await _http_get(SERVICE_SIMULATOR, "/api/market")
 
 
 # ---------------------------------------------------------------------------------------------

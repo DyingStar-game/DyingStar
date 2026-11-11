@@ -6,9 +6,10 @@ extends RefCounted
 ## .brand), and its screen, its lights and its logo take their colours from here, never from a copy.
 ## Brand names are proper nouns, shown as they are in every language (like the logo itself).
 
-enum Subsidiary { CORP, HAULING, MINING, SCIENCE, SECURITY, LIVING, MACHINERY, ENERGY, PHARMA }
+## The ten of the lore (2026-11-10). New ones go at the END: scenes keep a subsidiary as its number.
+enum Subsidiary { CORP, HAULING, MINING, SCIENCE, SECURITY, LIVING, MACHINERY, ENERGY, PHARMA, INFRA }
 
-## Read off the brand sheet (2026-10-13).
+## Read off the brand sheet (2026-10-13). INFRA is not on it: a steel grey until the lore gives its own.
 const COLOURS: Dictionary = {
 	Subsidiary.CORP: Color(1.0, 1.0, 1.0),
 	Subsidiary.HAULING: Color(1.0, 0.8, 0.0),
@@ -19,6 +20,7 @@ const COLOURS: Dictionary = {
 	Subsidiary.MACHINERY: Color(0.6, 0.0, 1.0),
 	Subsidiary.ENERGY: Color(0.0, 0.47, 0.0),
 	Subsidiary.PHARMA: Color(0.0, 1.0, 1.0),
+	Subsidiary.INFRA: Color(0.55, 0.6, 0.66),
 }
 const NAMES: Dictionary = {
 	Subsidiary.CORP: "CORP.",
@@ -30,6 +32,7 @@ const NAMES: Dictionary = {
 	Subsidiary.MACHINERY: "MACHINERY",
 	Subsidiary.ENERGY: "ENERGY",
 	Subsidiary.PHARMA: "PHARMA.",
+	Subsidiary.INFRA: "INFRA",
 }
 
 

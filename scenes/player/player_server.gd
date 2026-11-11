@@ -3062,10 +3062,10 @@ func _can_see(target: Node) -> bool:
 	return SightLine.can_see(_los_ray, player.interact_ray.global_position, target, player)
 
 ## True if a solid wall stands between the eye and the carriable `prop`. Thin wrapper over `_can_see`
-## for the carry call sites; tiny ore pieces detect unreliably, so we don't gate them on sight.
+## for the carry call sites. A rock piece is gated like the rest: the sight ray goes to the middle of
+## the piece (SightLine.first_hit_is, its aim_point) -- sent to its origin, the uncut rock's, it missed
+## the piece and a carriable one lost its prompt (playtest 2026-11-10).
 func _is_blocked_by_geometry(prop: Node) -> bool:
-	if prop is Node3D and "type_name" in prop and prop.type_name == "miningrock":
-		return false
 	return _behind_shut_hatch(prop) or not _can_see(prop)
 
 ## A part bolted in a bay is behind that bay's hatch: shut, nobody sees it. The hatch is a mesh that

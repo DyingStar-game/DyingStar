@@ -75,6 +75,12 @@ var _apply_cuts_seq: int = 0
 ## channel, so the same unchanged list arrives over and over; replaying it each time re-bakes the
 ## whole CSG for nothing (measured: 42 replays on ONE rock in a single session).
 var _applied_cut_signature: String = ""
+var _aim_centre: Vector3 = Vector3.ZERO  # aim_point, in the mesh's frame
+var _aim_centre_box: AABB = AABB()  # the piece's box it was reckoned for...
+var _aim_centre_cuts: String = ""  # ...and its cuts: one may leave the box as it was
+## The surface centres of the uncut rocks, by source mesh: every rock of a variant shares one, and a
+## look swept across a field reckoned each rock's on its own (review 2026-11-10).
+static var _uncut_centres: Dictionary = {}
 ## Re-entrancy guard. _apply_cuts is a coroutine that CLEARS every subtraction box before re-adding
 ## them a frame later, so two overlapping runs let the second wipe what the first is about to
 ## restore — the rock then renders whole, permanently and at random. Measured up to 4 in flight.
@@ -291,7 +297,23 @@ func _build_mesh_collider() -> void:
 		shape = _shared_uncut_hull(_source_mesh(), sc)
 	if shape != null:
 		shape_node.shape = shape
+		_fit_aim_area(shape_node)
 	RockDebug.t_end("rock:hull", _tok)
+
+
+## A piece that was carved is aimed at by its own shape. The look meets the rock's Area3D (the player's
+## ray sees areas only), a sphere round the whole rock that no cut ever shrank: the prompt showed beside
+## the piece, its line started in the air at the old rock's middle, and every piece of one rock, each
+## with that same sphere at the same place, answered for the others (playtest 2026-11-10). The hull just
+## made for the body is shared, so it costs nothing; an uncut rock keeps its sphere.
+func _fit_aim_area(shape_node: CollisionShape3D) -> void:
+	if not _has_pending_cuts():
+		return
+	var aim_shape := get_node_or_null("Area3D/CollisionShape3D") as CollisionShape3D
+	if aim_shape == null:
+		return
+	aim_shape.shape = shape_node.shape
+	aim_shape.transform = shape_node.transform
 
 
 ## Scale a hull's points by the variant's factor (x1 sm, x1.2 md, x2 lg). The hull is measured on
@@ -656,10 +678,41 @@ func _to_mesh_local(body_local: Vector3) -> Vector3:
 
 ## The middle of the piece as it stands (its CSG result), in world space: where a prompt about it
 ## points (PromptLeader.anchor_of). The middle of its hull box was off the piece once cut (playtest
-## 2026-11-07).
+## 2026-11-07), and so was the middle of the piece's own box for a wedge, which fills a corner of its
+## box (playtest 2026-11-10): the middle of its surface (surface_centre), reckoned once per shape.
 func aim_point() -> Vector3:
 	var mesh_node := _mesh_node()
-	return mesh_node.global_transform * _piece_aabb().get_center() if mesh_node != null else global_position
+	if mesh_node == null:
+		return global_position
+	if not _has_pending_cuts():
+		var source: Mesh = _source_mesh()
+		if source == null:
+			return global_position
+		if not _uncut_centres.has(source):
+			_uncut_centres[source] = surface_centre(source, source.get_aabb().get_center())
+		return mesh_node.global_transform * (_uncut_centres[source] as Vector3)
+	var box: AABB = _piece_aabb()
+	if box != _aim_centre_box or _applied_cut_signature != _aim_centre_cuts:  # cut again, or carved at last
+		_aim_centre_box = box
+		_aim_centre_cuts = _applied_cut_signature
+		_aim_centre = surface_centre(_rendered_mesh(), box.get_center())
+	return mesh_node.global_transform * _aim_centre
+
+
+## The middle of [param mesh]'s surface: its triangles' middles, weighted by their areas. On the piece
+## or inside it, where the middle of its box can be in the air beside it. [param fallback] for no
+## mesh or no surface. Static and pure.
+static func surface_centre(mesh: Mesh, fallback: Vector3) -> Vector3:
+	if mesh == null:
+		return fallback
+	var faces: PackedVector3Array = mesh.get_faces()
+	var sum := Vector3.ZERO
+	var total := 0.0
+	for i in range(0, faces.size() - 2, 3):
+		var area: float = (faces[i + 1] - faces[i]).cross(faces[i + 2] - faces[i]).length()
+		sum += (faces[i] + faces[i + 1] + faces[i + 2]) * area
+		total += area
+	return sum / (3.0 * total) if total > 0.0 else fallback
 
 
 ## Longest side (metres) of the piece as it stands — the size half of the breakable test.

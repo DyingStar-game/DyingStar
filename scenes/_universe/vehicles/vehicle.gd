@@ -52,6 +52,26 @@ const HORN_FADE_DB := -30.0
 const TYRE_SILENT := 0.001
 ## Scan the bed for a settled fallen crate every N physics frames (see _scan_bay_for_settled_cargo).
 const BAY_SCAN_FRAMES := 6
+## How many scans in a row a loose load must be seen at rest before the bed locks it where it lies:
+## about a third of a second, longer than the top of a bounce or the instant it is let go.
+const BAY_STILL_SCANS := 3
+## A loose load turning faster than this (rad/s) is not at rest.
+const BAY_STILL_SPIN := 1.0
+## How far over the bed (m) a load at rest is still the bed's: what was put on top of the others.
+const BAY_PILE_HEADROOM_M := 1.2
+## Gap left between two neighbouring loads of the bed grid (m), when there is room for it.
+const BED_GRID_GAP_M: float = 0.005
+## How far the loads of a row may press into each other (m, the whole row): a row of crates whose
+## boxes are a fraction of a millimetre too wide for the bed still goes in (playtest 2026-11-10: four
+## ore crates, 1.5814 m, in a 1.5813 m bed); their models are narrower than their boxes.
+const BED_GRID_SQUEEZE_M: float = 0.005
+## Two boxes that meet by less than this (m) are apart: the squeeze above, and rounding.
+const BED_GRID_SLACK_M: float = 0.005
+## At most this many cells along one side of the bed: a load a few millimetres wide does not make a
+## grid of a hundred thousand.
+const BED_GRID_MAX_CELLS: int = 32
+## A load lies ON another when its underside is at least this much (m) above the other's.
+const RESTS_ON_RISE_M: float = 0.05
 ## How long (s) a sampled surface family is reused before probing again. See _scrub_surface_family.
 const SCRUB_SAMPLE_S: float = 0.5
 ## How long after spawning the server keeps trying to re-link restored parts to their bays, and how
@@ -754,6 +774,8 @@ var _occupant_mass: float = 0.0  # kg of seated players (driver + passengers), a
 var _locked_cargo: Dictionary = {}  # RigidBody3D cargo -> its mass (kg), summed into the load
 var _locked_cargo_local: Dictionary = {}  # RigidBody3D cargo -> its rest LOCAL transform in the bed
 var _bed_players: Dictionary = {}  # set of on-foot players standing in the bed (player -> true)
+var _bay_loose: Array[RigidBody3D] = []  # loads seen loose in the bed by the last scan (_bed_obstacles)
+var _bay_still: Dictionary = {}  # loose load -> scans in a row it was seen at rest (BAY_STILL_SCANS)
 var _cargo_area: Area3D = null
 var _bed_box: AABB = AABB()  # the model's bed pieces, vehicle frame (empty = none: see _bay_box)
 var _bed_floor: AABB = AABB()  # the bed floor inside the boards, vehicle frame (empty = none: see bed_floor)
@@ -1267,16 +1289,25 @@ func reset_upright() -> void:
 ## over and then forgets it, so a silent refusal here strands the crate — still mounted on the
 ## carrier, phantom and frozen, with nobody holding it any more.
 func lock_dropped_cargo(body: Node) -> bool:
-	if body == null or body is Vehicle:
-		return false
 	if _locked_cargo.has(body):
 		return true  # already aboard: the caller's job is done either way
+	if not _may_lock(body):
+		return false
+	var pose: Variant = _bed_pose(body)
+	if pose == null:
+		return false  # no cell left: the load is let go, and locked where it comes to rest
+	_lock_cargo(body as RigidBody3D, pose)
+	return true
+
+
+## Whether the bed may take [param body] as a load: a body a player could carry (is_loadable), not a
+## vehicle, not a part bolted into a bay (part of the vehicle, not a load it is carrying).
+func _may_lock(body: Node) -> bool:
+	if body == null or body is Vehicle or not (body is RigidBody3D):
+		return false
 	if body is VehicleComponent and (body as VehicleComponent).is_fitted():
-		return false  # bolted into a bay: part of the vehicle, not a load it is carrying
-	if body is RigidBody3D and body.mass > 0.0 and is_loadable(body):
-		_lock_cargo(body)
-		return true
-	return false
+		return false
+	return (body as RigidBody3D).mass > 0.0 and is_loadable(body)
 
 
 ## Whether [param body] may ride in a bed: only what a player could carry (playtest 2026-11-07: a whole
@@ -1305,24 +1336,50 @@ func _scan_bay_for_settled_cargo() -> void:
 	q.collide_with_areas = false
 	q.collision_mask = 1 << (Globals.LAYER_PROP - 1)  # props only (crates/rocks live on LAYER_PROP)
 	var bay: AABB = _bay_box()
+	bay.size.y += BAY_PILE_HEADROOM_M  # and what lies on top of the load
 	var box := BoxShape3D.new()
 	box.size = bay.size
 	q.shape = box
 	q.transform = global_transform.translated_local(bay.get_center())
-	for hit in space.intersect_shape(q, 16):
+	_bay_loose.clear()
+	var still: Dictionary = {}
+	# A full bed holds sixteen crates: room for them and for what is thrown on top (16 hid the rest).
+	for hit in space.intersect_shape(q, 64):
 		var body = hit.get("collider")
 		if not (body is RigidBody3D) or _locked_cargo.has(body):
 			continue
 		var rb := body as RigidBody3D
 		if rb.mass <= 0.0 or rb.get_parent() is Player:
 			continue  # carried items ride under a Player — not free cargo, don't absorb them
+		_bay_loose.append(rb)
 		# A LOOSE part is ordinary cargo — hauling a spare motor is the point of the feature. Only a
 		# FITTED one is refused: two of the hatches sit inside the loading zone, so the engines
 		# bolted into them overlap this query and would otherwise be absorbed as a load.
 		if rb is VehicleComponent and (rb as VehicleComponent).is_fitted():
 			continue
-		if rb.linear_velocity.length() <= cargo_settle_speed:
-			lock_dropped_cargo(rb)  # settled inside the bay → weigh it in
+		# At rest ON THE TRUCK (its speed against the bed under it, so a load settles on a truck that
+		# rolls too), several scans in a row: locked where it lies. Physics set it down -- on the floor,
+		# against a board, on top of the others -- so it is inside nothing; moved to a cell of the grid
+		# instead, it had none when the bed was full and stayed loose for good, shaken at every start
+		# (playtest 2026-11-10).
+		var bed_velocity: Vector3 = linear_velocity + angular_velocity.cross(rb.global_position - global_position)
+		var at_rest: bool = (rb.linear_velocity - bed_velocity).length() <= cargo_settle_speed
+		if at_rest and rb.angular_velocity.length() <= BAY_STILL_SPIN:
+			still[rb] = int(_bay_still.get(rb, 0)) + 1
+			if int(still[rb]) >= BAY_STILL_SCANS and lock_resting_cargo(rb):
+				still.erase(rb)
+	_bay_still = still  # a load that moved, or left, starts again
+
+
+## Lock [param body] where it came to rest in the bed (the scan's, once physics has set it down): it
+## keeps its place and its turn, and rides the truck from there. The same loads as lock_dropped_cargo.
+func lock_resting_cargo(body: Node) -> bool:
+	if _locked_cargo.has(body):
+		return true
+	if not _may_lock(body):
+		return false
+	_lock_cargo(body as RigidBody3D, global_transform.affine_inverse() * (body as Node3D).global_transform)
+	return true
 
 ## True when a world point is inside the bed (where a dropped item is allowed to stick): the same box
 ## the settled loads and the walkers are counted in (_bay_box). The point is where the carry placement
@@ -1391,7 +1448,7 @@ func _carried_mass(player: Node) -> float:
 
 ## Lock a settled body into the bed: freeze it, drop its collision, ride rigidly with the
 ## truck, and fold its mass into the vehicle. Same idea as carried props (#124).
-func _lock_cargo(body: RigidBody3D) -> void:
+func _lock_cargo(body: RigidBody3D, pose: Transform3D) -> void:
 	_locked_cargo[body] = body.mass
 	body.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	body.freeze = true
@@ -1405,9 +1462,9 @@ func _lock_cargo(body: RigidBody3D) -> void:
 		body.server_parent_change(self)
 	else:
 		body.reparent(self)
-	# Rest it on the bed floor: it was frozen at hand height, so without this it would hang in the
-	# air. Keep its X/Z, lower it until its underside sits on the floor, THEN replicate that pose.
-	_settle_on_bed_floor(body)
+	# Into its cell of the bed, on the floor (_bed_pose): it was frozen at hand height and askew, THEN
+	# replicate that pose.
+	body.global_transform = global_transform * pose
 	_locked_cargo_local[body] = body.transform  # rest pose, re-asserted each frame so it rides rigidly
 	if body.has_method("send_properties_to_client"):
 		body.send_properties_to_client(str(uuid))
@@ -1437,40 +1494,117 @@ static func bed_floor(pieces: Array[AABB]) -> AABB:
 			hi[axis] = clampf(board.position[axis], mid[axis], hi[axis])
 	return AABB(lo, hi - lo)
 
-## Place a just-locked body INTO the cargo bay: shift its X/Z so its WHOLE footprint fits inside the
-## bed floor between the boards (cargo_bay for a blockout) -- an item dropped from far / over the rim
-## ends up entirely in the bed, not poking out of it or into the cab --
-## then rest its lowest collision point on the bed floor. Uses the real collision AABB, so it works
-## for any pivot (a cut ore piece keeps the original rock's off-centre pivot) and any size.
-func _settle_on_bed_floor(body: Node3D) -> void:
-	var col := body as CollisionObject3D
-	if col == null:
-		return
-	var bounds := _collision_aabb(body, global_transform.affine_inverse() * col.global_transform)
-	if bounds.size == Vector3.ZERO:
-		return  # no collision shape found: leave it where it is
-	var mn := bounds.position
-	var mx := bounds.end
-	var local := to_local(body.global_position)
-	# Fit the whole item inside the bed footprint (centred if it is wider than the bed).
+## Where [param body] goes in the bed (its pose in the vehicle's frame), or null when the bed is full.
+## The bed holds one layer of loads on a grid (playtest 2026-11-10: crates landed askew, overlapping or
+## inside each other): a crate stands upright, square to the bed (its heading snapped to a quarter turn),
+## in the free cell nearest where it was aimed, its underside on the floor. A rock piece keeps its turn
+## but takes a free cell of its own size the same way, never inside another load (playtest 2026-11-10).
+## Uses the real collision AABB, so it works for any pivot (a cut ore piece keeps the original rock's
+## off-centre pivot) and any size.
+func _bed_pose(body: Node3D) -> Variant:
+	var pose: Transform3D = global_transform.affine_inverse() * body.global_transform
 	var room := AABB(cargo_bay_offset - cargo_bay_size * 0.5, cargo_bay_size)
 	if _bed_floor.has_volume():
 		room = _bed_floor
-	local.x += _fit_shift(mn.x, mx.x, room.position.x, room.end.x)
-	local.z += _fit_shift(mn.z, mx.z, room.position.z, room.end.z)
-	local.y += _bed_floor_local_y() - mn.y  # rest the underside on the floor
-	body.global_position = to_global(local)
+	if is_boxy(body):
+		pose.basis = square_basis(pose.basis)
+		# Long side along the bed's long side: every crate the same way, so they pack.
+		var footprint := _collision_aabb(body, pose).size
+		if (footprint.x > footprint.z) != (room.size.x > room.size.z):
+			pose.basis = Basis(Vector3.UP, PI * 0.5) * pose.basis
+	var bounds := _collision_aabb(body, pose)
+	if bounds.size == Vector3.ZERO:
+		return pose  # no collision shape found: leave it where it is
+	var taken: Array[AABB] = _bed_obstacles(body)
+	var centre := bounds.get_center()
+	var cell: Variant = bed_slot(room, Vector2(bounds.size.x, bounds.size.z), Vector2(centre.x, centre.z), taken)
+	if cell == null:
+		return null
+	pose.origin += Vector3((cell as Vector2).x - centre.x, _bed_floor_local_y() - bounds.position.y,
+			(cell as Vector2).y - centre.z)
+	return pose
 
-## Translation along one axis so the span [item_min, item_max] fits inside [bay_min, bay_max]
-## (centred when the item is wider than the bay).
-static func _fit_shift(item_min: float, item_max: float, bay_min: float, bay_max: float) -> float:
-	if item_max - item_min >= bay_max - bay_min:
-		return (bay_min + bay_max) * 0.5 - (item_min + item_max) * 0.5
-	if item_min < bay_min:
-		return bay_min - item_min
-	if item_max > bay_max:
-		return bay_max - item_max
-	return 0.0
+
+## What stands in the bed besides [param body], as boxes in the vehicle's frame: no load is set down
+## into any of them. Not only the loads locked here (playtest 2026-11-10: a rock was given a cell the
+## grid thought free, inside something, and the physics threw everything about): every body riding the
+## vehicle (a load that came back with it from a restart is its child before the bed counts it), the
+## players standing in the bed -- a load under their feet throws them and the truck -- and what lies
+## loose in it, not at rest yet (_bay_loose, from the last scan).
+func _bed_obstacles(body: Node3D) -> Array[AABB]:
+	var out: Array[AABB] = []
+	var into: Transform3D = global_transform.affine_inverse()
+	for child in get_children():
+		if child == body or not (child is RigidBody3D):
+			continue
+		if child is VehicleComponent and (child as VehicleComponent).is_fitted():
+			continue  # bolted in a bay under the floor: not in the bed
+		out.append(_collision_aabb(child, _locked_cargo_local.get(child, (child as Node3D).transform)))
+	for player in _bed_players:
+		if is_instance_valid(player) and player is Node3D:
+			out.append(_collision_aabb(player, into * (player as Node3D).global_transform))
+	for loose in _bay_loose:
+		if is_instance_valid(loose) and loose != body and loose.get_parent() != self:
+			out.append(_collision_aabb(loose, into * loose.global_transform))
+	return out.filter(func(box: AABB) -> bool: return box.size != Vector3.ZERO)
+
+
+## Whether [param body] is a box (a crate: every collision shape of it a BoxShape3D), which the bed
+## squares to itself; a rock piece keeps the turn it was dropped with (both take a cell of the grid).
+static func is_boxy(body: Node) -> bool:
+	var found := false
+	for child in body.get_children():
+		if child is CollisionShape3D:
+			if not ((child as CollisionShape3D).shape is BoxShape3D):
+				return false
+			found = true
+	return found
+
+
+## [param basis] (a load's, in the vehicle's frame) stood upright and turned to the nearest quarter turn
+## of the vehicle: square to the bed. Static and pure.
+static func square_basis(basis: Basis) -> Basis:
+	var heading := basis.z
+	heading.y = 0.0
+	var yaw := atan2(heading.x, heading.z) if heading.length() > 0.001 else 0.0
+	return Basis(Vector3.UP, snappedf(yaw, PI * 0.5))
+
+
+## The centre (x, z) of the bed cell for a load of [param size] (x, z): the grid of such cells laid over
+## [param room] (as many as fit, BED_GRID_SQUEEZE_M allowed, centred, at most BED_GRID_GAP_M apart; one
+## cell in the middle of an axis the load is wider than),
+## its free cells (overlapping none of [param taken]), the one nearest [param aim]. Null when none is
+## free: the bed is full. Static and pure.
+static func bed_slot(room: AABB, size: Vector2, aim: Vector2, taken: Array[AABB]) -> Variant:
+	var best: Variant = null
+	var best_d := INF
+	for x in _grid_centres(room.position.x, room.size.x, size.x):
+		for z in _grid_centres(room.position.z, room.size.z, size.y):
+			var cell := Rect2(x - size.x * 0.5, z - size.y * 0.5, size.x, size.y).grow(-BED_GRID_SLACK_M)
+			var free := true
+			for other in taken:
+				if cell.intersects(Rect2(other.position.x, other.position.z, other.size.x, other.size.z)):
+					free = false
+					break
+			var d := Vector2(x, z).distance_squared_to(aim)
+			if free and d < best_d:
+				best_d = d
+				best = Vector2(x, z)
+	return best
+
+
+## Centres of the cells of [param cell] wide along a span from [param start], [param length] long.
+static func _grid_centres(start: float, length: float, cell: float) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	var count := clampi(floori((length + BED_GRID_SQUEEZE_M) / cell), 1, BED_GRID_MAX_CELLS) if cell > 0.0 else 1
+	var gap := 0.0
+	if count > 1:
+		gap = minf((length - count * cell) / (count - 1), BED_GRID_GAP_M)  # below 0: squeezed
+	var used := count * cell + (count - 1) * gap
+	var first := start + (length - used) * 0.5 + cell * 0.5
+	for i in count:
+		out.append(first + i * (cell + gap))
+	return out
 
 ## Local Y of the bed floor's top surface (where cargo rests): the model's own bed floor collision, or
 ## the generated floor box for a blockout. (The blockout's height on a real model sank every load into
@@ -1544,10 +1678,32 @@ func _body_local_aabb(body: Node3D) -> AABB:
 func release_cargo(body: Node) -> void:
 	if not _locked_cargo.has(body):
 		return
+	var gone := AABB()
+	if body is Node3D and _locked_cargo_local.has(body):
+		gone = _collision_aabb(body, _locked_cargo_local[body])
 	remove_collision_exception_with(body)
 	_locked_cargo.erase(body)
 	_locked_cargo_local.erase(body)
 	_refresh_mass()
+	# What lay on it falls: back to physics, which sets it down again, and the bed locks it where it
+	# rests (lock_resting_cargo). Left locked, it hung in the air over the gap.
+	if not gone.has_volume():
+		return
+	for other in _locked_cargo.keys():
+		if not is_instance_valid(other) or not _locked_cargo_local.has(other):
+			continue
+		if rests_on(_collision_aabb(other, _locked_cargo_local[other]), gone):
+			_spill_cargo(other)
+
+
+## Whether a load of box [param upper] lies on the one of box [param lower] (both in the vehicle's
+## frame): over it -- their footprints really overlap, which two neighbours of the grid do not -- and
+## higher, its underside RESTS_ON_RISE_M above the other's. Static and pure.
+static func rests_on(upper: AABB, lower: AABB) -> bool:
+	if upper.position.y < lower.position.y + RESTS_ON_RISE_M:
+		return false
+	return Rect2(upper.position.x, upper.position.z, upper.size.x, upper.size.z).grow(-BED_GRID_SLACK_M).intersects(
+			Rect2(lower.position.x, lower.position.z, lower.size.x, lower.size.z))
 
 ## Server: hold every locked crate at its rest LOCAL pose each physics frame, so it rides the truck
 ## rigidly (a KINEMATIC child can drift relative to a moving parent body). Keeps the replicated local
@@ -1573,6 +1729,8 @@ func _check_rollover_unlock() -> void:
 
 ## Drop one locked piece back into the world (un-freeze, reparent, replicate) — no new carrier.
 func _spill_cargo(body: Node) -> void:
+	if not _locked_cargo.has(body):
+		return  # spilled already: taking a load frees what lay on it, and a rollover goes through them all
 	release_cargo(body)  # remove from the load + stop ignoring it
 	if body is RigidBody3D:
 		(body as RigidBody3D).freeze = false
