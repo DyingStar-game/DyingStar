@@ -176,9 +176,13 @@ func test_the_wheel_spawns_full_test_crates_of_both_kinds() -> void:
 	assert_true(SpawnCatalog.test_crate(SpawnCatalog.entry("hauling_box"), "p1").is_empty(), "an empty box stays empty")
 
 
-func test_a_crate_counts_its_plate_weight_in_whole_kilograms() -> void:
-	var crate := CrateContent.crushed("gold", CRATE_M3 * 0.1, CRATE_M3 * 0.9, CRATE_M3 * 0.9 * GRANITE_KG_M3, "p1")
-	assert_eq(int(crate["units"]), roundi(float(crate["mass_kg"])), "what the plate weighs is what counts")
+func test_a_crate_counts_the_metal_it_holds_in_whole_kilograms() -> void:
+	var poor := CrateContent.crushed("gold", CRATE_M3 * 0.1, CRATE_M3 * 0.9, CRATE_M3 * 0.9 * GRANITE_KG_M3, "p1")
+	var rich := CrateContent.crushed("gold", CRATE_M3 * 0.6, CRATE_M3 * 0.4, CRATE_M3 * 0.4 * GRANITE_KG_M3, "p1")
+	assert_eq(int(poor["units"]), roundi(CrateContent.metal_kg(poor)), "the metal counts")
+	assert_lt(int(poor["units"]), roundi(float(poor["mass_kg"])), "the barren rock weighs on the plate and is worth nothing")
+	assert_eq(int(rich["units"]), int(poor["units"]) * 6, "purity pays: six times the metal, six times the units")
+	assert_eq(int(CrateContent.refined(rich)["units"]), int(rich["units"]), "refining gives what went in")
 	assert_eq(CrateContent.units_of_mass(0.2), 1, "a small partial crate still counts")
 	assert_eq(CrateContent.units_of_mass(0.0), 0)
 

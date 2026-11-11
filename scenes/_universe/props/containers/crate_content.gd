@@ -13,8 +13,9 @@ extends RefCounted
 ##   gangue_kg   barren rock PHYSICAL mass (kg) — host rocks differ in density, so it is banked as mass
 ##   purity      ore_m3 / (ore_m3 + gangue_m3), 0..1
 ##   mass_kg     GAME mass (kg): physical mass / RockMining.WEIGHT_REDUCTION_FACTOR, like every rock
-##   units       inventory units of the good: its weight in whole GAME kilograms, mass_kg as the plate
-##               shows it (crushed: ore and barren rock; ingots: the metal)
+##   units       inventory units of the good: the METAL it holds, in whole GAME kilograms (metal_kg) --
+##               what is sold, what a mission counts, what refining gives. The barren rock of a crushed
+##               crate weighs on the plate (mass_kg) and is worth nothing: purity pays
 ##   owner       who the goods belong to, for the plate: the player who extracted them (their login)
 ##   miner_id    service identity of the player who extracted it: the one the inventory credits
 ##   carrier_id  the player who took it off a warehouse shelf last (a transport), holding its goods
@@ -61,7 +62,7 @@ static func crushed(mineral: String, ore_m3: float, gangue_m3: float, gangue_kg:
 		"gangue_kg": gangue_kg,
 		"purity": ore_m3 / total if total > 0.0 else 0.0,
 		"mass_kg": game_mass(mineral, ore_m3, gangue_kg),
-		"units": units_of_mass(game_mass(mineral, ore_m3, gangue_kg)),
+		"units": units_of_mass(game_mass(mineral, ore_m3, 0.0)),
 		"owner": owner if owner != "" else OWNER_ARES,
 		"miner_id": miner_id,
 	}
