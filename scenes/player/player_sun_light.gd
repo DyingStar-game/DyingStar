@@ -42,6 +42,9 @@ var settled: bool = false
 ## world positions are subtracted in float64 BEFORE being normalised), and one owner means the sky
 ## and the light can never point at two different stars.
 var star_direction: Vector3 = Vector3.ZERO
+## How far underground the camera is, 0 (open air) .. 1 (deep in a mine): the share of the sun, the moons and the
+## sky's ambient taken off (MineSite.underground_at), refreshed every frame. The moon lights read it.
+var underground: float = 0.0
 var _star: Node3D = null
 var _prev_up_raw: Vector3 = Vector3.ZERO  # last frame's raw up, to detect when the orientation stops moving
 var _up_steady_frames: int = 0            # consecutive frames the raw up barely changed
@@ -146,6 +149,9 @@ func _update_sun(delta: float) -> void:
 	# the chunk lighting match the sphere instead of going uniformly black over the night side at altitude.
 	var alt: float = _altitude_crossfade()
 	var final_energy: float = sun_energy * lerpf(brightest, 1.0, alt)
+	# Down a mine, no sun: only its lamps and the torches light (its rock does the same in its own shader).
+	_update_underground()
+	final_energy *= 1.0 - underground
 	visible = final_energy > 0.0001
 	if visible:
 		# Build the orientation EXPLICITLY — do NOT use look_at() here: its target is derived from a ~3e10
@@ -160,6 +166,19 @@ func _update_sun(delta: float) -> void:
 		light_color = star_tint(extinction)
 		light_energy = final_energy
 	_apply_shadow_distance()
+
+## Where the camera is (else the player), how far underground: hands the sky's share to the atmosphere when it
+## changes.
+func _update_underground() -> void:
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var at: Vector3 = camera.global_position if camera != null else player.global_position
+	var value := MineSite.underground_at(at)
+	if is_equal_approx(value, underground):
+		return
+	underground = value
+	if is_instance_valid(atmosphere):
+		atmosphere.set_underground(value)
+
 
 ## Measurement switches from client.ini, for a light that crosses a thin roof right above what it lights
 ## (LightProbe: the roof's shadow is cast, its collision hides the star, the wall under it is lit all

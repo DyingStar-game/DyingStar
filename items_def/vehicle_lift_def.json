@@ -38,6 +38,7 @@
 				"acceleration",
 				"guide_z_offset",
 				"descent_depth",
+				"stop_depths",
 				"notch_length_m",
 				"notch_width_m",
 				"name"

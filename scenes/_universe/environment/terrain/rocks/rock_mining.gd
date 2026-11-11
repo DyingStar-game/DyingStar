@@ -1395,6 +1395,12 @@ func _debug_print_halves(side2_uuid: String) -> void:
 			other.can_be_carried(), other.can_be_breakable,
 			"" if settled else "  <-- cut replay NOT finished, size is the uncut rock"])
 
+## What a variant whose shape is not its scene's adds to the half it splits off, so that half can rebuild the same
+## rock (MineRock: the mine block it is made of). Nothing for the plain rocks.
+func _split_data() -> Dictionary:
+	return {}
+
+
 ## The replicated scene path (registry key, no res:// prefix) of THIS rock variant, so a broken-off
 ## half spawns the SAME scene (small / medium / large) instead of a hardcoded one.
 func _scene_name() -> String:
@@ -1428,7 +1434,7 @@ func _server_create_side2_rock(cut_index: int) -> void:
 		side2_uuid.substr(0, 8),
 		side2_fractures.map(func(f): return (f as Dictionary).get("fractured", "<absent>")),
 		side2_fractures.map(func(f): return (f as Dictionary).get("keep_side", "<absent>"))])
-	NetworkOrchestrator.spawn_prop_authoritative({
+	var side2_data := {
 		"type": "miningrock",
 		"uuid": side2_uuid,
 		"position": {"x": position.x, "y": position.y, "z": position.z},
@@ -1445,6 +1451,8 @@ func _server_create_side2_rock(cut_index: int) -> void:
 		"host_rock_id": str(host_rock.id) if host_rock != null else "",
 		"inert_density": inert_density,
 		"ground_color": ground_color,
-	})
+	}
+	side2_data.merge(_split_data(), true)
+	NetworkOrchestrator.spawn_prop_authoritative(side2_data)
 	# print("[mining] perforate %s CUT along plane %d (keep_side %d) -> %d fracture(s), breakable=%s"
 	# 	% [uuid, cut_i, keep_side, fractures.size(), can_be_breakable])

@@ -57,7 +57,7 @@ static func zones(data: PlanetData, hp_nside: int, hp_ipix: int, pitch_m: float)
     var chunk_reach := 1.5 * HEALPix.pixel_side_length(hp_nside, data.radius) + 2.0 * pitch_m + MARGIN_M
     var result: Array = []
     for placement in placements:
-        if placement == null:
+        if placement == null or not placement.refines_ground():
             continue
         var site := placement.surface_transform()
         var distance := center.angle_to(site.origin.normalized()) * data.radius

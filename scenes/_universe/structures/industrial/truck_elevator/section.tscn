@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/industrial/truck_elevator/truck_elevator_piece.gd" id="1_po3wq"]
+[ext_resource type="PackedScene" path="res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_section.glb" id="2_0v7rn"]
+
+[node name="Section" type="Node3D" unique_id=2143079441]
+script = ExtResource("1_po3wq")
+
+[node name="Model" type="Node3D" parent="." unique_id=2114333636 instance=ExtResource("2_0v7rn")]

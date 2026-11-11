@@ -22,7 +22,25 @@ const SCENES: Array[String] = [
 	"res://scenes/_universe/structures/urban/cities/ares_city_factory.tscn",
 	"res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 	ROCK_SCENE,
+	# The mines' truck elevator: spawned over the network, its parts built at run time (VehicleLiftModel), so no
+	# place's scene names them; seen first down a mine, they compiled there.
+	ELEVATOR + "upper_landing.tscn",
+	ELEVATOR + "lower_landing.tscn",
+	ELEVATOR + "level_landing.tscn",
+	ELEVATOR + "section.tscn",
+	ELEVATOR + "platform.tscn",
 ]
+const ELEVATOR := "res://scenes/_universe/structures/industrial/truck_elevator/"
+## The mines' rock, which no scene names either (MineSite gives it the caves' milky rock at run time, CaveMineral),
+## and the dust of a fallen layer: 72 pipelines compiled in one 10.7 s frame the first time a shaft was looked into
+## (playtest 2026-11-11). Drawn on meshes made like the mine's own (mine_meshes), whose vertex format the pipelines
+## depend on.
+const MINE_ROCK: Array[String] = [
+	"res://scenes/planet/cave/assets/crystal_corundum/corundum_rock_wall.tres",
+	"res://scenes/planet/cave/assets/crystal_corundum/corundum_rock_floor.tres",
+	"res://scenes/planet/cave/assets/crystal_corundum/corundum_rock_decor.tres",
+]
+const MINE_DUST_SHADER := preload("res://scenes/_universe/structures/industrial/mines/shaft/mine_dust.gdshader")
 ## A mining rock: drawn with its scene's materials and with the shader the game gives it at run time
 ## (MiningRock, rock_vein), which no scene names: the first rock met froze the game 2.7 s to compile it.
 const ROCK_SCENE := "res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn"
@@ -81,6 +99,34 @@ static func wanted() -> Array[String]:
 	return paths
 
 
+## [mesh, [materials]] of a mine's run-time surfaces (MINE_ROCK, MINE_DUST_SHADER): a rock cell's mesh (vertices,
+## normals, colours: MineMesher.to_mesh), a fractured block's (indexed: MineFracture.to_mesh) and the dust's box.
+static func mine_meshes() -> Array:
+	var rock: Array = []
+	for path in MINE_ROCK:
+		if ResourceLoader.exists(path):
+			rock.append(load(path))
+	var points := PackedVector3Array([Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 1, 0)])
+	var normals := PackedVector3Array([Vector3.BACK, Vector3.BACK, Vector3.BACK])
+	var cell_arrays := []
+	cell_arrays.resize(Mesh.ARRAY_MAX)
+	cell_arrays[Mesh.ARRAY_VERTEX] = points
+	cell_arrays[Mesh.ARRAY_NORMAL] = normals
+	cell_arrays[Mesh.ARRAY_COLOR] = PackedColorArray([Color.BLACK, Color.BLACK, Color.BLACK])
+	var cell := ArrayMesh.new()
+	cell.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, cell_arrays)
+	var block_arrays := []
+	block_arrays.resize(Mesh.ARRAY_MAX)
+	block_arrays[Mesh.ARRAY_VERTEX] = points
+	block_arrays[Mesh.ARRAY_NORMAL] = normals
+	block_arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2])
+	var block := ArrayMesh.new()
+	block.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, block_arrays)
+	var dust := ShaderMaterial.new()
+	dust.shader = MINE_DUST_SHADER
+	return [[cell, rock.duplicate()], [block, rock], [BoxMesh.new(), [dust]]]
+
+
 ## Add the mining rocks' run-time shader to the materials of [param meshes] ([method meshes_of]).
 static func with_rock_shader(meshes: Array) -> void:
 	var material := ShaderMaterial.new()
@@ -125,6 +171,7 @@ func _ready() -> void:
 		if ResourceLoader.load_threaded_request(path, "", true) == OK:
 			_loading.append(path)
 	_wanted = _loading.size()
+	_to_draw.append_array(mine_meshes())
 	_viewport = SubViewport.new()
 	_viewport.own_world_3d = true  # out of the game's world: nothing drawn here shows anywhere else
 	_viewport.size = Vector2i(64, 64)

@@ -2183,6 +2183,69 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "truck_elevator_base.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_base.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck_elevator_kiosk.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_kiosk.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck_elevator_pit.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_pit.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck_elevator_platform.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_platform.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck_elevator_ramp.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_ramp.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck_elevator_section.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_section.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck_elevator_top.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_top.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "vehicle_lift.png",
 			"path": "res://assets/textures/map_markers/vehicle_lift.png",
 			"author": "WarpZone",

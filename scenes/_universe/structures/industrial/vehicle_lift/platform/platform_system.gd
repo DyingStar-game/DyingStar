@@ -7,10 +7,19 @@ extends AnimatableBody3D
 @export var _platform_interface: CanvasLayer
 
 
-## The platform this system carries, as create_generic_object loads it (path from res://).
+## The platform this system carries, as create_generic_object loads it (path from res://): the first lift's.
 const PLATFORM_SCENE_PATH := "scenes/_universe/structures/industrial/vehicle_lift/platform/platform.tscn"
 
 const PLATFORM_INITIAL_POSITION: Vector3 = Vector3(0.0,0.0,2.425)
+
+## Scene of the platform this system spawns and carries (path from res://, as create_generic_object loads it):
+## each lift model has its own.
+@export var platform_scene_path: String = PLATFORM_SCENE_PATH
+## Where the platform hangs from this system (m, in its frame): its spring holds it there.
+@export var platform_offset: Vector3 = PLATFORM_INITIAL_POSITION
+## Railing layout generated on the platform in the editor (VehicleLift.generate_railings); empty = none.
+@export_file("*.json") var platform_railing_json: String = \
+		"res://scenes/_universe/structures/industrial/vehicle_lift/platform/railing_datas.json"
 
 
 var _is_platform_spawned: bool = false
@@ -40,10 +49,8 @@ func _ready() -> void:
 	add_to_group(PropNet.RIDE_CARRIER_GROUP)
 	if Engine.is_editor_hint():
 		var railing: Node3D = get_node_or_null("Platform/Railing")
-		var railing_json_path: StringName = &"res://scenes/_universe/structures/industrial/vehicle_lift/platform/railing_datas.json"
-
-		if railing:
-			VehicleLift.generate_railings(railing, railing_json_path)
+		if railing and not platform_railing_json.is_empty():
+			VehicleLift.generate_railings(railing, platform_railing_json)
 	else:
 		if GameOrchestrator.is_server():
 			var parent_lift: Node3D = get_parent()
@@ -67,12 +74,12 @@ func spawn_platform() -> void:
 		"type": "vehicle_lift_platform",
 		"uuid": platform_uuid,
 		"position": {
-			"x": PLATFORM_INITIAL_POSITION.x,
-			"y": PLATFORM_INITIAL_POSITION.y,
-			"z": PLATFORM_INITIAL_POSITION.z
+			"x": platform_offset.x,
+			"y": platform_offset.y,
+			"z": platform_offset.z
 		},
 		"rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
-		"scenename": PLATFORM_SCENE_PATH,
+		"scenename": platform_scene_path,
 		"parent_id": uuid,
 		"name": "Platform"
 	})

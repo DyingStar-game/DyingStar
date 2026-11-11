@@ -156,6 +156,8 @@ var props_scene: Dictionary = {
 		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn'),
 	'scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn':
 		preload('res://scenes/_universe/environment/terrain/rocks/rock_mining_lg.tscn'),
+	'scenes/_universe/structures/industrial/mines/shaft/mine_rock.tscn':
+		preload('res://scenes/_universe/structures/industrial/mines/shaft/mine_rock.tscn'),
 	'scenes/_universe/props/containers/box_50cm.tscn':
 		preload('res://scenes/_universe/props/containers/box_50cm.tscn'),
 	'scenes/_universe/props/containers/box_4m.tscn':

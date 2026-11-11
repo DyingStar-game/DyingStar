@@ -1169,7 +1169,8 @@ var _stargrot_hidden: Dictionary = {}
 ## galleries as a flat slab of ground. From inside the rock (CavePlanetRegistry.inside_rock) the surface is
 ## only seen through the openings, so stale chunks are not drawn there; they come back on leaving.
 func _hide_stale_in_caves(desired: Dictionary, local_cam: Vector3) -> void:
-	var underground := CavePlanetRegistry.inside_rock(planet_data, local_cam)
+	var underground := CavePlanetRegistry.inside_rock(planet_data, local_cam) \
+			or MineSite.contains_point(to_global(local_cam))
 	for key: String in _stargrot_hidden.keys():
 		if underground and _active_chunks.has(key) and not desired.has(key):
 			continue
@@ -5594,6 +5595,8 @@ var _runtime_cave_pixels: Dictionary = {}
 ## Caves registered at run time that were refused, by placement id: [definition signature, reason]. The same
 ## definition is not tried again; a new one is.
 var _cave_refusals: Dictionary = {}
+## The holes village mines opened (MinePlacement), by mine id.
+var _mine_holes_by_id: Dictionary = {}
 ## SERVER: the networked caves waiting for their fit to this relief, made on the first request.
 var _cave_fit_queue: CaveFitQueue = null
 
@@ -5647,6 +5650,54 @@ func unregister_cave_site(id: String) -> void:
 	_runtime_cave_pixels.erase(id)
 	_publish_runtime_cave_pixels()
 	_pads_changed(dirty, {}, "a cave")
+
+
+## Open (or move) the hole a village mine's shaft cuts in the ground (MinePlacement): the chunks it reaches are
+## rebuilt without the ground inside its outline. The same hole again changes nothing.
+func register_mine_hole(placement: MinePlacement) -> void:
+	if planet_data == null or placement == null:
+		return
+	var id := placement.placement_id
+	var previous: MinePlacement = _mine_holes_by_id.get(id)
+	if previous != null and previous.signature() == placement.signature():
+		return
+	_mine_holes_by_id[id] = placement
+	_publish_mine_holes()
+	var key := "mine:" + id
+	var dirty: Dictionary = _runtime_cave_pixels.get(key, {})
+	var tiles := {}
+	var reach := placement.radius_m + 5.0
+	CavePlanetRegistry._collect_tiles(planet_data, placement.frame, -reach, reach, reach, tiles,
+			1 << planet_data.max_quadtree_depth)
+	_runtime_cave_pixels[key] = tiles
+	dirty = dirty.merged(tiles)
+	_publish_runtime_cave_pixels()
+	_pads_changed(dirty, {}, "a mine")
+
+
+## Close the hole of the mine [param id]: the ground comes back.
+func unregister_mine_hole(id: String) -> void:
+	if planet_data == null or not _mine_holes_by_id.has(id):
+		return
+	_mine_holes_by_id.erase(id)
+	_publish_mine_holes()
+	var key := "mine:" + id
+	var dirty: Dictionary = _runtime_cave_pixels.get(key, {})
+	_runtime_cave_pixels.erase(key)
+	_publish_runtime_cave_pixels()
+	_pads_changed(dirty, {}, "a mine")
+
+
+## The open mine hole under [param id], or null.
+func mine_hole(id: String) -> MinePlacement:
+	return _mine_holes_by_id.get(id)
+
+
+func _publish_mine_holes() -> void:
+	var holes: Array[CavePlacement] = []
+	for hole: MinePlacement in _mine_holes_by_id.values():
+		holes.append(hole)
+	planet_data.mine_holes = holes
 
 
 ## The network of a cave registered at run time could not be built (CavePlanetRegistry.site_failed): drop it.
