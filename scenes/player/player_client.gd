@@ -2782,6 +2782,7 @@ func _on_notification(envelope: Dictionary) -> void:
 			return
 	var text: String = ChatNetwork.notification_text(envelope, names)
 	if text == "":
+		push_warning("[Notify] %s has no text to show" % str(envelope.get("type", "")))
 		return
 	_gain_pushed = ChatNetwork.is_gain(str(envelope.get("type", "")))
 	# Which notification rang how: a sound nobody heard is looked for here first.

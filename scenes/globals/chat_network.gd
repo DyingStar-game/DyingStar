@@ -657,10 +657,15 @@ func _on_reconnect_timeout() -> void:
 
 func _on_broker_message(topic: String, payload: String) -> void:
 	var me := _my_id()
+	if topic.begins_with(_NOTIFY_PREFIX):
+		# A notification that never showed is looked for here first: did it come, for us, readable?
+		print("[Notify] message on %s (%d chars), for us: %s" % [topic, payload.length(), str(is_my_notify_topic(topic, me))])
 	if is_my_notify_topic(topic, me):
 		var envelope := parse_notification(payload)
 		if not envelope.is_empty():
 			notification_received.emit(envelope)
+		else:
+			push_warning("[Notify] unreadable notification: %s" % payload.left(200))
 		return
 	var channel := _channel_for_topic(topic)
 	if channel == DirectChat.ChannelE.UNSPECIFIED:
