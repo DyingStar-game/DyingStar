@@ -12,7 +12,7 @@ const NODE_NAME := &"ScreenHum"
 ## From how far (m) the hum is heard; it plays only within.
 const HEAR_M := 7.0
 ## Its level (dB) a metre away: a room's background, under a voice.
-const VOLUME_DB := -22.0
+const VOLUME_DB := -17.0
 ## How often (s) the distance to the camera is looked at.
 const CHECK_S := 0.5
 
@@ -52,7 +52,7 @@ func _ready() -> void:
 	bus = Sfx3D.SFX_BUS
 	volume_db = VOLUME_DB
 	max_db = VOLUME_DB  # never louder than its level, however close the ear (the default tops at +3 dB)
-	unit_size = 1.0
+	unit_size = 1.5
 	max_distance = HEAR_M
 	attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 

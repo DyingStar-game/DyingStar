@@ -57,10 +57,10 @@ func test_who_holds_the_mission_aligns_the_gauges() -> void:
 func test_it_is_laid_out_for_the_screens_shape_and_fills_it() -> void:
 	var least := GaugeRepairPanel.DESIGN_PX
 	assert_eq(GaugeRepairPanel.design_for(least * 2.0), least, "the same shape: the least size, scaled")
-	var wide := GaugeRepairPanel.design_for(Vector2(1920.0, 600.0))
-	assert_eq(wide, Vector2(1920.0, 600.0), "a wide screen: wider, as high")
-	var tall := GaugeRepairPanel.design_for(Vector2(340.0, 600.0))
-	assert_eq(tall, Vector2(least.x, 1200.0), "a tall screen: as wide, higher")
+	var wide := GaugeRepairPanel.design_for(Vector2(least.y * 3.0, least.y))
+	assert_eq(wide, Vector2(least.y * 3.0, least.y), "a wide screen: wider, as high")
+	var tall := GaugeRepairPanel.design_for(Vector2(least.x * 0.5, least.x))
+	assert_eq(tall, Vector2(least.x, least.x * 2.0), "a tall screen: as wide, higher")
 	assert_eq(GaugeRepairPanel.design_for(Vector2.ZERO), least)
 	var dialog := _dialog()
 	dialog.fit(Vector2(3840.0, 1200.0))
@@ -181,3 +181,24 @@ func test_a_repaired_machine_counts_its_restart_down_then_works() -> void:
 	assert_eq(breakdown._shown, MachineBreakdown.Shown.WORKING)
 	assert_false(breakdown._cover.visible)
 	assert_false(breakdown.is_broken())
+
+
+func test_it_never_asks_for_more_room_than_its_design_size() -> void:
+	# On a dispenser's square screen the panel was wider than the screen: "Close" ran off its right edge.
+	for locale: String in ["en", "fr"]:
+		TranslationServer.set_locale(locale)
+		var dialog := _dialog()
+		dialog.fit(Vector2(1024.0, 1024.0))
+		dialog.open()
+		dialog.set_may_repair(false, 1)
+		dialog._process(GaugeRepairPanel.DIAGNOSIS_S + 0.1)
+		await wait_process_frames(2)
+		assert_lte(dialog.get_combined_minimum_size().x, dialog.size.x, "%s, no mission: as wide as laid out" % locale)
+		assert_almost_eq(dialog.size.x * dialog.scale.x, 1024.0, 0.01, "%s: it ends at the screen's edge" % locale)
+		dialog.open()
+		dialog.set_may_repair(true, 1)
+		dialog._process(GaugeRepairPanel.DIAGNOSIS_S + 0.1)
+		await wait_process_frames(2)
+		assert_lte(dialog.get_combined_minimum_size().y, GaugeRepairPanel.DESIGN_PX.y, "%s, gauges: no taller than the least screen" % locale)
+		assert_almost_eq(dialog.size.x * dialog.scale.x, 1024.0, 0.01)
+	TranslationServer.set_locale("en")

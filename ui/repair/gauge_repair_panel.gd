@@ -16,7 +16,7 @@ signal dismissed
 
 ## The smallest size (px) the panel is laid out at: a screen of another shape gets a wider or a taller
 ## layout (design_for), and the whole is scaled to the screen.
-const DESIGN_PX := Vector2(680.0, 600.0)
+const DESIGN_PX := Vector2(680.0, 660.0)
 ## How long the sensors are read before the fault is told (s).
 const DIAGNOSIS_S := 2.0
 ## How long the gauges must stay in their bands (s): a regulator swept through does not count.
@@ -24,8 +24,9 @@ const HOLD_S := 0.8
 ## A gauge's and a regulator's height (px, at the design size); both are as wide as the panel.
 const GAUGE_PX := 40.0
 const SLIDER_PX := 32.0
-## The least width (px) the wrapped texts are laid out at: DESIGN_PX less the margins.
-const WRAP_PX := 632.0
+## The least width (px) the wrapped texts are laid out at: under DESIGN_PX less the margins and the frame, so
+## that the panel never asks for more than its design size (it ran off a square screen's right edge).
+const WRAP_PX := 560.0
 
 enum Phase { CLOSED, DIAGNOSING, FAULT, GAUGES, SENT }
 
