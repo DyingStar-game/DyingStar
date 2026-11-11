@@ -8,7 +8,9 @@ class_name RockCatalogue
 ##   label, formula, colors [light, dark] (hex), night_colors (chameleon rocks),
 ##   core_colors (the deep / reduced-iron hue, see RockImpurity.tint),
 ##   impurities [{element, ppm_min, ppm_max, ions, optional}], minerals
-##   [{name, formula}], purity, surface (false = underground only).
+##   [{name, formula}], purity, surface (false = underground only),
+##   fluorescence {color, strength, activator} (the clear crystal's UV glow, see
+##   CaveMineral) and crystal_habit ("hexagonal": a cave of the rock grows crystals).
 ##
 ## Loaded once, then read-only: safe to call from the mesh workers. The tint
 ## is a pure function of position (SurfaceNoise), so every client and the
@@ -26,6 +28,7 @@ static var _rocks: Dictionary = {}
 static var _colors: Dictionary = {}     # slug → [Color light, Color dark]
 static var _night: Dictionary = {}      # slug → [Color, Color] (chameleon only)
 static var _core: Dictionary = {}       # slug → [Color, Color] (rocks with a deep hue)
+static var _fluo: Dictionary = {}       # slug → {color: Color, strength: float, activator: String}
 static var _loaded := false
 static var _mutex := Mutex.new()
 
@@ -45,6 +48,7 @@ static func _load() -> void:
 	var colors := {}
 	var night := {}
 	var core := {}
+	var fluo := {}
 	if FileAccess.file_exists(PATH):
 		var txt := FileAccess.get_file_as_string(PATH)
 		var parsed: Variant = JSON.parse_string(txt)
@@ -63,10 +67,18 @@ static func _load() -> void:
 		var cpair := _pair(r.get("core_colors"))
 		if not cpair.is_empty():
 			core[slug] = cpair
+		var f: Variant = r.get("fluorescence")
+		if f is Dictionary and float((f as Dictionary).get("strength", 0.0)) > 0.0:
+			fluo[slug] = {
+				"color": Color.html(str(f.get("color", "#ffffff"))),
+				"strength": float(f["strength"]),
+				"activator": str(f.get("activator", "")),
+			}
 	_rocks = rocks
 	_colors = colors
 	_night = night
 	_core = core
+	_fluo = fluo
 
 
 static func _pair(v: Variant) -> Array:
@@ -116,6 +128,20 @@ static func night_colors_of(slug: String) -> Array:
 static func core_colors_of(slug: String) -> Array:
 	_ensure_loaded()
 	return _core.get(slug, [])
+
+
+## The UV glow of the rock's clear crystal: {color: Color, strength: float
+## (0..1), activator: String}, or {} for a rock that does not fluoresce.
+static func fluorescence_of(slug: String) -> Dictionary:
+	_ensure_loaded()
+	return _fluo.get(slug, {})
+
+
+## How a free-growing crystal of the rock looks ("hexagonal"), or "" when the
+## rock grows none — a cave in it then has no crystals.
+static func crystal_habit_of(slug: String) -> String:
+	var habit: Variant = get_rock(slug).get("crystal_habit")
+	return str(habit) if habit is String else ""
 
 
 ## Does this rock exist at the surface (false: underground only, e.g. hercynite)?

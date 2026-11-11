@@ -4,6 +4,9 @@ extends Node3D
 ## Cave identity and collision never belong to a single terrain chunk.
 
 const MAX_TRIAL_SITES := 512
+## Group of the explorer's inspection lamps in the caves; the explorer switches them off to judge the crystals'
+## own glow.
+const AUTHORING_LIGHTS := &"stargrot_authoring_lights"
 
 var prepared: bool = false
 var error_message: String = ""
@@ -252,13 +255,15 @@ func assemble_plan(plan: Dictionary) -> Node3D:
     group.name = str(plan.placement.placement_id).validate_node_name()
     add_child(group)
     var placement: CavePlacement = plan.placement
+    # The rock the cave is dug in tints its walls and grows its crystals: a client look, never networked.
+    var mineral: CaveMineral = null if _terrain.is_server else CaveMineral.at(_terrain.planet_data, placement)
     var cave := CavePreviewBuilder.instantiate(plan.cave, placement.profile.asset_library,
-        not _terrain.is_server, _terrain.is_server, placement.network_origin())
+        not _terrain.is_server, _terrain.is_server, placement.network_origin(), mineral)
     cave.name = placement.placement_id.validate_node_name()
     cave.transform = placement.cave_transform()
     group.add_child(cave)
     var entrance := CavePreviewBuilder.instantiate(plan.entrance, placement.profile.asset_library,
-        not _terrain.is_server, _terrain.is_server)
+        not _terrain.is_server, _terrain.is_server, Vector3.ZERO, mineral)
     entrance.name = "Entrance"
     entrance.transform = placement.surface_transform()
     group.add_child(entrance)
@@ -270,6 +275,8 @@ func assemble_plan(plan: Dictionary) -> Node3D:
         var stride := maxi(1, int(ceil(rooms.size() / 6.0)))
         for index in range(0, rooms.size(), stride):
             var lamp := OmniLight3D.new()
+            lamp.name = "AuthoringCaveLight%d" % index
+            lamp.add_to_group(AUTHORING_LIGHTS)
             lamp.position = (rooms[index].a as Vector3) + Vector3.UP * 2.4
             lamp.light_color = Color(0.75, 0.87, 1.0)
             lamp.light_energy = 3.0

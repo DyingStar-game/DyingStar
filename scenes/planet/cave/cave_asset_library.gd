@@ -19,6 +19,9 @@ extends Resource
 @export var entrance_library: CaveAssetLibrary
 ## Shared visual instance budget for every rule in a cave, independent of its length.
 @export_range(0, 1000, 1) var instance_budget: int = 240
+## How a cave of this library shows the rock it is dug in: wall tint, crystal material, glow lights. Null: the
+## walls keep their authored look and the mineral_crystal rules draw nothing (ice, sand).
+@export var mineral_style: CaveMineralStyle
 
 
 static func default_for(family: String, open_mouth: bool = false) -> CaveAssetLibrary:
@@ -51,7 +54,7 @@ func validation_error() -> String:
                 return "Paramètre de décor non fini."
         if rule.scale_min <= 0.0 or rule.scale_max < rule.scale_min or rule.spacing_m < 2.0 \
                 or rule.max_instances < 0 or rule.max_instances > 500 \
-                or rule.support not in ["floor", "ceiling", "entrance_ground", "entrance_wall"] \
+                or rule.support not in ["floor", "ceiling", "entrance_ground", "entrance_wall", "wall"] \
                 or rule.zone not in ["all", "entrance", "chamber", "deep"]:
             return "Échelle ou espacement de décor invalide."
         if rule.distribution not in ["legacy", "scattered", "clustered"] or rule.max_slope_deg < 0 or rule.max_slope_deg > 75:

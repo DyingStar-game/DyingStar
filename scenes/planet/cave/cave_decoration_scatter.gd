@@ -57,17 +57,29 @@ static func network(data: Dictionary, rule: Dictionary, rng: RandomNumberGenerat
             break
         var scale := rng.randf_range(rule.scale_min, rule.scale_max)
         var point: Vector3 = candidate.point
-        if near_path(data.graph.links, point, rule.radius_m * scale + 1.0):
-            continue
-        var height := surface(data.sampler, candidate.room, point, rule.support == "ceiling")
-        if not is_finite(height):
-            continue
-        point.y = height
-        var normal := _normal(data.sampler, point)
-        var expected := Vector3.DOWN if rule.support == "ceiling" else Vector3.UP
-        if normal.dot(expected) < cos(deg_to_rad(rule.max_slope_deg)):
-            continue
-        var direction := normal if rule.align_to_surface else expected
+        var normal: Vector3
+        var direction: Vector3
+        if rule.support == "wall":
+            point = wall(data.sampler, candidate.room, point, rng.randf_range(0.15, 0.7))
+            if not point.is_finite() or near_path(data.graph.links, point, rule.radius_m * scale + 1.0):
+                continue
+            normal = _normal(data.sampler, point)
+            # A wall leans at most max_slope_deg from vertical; flatter ground belongs to the floor rules.
+            if absf(normal.y) > sin(deg_to_rad(rule.max_slope_deg)):
+                continue
+            direction = normal
+        else:
+            if near_path(data.graph.links, point, rule.radius_m * scale + 1.0):
+                continue
+            var height := surface(data.sampler, candidate.room, point, rule.support == "ceiling")
+            if not is_finite(height):
+                continue
+            point.y = height
+            normal = _normal(data.sampler, point)
+            var expected := Vector3.DOWN if rule.support == "ceiling" else Vector3.UP
+            if normal.dot(expected) < cos(deg_to_rad(rule.max_slope_deg)):
+                continue
+            direction = normal if rule.align_to_surface else expected
         var basis := Basis(Quaternion(Vector3.UP, direction)) * Basis(Vector3.UP, rng.randf_range(0, TAU))
         basis = basis.scaled(Vector3.ONE * scale)
         var transform := Transform3D(basis, point - direction * (rule.bounds as AABB).position.y * scale)
@@ -86,7 +98,7 @@ static func network(data: Dictionary, rule: Dictionary, rng: RandomNumberGenerat
 static func porch(data: Dictionary, rule: Dictionary, rng: RandomNumberGenerator,
         budget: int) -> Array[Transform3D]:
     var result: Array[Transform3D] = []
-    if rule.zone not in ["all", "entrance"]:
+    if rule.zone not in ["all", "entrance"] or rule.support == "wall":
         return result
     var occupied: Array[AABB] = []
     for section: Dictionary in data.decor_sections:
@@ -174,6 +186,33 @@ static func surface(sampler: RefCounted, room: Dictionary, point: Vector3, ceili
             return (air.y + solid.y) * 0.5
         air = solid
     return INF
+
+
+## The chamber wall met marching out horizontally from the middle of [param room] toward [param point], at
+## [param height_fraction] of the room's height above its middle; Vector3.INF when the start is in rock or no
+## wall is found within the room's reach.
+static func wall(sampler: RefCounted, room: Dictionary, point: Vector3, height_fraction: float) -> Vector3:
+    var centre: Vector3 = room.a
+    var outward := Vector3(point.x - centre.x, 0.0, point.z - centre.z)
+    if outward.length_squared() < 1e-6:
+        return Vector3.INF
+    outward = outward.normalized()
+    var air := centre + Vector3.UP * float(room.size.y) * height_fraction
+    if float(sampler.call("Sample", air)) <= 0:
+        return Vector3.INF
+    var reach := maxf(float(room.size.x), float(room.size.z)) * 1.5 + 4.0
+    for step in mini(1024, int(ceil(reach / 0.25))):
+        var solid := air + outward * 0.25
+        if float(sampler.call("Sample", solid)) <= 0:
+            for refinement in 6:
+                var midpoint := (air + solid) * 0.5
+                if float(sampler.call("Sample", midpoint)) > 0:
+                    air = midpoint
+                else:
+                    solid = midpoint
+            return (air + solid) * 0.5
+        air = solid
+    return Vector3.INF
 
 
 static func near_path(links: Array, point: Vector3, clearance: float) -> bool:

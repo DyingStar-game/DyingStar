@@ -17,8 +17,10 @@ extends Resource
 @export_range(0.0, 75.0, 1.0) var max_slope_deg: float = 35.0
 ## Whether interior decoration follows its support normal instead of staying upright.
 @export var align_to_surface: bool = false
-## Surface carrying the asset; entrance supports only exist on fitted planetary openings.
-@export_enum("floor", "ceiling", "entrance_ground", "entrance_wall") var support: String = "floor"
+## Surface carrying the asset; entrance supports only exist on fitted planetary openings. "wall" is the side of
+## a chamber, found by marching out from its middle; there max_slope_deg is the steepest tilt of the wall from
+## vertical.
+@export_enum("floor", "ceiling", "entrance_ground", "entrance_wall", "wall") var support: String = "floor"
 ## Entrance is the first 15% and, when open, the last 15%; deep starts after 55%.
 @export_enum("all", "entrance", "chamber", "deep") var zone: String = "all"
 ## Mesh origin must be on its support; local +Y points away from the support.
@@ -31,3 +33,6 @@ extends Resource
 @export_range(0.05, 10.0, 0.05) var radius_m: float = 0.5
 ## Per-rule instance cap (0..500), also bounded by the shared library budget; zero disables this rule.
 @export_range(0, 500, 1) var max_instances: int = 120
+## A crystal of the cave's rock (CaveMineral): drawn only in a cave whose rock grows crystals, in the rock's
+## hue and fluorescence; its placements are planned after the other rules', from what their budget leaves.
+@export var mineral_crystal: bool = false

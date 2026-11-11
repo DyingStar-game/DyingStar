@@ -4,10 +4,14 @@ class_name CavePreviewBuilder
 ## Planetary registration and server residency remain outside this preview builder.
 
 const GlobalsDefs := preload("res://scenes/globals/globals.gd")
+## Cell (m) of the ground cover lookup of an entrance's rocks (open_cover_grid).
+const OPEN_COVER_CELL_M := 2.0
 
 
+## [param mineral]: the rock the cave is dug in (CaveMineral, client side), which tints its walls and grows
+## its crystals when the library has a mineral style; null keeps the authored look and draws no crystal.
 static func instantiate(data: Dictionary, library: CaveAssetLibrary, visual: bool = true, physics: bool = true,
-        texture_origin: Vector3 = Vector3.ZERO) -> Node3D:
+        texture_origin: Vector3 = Vector3.ZERO, mineral: CaveMineral = null) -> Node3D:
     var root := Node3D.new()
     root.name = "CavePreview"
     root.set_meta("cave_spec", data.spec)
@@ -34,12 +38,18 @@ static func instantiate(data: Dictionary, library: CaveAssetLibrary, visual: boo
             var material: Material = null
             if library:
                 material = library.wall_material if key == "wall" else library.floor_material
+                if mineral != null:
+                    material = mineral.surface_material(key, material, library.mineral_style)
             mesh.surface_set_material(mesh.get_surface_count() - 1, material)
         var instance := MeshInstance3D.new()
         instance.name = "CaveSurface"
         instance.mesh = mesh
         # Triplanar textures share the site's coordinates with the entrance, while geometry and physics stay put.
         instance.position = -texture_origin
+        if mineral != null and library != null:
+            # An entrance's surfaces carry their ground cover, their share of open sky; a network has none.
+            var covered: bool = (data.wall as Dictionary).has("colors") or (data.floor as Dictionary).has("colors")
+            mineral.dress_surface(instance, library.mineral_style, 1 if covered else 0)
         root.add_child(instance)
     if physics:
         var body := StaticBody3D.new()
@@ -53,18 +63,25 @@ static func instantiate(data: Dictionary, library: CaveAssetLibrary, visual: boo
         body.add_child(collision)
         root.add_child(body)
     if library and (visual or physics):
-        _add_decorations(root, data, library, visual, physics)
+        _add_decorations(root, data, library, visual, physics, mineral)
     return root
 
 
 static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetLibrary,
-        visual: bool, physics: bool) -> void:
+        visual: bool, physics: bool, mineral: CaveMineral = null) -> void:
     var request := decoration_request(library)
     var plan: Dictionary = data.get("decoration_plan", {})
     if plan.get("signature", "") != request.signature:
         plan = prepare_decorations(data, request)
+    var style := library.mineral_style
+    var grows_crystals := mineral != null and mineral.crystals and style != null
+    var crystal_placements: Array = []
+    var open_cover := {}  # an entrance's ground cover by cell, built for its first rock (open_cover_grid)
     for rule in library.decoration_rules():
         if rule == null or rule.mesh == null:
+            continue
+        # Crystals only show in a rock that grows them; they have no collider (the server has no mineral).
+        if rule.mineral_crystal and not grows_crystals:
             continue
         var placements: Array = plan.groups.get(rule.rule_name, [])
         if placements.is_empty():
@@ -72,14 +89,31 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
         if visual:
             var multimesh := MultiMesh.new()
             multimesh.transform_format = MultiMesh.TRANSFORM_3D
+            # The rocks of an entrance carry their share of open sky (cave_corundum_rock.gdshader).
+            var open_air := not rule.mineral_crystal and mineral != null and rule.material != null \
+                and data.has("rock_supports")
+            multimesh.use_custom_data = open_air
             multimesh.mesh = rule.mesh
             multimesh.instance_count = placements.size()
+            var skies := PackedFloat32Array()
+            if open_air:
+                if open_cover.is_empty():
+                    open_cover = open_cover_grid(data)
+                skies = open_air_shares(rule, placements, open_cover)
             for index in placements.size():
                 multimesh.set_instance_transform(index, placements[index])
+                if open_air:
+                    multimesh.set_instance_custom_data(index, Color(skies[index], 0.0, 0.0, 0.0))
             var instance := MultiMeshInstance3D.new()
             instance.name = "Decor_" + rule.rule_name.validate_node_name()
             instance.multimesh = multimesh
             instance.material_override = rule.material
+            if rule.mineral_crystal:
+                mineral.dress_crystals(instance, style)
+                crystal_placements.append_array(placements)
+            elif mineral != null and rule.material != null:
+                instance.material_override = mineral.surface_material("decor", rule.material, style)
+                mineral.dress_surface(instance, style, 2 if open_air else 0)
             root.add_child(instance)
         if physics and rule.collision_shape:
             var body := StaticBody3D.new()
@@ -92,6 +126,55 @@ static func _add_decorations(root: Node3D, data: Dictionary, library: CaveAssetL
                 shape.transform = transform
                 body.add_child(shape)
             root.add_child(body)
+    if visual and grows_crystals:
+        mineral.add_glow_lights(root, crystal_placements, style)
+
+
+## Share of open sky (0 underground .. 1 in the open air) of each of [param placements] of [param rule] in an
+## entrance whose ground cover is [param cover] (open_cover_grid): the rocks set around the mouth (entrance_* supports)
+## stand on the planet's ground, the others take the cover of the entrance surface they stand on.
+static func open_air_shares(rule: CaveDecorationRule, placements: Array, cover: Dictionary) -> PackedFloat32Array:
+    var skies := PackedFloat32Array()
+    for transform: Transform3D in placements:
+        skies.append(1.0 if rule.support.begins_with("entrance_") else _open_air_at(cover, transform.origin))
+    return skies
+
+
+## The ground cover of an entrance's surfaces (CaveEntrance.ground_cover, its share of open sky) on a grid of
+## OPEN_COVER_CELL_M: cell -> [[vertex, cover], ...], the covered vertices only.
+static func open_cover_grid(data: Dictionary) -> Dictionary:
+    var grid := {}
+    for key in ["wall", "floor"]:
+        var surface: Dictionary = data[key]
+        if not surface.has("colors"):
+            continue
+        var vertices: PackedVector3Array = surface.vertices
+        var colors: PackedColorArray = surface.colors
+        for index in vertices.size():
+            if colors[index].r <= 0.0:
+                continue
+            var cell := Vector3i((vertices[index] / OPEN_COVER_CELL_M).floor())
+            if not grid.has(cell):
+                grid[cell] = []
+            (grid[cell] as Array).append([vertices[index], colors[index].r])
+    return grid
+
+
+## Share of open sky of a rock standing at [param point]: the ground cover of the nearest covered vertex within
+## one cell, 0 (underground) when there is none.
+static func _open_air_at(grid: Dictionary, point: Vector3) -> float:
+    var centre := Vector3i((point / OPEN_COVER_CELL_M).floor())
+    var best := OPEN_COVER_CELL_M * OPEN_COVER_CELL_M
+    var cover := 0.0
+    for dx in range(-1, 2):
+        for dy in range(-1, 2):
+            for dz in range(-1, 2):
+                for entry: Array in grid.get(centre + Vector3i(dx, dy, dz), []):
+                    var distance := (entry[0] as Vector3).distance_squared_to(point)
+                    if distance < best:
+                        best = distance
+                        cover = entry[1]
+    return cover
 
 
 ## Snapshot mesh bounds on the main thread; geometry workers receive plain immutable values only.
@@ -109,7 +192,7 @@ static func decoration_request(library: CaveAssetLibrary) -> Dictionary:
 static func _rule_snapshot(rule: CaveDecorationRule) -> Dictionary:
     var result := {"bounds": rule.mesh.get_aabb()}
     for property in ["rule_name", "scale_min", "scale_max", "spacing_m", "radius_m", "max_instances",
-            "support", "zone", "distribution", "max_slope_deg", "align_to_surface"]:
+            "support", "zone", "distribution", "max_slope_deg", "align_to_surface", "mineral_crystal"]:
         result[property] = rule.get(property)
     return result
 
@@ -129,26 +212,30 @@ static func prepare_decorations(data: Dictionary, request: Dictionary) -> Dictio
             var saved: Dictionary = applicable[index]
             applicable[index] = applicable[other]
             applicable[other] = saved
-    var rules_left: int = applicable.size()
     var occupied: Array[AABB] = []
     var groups := {}
-    for rule: Dictionary in applicable:
-        var share := int(ceil(float(remaining) / maxi(rules_left, 1)))
-        rules_left -= 1
-        var placements := _decoration_transforms(data, rule, share)
-        var separated: Array[Transform3D] = []
-        for transform in placements:
-            var box: AABB = (transform * (rule.bounds as AABB)).grow(0.08)
-            var overlaps := false
-            for other in occupied:
-                if box.intersects(other):
-                    overlaps = true
-                    break
-            if not overlaps:
-                separated.append(transform)
-                occupied.append(box)
-        remaining -= separated.size()
-        groups[rule.rule_name] = separated
+    # The rock's crystals come last and share what the other rules leave: adding them never thins the rocks.
+    var crystal := func(rule: Dictionary) -> bool: return bool(rule.get("mineral_crystal", false))
+    for rules: Array in [applicable.filter(func(rule: Dictionary): return not crystal.call(rule)),
+            applicable.filter(crystal)]:
+        var rules_left: int = rules.size()
+        for rule: Dictionary in rules:
+            var share := int(ceil(float(remaining) / maxi(rules_left, 1)))
+            rules_left -= 1
+            var placements := _decoration_transforms(data, rule, share)
+            var separated: Array[Transform3D] = []
+            for transform in placements:
+                var box: AABB = (transform * (rule.bounds as AABB)).grow(0.08)
+                var overlaps := false
+                for other in occupied:
+                    if box.intersects(other):
+                        overlaps = true
+                        break
+                if not overlaps:
+                    separated.append(transform)
+                    occupied.append(box)
+            remaining -= separated.size()
+            groups[rule.rule_name] = separated
     return {"signature": request.signature, "groups": groups}
 
 

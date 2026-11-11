@@ -5376,6 +5376,22 @@ func sample_biome_at(dir: Vector3) -> Color:
 	return Color(0.45, 0.35, 0.25, 1.0)
 
 
+## The catalogue rock of the ground in direction [param dir] (rocks.json slug), or "" when no rock
+## applies: the corundum default where it covers the zone, else the zone's own rock_type. The same
+## rule as [method ground_albedo_at]; caves read it to grow the crystals of the rock they are dug in
+## (CaveMineral). Main thread only, like [method first_zone_at].
+func rock_at(dir: Vector3) -> String:
+	return _rock_of_zone(first_zone_at(dir))
+
+
+func _rock_of_zone(zone: Dictionary) -> String:
+	if corundum_default_biome and corundum_applies_to_zone(zone):
+		return corundum_default_rock
+	if not zone.is_empty():
+		return String(zone.get("rock_type", ""))
+	return ""
+
+
 ## The colour the terrain SHOWS in direction `dir` -- the same decision PlanetChunk bakes into its
 ## vertex colours, so a fringe painted with it matches the ground it stands on.
 ##
@@ -5394,11 +5410,7 @@ func ground_albedo_at(dir: Vector3) -> Color:
 	# corundum_milky, a pale #E7E0D1, which is the near-white ground one actually sees. The plateau
 	# biome's own colour is a different, darker beige that never reaches the screen there, so
 	# reading the biome would paint a band in a colour the ground never shows.
-	var rock := ""
-	if corundum_default_biome and corundum_applies_to_zone(zone):
-		rock = corundum_default_rock
-	elif not zone.is_empty():
-		rock = String(zone.get("rock_type", ""))
+	var rock := _rock_of_zone(zone)
 	if not rock.is_empty() and RockCatalogue.has(rock):
 		return RockCatalogue.tint(dir, radius, rock)
 	if not zone.is_empty():
