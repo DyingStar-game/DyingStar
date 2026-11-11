@@ -2784,6 +2784,8 @@ func _on_notification(envelope: Dictionary) -> void:
 	if text == "":
 		return
 	_gain_pushed = ChatNetwork.is_gain(str(envelope.get("type", "")))
+	# Which notification rang how: a sound nobody heard is looked for here first.
+	print("[Notify] %s -> %s" % [str(envelope.get("type", "")), "chime" if _gain_pushed else "beep"])
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
 	_gain_pushed = false
 	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
