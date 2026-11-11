@@ -59,6 +59,7 @@ var _places: Dictionary = {}
 func refresh(planet: Planet, camera: Camera3D, gap_m: float) -> void:
 	var seen: Dictionary = {}
 	HomeLocation.ensure(planet, Player.own_horizon_id())  # the home, even far from it
+	MissionSites.ensure(planet)  # the zones the player's missions send them to
 	var tok: int = ClientPerf.scope_begin()  # map:markers, map:group on the [CPerf+] heartbeat
 	if planet != null and camera != null and is_inside_tree():
 		var metres_per_unit: float = 1.0 / maxf(global_basis.get_scale().x, 1.0e-30)

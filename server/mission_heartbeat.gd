@@ -39,6 +39,10 @@ const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
 ## Seconds between two full re-pushes. The service expires a state after 30 s, so one beat of slack
 ## absorbs a single failed call without every standing player dropping out of their mission list.
 const INTERVAL_S: float = 10.0
+## Seconds between two looks at the simulator's inspection sites to lay on the ground (InspectionGround),
+## and before the first, once the planets are there: sites are made once per village, rarely one waits.
+const GROUND_INTERVAL_S: float = 300.0
+const GROUND_FIRST_S: float = 45.0
 ## Request timeout, shorter than the beat so a hung call can never overlap the next one.
 const TIMEOUT_S: float = 3.0
 ## The schema's `maxItems` on the batch array: a roster larger than this is sent in several calls,
@@ -122,6 +126,12 @@ func _ready() -> void:
 	_timer.autostart = true
 	_timer.timeout.connect(_on_timer)
 	add_child(_timer)
+	get_tree().create_timer(GROUND_FIRST_S).timeout.connect(_lay_inspection_sites)
+	var ground := Timer.new()
+	ground.wait_time = GROUND_INTERVAL_S
+	ground.autostart = true
+	ground.timeout.connect(_lay_inspection_sites)
+	add_child(ground)
 
 
 func _load_config() -> void:
@@ -325,6 +335,20 @@ func _report_goods_move(player_id: String, good_type: String, units: int, direct
 ## server's service identity: {ok, data | error}. For the turn-in at a kiosk and the goods moves.
 func mission_internal(method: HTTPClient.Method, path: String, body: Variant) -> Dictionary:
 	return await _internal(_is_active(), _url, method, path, body)
+
+
+## The same, for the universe simulator's internal API.
+func usim_internal(method: HTTPClient.Method, path: String, body: Variant) -> Dictionary:
+	return await _internal(_usim_url != "" and _is_active(), _usim_url, method, path, body)
+
+
+## Lay on the ground the inspection sites the simulator made since the last look (services ADR 0019).
+func _lay_inspection_sites() -> void:
+	if _usim_url == "" or not _is_active():
+		return
+	var laid: int = await InspectionGround.lay(usim_internal, get_tree().get_nodes_in_group(Planet.GROUP))
+	if laid > 0:
+		print("[InspectionGround] %d site(s) laid on the ground" % laid)
 
 
 ## The same, for the inventory service's internal API (the warehouse behind a POI, at a turn-in).
