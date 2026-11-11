@@ -97,3 +97,22 @@ func test_the_shaft_has_a_flat_side_under_its_collar() -> void:
     assert_gt(float(mesher.call("Sample", Vector3(0, y, flat + 0.3))), 0.0, "air just inside the flat side")
     assert_lt(float(mesher.call("Sample", Vector3(0, y, flat - 0.3))), 0.0, "rock just past it, between levels")
     assert_gt(float(mesher.call("Sample", Vector3(0, -4.0, flat - 1.5))), 0.0, "round under the collar")
+
+
+func test_the_station_is_vaulted_with_room_for_a_truck_at_the_platform() -> void:
+    if not MineMesher.warm():
+        pending("native mesher not built")
+        return
+    var plan := MineLayout.generate(77, {}, MineLayout.STYLE_STRAIGHT)
+    var mesher := MineMesher.configure(MineLayout.graph(plan, MineLayout.dug(plan, {}, {})))
+    var level: Dictionary = plan.levels[0]
+    var station: Vector3 = level.station
+    var floor_y := float(level.y)
+    var flat := -float(plan.settings.shaft_flat_m)
+    for x: float in [-4.5, 0.0, 4.5]:
+        var headroom := Vector3(x, floor_y + 4.8, flat - 0.5)
+        assert_gt(float(mesher.call("Sample", headroom)), 0.0, "room for a truck at the platform (x %.1f)" % x)
+    var height := float(plan.settings.station_height_m)
+    assert_gt(float(mesher.call("Sample", station + Vector3(0, height - 1.5, 0))), 0.0, "air under the vault's top")
+    var corner := station + Vector3(float(plan.settings.station_width_m) * 0.5 - 2.0, height - 2.0, 0)
+    assert_lt(float(mesher.call("Sample", corner)), 0.0, "a rounded vault: rock in its upper corners")

@@ -59,7 +59,8 @@ const DEFAULTS := {
     "wall_frequency": 0.35,
     "station_width_m": 24.0,
     "station_length_m": 20.0,
-    "station_height_m": 10.0,
+    # Under its vault's top: the vault (graph) still leaves ~5 m where the lift's platform comes in.
+    "station_height_m": 12.0,
     "straight_fan_deg": 70.0,
     "straight_grade": 0.02,
     "chaotic_spread_deg": 110.0,
@@ -258,10 +259,11 @@ static func graph(layout: Dictionary, dug_m: Dictionary) -> Dictionary:
     var foot := Vector3(0.0, -depth, 0.0)
     volumes.append({"kind": "room", "a": foot, "b": foot, "size": Vector3(radius + 1.0, radius + 6.0, radius + 1.0),
         "e": 2.0, "k": 2.0, "amp": float(s.shaft_roughness_m), "freq": freq * 0.5})
+    # The stations: a rounded plan (e 4), under an elliptic vault (k 2) like the galleries' arch, not a flat roof.
     for level: Dictionary in layout.levels:
         volumes.append({"kind": "room", "a": level.station, "b": level.station,
             "size": Vector3(float(s.station_width_m) * 0.5, float(s.station_height_m), float(s.station_length_m) * 0.5),
-            "e": 4.0, "k": 4.0, "amp": amp * 0.6, "freq": freq})
+            "e": 4.0, "k": 2.0, "amp": amp * 0.6, "freq": freq})
     var half := float(s.gallery_width_m) * 0.5
     var height := float(s.gallery_height_m)
     for gallery: Dictionary in layout.galleries:

@@ -125,7 +125,7 @@ static var _live: Array[MineSite] = []
 @export_range(0.5, 30.0, 0.5, "suffix:s") var dust_spread_s: float = 6.0
 ## How far (m) one sees in the dust at its thickest, a second after the fall: lower = nothing at all to be seen.
 @export_range(0.1, 10.0, 0.1, "suffix:m") var dust_visibility_m: float = 0.8
-## Colour of the dust (it takes the brightness of the light behind it: dark in the dark, pale in a lamp's light).
+## Colour of the dust (lit by the lights in it: dark in the dark, pale in a torch's beam).
 @export var dust_color: Color = Color(0.62, 0.6, 0.56)
 
 @export_group("Lift")
@@ -146,12 +146,6 @@ static var _live: Array[MineSite] = []
 ## Distance (m) around the player within which the rock is built. Higher = seen further down the galleries, more
 ## cells in memory and more building.
 @export_range(40.0, 600.0, 1.0, "suffix:m") var view_radius_m: float = 160.0
-## Spacing (m) of the lamps along the galleries; 0 = only the stations are lit.
-@export_range(0.0, 200.0, 1.0, "suffix:m") var lamp_spacing_m: float = 30.0
-## Brightness of a lamp.
-@export_range(0.0, 16.0, 0.1) var lamp_energy: float = 2.5
-## Reach (m) of a lamp.
-@export_range(2.0, 60.0, 0.5, "suffix:m") var lamp_range_m: float = 18.0
 
 # Network fields (mine_def.json).
 var seed: int = 0
@@ -169,7 +163,6 @@ var _layout: Dictionary = {}
 var _layout_key := ""
 var _dug: Dictionary = {}
 var _cells: MineCells = null
-var _lights: Node3D = null
 var _terrain: PlanetTerrain = null
 var _hole_signature := ""
 var _measuring := -1
@@ -382,12 +375,9 @@ func _refresh() -> void:
             if wanted.is_empty():
                 # The same plan as forcing the style drawn (the seed draws it first either way): not a new mine.
                 _layout_key = "%d|%s|%s" % [seed, style, settings]
-    var previous := _dug
     _dug = MineLayout.dug(_layout, faces, gallery_max_m)
     _bounds = (MineLayout.graph(_layout, _dug).bounds as AABB).grow(5.0)
     _sync_cells(fresh)
-    if not server and (fresh or previous != _dug):
-        _rebuild_lights()
     _update_faces()
     _register_hole()
     if server and gallery_max_m.is_empty():
@@ -1103,40 +1093,6 @@ func _await_limits() -> void:
     print("[MineSite] %s : %d galeries mesurées, profondeur %d m, style %s" % [name, gallery_max_m.size(),
         int(_layout.depth), _layout.style])
     _refresh()
-
-
-## Lamps at the stations and along the dug galleries (client).
-func _rebuild_lights() -> void:
-    if _lights != null:
-        _lights.queue_free()
-    _lights = Node3D.new()
-    _lights.name = "Lamps"
-    add_child(_lights)
-    for level: Dictionary in _layout.levels:
-        _add_lamp((level.station as Vector3) + Vector3.UP * (float(_layout.settings.station_height_m) - 1.5))
-    if lamp_spacing_m <= 0.0:
-        return
-    var height := float(_layout.settings.gallery_height_m) - 0.8
-    for gallery: Dictionary in _layout.galleries:
-        var id := int(gallery.id)
-        if not _dug.has(id):
-            continue
-        var distance := lamp_spacing_m
-        while distance < float(_dug[id]):
-            _add_lamp(MineLayout.point_at(gallery, distance) + Vector3.UP * height)
-            distance += lamp_spacing_m
-
-
-func _add_lamp(at: Vector3) -> void:
-    var lamp := OmniLight3D.new()
-    lamp.position = at
-    lamp.light_color = Color(1.0, 0.86, 0.62)
-    lamp.light_energy = lamp_energy
-    lamp.omni_range = lamp_range_m
-    lamp.distance_fade_enabled = true
-    lamp.distance_fade_begin = view_radius_m * 0.5
-    lamp.distance_fade_length = 20.0
-    _lights.add_child(lamp)
 
 
 ## CLIENT: the planet's rock at the mine as a cave there shows it (CaveMineral.at), or null on the server, without a
