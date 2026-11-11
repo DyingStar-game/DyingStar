@@ -2201,6 +2201,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "truck_elevator_ramp.glb",
+			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_ramp.glb",
+			"author": "Kankan",
+			"source": "Discord",
+			"id": "415122592337362944",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "truck_elevator_section.glb",
 			"path": "res://assets/_universe/structures/industrial/truck_elevator/truck_elevator_section.glb",
 			"author": "Kankan",

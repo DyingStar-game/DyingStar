@@ -38,14 +38,17 @@ RAIL_FACE_Y = -11.86
 TOP_DECK_Z = 42.94
 BOTTOM_DECK_Z = 2.17
 
-# piece -> collections, the height of its origin, the objects that make its collision mesh[, objects left out].
+# piece -> collections, the height of its origin, the objects that make its collision mesh[, objects left out[,
+# the only objects kept]].
 PIECES = {
     "top": (["segment top", "call"], TOP_DECK_Z, r"^(segment top|road|stairs&ramp|pavement)"),
     "section": (["intermediate section"], 21.47, None),
     "base": (["base section"], BOTTOM_DECK_Z, r"^base\.001$"),
     "pit": (["bottom section", "call2"], BOTTOM_DECK_Z, r"^(fosse|pavement)"),
-    # Without its front ramp lip: the deck's front runs down the shaft's flat side, level with the stations' floor.
+    # Without its front ramp: a piece of its own, which folds up while the lift runs (the "ramp" piece).
     "platform": (["elevator"], TOP_DECK_Z, None, r"^ramp"),
+    # The platform's front ramp alone, in the platform's frame: it folds up while the lift runs (truck_elevator_ramp.gd).
+    "ramp": (["elevator"], TOP_DECK_Z, None, None, r"^ramp"),
     # The call kiosk alone (no pavement, no bollards), in the top's frame: the stop landings stand it on their deck.
     "kiosk": (["call"], TOP_DECK_Z, None, r"^(pavement|protection)"),
 }
@@ -167,13 +170,15 @@ def joined(name: str, meshes: list[bpy.types.Mesh], collection: bpy.types.Collec
 
 
 def export_piece(source: bpy.types.Scene, piece: str, collections: list[str], origin_z: float,
-        collide: str | None, exclude: str | None = None) -> None:
+        collide: str | None, exclude: str | None = None, only: str | None = None) -> None:
     frame = HALF_TURN @ Matrix.Translation(Vector((0.0, -RAIL_FACE_Y, -origin_z)))
     # Baked from the model's scene: the window shows the last export's scene otherwise.
     bpy.context.window.scene = source
     meshes = baked(piece_objects(collections), frame)
     if exclude:
         meshes = [(owner, mesh) for owner, mesh in meshes if not re.search(exclude, owner)]
+    if only:
+        meshes = [(owner, mesh) for owner, mesh in meshes if re.search(only, owner)]
     scene = bpy.data.scenes.new("export_" + piece)
     stage = bpy.data.collections.new("export_" + piece)
     scene.collection.children.link(stage)

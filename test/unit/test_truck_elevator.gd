@@ -116,3 +116,57 @@ func test_the_station_is_vaulted_with_room_for_a_truck_at_the_platform() -> void
     assert_gt(float(mesher.call("Sample", station + Vector3(0, height - 1.5, 0))), 0.0, "air under the vault's top")
     var corner := station + Vector3(float(plan.settings.station_width_m) * 0.5 - 2.0, height - 2.0, 0)
     assert_lt(float(mesher.call("Sample", corner)), 0.0, "a rounded vault: rock in its upper corners")
+
+
+func test_the_ramp_folds_up_while_the_lift_runs() -> void:
+    var lift := _lift(60.0, [])
+    var system: Node3D = load("res://scenes/_universe/structures/industrial/truck_elevator/platform_system.tscn").instantiate()
+    system.name = "Platform System"
+    lift.add_child(system)
+    system.add_child(load("res://scenes/_universe/structures/industrial/truck_elevator/platform.tscn").instantiate())
+    var ramp := system.get_node_or_null("Platform/Ramp") as TruckElevatorRamp
+    assert_not_null(ramp, "the platform has its ramp")
+    if ramp == null:
+        return
+    var box := (ramp.get_node("Ramp Collider") as CollisionShape3D).shape as BoxShape3D
+    assert_not_null(box, "a box of collision that turns with it")
+    var laid := deg_to_rad(ramp.laid_deg)
+    var folded := deg_to_rad(ramp.folded_deg)
+    await wait_seconds(ramp.fold_time_s + 0.5)
+    assert_almost_eq(ramp.rotation.x, folded, 1.0e-3, "folded up at the top: its front faces the shaft")
+    lift.platform_progress_ratio = 50.0
+    await wait_seconds(ramp.fold_time_s + 0.5)
+    assert_almost_eq(ramp.rotation.x, laid, 1.0e-3, "laid down at 5 deg, stopped at a level")
+    lift.apply_prop_data({"is_moving": true})
+    await wait_seconds(ramp.fold_time_s + 0.5)
+    assert_almost_eq(ramp.rotation.x, folded, 1.0e-3, "folded up while it runs")
+    lift.apply_prop_data({"is_moving": false})
+    await wait_seconds(ramp.fold_time_s + 0.5)
+    assert_almost_eq(ramp.rotation.x, laid, 1.0e-3, "laid down again when it stops")
+
+
+func test_a_landing_calls_the_platform_straight_to_itself() -> void:
+    var lift := _lift(300.0, [40.0, 110.0, 190.0])
+    # Two levels down, called from the top: straight up, not to the next level.
+    lift.platform_progress_ratio = 190.0 / 3.0
+    (lift.get_node("Upper Landing") as LiftLanding).update_screen({"elevator_screen_action": {"landing": "upper"}})
+    assert_true(lift.is_moving())
+    assert_almost_eq(lift._target_ratio, 0.0, 1.0e-4, "to the upper landing, past the levels")
+    lift.stop_movement()
+    lift._current_speed = 0.0
+    # From the bottom, the platform at the first level: straight down.
+    lift.platform_progress_ratio = 40.0 / 3.0
+    (lift.get_node("Lower Landing") as LiftLanding).update_screen({"elevator_screen_action": {"landing": "lower"}})
+    assert_almost_eq(lift._target_ratio, 100.0, 1.0e-4, "to the lower landing, past the levels")
+    lift.stop_movement()
+    lift._current_speed = 0.0
+    # From a level: to that level.
+    lift.platform_progress_ratio = 0.0
+    (lift.get_node("StopLanding2") as LiftLanding).update_screen({"elevator_screen_action": {"landing": "upper"}})
+    assert_almost_eq(lift._target_ratio, 190.0 / 3.0, 1.0e-3, "to the calling level")
+    # The platform's own buttons still go stop by stop.
+    lift.stop_movement()
+    lift._current_speed = 0.0
+    lift.platform_progress_ratio = 190.0 / 3.0
+    lift.move_up()
+    assert_almost_eq(lift._target_ratio, 110.0 / 3.0, 1.0e-3, "the platform's up button: the next level up")

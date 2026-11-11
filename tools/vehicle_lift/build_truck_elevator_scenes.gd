@@ -19,6 +19,11 @@ const PLATFORM_SCREEN := [Vector3(-4.49, 1.168, 4.431), Vector3(0.966, 0.259, 0.
 # The call kiosk in truck_elevator_kiosk.glb's frame (the top's), and where a level's kiosk stands: on the station's
 # floor past the platform's front (8 m out), to one side of the way out, its screen facing the middle.
 const KIOSK_IN_GLB := Vector3(-0.265, 0.0, -13.91)
+# The platform's front ramp: its hinge (the ramp's origin in the .blend) on the deck's front edge, and its box (in the
+# hinge's frame) when laid down: 9 m wide, 0.2 m thick, reaching 1.25 m past the hinge onto the landing.
+const RAMP_HINGE := Vector3(0.0, -0.098, 7.853)
+const RAMP_BOX_SIZE := Vector3(9.0, 0.2, 1.35)
+const RAMP_BOX_CENTER := Vector3(-0.074, 0.0, 0.572)
 const LEVEL_KIOSK := Vector3(6.5, 0.0, 10.0)
 # The touch screen drawn over a kiosk's own small screen: large enough to read the lift's interface.
 const SCREEN_SIZE := Vector2(0.36, 0.216)
@@ -258,6 +263,23 @@ func _platform() -> Node:
 		collider.shape = shape
 		collider.position = part[2]
 		_add(root, collider, root)
+	var ramp := AnimatableBody3D.new()
+	ramp.name = "Ramp"
+	ramp.collision_layer = root.collision_layer
+	ramp.collision_mask = 0
+	ramp.input_ray_pickable = false
+	ramp.sync_to_physics = false
+	ramp.position = RAMP_HINGE
+	ramp.set_script(load(OUT + "truck_elevator_ramp.gd"))
+	_add(root, ramp, root)
+	_piece(ramp, "Ramp Visuals", "ramp", root, -RAMP_HINGE)
+	var ramp_shape := BoxShape3D.new()
+	ramp_shape.size = RAMP_BOX_SIZE
+	var ramp_collider := CollisionShape3D.new()
+	ramp_collider.name = "Ramp Collider"
+	ramp_collider.shape = ramp_shape
+	ramp_collider.position = RAMP_BOX_CENTER
+	_add(ramp, ramp_collider, root)
 	var area := Area3D.new()
 	area.name = "Area Detection"
 	area.collision_layer = 0
