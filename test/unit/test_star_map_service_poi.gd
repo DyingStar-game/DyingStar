@@ -124,6 +124,8 @@ func test_the_world_s_record_of_a_village_is_not_a_second_marker() -> void:
 	assert_eq(merged.size(), export.size() + 2, "the entity's point of no known place, and the player's own")
 	var place: Dictionary = merged[export.size() - 1]
 	assert_true(StarMapPoi.holds_service_id(place, "village"), "a mission naming it still finds the village")
+	# "This place is not on the chart": going to a point starts by going to its body (playtest 2026-11-12).
+	assert_eq(StarMapPoi.service_entry(service[0], "tarsis_3")["scene"], "tarsis_3")
 	assert_true(StarMapPoi.holds_service_id(place, "depot"))
 	assert_false(StarMapPoi.holds_service_id(place, "player"))
 	assert_false(StarMapPoi.load_for("tarsis_3")[export.size() - 1].has("service_ids"), "the export is left as read")

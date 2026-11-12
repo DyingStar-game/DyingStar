@@ -202,6 +202,8 @@ static func service_entry(poi: Dictionary, body_key: String) -> Dictionary:
 		"lat": lonlat.y,
 		# Carried through so a click on the chart can name the POI back to the service.
 		"service_id": str_of(poi.get("id")),
+		# The body it stands on: what the chart goes to before it can show the point (StarMap.focus_service_poi).
+		"scene": body_key,
 		"owner_type": str_of(poi.get("ownerType")),
 	}
 
