@@ -1,0 +1,33 @@
+# Written by MakeHuman master:570790ca
+version v1.3.0
+uuid eab06bbe-0842-4a58-93a4-59b543245686
+name test1
+camera 11.0 13.0 0.4506297000110593 0.8874729739277117 1.0 0.7875000000000016
+modifier torso/torso-scale-vert-decr|incr 0.218000
+modifier torso/torso-trans-down|up 0.128000
+modifier armslegs/upperlegs-height-decr|incr 0.910000
+modifier breast/BreastSize 0.500000
+modifier breast/BreastFirmness 0.500000
+modifier macrodetails/Gender 0.500000
+modifier macrodetails/Age 0.500000
+modifier macrodetails/African 0.333333
+modifier macrodetails/Asian 0.333333
+modifier macrodetails/Caucasian 0.333333
+modifier macrodetails-universal/Muscle 0.500000
+modifier macrodetails-universal/Weight 0.500000
+modifier macrodetails-height/Height 0.500000
+modifier macrodetails-proportions/BodyProportions 0.500000
+proxy male_muscle_13290 79e967dc-3f7a-4f2d-851e-4f06753ed571
+hair short02 c104cd4a-1edc-43f9-8b94-f63345a44638
+skeleton game_engine.mhskel
+eyebrows eyebrow004 eb028b6d-3ff8-40c7-a2ea-4d9aa808b38d
+eyes HighPolyEyes 2c12f43b-1303-432c-b7ce-d78346baf2e6
+pose tpose.bvh
+clothes male_casualsuit01 79ced554-1d8a-4c14-a6a8-e1de90b09c32
+clothes shoes03 ad622a26-da1e-4e3c-9f8e-454edf10d504
+clothesHideFaces True
+skinMaterial skins/middleage_caucasian_male/middleage_caucasian_male.mhmat
+material short02 c104cd4a-1edc-43f9-8b94-f63345a44638 short02.mhmat
+material HighPolyEyes 2c12f43b-1303-432c-b7ce-d78346baf2e6 eyes/materials/brown.mhmat
+material eyebrow004 eb028b6d-3ff8-40c7-a2ea-4d9aa808b38d eyebrow004.mhmat
+subdivide False

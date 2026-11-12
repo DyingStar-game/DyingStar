@@ -1634,6 +1634,51 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "man_ddurieux.glb",
+			"path": "res://assets/_universe/characters/humanoids/man_ddurieux.glb",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "man_ddurieux.glb",
+			"path": "res://assets/_universe/characters/humanoids/man_ddurieux.glb",
+			"author": "Mika Suominen",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/faceunits01.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "man_ddurieux.glb",
+			"path": "res://assets/_universe/characters/humanoids/man_ddurieux.glb",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "man_ddurieux_teeth.png",
+			"path": "res://assets/_universe/characters/humanoids/man_ddurieux_teeth.png",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "man_ddurieux_tongue.png",
+			"path": "res://assets/_universe/characters/humanoids/man_ddurieux_tongue.png",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
 			"asset": "mat_concrete_wall_rough",
 			"path": "res://assets/_universe/_shared/materials/mat_concrete_wall_rough",
 			"author": "WarpZone",
