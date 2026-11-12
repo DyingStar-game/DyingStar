@@ -1530,8 +1530,11 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 		if not poi.is_empty() and not MissionPoiCache.is_closed(str(poi["id"])):
 			var poi_id := str(poi["id"])
 			var poi_name: String = str(poi["name"]) if str(poi["name"]) != "" else tr("%%SVC_LBL_POI")
-			var go := _action_button(lifecycle, tr("%%SVC_FMT_MISSION_SHOW_ON_CHART") % poi_name,
-					func() -> void: _show_place(poi))
+			# A repair's place is a machine, not the village its mission names: "Show M0001" promised
+			# the village (playtest 2026-11-12).
+			var has_machine: bool = str(poi.get("machine", "")) != ""
+			var go_text: String = tr("%%MISSION_LOCATE") if has_machine else tr("%%SVC_FMT_MISSION_SHOW_ON_CHART") % poi_name
+			var go := _action_button(lifecycle, go_text, func() -> void: _show_place(poi))
 			ServiceStyle.apply_button(go, mission.get("autoComplete") == false)
 		# Share the mission I took: my group may join it, or one player I pick. Their crates then
 		# count for it too, the reward is split equally, and any of us turns it in. The choice is a

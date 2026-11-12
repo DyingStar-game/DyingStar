@@ -91,17 +91,59 @@ static func _entry_from(src: Dictionary) -> Dictionary:
 ## ([code]_poi_focus[/code] and a result of the typeahead are both positions in this array). If the
 ## export were read alone by the search and the merge done only by the layer, a result would name a
 ## town the drawn list had pushed further down, and the camera would frame the wrong marker.
+##
+## A point the service holds for a place the level design ALREADY draws is folded into that place, not
+## drawn again: the governing entity's record of a village ("M0004") and of its buildings ("M0004 ·
+## cargo_depot") stand on the village's own badge, and every village read as a group of two or three
+## that no zoom would open (playtest 2026-11-12). The place keeps their ids ([code]service_ids[/code]),
+## so a mission naming one of them still finds it on the chart ([method holds_service_id]).
 static func merged_for(body_key: String, records: Array) -> Array[Dictionary]:
 	var out: Array[Dictionary] = load_for(body_key)
+	var towns: Dictionary = {}
+	for index: int in range(out.size()):
+		towns[str(out[index].get("name", ""))] = index
 	for record: Variant in records:
 		if not (record is Dictionary):
 			continue
 		# The body is the gate, not a second opinion here: it is the frame rule, and it belongs in the
 		# one place that knows what a body key means (service_entry below).
 		var entry: Dictionary = service_entry(record as Dictionary, body_key)
-		if not entry.is_empty():
+		if entry.is_empty():
+			continue
+		var town: int = towns.get(place_of(entry), -1)
+		if town < 0:
 			out.append(entry)
+			continue
+		# A copy: the export's entries are not this call's to write on.
+		var place: Dictionary = out[town].duplicate()
+		var ids: Array = (place.get("service_ids", []) as Array).duplicate()
+		ids.append(str(entry.get("service_id", "")))
+		place["service_ids"] = ids
+		out[town] = place
 	return out
+
+
+## Separates a place from one of its buildings in a point's name, as the universe simulator writes them
+## ("M0004 · cargo_depot").
+const BUILDING_SEPARATOR: String = " · "
+## Whose points are the world's own record of its places, never a player's mark.
+const WORLD_OWNER: String = "political"
+
+
+## The level-design place the service's [param entry] is a record of -- its name, or "" when it is a
+## point of its own: only the governing entity's points, named after the place or one of its buildings.
+## Static and pure.
+static func place_of(entry: Dictionary) -> String:
+	if str(entry.get("owner_type", "")) != WORLD_OWNER:
+		return ""
+	return str(entry.get("name", "")).split(BUILDING_SEPARATOR)[0].strip_edges()
+
+
+## Whether the chart's [param entry] is, or stands for, the service's point [param poi_id].
+static func holds_service_id(entry: Dictionary, poi_id: String) -> bool:
+	if poi_id == "":
+		return false
+	return str(entry.get("service_id", "")) == poi_id or (entry.get("service_ids", []) as Array).has(poi_id)
 
 
 ## What a point of interest of the SERVICE becomes on the chart for [param body_key], or {} when it

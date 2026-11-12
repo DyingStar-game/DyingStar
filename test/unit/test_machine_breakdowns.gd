@@ -164,3 +164,14 @@ func test_a_repair_names_its_place_and_its_machine() -> void:
 	assert_eq(ServiceTypes.mission_place({"zones": [{"kind": "poi", "poiId": "poi-2"}]}, []),
 			{"poi": "poi-2", "machine": ""})
 	assert_eq(ServiceTypes.mission_place({}, []), {"poi": "", "machine": ""}, "a mission that names no place")
+
+
+func test_a_broken_machine_is_on_the_chart() -> void:
+	# A repair mission names a village; the chart shows which machine (playtest 2026-11-12).
+	var marker := MachineBreakdown.chart_marker()
+	assert_not_null(marker.icon)
+	assert_ne(TranslationServer.translate(marker.label), marker.label, "translated")
+	assert_true(marker.on_top, "over the points of interest")
+	assert_false(marker.groupable, "never lost in a group of pictograms")
+	assert_gt(marker.footprint().size.x, 0.0, "a size of its own: the machine's meshes are not walked")
+	marker.free()

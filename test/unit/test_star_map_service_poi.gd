@@ -109,6 +109,26 @@ func test_the_export_and_the_service_come_back_as_one_list() -> void:
 			"a town of the export has no service id to give back")
 
 
+func test_the_world_s_record_of_a_village_is_not_a_second_marker() -> void:
+	# Every village was a group of two or three: itself, the governing entity's point of it and of its
+	# depot, on the very same spot (playtest 2026-11-12).
+	var export := StarMapPoi.load_for("tarsis_3")
+	var town := str(export[export.size() - 1]["name"])
+	var service := [
+		_poi({"id": "village", "name": town, "ownerType": "political"}),
+		_poi({"id": "depot", "name": town + " · cargo_depot", "ownerType": "political"}),
+		_poi({"id": "elsewhere", "name": "Somewhere else", "ownerType": "political"}),
+		_poi({"id": "player", "name": town, "ownerType": "player"}),
+	]
+	var merged := StarMapPoi.merged_for("tarsis_3", service)
+	assert_eq(merged.size(), export.size() + 2, "the entity's point of no known place, and the player's own")
+	var place: Dictionary = merged[export.size() - 1]
+	assert_true(StarMapPoi.holds_service_id(place, "village"), "a mission naming it still finds the village")
+	assert_true(StarMapPoi.holds_service_id(place, "depot"))
+	assert_false(StarMapPoi.holds_service_id(place, "player"))
+	assert_false(StarMapPoi.load_for("tarsis_3")[export.size() - 1].has("service_ids"), "the export is left as read")
+
+
 func test_a_search_result_and_a_drawn_list_agree_on_which_marker_is_which() -> void:
 	# The one property the merge exists for: an index into the list the chart draws must be the
 	# index into the list the search was built from.

@@ -3466,7 +3466,7 @@ func _service_poi_record(poi_id: String) -> Dictionary:
 ## loaded it (or is not its body).
 func _poi_index_of(poi_id: String) -> int:
 	for i: int in range(_poi_layer.entries.size()):
-		if str(_poi_layer.entries[i].get("service_id", "")) == poi_id:
+		if StarMapPoi.holds_service_id(_poi_layer.entries[i], poi_id):
 			return i
 	return -1
 
@@ -3514,7 +3514,7 @@ func _frame_on_surface(body: int, local_dir: Vector3, altitude_m: float = 0.0) -
 	var framing: float = POI_FOCUS_ZOOM
 	if altitude_m > 0.0:
 		framing = (ground + altitude_m * UNITS_PER_METRE) / radius_units
-	elif _cam.anchor_body == body:
+	if _cam.anchor_body == body:
 		# Going to a place NEVER pulls back. The standard framing is a floor on how close it brings you,
 		# not a distance it insists on: already down among the villages, double-clicking the next one
 		# along is a slide across to it, and forcing the standard framing there threw the view back out

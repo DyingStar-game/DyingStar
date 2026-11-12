@@ -27,7 +27,7 @@ const FLAT_PCT := 0.05
 const BALANCE_BAND := 0.1
 
 ## What a market is for who sells into it (state_of).
-enum State { SHORTAGE, BALANCED, SATURATED }
+enum State { SHORTAGE, BALANCED, SATURATED, IDLE }
 
 var _list: VBoxContainer = null
 var _stamp: Label = null
@@ -168,8 +168,11 @@ static func trend_colour(pct: float) -> Color:
 
 
 ## What the market of a resource is for who sells: asked for more than there is ([param demand] over
-## [param supply] by more than BALANCE_BAND), flooded, or balanced. Pure.
+## [param supply] by more than BALANCE_BAND), flooded, or balanced; IDLE when nobody holds any nor asks
+## for any -- "saturated" there read as a flood of a resource nobody had (playtest 2026-11-12). Pure.
 static func state_of(supply: int, demand: int) -> State:
+	if supply <= 0 and demand <= 0:
+		return State.IDLE
 	var have: float = maxf(float(supply), 1.0)
 	var need: float = maxf(float(demand), 0.0)
 	if need > have * (1.0 + BALANCE_BAND):
@@ -186,6 +189,8 @@ static func state_key(state: State) -> String:
 			return "%%MARKET_STATE_SHORTAGE"
 		State.SATURATED:
 			return "%%MARKET_STATE_SATURATED"
+		State.IDLE:
+			return "%%MARKET_STATE_IDLE"
 	return "%%MARKET_STATE_BALANCED"
 
 
@@ -196,6 +201,8 @@ static func state_colour(state: State) -> Color:
 			return UP
 		State.SATURATED:
 			return DOWN
+		State.IDLE:
+			return WallScreen.DIM
 	return WallScreen.TEXT
 
 
