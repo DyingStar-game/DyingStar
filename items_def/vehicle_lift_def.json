@@ -24,7 +24,8 @@
 				"parent_id",
 				"platform_progress_ratio",
 				"is_moving",
-				"target_ratio"
+				"target_ratio",
+				"departure_blocked"
 			]
 		},
 		{

@@ -337,7 +337,9 @@ func _platform_system() -> Node:
 	spring.set("linear_limit_y/lower_distance", -0.15)
 	spring.set("linear_spring_y/enabled", true)
 	spring.set("linear_spring_y/stiffness", 1500000.0)
-	spring.set("linear_spring_y/damping", 15000.0)
+	# ~0.6 of critical for the empty 4 t deck (2 * sqrt(k m) = 155 000), ~0.4 with a truck on it: 15 000 (0.1) rang
+	# at 3 Hz for seconds after every bump, a truck hopping on it on the way down (playtest 2026-11-12).
+	spring.set("linear_spring_y/damping", 90000.0)
 	_prop_sync(root, "vehicle_lift_platformsystem", true)
 	var rolling := Node3D.new()
 	rolling.name = "RollingNoise"
@@ -355,7 +357,11 @@ func _save_model() -> void:
 	model.set("stop_landing_scene", load(OUT + "level_landing.tscn"))
 	model.set("rail_segment_scene", load(OUT + "section.tscn"))
 	model.set("platform_system_scene", load(OUT + "platform_system.tscn"))
-	model.set("platform_system_offset", Vector3.ZERO)
+	model.set("platform_system_offset", Vector3.ZERO)  # level with the upper landing (the road on the tower)
+	# The deck rests on the pit's slab at the foot: 36 cm up (playtest 2026-11-12: 3-4 cm high at 0.4). The levels'
+	# floors are at the levels' height (MineLayout), the deck level with them, raised by nothing, like the top.
+	model.set("stop_raise_m", 0.0)
+	model.set("foot_raise_m", 0.36)
 	model.set("lower_landing_offset", Vector3.ZERO)
 	# The top piece carries the tower's first 11.47 m, the base its last 9.30 m above the foot's deck; the 10 m
 	# sections hang from their top and fill what is between, the last one sinking into the base.

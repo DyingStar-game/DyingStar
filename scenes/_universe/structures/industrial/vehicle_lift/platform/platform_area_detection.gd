@@ -17,7 +17,8 @@ extends Area3D
 ##
 ## Polled every physics frame rather than driven by body_entered / body_exited: a reparent takes the
 ## body out of the physics space and back in, which fires an exit and an entry of its own. A rider is
-## let go only after EXIT_GRACE_FRAMES frames in a row outside the volume.
+## let go only after EXIT_GRACE_FRAMES frames in a row outside the volume -- and so is a body found
+## under the carrier untracked (it may have just been put there).
 
 ## Physics frames in a row a rider must be outside the volume before it is handed back.
 const EXIT_GRACE_FRAMES: int = 6
@@ -90,12 +91,16 @@ func _physics_process(_delta: float) -> void:
 			_forget(body)
 
 	# Children of the carrier nobody tracks and that are not on the platform (persisted under it,
-	# then the platform moved away): hand them back too. The Platform and the carrier's own parts
-	# (Cart) are not riders.
+	# then the platform moved away): counted out like any rider, then handed back. Not at once: a body
+	# put here by someone else this very frame (a player getting out of a truck parked on the deck goes
+	# to the truck's parent) is not in the overlap list yet -- the reparent took it out of the space.
+	# Handed back at once, it flapped deck -> mine -> deck, and its client, getting a position meant for
+	# the deck read in the mine's frame, showed it a moment at the surface (playtest 2026-11-12).
+	# The Platform and the carrier's own parts (Cart) are not riders.
 	for child in carrier.get_children():
 		if child != platform and child is PhysicsBody3D and not _riders.has(child) \
 				and not inside.has(child) and child.owner != carrier and _is_rider_kind(child):
-			_move_to(child, _exit_parent(child, platform))
+			_track(child, null)
 
 
 ## A body that may ride: a player on foot, a networked prop or a vehicle, not part of the lift itself,

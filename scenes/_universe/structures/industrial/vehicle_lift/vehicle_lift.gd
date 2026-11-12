@@ -197,6 +197,12 @@ const NOTCH_NODE_NAME := "TerrainNotch"
 const STOP_LANDING_PREFIX := "StopLanding"
 ## A stop this close (m) to the platform is where it already is.
 const STOP_REACHED_M := 0.5
+## Group of the lift's parts it waits for, called at a stop, before it moves off: each answers holds_departure()
+## (the truck elevator's ramp, folding up).
+const DEPARTURE_GATE_GROUP := &"lift_departure_gate"
+## Depth (m) over which the platform takes up VehicleLiftModel.stop_raise_m leaving the upper landing, and
+## foot_raise_m coming to the foot.
+const STOP_RAISE_RAMP_M := 2.0
 
 const LIFT_DIR: String = "res://scenes/_universe/structures/industrial/vehicle_lift/"
 const RAILING_LIBRARY_SCENE: PackedScene = preload(LIFT_DIR + "railing/railing_segments.tscn")
@@ -208,6 +214,9 @@ var _is_moving: bool = false
 var _current_direction: float = 1.0
 var _ui_update_timer: float = 0.0
 var _is_platform_system_spawned: bool = false
+## Replicated: a gate (the truck elevator's ramp) cannot close, something stands in its way -- the server's word,
+## so every client's ramp waits as the server's does instead of folding through what blocks it.
+var _departure_blocked: bool = false
 
 var _travel_time: float = 0.0
 ## CLIENT: whether a moving state was heard already. The first one is how the lift was when we
@@ -413,6 +422,10 @@ func _physics_process(_delta: float) -> void:
 
 	if not GameOrchestrator.is_server():
 		return
+	_trace_ride(_delta)
+	# Called, still standing: wait for what has to get ready first (the truck elevator's ramp folding up).
+	if _is_moving and _current_speed <= 0.0 and _departure_held():
+		return
 
 	var current_depth_in_meter: float = (platform_progress_ratio / 100.0) * descent_depth
 	var target_depth_in_meter: float = (_target_ratio / 100.0) * descent_depth
@@ -598,6 +611,68 @@ func _landings() -> Array[Node3D]:
 	return out
 
 
+## Seconds until the next "[LiftRide]" line (see _trace_ride), and what each body did since the last one.
+var _ride_trace_s := 0.0
+var _ride_span: Dictionary = {}
+
+## Settings > Debug "movement" (a dedicated server: [debug] movement in its ini): while the lift runs, every physics
+## step on the server and every frame on a client, how the platform and what rides it sit in the Platform System's
+## frame; once a second a "[LiftRide]" line of each body's height range (low..high, m), its largest tilt (deg) and,
+## on the server, its fastest vertical speed (m/s) -- a load hopping on the deck shows as a range of centimetres and
+## a speed, a deck ringing on its spring as the Platform's range, a load knocked crooked as its tilt.
+func _trace_ride(delta: float) -> void:
+	if not SettingsManager.debug.is_on(&"movement_debug"):
+		_ride_span.clear()
+		return
+	var system := get_node_or_null("Platform System") as Node3D
+	if system == null:
+		return
+	for child in system.get_children():
+		if not (child is PhysicsBody3D) or child.name == &"Cart":
+			continue
+		var body := child as Node3D
+		var tilt := maxf(absf(body.rotation_degrees.x), absf(body.rotation_degrees.z))
+		var vy := absf((body as RigidBody3D).linear_velocity.dot(system.global_basis.y)) if body is RigidBody3D else 0.0
+		var span: Vector4 = _ride_span.get(body.name, Vector4(INF, -INF, 0.0, 0.0))
+		_ride_span[body.name] = Vector4(minf(span.x, body.position.y), maxf(span.y, body.position.y),
+				maxf(span.z, tilt), maxf(span.w, vy))
+	_ride_trace_s -= delta
+	if _ride_trace_s > 0.0:
+		return
+	_ride_trace_s = 1.0
+	var parts := PackedStringArray()
+	for body_name: StringName in _ride_span:
+		var span: Vector4 = _ride_span[body_name]
+		parts.append("%s y=%.3f..%.3f (%.0f mm) tilt=%.1f vy=%.2f" % [body_name, span.x, span.y,
+				(span.y - span.x) * 1000.0, span.z, span.w])
+	_ride_span.clear()
+	var side := "server" if GameOrchestrator.is_server() else "client"
+	print("[LiftRide] %s %s ratio=%.2f speed=%.2f %s" % [side, name, platform_progress_ratio, _current_speed,
+			" | ".join(parts)])
+
+
+## SERVER: whether a part of this lift in DEPARTURE_GATE_GROUP holds it at its stop (holds_departure()).
+func _departure_held() -> bool:
+	for gate in get_tree().get_nodes_in_group(DEPARTURE_GATE_GROUP):
+		if is_ancestor_of(gate) and gate.has_method("holds_departure") and gate.holds_departure():
+			return true
+	return false
+
+
+## Whether a gate of this lift waits to close because something stands in its way (replicated, see set_departure_blocked).
+func departure_blocked() -> bool:
+	return _departure_blocked
+
+
+## SERVER: a gate (the ramp) says whether something stands in its way; replicated only when it changes.
+func set_departure_blocked(blocked: bool) -> void:
+	if blocked == _departure_blocked:
+		return
+	_departure_blocked = blocked
+	if _sync != null:
+		_sync.server_prop_update({"departure_blocked": blocked})
+
+
 ## The next stop (as a ratio, %) going down ([param down]) or up from where the platform is: a stop landing,
 ## or the end of the run.
 func next_stop_ratio(down: bool) -> float:
@@ -647,6 +722,21 @@ func _go_to_ratio(ratio: float) -> void:
 		})
 
 
+## How much higher (m) than its depth says the platform stands [param depth_m] down a run of [param descent_m]:
+## [param stop_raise_m] (VehicleLiftModel.stop_raise_m) at the intermediate stops, [param foot_raise_m] at the foot,
+## nothing at the upper landing; each taken up over STOP_RAISE_RAMP_M, so the platform never jumps. Static and pure.
+static func raise_at(depth_m: float, descent_m: float, stop_raise_m: float, foot_raise_m: float) -> float:
+	var levels := stop_raise_m * clampf(depth_m / STOP_RAISE_RAMP_M, 0.0, 1.0)
+	return lerpf(levels, foot_raise_m, clampf((depth_m - descent_m) / STOP_RAISE_RAMP_M + 1.0, 0.0, 1.0))
+
+
+## How much higher (m) than its depth the platform stands now (raise_at, this lift's model): what its deck stands
+## over the landing's floor, read by the truck elevator's ramp to reach down to it.
+func deck_raise() -> float:
+	var model := lift_model()
+	return raise_at(platform_progress_ratio / 100.0 * descent_depth, descent_depth, model.stop_raise_m, model.foot_raise_m)
+
+
 func _update_platform_movement() -> void:
 	if not Engine.is_editor_hint() and not GameOrchestrator.is_server():
 		return
@@ -654,7 +744,7 @@ func _update_platform_movement() -> void:
 	var platform = get_node_or_null("Platform System") as AnimatableBody3D
 
 	if platform:
-		var target_y: float = lerpf(0.0, -descent_depth, (platform_progress_ratio / 100.0))
+		var target_y: float = -platform_progress_ratio / 100.0 * descent_depth + deck_raise()
 		var target_position: Vector3 = lift_model().platform_system_offset + Vector3(0, target_y, guide_z_offset)
 
 		### INFO Ne fonctionne pas en ligne: probablement à cause du mouvement combiné (planete, orbite)
@@ -688,6 +778,8 @@ func _process(_delta: float) -> void:
 	var display_direction: float = 1.0 if target_depth_in_meter >= current_depth_in_meter else -1.0
 
 	_sound_cart(_delta)
+	if _is_moving:
+		_trace_ride(_delta)
 
 	_ui_update_timer += _delta
 	if _ui_update_timer >= 1.0:
@@ -820,6 +912,11 @@ static func at_rest(speed: float) -> bool:
 
 func platform_system_spawned() -> void:
 	_is_platform_system_spawned = true
+	# Where the run says, not where it was saved: the system comes back at its stored position, and only a move of
+	# the lift placed it again -- a lift standing still kept its old height after a change of the model's offset
+	# (playtest 2026-11-12). Deferred: the stored transform is applied after the system's _ready.
+	if not Engine.is_editor_hint() and GameOrchestrator.is_server():
+		_update_platform_movement.call_deferred()
 	if _sync != null:
 		_sync.server_prop_update({
 			"is_platformsystem_spawned": _is_platform_system_spawned
@@ -849,6 +946,8 @@ func apply_prop_data(_data: Dictionary) -> void:
 		platform_progress_ratio = _data["platform_progress_ratio"]
 	if "target_ratio" in _data:
 		_target_ratio = _data["target_ratio"]
+	if "departure_blocked" in _data and _data["departure_blocked"] != null:
+		_departure_blocked = bool(_data["departure_blocked"])
 	if "is_platformsystem_spawned" in _data:
 		_is_platform_system_spawned = _data["is_platformsystem_spawned"]
 	if "is_moving" in _data:

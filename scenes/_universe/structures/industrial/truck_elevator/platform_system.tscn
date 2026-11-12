@@ -38,7 +38,7 @@ linear_limit_y/upper_distance = 0.15
 linear_limit_y/lower_distance = -0.15
 linear_spring_y/enabled = true
 linear_spring_y/stiffness = 1500000.0
-linear_spring_y/damping = 15000.0
+linear_spring_y/damping = 90000.0
 
 [node name="PropSync" type="Node" parent="." unique_id=799279594]
 script = ExtResource("2_xd4xe")
