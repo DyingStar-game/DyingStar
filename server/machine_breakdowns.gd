@@ -111,6 +111,33 @@ static func repair_objective(objectives: Variant, machine_uuid: String) -> Strin
 	return ""
 
 
+## How many times, and how far apart (s), a confirmation that did not answer is looked for in the mission.
+const CONFIRM_READS := 4
+const CONFIRM_READ_S := 2.0
+## What a call that got no answer says (HttpClient): the service may have done the work all the same.
+const NO_ANSWER := "UNREACHABLE"
+
+
+## Whether the objective of [param machine_uuid] in [param mission_id] is done although its confirmation
+## [param failed] to answer: the mission service pays through other services and can take longer than
+## this server waits. The player was then paid, told "unreachable", and left with a machine still
+## broken (playtest 2026-11-12). A refusal ([param failed] with another error) is a refusal.
+static func _confirmed_anyway(mission_id: String, machine_uuid: String, failed: Dictionary) -> bool:
+	if str(failed.get("error", "")) != NO_ANSWER:
+		return false
+	var tree := Engine.get_main_loop() as SceneTree
+	for _i: int in range(CONFIRM_READS):
+		if tree != null:
+			await tree.create_timer(CONFIRM_READ_S).timeout
+		var detail: Dictionary = await MissionHeartbeat.mission_internal(HTTPClient.METHOD_GET,
+				"/missions/%s" % mission_id.uri_encode(), null)
+		if not bool(detail.get("ok", false)) or not (detail.get("data") is Dictionary):
+			continue
+		if repair_objective((detail["data"] as Dictionary).get("objectives", []), machine_uuid) == "":
+			return true
+	return false
+
+
 ## The player [param player_id] has repaired the machine [param machine_uuid]: the mission's objective is
 ## confirmed (the mission service pays), the machine works again, and the simulator is told. Returns ""
 ## when done, else why not: NOT_BROKEN, NO_MISSION, NOT_YOURS (the repair is for who holds its mission),
@@ -134,7 +161,7 @@ static func repair(machine_uuid: String, player_id: String) -> String:
 		return "NO_MISSION"
 	var done: Dictionary = await MissionHeartbeat.mission_internal(HTTPClient.METHOD_POST,
 			"/missions/%s/objectives/%s/confirm" % [mission_id.uri_encode(), objective.uri_encode()], {})
-	if not bool(done.get("ok", false)):
+	if not bool(done.get("ok", false)) and not await _confirmed_anyway(mission_id, machine_uuid, done):
 		return str(done.get("error", "ERROR"))
 	var breakdown := str(entry.get("breakdown", ""))
 	_repaired[breakdown] = true
