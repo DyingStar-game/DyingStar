@@ -46,6 +46,11 @@ void vertex() {
 	v_local = VERTEX + box_center;
 }
 
+float ray_step(float distance_m) {
+	// Keep fine sampling around the camera and take longer steps farther along the ray.
+	return max(distance_m * 0.0022, clamp(distance_m * 0.06, 12.0, 18.0));
+}
+
 float phase_hg(float mu, float g) {
 	float gg = g * g;
 	return (1.0 - gg) / (12.566 * pow(1.0 + gg - 2.0 * g * mu, 1.5));
@@ -143,7 +148,7 @@ void fragment() {
 
 	float dither = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 	// Short step: fine enough for the lobes at this distance, whatever the distance.
-	float fine = max(t0 * 0.0022, 12.0);
+	float fine = ray_step(t0);
 	float coarse = fine * 3.0;
 	float t = t0 + coarse * dither;
 	bool inside = false;
@@ -160,7 +165,7 @@ void fragment() {
 			break;
 		}
 		vec3 p = ro + rd * t;
-		fine = max(t * 0.0022, 12.0);
+		fine = ray_step(t);
 		coarse = fine * 3.0;
 		// The puffs this stretch of the ray can touch, the probes' reach included.
 		uint near[7];

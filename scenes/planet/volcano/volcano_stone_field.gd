@@ -31,11 +31,16 @@ const TRAIL_LIFE_S := 7.0
 ## Rest: slower than this (m/s) just after a bounce.
 const REST_SPEED := 0.7
 const BOUNCE := 0.3
+## Minimum air gap before another contact counts as a bounce instead of rolling.
+const REBOUND_CLEARANCE_M := 0.025
 const GRIP := 0.68
 ## Seconds for a rock to go from just-thrown to cold.
 const COOL_S := 40.0
 const BUCKET_S := 0.25
-const MAX_DUST := 10
+const MAX_DUST := 80
+const MAX_IMPACT_PARTICLES := 640
+## Three dust particles and one clod per remaining impact slot.
+const MIN_IMPACT_PARTICLES := 4
 const ROCK_VARIANTS := 6
 ## One stone in this many leaves a smoke trail.
 const TRAIL_STRIDE := 5
@@ -58,6 +63,11 @@ const NO_DEADLINE := 1 << 62
 static var _shared_meshes: Array[ArrayMesh] = []
 static var _shared_flying_mesh: ArrayMesh
 static var _shared_cracks: NoiseTexture3D
+static var _shared_dust_mesh: QuadMesh
+static var _shared_dust_fade: Gradient
+static var _shared_dust_growth: Curve
+static var _shared_clod_material: StandardMaterial3D
+static var _shared_clod_scale: Curve
 
 signal player_hit(impact_speed: float, radius: float)
 
@@ -73,7 +83,8 @@ class Rock:
 	var axis := Vector3.UP
 	var turn := 0.0
 	var basis := Basis.IDENTITY
-	var bounced := false
+	var has_landed := false
+	var impact_armed := true
 	var asleep := false
 	var hit_player := false
 	var rest_at := 0.0
@@ -110,8 +121,9 @@ var _buckets := {}
 var _next_bucket := 0
 var _rocks: Array[Rock] = []
 var _rock_meshes: Array[ArrayMesh] = []
-var _dust_mat: StandardMaterial3D
 var _dust_nodes: Array[CPUParticles3D] = []
+## Base ground colour at a contact in this node's frame.
+var _ground_albedo: Callable
 var _eye := Vector3.ZERO
 var _feet := Vector3.ZERO
 var _has_player := false
@@ -126,9 +138,10 @@ var _instances: MultiMeshInstance3D
 var _trails: MultiMeshInstance3D
 
 
-func _init(plume: VolcanoPlumeModel, relief_height: Callable) -> void:
+func _init(plume: VolcanoPlumeModel, relief_height: Callable, ground_albedo := Callable()) -> void:
 	model = plume
 	relief = relief_height
+	_ground_albedo = ground_albedo
 	_token.resize(COUNT)
 	_land_t.resize(COUNT)
 	_birth.resize(COUNT)
@@ -167,21 +180,7 @@ func _init(plume: VolcanoPlumeModel, relief_height: Callable) -> void:
 	_instances.hide()
 	_build_trails()
 	_trails.hide()
-	_dust_mat = StandardMaterial3D.new()
-	_dust_mat.albedo_color = Color(0.3, 0.28, 0.26, 0.5)
-	_dust_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_dust_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	_dust_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_dust_mat.vertex_color_use_as_albedo = true
-	var blob := GradientTexture2D.new()
-	blob.fill = GradientTexture2D.FILL_RADIAL
-	blob.fill_from = Vector2(0.5, 0.5)
-	blob.fill_to = Vector2(1.0, 0.5)
-	var ramp := Gradient.new()
-	ramp.set_color(0, Color(1, 1, 1, 1))
-	ramp.set_color(1, Color(1, 1, 1, 0))
-	blob.gradient = ramp
-	_dust_mat.albedo_texture = blob
+	_prepare_impact_resources()
 	set_physics_process(false)
 
 
@@ -597,11 +596,14 @@ func _step(rock: Rock, delta: float) -> void:
 			rock.hit_player = true
 			player_hit.emit(rock.v.length(), rock.r)
 	if rock.p.y > _ground(rock.p.x, rock.p.z, COARSE_CELL_M) + 80.0:
+		rock.impact_armed = true
 		_place(rock)
 		return
 	var ground := _ground(rock.p.x, rock.p.z, FINE_CELL_M)
 	var clearance := rock.r * 0.8
-	if rock.p.y >= ground + clearance:
+	var air_gap := rock.p.y - (ground + clearance)
+	if air_gap >= 0.0:
+		rock.impact_armed = rock.impact_armed or air_gap >= REBOUND_CLEARANCE_M
 		_place(rock)
 		return
 	# The slope under the rock, sampled at its own size.
@@ -613,9 +615,9 @@ func _step(rock: Rock, delta: float) -> void:
 	var into := rock.v.dot(n)
 	if into < 0.0:
 		var impact := -into
-		if not rock.bounced:
-			rock.bounced = true
-			_impact(rock, impact)
+		if rock.impact_armed:
+			rock.impact_armed = false
+			_impact(rock, impact, Vector3(rock.p.x, ground, rock.p.z), n)
 		var along := rock.v - n * into
 		# Rolls: the spin follows the ground speed.
 		if along.length() > 0.1:
@@ -629,10 +631,12 @@ func _step(rock: Rock, delta: float) -> void:
 	_place(rock)
 
 
-func _impact(rock: Rock, impact: float) -> void:
-	if _dust_nodes.size() < MAX_DUST:
-		_dust(rock.p, rock.r, impact)
-	# A block breaks on landing: the chaos of a few small hot shards.
+func _impact(rock: Rock, impact: float, contact: Vector3, normal: Vector3) -> void:
+	_dust(contact, rock.r, impact, normal, rock.has_landed)
+	if rock.has_landed:
+		return
+	rock.has_landed = true
+	# The first landing can break a block into a few small hot shards.
 	if rock.r > 0.6 and impact > 15.0:
 		var shards := mini(int(rock.r * 4.0) + 2, 8)
 		for j in shards:
@@ -641,40 +645,168 @@ func _impact(rock: Rock, impact: float) -> void:
 			_spawn_rock(rock.born, rock.p + kick.normalized() * rock.r, kick, rock.r * randf_range(0.08, 0.26), randi())
 
 
-func _dust(at: Vector3, r: float, impact: float) -> void:
+## One short burst: spreading dust and heavier clods of earth.
+func _dust(at: Vector3, r: float, impact: float, normal := Vector3.UP, rebound := false) -> void:
 	if _dust_nodes.size() >= MAX_DUST:
 		return
+	var dust_color := Color(0.76, 0.67, 0.57)
+	var clod_color := Color(0.28, 0.23, 0.18)
+	if _ground_albedo.is_valid():
+		var ground: Color = _ground_albedo.call(at)
+		if ground.a > 0.0:
+			ground.a = 1.0
+			dust_color = ground.lightened(0.32)
+			clod_color = ground.darkened(0.25)
+	var strength := lerpf(0.18, 1.0, sqrt(clampf(impact / 45.0, 0.0, 1.0))) if rebound else 1.0
+	var speed := smoothstep(6.0, 65.0, impact)
+	var size := clampf(r * lerpf(0.75, 1.45, speed), 0.2, 5.5)
+	# Reserve enough particles for the remaining slots. Existing clouds keep
+	# their full lifetime even when a volley fills the budget.
+	var available := MAX_IMPACT_PARTICLES - (MAX_DUST - _dust_nodes.size() - 1) * MIN_IMPACT_PARTICLES
+	for active in _dust_nodes:
+		var active_clods := active.get_node(^"ImpactClods") as CPUParticles3D
+		available -= active.amount + active_clods.amount
+	var dust_count := maxi(MIN_IMPACT_PARTICLES - 1, roundi((12 + mini(int(size * 6.0 + speed * 5.0), 26)) * strength))
+	var clod_count := maxi(1, roundi((5 + mini(int(size * 3.0 + speed * 4.0), 17)) * strength))
 	var puff := CPUParticles3D.new()
-	_dust_nodes.append(puff)
+	puff.name = "ImpactDust"
+	puff.emitting = false
 	puff.one_shot = true
-	puff.explosiveness = 0.9
-	puff.amount = 8 + mini(int(r * 8.0), 22)
-	puff.lifetime = 3.0 + r
+	puff.explosiveness = 0.98
+	puff.amount = mini(dust_count, available - 1)
+	puff.lifetime = lerpf(0.4, 1.8 + minf(size * 0.5, 2.1), strength)
 	puff.local_coords = true
-	puff.direction = Vector3.UP
-	puff.spread = 65.0
-	puff.initial_velocity_min = 1.0
-	puff.initial_velocity_max = minf(impact * 0.18, 26.0) + r * 3.0
-	puff.gravity = Vector3(0.0, -1.2, 0.0)
-	puff.damping_min = 1.5
-	puff.damping_max = 3.5
-	puff.scale_amount_min = 0.8 + r * 1.2
-	puff.scale_amount_max = 2.0 + r * 3.5
-	var fade := Gradient.new()
-	fade.set_color(0, Color(0.34, 0.31, 0.28, 0.55))
-	fade.set_color(1, Color(0.3, 0.28, 0.26, 0.0))
-	puff.color_ramp = fade
-	var quad := QuadMesh.new()
-	quad.material = _dust_mat
-	puff.mesh = quad
-	add_child(puff)
-	puff.position = at
-	puff.emitting = true
+	puff.initial_velocity_min = (0.8 + size * 0.65) * strength
+	puff.initial_velocity_max = (2.4 + speed * 5.5 + size * 1.9) * strength
+	puff.gravity = Vector3.DOWN * 0.65
+	puff.damping_min = 0.75
+	puff.damping_max = 2.2
+	puff.angle_min = -180.0
+	puff.angle_max = 180.0
+	puff.angular_velocity_min = -35.0
+	puff.angular_velocity_max = 35.0
+	puff.scale_amount_min = (0.48 + size * 0.65) * strength
+	puff.scale_amount_max = (1.05 + size * 1.75) * strength
+	puff.scale_amount_curve = _shared_dust_growth
+	puff.color = dust_color
+	puff.color_ramp = _shared_dust_fade
+	puff.mesh = _shared_dust_mesh
+	puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	puff.position = at + normal * (0.06 + size * 0.16 * strength)
+	_aim_impact_particles(puff, normal, size * 0.27 * strength, 0.24, 0.83)
 	puff.finished.connect(
 		func() -> void:
 			_dust_nodes.erase(puff)
 			puff.queue_free()
 	)
+	add_child(puff)
+
+	var clods := CPUParticles3D.new()
+	clods.name = "ImpactClods"
+	clods.emitting = false
+	clods.one_shot = true
+	clods.explosiveness = 1.0
+	clods.amount = mini(clod_count, available - puff.amount)
+	clods.lifetime = lerpf(0.26, 0.85 + minf(size * 0.17, 0.9), strength)
+	clods.local_coords = true
+	clods.initial_velocity_min = (1.6 + size * 0.75) * strength
+	clods.initial_velocity_max = (3.4 + speed * 4.5 + size * 1.6) * strength
+	clods.gravity = Vector3.DOWN * GRAVITY
+	clods.angle_min = -180.0
+	clods.angle_max = 180.0
+	clods.angular_velocity_min = -420.0
+	clods.angular_velocity_max = 420.0
+	clods.scale_amount_min = (0.018 + size * 0.047) * strength
+	clods.scale_amount_max = (0.05 + size * 0.12) * strength
+	clods.scale_amount_curve = _shared_clod_scale
+	clods.color = clod_color
+	clods.mesh = _shared_flying_mesh
+	clods.material_override = _shared_clod_material
+	clods.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_aim_impact_particles(clods, normal, size * 0.16 * strength, 0.48, 1.18)
+	puff.add_child(clods)
+	_dust_nodes.append(puff)
+	clods.emitting = true
+	puff.emitting = true
+
+
+## Directed emission points fan out along the slope at a range of elevations.
+static func _aim_impact_particles(
+	emitter: CPUParticles3D, normal: Vector3, radius: float, low: float, high: float
+) -> void:
+	var points := PackedVector3Array()
+	var directions := PackedVector3Array()
+	var tangent := normal.cross(Vector3.FORWARD).normalized()
+	var bitangent := normal.cross(tangent)
+	for i in 16:
+		var azimuth := TAU * float(i) / 16.0
+		var outward := tangent * cos(azimuth) + bitangent * sin(azimuth)
+		var rise := lerpf(low, high, float(posmod(i * 7, 16)) / 15.0)
+		var near_center := i % 4 == 0
+		points.append(outward * radius * (0.16 if near_center else 1.0))
+		var lateral := 0.42 if near_center else 1.0
+		directions.append((outward * lateral + normal * rise).normalized())
+	emitter.emission_shape = CPUParticles3D.EMISSION_SHAPE_DIRECTED_POINTS
+	emitter.emission_points = points
+	emitter.emission_normals = directions
+	# Godot rotates local +Z into the emission normal at each point.
+	emitter.direction = Vector3.BACK
+	emitter.spread = 12.0
+
+
+static func _prepare_impact_resources() -> void:
+	if _shared_dust_mesh != null:
+		return
+	var dust := StandardMaterial3D.new()
+	dust.albedo_texture = _make_dust_texture()
+	dust.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dust.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	dust.billboard_keep_scale = true
+	dust.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	dust.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	dust.vertex_color_use_as_albedo = true
+	dust.proximity_fade_enabled = true
+	dust.proximity_fade_distance = 0.5
+	_shared_dust_mesh = QuadMesh.new()
+	_shared_dust_mesh.material = dust
+	_shared_dust_fade = Gradient.new()
+	_shared_dust_fade.offsets = PackedFloat32Array([0.0, 0.09, 0.43, 0.82, 1.0])
+	_shared_dust_fade.colors = PackedColorArray([
+		Color(1, 1, 1, 0.62), Color(1, 1, 1, 0.92), Color(1, 1, 1, 0.48),
+		Color(1, 1, 1, 0.08), Color(1, 1, 1, 0),
+	])
+	_shared_dust_growth = Curve.new()
+	_shared_dust_growth.max_value = 1.5
+	_shared_dust_growth.add_point(Vector2(0.0, 0.68))
+	_shared_dust_growth.add_point(Vector2(0.36, 1.02))
+	_shared_dust_growth.add_point(Vector2(1.0, 1.5))
+
+	_shared_clod_material = StandardMaterial3D.new()
+	_shared_clod_material.vertex_color_use_as_albedo = true
+	_shared_clod_material.roughness = 1.0
+	_shared_clod_scale = Curve.new()
+	_shared_clod_scale.add_point(Vector2(0.0, 1.0))
+	_shared_clod_scale.add_point(Vector2(0.82, 1.0))
+	_shared_clod_scale.add_point(Vector2(1.0, 0.0))
+
+
+static func _make_dust_texture() -> ImageTexture:
+	const SIZE := 64
+	var noise := FastNoiseLite.new()
+	noise.seed = 173
+	noise.frequency = 0.075
+	noise.fractal_octaves = 3
+	var image := Image.create_empty(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+	for y in SIZE:
+		for x in SIZE:
+			var uv := (Vector2(x, y) + Vector2(0.5, 0.5)) * (2.0 / SIZE) - Vector2.ONE
+			var shape := noise.get_noise_2d(x, y)
+			var edge := smoothstep(0.30, 0.97, uv.length() + shape * 0.29)
+			var density := (1.0 - edge) * lerpf(0.63, 1.0, smoothstep(-0.30, 0.36, shape))
+			var shade := clampf(0.85 + shape * 0.28, 0.0, 1.0)
+			image.set_pixel(x, y, Color(shade, shade, shade, density))
+	image.generate_mipmaps()
+	return ImageTexture.create_from_image(image)
 
 
 func _retire(rock: Rock) -> void:

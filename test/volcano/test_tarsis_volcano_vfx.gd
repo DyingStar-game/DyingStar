@@ -45,6 +45,16 @@ func _ready() -> void:
 					var plume := root.get_node_or_null("Plume") as VolcanoPlume
 					check(plume != null, key + ": game feature factory uses new plume")
 					if plume != null:
+						if heights.is_empty():
+							add_child(root)
+							var contact := Vector3(24.0, -7.0, -18.0)
+							var dir := (plume._origin + plume.transform.basis * contact).normalized()
+							var albedo := data.ground_albedo_at(dir)
+							plume.stones._dust(contact, 1.0, 20.0)
+							check(
+								plume.stones._dust_nodes[0].color.is_equal_approx(albedo.lightened(0.32)),
+								"game plume colours dust from the planet at the contact"
+							)
 						heights.append(plume.model.ceiling_m)
 						brightness.append(plume.model.ash_brightness)
 						lifetimes.append(plume.model.lifetime_s)
@@ -221,7 +231,13 @@ func _test_rock_cleanup() -> void:
 	var ground := func(_x: float, _z: float) -> float:
 		queries[0] += 1
 		return 0.0
-	var field := VolcanoStoneField.new(model, ground)
+	var ice := Color(0.64, 0.82, 0.93)
+	var rock := Color(0.45, 0.23, 0.14)
+	var tint_queries := [0]
+	var albedo_at := func(contact: Vector3) -> Color:
+		tint_queries[0] += 1
+		return ice if contact.x < 0.0 else rock
+	var field := VolcanoStoneField.new(model, ground, albedo_at)
 	field.rebuild_on_jump = false
 	add_child(field)
 	field.update(1000.0, Vector3.ZERO, Vector3.ZERO, false)
@@ -250,9 +266,27 @@ func _test_rock_cleanup() -> void:
 	await get_tree().process_frame
 	check(field.props_alive() == 0 and not field.is_physics_processing(), "hidden fields remove their rocks and stop physics")
 	field.update(3000.0, Vector3.ZERO, Vector3.ZERO, false)
-	for i in VolcanoStoneField.MAX_DUST + 5:
+	field._dust(Vector3.LEFT, 1.0, 20.0)
+	var first_cloud := field._dust_nodes[0]
+	for i in VolcanoStoneField.MAX_DUST + 4:
 		field._dust(Vector3.ZERO, 1.0, 20.0)
 	check(field._dust_nodes.size() == VolcanoStoneField.MAX_DUST, "dust effects are independently capped")
+	check(field._dust_nodes[0] == first_cloud and not first_cloud.is_queued_for_deletion(), "a full volley lets active clouds finish")
+	var rock_cloud := field._dust_nodes[1]
+	check(tint_queries[0] == VolcanoStoneField.MAX_DUST, "ground is sampled once per emitted impact")
+	check(first_cloud.color.is_equal_approx(ice.lightened(0.32)), "ice impact dust uses ice albedo")
+	check(rock_cloud.color.is_equal_approx(rock.lightened(0.32)), "rock impact dust uses rock albedo")
+	check(first_cloud.mesh == rock_cloud.mesh, "different ground tints share the dust mesh")
+	var ice_clods := first_cloud.get_node(^"ImpactClods") as CPUParticles3D
+	var rock_clods := rock_cloud.get_node(^"ImpactClods") as CPUParticles3D
+	check(ice_clods.color.is_equal_approx(ice.darkened(0.25)), "ice debris uses ice albedo")
+	check(rock_clods.color.is_equal_approx(rock.darkened(0.25)), "rock debris uses rock albedo")
+	check(ice_clods.material_override == rock_clods.material_override, "ground tints share the debris material")
+	var particles := 0
+	for puff in field._dust_nodes:
+		var clods := puff.get_node(^"ImpactClods") as CPUParticles3D
+		particles += puff.amount + clods.amount
+	check(particles <= VolcanoStoneField.MAX_IMPACT_PARTICLES, "dust and clods share a bounded particle budget")
 	field._dust_nodes[0].finished.emit()
 	check(field._dust_nodes.size() == VolcanoStoneField.MAX_DUST - 1, "finished dust releases its slot")
 	field._heights[Vector3i.ZERO] = 0.0
