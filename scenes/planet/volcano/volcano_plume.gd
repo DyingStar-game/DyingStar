@@ -129,7 +129,7 @@ func _ready() -> void:
 	_box.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_box.extra_cull_margin = 16384.0
 	add_child(_box)
-	stones = VolcanoStoneField.new(model, _relief)
+	stones = VolcanoStoneField.new(model, _relief, _impact_ground_albedo)
 	stones.rebuild_on_jump = false
 	var scale_h := clampf(volcano.h / REFERENCE_HEIGHT_M, 0.12, 1.4)
 	stones.speed_scale = sqrt(scale_h)
@@ -185,6 +185,11 @@ func _relief(x: float, z: float) -> float:
 	var dir := at.normalized()
 	var ground := dir * (data.radius + data.sample_height_for_direction(dir))
 	return (ground - _origin).dot(_up)
+
+
+## Convert the stone field's contact to a body-fixed direction, just as for the relief.
+func _impact_ground_albedo(contact: Vector3) -> Color:
+	return data.ground_albedo_at((_origin + basis * contact).normalized())
 
 
 func _process(delta: float) -> void:

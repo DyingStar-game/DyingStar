@@ -68,7 +68,11 @@ limitée à **300 s**, puis un fondu de **3 s** le supprime. Au-delà de **750 m
 de la caméra, il entre aussi dans ce fondu. Les fragments commencent leur
 simulation au tick suivant pour éviter une cascade de calculs dans une image.
 
-Les poussières d'impact sont limitées à **10 effets simultanés** par volcan.
+La poussière et les débris se déclenchent à chaque impact au sol, rebonds
+compris. Ils prennent la teinte de base du terrain au point de contact.
+Le budget est de **80 effets simultanés** et **640
+particules** par volcan. Les nouveaux impacts peuvent émettre moins de
+particules quand le budget se remplit. Les nuages en cours finissent leur fondu.
 Quand un champ de pierres sort de son budget de distance/visibilité, ses
 rochers, poussières, vols en attente et cache de terrain sont libérés et sa
 simulation physique s'arrête. Les sauts d'horloge vident les anciens objets et
