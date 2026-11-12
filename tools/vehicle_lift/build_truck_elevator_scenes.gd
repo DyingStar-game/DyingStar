@@ -387,7 +387,9 @@ func _lift() -> Node:
 	var marker := Node3D.new()
 	marker.name = "MapMarker"
 	marker.set_script(load("res://scenes/common/map_marker.gd"))
-	marker.set("label", "%%MAP_MARKER_VEHICLE_LIFT")
+	# A mine's lift, told from a canyon's on the chart by its name and its amber pictogram.
+	marker.set("label", "%%MAP_MARKER_MINE_LIFT")
+	marker.set("icon_tint", Color(1.0, 0.72, 0.24))
 	marker.set("icon", load("res://assets/textures/map_markers/vehicle_lift.png"))
 	marker.set("importance", 1)
 	marker.set("max_view_m", 5000.0)

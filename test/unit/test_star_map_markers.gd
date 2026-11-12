@@ -36,6 +36,18 @@ func test_it_lies_on_the_object_s_ground_turned_with_it() -> void:
 	assert_almost_eq(xf.basis.x.normalized().dot(place.basis.x), 1.0, 1e-6)
 
 
+func test_a_model_dug_under_its_ground_stands_on_its_ground() -> void:
+	# A mine's lift: its head at the origin, its shaft 500 m down. Marked at the bottom of the shaft, its
+	# pictogram sat in the middle of the chart wherever one looked (playtest 2026-11-12).
+	var shaft := AABB(Vector3(-4.0, -500.0, -6.0), Vector3(8.0, 512.0, 12.0))
+	assert_eq(StarMapMarkers.ground_point(shaft), Vector3(0.0, 0.0, 0.0), "on its ground, not in its pit")
+	var place := Transform3D(Basis.IDENTITY, Vector3(10.0, 2.0, -3.0))
+	var xf: Transform3D = StarMapMarkers.rect_transform(place, shaft, 0.01, 0.05)
+	assert_almost_eq(xf.origin, place.origin + Vector3.UP * 0.05, Vector3(1e-6, 1e-6, 1e-6))
+	# A model standing above its origin keeps its own base.
+	assert_eq(StarMapMarkers.ground_point(AABB(Vector3(-1.0, 2.0, -1.0), Vector3(2.0, 3.0, 2.0))).y, 2.0)
+
+
 func test_a_set_footprint_wins_over_the_meshes() -> void:
 	var marker := MapMarker.new()
 	marker.footprint_size = Vector3(4.0, 3.0, 2.0)
@@ -64,3 +76,14 @@ func test_a_blockout_of_csg_shapes_has_a_footprint() -> void:
 	var box: AABB = marker.footprint()
 	assert_gt(box.size.x, 0.1)
 	assert_gt(box.size.z, 0.1)
+
+
+func test_a_mine_s_lift_and_a_canyon_s_are_told_apart() -> void:
+	# Both were "Vehicle lift": a player sent to repair one went to the other (playtest 2026-11-12).
+	var mine: String = FileAccess.get_file_as_string(
+			"res://scenes/_universe/structures/industrial/truck_elevator/truck_elevator.tscn")
+	var canyon: String = FileAccess.get_file_as_string(
+			"res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift.tscn")
+	assert_true(mine.contains('label = "%%MAP_MARKER_MINE_LIFT"'), "the mine's lift has its own name")
+	assert_true(mine.contains("icon_tint = "), "and its own colour")
+	assert_true(canyon.contains('label = "%%MAP_MARKER_VEHICLE_LIFT"'), "the canyon's keeps the other")
