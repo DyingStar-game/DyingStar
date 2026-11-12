@@ -122,6 +122,9 @@ const POI_BODY_KEEP: float = 0.75
 ## settlement in its surroundings, and it is also where the ground is drawn at the finest level Tarsis
 ## III publishes: 198 m per sample, so the extra height costs no detail at all.
 const PLACE_FOCUS_ALTITUDE_M: float = 7000.0
+## The height (m) a single MACHINE is shown from (a repair's, focus_machine): close enough to tell it
+## from the machine beside it -- some 140 m of ground across the screen.
+const MACHINE_FOCUS_ALTITUDE_M: float = 90.0
 ## How high above YOUR feet "Moi" (and opening the chart) frames you: 150 m, the village's buildings and
 ## dispensers read one by one (playtest 2026-10-19) -- the chart now goes down to the metre.
 const PLAYER_FOCUS_ALTITUDE_M: float = 150.0
@@ -3405,7 +3408,7 @@ func focus_machine(machine_id: String) -> bool:
 			if _live_planet(key) != planet:
 				continue
 			_cam.select(body, key)
-			_frame_on_surface(body, planet.local_dir_of(machine_host.global_position), PLACE_FOCUS_ALTITUDE_M)
+			_frame_on_surface(body, planet.local_dir_of(machine_host.global_position), MACHINE_FOCUS_ALTITUDE_M)
 			return true
 		return false
 	return false
@@ -3670,8 +3673,10 @@ func debug_lines() -> PackedStringArray:
 		focused = str(_bodies[_cam.focus]["name"])
 	# The zoom through the shared distance rule — metres, then km, then millions of km. Printed as
 	# "%.2f million km" it read "0.00" for everything under 5 000 km, the whole range a planet is read in.
+	# The HEIGHT over the ground under the camera, not the distance to the body's centre: that one read
+	# "6 362 km" at every zoom a planet is looked at from (playtest 2026-11-12).
 	var lines := PackedStringArray([tr("%%HUD_MAP_READOUT") % [
-			_bodies.size(), focused, Globals.format_distance(_view / UNITS_PER_METRE), Globals.sim_time()]])
+			_bodies.size(), focused, Globals.format_distance(_gap() / UNITS_PER_METRE), Globals.sim_time()]])
 	var relief: String = _relief_readout()
 	if relief != "":
 		lines.append(relief)
