@@ -33,7 +33,8 @@ var active_player: Player
 
 func _ready() -> void:
 	set_process(false)
-	MachineBreakdown.attach(self, "lift")
+	var part: String = "landing_stop" if stop_index >= 0 else ("landing_upper" if is_upper else "landing_lower")
+	MachineBreakdown.attach(self, VehicleLift.breakdown_kind(self, part))
 
 	if Engine.is_editor_hint():
 		var railing: Node3D = get_node_or_null("Railing")

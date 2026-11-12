@@ -2059,10 +2059,25 @@ func _refresh_points_of_interest() -> void:
 		_poi_focus = -1
 		_poi_hover = -1
 		_poi_cluster_hover = -1
+	# Where the player stands, for a group of places to say which one that is.
+	_poi_layer.player_poi = _player_poi_index(index)
 	# The camera itself rather than pieces of it: the layer sizes each badge on its own distance and
 	# projects the names to screen to keep them from piling up, and both need the real thing.
 	_poi_layer.refresh(key, sphere.position, sphere.basis.orthonormalized(),
 			sphere.scale.x * MESH_RADIUS, _camera, _poi_focus, _poi_hover, _poi_cluster_hover)
+
+
+## Index, in the layer's entries, of the place the player stands at on body [param host]; -1 when the
+## player is not on it or stands in none (the smallest place holding them wins, MusicPoi.containing).
+func _player_poi_index(host: int) -> int:
+	var dir: Vector3 = _player_local_dir(host)
+	if dir.is_zero_approx():
+		return -1
+	var planet: Planet = _live_planet(str(_bodies[host]["key"]))
+	if planet == null:
+		return -1
+	var at: Dictionary = MusicPoi.containing(_poi_layer.entries, dir, planet.planet_data.radius)
+	return _poi_layer.entries.find(at) if not at.is_empty() else -1
 
 
 ## The ambient steps back as a body fills the screen.
@@ -3368,6 +3383,32 @@ func _focus_mission_site(poi_id: String) -> bool:
 	_cam.select(body, key)
 	_frame_on_surface(body, at.normalized(), PLACE_FOCUS_ALTITUDE_M)
 	return true
+
+
+## Frame the chart on the machine [param machine_id] (MachineBreakdown.machine_id, a repair mission's
+## `machineId`), when it is loaded around the player: the mission only knows its village, and "the
+## lift of M0001" is one of several. False when the machine is not loaded here -- the caller then
+## shows the village's point instead.
+func focus_machine(machine_id: String) -> bool:
+	if machine_id == "" or not is_instance_valid(_camera) or not is_inside_tree():
+		return false
+	for node: Node in get_tree().get_nodes_in_group(MachineBreakdown.GROUP):
+		var breakdown := node as MachineBreakdown
+		if breakdown == null or breakdown.machine_id() != machine_id:
+			continue
+		var machine_host: Node3D = breakdown.host()
+		var planet: Planet = SurfaceProbe.planet_of(machine_host) if machine_host != null else null
+		if planet == null:
+			return false
+		for body: int in _bodies.size():
+			var key := str(_bodies[body]["key"])
+			if _live_planet(key) != planet:
+				continue
+			_cam.select(body, key)
+			_frame_on_surface(body, planet.local_dir_of(machine_host.global_position), PLACE_FOCUS_ALTITUDE_M)
+			return true
+		return false
+	return false
 
 
 ## How many frames [method focus_service_poi] waits for the camera's travel to bring its body big

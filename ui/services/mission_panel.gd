@@ -1252,12 +1252,14 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 ## holds the player's own points, which covers every mission the player can build or has taken from
 ## themselves. A point belonging to someone else's contract is simply not known by name yet — the
 ## chart fetches it on the click, and the link says what it is rather than what it is called.
+##
+## A repair (the simulator's breakdowns) has no params: its place is `locationTo` -- the village's point
+## (`poiUuid`) -- and its `payload.machineId` names the broken machine, returned as "machine" so the
+## chart frames the machine itself when it is loaded around the player.
 static func _objective_poi(objective: Dictionary) -> Dictionary:
 	var params: Variant = objective.get("params")
-	if not (params is Dictionary):
-		return {}
 	for field: String in ["zone", "source"]:
-		var place: Variant = (params as Dictionary).get(field)
+		var place: Variant = (params as Dictionary).get(field) if params is Dictionary else null
 		if not (place is Dictionary):
 			continue
 		var poi_id := str((place as Dictionary).get("poiId", ""))
@@ -1265,8 +1267,22 @@ static func _objective_poi(objective: Dictionary) -> Dictionary:
 			var name := _poi_name_of(poi_id)
 			if name == "":
 				name = location_name(objective.get("locationTo" if field == "zone" else "locationFrom"))
-			return {"id": poi_id, "name": name}
+			return {"id": poi_id, "name": name, "machine": ""}
+	var to: Variant = objective.get("locationTo")
+	if to is Dictionary and to.get("poiUuid") != null and str(to.get("poiUuid")) != "":
+		var payload: Variant = objective.get("payload")
+		var machine := str(payload.get("machineId")) if payload is Dictionary and payload.get("machineId") != null else ""
+		return {"id": str(to.get("poiUuid")), "name": location_name(to), "machine": machine}
 	return {}
+
+
+## Show [param poi] (an _objective_poi) on the chart: through the tablet for a point of interest (it
+## comes back to this form afterwards), through PlayerServices for a repair's machine.
+func _show_place(poi: Dictionary) -> void:
+	if str(poi.get("machine", "")) != "":
+		PlayerServices.locate_requested.emit(str(poi.get("id", "")), str(poi.get("machine", "")))
+	else:
+		focus_poi_requested.emit(str(poi.get("id", "")))
 
 
 ## The name a mission's location carries ({village, name}, as the simulator writes it): "F0001 · CargoDepot_2",
@@ -1298,7 +1314,7 @@ static func _poi_name_of(poi_id: String) -> String:
 ## The point it names is not always one the player can read: a contract taken from someone else
 ## carries a place of theirs, and the service decides who may see it. The chart fetches the point on
 ## the click, and says so plainly when it cannot be shown.
-func _poi_link(text: String, poi_id: String) -> Button:
+func _poi_link(text: String, poi_id: String, machine_id: String = "") -> Button:
 	var button := Button.new()
 	button.text = text
 	button.add_theme_stylebox_override("normal", ServiceStyle.flat(Color.TRANSPARENT,
@@ -1316,7 +1332,7 @@ func _poi_link(text: String, poi_id: String) -> Button:
 	# The sentence's own size, so the word does not grow when it becomes a control.
 	ServiceStyle.font_of(button, 15)
 	button.tooltip_text = tr("%%SVC_TIP_SHOW_POI_ON_CHART")
-	button.pressed.connect(func() -> void: focus_poi_requested.emit(poi_id))
+	button.pressed.connect(func() -> void: _show_place({"id": poi_id, "machine": machine_id}))
 	return button
 
 
@@ -1385,7 +1401,7 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), ServiceStyle.TEXT_2))
 		else:
 			where.add_child(_poi_link(
-					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), poi_id))
+					poi_name if poi_name != "" else tr("%%SVC_LBL_POI"), poi_id, str(poi.get("machine", ""))))
 		box.add_child(where)
 
 	if current:
@@ -1515,7 +1531,7 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 			var poi_id := str(poi["id"])
 			var poi_name: String = str(poi["name"]) if str(poi["name"]) != "" else tr("%%SVC_LBL_POI")
 			var go := _action_button(lifecycle, tr("%%SVC_FMT_MISSION_SHOW_ON_CHART") % poi_name,
-					func() -> void: focus_poi_requested.emit(poi_id))
+					func() -> void: _show_place(poi))
 			ServiceStyle.apply_button(go, mission.get("autoComplete") == false)
 		# Share the mission I took: my group may join it, or one player I pick. Their crates then
 		# count for it too, the reward is split equally, and any of us turns it in. The choice is a

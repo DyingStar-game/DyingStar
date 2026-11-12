@@ -400,6 +400,7 @@ func setup() -> void:
 	_watch_debug_shadow_atlas()
 	ChatNetwork.notification_received.connect(_on_notification)
 	PlayerServices.mission_accepted.connect(_on_mission_accepted)
+	PlayerServices.locate_requested.connect(_on_locate_requested)
 	_places = PlaceWatcher.new()
 	_places.name = "PlaceWatcher"
 	add_child(_places)
@@ -2897,6 +2898,19 @@ func _watch_debug_notification() -> void:
 	SettingsManager.debug.watch(&"notification_debug", follow)
 	if SettingsManager.debug.is_on(&"notification_debug"):
 		follow.call(true)
+
+
+## A screen asked for a place on the chart (a kiosk's mission sheet, the DataPad): the wrist comes up on
+## the chart, framed on the broken machine itself when it is loaded around here, on the point of
+## interest otherwise.
+func _on_locate_requested(poi_id: String, machine_id: String) -> void:
+	if _star_map == null or _services == null or _wrist == null:
+		return
+	_wrist.open_with(func() -> void:
+		_services.open_navigation()
+		if machine_id != "" and _star_map.focus_machine(machine_id):
+			return
+		_show_poi(poi_id))
 
 
 ## A mission was taken somewhere else than on the tablet (a kiosk): a line says so, the wrist blinks,

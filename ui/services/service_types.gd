@@ -716,6 +716,30 @@ static func _place_short(location: Variant) -> String:
 	return ""
 
 
+## Where a mission is to be shown on the chart: {"poi": a point of interest's id, "machine": the id of
+## the broken machine of a repair, "" when it has none}. The point is the one its step under way names
+## (`locationTo.poiUuid`, as the simulator writes a repair), else the mission's first poi zone. Both ""
+## when the mission names no place. Pure.
+static func mission_place(mission: Variant, objectives: Variant) -> Dictionary:
+	var place := {"poi": "", "machine": ""}
+	for objective: Variant in (objectives if objectives is Array else []):
+		if not (objective is Dictionary) or str(objective.get("status", "")) == "completed":
+			continue
+		var to: Variant = objective.get("locationTo")
+		if place["poi"] == "" and to is Dictionary and to.get("poiUuid") != null:
+			place["poi"] = str(to.get("poiUuid"))
+		var payload: Variant = objective.get("payload")
+		if place["machine"] == "" and payload is Dictionary and payload.get("machineId") != null:
+			place["machine"] = str(payload.get("machineId"))
+	var zones: Variant = mission.get("zones") if mission is Dictionary else null
+	if place["poi"] == "" and zones is Array:
+		for zone: Variant in zones:
+			if zone is Dictionary and str(zone.get("kind", "")) == "poi" and str(zone.get("poiId", "")) != "":
+				place["poi"] = str(zone.get("poiId"))
+				break
+	return place
+
+
 ## The rows of a mission service listing {missions: [{assignment, mission}]} ([param data], the
 ## answer's `data`): the dictionaries only, [] for anything else.
 static func mission_rows(data: Variant) -> Array:
