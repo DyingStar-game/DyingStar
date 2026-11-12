@@ -305,10 +305,10 @@ func _build_mesh_collider() -> void:
 ## ray sees areas only), a sphere round the whole rock that no cut ever shrank: the prompt showed beside
 ## the piece, its line started in the air at the old rock's middle, and every piece of one rock, each
 ## with that same sphere at the same place, answered for the others (playtest 2026-11-10). The hull just
-## made for the body is shared, so it costs nothing; an uncut rock keeps its sphere.
+## made for the body is shared, so it costs nothing. An uncut rock too: its scene sphere (1.2 / 3.5 /
+## 5.5 m) reached past the rock and stood in front of the pieces and crates beside it, which then
+## offered no carry prompt from that side (playtest 2026-11-11).
 func _fit_aim_area(shape_node: CollisionShape3D) -> void:
-	if not _has_pending_cuts():
-		return
 	var aim_shape := get_node_or_null("Area3D/CollisionShape3D") as CollisionShape3D
 	if aim_shape == null:
 		return
@@ -809,6 +809,7 @@ func _paint_signature() -> String:
 	parts.append(str(mineral.id) if mineral != null else "")
 	parts.append(str(host_rock.id) if host_rock != null else "")
 	parts.append(ore_seed)
+	parts.append(str(can_be_carried()))  # a carriable piece draws no line (_make_rock_material)
 	for frac in fractures:
 		if frac.get("fractured", false):
 			continue
@@ -912,7 +913,9 @@ func _make_rock_material(ore_threshold_v: float, ore_scale_v: float, with_groove
 	mat.set_shader_parameter("crack_width_var", crack_width_var)
 	var normals: Array = []
 	var offsets: Array = []
-	if with_grooves:
+	# A piece you can carry shows no fault: the server drops its uncut planes (check_rock), and this
+	# keeps one still in flight from drawing a line on a piece the prompt already offers to carry.
+	if with_grooves and not can_be_carried():
 		for frac in fractures:
 			if frac.get("fractured", false):
 				continue
@@ -1004,7 +1007,10 @@ func apply_prop_data(data: Dictionary) -> void:
 		await _apply_cuts()
 		# The geometry now matches the fracture history, so the server can finally judge the piece:
 		# is it still breakable, and does it need its next crack plane? (See _server_ready.)
-		if OS.has_feature("dedicated_server"):
+		# Not while another call's replay is still carving: _apply_cuts returned at once because one
+		# runs (or claimed this very signature), the piece is still WHOLE, and judged now it got a
+		# plane from the uncut box that stayed once it shrank. That run's own caller judges it.
+		if OS.has_feature("dedicated_server") and not _apply_cuts_running:
 			check_rock()
 		run_ready = true
 
@@ -1185,17 +1191,17 @@ func server_update_proximity(near: bool) -> void:
 		_coll_disabled = true
 
 func check_rock() -> void:
-	# check if the rock can be breakable
-	var _can_be_breakable: bool = true
-	if fractures.size() > 0:
-		if not _is_breakable_piece():
-			_can_be_breakable = false
-
-	can_be_breakable = _can_be_breakable
-	server_prop_update({"can_be_breakable": can_be_breakable})
+	# Breakable = not carriable, measured on EVERY piece. The test used to run only once `fractures`
+	# held something, so a rock with no history -- every block a mine face drops, small or not -- was
+	# called breakable and got a crack line while interact() already offered to carry it (playtest
+	# 2026-11-11).
 	_refresh_mass()
-	if not _can_be_breakable:
-		# no breakable, don't need to generate fracture plane
+	can_be_breakable = _is_breakable_piece()
+	server_prop_update({"can_be_breakable": can_be_breakable})
+	if not can_be_breakable:
+		# A piece you can carry has no fault left to cut: drop the line it may still wear (a plane
+		# generated when it was bigger, or before its mineral was known).
+		_drop_uncut_planes()
 		return
 
 	# Now, if the rock is breakable, create fracture plan if not exists
@@ -1207,6 +1213,16 @@ func check_rock() -> void:
 	if not has_active_plane:
 		_generate_fracture_plane()
 		# TODO send fratures to client
+
+
+## Server: remove the fault planes not cut yet (the crack lines), keeping the cut history, and
+## replicate the list when it changed. Uncut planes carve nothing, so the geometry stays as it is.
+func _drop_uncut_planes() -> void:
+	var kept: Array = fractures.filter(func(f): return bool((f as Dictionary).get("fractured", false)))
+	if kept.size() == fractures.size():
+		return
+	fractures = kept
+	server_prop_update({"fractures": fractures})
 
 
 

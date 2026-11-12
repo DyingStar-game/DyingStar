@@ -40,13 +40,15 @@ func test_without_a_mesh_the_fallback_is_kept() -> void:
 
 
 func test_a_carved_piece_is_aimed_at_by_its_own_shape() -> void:
-	# The look meets the rock's area: a sphere round the whole rock, until a cut gives the piece's hull.
+	# The look meets the rock's area: the rock's own hull, uncut or carved. The scene's sphere reached past the rock
+	# and hid the pieces and crates beside it from the look (playtest 2026-11-11).
 	var rock: RockMining = (load("res://scenes/_universe/environment/terrain/rocks/rock_mining_sm.tscn") as PackedScene).instantiate()
 	rock.freeze = true
 	add_child_autofree(rock)
 	await get_tree().process_frame
 	var area_shape := rock.get_node("Area3D/CollisionShape3D") as CollisionShape3D
-	assert_true(area_shape.shape is SphereShape3D, "uncut: the cheap sphere")
+	assert_true(area_shape.shape is ConvexPolygonShape3D, "uncut: the rock's hull, not the scene's sphere")
+	assert_eq(area_shape.shape, (rock.get_node("CollisionShape3D") as CollisionShape3D).shape, "the body's own, shared")
 	rock.fractures = [{"fractured": true, "rotation_x": 0.0, "rotation_y": 30.0, "rotation_z": 0.0,
 			"plane_offset": 0.1, "keep_side": 1}]
 	rock._ensure_csg_backend(true)

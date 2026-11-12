@@ -90,8 +90,9 @@ static var _live: Array[MineSite] = []
 ## Thickness (m) of a fallen layer: how far the gallery moves on each time, and how deep its blocks go. Lower =
 ## thinner blocks and more layers to mine.
 @export_range(0.3, 3.0, 0.05, "suffix:m") var layer_m: float = 0.8
-## How close (m) to the fault the tool must hit; higher = easier to aim.
-@export_range(0.02, 1.0, 0.01, "suffix:m") var fault_tolerance_m: float = 0.15
+## How far (m) the player who broke a layer walks back on their own, down the gallery and away from the falling
+## blocks. Stops sooner against a block, a truck or a wall. 0 = no walk back.
+@export_range(0.0, 20.0, 0.5, "suffix:m") var retreat_m: float = 6.0
 ## Fewest blocks a layer breaks into. More blocks = smaller ones (a 6 × 4.5 m face in 25 blocks: about 0.9 m
 ## across), and more rigid bodies in the gallery.
 @export_range(4, 80) var fragment_min: int = 20
@@ -545,13 +546,13 @@ func _update_faces() -> void:
         face.height = float(_layout.settings.gallery_height_m)
         face.fault_normal = fault[0]
         face.fault_offset = fault[1]
-        face.tolerance_m = fault_tolerance_m
         face.transform = frame
         face.build(client)
 
 
 ## SERVER: a player held the tool [param face_seconds] on the face of gallery [param id], layer [param step], at
-## [param hit] (mine frame). A layer falls if it was the current layer's fault, within reach. True when it fell.
+## [param hit] (mine frame). A layer falls if it was the current layer's face (anywhere on it), within reach; the
+## player then walks back [member retreat_m] down the gallery. True when it fell.
 func server_perforate_face(player: Node3D, id: int, step: int, hit: Vector3) -> bool:
     var who := str(player.get("client_uuid")) if player != null else "?"
     var face: MineFace = _faces.get(id)
@@ -563,12 +564,9 @@ func server_perforate_face(player: Node3D, id: int, step: int, hit: Vector3) -> 
         print("[MineSite] %s: %s perforated layer %d of gallery %d, already at layer %d"
                 % [name, who, step, id, int(face_step.get(str(id), 0))])
         return false
-    var slack := 0.1  # the client judged the hit on its own copy of the face
     var local := face.transform.affine_inverse() * hit
-    var off := absf(Vector2(local.x, local.y).dot(face.fault_normal) - face.fault_offset)
-    if off > face.tolerance_m + slack:
-        push_warning("[MineSite] %s: %s hit gallery %d %.2f m off its fault (tolerance %.2f m)"
-                % [name, who, id, off, face.tolerance_m + slack])
+    if not face.is_on_face_local(local):
+        push_warning("[MineSite] %s: %s hit gallery %d off its face (%.2v in the face's frame)" % [name, who, id, local])
         return false
     if player != null:
         var reach := (global_transform * hit).distance_to(player.global_position)
@@ -577,6 +575,10 @@ func server_perforate_face(player: Node3D, id: int, step: int, hit: Vector3) -> 
             return false
     print("[MineSite] %s: %s broke layer %d of gallery %d" % [name, who, step, id])
     server_break_face(id)
+    if player != null and retreat_m > 0.0 and player.has_method("server_retreat"):
+        # Down the gallery, out of the way of the blocks: the face frame's +Z (its -Z runs into the rock).
+        var frame: Transform3D = global_transform if is_inside_tree() else transform
+        player.server_retreat((frame.basis * face.transform.basis.z).normalized(), retreat_m)
     return true
 
 

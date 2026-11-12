@@ -102,13 +102,6 @@ func _install(block: Dictionary) -> void:
         (mesh_node as MeshInstance3D).mesh = mesh
     if mesh_node != null:
         mesh_node.visibility_range_end = VISIBLE_M
-    # The look-at sphere the carry prompt aims at, as large as the block.
-    var look := get_node_or_null("Area3D/CollisionShape3D") as CollisionShape3D
-    if look != null:
-        var sphere := SphereShape3D.new()
-        sphere.radius = maxf(float(block.size) * 0.6, 0.3)
-        look.shape = sphere
-        look.transform = Transform3D.IDENTITY
     var server: bool = GameOrchestrator.is_server()
     # Fresh from the wall: still until the rock round it is built (see _hold_release).
     var site := mine()
@@ -122,6 +115,11 @@ func _install(block: Dictionary) -> void:
         var data := _pending
         _pending = {}
         super.apply_prop_data(data)
+    # super._ready judged the block before its mineral, host rock and density landed (just above): with
+    # the default ones its mass was wrong, so a small block could keep a crack line it cannot use, or
+    # miss the one it needs. Judge it again on its real data; a cut history is judged once carved.
+    if server and not _apply_cuts_running and not _has_pending_cuts():
+        check_rock()
     if not server and site != null:
         site.rock_arrived(int(mine_block.get("gallery", -1)), int(mine_block.get("step", -1)), int(block.index))
     set_process(server and _holding)
@@ -139,6 +137,13 @@ func _build_mesh_collider() -> void:
     var hull := ConvexPolygonShape3D.new()
     hull.points = MineFracture.hull_points(_block)
     shape_node.shape = hull
+    # The look-at area is the block itself. A sphere 0.6 x its longest side round each block overlapped
+    # its neighbours, and the look ray (first area met) took the wrong one: the carry prompt showed only
+    # from some sides (playtest 2026-11-11).
+    var look := get_node_or_null("Area3D/CollisionShape3D") as CollisionShape3D
+    if look != null:
+        look.shape = hull
+        look.transform = shape_node.transform
 
 
 func _process(_delta: float) -> void:

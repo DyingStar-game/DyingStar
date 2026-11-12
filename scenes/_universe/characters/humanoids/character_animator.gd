@@ -253,6 +253,37 @@ var _body_radius: float = 0.25  # the physics capsule's radius (m), read in setu
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
 	set_physics_process(false)
+	if not _materials_opaque and not OS.has_feature("dedicated_server"):
+		make_opaque(get_parent().get_node_or_null(^"Body"))
+
+
+## True once the model's materials were made opaque (they are the imported scene's, shared by every puppet).
+static var _materials_opaque: bool = false
+
+## Make the model's materials opaque, once for every puppet: the GLB exports each of them as alpha BLEND,
+## so an avatar was drawn in the TRANSPARENT pass and wrote no depth. Effects that read the depth buffer
+## (a mine's dust cloud, playtest 2026-11-11) went straight through it, and sorted against them by their
+## box centre, a player in dust stood out sharp in front of it. A material whose albedo has an alpha
+## channel (eyebrows, eyes, the shorts) is cut at half instead, still in the opaque pass.
+static func make_opaque(model: Node) -> void:
+	if model == null:
+		return
+	_materials_opaque = true
+	var meshes: Array[Node] = model.find_children("*", "MeshInstance3D", true, false)
+	for node: Node in meshes:
+		var inst := node as MeshInstance3D
+		if inst.mesh == null:
+			continue
+		for i in inst.mesh.get_surface_count():
+			var mat := inst.get_active_material(i) as BaseMaterial3D
+			if mat == null or mat.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
+				continue
+			var tex: Texture2D = mat.albedo_texture
+			if tex != null and tex.has_alpha():
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				mat.alpha_scissor_threshold = 0.5
+			else:
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 
 ## Freeze or resume the whole animation of this avatar: the AnimationPlayer stops posing the skeleton
 ## and this state machine stops running. For a REMOTE avatar that is off-screen or hidden — the pose
