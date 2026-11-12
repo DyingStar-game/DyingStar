@@ -38,6 +38,10 @@ const SETTLED_RAD: float = 0.0005
 var _pos: Vector3 = Vector3.ZERO
 var _basis: Basis = Basis.IDENTITY
 var _has: bool = false
+# The pose update_riding drew last (see there), and whether it drew one since the last snap.
+var _drawn_pos: Vector3 = Vector3.ZERO
+var _drawn_basis: Basis = Basis.IDENTITY
+var _drawn: bool = false
 # The lead of update_position: how fast the targets have been moving, when the last one came, and how
 # long the one before it took.
 var _vel: Vector3 = Vector3.ZERO
@@ -54,6 +58,9 @@ func set_target(node: Node3D, local_pos: Vector3, local_basis: Basis) -> void:
 		node.position = local_pos
 		node.transform.basis = local_basis
 		_has = true
+		_drawn_pos = local_pos
+		_drawn_basis = local_basis
+		_drawn = true
 
 ## True once a target came in: before that, lead_target has nothing to say.
 func has_target() -> bool:
@@ -66,6 +73,24 @@ func update(node: Node3D, delta: float) -> void:
 	var f: float = clampf(speed * delta, 0.0, 1.0)
 	node.position = node.position.lerp(_pos, f)
 	node.transform.basis = node.transform.basis.slerp(_basis, f)
+
+## Like update(), but gliding from the pose it drew last rather than from the node's: for a physics body riding a
+## moving parent (a truck on a lift's platform). The physics server writes such a body's pose back at its own tick,
+## where its parent stood one step before -- the parent, smoothed every frame, ran on. Glided from that, a truck on
+## the platform going down at 10 m/s fell back ~17 cm at every physics step and caught up between them: it hopped
+## (playtest 2026-11-12). The same reason as PropNet.ride_pin for cargo on a truck's bed.
+func update_riding(node: Node3D, delta: float) -> void:
+	if not _has:
+		return
+	if not _drawn:
+		_drawn_pos = node.position
+		_drawn_basis = node.transform.basis
+		_drawn = true
+	var f: float = clampf(speed * delta, 0.0, 1.0)
+	_drawn_pos = _drawn_pos.lerp(_pos, f)
+	_drawn_basis = _drawn_basis.slerp(_basis, f).orthonormalized()
+	node.position = _drawn_pos
+	node.transform.basis = _drawn_basis
 
 ## True once [param node] is on its target (within SETTLED_M and SETTLED_RAD), where it is put exactly:
 ## the glide is over until the next set_target, and its owner may stop calling update(). True without
@@ -148,6 +173,7 @@ func snap_to(node: Node3D) -> void:
 ## local frame (and thus the local target) changed.
 func snap_next() -> void:
 	_has = false
+	_drawn = false
 	_target_us = -1  # the next target is in another frame: no speed from this one to it
 	_server_ms = -1.0
 	_vel = Vector3.ZERO

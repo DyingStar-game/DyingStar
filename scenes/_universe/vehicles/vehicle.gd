@@ -1025,7 +1025,21 @@ func _ready() -> void:
 			position = spawn_position
 		if spawn_rotation != Vector3.ZERO:
 			rotation = spawn_rotation
+		# Created already on a moving carrier (a truck parked on a lift's platform when we arrive): ride it
+		# KINEMATIC, as client_parent_change does for one driven onto it and PropSync for any prop. Left STATIC,
+		# the physics server wrote its world pose back every step while the interpolator moved it: the truck
+		# hopped on the mine's lift going down (playtest 2026-11-12, the 2026-11-11 fix covered the reparent only).
+		PropNet.apply_ride_freeze_mode(self)
 	_spawned = true  # from now on, replicated engine / hand brake changes are real events → they sound
+
+## CLIENT, under Settings > Debug "movement": how many positions after a change of frame are still traced.
+var _frame_trace_left := 0
+## CLIENT: after a change of parent, a position this far (m) from where the reparent left the vehicle belongs to the
+## previous frame (client_channel_data_update): skipped, at most STALE_FRAME_SKIPS of them -- no vehicle covers that
+## between two updates, and a real teleport still lands on the one after.
+const STALE_FRAME_M := 50.0
+const STALE_FRAME_SKIPS := 2
+var _stale_frame_skips := 0
 
 ## The registration: "company-type-uuid", as on a crate (PropSerial). Empty until the uuid arrives.
 func serial() -> String:
@@ -2791,7 +2805,10 @@ func _process(delta: float) -> void:
 		return
 	# Smooth for everyone, driver included: the driver is parented to the vehicle, so the camera
 	# rides the smoothly-interpolated body (no per-frame world jitter). Server stays authoritative.
-	_interp.update(self, delta)
+	if PropNet.rides_parent(self):
+		_interp.update_riding(self, delta)  # on a lift's platform: not from the pose the physics wrote back
+	else:
+		_interp.update(self, delta)
 	_update_wheels_visual(delta)
 	_update_dust(delta)
 	# A part named in the bay table may not have been created yet — props and their vehicle are
@@ -3507,7 +3524,19 @@ func client_channel_data_update(data: Dictionary) -> void:
 		var rot := rotation
 		if data.has("rotation"):
 			rot = Vector3(data["rotation"]["x"], data["rotation"]["y"], data["rotation"]["z"])
-		_interp.set_target(self, pos, Basis.from_euler(rot))
+		if _frame_trace_left > 0 and is_inside_tree():
+			_frame_trace_left -= 1
+			print("[VehicleFrame] %s: target %.2v in %s, %.2f m from where it is drawn" % [name, pos, get_parent().name,
+					pos.distance_to(position)])
+		if _stale_frame_skips > 0 and pos.distance_to(position) > STALE_FRAME_M:
+			# The position delivered with a new parent is still the previous frame's: the network extension joins a
+			# parent_id declared by a prop's update with the last transform it holds, measured under the old parent
+			# (only a player's "move" restarts its frame there). Applied, the truck -- and its driver's view -- stood a
+			# moment 6000 km away on driving onto a lift or off it (playtest 2026-11-12). The next one is right.
+			_stale_frame_skips -= 1
+		else:
+			_stale_frame_skips = 0
+			_interp.set_target(self, pos, Basis.from_euler(rot))
 	if data.has("suspension"):
 		_net_suspension = (data["suspension"] as Array).duplicate()
 	if data.has("steering"):
@@ -3576,10 +3605,27 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("seats"):
 		_net_seats = _normalized(data["seats"])  # for _seat_is_taken (prompt + entry gate)
 
-## Client: reparent under the prop's parent (e.g. the planet/city) when spawned.
+## Client: reparent under the prop's parent (e.g. the planet/city) when spawned, or a ride carrier (a vehicle
+## lift's platform) when it drives on.
 func client_parent_change(parent: Node) -> void:
+	var was := get_parent()
+	var at := global_position if is_inside_tree() else Vector3.ZERO
 	reparent(parent)
 	has_parent = true
+	if SettingsManager.debug.is_on(&"movement_debug"):
+		# Settings > Debug "movement": a vehicle changing frame (onto or off a lift's platform), and where its first
+		# positions in the new frame put it -- a moment watched from elsewhere as a truck drove onto a lift
+		# (playtest 2026-11-12) should show here as a jump.
+		print("[VehicleFrame] %s: %s -> %s, at %.2v" % [name, was.name if was != null else "-", parent.name,
+				parent.to_local(at) if parent is Node3D else at])
+		_frame_trace_left = 3
+	# As a prop does (PropSync.client_parent_change): the local frame changed, so no glide from the old local
+	# pose; and the frozen replica rides a moving carrier KINEMATIC. Left STATIC, the physics server wrote its
+	# world pose back every step while the interpolator moved it every frame: the truck shook on the mine's
+	# lift going down (playtest 2026-11-11).
+	_interp.snap_next()
+	_stale_frame_skips = STALE_FRAME_SKIPS
+	PropNet.apply_ride_freeze_mode(self)
 
 # ------------------------------------------------------------------------------
 # Networked enter / exit (server-authoritative). The pilot is replicated as pilot_uuid;
