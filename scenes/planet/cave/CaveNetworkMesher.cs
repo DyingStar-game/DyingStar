@@ -81,7 +81,11 @@ public partial class CaveNetworkMesher : RefCounted
             _clipZ[i] = v.ContainsKey("clip_z") ? v["clip_z"].AsDouble() : double.NaN;
             _clipTop[i] = v.ContainsKey("clip_top") ? v["clip_top"].AsDouble() : double.PositiveInfinity;
             bool continues = kind == "tunnel" && i > 0 && v.ContainsKey("continues_a") && v["continues_a"].AsBool();
-            _group[i] = continues ? _group[i - 1] : i;
+            // "joins_previous": any volume joins the feature before it exactly, like a gallery's next segment. A village
+            // mine's station and the galleries leaving it: blended one by one, their floors (at one height) each added
+            // the smooth union's quarter of the blend, and the floor sank 60 cm under the galleries' start (2026-11-12).
+            bool joins = i > 0 && v.ContainsKey("joins_previous") && v["joins_previous"].AsBool();
+            _group[i] = continues || joins ? _group[i - 1] : i;
             var a = v["a"].AsVector3();
             var b = v["b"].AsVector3();
             var size = v["size"].AsVector3();

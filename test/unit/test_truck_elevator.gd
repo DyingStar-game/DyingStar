@@ -118,6 +118,67 @@ func test_the_station_is_vaulted_with_room_for_a_truck_at_the_platform() -> void
     assert_lt(float(mesher.call("Sample", corner)), 0.0, "a rounded vault: rock in its upper corners")
 
 
+func test_a_truck_drives_level_from_the_platform_into_the_galleries() -> void:
+    # The station and the galleries leaving it were blended one by one: their floors, at one height, each took the
+    # smooth union's share of air, and the floor sank 60 cm under the galleries' start, 4 m past the lift -- a step a
+    # truck could not climb (playtest 2026-11-12). Joined as one feature, the floor stays level up to the galleries.
+    if not MineMesher.warm():
+        pending("native mesher not built")
+        return
+    for seed: int in [11, 4242, 98765]:
+        var plan := MineLayout.generate(seed)
+        var mesher := MineMesher.configure(MineLayout.graph(plan, MineLayout.dug(plan, {}, {})))
+        var level: Dictionary = plan.levels[0]
+        var floor_y := float(level.y)
+        var hub: Vector3 = level.hub
+        var z := -float(plan.settings.shaft_flat_m) - 1.0
+        while z >= hub.z:  # past the hub the galleries take their grade
+            for x: float in [-3.0, 0.0, 3.0]:
+                var ground := _floor_at(mesher, x, z, floor_y)
+                assert_almost_eq(ground, floor_y, 0.1, "seed %d: level floor at x %.0f z %.1f" % [seed, x, z])
+            z -= 1.0
+
+
+## The floor under (x, z) near [param near_y]: the highest rock going down from 3 m above it.
+func _floor_at(mesher: RefCounted, x: float, z: float, near_y: float) -> float:
+    var y := near_y + 3.0
+    while y > near_y - 3.0:
+        if float(mesher.call("Sample", Vector3(x, y, z))) <= 0.0:
+            return y
+        y -= 0.02
+    return NAN
+
+
+func test_a_station_and_its_galleries_are_one_feature() -> void:
+    var plan := MineLayout.generate(4242)
+    var graph := MineLayout.graph(plan, MineLayout.dug(plan, {}, {}))
+    var volumes: Array = graph.volumes
+    var joined := 0
+    for index in volumes.size():
+        var volume: Dictionary = volumes[index]
+        if bool(volume.get("joins_previous", false)):
+            assert_eq(str(volume.kind), "tunnel", "a gallery's first segment")
+            var before: Dictionary = volumes[index - 1]
+            assert_true(str(before.kind) == "room" or str(before.kind) == "tunnel", "after its station or a gallery of it")
+            joined += 1
+    var primaries: int = plan.galleries.filter(func(g: Dictionary) -> bool: return int(g.parent) < 0).size()
+    assert_eq(joined, primaries, "every gallery leaving a station is joined to it")
+    # Cut down to a box at a gallery's far end, the feature is kept whole: the mesher gives the same rock there.
+    var gallery: Dictionary = plan.galleries[0]
+    var far := MineLayout.point_at(gallery, float(MineLayout.dug(plan, {}, {})[int(gallery.id)]))
+    var near := MineLayout.graph_near(plan, MineLayout.dug(plan, {}, {}), AABB(far - Vector3.ONE, Vector3.ONE * 2.0))
+    var kept_station := false
+    for volume: Dictionary in near.volumes:
+        if str(volume.kind) == "room":
+            kept_station = true
+    assert_true(kept_station, "the station comes with its gallery")
+    if MineMesher.warm():
+        var whole := MineMesher.configure(graph)
+        var part := MineMesher.configure(near)
+        for offset: Vector3 in [Vector3.ZERO, Vector3(0.5, 1.0, 0.3), Vector3(-0.7, 0.2, 0.6)]:
+            assert_almost_eq(float(part.call("Sample", far + offset)), float(whole.call("Sample", far + offset)), 1.0e-6)
+
+
 func test_the_ramp_folds_up_while_the_lift_runs() -> void:
     var lift := _lift(60.0, [])
     var system: Node3D = load("res://scenes/_universe/structures/industrial/truck_elevator/platform_system.tscn").instantiate()
