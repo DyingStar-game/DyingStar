@@ -231,3 +231,26 @@ func test_a_landing_calls_the_platform_straight_to_itself() -> void:
     lift.platform_progress_ratio = 190.0 / 3.0
     lift.move_up()
     assert_almost_eq(lift._target_ratio, 110.0 / 3.0, 1.0e-3, "the platform's up button: the next level up")
+
+
+func test_every_material_of_the_models_says_its_footstep_family() -> void:
+    # The deck's asphalt and the painted steels were named "truck_elevator_*": SurfaceProbe read no
+    # family in them and the footsteps played the missing-sound marker (playtest 2026-11-12).
+    var folder := "res://assets/_universe/structures/industrial/truck_elevator/"
+    var steps: SurfaceSounds = load("res://scenes/common/footsteps.tres")
+    var seen := 0
+    for file: String in DirAccess.get_files_at(folder):
+        if not file.ends_with(".glb"):
+            continue
+        var bytes: PackedByteArray = FileAccess.get_file_as_bytes(folder + file)
+        var doc: Variant = JSON.parse_string(bytes.slice(20, 20 + bytes.decode_u32(12)).get_string_from_utf8())
+        assert_true(doc is Dictionary, file + ": a glTF document")
+        if not (doc is Dictionary):
+            continue
+        for material: Dictionary in (doc as Dictionary).get("materials", []):
+            var id := str(material.get("name", ""))
+            var family: StringName = SurfaceProbe._family_from_id(id)
+            assert_ne(family, &"", "%s: %s names no family (mat_<family>_<name>)" % [file, id])
+            assert_true(steps.has(family), "%s: %s has footsteps" % [file, id])
+            seen += 1
+    assert_gt(seen, 0, "the models were read")
