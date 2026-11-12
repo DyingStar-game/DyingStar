@@ -1,12 +1,12 @@
 class_name MineFace
 extends StaticBody3D
 ## The working face at the end of a mine gallery: what the mining tool aims at (group "mineface", prop layer)
-## and where its fault shows. A layer falls when a player holds the tool on the fault for
-## MineSite.face_seconds; the gallery then moves on and a new fault shows on the new face.
+## and where its fault shows. A layer falls when a player holds the tool anywhere on the face for
+## MineSite.face_seconds; the gallery then moves on and a new fault shows on the new face. The fault is only
+## drawn: it shows the layer about to fall, the tool works wherever it hits the face (playtest 2026-11-11).
 ##
 ## The fault is a plane through the gallery's axis, tilted at a seeded angle (MineSite.fault_of): it meets the
-## face along a line, wherever the rough rock stands, so a decal projected along the gallery draws it exactly
-## and a hit is judged by its distance to the plane alone.
+## face along a line, wherever the rough rock stands, so a decal projected along the gallery draws it exactly.
 ##
 ## Its frame (set by MineSite): origin on the floor at the gallery's dug end, -Z along the gallery, +Y up.
 
@@ -15,6 +15,8 @@ const GROUP := "mineface"
 ## The shell standing for the rock of the face is this far (m) behind the smooth dome the mesher starts from:
 ## the rough rock stands in front of it, so the player meets the rock and the tool's ray the shell.
 const SHELL_BEHIND_M := 0.3
+## Slack (m) round the shell within which a hit still counts as on the face (is_on_face_local).
+const FACE_MARGIN_M := 0.5
 
 var mine: MineSite = null
 var gallery: int = -1
@@ -25,8 +27,6 @@ var height := 4.5
 ## The fault in the face frame: a unit normal in the XY plane and the plane's offset along it.
 var fault_normal := Vector2.UP
 var fault_offset := 0.0
-## How close (m) to the fault a hit counts.
-var tolerance_m := 0.15
 
 var _decal: Decal = null
 static var _crack_texture: ImageTexture = null
@@ -82,14 +82,18 @@ func _fault_center() -> Vector3:
     return Vector3(on_plane.x, on_plane.y, 0.0)
 
 
-## Is [param local] (this face's frame) on the fault?
-func is_on_fault_local(local: Vector3) -> bool:
-    return absf(Vector2(local.x, local.y).dot(fault_normal) - fault_offset) <= tolerance_m
+## Is [param local] (this face's frame) on the face's rock: the shell's box, [constant FACE_MARGIN_M] wider all
+## round (the client judged its hit on its own copy of the face, the rough rock stands in front of the shell)?
+func is_on_face_local(local: Vector3) -> bool:
+    var m := FACE_MARGIN_M
+    return absf(local.x) <= half_width + SHELL_BEHIND_M + m and local.y >= -m \
+        and local.y <= height + SHELL_BEHIND_M + m \
+        and local.z >= -(half_width + SHELL_BEHIND_M) - m and local.z <= m
 
 
-## Mining tool contract: is the world point [param hit] on the fault?
+## Mining tool contract: does the world point [param hit] break this face? Anywhere on it: the fault is only drawn.
 func is_on_fault_world(hit: Vector3) -> bool:
-    return is_on_fault_local(to_local(hit))
+    return is_on_face_local(to_local(hit))
 
 
 ## Mining tool contract: how long (s) the tool must be held on the fault.

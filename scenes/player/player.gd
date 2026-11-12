@@ -484,6 +484,8 @@ var screen_in_use: Node3D = null
 var _last_head_sent: float = INF
 # Last camera yaw ("head_yaw", non-zero only while seated) sent to the server, throttled.
 var _last_head_yaw_sent: float = INF
+# Last camera pivot offset ("eye", body-local, m) sent to the server, throttled. Vector3.INF = none yet.
+var _last_eye_sent: Vector3 = Vector3.INF
 # Seconds the player has had NO gravity area. A reparent (e.g. leaving a spawn apartment) drops all
 # gravity areas for a frame or two while the body re-enters PlanetGravity; we only act on a real loss
 # of gravity after it has been gone this long, so that blip changes nothing.
@@ -1122,21 +1124,64 @@ func client_channel_data_update(data: Dictionary) -> void:
 
 
 
+## How many props the look ray may pass that refuse to be picked up (an uncut rock, a block too heavy)
+## to reach one behind them that would. Each one passed costs one more ray, only when one is passed.
+const AIM_PASS_MAX := 4
+
 ## The carriable prop under the crosshair, or null. Shared by the SERVER (carry-prompt decision in
 ## PlayerServer._compute_carry_prompt) and the CLIENT (picking the target uuid to send). Checks the
 ## hit body itself AND its parent: a prop's collision can be the root (which carries interact(), e.g. a
 ## crate in a truck bed where get_parent() is the vehicle) or a child shape (parent carries interact()).
+##
+## The look ray meets areas, and an area reaches past what it stands for. A prop that refuses to be
+## carried right now is looked THROUGH, to the first one behind it that would be (up to AIM_PASS_MAX):
+## a heavy rock's area in front of a piece or a crate hid it, which then offered its prompt only from
+## the sides where nothing stood between (playtest 2026-11-11). Walls still hide what is behind them:
+## the server's sight check (SightLine) runs on solids. When nothing behind takes it, the first prop met
+## is returned as before (a locked vehicle part, a tool: their prompts read it).
 func _aimed_carriable() -> Node:
-	if not interact_ray.is_colliding():
-		return null
-	var hit = interact_ray.get_collider()
+	var first: Node = _aimed_prop(interact_ray.get_collider() if interact_ray.is_colliding() else null)
+	if first == null or _takes(first):
+		return first
+	var passed: Array[CollisionObject3D] = []
+	var found: Node = null
+	for _i in AIM_PASS_MAX:
+		var hit := interact_ray.get_collider() as CollisionObject3D
+		if hit == null:
+			break
+		passed.append(hit)
+		interact_ray.add_exception(hit)
+		interact_ray.force_raycast_update()
+		if not interact_ray.is_colliding():
+			break
+		var behind: Node = _aimed_prop(interact_ray.get_collider())
+		if behind == null:
+			break  # not a prop (a handle, a seat): what the look is on, nothing further
+		if _takes(behind):
+			found = behind
+			break
+	for body in passed:
+		interact_ray.remove_exception(body)
+	interact_ray.force_raycast_update()  # the ray reads as before for whoever asks it next
+	return found if found != null else first
+
+
+## Would [param prop] be picked up right now? An Interactable's interact() is its USE (a console, a
+## bed), never asked here: it is what the look stops on.
+func _takes(prop: Node) -> bool:
+	return prop is Interactable or bool(prop.interact(self))
+
+
+## The prop an interact-ray [param hit] stands for, or null: the hit itself or its parent (see
+## _aimed_carriable), not one another player carries.
+func _aimed_prop(hit: Object) -> Node:
 	if hit == null:
 		return null
 	var prop: Node = null
 	if hit.has_method("interact") and "uuid" in hit:
 		prop = hit
 	else:
-		var p = hit.get_parent()
+		var p = (hit as Node).get_parent() if hit is Node else null
 		if p != null and p.has_method("interact") and "uuid" in p:
 			prop = p
 	if prop == null:
@@ -1171,6 +1216,13 @@ func server_publish_spawn_state() -> void:
 func server_action_received(data: Dictionary) -> void:
 	# Server authority: delegate to the PlayerServer role (only the dedicated server receives this).
 	_role.server_action_received(data)
+
+
+## SERVER: walk this body back [param distance] m along the world direction [param dir], facing the way it looks
+## (a mine layer it broke falls in front of it). The client role has no such method.
+func server_retreat(dir: Vector3, distance: float) -> void:
+	if _role != null and _role.has_method("retreat"):
+		_role.retreat(dir, distance)
 
 
 ## Move this body onto [param destination] at [param local_pos], expressed in that node's frame.

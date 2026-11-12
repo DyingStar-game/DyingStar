@@ -15,6 +15,7 @@ stop_landing_scene = ExtResource("5_ge0sf")
 rail_segment_scene = ExtResource("3_56g80")
 platform_system_scene = ExtResource("2_i5dhk")
 platform_system_offset = Vector3(0, 0, 0)
+foot_raise_m = 0.36
 segment_height_m = 10.0
 segment_top_m = 11.47
 segment_bottom_m = 9.3

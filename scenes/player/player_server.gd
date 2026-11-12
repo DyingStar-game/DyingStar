@@ -144,6 +144,20 @@ var _vault_cooldown: float = 0.0          # seconds before another vault may sta
 ## Step-up: a short, SILENT scripted glide onto a low obstacle (no vault clip, keeps momentum) — smooth,
 ## speed-independent, and no cooldown so stairs climb freely. Same parent-frame (local) convention.
 var _stepping: bool = false
+## Walk back (server_retreat; MineSite: the layer a player broke falls in front of them): the walk, driven as if the
+## player held the key that takes them that way, so the ground, the step-up and every collision act as usual. It
+## stops after the distance, after RETREAT_MAX_S, or once blocked (less than RETREAT_STALL_M gained in RETREAT_STALL_S).
+const RETREAT_SPEED := 4.0
+const RETREAT_MAX_S := 3.0
+const RETREAT_STALL_S := 0.5
+const RETREAT_STALL_M := 0.2
+var _retreat_left_m := 0.0
+var _retreat_dir_local := Vector3.ZERO  # parent-frame direction, flattened on the ground at the start
+var _retreat_from := Vector3.ZERO  # parent-frame position at the last progress check
+var _retreat_frame: Node = null
+var _retreat_deadline_ms := 0
+var _retreat_check_ms := 0
+var _retreat_count := 0
 ## Throttle for the step-up refusal print (see _report_step_refusal): it would otherwise fire 60x/s.
 var _step_report_at: int = 0
 var _step_start: Vector3 = Vector3.ZERO
@@ -510,7 +524,11 @@ func server_action_received(data: Dictionary) -> void:
 				player.camera_pivot.rotation.x = float(props["head"])
 			if props.has("head_yaw"):
 				player.camera_pivot.rotation.y = float(props["head_yaw"])  # seated free-look yaw
-			player.server_send_properties_to_client(props)
+			if props.has("eye"):
+				_apply_eye(props["eye"])
+				props.erase("eye")  # the server's look ray needs it, nobody else does
+			if not props.is_empty():
+				player.server_send_properties_to_client(props)
 		"perforate_rock":
 			# Authoritative fracture: cut the targeted rock along the aimed fault.
 			var rock = _find_mining_rock(str(data.get("uuid", "")))
@@ -1277,6 +1295,8 @@ func _physics_process_impl(delta: float) -> void:
 		_apply_client_rotation(player.input_from_server["rotation"], player.input_from_server["frame"])
 		if player.piloting:
 			player.input_direction = Vector2.ZERO  # seated in a vehicle: no walking
+	if _retreat_left_m > 0.0:
+		_server_update_retreat()  # walking back: it holds the walk key, over whatever the owner sends
 
 	if player.god_mode:
 		# God mode (dev free-flight): fly the body where the camera looks, gravity off, collision off.
@@ -1354,6 +1374,8 @@ func _physics_process_impl(delta: float) -> void:
 	# Owner-driven gait: sprint (Shift held) or the mouse-wheel-chosen walk speed (Player.gait_speed,
 	# the same rule the owner's animation follows from its keys).
 	var speed: float = player.gait_speed(_sprint_held, _walk_speed_target, _stance, player.hands_item != null)
+	if _retreat_left_m > 0.0:
+		speed = RETREAT_SPEED
 
 	# GDD: no air control. Only the grounded branch below steers the horizontal velocity; once airborne
 	# we leave it alone, so a jump carries the run-up momentum and its distance follows the take-off
@@ -3229,6 +3251,20 @@ func _server_update_dialog(delta: float) -> void:
 	_dialog_active = true
 	_dialog_timer = _DIALOG_LINE_INTERVAL
 
+## Farthest (m) the replicated eye may sit from the camera pivot's rest: a crouch or a lean is well
+## inside, a client asking for an eye beside the crate it wants is not.
+const EYE_MAX_OFFSET_M := 1.2
+
+## Server: put the camera pivot where the owner's eye is (the "eye" property: its body-local offset,
+## moved by the head camera), so the look ray deciding the carry prompt and the grab starts from the same
+## place as the one the owner aims with. Kept within EYE_MAX_OFFSET_M of the rest.
+func _apply_eye(eye: Variant) -> void:
+	if not (eye is Dictionary):
+		return
+	var e := Vector3(float(eye.get("x", 0.0)), float(eye.get("y", 0.0)), float(eye.get("z", 0.0)))
+	var rest: Vector3 = player.camera_pivot_rest
+	player.camera_pivot.position = rest + (e - rest).limit_length(EYE_MAX_OFFSET_M)
+
 ## Server-authoritative carry prompt: the server (which owns the collisions) decides what E
 ## will do from the player's replicated aim, and replicates "carry"/"drop"/"" to the owner —
 ## the client just displays it. Throttled so it's cheap (one ray per player, not per object).
@@ -3453,9 +3489,73 @@ func teleport_to(destination: Node, local_pos: Vector3) -> void:
 	player.emit_move()
 
 
+## Walk the player back [param distance] m along the world direction [param dir] (flattened on the ground), at
+## RETREAT_SPEED, facing the way they look: MineSite sends the one who broke a layer down the gallery, away from its
+## falling blocks. Not seated, weightless, in bed nor in god mode. Shown on the owner's own body ("retreat:" event).
+func retreat(dir: Vector3, distance: float) -> void:
+	var frame := player.get_parent() as Node3D
+	if frame == null or distance <= 0.0 or player.piloting or player.floating or player.god_mode \
+			or is_instance_valid(player.lying_on):
+		return
+	var up: Vector3 = player.up_direction
+	var flat := dir - up * dir.dot(up)
+	if flat.length_squared() < 1.0e-6:
+		return
+	_retreat_dir_local = (frame.global_basis.inverse() * flat).normalized()
+	_retreat_frame = frame
+	_retreat_from = player.position
+	_retreat_left_m = distance
+	var now := Time.get_ticks_msec()
+	_retreat_deadline_ms = now + int(RETREAT_MAX_S * 1000.0)
+	_retreat_check_ms = now + int(RETREAT_STALL_S * 1000.0)
+	_retreat_count += 1
+	player.server_send_properties_to_client({"action": "retreat:on:%d" % _retreat_count})
+
+
+## The walk key that takes a body facing [param body_basis] along the world direction [param dir_world]: the
+## input_direction (x right, y back, as the owner's keys send it), unit length, or zero when it points up or down.
+static func retreat_input(body_basis: Basis, dir_world: Vector3) -> Vector2:
+	var local := body_basis.inverse() * dir_world
+	var key := Vector2(local.x, local.z)
+	return key.normalized() if key.length_squared() > 1.0e-6 else Vector2.ZERO
+
+
+## One tick of the walk back: done, blocked or moved to another frame ends it; else it holds the walk key.
+func _server_update_retreat() -> void:
+	var frame := player.get_parent() as Node3D
+	var now := Time.get_ticks_msec()
+	if frame == null or frame != _retreat_frame or now >= _retreat_deadline_ms or player.piloting or player.god_mode:
+		_end_retreat()
+		return
+	var gained: float = (player.position - _retreat_from).dot(_retreat_dir_local)
+	if gained >= _retreat_left_m:
+		_end_retreat()
+		return
+	if now >= _retreat_check_ms:
+		if gained < RETREAT_STALL_M:
+			_end_retreat()  # against a block, a truck or a wall: as far as it goes
+			return
+		_retreat_left_m -= gained
+		_retreat_from = player.position
+		_retreat_check_ms = now + int(RETREAT_STALL_S * 1000.0)
+	player.input_direction = retreat_input(player.global_basis, frame.global_basis * _retreat_dir_local)
+
+
+## The walk back is over: the owner's keys again (the last ones it sent: it only sends a change).
+func _end_retreat() -> void:
+	if _retreat_left_m <= 0.0:
+		return
+	_retreat_left_m = 0.0
+	_retreat_frame = null
+	var sent: Variant = player.input_from_server.get("input_direction")
+	player.input_direction = sent if sent is Vector2 and not player.piloting else Vector2.ZERO
+	player.server_send_properties_to_client({"action": "retreat:off:%d" % _retreat_count})
+
+
 ## A step or vault stores an endpoint in the old frame. It must not resume
 ## after a teleport or a switch to free flight and pull the player back there.
 func cancel_scripted_motion() -> void:
+	_end_retreat()
 	_stepping = false
 	_vaulting = false
 	_vault_cooldown = 0.0

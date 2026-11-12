@@ -242,7 +242,12 @@ static func face_open(layout: Dictionary, id: int, faces: Dictionary, limits: Di
 
 
 ## The volumes CaveNetworkMesher meshes for the galleries dug as [param dug] says ([method dug]): the shaft, the
-## floor at its foot, the stations, then every gallery's segments up to its face.
+## floor at its foot, then each station with the galleries leaving it, then the branches off those galleries.
+##
+## A station and its galleries' segments are one feature ("joins_previous" on a gallery's first segment): joined
+## exactly, not blended one after the other. Their floors are at one height where they meet, and each blend added
+## the smooth union's quarter of blend_m of air there: under the galleries' start the floor sank 60 cm, a step a
+## truck could not climb, 4 m past the lift (playtest 2026-11-12).
 static func graph(layout: Dictionary, dug_m: Dictionary) -> Dictionary:
     var s: Dictionary = layout.settings
     var radius := float(layout.shaft_radius)
@@ -259,35 +264,51 @@ static func graph(layout: Dictionary, dug_m: Dictionary) -> Dictionary:
     var foot := Vector3(0.0, -depth, 0.0)
     volumes.append({"kind": "room", "a": foot, "b": foot, "size": Vector3(radius + 1.0, radius + 6.0, radius + 1.0),
         "e": 2.0, "k": 2.0, "amp": float(s.shaft_roughness_m), "freq": freq * 0.5})
-    # The stations: a rounded plan (e 4), under an elliptic vault (k 2) like the galleries' arch, not a flat roof.
+    # The stations: a rounded plan (e 4), under an elliptic vault (k 2) like the galleries' arch, not a flat roof. Each
+    # followed by the galleries leaving its hub, joined to it.
     for level: Dictionary in layout.levels:
         volumes.append({"kind": "room", "a": level.station, "b": level.station,
             "size": Vector3(float(s.station_width_m) * 0.5, float(s.station_height_m), float(s.station_length_m) * 0.5),
             "e": 4.0, "k": 2.0, "amp": amp * 0.6, "freq": freq})
-    var half := float(s.gallery_width_m) * 0.5
-    var height := float(s.gallery_height_m)
+        for gallery: Dictionary in layout.galleries:
+            if int(gallery.parent) < 0 and int(gallery.level) == int(level.index):
+                _append_gallery(volumes, gallery, dug_m, s, true)
     for gallery: Dictionary in layout.galleries:
-        if not dug_m.has(int(gallery.id)):
-            continue
-        var reach := float(dug_m[int(gallery.id)])
-        var points: PackedVector3Array = gallery.points
-        var lengths: PackedFloat64Array = gallery.lengths
-        var ends: Array[Vector3] = [points[0]]
-        for index in range(1, points.size()):
-            if lengths[index] >= reach:
-                ends.append(point_at(gallery, reach))
-                break
-            ends.append(points[index])
-        for index in range(1, ends.size()):
-            volumes.append({"kind": "tunnel", "a": ends[index - 1], "b": ends[index], "size": Vector3(half, height, 0.0),
-                "amp": amp, "freq": freq, "continues_a": index > 1, "continues_b": index < ends.size() - 1})
+        if int(gallery.parent) >= 0:
+            _append_gallery(volumes, gallery, dug_m, s, false)
     return {"phase": 0.0, "noise_seed": int(layout.seed), "cell_m": float(s.cell_m), "blend_m": 1.0,
         "volumes": volumes, "bounds": bounds(volumes)}
 
 
+## The segments of [param gallery] up to where [param dug_m] says it is dug, onto [param volumes]: one feature, joined
+## to the volume before it when [param joined] (its station).
+static func _append_gallery(volumes: Array[Dictionary], gallery: Dictionary, dug_m: Dictionary, s: Dictionary,
+        joined: bool) -> void:
+    if not dug_m.has(int(gallery.id)):
+        return
+    var half := float(s.gallery_width_m) * 0.5
+    var height := float(s.gallery_height_m)
+    var reach := float(dug_m[int(gallery.id)])
+    var points: PackedVector3Array = gallery.points
+    var lengths: PackedFloat64Array = gallery.lengths
+    var ends: Array[Vector3] = [points[0]]
+    for index in range(1, points.size()):
+        if lengths[index] >= reach:
+            ends.append(point_at(gallery, reach))
+            break
+        ends.append(points[index])
+    for index in range(1, ends.size()):
+        var segment := {"kind": "tunnel", "a": ends[index - 1], "b": ends[index], "size": Vector3(half, height, 0.0),
+            "amp": float(s.wall_roughness_m), "freq": float(s.wall_frequency), "continues_a": index > 1,
+            "continues_b": index < ends.size() - 1}
+        if index == 1 and joined:
+            segment["joins_previous"] = true
+        volumes.append(segment)
+
+
 ## [method graph] cut down to the volumes that may reach [param box] (mine frame), for meshing a small piece of the
-## mine (MineFracture): the same densities inside the box, from a few volumes. A gallery is kept whole when any of its
-## segments reaches the box: the mesher joins consecutive segments as one feature, by their order.
+## mine (MineFracture): the same densities inside the box, from a few volumes. A feature (a gallery, a station with the
+## galleries joined to it) is kept whole when any of its volumes reaches the box: the mesher joins them, by their order.
 static func graph_near(layout: Dictionary, dug_m: Dictionary, box: AABB) -> Dictionary:
     var full := graph(layout, dug_m)
     var reach := box.grow(2.0)
@@ -295,21 +316,16 @@ static func graph_near(layout: Dictionary, dug_m: Dictionary, box: AABB) -> Dict
     var run: Array[Dictionary] = []
     var run_hits := false
     for volume: Dictionary in full.volumes:
-        var tunnel := str(volume.kind) == "tunnel"
         var hits := bounds([volume]).intersects(reach)
-        if tunnel and bool(volume.get("continues_a", false)):
+        # One feature for the mesher: a gallery's next segment, or a gallery joined to its station.
+        if bool(volume.get("continues_a", false)) or bool(volume.get("joins_previous", false)):
             run.append(volume)
             run_hits = run_hits or hits
             continue
         if run_hits:
             kept.append_array(run)
-        run = []
-        run_hits = false
-        if tunnel:
-            run.append(volume)
-            run_hits = hits
-        elif hits:
-            kept.append(volume)
+        run = [volume]
+        run_hits = hits
     if run_hits:
         kept.append_array(run)
     full.volumes = kept

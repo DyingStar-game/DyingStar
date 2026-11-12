@@ -27,7 +27,6 @@ func _face(id: int) -> MineFace:
     face.gallery = id
     face.fault_normal = fault[0]
     face.fault_offset = fault[1]
-    face.tolerance_m = _mine.fault_tolerance_m
     face.transform = _mine.face_frame(id, float(_mine._dug[id]))
     return autofree(face)
 
@@ -55,14 +54,20 @@ func test_face_frame_looks_down_the_gallery() -> void:
     assert_almost_eq(frame.origin, MineLayout.point_at(gallery, dug), Vector3.ONE * 1.0e-6)
 
 
-func test_hit_on_the_fault_whatever_the_depth() -> void:
+func test_a_hit_anywhere_on_the_face_counts() -> void:
+    # The fault is only drawn: the tool breaks the face wherever it hits it (playtest 2026-11-11).
     var face := _face(0)
     var normal: Vector2 = face.fault_normal
-    var on_line := normal * face.fault_offset + Vector2(-normal.y, normal.x) * 0.7
+    var on_line := normal * face.fault_offset
+    var off := on_line + normal * 1.5
     for depth: float in [0.0, -1.0, -2.8]:
-        assert_true(face.is_on_fault_local(Vector3(on_line.x, on_line.y, depth)), "on the fault at %.1f m" % depth)
-        var off := on_line + normal * 0.5
-        assert_false(face.is_on_fault_local(Vector3(off.x, off.y, depth)), "half a metre off")
+        assert_true(face.is_on_face_local(Vector3(on_line.x, on_line.y, depth)), "on the fault at %.1f m" % depth)
+        assert_true(face.is_on_face_local(Vector3(off.x, off.y, depth)), "1.5 m off the fault at %.1f m" % depth)
+    assert_true(face.is_on_face_local(Vector3(face.half_width, 0.2, -0.5)), "by the floor, at the side")
+    assert_true(face.is_on_face_local(Vector3(0.0, face.height, -0.5)), "at the top")
+    assert_false(face.is_on_face_local(Vector3(face.half_width + 3.0, 1.0, -0.5)), "beside the face")
+    assert_false(face.is_on_face_local(Vector3(0.0, 1.0, 3.0)), "back in the gallery")
+    assert_false(face.is_on_face_local(Vector3(0.0, 1.0, -(face.half_width + 3.0))), "deep in the rock")
 
 
 func test_the_tool_reads_the_face() -> void:
@@ -97,14 +102,13 @@ func test_a_stale_layer_or_a_miss_drops_nothing() -> void:
     var face := _face(0)
     face.step = 0
     _mine._faces[0] = face
+    var hit_miss := face.transform * Vector3(face.half_width + 3.0, 1.0, -1.0)
+    assert_false(_mine.server_perforate_face(null, 0, 0, hit_miss), "beside the face")
     var normal: Vector2 = face.fault_normal
-    var miss := normal * (face.fault_offset + 0.8)
-    var hit_miss := face.transform * Vector3(miss.x, miss.y, -1.0)
-    assert_false(_mine.server_perforate_face(null, 0, 0, hit_miss), "off the fault")
-    var on := normal * face.fault_offset
-    var hit_on := face.transform * Vector3(on.x, on.y, -1.0)
-    assert_false(_mine.server_perforate_face(null, 0, 3, hit_on), "another layer")
-    assert_true(_mine.server_perforate_face(null, 0, 0, hit_on), "on the fault, this layer")
+    var off := normal * (face.fault_offset + 1.2)
+    var hit_off := face.transform * Vector3(off.x, off.y, -1.0)
+    assert_false(_mine.server_perforate_face(null, 0, 3, hit_off), "another layer")
+    assert_true(_mine.server_perforate_face(null, 0, 0, hit_off), "this layer, well off the fault: it falls")
     assert_eq(int(_mine.face_step["0"]), 1)
     _mine._faces.erase(0)
 

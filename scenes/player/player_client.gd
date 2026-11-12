@@ -10,6 +10,11 @@ const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
 const PROMPT_LEADER := preload("res://ui/hud/prompt_leader.gd")
 ## Height of the mouse button's picture in a prompt (px): a little taller than its 24 px text.
 const PROMPT_ICON_PX := 30
+## Step (m) the camera pivot's offset is rounded to before it is sent to the server ("eye"): a finer one
+## only sends more, the server's look ray does not need it.
+const EYE_STEP_M := 0.02
+## Least time (ms) between two "eye" sends: the head camera moves the pivot a little every frame while walking.
+const EYE_SEND_MIN_MS := 200
 ## The DataPad worn on the wrist, and the owner's gesture into it -- preloaded for the same reason.
 const WRIST_DATAPAD_SCENE := preload("res://scenes/_universe/props/datapad/wrist_datapad.tscn")
 const WRIST_DATAPAD := preload("res://scenes/player/wrist_datapad_controller.gd")
@@ -83,6 +88,8 @@ const OWN_CATCH_UP_RATE: float = 25.0
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
 ## break global script compilation. Untyped duck-typing still reaches every Player member.
+## When the last "eye" was sent (Time.get_ticks_msec), see _replicate_look.
+var _eye_sent_ms: int = 0
 var player
 
 ## Remote player's name tag, drawn in 2D screen space (see _setup_name_tag) instead of a 3D billboard:
@@ -163,6 +170,12 @@ var _last_tap_action: String = ""  # last "tap:<n>:x:y:z" seen (ScreenPoke.tap_a
 var _last_tap_sound: AudioStream = null  # never the same tap sound twice running
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
+## OWNER: the server walks us back ("retreat:on|off:<n>", PlayerServer.retreat): the last one seen, and while it
+## lasts, the animation follows the body's motion rather than our keys (which ask for nothing). Until when (ms): the
+## "off" is one replicated action among others and may be overwritten, so it ends on its own past the longest walk.
+var _last_retreat_action: String = ""
+var _retreat_until_ms: int = 0
+const RETREAT_SHOWN_MAX_MS := 4000
 var _thruster: EvaThrusterSound = null  # the EVA hiss of this avatar, built on first use
 var _last_clothes: Dictionary = {}  # whole_body (bool) -> the take of that kind played last
 var _remote_carrying: bool = false  # replicated carry state of a REMOTE avatar (owner reads _owner_carrying)
@@ -1054,6 +1067,16 @@ func _replicate_look() -> void:
 	if head_yaw_q != player._last_head_yaw_sent:
 		player._last_head_yaw_sent = head_yaw_q
 		player.client_send_action_to_server({"action": "update_property", "head_yaw": head_yaw_q})
+	# Where the eye IS: the head camera moves the pivot (crouched it drops ~0.6 m, it leans forward
+	# walking), and the server, which casts the look ray that decides the carry prompt, kept it at its
+	# rest. Crouched over a rock, both rays aimed at different things (playtest 2026-11-11).
+	var eye_q: Vector3 = player.camera_pivot.position.snapped(Vector3(EYE_STEP_M, EYE_STEP_M, EYE_STEP_M))
+	var now_ms := Time.get_ticks_msec()
+	if eye_q != player._last_eye_sent and now_ms - _eye_sent_ms >= EYE_SEND_MIN_MS:
+		player._last_eye_sent = eye_q
+		_eye_sent_ms = now_ms
+		player.client_send_action_to_server({"action": "update_property",
+				"eye": {"x": eye_q.x, "y": eye_q.y, "z": eye_q.z}})
 
 ## The crosshair on 3D screens (ScreenTarget): the nearest screen the ray from the eye meets within
 ## SCREEN_REACH_M is hovered every frame, and becomes the screen in use (Player.set_screen_in_use)
@@ -2403,6 +2426,9 @@ func client_channel_data_update(data: Dictionary) -> void:
 			# delta-compressed and a stow that changes nothing on the wire never arrives.
 			_last_stow_action = action
 			player.mining_tool.apply_authoritative_tool("")
+		elif action.begins_with("retreat:") and action != _last_retreat_action:
+			_last_retreat_action = action
+			_retreat_until_ms = Time.get_ticks_msec() + RETREAT_SHOWN_MAX_MS if action.begins_with("retreat:on:") else 0
 		elif action.begins_with("vault:") and action != _last_vault_action:
 			_last_vault_action = action
 			player.vault_key = action  # "vault:<key>:<height>:<n>" -> the animator plays the matching climb clip
@@ -2551,10 +2577,11 @@ func _sample_locomotion(delta: float) -> void:
 ## smoothed on top (LOCO_SMOOTH_RATE) because it arrives in 30 Hz bursts. Pressing Shift showed the
 ## run 0.6 s later (playtest 2026-10-19). Only we see our own animation, so this guess never becomes
 ## state (ADR 0002); the remote avatars keep the measured motion. Not seated, weightless, in the air
-## or in god mode: there the keys do not set the gait.
+## or in god mode, nor walked back by the server (a mine layer falling): there the keys do not set the gait.
 func _owner_gait_from_keys() -> bool:
 	return not player.remote_player and player.seated_role == "" and not player.floating \
-			and not player.god_mode and not _airborne
+			and not player.god_mode and not _airborne \
+			and Time.get_ticks_msec() >= _retreat_until_ms
 
 
 ## The gait the keys ask for after one frame, in the body's frame (x right, y forward, m/s): from

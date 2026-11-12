@@ -30,6 +30,14 @@ extends Resource
 @export var platform_system_offset: Vector3 = Vector3(0.0, -0.175, 2.075)
 ## Where the lower landing stands (m) from the foot of the run (descent_depth under the top, guide_z_offset out).
 @export var lower_landing_offset: Vector3 = Vector3.ZERO
+## How much higher (m) the platform stops at the intermediate stops (VehicleLift.stop_depths), to stand level with
+## their floors: raise it if the deck stops under them, lower it if above. Taken up over the first
+## VehicleLift.STOP_RAISE_RAMP_M of the run: the upper landing keeps its exact height.
+@export_range(-2.0, 2.0, 0.01, "suffix:m") var stop_raise_m: float = 0.0
+## How much higher (m) the platform stops at the foot (the lower landing), where it may rest on a slab of its own
+## (the truck elevator's pit): raise it if the deck stops under that floor, lower it if above. Taken up over the last
+## VehicleLift.STOP_RAISE_RAMP_M of the run.
+@export_range(-2.0, 2.0, 0.01, "suffix:m") var foot_raise_m: float = 0.0
 ## Height (m) of one rail segment: one more segment every this much descent.
 @export_range(0.5, 50.0, 0.01, "suffix:m") var segment_height_m: float = 3.0
 ## Depth (m) under the top where the first segment starts: what the upper landing's own part of the guide covers.

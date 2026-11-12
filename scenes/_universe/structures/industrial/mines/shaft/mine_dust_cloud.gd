@@ -1,8 +1,9 @@
 class_name MineDustCloud
 extends MeshInstance3D
 ## The dust a falling layer of a mine's face raises (client): it rushes up the gallery from the face, hides
-## everything for a moment, then clears little by little. A volume drawn by mine_dust.gdshader, a chain of capsules
-## along the gallery's axis whose far end (the cloud's front) moves up the gallery as it spreads.
+## everything for a moment, then clears little by little. A volume drawn by mine_dust.gdshader, held in a chain of
+## capsules along the gallery's axis that grows up the gallery as it spreads; the dust thins out along the axis at a
+## ragged, rolling front, ahead of which the chain's round end holds none.
 ##
 ## No network state: every client sees its own from the fall (MineSite._layer_fell), so who arrives later sees none.
 
@@ -15,6 +16,10 @@ const SEGMENT_M := 5.0
 const RISE_S := 1.0
 ## Optical depth at which a thing counts as hidden (98 % of it): the visibility is this over the density.
 const HIDDEN_DEPTH := 3.912
+## How far (m) the noise pushes the front forward or holds it back (the shader's front_ragged_m).
+const FRONT_RAGGED_M := 3.0
+## Length (m) over which the dust thins out behind its front (the shader's front_soft_m).
+const FRONT_SOFT_M := 8.0
 
 var clear_s := 40.0
 var spread_s := 6.0
@@ -75,6 +80,9 @@ func setup(path: PackedVector3Array, radius: float, colour: Color) -> void:
     _material.shader = SHADER
     _material.set_shader_parameter(&"radius", radius)
     _material.set_shader_parameter(&"dust_color", colour)
+    _material.set_shader_parameter(&"reach_m", maxf(_along[_along.size() - 1], 1.0))
+    _material.set_shader_parameter(&"front_ragged_m", FRONT_RAGGED_M)
+    _material.set_shader_parameter(&"front_soft_m", FRONT_SOFT_M)
     material_override = _material
     cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     _born_ms = Time.get_ticks_msec()
@@ -93,21 +101,30 @@ func _process(_delta: float) -> void:
 func _update(age: float) -> void:
     if _material == null or _points.size() < 2:
         return
-    var front := front_at(age, spread_s, _along[_along.size() - 1])
+    var reach: float = _along[_along.size() - 1]
+    var front := front_at(age, spread_s, reach)
+    # The chain runs past the front by the noise's push: its round end lies where there is no dust left, and the
+    # shader's own front (thinning along the axis) is what shows.
+    var chain_end := front + FRONT_RAGGED_M + 0.5
     var starts := PackedVector3Array()
     var ends := PackedVector3Array()
+    var along := PackedFloat32Array()
     starts.resize(MAX_SEGMENTS)
     ends.resize(MAX_SEGMENTS)
+    along.resize(MAX_SEGMENTS)
     var count := 0
     for index in range(1, _points.size()):
-        if count >= MAX_SEGMENTS or _along[index - 1] > front:
+        if count >= MAX_SEGMENTS or _along[index - 1] > chain_end:
             break
-        var t := clampf((front - _along[index - 1]) / maxf(_along[index] - _along[index - 1], 1.0e-6), 0.0, 1.0)
+        var t := clampf((chain_end - _along[index - 1]) / maxf(_along[index] - _along[index - 1], 1.0e-6), 0.0, 1.0)
         starts[count] = _points[index - 1]
         ends[count] = _points[index - 1].lerp(_points[index], t)
+        along[count] = _along[index - 1]
         count += 1
     _material.set_shader_parameter(&"seg_a", starts)
     _material.set_shader_parameter(&"seg_b", ends)
+    _material.set_shader_parameter(&"seg_along", along)
     _material.set_shader_parameter(&"seg_count", count)
+    _material.set_shader_parameter(&"front_m", front)
     _material.set_shader_parameter(&"density", density_at(age, clear_s, visibility_m))
     _material.set_shader_parameter(&"drift", age)

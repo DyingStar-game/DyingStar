@@ -17,6 +17,7 @@
 			"properties": [
 				"position",
 				"rotation",
+				"parent_id",
 				"pilot_uuid",
 				"steering",
 				"speed",
@@ -65,7 +66,6 @@
 			"frequency": 1.0,
 			"properties": [
 				"scenename",
-				"parent_id",
 				"spawned_by"
 			]
 		}
