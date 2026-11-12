@@ -282,6 +282,15 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "cave-ambience.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/cave-ambience.ogg",
+			"author": "IanStarGem",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/478812/",
+			"license": "CC0"
+		},
+		{
 			"asset": "clothes-long-1.ogg",
 			"path": "res://assets/_universe/audio/sfx/characters/clothes-long-1.ogg",
 			"author": "Plx",
@@ -642,6 +651,15 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "screen-fan-hum.ogg",
+			"path": "res://assets/_universe/audio/sfx/ui/screen-fan-hum.ogg",
+			"author": "ganglyimp",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/828770/",
+			"license": "CC0"
+		},
+		{
 			"asset": "screen-unlock.ogg",
 			"path": "res://assets/_universe/audio/sfx/ui/screen-unlock.ogg",
 			"author": "SkibkaMusic",
@@ -729,6 +747,15 @@
 			"source": "Freesound",
 			"id": "",
 			"url": "https://freesound.org/s/521590/",
+			"license": "CC0"
+		},
+		{
+			"asset": "success-bell.ogg",
+			"path": "res://assets/_universe/audio/sfx/ui/success-bell.ogg",
+			"author": "MLaudio",
+			"source": "Freesound",
+			"id": "",
+			"url": "https://freesound.org/s/511484/",
 			"license": "CC0"
 		},
 		{
