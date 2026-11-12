@@ -93,15 +93,19 @@ static func receive(tree: SceneTree, event: Dictionary) -> void:
 		return
 	_last_at[key] = event.get("at")
 	var lock: bool = str(event.get("state", "")) == ScreenLock.STATE
+	# A repair's answer is the breakdown's, whatever the machine: its script need not know of it.
+	var repair: bool = str(event.get("state", "")) == MachineBreakdown.RESULT_STATE
 	for gui: Node in tree.get_nodes_in_group(GROUP):
 		var screen_owner: Node3D = owner_of(gui)
-		if screen_owner == null or not (lock or screen_owner.has_method("screen_event")):
+		if screen_owner == null or not (lock or repair or screen_owner.has_method("screen_event")):
 			continue
 		var address: Dictionary = address_of(screen_owner)
 		if str(address.get("target_uuid", "")) == str(event.get("target_uuid", "")) \
 				and str(address.get("screen", "")) == str(event.get("screen", "")):
 			if lock:
 				ScreenLock.on_event(screen_owner, event)  # who uses it, and what they see
+			elif repair:
+				MachineBreakdown.on_result(screen_owner, event)
 			else:
 				screen_owner.screen_event(event)
 			return

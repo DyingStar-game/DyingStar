@@ -19,6 +19,11 @@ var _shelter: Dictionary = ShelterProbe.open()
 var _shelter_age: float = INF
 
 
+## How much of the weather's sound the rock around takes off, 0..1: set by who knows the body is in a cave
+## or a mine (PlaceWatcher.buried), where no ray of the shelter probe says so.
+var buried: float = 0.0
+
+
 func _init(player: Player) -> void:
 	_player = player
 
@@ -51,4 +56,4 @@ func update(delta: float) -> void:
 	_weather_age = 0.0
 	var planet: Planet = Planet.of(_player)
 	var sample: Dictionary = planet.weather_at(_player.global_position) if planet != null else {}
-	_audio.update(sample, float(_shelter.get("shelter", 0.0)))
+	_audio.update(sample, float(_shelter.get("shelter", 0.0)), buried)

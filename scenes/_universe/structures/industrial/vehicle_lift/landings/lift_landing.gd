@@ -33,6 +33,7 @@ var active_player: Player
 
 func _ready() -> void:
 	set_process(false)
+	MachineBreakdown.attach(self, "lift")
 
 	if Engine.is_editor_hint():
 		var railing: Node3D = get_node_or_null("Railing")

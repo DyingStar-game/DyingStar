@@ -60,6 +60,9 @@ const IDLE_VARIATION_DURATION: float = 6.0
 ## The raised-wrist rig. Preloaded rather than named by its class, so a client started before the editor
 ## registered the class still compiles the puppet (same as PlayerClient's PROMPT_SHADE).
 const WRIST_RAISE := preload("res://scenes/_universe/characters/humanoids/wrist_raise.gd")
+## How fast (per second) a finger held on a screen catches up with the crosshair: a remote one hears of
+## it a few times a second (ScreenPoke.HOLD_SAY_S), and slides between rather than jumps.
+const POKE_FOLLOW_HZ := 18.0
 ## How far from the shoulder (m) a raised wrist may be asked to go: just short of this rig's reach (two
 ## 0.24 m bones), so the arm never locks straight.
 const DATAPAD_REACH_M: float = 0.45
@@ -231,6 +234,7 @@ var _wrist_raise = null  # WristRaise: the raised-wrist rig (IK + forearm twist)
 var _poke: ScreenPoke = null  # the right index tapping a screen, null on a rig without a right arm
 var _poke_serial: int = 0  # the Player.tap_serial last played
 var _poke_t: float = INF  # seconds since that tap began (INF: none playing)
+var _poke_point: Vector3 = Vector3.ZERO  # where the finger is, the body's frame: tap_point, eased while held
 var _lying_shown: bool = false  # the lay clips are playing for a bed (not the emote wheel)
 var _wrist_mount_xf: Transform3D = Transform3D.IDENTITY  # where the DataPad hangs on the forearm bone
 var _wrist_weight: float = 0.0  # 0 = arm down (animation alone) .. 1 = wrist up before the eyes
@@ -699,11 +703,15 @@ func _wheel_in_skeleton() -> Array:
 func _drive_poke(delta: float) -> void:
 	if _poke == null or _puppet == null:
 		return
+	# The button held, the finger stays on the screen and slides to where the crosshair goes.
+	var held: bool = Time.get_ticks_msec() < _player.tap_hold_until_ms
 	if _player.tap_serial != _poke_serial:
 		_poke_serial = _player.tap_serial
 		_poke_t = 0.0
+		_poke_point = _player.tap_point
 	else:
-		_poke_t += delta
+		_poke_t = ScreenPoke.held_time(_poke_t + delta, held)
+		_poke_point = _poke_point.lerp(_player.tap_point, minf(delta * POKE_FOLLOW_HZ, 1.0)) if held else _poke_point
 	var weight: float = ScreenPoke.envelope(_poke_t)
 	if weight <= 0.0:
 		_poke.drive(0.0, Vector3.ZERO, Vector3.ZERO)
@@ -711,7 +719,7 @@ func _drive_poke(delta: float) -> void:
 	var skeleton_in_puppet: Transform3D = WRIST_RAISE.local_to(_skeleton, _puppet)
 	var body_in_puppet := Transform3D(_puppet_base_basis, _puppet_base_position).affine_inverse()
 	var axes: Basis = (skeleton_in_puppet.affine_inverse() * body_in_puppet).basis  # body metres -> skeleton
-	var point: Vector3 = (_puppet.transform * skeleton_in_puppet).affine_inverse() * _player.tap_point
+	var point: Vector3 = (_puppet.transform * skeleton_in_puppet).affine_inverse() * _poke_point
 	_poke.drive(weight, point, _poke.shoulder() + axes * ScreenPoke.POLE_OFFSET)
 
 ## The pose is taken ONCE, as the arm starts up, then held in the SKELETON's space (it rides the puppet,

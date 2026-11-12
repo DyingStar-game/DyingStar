@@ -22,7 +22,6 @@
 [ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="propsync_1"]
 [ext_resource type="Script" uid="uid://c4t1duu3n71vw" path="res://scenes/_universe/structures/industrial/cargo_depot.gd" id="script_cargo"]
 [ext_resource type="Script" uid="uid://custckqbhkkow" path="res://scenes/planet/pad/terrain_pad.gd" id="terrain_pad_1"]
-[ext_resource type="PackedScene" uid="uid://i2esxxslgnhb" path="res://scenes/_universe/structures/dispenser/tool_dispenser.tscn" id="tool_dispenser"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_gm21b"]
 size = Vector3(11.762, 1.5, 2.889)
@@ -532,12 +531,6 @@ metadata/_custom_type_script = "uid://co37kjdlg6xqk"
 
 [node name="Photocell" type="Node3D" parent="NeonSign" unique_id=1160122955]
 script = ExtResource("pc_photocell")
-
-[node name="ToolDispenser" parent="." unique_id=1561022492 instance=ExtResource("tool_dispenser")]
-transform = Transform3D(6.123032e-17, 0, -1, 0, 1, 0, 1, 0, 6.123032e-17, 5.187191463527862, 0, 0.801264869547416)
-
-[node name="ToolDispenser2" parent="." unique_id=391775918 instance=ExtResource("tool_dispenser")]
-transform = Transform3D(6.123032e-17, 0, -1, 0, 1, 0, 1, 0, 6.123032e-17, 5.187191463527862, 0, 2.078585778608816)
 
 [node name="MapMarker" type="Node3D" parent="." unique_id=575266575]
 script = ExtResource("mm_script")

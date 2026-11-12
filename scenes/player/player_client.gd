@@ -114,6 +114,8 @@ var _pointed_at: Vector3 = Vector3.ZERO
 var _conversation_text: Label = null
 ## Social notifications at the top of the screen (null on a remote avatar — see setup()).
 var _notifications: NotificationStack = null
+## Whether the notification being pushed is money earned (ChatNetwork.is_gain): it chimes, it does not beep.
+var _gain_pushed: bool = false
 
 ## Remote LOD state (see _refresh_remote_lod): far avatars tick at half rate and cast no shadow.
 var _lod_elapsed: float = REMOTE_LOD_INTERVAL  # evaluate on the first frame, then every interval
@@ -167,6 +169,10 @@ var _last_jump_action: String = ""  # last "jump:<n>" seen, so a re-broadcast st
 var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end on server touchdown)
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _last_tap_action: String = ""  # last "tap:<n>:x:y:z" seen (ScreenPoke.tap_action)
+var _last_hold_action: String = ""  # last "hold:<n>:x:y:z" seen (ScreenPoke.hold_action)
+## OWNER: the button is held down on a screen since a tap, and when the others were last told (ms).
+var _tap_holding: bool = false
+var _hold_said_ms: int = 0
 var _last_tap_sound: AudioStream = null  # never the same tap sound twice running
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
 var _last_vault_action: String = ""  # last "vault:<key>:<n>" seen, so a re-broadcast isn't re-triggered
@@ -196,6 +202,8 @@ var _cab: CabScreenPointer = null
 var _help: ControlsHelp = null
 ## The place the player stands in — its banner, and its name asked of its discoverer (PlaceWatcher).
 var _places: PlaceWatcher = null
+## The diagnosis and repair of a broken machine (MachineRepair).
+var _repairs: MachineRepair = null
 ## The chart's pad button is down: a short press opens the chart when it comes up, a long one opens the
 ## controls help instead — the pad has no free button to give the help its own.
 var _map_pad_down: bool = false
@@ -396,6 +404,10 @@ func setup() -> void:
 	_places.name = "PlaceWatcher"
 	add_child(_places)
 	_places.setup(player, _screens_root(), func(text: String) -> void: _notifications.push(text), _input_locked)
+	_repairs = MachineRepair.new()
+	_repairs.name = "MachineRepair"
+	add_child(_repairs)
+	_repairs.setup(_push_notice)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -540,6 +552,7 @@ func _process(_delta: float) -> void:
 	_update_thruster(player.thrusting or (player.floating and not _in_god_mode()
 			and not is_instance_valid(player._seat_node)
 			and (player.input_direction != Vector2.ZERO or _vertical_sent != 0.0 or _roll_sent)), _delta)
+	_weather_listener_of().buried = _places.buried() if _places != null else 0.0
 	_weather_listener_of().update(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
@@ -1118,6 +1131,7 @@ func _point_screen(ui_focus: bool) -> bool:
 			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
+	_hold_tap(gui != null)
 	return gui != null or watched
 
 
@@ -1187,6 +1201,8 @@ func _input(event: InputEvent) -> void:
 		_pointed_gui.click_at(_pointed_at, event.is_pressed())
 		if event.is_pressed():
 			_screen_tap(_pointed_at)
+			_tap_holding = true  # until the button is let go, or the crosshair leaves the screen (_hold_tap)
+			_hold_said_ms = Time.get_ticks_msec()
 	if typing or is_instance_valid(_pointed_gui):
 		get_viewport().set_input_as_handled()
 
@@ -1203,6 +1219,25 @@ func _screen_tap(at: Vector3) -> void:
 	var p: Vector3 = player.to_local(at)
 	show_screen_tap(p)
 	player.client_send_action_to_server({"action": "screen_tap", "p": {"x": p.x, "y": p.y, "z": p.z}})
+
+
+## The button kept down on a screen ([param on_screen]: the crosshair is still on one): the finger stays
+## on it and follows the crosshair (ScreenPoke, Player.tap_hold_until_ms), and the others are told now and
+## then. Let go, or off the screen: the arm comes back.
+func _hold_tap(on_screen: bool) -> void:
+	if not _tap_holding:
+		return
+	if not on_screen or not Input.is_action_pressed(&"perforate"):
+		_tap_holding = false
+		player.tap_hold_until_ms = 0
+		return
+	var now: int = Time.get_ticks_msec()
+	var p: Vector3 = player.to_local(_pointed_at)
+	player.tap_point = p
+	player.tap_hold_until_ms = now + int(ScreenPoke.HOLD_KEEP_S * 1000.0)
+	if now - _hold_said_ms >= int(ScreenPoke.HOLD_SAY_S * 1000.0):
+		_hold_said_ms = now
+		player.client_send_action_to_server({"action": "screen_hold", "p": {"x": p.x, "y": p.y, "z": p.z}})
 
 
 ## Play a tap at [param p] (this body's frame): the arm (CharacterAnimator reads tap_serial), and the
@@ -1388,7 +1423,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if InputCombo.pressed(event, "toggle_tool"):
 		if not player.owns_mining_tool:
 			# Nobody starts with one any more: say where to get it (the server would refuse anyway).
-			_flash_prompt(tr("%%HUD_NO_MINING_TOOL"))
+			_flash_prompt(tr("%%HUD_NO_MINING_TOOL") % tr("%%MAP_MARKER_CHANGING_ROOMS"))
 		else:
 			if player.admin_cleanup_tool != null:
 				player.admin_cleanup_tool.set_active(false)  # stow the admin tool when equipping the perforator
@@ -2399,6 +2434,13 @@ func client_channel_data_update(data: Dictionary) -> void:
 			var tapped: Variant = ScreenPoke.parse_tap(action)
 			if player.remote_player and _sfx_live and tapped != null:
 				show_screen_tap(tapped)
+		elif action.begins_with("hold:") and action != _last_hold_action:
+			_last_hold_action = action
+			# Another body keeping its finger on a screen: the arm stays out a little longer, there.
+			var held_at: Variant = ScreenPoke.parse_hold(action)
+			if player.remote_player and _sfx_live and held_at != null:
+				player.tap_point = held_at
+				player.tap_hold_until_ms = Time.get_ticks_msec() + int(ScreenPoke.HOLD_KEEP_S * 1000.0)
 		elif action.begins_with("emote:") and action != _last_emote_action:
 			_last_emote_action = action
 			player.emote_key = action.split(":")[1]  # "emote:<key>:<n>" -> the emote key
@@ -2767,8 +2809,13 @@ func _on_notification(envelope: Dictionary) -> void:
 			return
 	var text: String = ChatNetwork.notification_text(envelope, names)
 	if text == "":
+		push_warning("[Notify] %s has no text to show" % str(envelope.get("type", "")))
 		return
+	_gain_pushed = ChatNetwork.is_gain(str(envelope.get("type", "")))
+	# Which notification rang how: a sound nobody heard is looked for here first.
+	print("[Notify] %s -> %s" % [str(envelope.get("type", "")), "chime" if _gain_pushed else "beep"])
 	_notifications.push(text, func() -> void: _on_notification_clicked(envelope))
+	_gain_pushed = false
 	_services.flag_app(app_of_notification(str(envelope.get("type", ""))))
 	# A mission's news changed it on the service: the DataPad, open on it, reads it again.
 	if str(envelope.get("type", "")).begins_with("mission."):
@@ -2776,11 +2823,25 @@ func _on_notification(envelope: Dictionary) -> void:
 
 
 
+## Show [param text] as a notification; [param gain]: money earned or a paid job done, which chimes once
+## instead of beeping until read (ChatNetwork.is_gain).
+func _push_notice(text: String, gain: bool = false) -> void:
+	_gain_pushed = gain
+	_notifications.push(text)
+	_gain_pushed = false
+
+
 ## A notification landed: the wrist DataPad beeps, and while it is unread blinks and beeps again every
 ## few seconds until it is next read (WristDatapadModel.set_notified). Being read right now -- the wrist
 ## up before the eyes -- the one beep is enough.
 func _on_notification_pushed() -> void:
 	if _wrist_model == null:
+		return
+	# Money earned: one chime, and the light alone says it is unread -- no beep coming back.
+	if _gain_pushed:
+		_wrist_model.chime()
+		if _wrist == null or not _wrist.is_up():
+			_wrist_model.set_notified(true, true)
 		return
 	if _wrist != null and _wrist.is_up():
 		_wrist_model.beep()

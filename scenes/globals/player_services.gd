@@ -488,6 +488,11 @@ func my_corporation_request_decline(request_id: int) -> Dictionary:
 # Materials market (universe simulator)
 # ---------------------------------------------------------------------------------------------
 
+## The machines broken down (services ADR 0020): {items: [{machineId, kind}]}.
+func broken_machines() -> Dictionary:
+	return await _http_get(SERVICE_SIMULATOR, "/api/breakdowns")
+
+
 ## The federation's market: each resource with its price now, a day ago, and the curve between.
 func market_prices() -> Dictionary:
 	return await _http_get(SERVICE_SIMULATOR, "/api/market")

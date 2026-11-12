@@ -138,6 +138,10 @@ static func on_event(screen_owner: Node3D, event: Dictionary, me: String = Playe
 	var who := str(event.get("holder", ""))
 	if who == "":
 		_holders.erase(_key(screen_owner))
+		# A repair watched on a broken machine's screen is over with its player gone.
+		var breakdown := MachineBreakdown.of(screen_owner)
+		if breakdown != null:
+			breakdown.screen_freed()
 		return
 	_holders[_key(screen_owner)] = {"holder": who, "holder_name": str(event.get("holder_name", ""))}
 	var view: Variant = event.get("view")
@@ -170,6 +174,10 @@ static func is_mine(screen_owner: Node3D, me: String = Player.own_horizon_id()) 
 
 ## The node of [param screen_owner]'s screen that has the view contract, null when none does.
 static func view_node(screen_owner: Node) -> Node:
+	# A broken machine's screen shows its repair, not its interface (MachineBreakdown).
+	var repair: Node = MachineBreakdown.view_of(screen_owner)
+	if repair != null:
+		return repair
 	var gui: Node = ScreenTarget.gui_of(screen_owner)
 	var root: Node = gui.get("node_viewport") if gui != null and gui.get("node_viewport") != null else screen_owner
 	return _find_view(root)

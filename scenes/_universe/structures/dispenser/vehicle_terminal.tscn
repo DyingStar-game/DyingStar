@@ -59,6 +59,7 @@ attenuation = 1
 
 [node name="VehicleTerminal" type="StaticBody3D" unique_id=1855328717 node_paths=PackedStringArray("tray_marker")]
 script = ExtResource("1_disp")
+breakdown_kind = "terminal"
 brand = 0
 catalogue_dir = "res://scenes/_universe/vehicles/terminal_items/"
 title_key = "%%TERMINAL_VEHICLES_TITLE"

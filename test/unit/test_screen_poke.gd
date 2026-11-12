@@ -22,6 +22,25 @@ func test_the_wrist_stops_a_finger_short_of_the_point() -> void:
 			"closer than a finger: the wrist stays at the shoulder")
 
 
+func test_the_finger_stays_on_the_screen_while_the_button_is_held() -> void:
+	var top: float = ScreenPoke.REACH_S
+	assert_eq(ScreenPoke.held_time(0.05, true), 0.05, "still reaching: the clock runs")
+	assert_eq(ScreenPoke.held_time(top + 5.0, true), top, "held: it stops on the screen")
+	assert_eq(ScreenPoke.envelope(ScreenPoke.held_time(top + 5.0, true)), 1.0, "the finger on it")
+	assert_eq(ScreenPoke.held_time(top + 0.01, false), top + 0.01, "let go: it runs on")
+	assert_eq(ScreenPoke.envelope(ScreenPoke.held_time(top + 5.0, false)), 0.0, "and the arm is down again")
+	assert_gt(ScreenPoke.HOLD_KEEP_S, ScreenPoke.HOLD_SAY_S * 2.0, "a word lost on the way does not drop the arm")
+
+
+func test_a_held_finger_is_told_like_a_tap_and_is_not_one() -> void:
+	var action := ScreenPoke.hold_action(4, Vector3(0.25, 1.5, -0.75))
+	assert_eq(action, "hold:4:0.250:1.500:-0.750")
+	assert_eq(ScreenPoke.parse_hold(action), Vector3(0.25, 1.5, -0.75))
+	assert_null(ScreenPoke.parse_tap(action), "no tap: the arm does not start over")
+	assert_null(ScreenPoke.parse_hold(ScreenPoke.tap_action(4, Vector3.ZERO)))
+	assert_null(ScreenPoke.parse_hold("hold:4"))
+
+
 func test_the_event_carries_its_point() -> void:
 	var action: String = ScreenPoke.tap_action(7, Vector3(0.25, 1.5, -0.4))
 	assert_eq(action, "tap:7:0.250:1.500:-0.400")

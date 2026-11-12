@@ -162,6 +162,10 @@ func _extra_state() -> Dictionary:
 func _client_ui() -> void:
 	pass
 
+## What the machine is for a breakdown (MachineBreakdown.kind); "": it never breaks down.
+func _breakdown_kind() -> String:
+	return ""
+
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -173,6 +177,7 @@ func _ready() -> void:
 		queue_free()
 		return  # placeholder is done; don't wire detectors on the node we just freed
 
+	MachineBreakdown.attach(self, _breakdown_kind())
 	if GameOrchestrator.is_server():
 		box_detector.body_exited.connect(_on_box_exited)
 		rock_detector.body_exited.connect(_on_belt_exited)
@@ -275,7 +280,11 @@ func _server_tick() -> void:
 	var accepted: Array = filter_accepted(on_belt)
 	var full := _is_full()
 	var blocked := not full and _belt_blocked(on_belt)
-	if not blocked and not full:
+	# Broken down: the belts stop, nothing is taken in nor packed until it is repaired.
+	var broken := _is_broken()
+	if broken and state in ["collect", "extract"]:
+		state = "idle"
+	if not blocked and not full and not broken:
 		for body in filter_accepted(rock_collector.get_overlapping_bodies()):
 			if not ("carried" in body and body.carried):
 				_collect(body)
@@ -291,7 +300,7 @@ func _server_tick() -> void:
 	if state == "collect" and accepted.is_empty():
 		state = "idle"
 	packable = _can_pack()
-	if packable and state == "idle" and _auto_extract():
+	if packable and state == "idle" and _auto_extract() and not broken:
 		state = "extract"
 		handle_extract()
 	belt_count = accepted.size()
@@ -302,6 +311,18 @@ func _server_tick() -> void:
 	if payload != _last_sent:
 		_last_sent = payload
 		server_prop_update(payload)
+
+
+## Whether the machine is broken down (MachineBreakdown).
+func _is_broken() -> bool:
+	var breakdown := MachineBreakdown.of(self)
+	return breakdown != null and breakdown.is_broken()
+
+
+## CLIENT (MachineBreakdown): the machine broke down, or was repaired.
+func breakdown_changed(_broken: bool) -> void:
+	if _ring != null:
+		_refresh_client()
 
 
 ## CLIENT: screen, lights, belts and sounds from the replicated state — once per change, not per frame.
@@ -315,8 +336,10 @@ func _refresh_client() -> void:
 		_ring.show_left(float(extra.get("process_left", PROCESS_S)), PROCESS_S)
 	else:
 		_client_ui()
-	var running_in := state == "collect"
-	var running_out := state == "extract"
+	# Broken down: nothing runs, whatever the state the server last said.
+	var works := not _is_broken()
+	var running_in := works and state == "collect"
+	var running_out := works and state == "extract"
 	danger_light_collect.enabled = running_in
 	danger_light_box.enabled = running_out
 	rock_conveyor.set_instance_shader_parameter("animation_speed", 1.0 if running_in else 0.0)

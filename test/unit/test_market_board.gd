@@ -53,3 +53,21 @@ func test_the_board_builds_and_shows_its_rows() -> void:
 	board.show_rows(MarketBoard.rows_of(MARKET, "en"), "credits")
 	assert_eq(board._list.get_child_count(), 2)
 	assert_eq(board._viewport.render_target_update_mode, SubViewport.UPDATE_DISABLED, "drawn only when seen")
+
+
+func test_the_market_state_is_told_apart_from_the_trend() -> void:
+	# The preprod board of 2026-11-11: a flooded ore, rising since the day before, read all green.
+	assert_eq(MarketBoard.state_of(5_500, 4_000), MarketBoard.State.SATURATED, "more ore than asked for")
+	assert_eq(MarketBoard.state_of(270, 1_100), MarketBoard.State.SHORTAGE, "ingots are missing")
+	assert_eq(MarketBoard.state_of(1_000, 1_050), MarketBoard.State.BALANCED, "within the band")
+	assert_eq(MarketBoard.state_of(1_000, 960), MarketBoard.State.BALANCED)
+	assert_eq(MarketBoard.state_of(0, 0), MarketBoard.State.SATURATED, "nothing asked for")
+	assert_eq(MarketBoard.state_of(0, 50), MarketBoard.State.SHORTAGE, "nothing in stock")
+	assert_eq(MarketBoard.state_colour(MarketBoard.State.SATURATED), MarketBoard.DOWN, "no bargain to sell into")
+	assert_eq(MarketBoard.state_colour(MarketBoard.State.SHORTAGE), MarketBoard.UP)
+	assert_eq(MarketBoard.trend_colour(208.0), MarketBoard.UP, "the trend keeps its own colour")
+	var keys: Array = []
+	for state: MarketBoard.State in [MarketBoard.State.SHORTAGE, MarketBoard.State.BALANCED, MarketBoard.State.SATURATED]:
+		keys.append(MarketBoard.state_key(state))
+		assert_ne(TranslationServer.translate(MarketBoard.state_key(state)), MarketBoard.state_key(state), "translated")
+	assert_eq(keys.size(), 3)

@@ -488,6 +488,10 @@ func server_action_received(data: Dictionary) -> void:
 				ScreenLock.serve(screen, player, data)  # a claim, or the view its holder now sees
 			elif screen != null and not ScreenLock.claim(screen, player):
 				pass  # another player is using it: theirs until they step away (ScreenLock)
+			elif screen != null and MachineBreakdown.of(screen) != null and MachineBreakdown.of(screen).is_broken():
+				# Broken down (services ADR 0020): the machine answers nothing but its repair.
+				if str(data.get("state", "")) == MachineBreakdown.REPAIR_STATE:
+					MachineBreakdown.of(screen).server_repair(player)
 			elif screen != null:
 				# Hand the ACTOR over when the screen asks for one: WHOSE action this is must never be read
 				# from the payload, which the client wrote. Screens that do not care are untouched.
@@ -596,6 +600,17 @@ func server_action_received(data: Dictionary) -> void:
 					_last_tap_ms = now
 					_tap_count += 1
 					player.server_send_properties_to_client({"action": ScreenPoke.tap_action(_tap_count, p)})
+		"screen_hold":
+			# The finger kept on the screen, the button held (ScreenPoke): the same event, the same bounds.
+			var held_data = data.get("p")
+			if held_data is Dictionary:
+				var held_p := Vector3(float(held_data.get("x", 0.0)), float(held_data.get("y", 0.0)),
+						float(held_data.get("z", 0.0)))
+				var held_now: int = Time.get_ticks_msec()
+				if may_relay_tap(held_p, held_now - _last_tap_ms):
+					_last_tap_ms = held_now
+					_tap_count += 1
+					player.server_send_properties_to_client({"action": ScreenPoke.hold_action(_tap_count, held_p)})
 		"furniture_use":
 			# A door, drawer, lamp or bed of a home: the client names it (building uuid + path inside it),
 			# the server checks the player lives there, reaches it and sees it.

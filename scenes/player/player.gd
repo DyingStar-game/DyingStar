@@ -378,6 +378,9 @@ var datapad_raised: bool = false
 ## by the server's "tap:" event.
 var tap_point: Vector3 = Vector3.ZERO
 var tap_serial: int = 0
+## Until when (Time.get_ticks_msec) the finger stays on the screen at tap_point: the button is held down
+## (ScreenPoke). 0: not held. Pushed forward on the owner while it presses, on the others by each "hold:".
+var tap_hold_until_ms: int = 0
 
 var spawn_position: Vector3 = Vector3.ZERO
 var spawn_up: Vector3 = Vector3.UP

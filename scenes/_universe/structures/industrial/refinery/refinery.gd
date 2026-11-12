@@ -164,6 +164,10 @@ static func take_crate(stock: Dictionary, crate_m3: float) -> Dictionary:
 	return out
 
 
+func _breakdown_kind() -> String:
+	return "refinery"
+
+
 func _title_key() -> String:
 	return "%%SIGN_REFINERY"
 

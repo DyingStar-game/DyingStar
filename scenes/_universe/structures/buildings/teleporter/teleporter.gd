@@ -60,6 +60,7 @@ func _ready() -> void:
 	# Physics processing is switched on only for the one frame a trip needs (see _physics_process);
 	# a cabin does nothing per-tick the rest of the time.
 	set_physics_process(false)
+	MachineBreakdown.attach(self, "teleporter")
 	if GameOrchestrator.is_server():
 		return  # the headless server has no interface to build
 	_ui.teleport_requested.connect(_on_ui_teleport_requested)

@@ -35,6 +35,9 @@ const TABLET_SIZE := Vector2i(1920, 1080)
 @export var led: MeshInstance3D
 ## The notification beep, on the UI bus (the volume of the interface's other sounds). Empty = silent.
 @export var beep_sound: AudioStream = preload("res://assets/_universe/audio/sfx/ui/notification.ogg")
+## The chime of money earned (a mission paid, goods sold), on the UI bus: played once, never repeated like
+## the beep. Empty = silent.
+@export var gain_sound: AudioStream = preload("res://assets/_universe/audio/sfx/ui/success-bell.ogg")
 ## Set before the model enters the tree, on the OWNER's wrist only: the viewport is made tablet-sized,
 ## for PlayerClient to put the tablet in it (a CanvasLayer above the face). Others keep a small face.
 var carries_tablet: bool = false
@@ -42,6 +45,7 @@ var carries_tablet: bool = false
 var _clock: Label = null
 var _led_lit: StandardMaterial3D = null  # the light's glow, laid over its dark lens while it blinks
 var _beeper: AudioStreamPlayer = null
+var _chimer: AudioStreamPlayer = null
 var _remind: Timer = null  # the beep again, every REMIND_S while unread
 
 
@@ -63,6 +67,10 @@ func _ready() -> void:
 	_beeper.bus = &"UI"
 	_beeper.stream = beep_sound
 	add_child(_beeper)
+	_chimer = AudioStreamPlayer.new()
+	_chimer.bus = &"UI"
+	_chimer.stream = gain_sound
+	add_child(_chimer)
 	_remind = Timer.new()
 	_remind.wait_time = REMIND_S
 	_remind.timeout.connect(beep)
@@ -78,8 +86,12 @@ func _ready() -> void:
 
 ## Something arrived the player has not read yet: beep now, then blink and beep again every REMIND_S
 ## (a new one starts the count over). False: read -- the light goes out, the beeping stops.
-func set_notified(notified: bool) -> void:
+## [param quiet]: blink only -- what arrived made its own sound (chime); a beeping already going on for
+## something else goes on.
+func set_notified(notified: bool, quiet: bool = false) -> void:
 	set_process(notified)
+	if notified and quiet:
+		return
 	if notified:
 		beep()
 		_remind.start()
@@ -92,6 +104,12 @@ func set_notified(notified: bool) -> void:
 func beep() -> void:
 	if _beeper.stream != null:
 		_beeper.play()
+
+
+## The chime of money earned, once.
+func chime() -> void:
+	if _chimer.stream != null:
+		_chimer.play()
 
 
 func _process(_delta: float) -> void:
