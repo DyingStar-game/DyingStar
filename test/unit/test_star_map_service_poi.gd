@@ -116,7 +116,7 @@ func test_the_world_s_record_of_a_village_is_not_a_second_marker() -> void:
 	var town := str(export[export.size() - 1]["name"])
 	var service := [
 		_poi({"id": "village", "name": town, "ownerType": "political"}),
-		_poi({"id": "depot", "name": town + " · cargo_depot", "ownerType": "political"}),
+		_poi({"id": "depot", "name": town + " — cargo_depot", "ownerType": "political"}),
 		_poi({"id": "elsewhere", "name": "Somewhere else", "ownerType": "political"}),
 		_poi({"id": "player", "name": town, "ownerType": "player"}),
 	]

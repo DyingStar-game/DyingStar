@@ -93,7 +93,7 @@ static func _entry_from(src: Dictionary) -> Dictionary:
 ## town the drawn list had pushed further down, and the camera would frame the wrong marker.
 ##
 ## A point the service holds for a place the level design ALREADY draws is folded into that place, not
-## drawn again: the governing entity's record of a village ("M0004") and of its buildings ("M0004 ·
+## drawn again: the governing entity's record of a village ("M0004") and of its buildings ("M0004 —
 ## cargo_depot") stand on the village's own badge, and every village read as a group of two or three
 ## that no zoom would open (playtest 2026-11-12). The place keeps their ids ([code]service_ids[/code]),
 ## so a mission naming one of them still finds it on the chart ([method holds_service_id]).
@@ -124,8 +124,8 @@ static func merged_for(body_key: String, records: Array) -> Array[Dictionary]:
 
 
 ## Separates a place from one of its buildings in a point's name, as the universe simulator writes them
-## ("M0004 · cargo_depot").
-const BUILDING_SEPARATOR: String = " · "
+## ("M0004 — cargo_depot", universesimulator/src/import).
+const BUILDING_SEPARATOR: String = " — "
 ## Whose points are the world's own record of its places, never a player's mark.
 const WORLD_OWNER: String = "political"
 
