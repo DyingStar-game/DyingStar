@@ -25,6 +25,9 @@ enum EmotePhase { NONE, ENTER, HOLD, EXIT }
 
 ## Crossfade time (s) between clips.
 const BLEND: float = 0.15
+## How many crossfades the head camera waits after a posture change with no transition clip before it
+## takes the new posture's eye point (HeadCam.stance_switched): the fade itself, and a margin.
+const STANCE_SWITCH_SETTLE: float = 2.0
 ## Planar speed (m/s) below which the body is standing (idle).
 const MOVE_EPSILON: float = 0.3
 ## Normalized direction component above which a strafe/diagonal direction is taken (else forward/back).
@@ -571,7 +574,8 @@ func _process(delta: float) -> void:
 			var head_now: Vector3 = _player.to_local(_skeleton.to_global(_skeleton.get_bone_global_pose(_head_bone).origin))
 			_head_cam.capture_rest(head_now, _player.camera_pivot.position)  # first frame: the neutral reference
 			var moving: bool = float(_player.locomotion_sample.get("planar_speed", 0.0)) >= MOVE_EPSILON
-			var one_shot: bool = _stance_transition != &"" or _vault_clip != &""
+			_head_cam.advance(delta)
+			var one_shot: bool = _stance_transition != &"" or _vault_clip != &"" or _head_cam.switching()
 			# Still = the posture's own pose: no gait, no one-shot, no emote, no turn on the spot (each moves
 			# the head, and the eye point taken now is kept for good).
 			var still: bool = not moving and not one_shot and _emote_phase == EmotePhase.NONE \
@@ -901,6 +905,7 @@ func _select_clip(delta: float) -> StringName:
 			_stance_transition_target = target_stance
 			return trans
 		_shown_stance = target_stance  # no transition clip -> switch directly (crossfade)
+		_head_cam.stance_switched(BLEND * STANCE_SWITCH_SETTLE)
 	if _shown_stance == 1:
 		_reset_idle()
 		_current_tier = Tier.WALK
