@@ -230,6 +230,42 @@ func test_the_lines_run_where_the_canyons_are() -> void:
 	pending("aucun canyon sous les tuiles essayees de %s" % BODY)
 
 
+## The game's carve does not know every border between two blocks: its distance to the nearest edge
+## looks one cell around the block, and a neighbour further than that leaves the ground whole. The chart
+## drew a canyon along each of those too -- south of F0001 a road ran 3 km "inside" one that is not
+## there (39.534 W 24.636 N, reported 2026-11-13).
+func test_no_line_where_the_game_carves_no_canyon() -> void:
+	if _no_planet():
+		return
+	var level: int = 256
+	var noise: CrackNoise = _data.crack_noise()
+	var spot: Vector3 = HEALPix.lonlat2vec(-39.53397, 24.63588)
+	assert_gt(ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(spot, _data.radius, _data.crack_spacing_m,
+			_data.crack_width_m, 0.0, noise), 500.0, "the reported spot: no canyon within 500 m")
+	var centre: int = HEALPix.vec2pix_nest(level, spot)
+	var tiles: Array = [centre]
+	for v: Variant in HEALPix.get_neighbors_nest(level, centre).values():
+		if int(v) >= 0 and not tiles.has(int(v)):
+			tiles.append(int(v))
+	var drawn: int = 0
+	var astray: int = 0
+	var nearest_m: float = INF
+	for ipix: int in tiles:
+		var points: PackedVector3Array = StarMapCanyons.trace_tile(_data, level, ipix)[0]
+		for n: int in range(0, points.size(), 2):
+			var along: Vector3 = (points[n] + points[n + 1]).normalized()
+			drawn += 1
+			nearest_m = minf(nearest_m, along.angle_to(spot) * _data.radius)
+			# Rounded and read every kilometre, a line may stand beside its canyon: by less than a
+			# canyon's width, not by the kilometres of one that does not exist.
+			if ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(along, _data.radius, _data.crack_spacing_m,
+					_data.crack_width_m, 0.0, noise) > _data.crack_width_m * 1.5:
+				astray += 1
+	assert_gt(drawn, 20, "canyons are drawn around it")
+	assert_gt(nearest_m, 400.0, "and none through the reported spot")
+	assert_lt(float(astray) / float(maxi(drawn, 1)), 0.02, "no stretch far from any canyon of the game")
+
+
 ## Stretches meeting end to end are one canyon: joined into runs, broken at a fork, a loop kept whole.
 func test_stretches_are_joined_into_runs() -> void:
 	var a := Vector3(1, 0, 0)
