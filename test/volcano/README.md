@@ -69,8 +69,9 @@ de la caméra, il entre aussi dans ce fondu. Les fragments commencent leur
 simulation au tick suivant pour éviter une cascade de calculs dans une image.
 
 La poussière et les débris se déclenchent à chaque impact au sol, rebonds
-compris. Ils prennent la teinte de base du terrain au point de contact.
-Le budget est de **80 effets simultanés** et **640
+compris. Ils prennent la teinte de base du terrain au point de contact, lue
+une fois par cellule de **16 m** puis gardée en cache. Le premier contact d'un
+éclat compte comme un rebond : son nuage suit la force de l'impact. Le budget est de **80 effets simultanés** et **640
 particules** par volcan. Les nouveaux impacts peuvent émettre moins de
 particules quand le budget se remplit. Les nuages en cours finissent leur fondu.
 Quand un champ de pierres sort de son budget de distance/visibilité, ses

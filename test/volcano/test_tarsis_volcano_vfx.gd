@@ -48,7 +48,11 @@ func _ready() -> void:
 						if heights.is_empty():
 							add_child(root)
 							var contact := Vector3(24.0, -7.0, -18.0)
-							var dir := (plume._origin + plume.transform.basis * contact).normalized()
+							# The colour is read at the centre of the contact's cache cell.
+							var cell_m := VolcanoStoneField.ALBEDO_CELL_M
+							var cell := Vector3(floorf(contact.x / cell_m), 0.0, floorf(contact.z / cell_m))
+							var centre := (cell + Vector3(0.5, 0.0, 0.5)) * cell_m
+							var dir := (plume._origin + plume.transform.basis * centre).normalized()
 							var albedo := data.ground_albedo_at(dir)
 							plume.stones._dust(contact, 1.0, 20.0)
 							check(
@@ -273,7 +277,7 @@ func _test_rock_cleanup() -> void:
 	check(field._dust_nodes.size() == VolcanoStoneField.MAX_DUST, "dust effects are independently capped")
 	check(field._dust_nodes[0] == first_cloud and not first_cloud.is_queued_for_deletion(), "a full volley lets active clouds finish")
 	var rock_cloud := field._dust_nodes[1]
-	check(tint_queries[0] == VolcanoStoneField.MAX_DUST, "ground is sampled once per emitted impact")
+	check(tint_queries[0] == 2, "ground colour is read once per cell, not once per impact")
 	check(first_cloud.color.is_equal_approx(ice.lightened(0.32)), "ice impact dust uses ice albedo")
 	check(rock_cloud.color.is_equal_approx(rock.lightened(0.32)), "rock impact dust uses rock albedo")
 	check(first_cloud.mesh == rock_cloud.mesh, "different ground tints share the dust mesh")
@@ -293,7 +297,11 @@ func _test_rock_cleanup() -> void:
 	field.suspend()
 	await get_tree().process_frame
 	check(field._dust_nodes.is_empty() and field._heights.is_empty(), "suspension releases dust and cached terrain heights")
+	check(field._albedos.is_empty(), "suspension releases the cached ground colours")
 	check(field.get_child_count() == 2, "suspension leaves no rock or dust children behind")
+	_test_impact_details(field)
+	field.suspend()
+	await get_tree().process_frame
 	# An ordinary flight ends before its ribbon; neither is allowed to repeat after a time jump.
 	field.update(4000.0, Vector3.ZERO, Vector3.ZERO, false)
 	field._write(0, Vector3(100, 40, 0), 4000.0, 1.0, 8.0, 0.5, 1.0)
@@ -323,6 +331,27 @@ func _test_rock_cleanup() -> void:
 	field.free()
 	check(not is_instance_valid(instances), "unloading the field frees its rendering batches too")
 	print("VOLCANO CLEANUP: bounded pools, hard lifetime, distance retirement, dust, suspension and time jumps checked")
+
+
+## A shard's first cloud scales like a rebound's; an impact on a cliff facing Z still fans out.
+func _test_impact_details(field: VolcanoStoneField) -> void:
+	field._suspended = false  # so that the caller's suspend() releases these clouds again
+	var block := VolcanoStoneField.Rock.new()
+	block.r = 0.3
+	field._impact(block, 4.0, Vector3.ZERO, Vector3.UP)
+	var landing := field._dust_nodes[-1].amount
+	var shard := VolcanoStoneField.Rock.new()
+	shard.r = 0.3
+	shard.shard = true
+	field._impact(shard, 4.0, Vector3.ZERO, Vector3.UP)
+	check(field._dust_nodes[-1].amount < landing, "a shard's first contact raises less dust than a block's landing")
+	var cliff := CPUParticles3D.new()
+	VolcanoStoneField._aim_impact_particles(cliff, Vector3.BACK, 1.0, 0.24, 0.83)
+	var reach := 0.0
+	for point in cliff.emission_points:
+		reach = maxf(reach, point.length())
+	check(reach > 0.5, "an impact on a cliff facing +Z still spreads around the contact")
+	cliff.free()
 
 
 func _test_lifecycle() -> void:

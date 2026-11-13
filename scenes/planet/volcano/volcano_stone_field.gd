@@ -50,6 +50,10 @@ const SHADER_DIR := "res://assets/_universe/environment/terrain/volcano/"
 const COARSE_CELL_M := 100.0
 const FINE_CELL_M := 4.0
 const MAX_HEIGHTS := 150000
+## Ground colour cache (m): one planet read per cell, the colour of its centre. The ground's own tint
+## varies over hundreds of metres, an impact cloud spans a few: finer cells only cost more reads.
+const ALBEDO_CELL_M := 16.0
+const MAX_ALBEDO_CELLS := 4096
 ## Heights a frame may read from the planet for new stones (each costs 0.15 to 0.3 ms). A stone over budget
 ## is born on a later frame, from the cells already read, so a single flight no longer makes a hitch.
 const MAX_READS_PER_FRAME := 8
@@ -84,6 +88,8 @@ class Rock:
 	var turn := 0.0
 	var basis := Basis.IDENTITY
 	var has_landed := false
+	## Broken off a block on its landing: its own first contact is already a rebound.
+	var shard := false
 	var impact_armed := true
 	var asleep := false
 	var hit_player := false
@@ -124,6 +130,8 @@ var _rock_meshes: Array[ArrayMesh] = []
 var _dust_nodes: Array[CPUParticles3D] = []
 ## Base ground colour at a contact in this node's frame.
 var _ground_albedo: Callable
+## Vector2i cell -> Color: [member _ground_albedo] is not cheap and every rebound asks.
+var _albedos := {}
 var _eye := Vector3.ZERO
 var _feet := Vector3.ZERO
 var _has_player := false
@@ -192,6 +200,7 @@ func suspend() -> void:
 	_suspended = true
 	_reset_transients()
 	_heights.clear()
+	_albedos.clear()
 	_last_t = -INF
 
 
@@ -501,9 +510,9 @@ func _promote(i: int, t: float, p: Vector3, v: Vector3, age: float) -> void:
 	_spawn_rock(t - age, p, v, _radius[i], i)
 
 
-func _spawn_rock(born: float, p: Vector3, v: Vector3, r: float, variety: int) -> void:
+func _spawn_rock(born: float, p: Vector3, v: Vector3, r: float, variety: int) -> Rock:
 	if _rocks.size() >= MAX_ROCKS and (_stepping or not _evict_one()):
-		return
+		return null
 	var rock := Rock.new()
 	rock.p = p
 	rock.v = v
@@ -530,6 +539,7 @@ func _spawn_rock(born: float, p: Vector3, v: Vector3, r: float, variety: int) ->
 	_place(rock)
 	_rocks.append(rock)
 	set_physics_process(true)
+	return rock
 
 
 func _place(rock: Rock) -> void:
@@ -632,7 +642,9 @@ func _step(rock: Rock, delta: float) -> void:
 
 
 func _impact(rock: Rock, impact: float, contact: Vector3, normal: Vector3) -> void:
-	_dust(contact, rock.r, impact, normal, rock.has_landed)
+	# A shard's cloud scales with its impact like a rebound: a pebble does not raise a block's dust.
+	var rebound := rock.has_landed or rock.shard
+	_dust(contact, rock.r, impact, normal, rebound)
 	if rock.has_landed:
 		return
 	rock.has_landed = true
@@ -642,7 +654,9 @@ func _impact(rock: Rock, impact: float, contact: Vector3, normal: Vector3) -> vo
 		for j in shards:
 			var a := TAU * randf()
 			var kick := Vector3(cos(a), randf_range(0.4, 1.2), sin(a)) * impact * randf_range(0.12, 0.32)
-			_spawn_rock(rock.born, rock.p + kick.normalized() * rock.r, kick, rock.r * randf_range(0.08, 0.26), randi())
+			var shard := _spawn_rock(rock.born, rock.p + kick.normalized() * rock.r, kick, rock.r * randf_range(0.08, 0.26), randi())
+			if shard != null:
+				shard.shard = true
 
 
 ## One short burst: spreading dust and heavier clods of earth.
@@ -652,7 +666,7 @@ func _dust(at: Vector3, r: float, impact: float, normal := Vector3.UP, rebound :
 	var dust_color := Color(0.76, 0.67, 0.57)
 	var clod_color := Color(0.28, 0.23, 0.18)
 	if _ground_albedo.is_valid():
-		var ground: Color = _ground_albedo.call(at)
+		var ground := _albedo_at(at)
 		if ground.a > 0.0:
 			ground.a = 1.0
 			dust_color = ground.lightened(0.32)
@@ -730,13 +744,28 @@ func _dust(at: Vector3, r: float, impact: float, normal := Vector3.UP, rebound :
 	puff.emitting = true
 
 
+## The ground colour under [param at], read once per [constant ALBEDO_CELL_M] cell at its centre.
+func _albedo_at(at: Vector3) -> Color:
+	var cell := Vector2i(floori(at.x / ALBEDO_CELL_M), floori(at.z / ALBEDO_CELL_M))
+	if _albedos.has(cell):
+		return _albedos[cell]
+	if _albedos.size() >= MAX_ALBEDO_CELLS:
+		_albedos.clear()
+	var centre := Vector3((float(cell.x) + 0.5) * ALBEDO_CELL_M, 0.0, (float(cell.y) + 0.5) * ALBEDO_CELL_M)
+	var colour: Color = _ground_albedo.call(centre)
+	_albedos[cell] = colour
+	return colour
+
+
 ## Directed emission points fan out along the slope at a range of elevations.
 static func _aim_impact_particles(
 	emitter: CPUParticles3D, normal: Vector3, radius: float, low: float, high: float
 ) -> void:
 	var points := PackedVector3Array()
 	var directions := PackedVector3Array()
-	var tangent := normal.cross(Vector3.FORWARD).normalized()
+	# Any axis not along the normal: a cliff facing +/-Z has no tangent across FORWARD.
+	var across := Vector3.FORWARD if absf(normal.z) < 0.9 else Vector3.RIGHT
+	var tangent := normal.cross(across).normalized()
 	var bitangent := normal.cross(tangent)
 	for i in 16:
 		var azimuth := TAU * float(i) / 16.0
