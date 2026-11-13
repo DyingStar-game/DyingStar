@@ -823,8 +823,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			# Client-only suffix, for what only the visual meshes carry: "_far50km" = the far tiers
 			# cut into quads of 50 km at most (PlanetData.get_resolution_for_lod) — no server
 			# collision to re-bake; "_rail1" = the rail modules built with the mesh and saved on it
-			# (RailwayTrack.RAILS_META).
-			_cache_version += "_far50km_rail1"
+			# (RailwayTrack.RAILS_META); "_roadmat1" = the plain asphalt (RoadTerrain.ASPHALT_MATERIAL_PATH)
+			# -- a road's material is saved with its mesh.
+			_cache_version += "_far50km_rail1_roadmat1"
 		# An exported build starts from an empty cache: a change no field above captures (a road
 		# re-export, a forgotten vNN bump) cannot reach players through a mesh baked by the build
 		# before. Not in relief_signature: the persisted pad altitudes survive a deploy. Empty in
