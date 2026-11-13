@@ -46,3 +46,25 @@ func test_a_click_under_the_crosshair_presses_the_button_there() -> void:
 	_gui.click_at(centre, true)
 	_gui.click_at(centre, false)
 	assert_signal_emitted(_button, "pressed", "the interface got the click")
+
+
+## Space is both `jump` and `ui_accept`: jumping in front of a screen pressed its last clicked button.
+func test_a_key_does_not_press_the_button_left_focused_by_a_click() -> void:
+	var centre: Vector3 = _gui.hit(Vector3(0, 0, 2), Vector3.FORWARD, 4.0)
+	_gui.pointer_at(centre)
+	_gui.click_at(centre, true)
+	_gui.click_at(centre, false)
+	watch_signals(_button)
+	for pressed: bool in [true, false]:
+		var accept := InputEventAction.new()
+		accept.action = &"ui_accept"
+		accept.pressed = pressed
+		_gui._unhandled_input(accept)
+	assert_signal_not_emitted(_button, "pressed", "the keyboard stays the game's")
+
+
+func test_only_a_text_field_takes_the_keys() -> void:
+	assert_false(_gui.takes_keys(null), "nothing focused")
+	assert_false(_gui.takes_keys(_button), "a button")
+	assert_true(_gui.takes_keys(autofree(LineEdit.new())), "a line being typed")
+	assert_true(_gui.takes_keys(autofree(TextEdit.new())), "a text being typed")
