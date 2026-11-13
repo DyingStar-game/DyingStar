@@ -2,10 +2,17 @@ class_name WristRaise
 extends SkeletonModifier3D
 
 ## Brings the left wrist up before the face, to read the DataPad worn on it. Two modifiers, in this
-## order under the skeleton: a TwoBoneIK3D puts the wrist on a spot held in the BODY's frame (shoulder ->
+## order under the skeleton: Reach puts the wrist on a spot held in the BODY's frame (shoulder ->
 ## elbow -> wrist, the elbow bent towards a pole), then this one turns the forearm about its own axis
-## until the screen faces the eye -- the IK places the wrist but leaves the forearm's twist wherever the
-## animation had it, and a watch read edge-on is no watch.
+## until the screen faces the eye -- the reach places the wrist but leaves the forearm's twist wherever
+## the animation had it, and a watch read edge-on is no watch.
+##
+## Reach is our own two-bone solve, not the engine's TwoBoneIK3D: that one reads its target and pole
+## through their WORLD transforms and brings them back into the skeleton's space each frame. Out where
+## the world is (4e10 m) that round trip is only good to some µm, and it comes back differently each
+## time the body's world transform changes -- on a vehicle, every frame. The elbow multiplied it: the
+## forearm moved 30 µm a frame under a fixed target, a pixel of shake on a screen read zoomed in
+## (measured at the wheel, 2026-11-13, PadShakeProbe). Reach never leaves the skeleton's space.
 ##
 ## The spot is the body's, not the camera's: this rig's arms are short (0.24 m a bone), and a wrist held
 ## on the line of sight wherever one looks left the forearm pointing at the eye rather than across it
@@ -17,9 +24,7 @@ extends SkeletonModifier3D
 ## fade between the clip and the raised pose. CharacterAnimator drives it from Player.datapad_raised, on
 ## the owner AND on every remote avatar.
 
-var _ik: TwoBoneIK3D = null
-var _target: Node3D = null
-var _pole: Node3D = null
+var _ik: Reach = null
 var _lower_arm: int = -1
 var _hand: int = -1
 ## The screen's centre and its normal in the FOREARM bone's frame (see mount_transform).
@@ -34,23 +39,18 @@ var _eye_local: Vector3 = Vector3.ZERO
 static func attach(skeleton: Skeleton3D, upper_arm: int, lower_arm: int, hand: int) -> WristRaise:
 	if skeleton == null or upper_arm == -1 or lower_arm == -1 or hand == -1:
 		return null
-	var ik := TwoBoneIK3D.new()
+	var ik := Reach.new()
 	ik.name = "WristIK"
+	ik.upper = upper_arm
+	ik.lower = lower_arm
+	ik.hand = hand
 	skeleton.add_child(ik)
-	ik.set_setting_count(1)
-	ik.set_root_bone(0, upper_arm)
-	ik.set_middle_bone(0, lower_arm)
-	ik.set_end_bone(0, hand)
 	var raise := WristRaise.new()
 	raise.name = "WristTwist"
 	skeleton.add_child(raise)
 	raise._ik = ik
 	raise._lower_arm = lower_arm
 	raise._hand = hand
-	raise._target = HumanoidHand.marker(skeleton, "WristTarget")
-	raise._pole = HumanoidHand.marker(skeleton, "WristPole")
-	ik.set_target_node(0, ik.get_path_to(raise._target))
-	ik.set_pole_node(0, ik.get_path_to(raise._pole))
 	raise.drive(0.0, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO)  # starts down, both modifiers off
 	return raise
 
@@ -95,8 +95,8 @@ func drive(weight: float, wrist: Vector3, pole: Vector3, eye: Vector3) -> void:
 	_ik.influence = w
 	if not active:
 		return
-	_target.position = wrist  # the markers are the skeleton's own children: their space is its space
-	_pole.position = pole
+	_ik.target = wrist
+	_ik.pole = pole
 	_eye_local = eye
 
 
@@ -117,14 +117,62 @@ func _process_modification_with_delta(_delta: float) -> void:
 		skeleton.set_bone_global_pose(_lower_arm, lower)
 
 
+## The two-bone reach: the wrist put on [member target], the elbow bent towards [member pole], both in
+## the SKELETON's space and never taken through the world (see the class notes). The elbow's place is
+## the triangle's (HandsOnWheel.elbow_for); the upper arm then the forearm are each swung by the
+## shortest turn that lays them along it, so the roll the clip gave them is kept (the twist that follows
+## sets the forearm's).
+class Reach:
+	extends SkeletonModifier3D
+	var upper: int = -1
+	var lower: int = -1
+	var hand: int = -1
+	var target: Vector3 = Vector3.ZERO
+	var pole: Vector3 = Vector3.ZERO
+
+	func _process_modification_with_delta(_delta: float) -> void:
+		var skeleton: Skeleton3D = get_skeleton()
+		if skeleton == null or upper == -1 or lower == -1 or hand == -1:
+			return
+		var solved: Array[Transform3D] = WristRaise.reach(skeleton.get_bone_global_pose(upper),
+				skeleton.get_bone_global_pose(lower), skeleton.get_bone_global_pose(hand).origin, target, pole)
+		skeleton.set_bone_global_pose(upper, solved[0])
+		skeleton.set_bone_global_pose(lower, solved[1])
+
+
+## The poses (skeleton's space) of an arm's upper bone and forearm that put its wrist on [param target]
+## with the elbow bent towards [param pole], from their poses now ([param upper], [param lower]) and
+## where the wrist is now ([param wrist]). Out of reach, the arm is straight towards the target. Pure,
+## for the tests.
+static func reach(upper: Transform3D, lower: Transform3D, wrist: Vector3, target: Vector3,
+		pole: Vector3) -> Array[Transform3D]:
+	var shoulder: Vector3 = upper.origin
+	var upper_length: float = shoulder.distance_to(lower.origin)
+	var lower_length: float = lower.origin.distance_to(wrist)
+	if upper_length < 1e-6 or lower_length < 1e-6:
+		return [upper, lower]
+	var elbow: Vector3 = HandsOnWheel.elbow_for(shoulder, target, pole, upper_length, lower_length)
+	var swing := Basis(_arc((lower.origin - shoulder) / upper_length, (elbow - shoulder).normalized()))
+	var new_upper := Transform3D(swing * upper.basis, shoulder)
+	# The forearm rides the upper arm's swing, then swings itself onto the line elbow -> target.
+	var carried: Basis = swing * lower.basis
+	var forearm_now: Vector3 = swing * ((wrist - lower.origin) / lower_length)
+	var bend := Basis(_arc(forearm_now, (target - elbow).normalized()))
+	return [new_upper, Transform3D(bend * carried, elbow)]
+
+
+## The shortest turn from [param from] to [param to] (unit vectors); none when they are in line.
+static func _arc(from: Vector3, to: Vector3) -> Quaternion:
+	if from.length_squared() < 1e-12 or to.length_squared() < 1e-12 or from.dot(to) > 1.0 - 1e-15:
+		return Quaternion.IDENTITY
+	if from.dot(to) < -1.0 + 1e-12:
+		var side: Vector3 = from.cross(Vector3.UP if absf(from.y) < 0.9 else Vector3.RIGHT).normalized()
+		return Quaternion(side, PI)
+	return Quaternion(from, to)
+
+
 ## `node`'s transform in `ancestor`'s frame, multiplied up from the local transforms in between: exact
 ## whatever the world coordinates are, where going through two global transforms is not (see drive).
 static func local_to(node: Node3D, ancestor: Node) -> Transform3D:
-	var xf := Transform3D.IDENTITY
-	var n: Node = node
-	while n != null and n != ancestor:
-		if n is Node3D:
-			xf = (n as Node3D).transform * xf
-		n = n.get_parent()
-	return xf
+	return LocalFrame.of(node, ancestor)
 

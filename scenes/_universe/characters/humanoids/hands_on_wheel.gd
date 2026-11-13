@@ -85,6 +85,7 @@ class Lean:
 	var rig: HandsOnWheel = null
 	var spine: int = -1
 	var angle: float = 0.0  # the lean being held, smoothed (radians)
+	var axis_held: Vector3 = Vector3.ZERO  # the axis it turns about, kept while the DataPad is read
 
 	func _process_modification_with_delta(delta: float) -> void:
 		var skeleton: Skeleton3D = get_skeleton()
@@ -101,16 +102,25 @@ class Lean:
 			var ahead: Vector3 = hub - pose.origin
 			ahead.y = 0.0
 			var axis: Vector3 = Vector3.UP.cross(ahead)
-			if axis.length() > 1e-6:
-				axis = axis.normalized()
-				var wrists: Array = []
-				var reaches: Array = []
-				for i in 2:
-					wrists.append(rig._wrist_for(i, held[i], hub, away, (held[i] - shoulders[i]).normalized()))
-					reaches.append(arms[i].length * HandsOnWheel.COMFORT_REACH)
-				var found: Array = HandsOnWheel.lean_needed(pose.origin, axis, shoulders, wrists, reaches,
-						HandsOnWheel.MAX_LEAN)
-				angle = lerpf(angle, found[0], 1.0 - exp(-HandsOnWheel.LEAN_RATE * delta))
+			# The left arm off the wheel, reading the DataPad: the spine keeps the lean it has. The
+			# device hangs on that arm's forearm, and a lean still following the grips -- the steering,
+			# the body held still on a vehicle that rocks (WristDatapadController._steady_body) -- moved
+			# its shoulder every frame: the screen shook before the eyes, zoomed in on.
+			var reading: bool = rig.left_released > 0.0 and axis_held != Vector3.ZERO
+			if reading or axis.length() > 1e-6:
+				if reading:
+					axis = axis_held
+				else:
+					axis = axis.normalized()
+					axis_held = axis
+					var wrists: Array = []
+					var reaches: Array = []
+					for i in 2:
+						wrists.append(rig._wrist_for(i, held[i], hub, away, (held[i] - shoulders[i]).normalized()))
+						reaches.append(arms[i].length * HandsOnWheel.COMFORT_REACH)
+					var found: Array = HandsOnWheel.lean_needed(pose.origin, axis, shoulders, wrists, reaches,
+							HandsOnWheel.MAX_LEAN)
+					angle = lerpf(angle, found[0], 1.0 - exp(-HandsOnWheel.LEAN_RATE * delta))
 				var turn := Basis(axis, angle)
 				var parent: int = skeleton.get_bone_parent(spine)
 				var above: Basis = skeleton.get_bone_global_pose(parent).basis if parent != -1 else Basis.IDENTITY
@@ -315,6 +325,7 @@ func drive(weight: float, grips: Array, hub: Vector3) -> void:
 	_hub = hub
 	if not active:
 		_lean.angle = 0.0
+		_lean.axis_held = Vector3.ZERO
 
 
 ## After the IK: each hand turned to hold the rim, then its fingers closed round it. Worked out from the

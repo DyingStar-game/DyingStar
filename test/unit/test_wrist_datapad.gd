@@ -351,7 +351,42 @@ func test_the_held_pose_reaches_the_rig_exactly_however_far_out() -> void:
 	for i: int in 20:
 		skeleton.global_position = Vector3(4.1e10, -2.0e10, 6.9e10) + Vector3(sin(i * 1.7), cos(i * 2.3), sin(i)) * 3e-6
 		raise.drive(1.0, wrist, Vector3(-0.7, 0.0, 0.0), Vector3(0.0, 0.3, 0.0))
-		assert_eq(raise._target.position, wrist, "frame %d: the target is where it was held, to the bit" % i)
+		assert_eq(raise._ik.target, wrist, "frame %d: the target is where it was held, to the bit" % i)
+
+
+## The reach is solved in the skeleton's own space (the engine's TwoBoneIK3D took its target through the
+## world and back: 30 µm of forearm a frame at the wheel, 2026-11-13): the wrist lands on the target, the
+## bones keep their lengths, the elbow bends towards the pole.
+func test_the_reach_puts_the_wrist_on_its_target() -> void:
+	var upper := Transform3D(Basis(Vector3.UP, 0.3), Vector3(0.2, 1.4, 0.0))
+	var lower := Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0.2, 1.16, 0.0))
+	var wrist := Vector3(0.2, 0.92, 0.0)
+	var target := Vector3(0.05, 1.35, -0.3)
+	var pole := Vector3(0.6, 0.9, 0.0)
+	var solved: Array[Transform3D] = WristRaise.reach(upper, lower, wrist, target, pole)
+	var elbow: Vector3 = solved[1].origin
+	assert_eq(solved[0].origin, upper.origin, "the shoulder stays put")
+	assert_almost_eq(elbow.distance_to(upper.origin), 0.24, 1e-9, "the upper arm keeps its length")
+	assert_almost_eq(elbow.distance_to(target), 0.24, 1e-9, "the forearm keeps its length")
+	# Where each bone's own pose carries the next joint: the elbow from the upper arm, the wrist from the forearm.
+	var elbow_local: Vector3 = upper.affine_inverse() * lower.origin
+	var wrist_local: Vector3 = lower.affine_inverse() * wrist
+	assert_almost_eq(solved[0] * elbow_local, elbow, Vector3.ONE * 1e-9, "the upper arm points at the elbow")
+	assert_almost_eq(solved[1] * wrist_local, target, Vector3.ONE * 1e-9, "the wrist is on its target")
+	var mid: Vector3 = (upper.origin + target) * 0.5
+	assert_gt((elbow - mid).dot(pole - mid), 0.0, "the elbow bends to the pole's side")
+	# The same question asked again answers the same, to the bit: nothing in it reads the world.
+	assert_eq(WristRaise.reach(upper, lower, wrist, target, pole), solved, "to the bit")
+
+
+func test_out_of_reach_the_arm_points_straight_at_the_target() -> void:
+	var upper := Transform3D(Basis.IDENTITY, Vector3.ZERO)
+	var lower := Transform3D(Basis.IDENTITY, Vector3(0.24, 0.0, 0.0))
+	var solved: Array[Transform3D] = WristRaise.reach(upper, lower, Vector3(0.48, 0.0, 0.0), Vector3(0.0, 0.0, -2.0),
+			Vector3(0.0, -1.0, 0.0))
+	assert_almost_eq(solved[1].origin, Vector3(0.0, 0.0, -0.24), Vector3.ONE * 1e-9, "the elbow on the line")
+	assert_almost_eq(solved[1] * Vector3(0.24, 0.0, 0.0), Vector3(0.0, 0.0, -0.48), Vector3.ONE * 1e-9,
+			"the wrist as far as the arm goes")
 
 
 ## `local_to` multiplies the local transforms up to the ancestor.
@@ -403,3 +438,38 @@ func test_f4_opens_straight_on_my_missions_and_closes_them() -> void:
 	_wrist.toggle_missions()
 	_run(1.0)
 	assert_eq(_tablet.current_app(), "", "pressed again on them: the DataPad closes")
+
+
+## The shake probe (client.ini debug_wrist_probe): a link's span is how far it strayed over the window.
+func test_the_shake_probe_measures_how_far_a_link_strayed() -> void:
+	var span := PadShakeProbe.Span.new()
+	assert_eq(span.moved(), 0.0, "nothing seen, nothing moved")
+	span.add(Transform3D(Basis.IDENTITY, Vector3(1.0, 2.0, 3.0)))
+	span.add(Transform3D(Basis(Vector3.UP, 0.002), Vector3(1.0, 2.0, 3.0003)))
+	span.add(Transform3D(Basis(Vector3.UP, -0.001), Vector3(1.0004, 2.0, 3.0)))
+	assert_almost_eq(span.moved(), 0.0005, 1e-9, "the diagonal of the box its origin stayed in")
+	assert_almost_eq(span.angle, 0.002, 1e-9, "the widest angle from the first orientation")
+	var text: String = PadShakeProbe.line({"screen in camera": span}, ["screen in camera"], 3, 2000.0, "x")
+	assert_string_contains(text, "screen in camera 500.0 um 2000.0 urad = 1.00 px")
+
+
+## The tablet's picture is laid in 2D where the screen stands in the camera's frame (PadScreenOverlay).
+func test_the_picture_is_laid_where_the_screen_stands_in_the_view() -> void:
+	var view := Vector2(1600.0, 900.0)
+	assert_almost_eq(PadScreenOverlay.project(Vector3(0.0, 0.0, -0.3), 12.0, view), view * 0.5, Vector2.ONE * 1e-6,
+			"dead ahead: the middle of the view")
+	var edge: float = 0.3 * tan(deg_to_rad(6.0))
+	assert_almost_eq(PadScreenOverlay.project(Vector3(0.0, edge, -0.3), 12.0, view), Vector2(800.0, 0.0),
+			Vector2.ONE * 1e-6, "half the field up: the top edge")
+	assert_almost_eq(PadScreenOverlay.project(Vector3(edge, 0.0, -0.3), 12.0, view), Vector2(1250.0, 450.0),
+			Vector2.ONE * 1e-6, "the same slope to the right: as many pixels (square pixels)")
+	assert_eq(PadScreenOverlay.project(Vector3(0.0, 0.0, 0.2), 12.0, view), Vector2.INF, "behind the eye: nowhere")
+	# A screen squarely before the eye, as tall as the field: its grid spans the view's height, centred.
+	var facing := Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -0.3))
+	var points: PackedVector2Array = PadScreenOverlay.grid(facing, Vector2(2.0 * edge * 16.0 / 9.0, 2.0 * edge), 12.0, view)
+	var side: int = PadScreenOverlay.CELLS + 1
+	assert_eq(points.size(), side * side, "a point at every corner of every cell")
+	assert_almost_eq(points[0], Vector2(0.0, 0.0), Vector2.ONE * 1e-6, "top-left first")
+	assert_almost_eq(points[points.size() - 1], view, Vector2.ONE * 1e-6, "bottom-right last")
+	assert_eq(PadScreenOverlay.grid(Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, 0.1)), Vector2.ONE, 12.0, view).size(), 0,
+			"a screen behind the eye is not laid")
