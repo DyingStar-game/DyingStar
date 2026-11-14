@@ -421,6 +421,25 @@ func _exit_tree() -> void:
 		RenderingServer.frame_pre_draw.disconnect(_aim_aerial_lut)
 
 
+## Back in the tree: the table follows the camera again.
+##
+## This node hangs on the player, and the player is taken out of the tree and put back each time it
+## changes frame -- into a vehicle, out of it, onto another body. _exit_tree lets go of the table's
+## aim, and nothing took it back: from the first ride on, the table stayed aimed where the camera
+## looked at that moment. Level, it was about right (the air only depends on a ray's height over the
+## horizon); looking up, the cells at the bottom of the view still held rays diving into Sandbox's veil,
+## and the far relief there went black (reported 2026-11-14; measured: the same table, to the third
+## decimal, at 42 degrees over the horizon and at 3).
+func _enter_tree() -> void:
+	_follow_camera()
+
+
+## Aim the table before each frame is drawn, once it exists (_build_aerial_lut) and while in the tree.
+func _follow_camera() -> void:
+	if _aerial_lut_material != null and not RenderingServer.frame_pre_draw.is_connected(_aim_aerial_lut):
+		RenderingServer.frame_pre_draw.connect(_aim_aerial_lut)
+
+
 ## The aerial pass's table (see AERIAL_LUT_TILES), filled every frame just before it is drawn.
 func _build_aerial_lut() -> void:
 	if _aerial_material == null:
@@ -449,7 +468,7 @@ func _build_aerial_lut() -> void:
 	if _lut_viewport != null:
 		_aerial_lut_material.set_shader_parameter("transmittance_lut", _lut_viewport.get_texture())
 	_aerial_material.set_shader_parameter("aerial_lut", _aerial_lut_viewport.get_texture())
-	RenderingServer.frame_pre_draw.connect(_aim_aerial_lut)
+	_follow_camera()
 
 
 ## The table on the camera as it is drawn this frame: after everything that moved it.
