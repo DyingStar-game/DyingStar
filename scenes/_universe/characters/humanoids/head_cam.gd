@@ -25,6 +25,9 @@ var _base_captured : bool = false
 var _eye : Dictionary = {0: Vector2.ZERO}
 ## Stances whose eye point was taken standing still: final, never retaken (a breath would move it).
 var _settled : Dictionary = {0: true}
+## Time (s) left of a posture change played as a plain crossfade (stance_switched): the head is still
+## on its way from the old posture, so it is followed and no eye point is taken from it.
+var _switch_left : float = 0.0
 
 
 ## Take the camera's rest position, once: where the scene put the pivot. Seated or floating the pivot
@@ -49,6 +52,24 @@ func capture_rest(head_now: Vector3, camera_now: Vector3) -> void:
 	rest_captured = true
 
 
+## The shown stance just changed with no transition clip (crouch <-> prone): for [param blend_s] the
+## poses crossfade, and the head is not yet where the new posture holds it. Without this the eye of the
+## new stance was taken on that very frame -- from the OLD posture's head -- and kept for good when the
+## player stood still: after prone -> crouch, every crouch looked from the ground.
+func stance_switched(blend_s: float) -> void:
+	_switch_left = maxf(blend_s, 0.0)
+
+
+## Time passes ([param delta] s): once a frame, before target.
+func advance(delta: float) -> void:
+	_switch_left = maxf(_switch_left - delta, 0.0)
+
+
+## Whether a posture change is still crossfading (stance_switched): a one-shot move for the camera.
+func switching() -> bool:
+	return _switch_left > 0.0
+
+
 ## The camera's target (body frame) for a head at [param head_now] (body frame).
 ## [param stance]: the stance currently shown. [param follows_head]: a one-shot move is playing (stance
 ## transition, vault). [param moving]: walking, running or crawling. [param still]: standing still in
@@ -59,7 +80,7 @@ func target(head_now: Vector3, stance: int, follows_head: bool, moving: bool, st
 		forward: float) -> Vector3:
 	var offset : Vector3 = head_now - head_rest
 	var eye : Vector3
-	if follows_head:
+	if follows_head or switching():
 		eye = offset
 	else:
 		var point : Vector2 = _eye_point(stance, offset, still)

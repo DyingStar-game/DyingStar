@@ -227,6 +227,9 @@ func _build() -> void:
 	_corp_picker = ServiceTargetPicker.new()
 	_corp_picker.setup(ServiceTargetPicker.Mask.CORPORATIONS, true)
 	adopt_field(_corp_picker.search_field())
+	# A corporation picked is a treasury read: nobody should have to press "Load" to learn a gift
+	# arrived (playtest 2026-11-12: a donation "showed nowhere").
+	_corp_picker.picked.connect(func(_id: String, _kind: String) -> void: _show_treasury())
 	_corp_from = _field(tr("%%SVC_PH_FROM"), 170.0)
 	_corp_to = _field(tr("%%SVC_PH_TO"), 170.0)
 	corp.add_child(_label(tr("%%SVC_LBL_CORPORATION"), DIM))
@@ -329,6 +332,7 @@ func refresh() -> void:
 	await _load_mine()
 	await _load_my_requests()
 	await _load_directory()
+	await _show_treasury()
 	_end_refresh()
 
 
@@ -887,6 +891,15 @@ func _load_corp() -> void:
 	var corporation_id: String = _picked_corp()
 	if corporation_id == "":
 		_say(tr("%%SVC_MSG_NEED_CORP_ID"), WARN)
+		return
+	await _show_treasury()
+
+
+## Read the picked corporation's treasury again (accounts, movements, taxes); nothing without a pick.
+## Quiet: called when the pick changes and at every refresh, not only from the "Load" button.
+func _show_treasury() -> void:
+	var corporation_id: String = _picked_corp()
+	if corporation_id == "":
 		return
 	# The pick (or the movement just made) is what this page now shows: both windows start again
 	# at their first page — which is also where a brand-new transaction lands.

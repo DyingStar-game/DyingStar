@@ -480,9 +480,12 @@ func test_an_objective_names_the_place_it_happens_at() -> void:
 	# from the sentence the service wrote. A clause you cannot locate is a contract you can only
 	# hope about, so the panel reads the destination the protocol already carries.
 	assert_eq(MISSION_PANEL._objective_poi({"params": {"zone": {"kind": "poi", "poiId": "a"}}}),
-			{"id": "a", "name": ""})
+			{"id": "a", "name": "", "machine": ""})
 	assert_eq(MISSION_PANEL._objective_poi({"params": {"source": {"kind": "poi", "poiId": "b"}}}),
-			{"id": "b", "name": ""}, "a transport with no zone still has a departure")
+			{"id": "b", "name": "", "machine": ""}, "a transport with no zone still has a departure")
+	# A repair has no params: its place is where it goes, and its machine is named (playtest 2026-11-12).
+	assert_eq(MISSION_PANEL._objective_poi({"params": {}, "locationTo": {"poiUuid": "c", "name": "M0001"},
+			"payload": {"machineId": "m"}}), {"id": "c", "name": "M0001", "machine": "m"})
 
 
 func test_the_arrival_is_the_place_and_the_departure_is_not() -> void:

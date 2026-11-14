@@ -56,6 +56,13 @@ var _mine_missions: Array = []
 var _sheet_data: Dictionary = {}
 var _tab_chips: HBoxContainer
 var _turn_in: Button
+## "Locate on the chart": shown when the open mission names a place (its village, a repair's machine).
+var _locate: Button
+## The place the open sheet's mission names (ServiceTypes.mission_place).
+var _place: Dictionary = {}
+## Whether what is on show is another player's (apply_view_state): theirs to read, ours to drop when the
+## screen is free or ours again (watch_ended).
+var _watched: bool = false
 
 
 ## Build the screen in [param subsidiary]'s colours (AresBrand), showing what [param feed] brings.
@@ -121,6 +128,7 @@ func apply_view_state(view: Dictionary) -> void:
 		_set_tab(bool(view.get("mine", false)), false)
 	var their_missions: Array = view.get("missions") if view.get("missions") is Array else []
 	if _mine and their_missions != _mine_missions:
+		_watched = true
 		_mine_missions = their_missions
 		_fill_grid(their_missions)  # the user's missions in progress, not the watcher's
 	var filters := [str(view.get("category", "")), str(view.get("giver", "")), int(view.get("sort", 0)),
@@ -145,6 +153,19 @@ func apply_view_state(view: Dictionary) -> void:
 			if not sheet.is_empty():
 				_show_sheet_data(mission, sheet)  # the user's sheet: their progress, their turn-in
 	_list_scroll.scroll_vertical = int(view.get("scroll", 0))
+
+
+## Screen view contract (ScreenLock): the screen is free, or ours. What was copied from the player who
+## held it -- their missions in progress, their sheet -- is theirs: the list is read again as OURS, or
+## it stayed on this player's kiosk as if those missions had been given to them (playtest 2026-11-12).
+func watch_ended() -> void:
+	if not _watched:
+		return
+	_watched = false
+	if not _open.is_empty():
+		_close_sheet()
+	if _mine:
+		_load_mine()
 
 
 func is_typing() -> bool:
@@ -252,6 +273,7 @@ func _show_sheet(mission: Dictionary) -> void:
 	_accept.disabled = false
 	_accept.visible = true
 	_turn_in.visible = false
+	_offer_locate(mission, [])
 	_fill_sheet(mission, [])
 
 
@@ -261,6 +283,7 @@ func _show_sheet_data(mission: Dictionary, data: Dictionary) -> void:
 	_sheet_data = data
 	var full: Dictionary = data.get("mission") if data.get("mission") is Dictionary else mission
 	var objectives: Array = data.get("objectives") if data.get("objectives") is Array else []
+	_offer_locate(full, objectives)
 	_fill_sheet(full, objectives, data.get("assignment"))
 	var participants := ServiceTypes.participants_text(data.get("participants"))
 	if participants != "":
@@ -269,6 +292,17 @@ func _show_sheet_data(mission: Dictionary, data: Dictionary) -> void:
 	if assignment is Dictionary:
 		_accept.visible = false  # already the player's
 		_show_turn_in(full, objectives, assignment)
+
+
+## Offer "Locate on the chart" when [param mission] names a place: its village's point, and for a
+## repair the broken machine itself.
+func _offer_locate(mission: Dictionary, objectives: Array) -> void:
+	_place = ServiceTypes.mission_place(mission, objectives)
+	_locate.visible = str(_place.get("poi", "")) != "" or str(_place.get("machine", "")) != ""
+
+
+func _on_locate_pressed() -> void:
+	PlayerServices.locate_requested.emit(str(_place.get("poi", "")), str(_place.get("machine", "")))
 
 
 func _close_sheet() -> void:
@@ -527,6 +561,14 @@ func _build(subsidiary: AresBrand.Subsidiary) -> void:
 	AresBrand.style_button(back, Color(1, 1, 1, 0.08), TEXT, BUTTON_PX)
 	back.pressed.connect(_close_sheet)
 	buttons.add_child(back)
+	_locate = Button.new()
+	_locate.text = "%%MISSION_LOCATE"
+	_locate.custom_minimum_size = Vector2(0, 72)
+	_locate.focus_mode = Control.FOCUS_NONE
+	_locate.visible = false
+	AresBrand.style_button(_locate, Color(1, 1, 1, 0.08), TEXT, BUTTON_PX)
+	_locate.pressed.connect(_on_locate_pressed)
+	buttons.add_child(_locate)
 	_accept = Button.new()
 	_accept.text = "%%MISSION_ACCEPT"
 	_accept.custom_minimum_size = Vector2(0, 72)

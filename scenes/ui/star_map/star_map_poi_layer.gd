@@ -63,6 +63,10 @@ const CLUSTER_SCALE: float = 1.15
 ## Where the number sits from the marker's centre, in marker heights along the camera's right and up:
 ## the top right corner, as an exponent is written.
 const CLUSTER_COUNT_OFFSET: Vector2 = Vector2(0.55, 0.5)
+## How far under a group's picture the name of the player's place is written, in picture heights.
+const CLUSTER_NAME_DROP: float = 0.75
+## The colour of that name: the player's own on the chart.
+const PLAYER_PLACE_TINT: Color = Color(1.0, 0.82, 0.35)
 ## The group marker's colour. The towns' own neutral: a group is of no one kind.
 const CLUSTER_TINT: Color = Color(0.82, 0.86, 0.92, 1.0)
 
@@ -93,6 +97,12 @@ var _world: PackedVector3Array = PackedVector3Array()
 var _clusters: Array[Dictionary] = []
 var _cluster_icons: Array[Sprite3D] = []
 var _cluster_counts: Array[Label3D] = []
+## The name under a group: the place the player stands at, when it is one of the group's.
+var _cluster_names: Array[Label3D] = []
+## Index in [member entries] of the place the player stands at, -1 when none or not on this body. Set
+## by the chart before [method refresh]: a group that holds it says its name, or a player standing
+## among several places could not tell which one they were at (playtest 2026-11-12).
+var player_poi: int = -1
 ## Last frame's grouping, index → seed: what keeps a group from flickering (StarMapPoiCluster.KEEP).
 var _grouped_before: Dictionary = {}
 
@@ -305,9 +315,24 @@ func _place_clusters(clusters: Array[Dictionary], camera: Camera3D, hovered_seed
 		count.position = world + camera.global_basis.x * (span * CLUSTER_COUNT_OFFSET.x) \
 				+ camera.global_basis.y * (span * CLUSTER_COUNT_OFFSET.y)
 		count.show()
+		var here: String = cluster_name(members, player_poi, entries)
+		var named: Label3D = _cluster_names[n]
+		named.visible = here != ""
+		if here != "":
+			named.text = here
+			named.position = world - camera.global_basis.y * (span * CLUSTER_NAME_DROP)
 	for n: int in range(clusters.size(), _cluster_icons.size()):
 		_cluster_icons[n].hide()
 		_cluster_counts[n].hide()
+		_cluster_names[n].hide()
+
+
+## The name a group of [param members] (indices in [param listed]) shows: the label of the place the
+## player stands at ([param at], an index) when it is one of them, "" otherwise. Static and pure.
+static func cluster_name(members: PackedInt32Array, at: int, listed: Array[Dictionary]) -> String:
+	if at < 0 or at >= listed.size() or not members.has(at):
+		return ""
+	return str(listed[at].get("label", listed[at].get("name", "")))
 
 
 ## Sized from the distance to THIS POINT, never from the distance to the planet's centre.
@@ -423,6 +448,9 @@ func _grow_cluster_pool(index: int) -> void:
 	while _cluster_icons.size() <= index:
 		_cluster_icons.append(_new_badge())
 		_cluster_counts.append(_new_text(0.0006))
+		var named := _new_text(0.0005)
+		named.modulate = PLAYER_PLACE_TINT
+		_cluster_names.append(named)
 
 
 func _new_badge() -> Sprite3D:
@@ -455,7 +483,7 @@ func _hide(index: int) -> void:
 
 
 func _release_pool() -> void:
-	for pool: Array in [_icons, _labels, _cluster_icons, _cluster_counts]:
+	for pool: Array in [_icons, _labels, _cluster_icons, _cluster_counts, _cluster_names]:
 		for node: Node in pool:
 			node.queue_free()
 		pool.clear()

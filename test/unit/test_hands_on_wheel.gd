@@ -126,3 +126,70 @@ func test_each_hand_takes_the_grip_on_its_side() -> void:
 	var right := Vector3(-0.2, 0, 0.3)
 	assert_eq(HandsOnWheel.by_side([right, left], 0.15, -0.15), [left, right], "swapped to match the arms")
 	assert_eq(HandsOnWheel.by_side([left, right], 0.15, -0.15), [left, right], "already matching")
+
+
+## A bare rig, enough for the wheel: hips, spine, and two arms of the humanoid profile's names.
+func _driver() -> Skeleton3D:
+	var skeleton := Skeleton3D.new()
+	var bones: Array = [["Hips", -1, Vector3.ZERO], ["Spine", 0, Vector3(0.0, 0.2, 0.0)]]
+	for side: Array in [["Left", 1.0], ["Right", -1.0]]:
+		var x: float = side[1]
+		bones.append([side[0] + "UpperArm", 1, Vector3(0.2 * x, 0.4, 0.0)])
+		bones.append([side[0] + "LowerArm", bones.size() - 1, Vector3(0.3 * x, 0.0, 0.0)])
+		bones.append([side[0] + "Hand", bones.size() - 1, Vector3(0.25 * x, 0.0, 0.0)])
+	for bone: Array in bones:
+		var index: int = skeleton.add_bone(bone[0])
+		if int(bone[1]) != -1:
+			skeleton.set_bone_parent(index, bone[1])
+		skeleton.set_bone_rest(index, Transform3D(Basis.IDENTITY, bone[2]))
+	skeleton.reset_bone_poses()
+	add_child_autofree(skeleton)
+	return skeleton
+
+
+## The left shoulder (skeleton's space) once the modifiers have posed the frame.
+func _posed_left_shoulder(skeleton: Skeleton3D) -> Vector3:
+	await skeleton.skeleton_updated
+	var at: Vector3 = skeleton.get_bone_global_pose(skeleton.find_bone("LeftUpperArm")).origin
+	await get_tree().process_frame  # out of the skeleton's own signal before anything frees it
+	return at
+
+
+## Reading the DataPad at the wheel, the device shook: it hangs on the left forearm, whose shoulder the
+## lean went on moving with every twitch of the grips (the steering, the body held still on a rocking
+## vehicle). The arm is off the wheel then: the spine keeps the lean it had.
+func test_the_lean_holds_still_while_the_left_arm_reads_the_datapad() -> void:
+	var skeleton: Skeleton3D = _driver()
+	var rig: HandsOnWheel = HandsOnWheel.attach(skeleton)
+	assert_not_null(rig, "the rig is built")
+	var hub := Vector3(0.0, 0.5, -0.52)
+	var near: Array = [hub + Vector3(0.18, 0.05, 0.0), hub + Vector3(-0.18, 0.05, 0.0)]
+	var far: Array = [hub + Vector3(0.18, 0.05, -0.08), hub + Vector3(-0.18, 0.05, -0.08)]
+	rig.drive(1.0, far, hub + Vector3(0.0, 0.0, -0.08))
+	for _frame in 90:
+		await get_tree().process_frame
+	var upright: Vector3 = skeleton.get_bone_global_rest(skeleton.find_bone("LeftUpperArm")).origin
+	var leaning: Vector3 = await _posed_left_shoulder(skeleton)
+	assert_gt(leaning.distance_to(upright), 0.01, "out of reach: the spine leans to the wheel")
+	# The grips move (the wheel pulled closer): hands on the wheel, the lean follows...
+	rig.drive(1.0, near, hub)
+	for _frame in 30:
+		await get_tree().process_frame
+	var followed: Vector3 = await _posed_left_shoulder(skeleton)
+	assert_gt(followed.distance_to(leaning), 0.005, "the lean follows the wheel")
+	# ...reading the DataPad, it does not.
+	rig.left_released = 1.0
+	for _frame in 5:
+		await get_tree().process_frame
+	var held: Vector3 = await _posed_left_shoulder(skeleton)
+	rig.drive(1.0, far, hub + Vector3(0.0, 0.0, -0.08))
+	for _frame in 30:
+		await get_tree().process_frame
+	var still: Vector3 = await _posed_left_shoulder(skeleton)
+	assert_almost_eq(still, held, Vector3.ONE * 1e-6, "the shoulder the DataPad arm hangs from does not move")
+	# The arm back on the wheel, the lean follows again.
+	rig.left_released = 0.0
+	for _frame in 30:
+		await get_tree().process_frame
+	var back: Vector3 = await _posed_left_shoulder(skeleton)
+	assert_gt(back.distance_to(held), 0.005, "and follows the wheel again once the arm is back")

@@ -82,3 +82,23 @@ func test_a_building_without_a_terminal_has_none() -> void:
 	assert_null(ItemDispenser.vehicle_terminal_of(building), "a parts dispenser is no vehicle terminal")
 	assert_null(ItemDispenser.vehicle_terminal_of(null), "no building, no terminal")
 	building.free()
+
+
+func test_the_garage_has_three_terminals_each_with_its_own_bay() -> void:
+	# One bay for the whole garage: a truck left on it (its driver asleep inside) kept every other
+	# player from taking a vehicle (playtest 2026-11-12).
+	var garage := (load(GARAGE) as PackedScene).instantiate() as Node3D
+	var bays: Array[Node] = []
+	for terminal_name: String in ["VehicleTerminal", "VehicleTerminal2", "VehicleTerminal3"]:
+		var terminal := garage.get_node_or_null(terminal_name) as ItemDispenser
+		assert_not_null(terminal, terminal_name)
+		if terminal == null:
+			continue
+		assert_not_null(terminal.tray_marker, terminal_name + ": its bay")
+		assert_false(bays.has(terminal.tray_marker), terminal_name + ": a bay of its own")
+		bays.append(terminal.tray_marker)
+	for i: int in range(bays.size()):
+		for j: int in range(i + 1, bays.size()):
+			assert_gt((bays[i] as Node3D).position.distance_to((bays[j] as Node3D).position), 5.0,
+					"two bays leave a truck's width between them")
+	garage.free()

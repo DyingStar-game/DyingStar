@@ -139,3 +139,39 @@ func test_gauges_are_aligned_within_the_band_only() -> void:
 	assert_true(GaugePuzzle.aligned([0.2 + GaugePuzzle.TOLERANCE * 0.9, 0.5, 0.8], targets))
 	assert_false(GaugePuzzle.aligned([0.2 + GaugePuzzle.TOLERANCE * 1.1, 0.5, 0.8], targets))
 	assert_false(GaugePuzzle.aligned([0.2, 0.5], targets))
+
+
+func test_a_lift_s_part_says_which_lift_it_is() -> void:
+	# "The lift of M0001" was both the mine's and the canyon's, and any of their screens (playtest 2026-11-12).
+	var mine := Node3D.new()
+	mine.scene_file_path = VehicleLift.MINE_LIFT_DIR + "truck_elevator.tscn"
+	var landing := Node3D.new()
+	mine.add_child(landing)
+	assert_eq(VehicleLift.breakdown_kind(landing, "landing_upper"), "mine_lift_landing_upper")
+	var canyon := Node3D.new()
+	canyon.scene_file_path = "res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift.tscn"
+	var platform := Node3D.new()
+	canyon.add_child(platform)
+	assert_eq(VehicleLift.breakdown_kind(platform, "platform"), "canyon_lift_platform")
+	mine.free()
+	canyon.free()
+
+
+func test_a_repair_names_its_place_and_its_machine() -> void:
+	var objectives := [{"status": "pending", "locationTo": {"poiUuid": "poi-1"}, "payload": {"machineId": "m-1"}}]
+	assert_eq(ServiceTypes.mission_place({}, objectives), {"poi": "poi-1", "machine": "m-1"})
+	# No objective read yet (a list row): the mission's own poi zone.
+	assert_eq(ServiceTypes.mission_place({"zones": [{"kind": "poi", "poiId": "poi-2"}]}, []),
+			{"poi": "poi-2", "machine": ""})
+	assert_eq(ServiceTypes.mission_place({}, []), {"poi": "", "machine": ""}, "a mission that names no place")
+
+
+func test_a_broken_machine_is_on_the_chart() -> void:
+	# A repair mission names a village; the chart shows which machine (playtest 2026-11-12).
+	var marker := MachineBreakdown.chart_marker()
+	assert_not_null(marker.icon)
+	assert_ne(TranslationServer.translate(marker.label), marker.label, "translated")
+	assert_true(marker.on_top, "over the points of interest")
+	assert_false(marker.groupable, "never lost in a group of pictograms")
+	assert_gt(marker.footprint().size.x, 0.0, "a size of its own: the machine's meshes are not walked")
+	marker.free()
