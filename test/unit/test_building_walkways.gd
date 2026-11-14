@@ -53,6 +53,37 @@ func test_each_built_flight_has_its_posts() -> void:
 	KnownEngineErrors.forgive_floor_material(self)
 
 
+## One stepped through the posts and off the side of a flight: only the ramp was solid.
+func test_a_wall_stands_under_each_rail_of_a_flight() -> void:
+	var walls: Array[PackedVector3Array] = BuildingWalkways.flight_side_walls()
+	assert_eq(walls.size(), 2, "one a side")
+	var half: float = BuildingWalkways.RAIL_BAR * 0.5
+	var sides: Array[float] = [half, BuildingWalkways.LANE_W - half]
+	for i in walls.size():
+		var low := Vector3.INF
+		var high := -Vector3.INF
+		for corner: Vector3 in walls[i]:
+			low = low.min(corner)
+			high = high.max(corner)
+			var slope_y: float = corner.z * BuildingWalkways.HALF_RISE / BuildingWalkways.HALF_RUN
+			assert_between(corner.y - slope_y, -1e-6, BuildingWalkways.RAIL_H + 1e-6, "between the slope and the rail")
+		assert_almost_eq((low.x + high.x) * 0.5, sides[i], 1e-6, "under its rail")
+		assert_almost_eq(high.x - low.x, BuildingWalkways.RAIL_WALL_T, 1e-6, "as thin as a railing's")
+		assert_almost_eq(low.z, 0.0, 1e-6, "from the foot of the flight")
+		assert_almost_eq(high.z, BuildingWalkways.HALF_RUN, 1e-6, "to its head, and no further")
+	# Between them the lane stays open, wider than a body and than an NPC's path.
+	assert_gt(sides[1] - sides[0] - BuildingWalkways.RAIL_WALL_T, 2.0 * NpcNavCache.AGENT_RADIUS + 0.3, "room to walk")
+	var building := _building(1, 3, 2)
+	building._create_apartments()
+	var flights: Array = building.find_children("*", "StaticBody3D", true, false).filter(
+			func(n: Node) -> bool: return n.scene_file_path.ends_with("stair_half_flight.tscn"))
+	for flight: Node in flights:
+		assert_eq(flight.find_children(BuildingWalkways.FLIGHT_WALL_PREFIX + "*", "CollisionShape3D", false, false).size(), 2,
+				"both walls on every flight built")
+	building.free()
+	KnownEngineErrors.forgive_floor_material(self)
+
+
 ## The treads stuck out of the stringers: as wide as the lane, their ends flush with the outer faces.
 func test_the_treads_fit_between_the_stringers() -> void:
 	var flight: Node3D = BuildingWalkways.STAIR_SCENE.instantiate()
