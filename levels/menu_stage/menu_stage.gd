@@ -17,6 +17,8 @@ extends Node3D
 ## The set: edit it in Godot (move, add, remove props, figures, trucks and viewpoints).
 const WORLD_SCENE : String = "res://levels/menu_stage/menu_stage_world.tscn"
 const PLANET_NAME : String = "tarsis_3"
+## The planet's node in WORLD_SCENE.
+const PLANET_NODE : StringName = &"Tarsis3"
 ## Sunrise: the sun just clear of the horizon in the morning — long shadows, a warm sky, the lamps
 ## still on. Set by the sun's height rather than an hour, which could fall in the dark in winter.
 const MENU_SUN_ELEVATION_DEG : float = 5.0
@@ -43,6 +45,8 @@ var _live : bool = false
 var _resnap_left : float = 0.0
 var _resnap_tick : float = 0.0
 var _ground : DrawnGround = null
+## The WorkerThreadPool task this stage waits for (_load_world, _pipelines_compiled), -1 when none runs.
+var _pending_task : int = -1
 
 @onready var _menu : MainPage = $MainPage
 
@@ -63,6 +67,9 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if _probe != null:
 		_probe.wait()
+	if _pending_task != -1:
+		WorkerThreadPool.wait_for_task_completion(_pending_task)
+		_pending_task = -1
 	_session.end()
 
 
@@ -119,12 +126,21 @@ func _build() -> void:
 		await get_tree().process_frame
 		if not is_inside_tree():
 			return  # left while the splash painted (the game was entered, or closed)
-	var world : Node3D = load(WORLD_SCENE).instantiate()
+	# Read from the disk on worker threads, and the planet's slowest data made there too, while the splash
+	# goes on painting: all this held the main thread ~12 s in a single frame (2-3 s of loading, 4.4 s of
+	# roads and biomes in Planet._ready), and Windows closed the game as "not responding" (2026-11-16).
+	var scene : PackedScene = await _load_world()
+	if scene == null:
+		return  # left meanwhile, or the scene did not load (already said)
+	var world : Node3D = scene.instantiate()
 	# Before the world enters the tree: the planet places itself for the (frozen) clock in its _ready.
 	_session.begin(world)
+	# Hidden until its pipelines are compiled (_pipelines_compiled): drawn at once, its first frame waited for
+	# every one of them, 17 s on a cold cache (the first launch, a new driver).
+	world.visible = false
 	add_child(world)
 	_progress(0.5)  # the planet's set-up held the main thread: the bar jumps rather than crawls
-	_planet = world.get_node("Tarsis3")
+	_planet = world.get_node(NodePath(PLANET_NODE))
 	_outpost = _planet.get_node("Outpost")
 	var ground_ready : Array = [false]
 	if _planet.planet_terrain != null:
@@ -154,6 +170,10 @@ func _build() -> void:
 			built = float(terrain.active_chunk_count()) / terrain.desired_chunk_count()
 		_progress(0.5 + 0.5 * maxf(built, waited / READY_TIMEOUT_S))
 	_outpost.start(_planet.planet_data.radius, _drawn_ground)
+	await _pipelines_compiled()
+	if not is_inside_tree():
+		return
+	world.visible = true
 	_resnap_left = RESNAP_FOR_S
 	_menu.set_stage_mode(true)
 	_splash(false)
@@ -170,6 +190,74 @@ func _build() -> void:
 		var bench := VillageBench.new()
 		bench.setup(self, _planet, _rig, _anchor, _drawn_ground)
 		add_child(bench)
+
+
+## The world scene, loaded on worker threads, then its planet's data prepared on another
+## (PlanetData.prepare_off_main_thread): frames go on meanwhile. Null when left before the end, or when
+## the scene does not load.
+func _load_world() -> PackedScene:
+	if ResourceLoader.load_threaded_request(WORLD_SCENE, "", true) != OK:
+		push_error("[MenuStage] cannot load %s" % WORLD_SCENE)
+		return null
+	var done : Array = []
+	while ResourceLoader.load_threaded_get_status(WORLD_SCENE, done) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		_progress(0.1 + 0.25 * float(done[0]) if not done.is_empty() else 0.1)
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return null  # the load goes on; the resource cache keeps what it made
+	var scene := ResourceLoader.load_threaded_get(WORLD_SCENE) as PackedScene
+	if scene == null:
+		push_error("[MenuStage] %s did not load" % WORLD_SCENE)
+		return null
+	var data : PlanetData = planet_data_of(scene)
+	if data != null:
+		_pending_task = WorkerThreadPool.add_task(data.prepare_off_main_thread, true, "MenuStage planet data")
+		while not WorkerThreadPool.is_task_completed(_pending_task):
+			await get_tree().process_frame
+			if not is_inside_tree():
+				return null  # _exit_tree waits for the task
+		WorkerThreadPool.wait_for_task_completion(_pending_task)
+		_pending_task = -1
+	_progress(0.4)
+	return scene
+
+
+## Waits until the pipelines Godot has queued so far have been compiled. Godot queues a surface's pipelines
+## on worker threads as soon as a render meets it, hidden or not, and a frame that DRAWS the surface blocks the
+## main thread until they are done, behind every compilation queued before them. A high-priority marker task
+## queued after them runs once all of those have started (the queue is first in, first out): the frames go on
+## meanwhile instead of freezing.
+func _pipelines_compiled() -> void:
+	await RenderingServer.frame_post_draw  # the render that met the newest surfaces
+	_pending_task = WorkerThreadPool.add_task(func() -> void: pass, true, "MenuStage pipelines")
+	while not WorkerThreadPool.is_task_completed(_pending_task):
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return  # _exit_tree waits for the task
+	WorkerThreadPool.wait_for_task_completion(_pending_task)
+	_pending_task = -1
+
+
+## The PlanetData the stage's planet will carry, read from the scenes without instancing them: a sub-resource
+## that is not local to its scene, so it is the very one the planet gets on instancing. Null if not found.
+static func planet_data_of(world: PackedScene) -> PlanetData:
+	var state : SceneState = world.get_state()
+	for i in state.get_node_count():
+		if state.get_node_name(i) != PLANET_NODE:
+			continue
+		var found : PlanetData = _planet_data_property(state, i)
+		var inner : PackedScene = state.get_node_instance(i)
+		if found == null and inner != null:
+			found = _planet_data_property(inner.get_state(), 0)
+		return found
+	return null
+
+
+static func _planet_data_property(state: SceneState, node: int) -> PlanetData:
+	for p in state.get_node_property_count(node):
+		if state.get_node_property_name(node, p) == &"planet_data":
+			return state.get_node_property_value(node, p) as PlanetData
+	return null
 
 
 ## The ground as the chunks DRAW it, distance from the centre along `dir`: measured on the chunk's

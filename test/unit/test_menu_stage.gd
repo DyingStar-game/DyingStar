@@ -92,3 +92,14 @@ func test_every_menu_screen_has_a_viewpoint() -> void:
 	var outpost : StageOutpost = _world().get_node("Tarsis3/Outpost")
 	for key in [&"home", &"settings", &"settings_graphics"]:
 		assert_not_null(outpost.station(key), "%s" % key)
+
+
+func test_the_planet_data_prepared_off_the_main_thread_is_the_planet_s_own() -> void:
+	# MenuStage prepares the roads and biomes of this very PlanetData on a worker before instancing the
+	# world: a copy would leave Planet._ready to do it all again on the main thread.
+	var scene := load(MenuStage.WORLD_SCENE) as PackedScene
+	var data : PlanetData = MenuStage.planet_data_of(scene)
+	assert_not_null(data, "found in the scenes, without instancing them")
+	assert_eq(data.planet_name, MenuStage.PLANET_NAME)
+	var world := _world()
+	assert_same(world.get_node(NodePath(MenuStage.PLANET_NODE)).planet_data, data, "shared, not duplicated")
