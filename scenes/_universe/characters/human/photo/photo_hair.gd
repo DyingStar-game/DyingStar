@@ -38,6 +38,11 @@ const TIE_LENGTH: float = 0.35
 ## volume 0.26 / 0.26, density 0.12 / 0.12): a match's are a plain cut's (HairCut's defaults), not its neighbours'
 ## (whose short sides made a shaven band).
 const UNREAD: Array[String] = ["sides", "volume", "density"]
+## The settings taken as the neighbours' weighted median, not their mean: they rest at 0 on most heads, and a mean
+## of five can only climb from there -- one receding neighbour pushed back a full hairline. Held out on the
+## library, on hairlines with no recession: recession made up past 0.1 on 27 % of them with the mean, 14 % with
+## the median; crown_bald 17 % -> 1 %, low_line 17 % -> 8 % (and a smaller error overall).
+const BY_MEDIAN: Array[String] = ["recession", "crown_bald", "low_line"]
 ## The shortest cut a photo gives (FaceFromPhoto takes a shaven head apart): under about 0.08 the hair is the
 ## shell alone (HairCut.SHELL_ONLY_BELOW), which on dark hair looked painted on; a short crop's strands instead.
 const MIN_LENGTH: float = 0.12
@@ -181,15 +186,22 @@ static func match_cut(views: Array[Dictionary]) -> HairCut:
 	var sums: Dictionary = {}
 	var total := 0.0
 	var parts: Dictionary = {}
+	var ranked: Dictionary = {}  # field -> [[value, weight], ...] for BY_MEDIAN
 	for k in mini(NEIGHBOURS, scored.size()):
 		var weight: float = 1.0 / (0.05 + float(scored[k][0]))
 		var cut: HairCut = HairCut.from_bytes(String(scored[k][1]).hex_decode())
 		for field in ["length", "curl", "fringe", "recession", "crown_bald", "low_line", "flyaways"]:
 			sums[field] = float(sums.get(field, 0.0)) + weight * float(cut.get(field))
+		for field: String in BY_MEDIAN:
+			if not ranked.has(field):
+				ranked[field] = []
+			(ranked[field] as Array).append([float(cut.get(field)), weight])
 		parts[cut.part] = float(parts.get(cut.part, 0.0)) + weight
 		total += weight
 	for field: String in sums:
 		out.set(field, float(sums[field]) / total)
+	for field: String in ranked:
+		out.set(field, weighted_median(ranked[field]))
 	out.length = maxf(out.length, MIN_LENGTH)
 	var plain := HairCut.new()
 	for field in UNREAD:
@@ -216,6 +228,23 @@ static func match_cut(views: Array[Dictionary]) -> HairCut:
 	if out.length < TIE_LENGTH or not side:
 		out.tie = HairCut.Tie.LOOSE
 	return out
+
+
+## The value of [param pairs] ([value, weight] each) that half the total weight reaches, the values sorted.
+static func weighted_median(pairs: Array) -> float:
+	if pairs.is_empty():
+		return 0.0
+	var sorted: Array = pairs.duplicate()
+	sorted.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	var total := 0.0
+	for pair: Array in sorted:
+		total += float(pair[1])
+	var reached := 0.0
+	for pair: Array in sorted:
+		reached += float(pair[1])
+		if reached >= 0.5 * total:
+			return float(pair[0])
+	return float(sorted[-1][0])
 
 
 static func library() -> Dictionary:

@@ -47,6 +47,19 @@ const REDNESS_PER_UNIT: float = 0.025
 const EYE_WHITE: float = 0.3
 const EYE_CHROMA: float = 1.5
 const EYE_LIGHTNESS_WEIGHT: float = 0.3
+## An iris' family is told first, the catalogue colour then within it (eye_colour_for): EYE_TINTS' indices of the brown,
+## hazel/green and blue/grey eyes. Matched against the tints alone, by hue, brown eyes came out green or blue more often
+## than not (27 of 66 photos right) and a webcam's pink whites made them bluer still.
+const EYE_FAMILIES: Array = [[0, 1], [2, 3], [4, 5, 6, 7, 8]]
+## The families' means of [log of the iris' lightness over the white's, log of its red over blue over the white's, log of
+## the iris' own green over blue], and the inverse of their pooled spread: a linear discriminant, equal odds per family,
+## fitted on 66 FFHQ faces whose eyes were labelled by eye (2026-11-16), each also shrunk to a webcam's (an iris ~10 px,
+## blurred, JPEG) under a neutral, a warm and a cool cast -- 69 % right whatever the cast (brown 71 %, hazel 66 %, blue
+## 66 %), where the tints alone were 29-41 %. The few iris pixels a webcam gives behind glasses' glare stay unreadable.
+const EYE_FAMILY_MEANS: Array[Vector3] = [Vector3(-2.54468, 0.53074, 0.32804), Vector3(-1.75885, 0.2729, 0.38895),
+		Vector3(-1.82505, -0.04414, 0.08945)]
+const EYE_FAMILY_SPREAD := Basis(Vector3(3.99344, 2.44947, -2.22383), Vector3(2.44947, 12.95833, -8.91843),
+		Vector3(-2.22383, -8.91843, 12.23052))
 ## A render's saturation of hair against its albedo (hair_colour()).
 const HAIR_SATURATION: float = 1.27
 ## Years from which a photo's pale hair may be grey rather than blond.
@@ -70,7 +83,7 @@ static func measure(image: Image, detection: Dictionary) -> Dictionary:
 	for eye: Array in EYES:
 		_eye(img, points, eye, sclera, iris)
 	out["sclera"] = _band_mean(sclera, 0.8, 0.98)  # the lit white: the lashes and the lid's shade out
-	out["iris"] = _band_mean(iris, 0.0, 0.9)  # the catch-lights out
+	out["iris"] = _band_mean(iris, 0.1, 0.7)  # the catch-lights and the white's glare out, the lashes' shade too
 	var skin: Array[Vector3] = []
 	for c in CHEEKS:
 		skin.append_array(_patch(img, mask, _xy(points[c]), PATCH * iod, CLASS_FACE_SKIN))
@@ -101,7 +114,7 @@ static func estimate(measures: Dictionary, years: float = 30.0) -> Dictionary:
 	var sclera: Vector3 = measures.get("sclera", Vector3.ZERO)
 	if iris != Vector3.ZERO and sclera != Vector3.ZERO:
 		out["eye_colour"] = eye_colour_for(Vector3(iris.x / maxf(sclera.x, 1e-4), iris.y / maxf(sclera.y, 1e-4),
-				iris.z / maxf(sclera.z, 1e-4)))
+				iris.z / maxf(sclera.z, 1e-4)), EYE_FAMILIES[eye_family(iris, sclera)])
 	if measures.has("hair"):
 		out.merge(hair_pigments(measures["hair"], years >= GREY_FROM_YEARS))
 	return out
@@ -130,12 +143,32 @@ static func ita(lab: Vector3) -> float:
 	return rad_to_deg(atan2(lab.x - 50.0, maxf(lab.z, 1e-3)))
 
 
-## The eye colour (catalogue index) nearest an iris' colour over the white beside it, by its hue mostly.
-static func eye_colour_for(ratio: Vector3) -> int:
+## The family of an iris ([param iris] and the [param sclera] beside it, linear): brown, hazel/green or blue/grey
+## (EYE_FAMILIES' index), the nearest by the linear discriminant of EYE_FAMILY_MEANS.
+static func eye_family(iris: Vector3, sclera: Vector3) -> int:
+	var ratio := Vector3(iris.x / maxf(sclera.x, 1e-4), iris.y / maxf(sclera.y, 1e-4), iris.z / maxf(sclera.z, 1e-4))
+	var v := Vector3(log(maxf((ratio.x + ratio.y + ratio.z) / 3.0, 1e-4)), log(maxf(ratio.x, 1e-4) / maxf(ratio.z, 1e-4)),
+			log(maxf(iris.y, 1e-4) / maxf(iris.z, 1e-4)))
+	var best := 0
+	var best_d: float = INF
+	for k in EYE_FAMILY_MEANS.size():
+		var d: Vector3 = v - EYE_FAMILY_MEANS[k]
+		var m: float = d.dot(EYE_FAMILY_SPREAD * d)
+		if m < best_d:
+			best_d = m
+			best = k
+	return best
+
+
+## The eye colour (catalogue index) nearest an iris' colour over the white beside it, by its hue mostly, among
+## [param among] (catalogue indices; all by default).
+static func eye_colour_for(ratio: Vector3, among: Array = []) -> int:
 	var want: Array = _split(_log3v(ratio))
 	var best := 0
 	var best_d: float = INF
 	for k in CharacterAppearance.EYE_TINTS.size():
+		if not among.is_empty() and not among.has(k):
+			continue
 		var tint: Color = CharacterAppearance.EYE_TINTS[k].srgb_to_linear()
 		var have: Array = _split(_log3v(Vector3(tint.r, tint.g, tint.b) / EYE_WHITE))
 		var d: float = ((want[1] as Vector3) * EYE_CHROMA - (have[1] as Vector3)).length_squared() \

@@ -31,18 +31,22 @@ const MAX_STATURE: float = 1.1
 ## most, and seven of the twelve are neighbours): per origin, feature sliders (the catalogue's shape keys)
 ## and how far each is pushed at full weight. Weights go past a slider's own +-1: a face must say where
 ## it comes from at a glance. Tendencies of a population, not a rule -- a person's own sliders add to them.
+## Except the nose's bridge and the eyelids, kept within their sliders' travel: rated by eye (200 random faces,
+## 2026-11-16), pushed past it the bridge sank into a groove between the eyes (African, East Asian: 37-47 % of those
+## faces rejected for it) or ran out of the forehead like a beak (Middle Eastern: 42 %), the East Asian lids folded
+## shut -- where European and Hispanic faces, within it, had none.
 const ORIGIN_FEATURES: Dictionary = {
 	"Race_African": {
-		"Nose_NasalBone_AnteriorNasalAperature": 2.4, "Nose_BridgeProminence": -1.6, "Nose_NasalBone": -1.2,
+		"Nose_NasalBone_AnteriorNasalAperature": 2.4, "Nose_BridgeProminence": -0.8, "Nose_NasalBone": -0.6,
 		"Nose_Potrusion": -1.0, "Nose_Tip_Potrusion": -0.6, "Mouth_Lips_Height": 1.8, "Mouth_Lips_UpperLipDepth": 1.2,
 		"Mouth_Lips_BottomLipDepth": 1.3, "Mouth_Lips_Length": 0.9, "Face_Maxilla": 1.1, "Face_Zygomatic_Bone": 0.5,
 		"Face_FrontalBone_BrowRidge": -0.4, "Head_BackScalpPotrusion": 0.5, "Head_SideScalpPotrusion": -0.3,
 		"Chin_Portrusion": -0.5,
 	},
 	"Race_EastAsian": {
-		"Nose_BridgeProminence": -1.8, "Nose_NasalBone": -1.4, "Nose_Potrusion": -1.2, "Nose_Tip_Potrusion": -0.6,
+		"Nose_BridgeProminence": -0.9, "Nose_NasalBone": -0.7, "Nose_Potrusion": -1.2, "Nose_Tip_Potrusion": -0.6,
 		"Nose_NasalBone_AnteriorNasalAperature": 0.7, "Face_Zygomatic_Bone": 1.8, "Cheeks_UpperCheek_Bone": 1.3,
-		"Face_EyeSocket_Potrusion": 1.2, "Eyes_EyelidsAngle": 1.3, "Eyes_EyelidsCrease": -2.0, "Eye_Size": -0.6,
+		"Face_EyeSocket_Potrusion": 1.2, "Eyes_EyelidsAngle": 0.8, "Eyes_EyelidsCrease": -1.0, "Eye_Size": -0.6,
 		"Face_FrontalBone_BrowRidge": -1.2, "Head_SideScalpPotrusion": 0.6, "Head_BackScalpPotrusion": -0.6,
 		"Face_Maxilla": -0.3, "Mouth_Lips_Height": 0.4, "Jaw_Mandible_GonialAngle": 0.4,
 	},
@@ -57,7 +61,7 @@ const ORIGIN_FEATURES: Dictionary = {
 		"Head_SideScalpPotrusion": 0.4, "Eyes_EyelidsAngle": 0.5, "Nose_Potrusion": -0.3,
 	},
 	"Race_MiddleEastern": {
-		"Nose_BridgeProminence": 2.0, "Nose_NasalBone": 1.6, "Nose_NoseHeight": 0.5, "Nose_NasalAngle": 0.8,
+		"Nose_BridgeProminence": 1.0, "Nose_NasalBone": 0.8, "Nose_NoseHeight": 0.5, "Nose_NasalAngle": 0.8,
 		"Nose_Potrusion": 1.0, "Face_FrontalBone_BrowRidge": 0.9, "Mouth_Lips_Height": 0.5, "Chin_Portrusion": 0.3,
 		"Eye_Size": 0.4, "Face_Zygomatic_Bone": -0.2,
 	},
@@ -70,7 +74,7 @@ const ORIGIN_FEATURES: Dictionary = {
 		"Mouth_Lips_BottomLipDepth": 0.8, "Face_Maxilla": 0.5, "Eye_Size": 0.6, "Jaw_Mandible": -0.4,
 	},
 	"Race_Punjabi": {
-		"Nose_BridgeProminence": 1.4, "Nose_NasalBone": 0.8, "Nose_NoseHeight": 0.3, "Face_FrontalBone_BrowRidge": 0.6,
+		"Nose_BridgeProminence": 1.0, "Nose_NasalBone": 0.8, "Nose_NoseHeight": 0.3, "Face_FrontalBone_BrowRidge": 0.6,
 		"Mouth_Lips_Height": 0.5, "Eye_Size": 0.4, "Chin_Portrusion": 0.3,
 	},
 	"Race_Marathi": {

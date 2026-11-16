@@ -76,6 +76,14 @@ func test_a_photos_colours_are_read_back_on_the_creators_scales() -> void:
 		var dulled := Vector3(exp(mean + (log(ratio.x) - mean) / PhotoAppearance.EYE_CHROMA),
 				exp(mean + (log(ratio.y) - mean) / PhotoAppearance.EYE_CHROMA), exp(mean + (log(ratio.z) - mean) / PhotoAppearance.EYE_CHROMA))
 		assert_eq(PhotoAppearance.eye_colour_for(dulled), k, "eye colour %d found again" % k)
+	# An iris' family first: each family's mean is told as that family (iris over a white of 1, its green/blue given).
+	for f in PhotoAppearance.EYE_FAMILY_MEANS.size():
+		var m: Vector3 = PhotoAppearance.EYE_FAMILY_MEANS[f]
+		var light: float = exp(m.x) * 3.0
+		# A ratio of that lightness and red/blue whose green sits so that the iris' own green/blue is m.z.
+		var b: float = light / (exp(m.y) + exp(m.z) + 1.0)
+		var iris := Vector3(b * exp(m.y), b * exp(m.z), b)
+		assert_eq(PhotoAppearance.eye_family(iris, Vector3.ONE), f, "family %d told from its mean" % f)
 	var look := CharacterAppearance.new()
 	for pigments in [Vector2(0.1, 0.0), Vector2(0.5, 1.0), Vector2(0.9, 0.1)]:
 		look.hair_eumelanin = pigments.x
@@ -195,6 +203,12 @@ func test_a_cut_is_matched_from_its_measures() -> void:
 	assert_gt(close, 7, "a render's own measures give back about its length")
 	var profile: Array[Dictionary] = [{"turn": 1.8, "amount": 30.0}]
 	assert_true(PhotoHair.match_cut(profile) == null, "a true profile alone tells the library nothing")
+
+
+func test_one_receding_neighbour_does_not_push_a_hairline_back() -> void:
+	assert_eq(PhotoHair.weighted_median([[0.0, 1.0], [0.0, 1.0], [0.6, 1.5]]), 0.0, "the weight of the bare-front ones wins")
+	assert_eq(PhotoHair.weighted_median([[0.6, 1.0], [0.0, 0.5], [0.2, 0.4]]), 0.6, "unless the receding one weighs more")
+	assert_eq(PhotoHair.weighted_median([]), 0.0, "none: no recession")
 
 
 func test_the_landmark_fit_alone_finds_a_known_face_again_from_three_views() -> void:
