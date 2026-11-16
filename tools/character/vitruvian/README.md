@@ -52,8 +52,10 @@ is appended to the catalogue is appended too.
 - **Skin.** One set of maps for everyone: a light and a dark colour mixed by the person's skin tone, a
   normal map from the sculpt's height, roughness, and old-age wrinkles faded in with age.
 - **Outfits.** MakeHuman's, re-fitted (`refit_outfits.py`): the bones carry each garment from a MakeHuman
-  body to the Vitruvian one, the clearance it had over the skin is restored, and it is bound to the new
-  body. 6 of 7 kept (the sport top ends above the Vitruvian bust line).
+  body to the Vitruvian one, about the centre of each bone's flesh and alike across its pieces (a top stays
+  over the waistband); the old skin, so carried, is registered onto the new one and takes the garment along
+  (MakeHuman's bust sat 4 cm higher); the clearance it had over the skin is restored, the garment is ironed
+  (no folds, edges kept, nothing through the skin), and it is bound to the new body. 6 of 7 kept (the sport top ends above the Vitruvian bust line).
 
 - **Head and face.** The head is a mesh of its own; seen close up it is baked again with 17 blend shapes
   summed from the FACS keys (`HumanBuilder.LIFE_SHAPES`), which `FaceLife` drives.

@@ -7,9 +7,12 @@ Vitruvian one -- another mesh, in another rest pose. Per outfit piece:
   2. the Vitruvian body of the same gender is put in MakeHuman's pose (the T pose of the game skeleton),
      exactly as the game does it: each bone turned from its direction to the template's;
   3. the garment follows the bones from one body to the other: each bone stretches it along itself by
-     the two bodies' bone lengths and across by their girths, blended by the garment's skin weights;
+     the two bodies' bone lengths and across by their girths, about the centre of its flesh, blended by the
+     garment's skin weights; the move is smoothed across the garment's pieces (a top over a waistband), and the
+     old body's skin, so carried, is drawn onto the new one (register) and takes the garment along;
   4. what still cuts into the new body is pushed back out to the clearance it had over the old one, and
-     the correction is smoothed over the garment;
+     the correction is smoothed over the garment; then the garment lying on the body is ironed (its folds
+     smoothed, its edges kept);
   5. the result is taken back to the Vitruvian rest pose and bound to the new body the way the bank
      binds every worn mesh: three body vertices, their weights, and an offset.
 
@@ -24,6 +27,7 @@ import re
 import sys
 
 import numpy as np
+from scipy.sparse import coo_matrix, diags
 from scipy.spatial import cKDTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +42,12 @@ MIN_CLEARANCE = 0.004  # m: a garment never sits closer to the skin than this
 TIGHT_BELOW = 0.05  # m: a garment vertex farther than this from the old body is loose (a hem): left alone
 MAX_POKE_SHARE = 0.06
 SMOOTH_PASSES = 6
+LAYER_REACH = 0.03  # m: garment vertices this close move alike, on whichever piece (spatial_smooth)
+LAYER_PASSES = 6
+IRON_PASSES = 8  # step 4b
+FIT_ROUNDS = 6  # register(): the old body's skin, carried by the bones, drawn onto the new body's
+FIT_REACH = 0.04  # m
+FIT_PASSES = 6
 OUTFITS = [  # id, gender, MakeHuman pieces (suit, shoes)
     ("male_casual01", "male", ["clothes/male_casualsuit01/male_casualsuit01.mhclo", "clothes/shoes03/shoes03.mhclo"]),
     ("male_casual02", "male", ["clothes/male_casualsuit02/male_casualsuit02.mhclo", "clothes/shoes01/shoes01.mhclo"]),
@@ -98,9 +108,11 @@ def shortest_arc(a, b):
 
 
 def bone_frames(body_t, verts_t, weights, aims, parents):
-    """Per bone, in the T pose: joint, direction (its own or its parent's), length, girth."""
+    """Per bone, in the T pose: direction (its own or its parent's), length, girth, and where its flesh is centred
+    across it (from the joint, square to the direction: a spine sits at the back of the torso, not at its middle)."""
     count = len(body_t.rest)
     direction, length, girth = [None] * count, np.ones(count), np.ones(count)
+    centre = np.zeros((count, 3))
     for b in range(count):
         if aims[b] >= 0:
             d = body_t.rest[aims[b]] - body_t.rest[b]
@@ -112,10 +124,62 @@ def bone_frames(body_t, verts_t, weights, aims, parents):
         if mine.sum() >= 8:
             rel = verts_t[mine] - body_t.rest[b]
             radial = rel - np.outer(rel @ direction[b], direction[b])
-            girth[b] = np.median(np.linalg.norm(radial, axis=1))
+            centre[b] = radial.mean(0)
+            girth[b] = np.median(np.linalg.norm(radial - centre[b], axis=1))
         else:
             girth[b] = girth[parents[b]] if parents[b] >= 0 else 1.0
-    return direction, length, girth
+    return direction, length, girth, centre
+
+
+def follow_bones(points, weights, old_rest, old_frames, new_rest, new_frames):
+    """Points carried from one body to the other by their bones (step 3): along each bone by the bodies' bone
+    lengths, across it by their girths, about the centre of the bone's flesh. Centred on the joints instead, the
+    Vitruvian spine lying further back in the torso than MakeHuman's carried a T-shirt 5 cm in front of the
+    body, and pulling it back to the skin left a fold on the bust."""
+    (od, ol, og, oc), (nd, nl, ng, nc) = old_frames, new_frames
+    out = np.zeros_like(points)
+    for b in range(len(old_rest)):
+        wb = weights[:, b:b + 1]
+        if wb.max() <= 0:
+            continue
+        rel_p = points - old_rest[b] - oc[b]
+        along = rel_p @ od[b]
+        radial = rel_p - np.outer(along, od[b])
+        out += wb * (new_rest[b] + nc[b] + np.outer(along * (nl[b] / ol[b]), nd[b]) + radial * (ng[b] / og[b]))
+    return out
+
+
+def spatial_smooth(values, points, reach, passes):
+    """Each value blended with the mean of those within `reach` (m) of its point, whatever piece they are on."""
+    pairs = cKDTree(points).query_pairs(reach, output_type="ndarray")
+    rows = np.concatenate([pairs[:, 0], pairs[:, 1], np.arange(len(points))])
+    cols = np.concatenate([pairs[:, 1], pairs[:, 0], np.arange(len(points))])
+    near = coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(len(points), len(points))).tocsr()
+    near = diags(1.0 / np.asarray(near.sum(1)).ravel()) @ near  # each row: the mean over its neighbours
+    for _ in range(passes):
+        values = 0.5 * values + 0.5 * (near @ values)
+    return values
+
+
+def register(points, target, rounds, reach, passes):
+    """How `points` (a body's skin) move onto the `target` skin: each round every point steps to its nearest
+    target point, the steps smoothed over `reach` (m) so the surface moves as one and does not crumple."""
+    tree = cKDTree(target)
+    cur = points.copy()
+    for _ in range(rounds):
+        _d, i = tree.query(cur)
+        cur += spatial_smooth(target[i] - cur, cur, reach, passes)
+    return cur - points
+
+
+def edge_vertices(index, count):
+    """Whether each vertex lies on the mesh's border (an edge with a single triangle: hems, collars, cuffs)."""
+    tri = index.reshape(-1, 3)
+    edges = np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]]), axis=1)
+    unique, uses = np.unique(edges, axis=0, return_counts=True)
+    out = np.zeros(count, dtype=bool)
+    out[unique[uses == 1].ravel()] = True
+    return out
 
 
 def laplacian_smooth(values, index, passes):
@@ -208,13 +272,22 @@ def main():
             vit_t = vit.carry(v, vit_w)
             worlds[gender] = (mh, mh_dm, vit, vit_t, vertex_normals(vit_t, vit_tris),
                               bone_frames(mh, mh.verts, mh_w_all, aims, parents), bone_frames(vit, vit_t, vit_w, aims, parents))
-        mh, mh_dm, vit, vit_t, vit_n, (md, ml, mg), (vd, vl, vg) = worlds[gender]
+        mh, mh_dm, vit, vit_t, vit_n, mh_frames, vit_frames = worlds[gender]
         mh_tree = cKDTree(mh.verts[mh_body])
         mh_normals = vertex_normals(mh.verts, np.array([t for f, g in zip(model.base.faces, model.base.face_group) if g == "body"
                                                         for t in [(f[0][0], f[0][k], f[0][k + 1]) for k in range(1, len(f[0]) - 1)]], dtype=np.int32))
         skin_ids = np.nonzero(skin_zone)[0]
         vit_tree = cKDTree(vit_t[skin_ids])
         neck_skin = vit_w[skin_ids][:, [names.index("Neck"), names.index("Head")]].sum(1)
+        aligned = follow_bones(mh.verts[mh_body], mh_w_all[mh_body], mh.rest, mh_frames, vit.rest, vit_frames)
+        fit = register(aligned, vit_t[skin_ids], FIT_ROUNDS, FIT_REACH, FIT_PASSES)
+        aligned_tree = cKDTree(aligned)
+
+        def fit_field(points):
+            """register()'s move at `points`, from the 8 nearest old skin points (the nearer the more)."""
+            dist, near = aligned_tree.query(points, k=8)
+            wgt = 1.0 / np.maximum(dist, 1e-4)
+            return np.einsum("nk,nkj->nj", wgt / wgt.sum(1, keepdims=True), fit[near])
         slot = len(catalogue)
         kept_parts = []
         for part, rel in enumerate(files):
@@ -227,18 +300,19 @@ def main():
             src, uv, index = render_mesh(triangulate(obj.faces), obj.uvs)
             weld = src[index].astype(np.int32)
             # 3. follow the bones from one body to the other
-            moved = np.zeros_like(cloth)
-            for b in range(count):
-                wb = w[:, b:b + 1]
-                if wb.max() <= 0:
-                    continue
-                rel_p = cloth - mh.rest[b]
-                along = rel_p @ md[b]
-                radial = rel_p - np.outer(along, md[b])
-                moved += wb * (vit.rest[b] + np.outer(along * (vl[b] / ml[b]), vd[b]) + radial * (vg[b] / mg[b]))
+            moved = follow_bones(cloth, w, mh.rest, mh_frames, vit.rest, vit_frames)
             # Neighbouring bones do not stretch alike (a thigh against the hips): the move, not the
             # garment, is smoothed, or the cloth tears where two bones meet (the crotch, a collar).
             moved = cloth + laplacian_smooth(moved - cloth, weld, 12)
+            # A garment's pieces do not share an edge (a T-shirt over the jeans' waistband): smoothed along its
+            # triangles alone, the top followed the spine and the trousers the hips, and the hem rose off the
+            # waistband (2.6 cm of bare skin in front on the woman). Smoothed across the pieces too, layers
+            # lying together move together.
+            moved = cloth + spatial_smooth(moved - cloth, cloth, LAYER_REACH, LAYER_PASSES)
+            # The bones do not shape the body: MakeHuman's woman's bust, carried, came 4 cm above the Vitruvian
+            # one's, and the clearance below pulled the garment's own bump down onto the breast in a fold. The
+            # old skin, carried, is drawn onto the new one as one smooth sheet, and the garment moves with it.
+            moved += fit_field(moved)
             # 4. keep the clearance the garment had over the old body
             dist, near = mh_tree.query(cloth)
             old = np.einsum("ij,ij->i", cloth - mh.verts[mh_body][near], mh_normals[mh_body][near])
@@ -255,6 +329,16 @@ def main():
                 push = np.where(restore, want - have, np.maximum(MIN_CLEARANCE - have, 0.0))
                 push = np.where(restore, np.clip(push, -0.03, 0.06), push)
                 moved += laplacian_smooth(n * push[:, None], weld, SMOOTH_PASSES)
+            # 4b. iron: where the old garment's shape and the new body disagree (the top of a bust) the two
+            # steps above left a fold, a crease across a T-shirt's chest. The garment lying on the body is
+            # smoothed, its edges (hems, collar, sleeves) left where they are, and kept off the skin.
+            ironed = tight & ~edge_vertices(weld, len(moved))
+            for _ in range(IRON_PASSES):
+                moved[ironed] = laplacian_smooth(moved, weld, 1)[ironed]
+                _d, hit = vit_tree.query(moved)
+                n = vit_n[skin_ids][hit]
+                have = np.einsum("ij,ij->i", moved - vit_t[skin_ids][hit], n)
+                moved += n * np.maximum(MIN_CLEARANCE - have, 0.0)[:, None]
             _d, hit = vit_tree.query(moved)
             have = np.einsum("ij,ij->i", moved - vit_t[skin_ids][hit], vit_n[skin_ids][hit])
             poke = float((have < 0.0).mean())
@@ -271,14 +355,6 @@ def main():
             weights = np.full((len(cloth), 3), 1.0 / 3.0)
             offsets = rest_pose - vit.verts[refs].mean(1)
             # what the garment hides: the body vertices lying where MakeHuman hid its own
-            aligned = np.zeros((len(mh_body), 3))
-            for b in range(count):
-                wb = mh_w_all[mh_body][:, b:b + 1]
-                if wb.max() <= 0:
-                    continue
-                rel_p = mh.verts[mh_body] - mh.rest[b]
-                along = rel_p @ md[b]
-                aligned += wb * (vit.rest[b] + np.outer(along * (vl[b] / ml[b]), vd[b]) + (rel_p - np.outer(along, md[b])) * (vg[b] / mg[b]))
             hidden_mh = np.zeros(len(model.base.verts), dtype=bool)
             hidden_mh[clo.delete_verts] = True
             _d, twin = cKDTree(aligned).query(vit_t[skin_ids])
