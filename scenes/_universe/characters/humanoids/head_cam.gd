@@ -21,6 +21,8 @@ var head_rest : Vector3 = Vector3.ZERO
 var rest_captured : bool = false
 ## camera_base is taken, by capture_base or capture_rest: never retaken (see capture_base).
 var _base_captured : bool = false
+## Height the body's head moved by before camera_base was taken (rest_changed), added to it then.
+var _base_shift : Vector3 = Vector3.ZERO
 ## Stance (0 standing, 1 crouched, 2 prone) -> its eye point (y, z) relative to the standing rest.
 var _eye : Dictionary = {0: Vector2.ZERO}
 ## Stances whose eye point was taken standing still: final, never retaken (a breath would move it).
@@ -35,7 +37,7 @@ var _settled : Dictionary = {0: true}
 func capture_base(camera_now: Vector3) -> void:
 	if _base_captured:
 		return
-	camera_base = camera_now
+	camera_base = camera_now + _base_shift
 	_base_captured = true
 
 
@@ -47,6 +49,20 @@ func capture_rest(head_now: Vector3, camera_now: Vector3) -> void:
 	head_rest = head_now
 	capture_base(camera_now)
 	rest_captured = true
+
+
+## The body changed (HumanAppearance): its head now rests [param head_shift] (body frame) from where it
+## did. The eye moves with it -- a taller body looks from higher up -- and the head's rest and the stances'
+## eye points are taken again from the new body.
+func rest_changed(head_shift: Vector3) -> void:
+	var up := Vector3(0.0, head_shift.y, 0.0)
+	if _base_captured:
+		camera_base += up
+	else:
+		_base_shift += up  # applied when the base is taken
+	rest_captured = false
+	_eye = {0: Vector2.ZERO}
+	_settled = {0: true}
 
 
 ## The camera's target (body frame) for a head at [param head_now] (body frame).

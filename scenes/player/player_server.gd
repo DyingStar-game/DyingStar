@@ -57,6 +57,9 @@ const _ADMIN_DEPOT_RANGE := 300.0
 const _MINE_RESCUE_MARGIN_M := 40.0
 ## Height (m) over the mine's floor a rescued player's feet (its origin) are set at.
 const _MINE_RESCUE_LIFT_M := 0.3
+## A player's look is replicated at most this often (ms): a creator dragging a slider in game must not
+## flood its neighbours. A look asked for sooner waits, and the last one asked for is the one sent.
+const APPEARANCE_INTERVAL_MS: int = 2000
 
 ## The body / facade this role drives (a Player). Untyped ON PURPOSE: typing it `Player` would create a
 ## cyclic class_name dependency (Player references PlayerServer/PlayerClient, which reference Player) and
@@ -65,6 +68,8 @@ var player
 
 ## Server-only: consecutive quasi-still ticks, used to throttle move_and_slide for idle players.
 var _idle_settled_ticks: int = 0
+var _appearance_sent_ms: int = -APPEARANCE_INTERVAL_MS  # when the last look went out
+var _appearance_waiting: String = ""  # a valid look asked for too soon, sent when the interval is up
 
 ## Jumps performed by this player, replicated with the jump event so each one is a NEW value (see the
 ## jump in _physics_process): an identical repeated value would be swallowed by delta compression.
@@ -513,11 +518,14 @@ func server_action_received(data: Dictionary) -> void:
 				if refused != "":
 					push_warning("[Discoveries] %s proposed a name for %s: refused, %s"
 							% [player.client_uuid, str(data.get("uuid", "")), refused])
+		"set_appearance":
+			_set_appearance(str(data.get("appearance", "")))
 		"update_property":
 			# Generic player-property update (tech-debt A): apply the authoritative side-effects we
 			# know about, then replicate every property to nearby clients.
 			var props: Dictionary = data.duplicate()
 			props.erase("action")
+			props.erase("appearance")  # only through set_appearance, which validates it
 			if props.has("tools"):
 				if str(props["tools"]) != "" and not player.owns_mining_tool:
 					props["tools"] = ""  # no tool to take out: the owner's client is told it stays away
@@ -3273,6 +3281,36 @@ const EYE_MAX_OFFSET_M := 1.2
 ## Server: put the camera pivot where the owner's eye is (the "eye" property: its body-local offset,
 ## moved by the head camera), so the look ray deciding the carry prompt and the grab starts from the same
 ## place as the one the owner aims with. Kept within EYE_MAX_OFFSET_M of the rest.
+## The client asks for a new look: decoded and made canonical here (anything that is not a valid,
+## adult look is refused), then replicated as the player's `appearance` -- to everyone near, and to
+## persistence, which gives it back on the next spawn. At most one every APPEARANCE_INTERVAL_MS.
+func _set_appearance(text: String) -> void:
+	var look: CharacterAppearance = CharacterAppearance.decode(text)
+	if look == null:
+		push_warning("[Look] %s sent an appearance that is not a valid look: refused" % player.client_uuid)
+		return
+	var wait_ms: int = _appearance_sent_ms + APPEARANCE_INTERVAL_MS - Time.get_ticks_msec()
+	if wait_ms > 0:
+		var first: bool = _appearance_waiting == ""
+		_appearance_waiting = look.encode()
+		if first:
+			get_tree().create_timer(wait_ms / 1000.0).timeout.connect(_send_waiting_appearance)
+		return
+	_send_appearance(look.encode())
+
+
+func _send_waiting_appearance() -> void:
+	if _appearance_waiting != "" and is_instance_valid(player):
+		var text: String = _appearance_waiting
+		_appearance_waiting = ""
+		_send_appearance(text)
+
+
+func _send_appearance(canonical: String) -> void:
+	_appearance_sent_ms = Time.get_ticks_msec()
+	player.server_send_properties_to_client({"appearance": canonical})
+
+
 func _apply_eye(eye: Variant) -> void:
 	if not (eye is Dictionary):
 		return

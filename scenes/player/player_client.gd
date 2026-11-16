@@ -272,6 +272,11 @@ func setup() -> void:
 	_animator = animator
 	if animator != null:
 		animator.setup(player, not player.remote_player)
+	# Our own face is seen close up (a mirror) and will move: baked apart, with its face units.
+	var looks := _looks()
+	if looks != null and not player.remote_player:
+		looks.face_units = true
+	_wear_default_look.call_deferred()  # deferred: a remote's uuid is set right after it enters the tree
 	_mount_torch()  # every avatar, owner and remote alike: the beam belongs on the head, not on a camera
 	_mount_wrist_datapad(animator)  # every avatar too, before our own body moves to its render layer
 	if player.remote_player:
@@ -2226,6 +2231,96 @@ func _setup_conversation_text() -> void:
 	italic.variation_transform = Transform2D(Vector2(1.0, 0.415), Vector2(0.0, 1.0), Vector2.ZERO)
 	_conversation_text.add_theme_font_override("font", italic)
 
+## Past this distance (m) a remote avatar wears the light skin and eye materials (HumanAppearance.set_detail);
+## it gets the close-up ones back under the second one (a hysteresis, so it does not flicker at the edge).
+const REMOTE_DETAIL_ENTER: float = 12.0
+const REMOTE_DETAIL_EXIT: float = 10.0
+
+## Whether this remote avatar currently wears its close-up materials.
+var _remote_near: bool = true
+
+## Under this distance (m) a remote avatar's face comes alive (HumanAppearance.set_life, FaceLife): it
+## blinks, looks around, talks. Past the second one it is still again -- nobody sees a blink from there,
+## and a live head costs a bake and ~10 MB of video memory.
+const REMOTE_LIFE_ENTER: float = 7.0
+const REMOTE_LIFE_EXIT: float = 9.0
+
+## Whether this remote avatar's face is alive right now.
+var _remote_alive: bool = false
+
+## How long a body waits for its replicated look before wearing the one its uuid seeds (s): the look
+## rides its own channel (zone 1), which enters a moment after the body's.
+const LOOK_GRACE_S: float = 0.4
+
+## Whether this avatar's look came from the network (its `appearance` property).
+var _look_received: bool = false
+
+
+## Every avatar wears a look of its own. The one the server holds (`appearance`, see _wear_appearance)
+## when it has one; else the one its uuid seeds (CharacterAppearance.from_uuid) -- the same on every
+## machine, so everyone sees the same person: NPCs, and players who never made theirs. Our own body
+## wears the look kept on this machine at once (CharacterStore), and an edit made offline is sent.
+func _wear_default_look() -> void:
+	var looks := _looks()
+	if looks == null:
+		return
+	if not looks.appearance_applied.is_connected(_on_appearance_applied):
+		looks.appearance_applied.connect(_on_appearance_applied)
+	if not player.remote_player:
+		# Our own face is seen in mirrors, close up: always alive, its mouth on our microphone.
+		looks.set_life(true)
+		var face := player.puppet.get_node_or_null(^"FaceLife") as FaceLife
+		if face != null:
+			face.own_voice = true
+		var mine: CharacterAppearance = CharacterStore.saved()
+		if mine != null:
+			if not _look_received:
+				looks.set_appearance(mine)
+			if CharacterStore.is_pending():
+				send_appearance(mine)
+			return
+	await get_tree().create_timer(LOOK_GRACE_S).timeout
+	if _look_received or not is_instance_valid(looks):
+		return
+	var seed_text: String = str(player.client_uuid) if str(player.client_uuid) != "" else str(player.name)
+	looks.set_appearance(CharacterAppearance.from_uuid(seed_text))
+
+
+## Ask the server to make [param look] our player's look (validated there, then replicated to everyone
+## and persisted). Worn here at once.
+func send_appearance(look: CharacterAppearance) -> void:
+	if player.remote_player or look == null:
+		return
+	var looks := _looks()
+	if looks != null:
+		looks.set_appearance(look)
+	player.client_send_action_to_server({"action": "set_appearance", "appearance": look.encode()})
+
+
+## The replicated `appearance` property: the look the server holds for this player. Ours is also kept
+## on this machine (CharacterStore), for the menu and the next spawn.
+func _wear_appearance(text: String) -> void:
+	var look: CharacterAppearance = CharacterAppearance.decode(text)
+	if look == null:
+		push_warning("[Look] %s: replicated appearance is not a valid look, ignored" % player.client_uuid)
+		return
+	_look_received = true
+	var looks := _looks()
+	if looks != null:
+		looks.set_appearance(look)
+	if not player.remote_player:
+		CharacterStore.confirm(text)
+
+
+func _looks() -> HumanAppearance:
+	return player.puppet.get_node_or_null(^"HumanAppearance") as HumanAppearance if player.puppet != null else null
+
+
+## A new body replaced the puppet's meshes: the distance LOD flips the shadows of the new ones.
+func _on_appearance_applied() -> void:
+	if player.remote_player:
+		_puppet_meshes.assign(player.puppet.find_children("*", "MeshInstance3D", true, false))
+
 ## Distance LOD of a remote avatar, four times a second: beyond REMOTE_HALF_RATE_* its presentation
 ## (this role's _process and the MiningTool's) ticks every other frame — the network feeds it at
 ## 30 Hz anyway — and beyond REMOTE_SHADOW_DISTANCE its puppet stops casting the sun shadow. The
@@ -2239,6 +2334,18 @@ func _refresh_remote_lod() -> void:
 	_remote_far = _beyond(_remote_far, d, REMOTE_HALF_RATE_ENTER, REMOTE_HALF_RATE_EXIT)
 	_half_rate.enabled = _remote_far
 	player.mining_tool.half_rate.enabled = _remote_far
+	var near: bool = not _beyond(not _remote_near, d, REMOTE_DETAIL_ENTER, REMOTE_DETAIL_EXIT)
+	if near != _remote_near:
+		_remote_near = near
+		var looks := _looks()
+		if looks != null:
+			looks.set_detail(near)
+	var alive: bool = not _beyond(not _remote_alive, d, REMOTE_LIFE_EXIT, REMOTE_LIFE_ENTER)
+	if alive != _remote_alive:
+		_remote_alive = alive
+		var looks := _looks()
+		if looks != null:
+			looks.set_life(alive)
 	var no_shadow: bool = d > REMOTE_SHADOW_DISTANCE
 	if no_shadow != _remote_no_shadow:
 		_remote_no_shadow = no_shadow
@@ -2366,6 +2473,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 			data["rotation"]["y"],
 			data["rotation"]["z"]
 		)
+	if data.has("appearance"):
+		_wear_appearance(str(data["appearance"]))
 	if data.has("flashlight"):
 		var torch_on := bool(data["flashlight"])  # replicated torch state (owner + remotes)
 		# Click only on a REAL flip, and never on the state a remote player spawns with (a torch that

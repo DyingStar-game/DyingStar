@@ -4,10 +4,18 @@
 [ext_resource type="AnimationLibrary" uid="uid://do3hc8x4nonh0" path="res://assets/_universe/characters/humanoids/man_ddurieux_animations.res" id="2_anims"]
 [ext_resource type="Script" uid="uid://dtb3oqqid36t1" path="res://scenes/_universe/characters/humanoids/character_animator.gd" id="3_animator"]
 [ext_resource type="Resource" uid="uid://dti7f5itnvf0f" path="res://scenes/_universe/characters/humanoids/ual_animation_set.tres" id="4_animset"]
+[ext_resource type="Script" uid="uid://cjco6rhqiiwty" path="res://scenes/_universe/characters/human/human_appearance.gd" id="5_appearance"]
+[ext_resource type="Script" uid="uid://bdaaajy7ksa4t" path="res://scenes/_universe/characters/human/face_life.gd" id="6_facelife"]
 
 [node name="human_puppet" type="Node3D" unique_id=1701771454]
 
 [node name="Body" parent="." unique_id=462503427 instance=ExtResource("1_body")]
+
+[node name="HumanAppearance" type="Node" parent="." unique_id=1284437112]
+script = ExtResource("5_appearance")
+
+[node name="FaceLife" type="Node" parent="."]
+script = ExtResource("6_facelife")
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=542844815]
 root_node = NodePath("../Body")

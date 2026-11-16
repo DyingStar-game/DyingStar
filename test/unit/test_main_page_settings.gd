@@ -22,3 +22,34 @@ func test_settings_credits_and_back() -> void:
 		menu._close_settings()
 		await wait_process_frames(2)
 		assert_null(menu._settings_overlay, "Back closes it")
+
+
+func test_the_menu_does_not_preload_the_creator() -> void:
+	var source := FileAccess.get_file_as_string(MAIN_PAGE_SCRIPT)
+	assert_false(source.contains("preload(\"res://ui/character_creator/"), "loaded when opened, as the settings")
+	assert_true(ResourceLoader.exists(MainPage.CREATOR_SCENE_PATH))
+
+
+func test_character_opens_the_creator_and_back_closes_it() -> void:
+	var menu : MainPage = load("res://ui/main_page/main_page.tscn").instantiate()
+	add_child_autofree(menu)
+	menu._on_entry_pressed(MainPage.CHARACTER)
+	assert_true(menu._settings_overlay is CharacterCreator, "Character opens the creator")
+	assert_false(menu._settings_overlay.first_enter)
+	menu._close_settings()
+	await wait_process_frames(2)
+	assert_null(menu._settings_overlay, "Back closes it")
+
+
+func test_a_first_enter_makes_the_character_first() -> void:
+	CharacterStore.path = "user://test_main_page_creator.cfg"
+	CharacterStore.clear()
+	var menu : MainPage = load("res://ui/main_page/main_page.tscn").instantiate()
+	add_child_autofree(menu)
+	menu._on_entry_pressed(MainPage.ENTER)
+	assert_true(menu._settings_overlay is CharacterCreator, "no look kept yet: the creator first")
+	assert_true(menu._settings_overlay.first_enter, "its button enters the universe")
+	menu._close_settings()
+	await wait_process_frames(2)
+	CharacterStore.clear()
+	CharacterStore.path = CharacterStore.PATH

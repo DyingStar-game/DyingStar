@@ -1,9 +1,9 @@
 class_name Mannequin
 extends Node3D
-## A figure on the menu stage: the player's own model (human_puppet, the Puppet of player.tscn)
-## playing one animation forever — idle, talking, mining, dancing, or walking a small circle. Not an
-## NPC, not a player: no network, no physics, no controller; its CharacterAnimator is never set up,
-## so it costs nothing, and the animation pauses while off screen.
+## A figure on the menu stage: the player's own model (human_puppet, the Puppet of player.tscn), in a
+## look of its own (look_seed), playing one animation forever — idle, talking, mining, dancing, or
+## walking a small circle. Not an NPC, not a player: no network, no physics, no controller; its
+## CharacterAnimator is never set up, so it costs nothing, and the animation pauses while off screen.
 ##
 ## An instance of mannequin.tscn, placed in menu_stage_world.tscn: move it, turn it (it faces its
 ## -Z, the arrow of the editor gizmo), pick its clip in the inspector.
@@ -16,6 +16,12 @@ const WALK_SPEED : float = 1.0
 @export var clip : StringName = &"Idle"
 ## > 0: walks a circle of this radius around its own origin instead of playing `clip` on the spot.
 @export var walk_radius : float = 0.0
+## Text the figure's random look is drawn from (CharacterAppearance.from_uuid): the same text, the same
+## person. Empty = the node's name, so every figure of the stage is someone else.
+@export var look_seed : String = ""
+## Give the figure a living face (blinks, glances, a temper: FaceLife). For the figures the menu's camera
+## comes close to: a live head is one more bake and ~10 MB of video memory.
+@export var face_life : bool = false
 
 var _anim : AnimationPlayer
 var _playing : StringName
@@ -28,6 +34,10 @@ func _ready() -> void:
 	# Off until the clip is known to play: Godot turns _process on for any script that has one, and
 	# a figure left standing (unknown clip, no walk) would divide by its zero walk radius there.
 	set_process(false)
+	var looks := _puppet.get_node_or_null(^"HumanAppearance") as HumanAppearance
+	if looks != null:
+		looks.face_life = face_life
+		looks.set_appearance(CharacterAppearance.from_uuid(look_seed if look_seed != "" else String(name)))
 	_anim = _puppet.get_node("AnimationPlayer")
 	_playing = &"Walk" if walk_radius > 0.0 else clip
 	if not _anim.has_animation(_playing):

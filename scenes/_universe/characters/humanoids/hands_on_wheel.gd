@@ -150,12 +150,7 @@ static func attach(skeleton: Skeleton3D) -> HandsOnWheel:
 		if arm.upper == -1 or arm.lower == -1 or arm.hand == -1:
 			return null
 		arm.fingers = HumanoidHand.finger_chains(skeleton, side)
-		_measure_hand(skeleton, arm, side == "Left")
-		arm.upper_length = skeleton.get_bone_global_rest(arm.upper).origin.distance_to(
-				skeleton.get_bone_global_rest(arm.lower).origin)
-		arm.lower_length = skeleton.get_bone_global_rest(arm.lower).origin.distance_to(
-				skeleton.get_bone_global_rest(arm.hand).origin)
-		arm.length = arm.upper_length + arm.lower_length
+		_measure_arm(skeleton, arm, side == "Left")
 		arms.append(arm)
 	var rig := HandsOnWheel.new()
 	rig.name = "HandsOnWheelGrip"
@@ -184,6 +179,22 @@ static func attach(skeleton: Skeleton3D) -> HandsOnWheel:
 		ik.set_pole_node(i, ik.get_path_to(arm.pole))
 	rig.drive(0.0, [], Vector3.ZERO)
 	return rig
+
+
+## Measure the arms again from the skeleton's rests: a new body (HumanAppearance) moved the joints.
+func remeasure(skeleton: Skeleton3D) -> void:
+	for i in _arms.size():
+		_measure_arm(skeleton, _arms[i], i == 0)
+
+
+## An arm's lengths (shoulder -> elbow -> wrist) and its hand's frame, from the rest pose.
+static func _measure_arm(skeleton: Skeleton3D, arm: Arm, left: bool) -> void:
+	_measure_hand(skeleton, arm, left)
+	arm.upper_length = skeleton.get_bone_global_rest(arm.upper).origin.distance_to(
+			skeleton.get_bone_global_rest(arm.lower).origin)
+	arm.lower_length = skeleton.get_bone_global_rest(arm.lower).origin.distance_to(
+			skeleton.get_bone_global_rest(arm.hand).origin)
+	arm.length = arm.upper_length + arm.lower_length
 
 
 ## The hand's own frame at rest, in its bone's space: wrist -> middle knuckle, and the palm's normal from

@@ -1121,6 +1121,24 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "beard_model.json",
+			"path": "res://assets/_universe/characters/human/beard_model.json",
+			"author": "FFHQ features",
+			"source": "Brno University of Technology (DCGM)",
+			"id": "",
+			"url": "https://github.com/DCGM/ffhq-features-dataset",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "beard_model.json",
+			"path": "res://assets/_universe/characters/human/beard_model.json",
+			"author": "Flickr-Faces-HQ (FFHQ)",
+			"source": "NVIDIA",
+			"id": "",
+			"url": "https://github.com/NVlabs/ffhq-dataset",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "bed.glb",
 			"path": "res://assets/_universe/props/furniture/chamber/bed.glb",
 			"author": "Irong",
@@ -1310,6 +1328,51 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "face_detector.onnx",
+			"path": "res://assets/_universe/characters/human/face_models/face_detector.onnx",
+			"author": "Face Detector (BlazeFace short range)",
+			"source": "Google MediaPipe",
+			"id": "",
+			"url": "https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector",
+			"license": "Apache-2.0"
+		},
+		{
+			"asset": "face_fit.res",
+			"path": "res://assets/_universe/characters/human/face_fit.res",
+			"author": "Ava-256",
+			"source": "Meta Platforms",
+			"id": "",
+			"url": "https://github.com/facebookresearch/ava-256",
+			"license": "CC BY-NC 4.0"
+		},
+		{
+			"asset": "face_landmarks.onnx",
+			"path": "res://assets/_universe/characters/human/face_models/face_landmarks.onnx",
+			"author": "Face Landmarker (face mesh with irises)",
+			"source": "Google MediaPipe",
+			"id": "",
+			"url": "https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker",
+			"license": "Apache-2.0"
+		},
+		{
+			"asset": "face_stats.json",
+			"path": "res://assets/_universe/characters/human/face_stats.json",
+			"author": "FFHQ features",
+			"source": "Brno University of Technology (DCGM)",
+			"id": "",
+			"url": "https://github.com/DCGM/ffhq-features-dataset",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "face_stats.json",
+			"path": "res://assets/_universe/characters/human/face_stats.json",
+			"author": "Flickr-Faces-HQ (FFHQ)",
+			"source": "NVIDIA",
+			"id": "",
+			"url": "https://github.com/NVlabs/ffhq-dataset",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "factory.png",
 			"path": "res://assets/textures/map_markers/factory.png",
 			"author": "WarpZone",
@@ -1317,6 +1380,24 @@
 			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "female_casualsuit01_*",
+			"path": "res://assets/_universe/characters/human/textures/female_casualsuit01_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "female_casualsuit02_*",
+			"path": "res://assets/_universe/characters/human/textures/female_casualsuit02_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
 		},
 		{
 			"asset": "fire_station.png",
@@ -1490,6 +1571,33 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "hair_shell.png",
+			"path": "res://assets/_universe/characters/human/hair/hair_shell.png",
+			"author": "ddurieux",
+			"source": "Discord",
+			"id": "456525763215228948",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hair_stats.json",
+			"path": "res://assets/_universe/characters/human/hair_stats.json",
+			"author": "FFHQ features",
+			"source": "Brno University of Technology (DCGM)",
+			"id": "",
+			"url": "https://github.com/DCGM/ffhq-features-dataset",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "hair_stats.json",
+			"path": "res://assets/_universe/characters/human/hair_stats.json",
+			"author": "Flickr-Faces-HQ (FFHQ)",
+			"source": "NVIDIA",
+			"id": "",
+			"url": "https://github.com/NVlabs/ffhq-dataset",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "hammerdrill-v2.glb",
 			"path": "res://assets/_universe/props/tools/tools/mining/hammerdrill-v2.glb",
 			"author": "Sir de XanTiuM",
@@ -1533,6 +1641,51 @@
 			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "human_bank.res",
+			"path": "res://assets/_universe/characters/human/human_bank.res",
+			"author": "Ava-256 (the nose bridge's shapes, measured on its 3D faces)",
+			"source": "Meta Platforms",
+			"id": "",
+			"url": "https://github.com/facebookresearch/ava-256",
+			"license": "CC BY-NC 4.0"
+		},
+		{
+			"asset": "human_bank.res",
+			"path": "res://assets/_universe/characters/human/human_bank.res",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "human_bank.res",
+			"path": "res://assets/_universe/characters/human/human_bank.res",
+			"author": "FLAME 2023 Open (identity directions carried onto the Vitruvian head)",
+			"source": "Max Planck Institute for Intelligent Systems",
+			"id": "",
+			"url": "https://flame.is.tue.mpg.de",
+			"license": "CC BY 4.0"
+		},
+		{
+			"asset": "human_bank.res",
+			"path": "res://assets/_universe/characters/human/human_bank.res",
+			"author": "Hopefullyidont1 (Vitruvian Project)",
+			"source": "Blender Artists",
+			"id": "",
+			"url": "https://blenderartists.org/t/open-source-customizable-digital-human-vitruvian-project/1457388",
+			"license": "CC0"
+		},
+		{
+			"asset": "humanshaders_micro_detail.png",
+			"path": "res://assets/_universe/characters/human/skin/humanshaders_micro_detail.png",
+			"author": "MatMADNESS",
+			"source": "GitHub",
+			"id": "",
+			"url": "https://github.com/matmadness/HumanShaders",
+			"license": "MIT"
 		},
 		{
 			"asset": "icon_plate_content.png",
@@ -1632,6 +1785,42 @@
 			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "male_casualsuit01_*",
+			"path": "res://assets/_universe/characters/human/textures/male_casualsuit01_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "male_casualsuit02_*",
+			"path": "res://assets/_universe/characters/human/textures/male_casualsuit02_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "male_casualsuit04_*",
+			"path": "res://assets/_universe/characters/human/textures/male_casualsuit04_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "male_worksuit01_*",
+			"path": "res://assets/_universe/characters/human/textures/male_worksuit01_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
 		},
 		{
 			"asset": "man_ddurieux.glb",
@@ -2120,6 +2309,42 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "selfie_multiclass.onnx",
+			"path": "res://assets/_universe/characters/human/face_models/selfie_multiclass.onnx",
+			"author": "Selfie multiclass segmentation 256x256",
+			"source": "Google MediaPipe",
+			"id": "",
+			"url": "https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter",
+			"license": "Apache-2.0"
+		},
+		{
+			"asset": "shoes01_*",
+			"path": "res://assets/_universe/characters/human/textures/shoes01_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "shoes03_*",
+			"path": "res://assets/_universe/characters/human/textures/shoes03_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "shoes04_*",
+			"path": "res://assets/_universe/characters/human/textures/shoes04_albedo.webp",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
 			"asset": "shop.png",
 			"path": "res://assets/textures/map_markers/shop.png",
 			"author": "WarpZone",
@@ -2134,6 +2359,15 @@
 			"author": "Irong",
 			"source": "Discord",
 			"id": "238210426100383744",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "skin_detail_*",
+			"path": "res://assets/_universe/characters/human/skin/skin_detail_arms_regions.webp",
+			"author": "ddurieux",
+			"source": "Discord",
+			"id": "456525763215228948",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -2325,6 +2559,15 @@
 			"id": "111043432687874048",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "vitruvian_*",
+			"path": "res://assets/_universe/characters/human/skin/vitruvian_arms_age_normal.webp",
+			"author": "Hopefullyidont1",
+			"source": "Blender Artists",
+			"id": "",
+			"url": "https://blenderartists.org/t/open-source-customizable-digital-human-vitruvian-project/1457388",
+			"license": "CC0"
 		},
 		{
 			"asset": "wardrobe.glb",
