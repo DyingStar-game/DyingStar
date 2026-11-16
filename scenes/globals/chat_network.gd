@@ -457,6 +457,8 @@ func active_channels() -> Array:
 	var result: Array = []
 	for channel in _STATIC_TOPICS:
 		result.append(channel)
+	# SAY needs no broker: it travels over the game connection (see SayMessage).
+	result.append(DirectChat.ChannelE.SAY)
 	for channel in _TOPIC_TEMPLATES:
 		if _resolve_id(channel) != "":
 			result.append(channel)

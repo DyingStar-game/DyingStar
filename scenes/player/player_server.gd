@@ -856,10 +856,11 @@ func server_action_received(data: Dictionary) -> void:
 					if rel_depot != null and rel_depot.has_method("release_reception"):
 						rel_depot.release_reception(player.client_uuid)
 		"dialog":
-			# Queue only — _server_update_dialog owns the pacing and the actual send.
+			# Queue only — _server_update_dialog owns the pacing and the actual send. Player and NPC go through
+			# the same check (SayMessage.check); a rejected line is reported to its speaker, never dropped silently.
 			var text = data.get("text", null)
-			if text != null and str(text) != "":
-				_dialog_queue.append(str(text))
+			if text != null:
+				_server_say(str(text))
 		"action":
 			print("action key pressed by player")
 			if player.hands_item != null:
@@ -1272,6 +1273,7 @@ func _physics_process_impl(delta: float) -> void:
 		return
 	# Before the seat / NPC early-returns below: an NPC returns out of this function, and an NPC is
 	# precisely who does the talking.
+	_say_since_last += delta
 	_server_update_dialog(delta)
 	if is_instance_valid(player.lying_on):
 		# Lying on a bed: the body on its lie point, the lay clip lays it down (BedSpot).
@@ -3265,6 +3267,33 @@ func _server_update_dialog(delta: float) -> void:
 	player.server_send_properties_to_client({"conversation": _dialog_queue.pop_front()})
 	_dialog_active = true
 	_dialog_timer = _DIALOG_LINE_INTERVAL
+
+## Seconds since the last line this player said, for the anti-spam gap (SayMessage.MIN_INTERVAL).
+var _say_since_last: float = 1000.0
+
+## Server: a line said by this body, a player's (SAY channel) or an NPC's (AI). It goes into the dialog
+## queue, so it is paced, replicated (`conversation`) and shown the same way for both. SayMessage.check
+## decides; a rejected line is not queued and its speaker is told why ([method _server_say_rejected]).
+func _server_say(raw: String) -> void:
+	var error := SayMessage.check(raw, _say_since_last, _dialog_queue.size(), player.is_npc)
+	if error != "":
+		_server_say_rejected(error)
+		return
+	_say_since_last = 0.0
+	_dialog_queue.append(SayMessage.sanitize(raw))
+
+## Tell the speaker its line was rejected so it can try again: the reason travels as the `say_rejected`
+## property of the speaker's GORC object, for a player and for an NPC alike (whoever controls the body
+## reads it there). An NPC's is also logged on the server, since nobody may be reading the property yet.
+func _server_say_rejected(error: String) -> void:
+	if player.is_npc:
+		push_warning("NPC %s: line rejected (%s)" % [player.name, error])
+	# Numbered: the same reason twice in a row must still be a NEW value on the replicated field.
+	_say_reject_count += 1
+	player.server_send_properties_to_client({"say_rejected": "%s:%d" % [error, _say_reject_count]})
+
+## Rejections sent so far, see _server_say_rejected.
+var _say_reject_count: int = 0
 
 ## Farthest (m) the replicated eye may sit from the camera pivot's rest: a crouch or a lean is well
 ## inside, a client asking for an eye beside the crate it wants is not.
