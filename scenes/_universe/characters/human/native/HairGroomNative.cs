@@ -348,9 +348,13 @@ public partial class HairGroomNative : RefCounted
         Vector3 point = root;
         var output = new Vector3[n];
         output[0] = root;
+        double ownReach = style[CombReach];
         for (int k = 0; k < seg; k++)
         {
             double t = (double)(k + 1) / seg;
+            // A front hair combed aside all along is, once beside the face, combed no further than the cut's.
+            if (reach > ownReach && Math.Abs((double)point.X - (double)_centre.X) > FaceHalfWidth)
+                reach = ownReach;
             Vector3 want = Mul(direction, stiff) + Mul(Mul(Vector3.Down, gravity), 0.4 + 0.6 * t)
                 + Mul(Mul(Mul(Flow(flow, point, style, tie), style[Comb]), Math.Max(0.0, 1.0 - t / reach)),
                     1.0 - QuiffCombDelay * quiff * (1.0 - t))
@@ -622,6 +626,97 @@ public partial class HairGroomNative : RefCounted
             }
         }
         return new Godot.Collections.Array { pos, nrm, tan, uv, col, index };
+    }
+
+    /// <summary>
+    /// HairVolume.build: [origin (Vector3), size (Vector3), dims (Vector3I), cell (double), data (float[]: per cell,
+    /// the extinction then the optical depth from outside)] of a strand mesh's hairs; empty without hairs. Same
+    /// loops and order as the GDScript, which holds their reasons.
+    /// </summary>
+    public Godot.Collections.Array Density(Vector3[] pos, Color[] col, int size, double width, int resolution, int margin)
+    {
+        int count = size > 1 ? pos.Length / (2 * size) : 0;
+        if (count == 0)
+            return new Godot.Collections.Array();
+        Vector3 lo = pos[0], hi = pos[0];
+        for (int i = 0; i < pos.Length; i += 2)
+        {
+            lo = lo.Min(pos[i]);
+            hi = hi.Max(pos[i]);
+        }
+        Vector3 extent = hi - lo;
+        double cell = Math.Max(Math.Max(extent.X, Math.Max(extent.Y, extent.Z)) / (resolution - 2 * margin), 0.001);
+        int nx = Math.Clamp((int)Math.Ceiling(extent.X / cell) + 2 * margin, 1, resolution);
+        int ny = Math.Clamp((int)Math.Ceiling(extent.Y / cell) + 2 * margin, 1, resolution);
+        int nz = Math.Clamp((int)Math.Ceiling(extent.Z / cell) + 2 * margin, 1, resolution);
+        Vector3 origin = lo - Vector3.One * (margin * cell);
+        int nxy = nx * ny;
+        int cells = nxy * nz;
+        var sigma = new float[cells];
+        double perCell = width / (cell * cell * cell);
+        double inv = 1.0 / cell;
+        for (int h = 0; h < count; h++)
+        {
+            int b = h * size * 2;
+            if (col[b].G > col[b].A * 1.4 + 0.1)
+                continue;
+            Vector3 prev = pos[b];
+            for (int k = 1; k < size; k++)
+            {
+                Vector3 p = pos[b + k * 2];
+                Vector3 at = ((prev + p) * 0.5 - origin) * inv;
+                int ix = Math.Clamp((int)at.X, 0, nx - 1), iy = Math.Clamp((int)at.Y, 0, ny - 1), iz = Math.Clamp((int)at.Z, 0, nz - 1);
+                int c = ix + iy * nx + iz * nxy;
+                sigma[c] = (float)(sigma[c] + prev.DistanceTo(p) * perCell);
+                prev = p;
+            }
+        }
+        int[] steps = { 1, nx, nxy };
+        int[] counts = { nx, ny, nz };
+        for (int axis = 0; axis < 3; axis++)
+        {
+            var blurred = new float[cells];
+            int step = steps[axis], n = counts[axis];
+            for (int i = 0; i < cells; i++)
+            {
+                int k = (i / step) % n;
+                double before = k > 0 ? sigma[i - step] : 0.0;
+                double after = k < n - 1 ? sigma[i + step] : 0.0;
+                blurred[i] = (float)(0.5 * sigma[i] + 0.25 * (before + after));
+            }
+            sigma = blurred;
+        }
+        var light = new float[cells];
+        for (int axis = 0; axis < 3; axis++)
+        {
+            int step = steps[axis], n = counts[axis];
+            for (int i = 0; i < cells; i++)
+            {
+                if ((i / step) % n != 0)
+                    continue;
+                double tau = 0.0;
+                for (int k = 0; k < n; k++)
+                {
+                    int c = i + k * step;
+                    light[c] = (float)(light[c] + Math.Exp(-(tau + 0.5 * sigma[c] * cell)));
+                    tau += sigma[c] * cell;
+                }
+                tau = 0.0;
+                for (int k = n - 1; k >= 0; k--)
+                {
+                    int c = i + k * step;
+                    light[c] = (float)(light[c] + Math.Exp(-(tau + 0.5 * sigma[c] * cell)));
+                    tau += sigma[c] * cell;
+                }
+            }
+        }
+        var data = new float[cells * 2];
+        for (int i = 0; i < cells; i++)
+        {
+            data[i * 2] = sigma[i];
+            data[i * 2 + 1] = (float)(-Math.Log(Math.Max(light[i] / 6.0, 1e-6)));
+        }
+        return new Godot.Collections.Array { origin, new Vector3(nx, ny, nz) * cell, new Vector3I(nx, ny, nz), cell, data };
     }
 
     /// <summary>Godot's RandomNumberGenerator (core/math/random_pcg.h): PCG32 on its default stream; randf

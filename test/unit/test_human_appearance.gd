@@ -149,7 +149,7 @@ func test_hair_goes_on_the_body_and_brows_on_the_head() -> void:
 		var asset: HumanAssetData = baked.surface_assets[s]
 		if asset.kind == &"hair":
 			shells += 1
-			assert_eq(asset.style, &"shell", "on the body's mesh, only the scalp's shell")
+			assert_true(asset.style in [&"shell", &"scalp"], "on the body's mesh, only the scalp's shell or shade")
 			assert_eq(asset.color.size(), asset.vertex.size(), "hair carries a colour per vertex, for its shader")
 			assert_not_null(baked.mesh.surface_get_arrays(s)[Mesh.ARRAY_COLOR])
 			assert_true(CharacterMaterials.human_material(asset, look) is ShaderMaterial)

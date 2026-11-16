@@ -70,26 +70,35 @@ func grow(cut: BeardCut) -> Array[HumanAssetData]:
 			d = minf(d, lerpf(0.0, 1.0, cut.connect) + (1.0 - mouth_side))
 		density[v] = d
 		under_nose[v] = _head.beard_zones[v * 4]
-	var out: Array[HumanAssetData] = [_shell(cut, density)]
-	if not cut.shell_only():
+	# First the skin's shade under the beard, then its stubble or its hairs over it.
+	var out: Array[HumanAssetData] = [_shell(cut, density, true)]
+	if cut.shell_only():
+		out.append(_shell(cut, density, false))
+	else:
 		var hairs: HumanAssetData = _hairs(cut, density, under_nose)
 		if hairs != null:
 			out.append(hairs)
 	return out
 
 
-func _shell(cut: BeardCut, density: PackedFloat32Array) -> HumanAssetData:
-	var layers: int = 3
+## The face's triangles where the beard grows, lifted off the skin. [param shade]: the skin seen through the
+## beard (style "scalp", human_hair_scalp.gdshader), one layer as opaque as the beard is dense. Else a
+## stubble's hairs seen end-on (style "shell", human_hair_shell.gdshader): its cap of dots (no more than the
+## shell's cap_share of them, over the shade: a whole cap drew a black block over the lip), then the tips, then
+## the layer between.
+func _shell(cut: BeardCut, density: PackedFloat32Array, shade: bool) -> HumanAssetData:
+	var heights: PackedFloat32Array = [0.0] if shade else [0.0, 1.0, 0.5]  # the cap and the tips: from afar enough
 	var height: float = clampf(cut.hair_length(), 0.0012, 0.004)
 	var first: float = 0.0003
-	var over: float = 0.0 if cut.shell_only() else 1.0  # hairs lie over it (human_hair_shell.gdshader)
+	var over: float = 0.0 if cut.shell_only() else 1.0  # hairs lie over it
+	var cover: float = clampf(cut.density * 1.6, 0.0, 1.0)
 	var render: int = _head.beard_shell_vertex.size()
 	var asset := HumanAssetData.new()
 	asset.kind = &"beard"
 	asset.part = 0
 	asset.id = StringName("beard_" + cut.key())
 	asset.gender = &"male"
-	asset.style = &"shell"
+	asset.style = &"scalp" if shade else &"shell"
 	asset.albedo = load("res://assets/_universe/characters/human/hair/hair_shell.png")
 	asset.scale_pairs = PackedInt32Array([-1, -1, -1, -1, -1, -1])
 	asset.scale_ref = PackedFloat32Array([1.0, 1.0, 1.0])
@@ -100,9 +109,10 @@ func _shell(cut: BeardCut, density: PackedFloat32Array) -> HumanAssetData:
 			any = any or density[_head.beard_shell_vertex[_head.beard_shell_index[t * 3 + j]]] > 0.004
 		if any:
 			tris.append_array(_head.beard_shell_index.slice(t * 3, t * 3 + 3))
-	for layer in layers:
-		var t: float = float(layer) / (layers - 1)
-		var lift: float = first + (height - first) * t
+	for layer in heights.size():
+		var t: float = heights[layer]
+		# The shade under a stubble's cap, not level with it (they would fight for the same depth).
+		var lift: float = first * 0.5 if shade else first + (height - first) * t
 		for r in render:
 			var v: int = _head.beard_shell_vertex[r]
 			var compact: int = _head.beard_vertex[v]
@@ -114,11 +124,12 @@ func _shell(cut: BeardCut, density: PackedFloat32Array) -> HumanAssetData:
 			asset.tangent.append_array(_head.beard_shell_tangent.slice(r * 4, r * 4 + 4))
 			asset.bones.append_array([_head.head_bone, 0, 0, 0])
 			asset.bone_weights.append_array([1.0, 0.0, 0.0, 0.0])
-			asset.color.append(Color(over, _rng.randf(), t, density[v] * clampf(cut.density * 1.6, 0.0, 1.0)))
-	for layer in [0, layers - 1, 1]:
+			asset.color.append(Color(over, _rng.randf(), t, density[v] * cover))
+	for layer in heights.size():
 		for k in tris.size():
 			asset.index.append(tris[k] + layer * render)
-	asset.lods = PackedFloat32Array([0.008, 1.0 / layers])
+	if heights.size() > 1:
+		asset.lods = PackedFloat32Array([0.008, 1.0 / heights.size()])
 	return asset
 
 

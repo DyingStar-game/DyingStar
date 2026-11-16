@@ -56,6 +56,10 @@ extends Resource
 @export var strand_points: PackedVector3Array
 ## Points per guide strand of strand_points.
 @export var strand_size: int = 0
+## Per guide strand: how far from its root it starts to move (HairMotion), m -- or a code: below 0, that many
+## times the shaders' fixed_length (a loose cut's hairs); HairMotionBinding.RIGID or more, never (the scalp's hairs
+## of a tied cut, gathered to their tie). Empty: the whole style is rigid.
+@export var strand_free: PackedFloat32Array
 ## How hairs are made around a guide: children (hairs per guide), clump (m: how far from the guide a
 ## hair's root may be), clump_tip (share of that left at the tip), frizz (m: how far a hair strays),
 ## longest (m: the style's longest strand, what the length slider cuts against), centre (the skull's).

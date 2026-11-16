@@ -20,9 +20,12 @@ func test_every_preset_grows_hair_on_the_scalp_and_out_of_the_head() -> void:
 		var started: int = Time.get_ticks_msec()
 		var made: Array[HumanAssetData] = HairGroom.new(head).grow(HairCut.preset(id))
 		var ms: int = Time.get_ticks_msec() - started
-		assert_eq(made[0].style, &"shell", "%s: a shell first" % id)
+		var cut := HairCut.preset(id)
+		# Under strands over the whole head, the scalp seen through them; a buzz cut and shaved sides, the shell.
+		var covered: bool = not cut.shell_only() and cut.side_length() >= HairCut.SHELL_ONLY_BELOW
+		assert_eq(made[0].style, &"scalp" if covered else &"shell", "%s: a scalp or a shell first" % id)
 		assert_gt(made[0].index.size(), 0, "%s: the shell has triangles" % id)
-		if HairCut.preset(id).shell_only():
+		if cut.shell_only():
 			assert_eq(made.size(), 1, "%s: a stubble is its shell alone" % id)
 			continue
 		var strands: HumanAssetData = made[1]
@@ -86,10 +89,14 @@ func test_every_beard_preset_grows_on_the_face() -> void:
 	for id: String in BeardCut.PRESETS:
 		var cut := BeardCut.preset(id)
 		var made: Array[HumanAssetData] = BeardGroom.new(head).grow(cut)
-		assert_eq(made[0].style, &"shell", "%s: a shell first" % id)
-		assert_gt(made[0].index.size(), 0, "%s: the shell has triangles" % id)
+		# First the skin seen through the beard (one layer), then its stubble or its hairs.
+		assert_eq(made[0].style, &"scalp", "%s: the skin's shade first" % id)
+		assert_gt(made[0].index.size(), 0, "%s: the shade has triangles" % id)
+		assert_eq(made[0].vertex.size(), head.beard_shell_vertex.size(), "%s: one layer of shade" % id)
 		if cut.shell_only():
-			assert_eq(made.size(), 1, "%s: a stubble is its shell alone" % id)
+			assert_eq(made.size(), 2, "%s: a stubble is its shade and its shell" % id)
+			assert_eq(made[1].style, &"shell", "%s: the stubble's shell" % id)
+			assert_eq(made[1].vertex.size(), head.beard_shell_vertex.size() * 3, "%s: its cap and two layers" % id)
 			continue
 		var hairs: HumanAssetData = made[1]
 		assert_eq(hairs.style, &"hairs")

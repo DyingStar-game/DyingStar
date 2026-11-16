@@ -145,6 +145,27 @@ func head_mesh() -> MeshInstance3D:
 	return _head
 
 
+## The skeleton the body hangs on, or null.
+func skeleton() -> Skeleton3D:
+	return _skeleton
+
+
+## The grown head of hair's asset shown (its style), or null.
+func hair_asset() -> HumanAssetData:
+	return _baked.hair_asset if _baked != null else null
+
+
+## The capsules the hair keeps out of (HumanBuilder.Baked.hair_colliders): [bone name, a, b, radius].
+func hair_colliders() -> Array:
+	return _baked.hair_colliders if _baked != null else []
+
+
+## The beard's length as the strands shader measures along its hairs (m: BeardGroom's colour), 0 without hairs.
+func beard_length() -> float:
+	var cut: BeardCut = appearance.beard_grown() if appearance != null else null
+	return 0.0 if cut == null or cut.shell_only() else cut.hair_length() * 1.15
+
+
 ## Turn the face's blend shapes on or off (see face_life). The live head shows once baked.
 func set_life(on: bool) -> void:
 	if on == face_life:
@@ -316,6 +337,10 @@ func _apply_look() -> void:
 	_dress(_head, _live.head_surface_assets if _live != null else _baked.head_surface_assets)
 	if _hair != null:
 		_dress(_hair, [_baked.hair_asset])
+	# Its hair moves past its fixed length (client side: none on a server).
+	var motion: HairMotion = HairMotion.of(self)
+	if motion != null:
+		motion.track(self)
 	# The local player's mirror double copies meshes, materials and colours: copy them again.
 	var double := _skeleton.get_parent().get_node_or_null(NodePath(MirrorDouble.NODE_NAME)) as MirrorDouble
 	if double != null:

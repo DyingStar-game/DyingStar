@@ -48,7 +48,8 @@ static func _posed_skeleton(player: Node) -> Skeleton3D:
 
 
 ## Per-avatar colours of the character shaders (HumanAppearance), copied onto the double's meshes.
-const INSTANCE_PARAMETERS: Array[StringName] = [&"skin_look", &"hair_colour", &"eye_colour", &"hair_look", &"skin_detail", &"skin_marks"]
+const INSTANCE_PARAMETERS: Array[StringName] = [&"skin_look", &"hair_colour", &"eye_colour", &"hair_look", &"skin_detail", &"skin_marks",
+		&"hair_motion"]
 
 var _faces: Array = []  # [source MeshInstance3D, copy] of the meshes with blend shapes (the face units)
 

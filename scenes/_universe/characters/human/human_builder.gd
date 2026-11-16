@@ -44,6 +44,8 @@ class Baked:
 	var hair_transform := Transform3D.IDENTITY
 	## The asset hair_mesh was made from (its material).
 	var hair_asset: HumanAssetData
+	## The capsules the hair keeps out of (HairMotion): [bone name, a, b (bone space), radius (m)] per bone.
+	var hair_colliders: Array = []
 	## Global rest of each bank bone (HumanBank.bone_names order), skeleton space, soles at y = 0.
 	var rests: Array[Transform3D] = []
 	## Height of the hips joint at rest (m): the skeleton's motion_scale.
@@ -84,6 +86,14 @@ const LOD_NORMAL_SPLIT_DEG: float = 60.0
 const WORN_KINDS: Array[String] = ["eyebrows", "eyelashes", "hair", "beard", "outfit"]
 ## Worn assets that hang on the face's skin and move with it: in the head mesh, with its blend shapes.
 const FACE_KINDS: Array[String] = ["eyebrows", "eyelashes", "beard"]
+## The capsules a head of hair's strands keep out of (HairMotion), where long hair lies: [the bone that carries it (and
+## whose skin and cloth measure its radius), the joints it runs between, optionally the band (m, up and down) of the
+## skin measured]. The neck; the top of the chest across, from one shoulder joint to the other, measured at their
+## height (a torso is wide and thin: round about its spine, it pushed the hair 20 cm off the back; measured all down
+## the chest, 24 cm); the collarbones; the upper arms.
+const HAIR_COLLIDERS: Array = [["Neck", "Neck", "Head"], ["UpperChest", "LeftUpperArm", "RightUpperArm", 0.05],
+		["LeftShoulder", "LeftShoulder", "LeftUpperArm"], ["RightShoulder", "RightShoulder", "RightUpperArm"],
+		["LeftUpperArm", "LeftUpperArm", "LeftLowerArm"], ["RightUpperArm", "RightUpperArm", "RightLowerArm"]]
 ## Material zones of the body mesh; every other zone (face, eyes, mouth...) is the head's.
 const BODY_ZONES: Array[String] = ["Torso", "Arms", "Legs"]
 ## The blend shapes of a live head, in order: [name, {bank target: weight}]. Sides are the CHARACTER's
@@ -140,6 +150,7 @@ static func warm() -> bool:
 		# The C# twins are made here, on the main thread; the workers only fill them.
 		var native: Object = HumanMorph.native_instance()
 		HairGroom.adopt_native(HairGroom.native_instance())
+		HairMotionBinding.adopt_native(HairMotionBinding.native_instance())
 		_warm_task = WorkerThreadPool.add_task(_prepare_now.bind(native), false, "HumanBuilder.warm")
 		return false
 	if _warm_task >= 0 and WorkerThreadPool.is_task_completed(_warm_task):
@@ -156,6 +167,7 @@ static func prepare() -> HumanMorph:
 			_warm_task = -2
 		else:
 			HairGroom.adopt_native(HairGroom.native_instance())
+			HairMotionBinding.adopt_native(HairMotionBinding.native_instance())
 			_prepare_now(HumanMorph.native_instance())
 	return HumanMorph.shared()
 
@@ -275,7 +287,7 @@ static func build(order: Order, template: Array[Transform3D]) -> Baked:
 
 	var baked := Baked.new()
 	baked.shape_hash = order.shape_hash
-	_pose_skeleton(baked, bank, points, template)
+	var joints: PackedVector3Array = _pose_skeleton(baked, bank, points, template)
 
 	baked.live = order.live
 	var worn: Array[HumanAssetData] = order.assets.duplicate()
@@ -288,6 +300,8 @@ static func build(order: Order, template: Array[Transform3D]) -> Baked:
 		var hair: Array[HumanAssetData] = HairGroom.assets_for(order.hair_cut)
 		for k in hair.size():
 			worn.insert(order.hair_at + k, hair[k])
+	if not order.live:
+		baked.hair_colliders = _hair_colliders(baked, bank, morph, points, joints, worn)
 	var hidden := PackedByteArray()
 	hidden.resize(points.size())
 	for asset in worn:
@@ -412,9 +426,62 @@ static func _slice(surface: Array, a: int, b: int) -> Array:
 			(surface[2] as PackedFloat32Array).slice(a * 4, b * 4)]
 
 
+## The capsules a head of hair's strands keep out of (HairMotion): per bone of HAIR_COLLIDERS, [bone name, the
+## segment from its joint to its child's (in the bone's own space: the skeleton's pose carries it), radius (m)] --
+## the radius the 90th percentile of how far the body's skin and the worn outfit's cloth on that bone lie from the
+## segment: a thick collar makes a thicker neck.
+static func _hair_colliders(baked: Baked, bank: HumanBank, morph: HumanMorph, points: PackedVector3Array,
+		joints: PackedVector3Array, worn: Array[HumanAssetData]) -> Array:
+	var bones: Dictionary = {}  # bone index -> [from joint, to joint, body distances, cloth distances]
+	for entry: Array in HAIR_COLLIDERS:
+		var b: int = bank.bone_names.find(entry[0])
+		var from: int = bank.bone_names.find(entry[1])
+		var to: int = bank.bone_names.find(entry[2])
+		if b != -1 and from != -1 and to != -1:
+			# Arrays: a Packed one in an Array is a copy, appends to it are lost.
+			bones[b] = [joints[from], joints[to], [], [], float(entry[3]) if entry.size() > 3 else INF]
+	for v in points.size():
+		var b: int = bank.skin_bones[v * 4]
+		if bones.has(b) and bank.skin_weights[v * 4] >= 0.5:
+			_collider_sample(bones[b], 2, points[v])
+	for asset in worn:
+		if asset.kind != &"outfit" or asset.bones.is_empty():
+			continue
+		var fitted: PackedVector3Array = morph.fit(points, asset)
+		for r in asset.vertex.size():
+			var b: int = asset.bones[r * 4]
+			if bones.has(b) and asset.bone_weights[r * 4] >= 0.5:
+				_collider_sample(bones[b], 3, fitted[asset.vertex[r]])
+	var out: Array = []
+	for b: int in bones:
+		var radius: float = maxf(_percentile(bones[b][2], 0.9), _percentile(bones[b][3], 0.9))
+		if radius <= 0.0:
+			continue
+		var bind: Transform3D = baked.skin.get_bind_pose(b)
+		out.append([bank.bone_names[b], bind * (bones[b][0] as Vector3), bind * (bones[b][1] as Vector3), radius])
+	return out
+
+
+static func _collider_sample(entry: Array, slot: int, p: Vector3) -> void:
+	var a: Vector3 = entry[0]
+	var ab: Vector3 = (entry[1] as Vector3) - a
+	var t: float = (p - a).dot(ab) / maxf(ab.length_squared(), 1e-12)
+	if t >= 0.0 and t <= 1.0 and absf(p.y - (a.y + ab.y * t)) <= float(entry[4]):
+		(entry[slot] as Array).append(p.distance_to(a + ab * t))
+
+
+static func _percentile(values: Array, share: float) -> float:
+	if values.is_empty():
+		return 0.0
+	var sorted := PackedFloat32Array(values)
+	sorted.sort()
+	return sorted[mini(int(share * sorted.size()), sorted.size() - 1)]
+
+
 ## The skeleton of a body: joints on the mesh (A pose), each bone's turn to the template's direction, the
 ## T-pose rests with the soles on y = 0, and the binds that carry mesh vertices there.
-static func _pose_skeleton(baked: Baked, bank: HumanBank, points: PackedVector3Array, template: Array[Transform3D]) -> void:
+static func _pose_skeleton(baked: Baked, bank: HumanBank, points: PackedVector3Array,
+		template: Array[Transform3D]) -> PackedVector3Array:
 	var count: int = bank.bone_names.size()
 	var weighted: bool = bank.joint_weight.size() == bank.joint_index.size()
 	var joints := PackedVector3Array()
@@ -459,6 +526,7 @@ static func _pose_skeleton(baked: Baked, bank: HumanBank, points: PackedVector3A
 		baked.rests.append(rest)
 		baked.skin.add_named_bind(bank.bone_names[b], rest.affine_inverse() * carry)
 	baked.hips_height = baked.rests[_hips].origin.y if _hips != -1 else 1.0
+	return joints
 
 
 static func _add_surface(importer: ImporterMesh, surface: Array, uv: PackedVector2Array, index: PackedInt32Array,

@@ -85,7 +85,7 @@ const FLYAWAY_LENGTH := Vector2(0.25, 0.8)
 ## How much of the comb a quiff's hairs are spared at the root (none at the tip): they stand, then lie back.
 const QUIFF_COMB_DELAY: float = 1.0
 ## How hairs gather around their guide (HairStrands): clump (m), clump_tip, frizz (m), per kind of hair.
-const KINDS: Array = [[0.004, 0.8, 0.0008], [0.005, 0.6, 0.002], [0.003, 0.7, 0.001], [0.006, 1.0, 0.004]]
+const KINDS: Array = [[0.004, 0.92, 0.0008], [0.005, 0.75, 0.002], [0.003, 0.7, 0.001], [0.006, 1.0, 0.004]]
 
 const NATIVE_PATH: String = "res://scenes/_universe/characters/human/native/HairGroomNative.cs"
 ## The style's knobs handed to the C# twin, in its order (HairGroomNative's constants).
@@ -153,6 +153,7 @@ static func assets_for(cut: HairCut) -> Array[HumanAssetData]:
 		return found
 	_mutex.unlock()
 	var made: Array[HumanAssetData] = HairGroom.new(HairHead.shared()).grow(cut)
+	var dropped: Array = []
 	_mutex.lock()
 	if _cache.has(key):  # another worker made it meanwhile: keep one
 		made = _cache[key]
@@ -161,10 +162,13 @@ static func assets_for(cut: HairCut) -> Array[HumanAssetData]:
 		_order.append(key)
 		while _order.size() > CAPACITY:
 			var old: String = _order.pop_front()
-			for asset: HumanAssetData in _cache[old]:
-				HairStrands.forget(asset)
+			dropped.append_array(_cache[old])
 			_cache.erase(old)
 	_mutex.unlock()
+	# Outside the mutex: HairStrands holds its lock while it builds, and asks for the C# twin (this mutex)
+	# meanwhile -- forgetting under this one deadlocked a worker against another.
+	for asset: HumanAssetData in dropped:
+		HairStrands.forget(asset)
 	return made
 
 
@@ -217,7 +221,7 @@ static func style_of(cut: HairCut) -> Dictionary:
 	s["comb"] = lerpf(0.7, 1.0, smoothstep(0.03, 0.12, top)) * (1.0 - 0.9 * coily)
 	s["comb_reach"] = 0.3 if top > 0.18 else 2.0
 	s["stiff"] = 0.5 - 0.2 * coily
-	s["volume"] = lerpf(0.004, 0.016, cut.volume) + 0.03 * coily
+	s["volume"] = lerpf(0.007, 0.016, cut.volume) + 0.03 * coily
 	s["frizz"] = 0.03 + 0.04 * c + 0.85 * coily
 	s["curl"] = 0.0 if c < 0.15 else lerpf(0.004, 0.009, curly) * (1.0 - 0.7 * coily)
 	s["pitch"] = lerpf(0.08, 0.045, curly) * (1.0 - 0.6 * coily)
@@ -552,8 +556,14 @@ func _grow_one(root: Vector3, normal: Vector3, length: float, layer: float, styl
 	var direction: Vector3 = (normal * lift + comb.normalized() * (1.0 - lift)).normalized()
 	var point: Vector3 = root
 	var out := PackedVector3Array([root])
+	var own_reach: float = float(style["comb_reach"])
 	for k in seg:
 		var t: float = float(k + 1) / seg
+		# A front hair combed aside all along (_strands: so it does not fall over the face) is, once beside the face,
+		# combed no further than the cut's: it falls with the others. Combed on, a long hair went on sideways to its
+		# tip and stood out diagonally from the side of the head.
+		if reach > own_reach and absf(point.x - _head.centre.x) > FACE_HALF_WIDTH:
+			reach = own_reach
 		var want: Vector3 = direction * stiff + Vector3.DOWN * gravity * (0.4 + 0.6 * t) \
 				+ _flow(style["flow"], point, style) * float(style["comb"]) * maxf(0.0, 1.0 - t / reach) \
 				* (1.0 - QUIFF_COMB_DELAY * quiff * (1.0 - t)) \
@@ -729,7 +739,29 @@ func _wrap(cut: HairCut, points: PackedVector3Array, n: int, colours: PackedColo
 	asset.offsets = offsets
 	asset.strand_params = {"children": 5, "clump": style["clump"], "clump_tip": style["clump_tip"],
 			"frizz": style["kind_frizz"], "longest": longest, "centre": [_head.centre.x, _head.centre.y, _head.centre.z]}
+	asset.strand_free = _free_from(cut, points, n, colours, weights)
 	return asset
+
+
+## Per guide, from how far along it the hair may move (HumanAssetData.strand_free): a loose cut's hairs past the
+## shaders' fixed length; a fringe's near its root (it is short); of a tied cut, the tail and the bun just past
+## the tie (their guides are rooted on it, weighted a third to each of the 3 scalp vertices nearest it), its
+## flyaways (R = 1, rooted on the scalp) like a loose cut's, the scalp's hairs never (gathered to the tie).
+func _free_from(cut: HairCut, points: PackedVector3Array, n: int, colours: PackedColorArray,
+		weights: PackedFloat32Array) -> PackedFloat32Array:
+	var free := PackedFloat32Array()
+	free.resize(colours.size())
+	for k in free.size():
+		var on_tie: bool = absf(weights[k * 3] - 1.0 / 3.0) < 1e-5 and absf(weights[k * 3 + 1] - 1.0 / 3.0) < 1e-5
+		var rel: Vector3 = points[k * n] - _head.centre
+		if cut.tie != HairCut.Tie.LOOSE and on_tie:
+			free[k] = HairMotionBinding.TAIL_FIXED if cut.tie == HairCut.Tie.PONYTAIL else HairMotionBinding.BUN_FIXED
+		elif cut.tie == HairCut.Tie.LOOSE or colours[k].r > 0.5:
+			var fringe: bool = cut.fringe >= 0.02 and rel.z > 0.045 and absf(rel.x) < 0.06
+			free[k] = HairMotionBinding.FRINGE_FIXED if fringe else HairMotionBinding.GLOBAL_FIXED
+		else:
+			free[k] = HairMotionBinding.RIGID
+	return free
 
 
 ## A scalp vertex's neutral position by its compact id.
@@ -740,11 +772,18 @@ func _bank_point(compact: int) -> Vector3:
 
 ## The shell: the scalp's triangles lifted in layers where hair grows (groom.shell), drawn as hair seen
 ## end-on (human_hair_shell.gdshader).
+## Under a head of hair whose strands cover it all (sides not shaved), only the cap, drawn as the scalp seen
+## through the hairs (style "scalp", human_hair_scalp.gdshader): a shade fading out over the whole hairline,
+## where the shell's cap appeared at a density of 0.85 and drew a hard edge inside it. A buzz cut and shaved
+## sides keep the shell: there it is the hair.
 func _shell(cut: HairCut, style: Dictionary, density: PackedFloat32Array) -> HumanAssetData:
 	var layers: int = style["shell_layers"]
 	var height: float = style["shell_height"]
 	var first: float = 0.0005
 	var under: float = 0.0 if cut.shell_only() else 1.0  # strands over it: the hairline is theirs
+	var scalp: bool = not cut.shell_only() and cut.side_length() >= HairCut.SHELL_ONLY_BELOW
+	if scalp:
+		layers = 1
 	var render: int = _head.shell_vertex.size()
 	var grain := PackedFloat32Array()
 	grain.resize(render)
@@ -763,7 +802,7 @@ func _shell(cut: HairCut, style: Dictionary, density: PackedFloat32Array) -> Hum
 	asset.part = 0
 	asset.id = StringName("cut_" + cut.key())
 	asset.gender = &"any"
-	asset.style = &"shell"
+	asset.style = &"scalp" if scalp else &"shell"
 	asset.albedo = load("res://assets/_universe/characters/human/hair/hair_shell.png")
 	asset.scale_pairs = PackedInt32Array([-1, -1, -1, -1, -1, -1])
 	asset.scale_ref = PackedFloat32Array([1.0, 1.0, 1.0])

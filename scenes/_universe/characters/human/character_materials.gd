@@ -21,6 +21,7 @@ const IRIS_SHADER := preload("res://assets/_universe/characters/human/shaders/hu
 const HAIR_SHADER := preload("res://assets/_universe/characters/human/shaders/human_hair.gdshader")
 const HAIR_STRANDS_SHADER := preload("res://assets/_universe/characters/human/shaders/human_hair_strands.gdshader")
 const HAIR_SHELL_SHADER := preload("res://assets/_universe/characters/human/shaders/human_hair_shell.gdshader")
+const HAIR_SCALP_SHADER := preload("res://assets/_universe/characters/human/shaders/human_hair_scalp.gdshader")
 
 enum Role { SKIN, EYE, HAIR, TEETH, TONGUE, CLOTH, SHOES }
 
@@ -41,12 +42,14 @@ const DARKEN_BY_KIND: Dictionary = {"eyebrows": 0.25, "eyelashes": 0.8}
 ## Width (m) of a hair of each kind drawn as hairs (human_hair_strands.gdshader); a head of hair's is
 ## HairStrands.HAIR_WIDTH.
 ## An eyebrow hair is ~0.1 mm thick at its root (a hair under a pixel covers its share of it:
-## human_hair_strands.gdshader); an eyelash ~0.15 mm at its root, tapering: drawn thinner, the lashes made no
-## dark line along the lid where a photo has one.
-const HAIR_WIDTH_BY_KIND: Dictionary = {"beard": 0.0006, "eyebrows": 0.00012, "eyelashes": 0.00018}
-## Highlight band of the hairs of each kind (human_hair_strands.gdshader sheen), when not the shader's: a
-## head of hair's band, on lashes a few pixels long, greys them.
-const SHEEN_BY_KIND: Dictionary = {"eyelashes": 0.0, "eyebrows": 0.02}
+## human_hair_strands.gdshader), but the brows were set by eye while every hair covered only min_coverage (the
+## shader's negative pixel size): drawn 0.05 mm, they keep that look -- at their true width they came out
+## twice as dark and heavy. An eyelash ~0.15 mm at its root, tapering: drawn thinner, the lashes made no dark
+## line along the lid where a photo has one.
+const HAIR_WIDTH_BY_KIND: Dictionary = {"beard": 0.0006, "eyebrows": 0.00005, "eyelashes": 0.00018}
+## Strength of the highlights of each kind of hair (human_hair_strands.gdshader spec_strength, 1 = a real
+## hair's), when not the shader's: a head of hair's bands, on lashes a few pixels long, grey them.
+const SPEC_BY_KIND: Dictionary = {"eyelashes": 0.0, "eyebrows": 0.3}
 ## Least opacity of a hair's strip of each kind (human_hair_strands.gdshader min_coverage), when not the
 ## shader's: eyebrows and lashes keep all their hairs at any distance, so a thin one may stay faint.
 const MIN_COVERAGE_BY_KIND: Dictionary = {"eyebrows": 0.05, "eyelashes": 0.18}
@@ -54,11 +57,23 @@ const MIN_COVERAGE_BY_KIND: Dictionary = {"eyebrows": 0.05, "eyelashes": 0.18}
 ## 4): a beard's stubble and a scalp's are finer than 1.5 mm dots, read as a shadow, not as spots (at a hairline, a
 ## dark ragged rim).
 const SHELL_TILING_BY_KIND: Dictionary = {"beard": 12.0, "hair": 12.0}
+## How much of the skin under its hairs each kind hides where it is dense (human_hair_scalp.gdshader
+## scalp_cover), when not the shader's: FFHQ's bearded men show skin between their hairs (a beard's mean light
+## 0.55 of the way from the cheek's to the hair's), where a whole cap measured 0.82-0.89.
+const SCALP_COVER_BY_KIND: Dictionary = {"beard": 0.75}
+## How that cover follows the density (human_hair_scalp.gdshader cover_curve), when not the shader's: a beard's
+## comes in sooner, its cheeks are shaded as well as its moustache.
+const SCALP_CURVE_BY_KIND: Dictionary = {"beard": 0.7}
+## Share of the dots a shell's cap keeps where the hair is dense (human_hair_shell.gdshader cap_share), when not
+## the shader's: a stubble shows skin between its dots, over the shade under them.
+const CAP_SHARE_BY_KIND: Dictionary = {"beard": 0.4}
 ## The lips' box in the face's UV square (u0, v0, u1, v1; human_skin_detail.gdshaderinc lip_box): measured on the
 ## bank's face, the nostrils just above it, the eyes far off.
 const LIP_BOX := Vector4(0.36, 0.6, 0.64, 0.71)
 
 static var _cache: Dictionary = {}  # [role, texture id] -> Material
+static var _styles: Dictionary = {}  # a head of hair's asset instance id -> its style's strands Material
+static var _styles_lock := Mutex.new()
 static var _pores: NoiseTexture2D
 
 
@@ -137,27 +152,110 @@ static func human_material(what: Variant, _appearance: CharacterAppearance, near
 
 
 ## The shared material of generated hair (tools/character/hair_groom): hairs -- a head of hair, a beard,
-## eyebrows, eyelashes -- or the shell that is hair seen end-on. One per kind.
+## eyebrows, eyelashes -- or the shell that is hair seen end-on, or the scalp seen through the strands. One
+## per kind; a head of hair's strands, one per style, with the light its hairs stop (HairStrands.volume_of):
+## their shadows on each other.
 static func _hair_material(asset: HumanAssetData, _near: bool) -> Material:
-	var shell: bool = asset.style == &"shell"
-	var shader: Shader = HAIR_SHELL_SHADER if shell else HAIR_STRANDS_SHADER
+	var shell: bool = asset.style == &"shell" or asset.style == &"scalp"
+	var volume: HairVolume = null if shell or asset.kind != &"hair" else HairStrands.volume_of(asset)
+	if volume != null:
+		_styles_lock.lock()
+		var made: Material = _styles.get(asset.get_instance_id())
+		_styles_lock.unlock()
+		if made != null:
+			return made
+	var shader: Shader = _hair_shader(asset)
 	var key: Array = [shader.get_rid().get_id(), asset.kind, asset.albedo.get_rid().get_id() if asset.albedo != null else 0]
+	if volume != null:
+		var shared: Material = _hair_material_of(asset, key, shell)
+		var mat := shared.duplicate() as ShaderMaterial
+		mat.set_shader_parameter(&"density_volume", volume.texture())
+		mat.set_shader_parameter(&"volume_origin", volume.origin)
+		mat.set_shader_parameter(&"volume_size", volume.size)
+		mat.set_shader_parameter(&"volume_cell", volume.cell)
+		mat.set_shader_parameter(&"has_volume", 1.0)
+		_set_lod(mat, HairStrands.lod_of(asset))
+		_set_motion(mat, HairStrands.motion_of(asset), HairStrands.lod_of(asset))
+		_styles_lock.lock()
+		_styles[asset.get_instance_id()] = mat
+		_styles_lock.unlock()
+		return mat
+	return _hair_material_of(asset, key, shell)
+
+
+## What the strands shader needs to keep a head of hair's coverage across its levels of detail
+## (HairStrands.lod_of, HairStrands.LODS): without it, the shader's min_coverage stands in.
+static func _set_lod(mat: ShaderMaterial, lod: Dictionary) -> void:
+	if lod.is_empty() or HairStrands.LODS.size() != 4:
+		return
+	var bounds: AABB = lod["bounds"]
+	var errors := Vector4()
+	var shares := Vector4()
+	for i in 4:
+		errors[i] = float(HairStrands.LODS[i][0])
+		shares[i] = float(HairStrands.LODS[i][1])
+	mat.set_shader_parameter(&"lod_compensate", 1.0)
+	mat.set_shader_parameter(&"hair_count", int(lod["hairs"]))
+	mat.set_shader_parameter(&"vertices_per_hair", int(lod["vertices_per_hair"]))
+	mat.set_shader_parameter(&"lod_box_origin", bounds.position)
+	mat.set_shader_parameter(&"lod_box_size", bounds.size)
+	mat.set_shader_parameter(&"lod_errors", errors)
+	mat.set_shader_parameter(&"lod_shares", shares)
+
+
+## What the strands shader needs to move a head of hair's hairs with the strands HairMotion simulates (its
+## binding, HairStrands.motion_of); a style none of whose hairs move keeps has_motion 0.
+static func _set_motion(mat: ShaderMaterial, motion: HairMotionBinding, lod: Dictionary) -> void:
+	if motion == null or lod.is_empty():
+		return
+	mat.set_shader_parameter(&"motion_binding", motion.texture())
+	mat.set_shader_parameter(&"guide_count", int(lod["guides"]))
+	mat.set_shader_parameter(&"fixed_length", HairMotionBinding.FIXED_LENGTH)
+	mat.set_shader_parameter(&"free_blend", HairMotionBinding.FREE_BLEND)
+	mat.set_shader_parameter(&"has_motion", 1.0)
+
+
+## Let go of the material made for a head of hair's style (HairStrands.forget: its cut is no longer used;
+## any thread -- HairGroom's cache lets cuts go on the bakes' workers).
+static func forget_style(asset: HumanAssetData) -> void:
+	_styles_lock.lock()
+	_styles.erase(asset.get_instance_id())
+	_styles_lock.unlock()
+
+
+static func _hair_shader(asset: HumanAssetData) -> Shader:
+	match asset.style:
+		&"shell":
+			return HAIR_SHELL_SHADER
+		&"scalp":
+			return HAIR_SCALP_SHADER
+	return HAIR_STRANDS_SHADER
+
+
+static func _hair_material_of(asset: HumanAssetData, key: Array, shell: bool) -> Material:
 	if _cache.has(key):
 		return _cache[key]
 	var mat := ShaderMaterial.new()
-	mat.shader = shader
+	mat.shader = _hair_shader(asset)
+	if asset.style == &"scalp":
+		mat.render_priority = -1  # under the strands: drawn before them, which blend over it
 	if shell:
 		mat.set_shader_parameter(&"dot_texture", asset.albedo)
 		if SHELL_TILING_BY_KIND.has(String(asset.kind)):
 			mat.set_shader_parameter(&"tiling", SHELL_TILING_BY_KIND[String(asset.kind)])
+		var kind := String(asset.kind)
+		if asset.style == &"scalp" and SCALP_COVER_BY_KIND.has(kind):
+			mat.set_shader_parameter(&"scalp_cover", SCALP_COVER_BY_KIND[kind])
+			mat.set_shader_parameter(&"cover_curve", SCALP_CURVE_BY_KIND[kind])
+		if asset.style == &"shell" and CAP_SHARE_BY_KIND.has(kind):
+			mat.set_shader_parameter(&"cap_share", CAP_SHARE_BY_KIND[kind])
 	else:
 		mat.set_shader_parameter(&"hair_width", HAIR_WIDTH_BY_KIND.get(String(asset.kind), HairStrands.HAIR_WIDTH))
 	mat.set_shader_parameter(&"darken", DARKEN_BY_KIND.get(String(asset.kind), 0.0))
 	if not shell and MIN_COVERAGE_BY_KIND.has(String(asset.kind)):
 		mat.set_shader_parameter(&"min_coverage", MIN_COVERAGE_BY_KIND[String(asset.kind)])
-	if not shell and SHEEN_BY_KIND.has(String(asset.kind)):
-		mat.set_shader_parameter(&"sheen", SHEEN_BY_KIND[String(asset.kind)])
-		mat.set_shader_parameter(&"glow", SHEEN_BY_KIND[String(asset.kind)])
+	if SPEC_BY_KIND.has(String(asset.kind)):
+		mat.set_shader_parameter(&"spec_strength", SPEC_BY_KIND[String(asset.kind)])
 	mat.set_shader_parameter(&"is_beard", 1.0 if asset.kind == &"beard" else 0.0)
 	_cache[key] = mat
 	return mat

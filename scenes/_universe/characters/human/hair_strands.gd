@@ -14,8 +14,9 @@ extends RefCounted
 
 ## Width of a hair's strip (m). A real hair is ~0.08 mm: a strip stands for a few.
 const HAIR_WIDTH: float = 0.0008
-## Levels of detail: [error (m), share of the hairs kept]. A level shows once its error is under a pixel;
-## the shader keeps a hair at least a pixel wide, so fewer hairs still cover the head.
+## Levels of detail: [error (m), share of the hairs kept]. A level shows once its error is under a pixel
+## (times the viewport's mesh_lod_threshold). A head of hair's shader thins its hairs out smoothly ahead of
+## the level the engine draws and widens those left by as much, so the hair covers as much at any level.
 const LODS: Array = [[0.0015, 0.5], [0.004, 0.25], [0.009, 0.12], [0.02, 0.05]]
 
 static var _meshes: Dictionary = {}  # asset instance id -> ArrayMesh
@@ -33,11 +34,46 @@ static func mesh_of(asset: HumanAssetData) -> ArrayMesh:
 	return mesh
 
 
+## How much light the style's hairs stop, cell by cell (HairVolume), made with its mesh; null for a style
+## whose mesh is not made yet (never builds it: a material asks, on the main thread) or has no hairs.
+static func volume_of(asset: HumanAssetData) -> HairVolume:
+	_lock.lock()
+	var mesh: ArrayMesh = _meshes.get(asset.get_instance_id())
+	_lock.unlock()
+	if mesh == null or not mesh.has_meta(&"hair_volume"):
+		return null
+	return mesh.get_meta(&"hair_volume") as HairVolume
+
+
+## What a style's material needs to keep its coverage across the levels of detail (the strands shader's
+## lod_* parameters): {hairs, vertices_per_hair, bounds (the hairs' box, before the room the shader gives
+## them)}; empty while the mesh is not made (never builds it).
+static func lod_of(asset: HumanAssetData) -> Dictionary:
+	_lock.lock()
+	var mesh: ArrayMesh = _meshes.get(asset.get_instance_id())
+	_lock.unlock()
+	if mesh == null or not mesh.has_meta(&"hair_lod"):
+		return {}
+	return mesh.get_meta(&"hair_lod")
+
+
+## How the style's hairs move (HairMotionBinding), made with its mesh; null for a style whose mesh is not made
+## yet (never builds it) or none of whose hairs move.
+static func motion_of(asset: HumanAssetData) -> HairMotionBinding:
+	_lock.lock()
+	var mesh: ArrayMesh = _meshes.get(asset.get_instance_id())
+	_lock.unlock()
+	if mesh == null or not mesh.has_meta(&"hair_motion"):
+		return null
+	return mesh.get_meta(&"hair_motion") as HairMotionBinding
+
+
 ## Forget the mesh made for [param asset] (a grown cut no longer used: HairGroom's cache let it go).
 static func forget(asset: HumanAssetData) -> void:
 	_lock.lock()
 	_meshes.erase(asset.get_instance_id())
 	_lock.unlock()
+	CharacterMaterials.forget_style(asset)
 
 
 ## Forget the meshes made (tests).
@@ -217,6 +253,17 @@ static func _mesh(asset: HumanAssetData, guides: int, children: int, pos: Packed
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], lods)
 	mesh.surface_set_name(0, "hair:%s" % asset.id)
-	# The strips have no width until the shader gives them one: room for it, and for the affine fit.
-	mesh.custom_aabb = mesh.get_aabb().grow(0.01)
+	# What the shader needs to keep the hair's coverage whatever level of detail is drawn (lod_of()).
+	mesh.set_meta(&"hair_lod", {"hairs": guides * children, "guides": guides, "vertices_per_hair": size * 2,
+			"bounds": mesh.get_aabb()})
+	# The strips have no width until the shader gives them one: room for it, and for the affine fit -- and for
+	# the hairs' swing when they move (motion_of()).
+	var room: float = 0.01
+	if asset.kind == &"hair":
+		mesh.set_meta(&"hair_volume", HairVolume.build(pos, col, size, HAIR_WIDTH))
+		var motion: HairMotionBinding = HairMotionBinding.build(asset)
+		if motion != null:
+			mesh.set_meta(&"hair_motion", motion)
+			room = HairMotionBinding.MAX_SWING
+	mesh.custom_aabb = mesh.get_aabb().grow(room)
 	return mesh

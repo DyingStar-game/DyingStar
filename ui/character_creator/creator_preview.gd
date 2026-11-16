@@ -39,6 +39,8 @@ const SATURATION: float = 1.2
 const MIN_ZOOM: float = 0.5
 const MAX_ZOOM: float = 1.6
 
+## The breeze over the stage when the whole body is shown (m/s, world frame: from the side, a little from the front).
+const CREATOR_BREEZE := Vector3(1.2, 0.0, 0.6)
 var _viewport: SubViewport
 var _puppet: Node3D
 var _looks: HumanAppearance
@@ -58,6 +60,9 @@ func _ready() -> void:
 	_viewport = SubViewport.new()
 	_viewport.own_world_3d = true
 	_viewport.msaa_3d = Viewport.MSAA_4X
+	# The game view's mesh LOD threshold (graphics options): a head of hair's shader keeps its coverage with
+	# that one (the mesh_lod_threshold shader global), and drops more of its hairs under any other.
+	_viewport.mesh_lod_threshold = get_tree().root.mesh_lod_threshold
 	add_child(_viewport)
 	var stage := Node3D.new()
 	_viewport.add_child(stage)
@@ -104,6 +109,10 @@ func set_appearance(look: CharacterAppearance) -> void:
 ## Frame the whole body (&"body"), the face (&"face") or the head and its hair (&"hair").
 func focus(framing: StringName) -> void:
 	_framing = framing
+	# A breeze stirs the hair when the whole body is shown; none while the face or the hair is being set.
+	var motion: HairMotion = HairMotion.of(self)
+	if motion != null:
+		motion.breeze = CREATOR_BREEZE if framing == &"body" else Vector3.ZERO
 
 
 func _process(delta: float) -> void:
