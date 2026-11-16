@@ -10,7 +10,9 @@ enum ChannelE {
 	GROUP,
 	CORPORATION,
 	REGION,
-	UNSPECIFIED
+	UNSPECIFIED,
+	## Local chat: shown as a bubble over the speaker, heard by the players near them (GORC).
+	SAY
 }
 
 ## Channel enum name -> its translation key.
@@ -21,6 +23,7 @@ const CHANNEL_LABELS : Dictionary = {
 	"CORPORATION": "%%CHAT_CORPORATION",
 	"REGION": "%%CHAT_REGION",
 	"UNSPECIFIED": "%%CHAT_UNSPECIFIED",
+	"SAY": "%%CHAT_SAY",
 }
 
 ## Line where the player types a message; Enter sends it on the selected channel, then closes write mode.
@@ -49,7 +52,8 @@ var forced_colors := {
 	str(ChannelE.GROUP): "27C8F5",
 	str(ChannelE.CORPORATION): "D327F5",
 	str(ChannelE.REGION): "F7F3B5",
-	str(ChannelE.DIRECT_MESSAGE): "79F25E"
+	str(ChannelE.DIRECT_MESSAGE): "79F25E",
+	str(ChannelE.SAY): "FFD27A"
 }
 
 # Panel backgrounds toggled by write mode: a semi-transparent box while typing
@@ -290,9 +294,45 @@ func _on_input_text_text_submitted(message: String) -> void:
 	# Enter inside the input line: send (when not empty), then leave write mode.
 	if message.strip_edges() != "":
 		var chat_message = ChatMessage.new(message, channel_selector.get_selected_id())
-		send_message.emit(chat_message)
+		if chat_message.channel == ChannelE.SAY:
+			if not _say(message):
+				return  # refused and explained in the log: the text stays in the field to be fixed
+		else:
+			send_message.emit(chat_message)
 	input_field.text = ""
 	_stop_writing()
+
+## Time (ms) of the last line said, so the client does not flood the server (see SayMessage.MIN_INTERVAL).
+var _last_say_ms: int = -100000
+
+## Say [param message] to the players around: the game server replicates it to whoever sees our
+## avatar (GORC) and they show it as a bubble. We log it ourselves, since the echo is not sent back.
+## Returns false when the line was refused here (the log says why); the server checks again and answers
+## through [method show_say_rejected] if it refuses too.
+func _say(message: String) -> bool:
+	var now_ms: int = Time.get_ticks_msec()
+	var error: String = SayMessage.check(message, (now_ms - _last_say_ms) / 1000.0, 0)
+	if error != "":
+		show_say_rejected(error)
+		return false
+	var text: String = SayMessage.sanitize(message)
+	_last_say_ms = now_ms
+	var me: Player = Player.of(self)
+	if me == null:
+		return false
+	# The SAME action an NPC's lines use ("dialog"): every game server already understands it, and the
+	# line then follows the NPC path to the end (queue, `conversation`, bubble over the head).
+	me.client_send_action_to_server({"action": "dialog", "text": text})
+	receive_message_from_server(ChatMessage.new(text, ChannelE.SAY, Globals.player_name))
+	return true
+
+## Tell the player in the log that a line was not said, and why (a [constant SayMessage] ERR_* reason).
+func show_say_rejected(error: String) -> void:
+	var reason: String = tr(SayMessage.message_key(error))
+	if error == SayMessage.ERR_TOO_LONG:
+		reason = reason % SayMessage.MAX_LENGTH  # the only message that names a number
+	receive_message_from_server(ChatMessage.new(
+			"[color=#FF6B6B]%s[/color]" % reason, ChannelE.UNSPECIFIED, tr("%%CHAT_SAY_NOTICE")))
 
 ## While typing, TAB cycles the channel and Escape closes the input. Both are caught
 ## here (in _input, before the GUI focus system) — otherwise the focused input field
@@ -429,6 +469,8 @@ func _channel_tag(message: ChatMessage) -> String:
 		if peer_name == "":
 			peer_name = tr("%%CHAT_DM_UNRESOLVED")
 		return tr("%%CHAT_DM_TO") % peer_name
+	if message.channel == ChannelE.SAY:
+		return "(" + tr(CHANNEL_LABELS["SAY"]) + ") "
 	return "(" + ChannelE.keys()[message.channel] + ") "
 
 

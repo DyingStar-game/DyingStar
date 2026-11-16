@@ -67,3 +67,5 @@ heights.pack
 
 # Results written by the StarGrotte test scenes
 test/stargrot/*-results.json
+# graphify (graphe de connaissance local)
+graphify-out/

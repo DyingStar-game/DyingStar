@@ -2402,6 +2402,14 @@ func _notification(what: int) -> void:
 		if is_instance_valid(_screens):
 			_screens.queue_free()
 
+## Put a line said by this avatar into the LOCAL player's chat log, on the SAY channel.
+func _log_said_line(text: String) -> void:
+	var me: Node3D = PlayerLocation.local_player()
+	if me == null or not ("direct_chat" in me) or me.direct_chat == null:
+		return
+	me.direct_chat.receive_message_from_server(
+			ChatMessage.new(text, DirectChat.ChannelE.SAY, str(player.name)))
+
 ## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
 ## centered over the head and hidden when the player is behind the camera.
 func _update_name_tag() -> void:
@@ -2486,6 +2494,11 @@ func client_channel_data_update(data: Dictionary) -> void:
 	if data.has("torch_uv"):
 		player.torch_uv = bool(data["torch_uv"])  # replicated UV mode (owner + remotes)
 		player.apply_torch_mode()
+	if data.has("say_rejected") and not player.remote_player:
+		# The server refused a line we said (reason:counter): tell the speaker so it can try again.
+		var reason: String = str(data["say_rejected"]).split(":")[0]
+		if player.direct_chat != null:
+			player.direct_chat.show_say_rejected(reason)
 	if data.has("carry_prompt") and not player.remote_player:
 		player._carry_prompt = str(data["carry_prompt"])  # server-decided E prompt for the owner
 	if data.has(Player.MINING_TOOL_KEY):
@@ -2645,6 +2658,10 @@ func client_channel_data_update(data: Dictionary) -> void:
 					_conversation_text.visible = false
 				else:
 					_conversation_text.visible = true
+					# What is said NOW also goes in our chat log (the bubble is gone in seconds); a line
+					# already up when we arrived (not live) is not replayed.
+					if live:
+						_log_said_line(_conversation_text.text)
 	elif data.has("carrying"):
 		# Owner: reconcile the optimistic carry prediction with the server's verdict
 		# (e.g. a missed pickup) so we never get stuck stowed (issue #124).
