@@ -351,6 +351,26 @@ static func is_fixed_material(road_type: String) -> bool:
 	return road_type in FIXED_MATERIAL_TYPES
 
 
+## Does [param material] take the light as it is written? False for an ORMMaterial3D with no ORM
+## texture: in that mode the roughness and the METAL are read from the texture's channels, and a missing
+## texture reads white -- metal 1, no diffuse light at all. The plain asphalt was one (2026-11-13): the
+## road came out black, with a glint that changed as the view turned (measured: 3/255 against 14/255
+## for a StandardMaterial3D of the same colour). Static and pure, for the test that walks every road
+## material.
+static func is_lit_material(material: Material) -> bool:
+	return not (material is ORMMaterial3D and (material as ORMMaterial3D).orm_texture == null)
+
+
+## Every material a road can be given (get_material_path), for whoever checks them all.
+static func material_paths() -> PackedStringArray:
+	var out: PackedStringArray = [ASPHALT_MATERIAL_PATH, CORUNDUM_HIGHWAY_MATERIAL_PATH,
+			CORUNDUM_HIGHWAY_SIDE_MATERIAL_PATH, FALLBACK_MATERIAL_PATH]
+	for path: String in ADAPTIVE_MATERIAL_MAP.values():
+		if not out.has(path):
+			out.append(path)
+	return out
+
+
 ## Does the chunk emitter keep this material's parallax? (It strips it from
 ## every other road material.)
 static func keeps_parallax(mat_path: String) -> bool:

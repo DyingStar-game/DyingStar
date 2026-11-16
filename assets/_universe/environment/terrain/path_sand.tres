@@ -1,4 +1,4 @@
-[gd_resource type="ORMMaterial3D" format=3 uid="uid://cw7k5bg4hy3cg"]
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://cw7k5bg4hy3cg"]
 
 [resource]
 resource_name = "path_sand"

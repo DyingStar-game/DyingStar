@@ -38,6 +38,10 @@ const POST_STEP := 1.3
 const RAIL_BAR := 0.04
 ## What the posts of a half flight are named, under it (Post1, Post2...).
 const FLIGHT_POST_PREFIX := "Post"
+## What the walls at the sides of a half flight are named, under it (SideWall1, SideWall2).
+const FLIGHT_WALL_PREFIX := "SideWall"
+## Thickness (m) of the wall a railing is for the bodies.
+const RAIL_WALL_T := 0.05
 ## Side (m) of a column the decks stand on, and the most (m) between two along a walkway.
 const COLUMN_W := 0.12
 const COLUMN_STEP := 5.2
@@ -50,6 +54,8 @@ static var _rail_material: StandardMaterial3D
 static var _plate_material: StandardMaterial3D
 ## The box meshes made so far, by size and material: three hundred posts are one mesh.
 static var _meshes: Dictionary = {}
+## The two side walls of a half flight (flight_side_walls), made once: every flight shares them.
+static var _side_walls: Array[ConvexPolygonShape3D] = []
 
 
 ## Build them under [param building] (a SpawnBuilding): nothing for one storey, nor twice.
@@ -149,7 +155,37 @@ static func _flight(facade: Node3D, place: Transform3D) -> void:
 		post.mesh = _mesh(Vector3(RAIL_BAR, RAIL_H, RAIL_BAR), _rail_mat())
 		post.position = feet[i] + Vector3.UP * RAIL_H * 0.5
 		flight.add_child(post)
+	# And a wall under each rail, for the bodies: the scene only has the ramp walked on, so one stepped
+	# through the posts and off the side of a flight, where a deck's railing holds (_rail).
+	if _side_walls.is_empty():
+		for points: PackedVector3Array in flight_side_walls():
+			var hull := ConvexPolygonShape3D.new()
+			hull.points = points
+			_side_walls.append(hull)
+	for i in _side_walls.size():
+		var wall := CollisionShape3D.new()
+		wall.name = "%s%d" % [FLIGHT_WALL_PREFIX, i + 1]
+		wall.shape = _side_walls[i]
+		flight.add_child(wall)
 	facade.add_child(flight)
+
+
+## The walls at the sides of a half flight, in its frame, each as the corners of its hull: under each
+## rail, RAIL_WALL_T thick, from the slope up to the rail (RAIL_H) along the whole run -- upright at both
+## ends, so nothing stands out past the flight where one walks up to it. Both ends stay open. Pure, for
+## the tests.
+static func flight_side_walls() -> Array[PackedVector3Array]:
+	var inset: float = RAIL_BAR * 0.5
+	var out: Array[PackedVector3Array] = []
+	for x: float in [inset, LANE_W - inset]:
+		var corners := PackedVector3Array()
+		for side: float in [-RAIL_WALL_T * 0.5, RAIL_WALL_T * 0.5]:
+			corners.append(Vector3(x + side, 0.0, 0.0))
+			corners.append(Vector3(x + side, RAIL_H, 0.0))
+			corners.append(Vector3(x + side, HALF_RISE, HALF_RUN))
+			corners.append(Vector3(x + side, HALF_RISE + RAIL_H, HALF_RUN))
+		out.append(corners)
+	return out
 
 
 ## The feet of the posts of a half flight, in its frame (x across the lane, y up, z along the run): on

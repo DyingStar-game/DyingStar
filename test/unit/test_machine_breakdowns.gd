@@ -166,6 +166,34 @@ func test_a_repair_names_its_place_and_its_machine() -> void:
 	assert_eq(ServiceTypes.mission_place({}, []), {"poi": "", "machine": ""}, "a mission that names no place")
 
 
+## A broken part of a mine's lift is down its shaft; marked there, its pictogram sat in the middle of
+## the chart (drawn through the ground, under a camera that looks at the planet's centre).
+func test_a_machine_under_what_the_chart_marks_is_marked_there() -> void:
+	var lift: Node3D = autofree(Node3D.new())
+	lift.add_child(MapMarker.new())
+	var landing := Node3D.new()
+	landing.position = Vector3(0.0, -500.0, 3.0)
+	lift.add_child(landing)
+	var head := Node3D.new()
+	head.position = Vector3(4.0, 0.2, 0.0)
+	lift.add_child(head)
+	assert_eq(MachineBreakdown.chart_subject(landing), lift, "down the shaft: on the lift the chart marks")
+	assert_eq(MachineBreakdown.chart_subject(head), head, "at the lift's head: on the machine itself")
+	# A machine the chart marks itself, and one under nothing marked, keep their own marker.
+	var crusher: Node3D = autofree(Node3D.new())
+	crusher.add_child(MapMarker.new())
+	assert_eq(MachineBreakdown.chart_subject(crusher), crusher)
+	var kiosk := Node3D.new()
+	(autofree(Node3D.new()) as Node3D).add_child(kiosk)
+	assert_eq(MachineBreakdown.chart_subject(kiosk), kiosk)
+	# Another broken part's marker on the lift does not make the lift "marked" twice over.
+	lift.add_child(MachineBreakdown.chart_marker(), true)
+	var deeper := Node3D.new()
+	deeper.position = Vector3(0.0, -10.0, 0.0)
+	landing.add_child(deeper)
+	assert_eq(MachineBreakdown.chart_subject(deeper), lift, "still the lift, through the landing")
+
+
 func test_a_broken_machine_is_on_the_chart() -> void:
 	# A repair mission names a village; the chart shows which machine (playtest 2026-11-12).
 	var marker := MachineBreakdown.chart_marker()

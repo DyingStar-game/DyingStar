@@ -34,6 +34,9 @@ const BACKGROUND := Color(0.04, 0.04, 0.05)
 ## seen from MARKER_VIEW_M (m) up -- a repair mission names a village, the chart shows which machine.
 const MARKER_ICON: Texture2D = preload("res://assets/textures/map_markers/workbench.png")
 const MARKER_NAME := &"BreakdownMarker"
+## How far (m) under the thing the chart marks above it a machine must stand for its breakdown to be
+## marked on that thing rather than on itself (chart_subject).
+const MARKER_UNDER_M := 1.0
 const MARKER_LABEL := "%%MAP_MARKER_BREAKDOWN"
 const MARKER_VIEW_M := 10000.0
 
@@ -57,6 +60,7 @@ var _button: Button = null
 var _boot: Label = null
 var _panel: GaugeRepairPanel = null
 var _sparks: MachineSparks = null
+var _marker: MapMarker = null  # the star chart's marker while broken (_mark_on_chart)
 ## CLIENT: the prompt a screen that takes no click is repaired from (RepairPrompt), while broken.
 var _prompt: RepairPrompt = null
 ## CLIENT: the countdown's next look (s), the seconds and the lines of code it last wrote.
@@ -238,15 +242,44 @@ func _state() -> Shown:
 
 
 ## Put [param machine] on the star chart while it is broken ([param on]), take it off once repaired.
+## The marker hangs on the machine's chart subject (chart_subject), under a name of its own: two broken
+## parts of one lift are two markers.
 func _mark_on_chart(machine: Node3D, on: bool) -> void:
-	var marker := machine.get_node_or_null(NodePath(MARKER_NAME)) as MapMarker
 	if not on:
-		if marker != null:
-			marker.queue_free()
+		if is_instance_valid(_marker):
+			_marker.queue_free()
+		_marker = null
 		return
-	if marker != null:
+	if is_instance_valid(_marker):
 		return
-	machine.add_child(chart_marker())
+	_marker = chart_marker()
+	chart_subject(machine).add_child(_marker, true)
+
+
+## What carries [param machine]'s marker on the chart: the machine, unless it stands UNDER the nearest
+## thing above it that the chart already marks -- then that thing.
+##
+## A mine lift's lower landing, its stops and its platform are machines down a shaft, 250 m to 1 km under
+## the lift the chart marks at its head. A pictogram is drawn through the ground, and the chart's camera
+## looks at the planet's centre: marked down there, a broken part hardly moved as the chart was dragged
+## and sat in the middle of the DataPad -- most of all after "Locate on the chart", which frames it from
+## right above (reported 2026-11-14; the lift's own marker had the same fault, StarMapMarkers.ground_point).
+## Static and pure, for the tests.
+static func chart_subject(machine: Node3D) -> Node3D:
+	var above: Node = machine.get_parent()
+	while above != null:
+		if above is Node3D and _is_marked(above):
+			return above if LocalFrame.of(machine, above).origin.y < -MARKER_UNDER_M else machine
+		above = above.get_parent()
+	return machine
+
+
+## Whether the chart marks [param node] itself: a MapMarker of its own, not a breakdown's.
+static func _is_marked(node: Node) -> bool:
+	for child: Node in node.get_children():
+		if child is MapMarker and not String(child.name).begins_with(String(MARKER_NAME)):
+			return true
+	return false
 
 
 ## The star chart's marker of a broken machine. Static, for the tests.

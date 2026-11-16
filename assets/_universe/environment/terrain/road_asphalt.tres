@@ -1,4 +1,4 @@
-[gd_resource type="ORMMaterial3D" format=3 uid="uid://baa0hfm7cmipb"]
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://baa0hfm7cmipb"]
 
 [resource]
 resource_name = "mat_concrete_road_asphalt"
