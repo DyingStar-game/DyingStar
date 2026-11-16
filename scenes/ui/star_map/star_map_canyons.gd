@@ -171,9 +171,11 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 		for vx: int in range(stride):
 			var here: int = vy * stride + vx
 			if vx < grid_res:
-				right[here] = _crossing(grid[vy][vx], grid[vy][vx + 1], read_at, blocks, here, here + 1)
+				right[here] = _carved(data, noise,
+						_crossing(grid[vy][vx], grid[vy][vx + 1], read_at, blocks, here, here + 1))
 			if vy < grid_res:
-				down[here] = _crossing(grid[vy][vx], grid[vy + 1][vx], read_at, blocks, here, here + stride)
+				down[here] = _carved(data, noise,
+						_crossing(grid[vy][vx], grid[vy + 1][vx], read_at, blocks, here, here + stride))
 
 	var half_width: float = data.crack_width_m * 0.5 / data.radius
 	var tile := StarMapDrawnTile.new(data, nside, ipix)
@@ -327,6 +329,25 @@ static func _fork(grid: Array[PackedVector3Array], read_at: PackedVector3Array,
 	var v: float = clampf((a * q - p * c) / det, 0.0, 1.0)
 	return grid[vy][vx].lerp(grid[vy][vx + 1], u).lerp(
 			grid[vy + 1][vx].lerp(grid[vy + 1][vx + 1], u), v).normalized()
+
+
+## [param crossing] (a [method _crossing]) when the game carves a canyon there, ZERO when it does not.
+##
+## Two blocks side by side do not always have a canyon between them: the game's distance to the nearest
+## edge (ArideDesertCorundumPlateauTerrain._voronoi_gd) only looks one cell around the block it is on,
+## and the border with a block whose feature point lies further than that is never found -- the ground
+## stays whole along it, for the mesh and for the physics alike. The chart drew those borders as canyons:
+## kilometres of them, a road running "inside" one with no bridge, and nothing on the ground.
+##
+## Asked AT the crossing, which stands on the border itself (a stretch's middle cuts corners near a
+## fork, see trace_tile), and within a whole width rather than half of one: the crossing is worked out
+## from points a kilometre apart, and the canyon wanders between them.
+static func _carved(data: PlanetData, noise: CrackNoise, crossing: Vector3) -> Vector3:
+	if crossing == Vector3.ZERO:
+		return Vector3.ZERO
+	var edge_m: float = ArideDesertCorundumPlateauTerrain.crack_edge_distance_m(crossing, data.radius,
+			data.crack_spacing_m, data.crack_width_m, 0.0, noise)
+	return crossing if edge_m < data.crack_width_m else Vector3.ZERO
 
 
 ## Where the canyon between two points of the grid crosses the line from one to the other, as a

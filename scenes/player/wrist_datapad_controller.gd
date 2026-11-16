@@ -20,6 +20,11 @@ extends Node
 
 enum Phase { LOWERED, RAISING, ZOOMING, OPEN, LOWERING }
 
+## Loaded by path, like the probe: a class_name only exists once the project has been imported again,
+## and a script that names one not imported yet does not compile -- nor does anything that loads it.
+const PAD_SCREEN_OVERLAY := preload("res://scenes/player/pad_screen_overlay.gd")
+const PAD_SHAKE_PROBE := preload("res://scenes/player/pad_shake_probe.gd")
+
 ## The wrist went up (true) or is all the way down again (false): the HUD's reticle has nothing to
 ## aim at in between, the view being the DataPad's (PlayerClient hides it).
 signal up_changed(up: bool)
@@ -61,6 +66,8 @@ var _over_screen: bool = false  # the cursor is on the wrist's screen (it was to
 var _held_basis: Basis = Basis.IDENTITY  # the body's orientation held while reading (_steady_body)
 var _basis_held: bool = false
 var _hidden_body: Array[GeometryInstance3D] = []  # our own body's meshes hidden while reading (_show_own_body)
+var _pin_parent: Node = null  # where the device hangs when it is not pinned to the body (_pin_device)
+var _overlay: CanvasLayer = null  # PadScreenOverlay: the tablet's picture, drawn in 2D over the screen while read
 
 
 func setup(player, terminal, camera: Camera3D, animator, model) -> void:
@@ -70,6 +77,11 @@ func setup(player, terminal, camera: Camera3D, animator, model) -> void:
 	_animator = animator
 	_model = model
 	_terminal.visibility_changed.connect(_on_terminal_visibility_changed)
+	if PAD_SHAKE_PROBE.enabled() and model is WristDatapadModel:
+		var probe: Node = PAD_SHAKE_PROBE.new()
+		probe.name = "PadShakeProbe"
+		probe.setup(self, player, camera, model, terminal)
+		add_child(probe)
 
 
 ## F3: up when down, down when up; pressed during the gesture, it takes the arm back down.
@@ -161,6 +173,7 @@ func advance(delta: float) -> void:
 			if _t >= ZOOM_TIME:
 				phase = Phase.OPEN
 				_show_own_body(false)
+				_pin_device()
 		Phase.OPEN:
 			# Every frame: the eyes drifting after the cursor. The device is not turned again: it was set
 			# straight at the end of the zoom and nothing moves it on the body since (the arm's pose is
@@ -178,6 +191,7 @@ func advance(delta: float) -> void:
 				_model_rest()
 				_camera.fov = _base_fov()
 				up_changed.emit(false)
+	_lay_picture()
 
 
 ## While the tablet is open: the mouse's own events are carried onto the wrist's screen, at the point
@@ -269,6 +283,7 @@ func _lower() -> void:
 	_face_held = 1.0 if was == Phase.OPEN else (smoothstep(0.0, 1.0, _t / ZOOM_TIME) if was == Phase.ZOOMING else 0.0)
 	_look_held = _look()
 	_basis_held = false
+	_unpin_device()
 	phase = Phase.LOWERING  # before closing the tablet: its visibility_changed must not lower again
 	_show_own_body(true)
 	_t = 0.0
@@ -280,6 +295,62 @@ func _lower() -> void:
 	if _terminal.is_open():
 		_terminal.close()  # stopped during the zoom: the tablet had already opened on the screen
 	_set_raised(false)
+
+
+## The tablet's picture laid in 2D over the wrist's screen from the moment it opens on it until the
+## arm starts down (PadScreenOverlay says why): where the screen stands in the camera's frame, through
+## local transforms only -- the body's frame is the one both hang in.
+func _lay_picture() -> void:
+	var device := _model as WristDatapadModel if _model is WristDatapadModel else null
+	if device == null or (phase != Phase.ZOOMING and phase != Phase.OPEN) or not device.is_inside_tree():
+		if _overlay != null:
+			_overlay.clear()
+		return
+	if _overlay == null:
+		_overlay = PAD_SCREEN_OVERLAY.new()
+		_overlay.name = "PadScreenOverlay"
+		add_child(_overlay)
+	var screen_in_body: Transform3D = WristRaise.local_to(device.screen, _body())
+	_overlay.place(device.viewport.get_texture(), _camera_in_body().affine_inverse() * screen_in_body,
+			device.screen_size_m(), _camera.fov, _camera.get_viewport().get_visible_rect().size,
+			_camera.keep_aspect == Camera3D.KEEP_HEIGHT)
+
+
+## While the tablet is read, the device hangs on the BODY, where the arm held it, instead of on the
+## forearm: next to the camera's pivot, two transforms from the same origin.
+##
+## Nothing moves between the eye and the screen then -- measured to a hundredth of a pixel in the
+## body's frame -- yet the picture shook by a pixel or more on any vehicle not held by its handbrake
+## (2026-11-13, PadShakeProbe "engine px"). The engine draws from WORLD transforms, each the product
+## of its whole chain of parents; out where the world is (4e10 m, positions 8 µm apart) every product
+## rounds, the camera's chain (body, pivot, camera) and the screen's (body, puppet, skeleton, bone,
+## mount, device, screen) round differently, and they round anew each time the vehicle under them
+## moves by a micron. The same chain for both, as far as it goes, leaves one rounding between them.
+## Our own arm is hidden while reading (_show_own_body): nobody sees the device leave it.
+func _pin_device() -> void:
+	var device := _model as Node3D if _model is Node3D else null
+	if device == null or _pin_parent != null or not device.is_inside_tree():
+		return
+	var body: Node3D = _body()
+	var held: Transform3D = LocalFrame.of(device, body)
+	_pin_parent = device.get_parent()
+	_pin_parent.remove_child(device)
+	body.add_child(device)
+	device.transform = held
+
+
+## Back on the forearm, as the arm holds it (the device eases back from there, see _lower).
+func _unpin_device() -> void:
+	if _pin_parent == null:
+		return
+	var device := _model as Node3D if _model is Node3D else null
+	var home: Node = _pin_parent
+	_pin_parent = null
+	if device == null or not is_instance_valid(device) or not is_instance_valid(home):
+		return
+	device.get_parent().remove_child(device)
+	home.add_child(device)
+	device.transform = Transform3D.IDENTITY
 
 
 ## Our own body hidden from our own eyes while the view is closed in on the wrist, the device kept: the
@@ -319,7 +390,10 @@ func _steady_body() -> void:
 		_held_basis = now
 		_basis_held = true
 		return
-	body.global_basis = _held_basis
+	# The orientation alone, through the parent's: writing global_basis goes through the whole world
+	# transform and back, which moved the body's ORIGIN on its seat by tens of µm a frame.
+	var parent := body.get_parent() as Node3D
+	body.basis = parent.global_basis.orthonormalized().inverse() * _held_basis if parent != null else _held_basis
 
 
 ## The cursor's place in the window, -0.5..0.5 from its centre on each axis.
@@ -373,7 +447,12 @@ func _look_at(target: Vector3, k: float) -> void:
 
 ## The look (pivot pitch, yaw) that puts `target` (body frame) dead ahead of the camera.
 func _look_towards_body(target: Vector3) -> Vector2:
-	return look_towards((_player.camera_pivot.transform * _camera.transform).origin, target)
+	return look_towards(_camera_in_body().origin, target)
+
+
+## The camera in the BODY's frame, through its pivot: local transforms only.
+func _camera_in_body() -> Transform3D:
+	return _player.camera_pivot.transform * _camera.transform
 
 
 ## The body the camera pivot hangs from: the player.

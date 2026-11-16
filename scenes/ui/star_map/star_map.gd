@@ -122,6 +122,9 @@ const POI_BODY_KEEP: float = 0.75
 ## settlement in its surroundings, and it is also where the ground is drawn at the finest level Tarsis
 ## III publishes: 198 m per sample, so the extra height costs no detail at all.
 const PLACE_FOCUS_ALTITUDE_M: float = 7000.0
+## The height (m) a single MACHINE is shown from (a repair's, focus_machine): close enough to tell it
+## from the machine beside it -- some 140 m of ground across the screen.
+const MACHINE_FOCUS_ALTITUDE_M: float = 90.0
 ## How high above YOUR feet "Moi" (and opening the chart) frames you: 150 m, the village's buildings and
 ## dispensers read one by one (playtest 2026-10-19) -- the chart now goes down to the metre.
 const PLAYER_FOCUS_ALTITUDE_M: float = 150.0
@@ -2059,10 +2062,25 @@ func _refresh_points_of_interest() -> void:
 		_poi_focus = -1
 		_poi_hover = -1
 		_poi_cluster_hover = -1
+	# Where the player stands, for a group of places to say which one that is.
+	_poi_layer.player_poi = _player_poi_index(index)
 	# The camera itself rather than pieces of it: the layer sizes each badge on its own distance and
 	# projects the names to screen to keep them from piling up, and both need the real thing.
 	_poi_layer.refresh(key, sphere.position, sphere.basis.orthonormalized(),
 			sphere.scale.x * MESH_RADIUS, _camera, _poi_focus, _poi_hover, _poi_cluster_hover)
+
+
+## Index, in the layer's entries, of the place the player stands at on body [param host]; -1 when the
+## player is not on it or stands in none (the smallest place holding them wins, MusicPoi.containing).
+func _player_poi_index(host: int) -> int:
+	var dir: Vector3 = _player_local_dir(host)
+	if dir.is_zero_approx():
+		return -1
+	var planet: Planet = _live_planet(str(_bodies[host]["key"]))
+	if planet == null:
+		return -1
+	var at: Dictionary = MusicPoi.containing(_poi_layer.entries, dir, planet.planet_data.radius)
+	return _poi_layer.entries.find(at) if not at.is_empty() else -1
 
 
 ## The ambient steps back as a body fills the screen.
@@ -3370,6 +3388,32 @@ func _focus_mission_site(poi_id: String) -> bool:
 	return true
 
 
+## Frame the chart on the machine [param machine_id] (MachineBreakdown.machine_id, a repair mission's
+## `machineId`), when it is loaded around the player: the mission only knows its village, and "the
+## lift of M0001" is one of several. False when the machine is not loaded here -- the caller then
+## shows the village's point instead.
+func focus_machine(machine_id: String) -> bool:
+	if machine_id == "" or not is_instance_valid(_camera) or not is_inside_tree():
+		return false
+	for node: Node in get_tree().get_nodes_in_group(MachineBreakdown.GROUP):
+		var breakdown := node as MachineBreakdown
+		if breakdown == null or breakdown.machine_id() != machine_id:
+			continue
+		var machine_host: Node3D = breakdown.host()
+		var planet: Planet = SurfaceProbe.planet_of(machine_host) if machine_host != null else null
+		if planet == null:
+			return false
+		for body: int in _bodies.size():
+			var key := str(_bodies[body]["key"])
+			if _live_planet(key) != planet:
+				continue
+			_cam.select(body, key)
+			_frame_on_surface(body, planet.local_dir_of(machine_host.global_position), MACHINE_FOCUS_ALTITUDE_M)
+			return true
+		return false
+	return false
+
+
 ## How many frames [method focus_service_poi] waits for the camera's travel to bring its body big
 ## enough for the layer to draw its points. A second at 60 fps: the travels here are short and the
 ## body is large on screen by the end of them, so the wait ends long before it would matter.
@@ -3425,7 +3469,7 @@ func _service_poi_record(poi_id: String) -> Dictionary:
 ## loaded it (or is not its body).
 func _poi_index_of(poi_id: String) -> int:
 	for i: int in range(_poi_layer.entries.size()):
-		if str(_poi_layer.entries[i].get("service_id", "")) == poi_id:
+		if StarMapPoi.holds_service_id(_poi_layer.entries[i], poi_id):
 			return i
 	return -1
 
@@ -3473,7 +3517,7 @@ func _frame_on_surface(body: int, local_dir: Vector3, altitude_m: float = 0.0) -
 	var framing: float = POI_FOCUS_ZOOM
 	if altitude_m > 0.0:
 		framing = (ground + altitude_m * UNITS_PER_METRE) / radius_units
-	elif _cam.anchor_body == body:
+	if _cam.anchor_body == body:
 		# Going to a place NEVER pulls back. The standard framing is a floor on how close it brings you,
 		# not a distance it insists on: already down among the villages, double-clicking the next one
 		# along is a slide across to it, and forcing the standard framing there threw the view back out
@@ -3629,8 +3673,10 @@ func debug_lines() -> PackedStringArray:
 		focused = str(_bodies[_cam.focus]["name"])
 	# The zoom through the shared distance rule — metres, then km, then millions of km. Printed as
 	# "%.2f million km" it read "0.00" for everything under 5 000 km, the whole range a planet is read in.
+	# The HEIGHT over the ground under the camera, not the distance to the body's centre: that one read
+	# "6 362 km" at every zoom a planet is looked at from (playtest 2026-11-12).
 	var lines := PackedStringArray([tr("%%HUD_MAP_READOUT") % [
-			_bodies.size(), focused, Globals.format_distance(_view / UNITS_PER_METRE), Globals.sim_time()]])
+			_bodies.size(), focused, Globals.format_distance(_gap() / UNITS_PER_METRE), Globals.sim_time()]])
 	var relief: String = _relief_readout()
 	if relief != "":
 		lines.append(relief)

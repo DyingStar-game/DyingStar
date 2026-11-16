@@ -8,7 +8,7 @@ metallic = 0.6
 roughness = 0.4
 
 [sub_resource type="BoxMesh" id="Mesh_tread"]
-size = Vector3(1.2, 0.04, 0.2429)
+size = Vector3(1.12, 0.04, 0.2429)
 material = ExtResource("1_plate")
 
 [sub_resource type="BoxMesh" id="Mesh_stringer"]
@@ -54,19 +54,27 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6, 1.2800, 1.5786)
 mesh = SubResource("Mesh_tread")
 
 [node name="StringerL" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.02, 0.6000, 0.85)
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.02, 0.7200, 0.85)
 mesh = SubResource("Mesh_stringer")
 
 [node name="StringerR" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 1.18, 0.6000, 0.85)
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 1.18, 0.7200, 0.85)
 mesh = SubResource("Mesh_stringer")
 
 [node name="RailL" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.02, 1.5500, 0.85)
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.02, 1.6500, 0.85)
 mesh = SubResource("Mesh_rail")
 
 [node name="RailR" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 1.18, 1.5500, 0.85)
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 1.18, 1.6500, 0.85)
+mesh = SubResource("Mesh_rail")
+
+[node name="MidRailL" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 0.02, 1.1500, 0.85)
+mesh = SubResource("Mesh_rail")
+
+[node name="MidRailR" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.794358, 0.607450, 0, -0.607450, 0.794358, 1.18, 1.1500, 0.85)
 mesh = SubResource("Mesh_rail")
 
 [node name="Ramp" type="CollisionShape3D" parent="."]

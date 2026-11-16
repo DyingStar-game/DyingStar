@@ -202,3 +202,13 @@ func test_it_never_asks_for_more_room_than_its_design_size() -> void:
 		assert_lte(dialog.get_combined_minimum_size().y, GaugeRepairPanel.DESIGN_PX.y, "%s, gauges: no taller than the least screen" % locale)
 		assert_almost_eq(dialog.size.x * dialog.scale.x, 1024.0, 0.01)
 	TranslationServer.set_locale("en")
+
+
+func test_a_watched_repair_closes_when_its_player_says_it_is_over() -> void:
+	# The repairing player's controller tells the watchers its panel closed (MachineRepair._tell_closed):
+	# theirs must not stay on its last picture.
+	var dialog := _dialog()
+	dialog.apply_view_state({"repair": float(GaugeRepairPanel.Phase.FAULT)})
+	assert_true(dialog.visible and dialog.watched, "the watcher sees the diagnosis")
+	dialog.apply_view_state({"repair": float(GaugeRepairPanel.Phase.CLOSED)})
+	assert_false(dialog.visible, "and sees it close")

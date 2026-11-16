@@ -122,6 +122,20 @@ tray_marker = NodePath("../SpawnVehicule")
 [node name="SpawnVehicule" type="Marker3D" parent="." unique_id=194993262]
 transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -5.021331208860071, 0.5241000776928306, -19.9798519296165)
 
+[node name="VehicleTerminal2" parent="." unique_id=871203344 node_paths=PackedStringArray("tray_marker") instance=ExtResource("vehicle_terminal")]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -10.853278697055469, 0.01096325825641919, -25.4)
+tray_marker = NodePath("../SpawnVehicule2")
+
+[node name="SpawnVehicule2" type="Marker3D" parent="." unique_id=871203345]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -5.021331208860071, 0.5241000776928306, -25.61)
+
+[node name="VehicleTerminal3" parent="." unique_id=871203346 node_paths=PackedStringArray("tray_marker") instance=ExtResource("vehicle_terminal")]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -10.853278697055469, 0.01096325825641919, -31.29)
+tray_marker = NodePath("../SpawnVehicule3")
+
+[node name="SpawnVehicule3" type="Marker3D" parent="." unique_id=871203347]
+transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995736766e-17, -5.021331208860071, 0.5241000776928306, -31.5)
+
 [node name="BatterieZone1" type="Decal" parent="." unique_id=1354213166]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.030217523784713, -0.00785250420293226, -9.959797003836847)
 size = Vector3(2, 0.06675516680570581, 2)

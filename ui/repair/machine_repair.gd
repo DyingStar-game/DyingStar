@@ -22,6 +22,9 @@ var _notify: Callable
 var _machine: MachineBreakdown = null
 ## The panel in use, the machine's screen's. Null when none.
 var _panel: GaugeRepairPanel = null
+## What the players around were last told our panel shows, and the time left before it is looked at again.
+var _shared_view: Dictionary = {}
+var _share_in_s: float = 0.0
 
 
 ## [param notify] shows a line to the player: func(text, gain) -- gain when it is good news that pays (the
@@ -35,6 +38,34 @@ func setup(notify: Callable) -> void:
 	timer.timeout.connect(func() -> void: BrokenMachines.refresh(get_tree()))
 	add_child(timer)
 	BrokenMachines.refresh(get_tree())
+
+
+## While our diagnosis is on a machine's screen, what it shows goes to the server whenever it changes,
+## for the players around to watch it (ScreenLock's view).
+##
+## PlayerClient shares the view of the screen under the crosshair (a Gui3D); a machine that draws its
+## own wall screen is never that one, so its repair was told to nobody: the others kept reading
+## "BREAKDOWN" while a player repaired in front of them (playtest 2026-11-12). The repair tells it
+## itself, whatever the screen.
+func _process(delta: float) -> void:
+	if not is_open() or _panel.watched or not is_instance_valid(_machine):
+		return
+	_share_in_s -= delta
+	if _share_in_s > 0.0:
+		return
+	_share_in_s = ScreenLock.CHECK_S
+	_share(_machine.view_state())
+
+
+## Tell the players around what our panel shows ([param view]), when it changed.
+func _share(view: Dictionary) -> void:
+	if view.is_empty() or view == _shared_view or not is_instance_valid(_machine):
+		return
+	var machine_host: Node3D = _machine.host()
+	if ScreenTarget.address_of(machine_host).is_empty():
+		return
+	_shared_view = view
+	ScreenTarget.send(machine_host, {"state": ScreenLock.STATE, "view": view})
 
 
 ## Whether a diagnosis is on a machine's screen.
@@ -85,6 +116,8 @@ func _open(machine: MachineBreakdown) -> void:
 		_panel.aligned.connect(_on_aligned)
 		_panel.dismissed.connect(_on_dismissed)
 	_panel.open()
+	_shared_view = {}
+	_share_in_s = 0.0
 	# The screen is ours while we repair (ScreenLock): the players around watch, and a screen opened
 	# from its prompt was not clicked yet.
 	var machine_host: Node3D = machine.host()
@@ -120,13 +153,23 @@ func _holds_repair(machine_uuid: String) -> bool:
 func _leave() -> void:
 	if is_instance_valid(_panel):
 		_panel.close()
+	_tell_closed()
 	_panel = null
 	_machine = null
 
 
 func _on_dismissed() -> void:
+	_tell_closed()
 	_panel = null
 	_machine = null
+
+
+## Our diagnosis is over: the players watching it are told, so theirs closes too instead of staying on
+## its last picture.
+func _tell_closed() -> void:
+	if not _shared_view.is_empty():
+		_share({"repair": int(GaugeRepairPanel.Phase.CLOSED)})
+	_shared_view = {}
 
 
 func _on_aligned() -> void:

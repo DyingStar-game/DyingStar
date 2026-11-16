@@ -75,6 +75,26 @@ func test_the_eye_point_is_retaken_once_standing_still_then_never() -> void:
 	assert_almost_eq(_idle(Vector3(0.0, CROUCH_Y + 0.13, 0.0), 1).y, settled, 0.0001, "a breath later: unchanged")
 
 
+## Prone -> crouch has no transition clip: the poses crossfade, and on the first frames of the new
+## stance the head is still where the old posture had it. Standing still, that head was taken as the
+## crouch eye for good: every crouch then looked from the ground (reported as "C lies down like W").
+func test_a_direct_stance_switch_does_not_take_the_old_posture_s_eye() -> void:
+	var prone_y : float = -1.4
+	_idle(Vector3(0.0, prone_y, 0.0), 2)  # lying still: the prone eye
+	_cam.stance_switched(0.3)
+	var first : Vector3 = _idle(Vector3(0.0, prone_y, 0.0), 1)  # shown crouched, the head not risen yet
+	assert_almost_eq(first.y, 1.6 + prone_y, 0.0001, "the view starts from where the head is")
+	_cam.advance(0.15)
+	var rising : Vector3 = _idle(Vector3(0.0, (prone_y + CROUCH_Y) * 0.5, 0.0), 1)
+	assert_almost_eq(rising.y, 1.6 + (prone_y + CROUCH_Y) * 0.5, 0.0001, "and follows it up")
+	_cam.advance(0.2)
+	assert_false(_cam.switching(), "the crossfade is over")
+	var crouched : Vector3 = _idle(Vector3(0.0, CROUCH_Y, 0.0), 1)
+	assert_almost_eq(crouched.y, 1.6 + CROUCH_Y, 0.0001, "the crouch eye is the crouched head's")
+	assert_almost_eq(_idle(Vector3(0.0, CROUCH_Y + 0.02, 0.0), 1).y, crouched.y, 0.0001, "kept, a breath later")
+	assert_almost_eq(_idle(Vector3(0.0, prone_y, 0.0), 2).y, 1.6 + prone_y, 0.0001, "the prone eye untouched")
+
+
 func test_at_a_screen_the_view_holds_still() -> void:
 	var still : Vector3 = _idle(Vector3.ZERO)
 	var reading : Vector3 = _cam.target(Vector3(0.02, 0.03, -0.1), 0, false, true, false, true, FORWARD)

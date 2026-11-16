@@ -247,6 +247,30 @@ var uuid: String:
 			_sync.uuid = value
 
 
+## The folder of the mine shafts' lift (the truck elevator): a part whose scene comes from there is a
+## mine's, any other a canyon's.
+const MINE_LIFT_DIR: String = "res://scenes/_universe/structures/industrial/truck_elevator/"
+
+
+## The breakdown kind (MachineBreakdown) of a lift's [param part] ("platform", "landing_upper",
+## "landing_lower", "landing_stop"), which says WHICH lift it is: "mine_lift_platform",
+## "canyon_lift_landing_upper"... A repair mission names its machine from it; "the lift of M0001" sent
+## a player to the canyon's lift for the mine's, and to the wrong one of its screens (playtest 2026-11-12).
+static func breakdown_kind(node: Node, part: String) -> String:
+	return "%s_lift_%s" % ["mine" if of_a_mine(node) else "canyon", part]
+
+
+## Whether [param node] is a part of a mine shaft's lift: its scene, or one of the scenes it stands in,
+## comes from MINE_LIFT_DIR.
+static func of_a_mine(node: Node) -> bool:
+	var at: Node = node
+	while at != null:
+		if at.scene_file_path.begins_with(MINE_LIFT_DIR):
+			return true
+		at = at.get_parent()
+	return false
+
+
 static func generate_railings(parent_node: Node3D, json_path: String) -> void:
 	if parent_node.has_node("Visuals"):
 		return

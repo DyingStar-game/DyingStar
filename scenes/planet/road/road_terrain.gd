@@ -102,8 +102,11 @@ const ADAPTIVE_MATERIAL_TYPES: PackedStringArray = ["path", "trail"]
 ## (planet_chunk.gd skips a road group whose material fails to load).
 const MATERIAL_DIR := "res://assets/_universe/environment/terrain/"
 
-## Fixed materials for highway/road.
-const ASPHALT_MATERIAL_PATH := MATERIAL_DIR + "path_asphalt.tres"
+## Fixed materials for highway/road: a plain, single-colour asphalt. The textured one
+## (path_asphalt.tres: triplanar, normal-mapped) took a head light's beam on one side only -- lit
+## driving one way, black the other way a hundred metres on, with or without the lights' shadows
+## (tarsis_3, 39.556 W 24.851 N, 2026-11-13). Not explained yet; plain until the roads are designed.
+const ASPHALT_MATERIAL_PATH := MATERIAL_DIR + "road_asphalt.tres"
 
 ## The corundum plateau's highway: melted corundum, vertex-tinted like the
 ## ground, engraved with the gaufrage (normal map + parallax height map).

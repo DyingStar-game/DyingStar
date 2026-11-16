@@ -837,15 +837,22 @@ func _ride_bed(bed: Node3D) -> void:
 
 
 func _ride_seat(seat: Node3D) -> void:
-	var eye: Transform3D = seat.sit_transform()
 	var veh: Node = seat.vehicle() if seat.has_method("vehicle") else null
 	if veh != null and get_parent() == veh:
 		# Parented to the vehicle: ride in LOCAL space so we move WITH it by transform
 		# inheritance (no per-frame world fight against the parent's smoothing) — kills the jitter.
-		var local_eye: Transform3D = (veh as Node3D).global_transform.affine_inverse() * eye
+		# The seat's place is read through LOCAL transforms too (sit_in): worked out from two world
+		# transforms, the body was put back some 70 µm off every frame, and whatever reads the world
+		# under it shook with it -- the arm holding the DataPad, a pixel at the zoom it is read at.
+		var local_eye: Transform3D
+		if seat.has_method("sit_in"):
+			local_eye = seat.sit_in(veh)
+		else:
+			local_eye = (veh as Node3D).global_transform.affine_inverse() * seat.sit_transform()
 		transform.basis = local_eye.basis
 		transform.origin = local_eye.origin - local_eye.basis * seat_body_drop
 	else:
+		var eye: Transform3D = seat.sit_transform()
 		global_transform.basis = eye.basis
 		global_position = eye.origin - eye.basis * seat_body_drop
 	_seat_free_look()

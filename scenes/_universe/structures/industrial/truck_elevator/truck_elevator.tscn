@@ -22,6 +22,7 @@ type_name = "vehicle_lift"
 [node name="MapMarker" type="Node3D" parent="." unique_id=1502620305]
 script = ExtResource("6_f6d45")
 icon = ExtResource("7_qi8e2")
-label = "%%MAP_MARKER_VEHICLE_LIFT"
+label = "%%MAP_MARKER_MINE_LIFT"
 importance = 1
+icon_tint = Color(1, 0.72, 0.24, 1)
 max_view_m = 5000.0

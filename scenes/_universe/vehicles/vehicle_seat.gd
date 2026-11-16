@@ -66,6 +66,15 @@ func sit_transform() -> Transform3D:
 		return (sp as Node3D).global_transform
 	return global_transform
 
+## Where the occupant sits in [param ancestor]'s frame (the vehicle the seat and the occupant are both
+## under), multiplied up from the local transforms: exact, where the product of two world transforms
+## (sit_transform against the vehicle's) comes back some 50 to 80 µm off, differently each frame, out
+## where the world is (4e10 m) -- measured on a parked truck, 2026-11-13 (PadShakeProbe).
+func sit_in(ancestor: Node) -> Transform3D:
+	var point: Node = sit_point if sit_point != null else get_node_or_null("SitPoint")
+	return LocalFrame.of(point if point != null else self, ancestor)
+
+
 ## The Vehicle that owns this seat (the seat is placed under the vehicle in the scene).
 func vehicle() -> Node:
 	return get_parent()

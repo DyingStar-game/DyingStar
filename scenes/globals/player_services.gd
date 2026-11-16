@@ -22,6 +22,11 @@ signal changed(area: String)
 ## The player took mission [param mission_id] ([param title], "" when the caller did not say).
 ## Whoever shows the player's missions can point at it (the wrist DataPad, after a kiosk).
 signal mission_accepted(mission_id: String, title: String)
+## A screen asks for a place to be shown on the player's chart (a mission kiosk's sheet, the DataPad's
+## mission): the point of interest [param poi_id], and the broken machine [param machine_id] of a repair
+## when there is one ("" otherwise) -- the chart frames the machine itself when it is loaded around the
+## player, the point otherwise. PlayerClient raises the wrist and opens the chart there.
+signal locate_requested(poi_id: String, machine_id: String)
 
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
 

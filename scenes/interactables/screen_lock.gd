@@ -14,6 +14,7 @@ extends RefCounted
 ## The view contract, on the screen's UI (the first node of its viewport that has both, view_node):
 ##   view_state() -> Dictionary          CLIENT: what the user is looking at (tab, filters, page...).
 ##   apply_view_state(view: Dictionary)  CLIENT: show that on a watcher's screen.
+##   watch_ended()                        CLIENT, optional: the screen is free or ours; drop what was copied.
 ## A screen without them (a machine whose screen follows its replicated state) is only locked.
 ##
 ## Every event is {"state": STATE, "holder": Horizon id ("" = free), "holder_name", "view"}: the holder
@@ -142,13 +143,24 @@ static func on_event(screen_owner: Node3D, event: Dictionary, me: String = Playe
 		var breakdown := MachineBreakdown.of(screen_owner)
 		if breakdown != null:
 			breakdown.screen_freed()
+		_end_watch(screen_owner)
 		return
 	_holders[_key(screen_owner)] = {"holder": who, "holder_name": str(event.get("holder_name", ""))}
+	if who == me:
+		_end_watch(screen_owner)  # ours now: what we copied from its last holder is not
 	var view: Variant = event.get("view")
 	if who != me and view is Dictionary and not (view as Dictionary).is_empty():
 		var ui: Node = view_node(screen_owner)
 		if ui != null:
 			ui.apply_view_state(view)
+
+
+## CLIENT: [param screen_owner]'s screen stops showing another player's view (it is free, or ours):
+## a screen that copied things of theirs drops them (optional `watch_ended()` of the view contract).
+static func _end_watch(screen_owner: Node3D) -> void:
+	var ui: Node = view_node(screen_owner)
+	if ui != null and ui.has_method("watch_ended"):
+		ui.watch_ended()
 
 
 ## CLIENT: the name of the OTHER player using [param screen_owner], "" when it is free or ours. A

@@ -30,6 +30,12 @@ const COUNTDOWN_CHECK_S := BootLog.LINE_S
 ## The cover's ink: the screens' warning orange.
 const INK := Color(1.0, 0.55, 0.1)
 const BACKGROUND := Color(0.04, 0.04, 0.05)
+## The broken machine on the star chart (F2): a pictogram in the breakdown's colour, over everything,
+## seen from MARKER_VIEW_M (m) up -- a repair mission names a village, the chart shows which machine.
+const MARKER_ICON: Texture2D = preload("res://assets/textures/map_markers/workbench.png")
+const MARKER_NAME := &"BreakdownMarker"
+const MARKER_LABEL := "%%MAP_MARKER_BREAKDOWN"
+const MARKER_VIEW_M := 10000.0
 
 ## What the machine is, a slug the simulator names in the mission's text (crusher, refinery, dispenser,
 ## terminal, kiosk, lift, teleporter, screen).
@@ -139,6 +145,7 @@ func refresh() -> void:
 			_sparks.position = machine.to_local(gui.global_position)
 	if _sparks != null:
 		_sparks.set_running(broken)
+	_mark_on_chart(machine, broken)
 	# A repair left on the screen (ours, or one watched) is over.
 	if not broken and _panel != null and _panel.visible:
 		_panel.close()
@@ -228,6 +235,34 @@ func _state() -> Shown:
 	if BrokenMachines.is_broken(id):
 		return Shown.BROKEN
 	return Shown.RESTARTING if BrokenMachines.restart_left(id) > 0.0 else Shown.WORKING
+
+
+## Put [param machine] on the star chart while it is broken ([param on]), take it off once repaired.
+func _mark_on_chart(machine: Node3D, on: bool) -> void:
+	var marker := machine.get_node_or_null(NodePath(MARKER_NAME)) as MapMarker
+	if not on:
+		if marker != null:
+			marker.queue_free()
+		return
+	if marker != null:
+		return
+	machine.add_child(chart_marker())
+
+
+## The star chart's marker of a broken machine. Static, for the tests.
+static func chart_marker() -> MapMarker:
+	var marker := MapMarker.new()
+	marker.name = MARKER_NAME
+	marker.icon = MARKER_ICON
+	marker.label = MARKER_LABEL
+	marker.icon_tint = INK
+	marker.importance = 1
+	marker.max_view_m = MARKER_VIEW_M
+	marker.show_footprint = false
+	marker.footprint_size = Vector3.ONE
+	marker.groupable = false
+	marker.on_top = true
+	return marker
 
 
 ## Cover the machine's screen with the breakdown's, or take the cover off.

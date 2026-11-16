@@ -34,6 +34,10 @@ const DECK_T := 0.08
 ## Height (m) of a railing, and the spacing of its posts.
 const RAIL_H := 1.0
 const POST_STEP := 1.3
+## Side (m) of a rail's bar and of a post.
+const RAIL_BAR := 0.04
+## What the posts of a half flight are named, under it (Post1, Post2...).
+const FLIGHT_POST_PREFIX := "Post"
 ## Side (m) of a column the decks stand on, and the most (m) between two along a walkway.
 const COLUMN_W := 0.12
 const COLUMN_STEP := 5.2
@@ -136,7 +140,30 @@ static func _flight(facade: Node3D, place: Transform3D) -> void:
 	flight.transform = place
 	for tread in flight.find_children("Tread*", "MeshInstance3D", false, false):
 		(tread as MeshInstance3D).material_override = _plate()
+	# The posts its two rails stand on: the scene only has the sloped bars, which hung in the air at
+	# both ends wherever no deck railing happened to end there.
+	var feet: Array[Vector3] = flight_post_feet()
+	for i in feet.size():
+		var post := MeshInstance3D.new()
+		post.name = "%s%d" % [FLIGHT_POST_PREFIX, i + 1]
+		post.mesh = _mesh(Vector3(RAIL_BAR, RAIL_H, RAIL_BAR), _rail_mat())
+		post.position = feet[i] + Vector3.UP * RAIL_H * 0.5
+		flight.add_child(post)
 	facade.add_child(flight)
+
+
+## The feet of the posts of a half flight, in its frame (x across the lane, y up, z along the run): on
+## both sides, at both ends of the rail and no more than POST_STEP apart between them, each standing on
+## the slope and RAIL_H tall (the rail runs RAIL_H over the slope). Pure, for the tests.
+static func flight_post_feet() -> Array[Vector3]:
+	var inset: float = RAIL_BAR * 0.5
+	var spans: int = maxi(1, ceili(HALF_RUN / POST_STEP))
+	var out: Array[Vector3] = []
+	for x: float in [inset, LANE_W - inset]:
+		for i in spans + 1:
+			var z: float = lerpf(inset, HALF_RUN - inset, float(i) / spans)
+			out.append(Vector3(x, z * HALF_RISE / HALF_RUN, z))
+	return out
 
 
 ## A deck whose top spans [param from] .. [param to] (their y: the top).

@@ -75,3 +75,13 @@ func test_the_group_picture_is_the_waypoint() -> void:
 	var picture: Texture2D = StarMapPoiLayer.ICONS.cluster_picture()
 	assert_not_null(picture)
 	assert_eq(picture.resource_path, "res://assets/textures/poi/waypoint.png")
+
+
+func test_a_group_names_the_place_the_player_stands_at() -> void:
+	# Several places on the same pixels read "2" and nothing else: a player standing in one of them
+	# could no longer tell where they were (playtest 2026-11-12).
+	var listed: Array[Dictionary] = [{"label": "M0001"}, {"label": "F0001"}, {"label": "Mine 3"}]
+	var members := PackedInt32Array([0, 2])
+	assert_eq(StarMapPoiLayer.cluster_name(members, 2, listed), "Mine 3", "the player's place, by name")
+	assert_eq(StarMapPoiLayer.cluster_name(members, 1, listed), "", "the player is elsewhere")
+	assert_eq(StarMapPoiLayer.cluster_name(members, -1, listed), "", "the player is nowhere")

@@ -169,10 +169,19 @@ func name_of(id: int) -> String:
 ## and pure: tested without a chart.
 static func rect_transform(place: Transform3D, size: AABB, floor_m: float, lift_m: float) -> Transform3D:
 	var up: Vector3 = place.basis.y.normalized()
-	var base: Vector3 = place * Vector3(size.get_center().x, size.position.y, size.get_center().z) + up * lift_m
+	var base: Vector3 = place * ground_point(size) + up * lift_m
 	var across: float = maxf(size.size.x, floor_m)
 	var along: float = maxf(size.size.z, floor_m)
 	return Transform3D(place.basis.orthonormalized().scaled_local(Vector3(across, 1.0, along)), base)
+
+
+## Where an object whose model fills [param size] (its own frame) stands: the middle of its footprint,
+## at the bottom of the model -- but never under the object's own origin. A model that goes down from
+## its ground (a mine's lift: a shaft of hundreds of metres under its head) stands on that ground, not
+## at the bottom of its pit: drawn down there with no depth test, its pictogram hardly moved on screen
+## and sat in the middle of the chart wherever one looked (playtest 2026-11-12). Static and pure.
+static func ground_point(size: AABB) -> Vector3:
+	return Vector3(size.get_center().x, maxf(size.position.y, 0.0), size.get_center().z)
 
 
 ## A picture of [param width] x [param height] fitted in a unit square, its proportions kept: every
@@ -236,7 +245,7 @@ func _place(id: int, marker: MapMarker, size: AABB, place: Transform3D, camera: 
 		entry["radius_px"] = 0.0
 		return
 	var lit: bool = id == hovered
-	var base: Vector3 = place * Vector3(size.get_center().x, size.position.y, size.get_center().z)
+	var base: Vector3 = place * ground_point(size)
 	# The DEPTH along the view, not the distance: a size that is a share of the depth is the same on
 	# screen everywhere; on the distance, the pictograms at the edges of the view came out bigger.
 	var depth: float = (to_global(base) - camera.global_position).dot(-camera.global_basis.z)

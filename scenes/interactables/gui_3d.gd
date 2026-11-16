@@ -109,12 +109,19 @@ func _unhandled_input(input_event: InputEvent) -> void:
 	# focused on a console in another room would still swallow what is typed here, while
 	# PlayerClient._screen_typing() only ever asks about the screen the player is STANDING at — so
 	# gameplay input would not even be locked for it.
-	# Nothing in a panel reacts to a key without holding focus, which makes "has a focus owner" the
-	# exact condition. A click never comes through here — it arrives by picking, above — so a field
-	# can still be focused in the first place.
-	if node_viewport == null or node_viewport.gui_get_focus_owner() == null:
+	# Only a text field being typed in gets the keys. "Has a focus owner" was not enough: a Button
+	# keeps the focus after a click, and `ui_accept` shares Space (and the pad's A) with `jump`, so
+	# jumping in front of a screen pressed its last clicked button again. A click never comes through
+	# here — it arrives by picking, above — so a field can still be focused in the first place.
+	if node_viewport == null or not takes_keys(node_viewport.gui_get_focus_owner()):
 		return
 	node_viewport.push_input(input_event)
+
+
+## Whether [param focused] (a viewport's focus owner, possibly null) is a field one types in: the only
+## kind of control a world screen forwards the keyboard to. Static and pure.
+static func takes_keys(focused: Control) -> bool:
+	return focused is LineEdit or focused is TextEdit
 
 
 ## Width/height (m) of the interactive surface, taken from the MESH — the surface whose 0..1 UVs the
