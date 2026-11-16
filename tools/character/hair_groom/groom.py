@@ -38,6 +38,7 @@ from scipy.spatial import cKDTree
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "human_bank"))
 from build_human_bank import tangents, vertex_normals  # noqa: E402
+from catalogue_guard import guard  # noqa: E402
 
 TEX_REL = "assets/_universe/characters/human/hair"
 CATALOGUE_REL = "assets/_universe/characters/human/human_catalogue.json"
@@ -750,6 +751,7 @@ def main():
         print(f"beard {beard['id']:10s}: " + ", ".join(f"{len(a['index']) // 3}" for a, _n, _t in parts) + " triangles")
     add("eyelashes", 0, {"id": "eyelashes", "gender": "any"}, eyelashes(head, raw, np.random.default_rng(SEED + 200)))
 
+    guard(os.path.join(root, CATALOGUE_REL), {"assets": catalogue}, ["assets/" + kind for kind in catalogue])
     textures_map, meta = {}, []
     for i, (arrays, m, textures) in enumerate(assets):
         for k, v in arrays.items():

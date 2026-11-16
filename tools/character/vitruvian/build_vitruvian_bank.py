@@ -29,6 +29,7 @@ from scipy.spatial import cKDTree
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "human_bank"))
 from build_human_bank import tangents, top4, vertex_normals  # noqa: E402
+from catalogue_guard import guard  # noqa: E402
 
 DENSE_FRACTION = 0.6
 JOINT_NEIGHBOURS = 48
@@ -164,7 +165,10 @@ def main():
             "assets": assets, "eye_colours": list(EYE_COLOURS), "origins": list(ORIGINS),
             "origin_labels": ["%%CHAR_ORIGIN_" + o.removeprefix("Race_").upper() for o in ORIGINS],
         }
-        with open(os.path.join(sys.argv[3], "assets/_universe/characters/human/human_catalogue.json"), "w") as f:
+        cat_path = os.path.join(sys.argv[3], "assets/_universe/characters/human/human_catalogue.json")
+        # The asset lists are refilled by refit_outfits.py and groom.py, which guard them.
+        guard(cat_path, runtime, ["modifiers", "eye_colours", "origins"])
+        with open(cat_path, "w") as f:
             json.dump(runtime, f, indent=1)
     print(f"targets: {len(names)} ({sum(dense_flags)} dense), {cursor // 3} deltas, {len(catalogue)} sliders, {len(face_units)} face units")
 

@@ -9,14 +9,28 @@ const SCENE := "res://ui/character_creator/character_creator.tscn"
 const STORE := "user://test_character_creator.cfg"
 
 
+const LIBRARY := "user://test_character_creator_sheets"
+
+
 func before_each() -> void:
 	CharacterStore.path = STORE
 	CharacterStore.clear()
+	CharacterLibrary.backend = CharacterLibrary.Local.new(LIBRARY)
+	_clear_library()
 
 
 func after_all() -> void:
 	CharacterStore.clear()
 	CharacterStore.path = CharacterStore.PATH
+	_clear_library()
+	CharacterLibrary.backend = CharacterLibrary.Local.new()
+
+
+func _clear_library() -> void:
+	if not DirAccess.dir_exists_absolute(LIBRARY):
+		return
+	for file: String in DirAccess.get_files_at(LIBRARY):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(LIBRARY.path_join(file)))
 
 
 func _creator(first_enter: bool = false) -> CharacterCreator:
@@ -86,6 +100,12 @@ func test_saving_keeps_the_look_for_the_next_spawn() -> void:
 	assert_true(CharacterStore.saved().equals(creator.look))
 	assert_true(CharacterStore.is_pending(), "to be sent on the next spawn")
 	assert_true(creator._save.disabled, "saved")
+	var sheet: Dictionary = await CharacterLibrary.fetch(CharacterStore.active_id())
+	assert_false(sheet.is_empty(), "kept as the player's character sheet too")
+	assert_eq((CharacterSheet.read(sheet)["look"] as CharacterAppearance).encode(), creator.look.encode())
+	creator._randomise_all()
+	creator._on_save()
+	assert_eq((await CharacterLibrary.list()).size(), 1, "saving again updates that same sheet")
 
 
 func test_first_enter_saves_and_asks_to_enter() -> void:

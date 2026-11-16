@@ -650,8 +650,22 @@ func _on_save() -> void:
 	CharacterStore.save_edit(look)
 	_saved = look.duplicate_appearance()
 	_refresh_buttons()
+	# Awaited before entering: the creator goes then, and the portrait is drawn by its preview.
+	await _keep_sheet(look.duplicate_appearance())
 	if first_enter:
 		enter_requested.emit()
+
+
+## The saved look into the player's character sheet (CharacterLibrary), with its portrait: the one it was
+## made from, else a new one.
+func _keep_sheet(saved_look: CharacterAppearance) -> void:
+	var portrait: Image = await _preview.portrait()
+	var base: Dictionary = await CharacterLibrary.fetch(CharacterStore.active_id())
+	var empty: bool = portrait == null or portrait.is_empty()
+	var sheet: Dictionary = CharacterSheet.make(String(base.get("name", "")), saved_look, null if empty else portrait, base)
+	var kept: Dictionary = await CharacterLibrary.save(sheet)
+	if not kept.is_empty():
+		CharacterStore.set_active_id(String(kept["id"]))
 
 
 func _refresh_buttons() -> void:

@@ -34,8 +34,11 @@ A NEW texture is imported by Godot with its defaults (lossless, no mipmaps): set
 with mipmaps (`compress/mode=2`, `mipmaps/generate=true`, `detect_3d/compress_to=0`,
 `compress/normal_map=1` for `*_normal`), as the existing `.import` files are.
 
-The catalogue (sliders, origins, asset choices) is **append-only**: an appearance (CharacterAppearance,
-version 2) stores positions in it.
+The catalogue (sliders, origins, asset choices) is **append-only**: an appearance's replicated string
+(CharacterAppearance) stores positions in it. The tools that write it stop when an entry would move or go
+(`human_bank/catalogue_guard.py`; `DS_CATALOGUE_REORDER=1` overrides, then a CharacterMigrations step must follow),
+and `test/unit/test_catalogue_order.gd` checks it against `test/data/character/catalogue_order.json`, where what
+is appended to the catalogue is appended too.
 
 ## What the game does with it
 

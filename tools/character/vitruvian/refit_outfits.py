@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "human_bank"))
 import mh_formats  # noqa: E402
 from build_human_bank import bone_profile_map, render_mesh, tangents, top4, triangulate, vertex_normals  # noqa: E402
 from human_model import DEFAULT_USER, HumanModel  # noqa: E402
+from catalogue_guard import guard  # noqa: E402
 
 TEXTURES_REL = "assets/_universe/characters/human/textures"
 MIN_CLEARANCE = 0.004  # m: a garment never sits closer to the skin than this
@@ -305,6 +306,8 @@ def main():
     for outfit_id, part, name, n, poke in report:
         print(f"{outfit_id:18s} part {part} {name:28s} {n:6d} vertices, cutting into the body: {poke * 100:5.2f} %"
               + ("" if poke <= MAX_POKE_SHARE else "   -> LEFT OUT"))
+    cat_path = os.path.join(root, "assets/_universe/characters/human/human_catalogue.json")
+    guard(cat_path, {"assets": {"outfit": catalogue}}, ["assets/outfit"])  # an outfit LEFT OUT would shift the next
     for key in [k for k in bank if k.startswith("asset") and k != "assets_json"]:
         del bank[key]
     textures_map = {}
@@ -319,7 +322,6 @@ def main():
     np.savez_compressed(bank_path, **bank)
     with open(os.path.join(os.path.dirname(os.path.abspath(bank_path)), "textures.json"), "w") as f:
         json.dump(textures_map, f, indent=1)
-    cat_path = os.path.join(root, "assets/_universe/characters/human/human_catalogue.json")
     runtime = json.load(open(cat_path))
     runtime["assets"]["outfit"] = catalogue
     json.dump(runtime, open(cat_path, "w"), indent=1)

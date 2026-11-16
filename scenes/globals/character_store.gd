@@ -47,6 +47,19 @@ static func confirm(appearance: String) -> void:
 	_write(look.encode(), false)
 
 
+## The id of the CharacterLibrary sheet the worn look was saved as ("" before any).
+static func active_id() -> String:
+	var config := ConfigFile.new()
+	return str(config.get_value(SECTION, "sheet", "")) if config.load(path) == OK else ""
+
+
+static func set_active_id(id: String) -> void:
+	var config := ConfigFile.new()
+	config.load(path)
+	config.set_value(SECTION, "sheet", id)
+	config.save(path)
+
+
 static func clear() -> void:
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

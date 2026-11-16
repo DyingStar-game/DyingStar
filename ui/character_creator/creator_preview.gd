@@ -151,6 +151,35 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 
 
+## A square portrait of the face, from the front, [param size] px (a character sheet's thumbnail): drawn by a
+## second camera in the same world, so the view being edited does not move.
+func portrait(size: int = CharacterSheet.THUMBNAIL_SIZE) -> Image:
+	if DisplayServer.get_name() == "headless":
+		return null  # nothing is drawn
+	var shot := SubViewport.new()
+	shot.world_3d = _viewport.world_3d
+	shot.size = Vector2i(size, size)
+	shot.msaa_3d = Viewport.MSAA_4X
+	shot.mesh_lod_threshold = _viewport.mesh_lod_threshold
+	shot.render_target_update_mode = SubViewport.UPDATE_ONCE
+	var camera := Camera3D.new()
+	camera.fov = PORTRAIT_FOV
+	camera.near = _camera.near
+	shot.add_child(camera)
+	_viewport.add_child(shot)  # not this container's: it stretches its own viewports to its size
+	var aim := Vector3(0.0, BODY_AIM, 0.0)
+	var head: int = _skeleton.find_bone("Head") if _skeleton != null else -1
+	if head != -1:
+		aim = _skeleton.global_transform * _skeleton.get_bone_global_pose(head).origin + Vector3(0.0, FACE_AIM_ABOVE_HEAD, 0.0)
+	camera.look_at_from_position(aim + Vector3(0.0, FACE_RISE, 1.0).normalized() * FACE_DISTANCE, aim)
+	camera.make_current()
+	for i in 2:
+		await get_tree().process_frame
+	var image: Image = shot.get_texture().get_image()
+	shot.queue_free()
+	return image
+
+
 ## Turn the figure from the gamepad's right stick or the keyboard (radians).
 func turn(radians: float) -> void:
 	_yaw += radians
