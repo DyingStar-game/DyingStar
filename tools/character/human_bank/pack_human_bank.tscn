@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tools/character/human_bank/pack_human_bank.gd" id="1"]
+
+[node name="PackHumanBank" type="Node"]
+script = ExtResource("1")

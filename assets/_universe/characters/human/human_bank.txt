@@ -1,0 +1,4 @@
+MakeHuman - Data Collection AB - https://static.makehumancommunity.org/assets/assetpacks/index.html - CC0
+Blender Artists - Hopefullyidont1 (Vitruvian Project) - https://blenderartists.org/t/open-source-customizable-digital-human-vitruvian-project/1457388 - CC0
+Max Planck Institute for Intelligent Systems - FLAME 2023 Open (identity directions carried onto the Vitruvian head) - https://flame.is.tue.mpg.de - CC BY 4.0
+Meta Platforms - Ava-256 (the nose bridge's shapes, measured on its 3D faces) - https://github.com/facebookresearch/ava-256 - CC BY-NC 4.0

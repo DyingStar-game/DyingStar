@@ -7,10 +7,15 @@ extends Node3D
 ## The avatars walk in small circles (move=1, default) fed at 30 Hz through net_set_target, like the
 ## network does, so the walk animation, interpolation and footsteps all run. Prints one line
 ## `PROBE count=… frame_ms=… proc_ms=… phys_ms=… rcpu_ms=… rgpu_ms=… draws=… prims=…` and appends it
-## to user://remote_players_bench.txt.
+## to user://remote_players_bench.txt. Each avatar wears a look of its own (HumanAppearance, seeded by its
+## name): the measure starts once every body is baked -- `bake_wait` counts the extra warm-up frames,
+## `warm_max` is the longest frame while they arrived and baked.
 const WARMUP := 120
 const FRAMES := 300
 const PLAYER_SCENE := preload("res://scenes/player/player.tscn")
+
+var _bake_wait_frames: int = 0  # frames the warm-up was held for the avatars' body bakes
+var _warm_max: float = 0.0  # longest frame of the warm-up after its first 10 (ms)
 
 var _count := 30
 var _move := true
@@ -188,6 +193,11 @@ func _process(delta: float) -> void:
 	var now := Time.get_ticks_usec()
 	var frame_ms := float(now - _last_usec) / 1000.0
 	_last_usec = now
+	if _frame > 10:
+		_warm_max = maxf(_warm_max, frame_ms)  # arrival hitches: bank load, body bakes, first draws
+	if _frame == WARMUP and (HumanMeshCache.busy() or not HumanBuilder.warm()):
+		_bake_wait_frames += 1
+		return  # the avatars' bodies are still baking (HumanAppearance): measure the steady state
 	_frame += 1
 	if _frame <= WARMUP:
 		return
@@ -200,11 +210,12 @@ func _process(delta: float) -> void:
 	_draws = int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	_prims = int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 	if _frame == WARMUP + FRAMES:
-		var line := "PROBE count=%d move=%d flags=%s frame_ms=%.2f max=%.1f fps=%.0f proc<=%.1f phys<=%.1f rcpu_ms=%.2f rgpu_ms=%.2f draws=%d prims=%d objects=%d" % [
+		var line := ("PROBE count=%d move=%d flags=%s frame_ms=%.2f max=%.1f fps=%.0f proc<=%.1f phys<=%.1f "
+				+ "rcpu_ms=%.2f rgpu_ms=%.2f draws=%d prims=%d objects=%d bake_wait=%d warm_max=%.1f") % [
 			_count, 1 if _move else 0, ",".join(_flags.keys()), _sum_frame / FRAMES, _max_frame,
 			1000.0 * FRAMES / _sum_frame, _peak_proc, _peak_phys, _sum_rcpu / FRAMES,
 			_sum_rgpu / FRAMES, _draws, _prims,
-			int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))]
+			int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)), _bake_wait_frames, _warm_max]
 		print(line)
 		var f := FileAccess.open("user://remote_players_bench.txt", FileAccess.READ_WRITE)
 		if f == null:

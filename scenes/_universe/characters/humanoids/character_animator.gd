@@ -256,41 +256,20 @@ var _wrist_hold_eye: Vector3 = Vector3.ZERO  # skeleton space: the eye the scree
 var _eye_sphere := SphereShape3D.new()  # swept from the body axis to the eye (see _eye_clear_of_walls)
 var _eye_query := PhysicsShapeQueryParameters3D.new()
 var _body_radius: float = 0.25  # the physics capsule's radius (m), read in setup
+var _wrist_screen: Variant = null  # the wrist device's screen centre (set_wrist_screen), null until named
+var _eye_shift_applied: Vector3 = Vector3.ZERO  # head move (body frame) already given to _head_cam
 
 func _ready() -> void:
 	set_process(false)  # dormant until PlayerClient.setup() wires us — never on the dedicated server
 	set_physics_process(false)
-	if not _materials_opaque and not OS.has_feature("dedicated_server"):
-		make_opaque(get_parent().get_node_or_null(^"Body"))
+	# Realistic, opaque materials, set as overrides on this puppet's meshes (shared, cached instances): the
+	# glTF's own are alpha BLEND, which kept the avatar out of the depth buffer (mine dust went through it).
+	CharacterMaterials.apply(get_parent().get_node_or_null(^"Body"))
+	# A baked body (HumanAppearance) moves the skeleton's joints: what was measured on the rests follows.
+	var looks: Node = get_parent().get_node_or_null(^"HumanAppearance")
+	if looks != null and looks.has_signal(&"appearance_applied"):
+		looks.appearance_applied.connect(on_rest_changed)
 
-
-## True once the model's materials were made opaque (they are the imported scene's, shared by every puppet).
-static var _materials_opaque: bool = false
-
-## Make the model's materials opaque, once for every puppet: the GLB exports each of them as alpha BLEND,
-## so an avatar was drawn in the TRANSPARENT pass and wrote no depth. Effects that read the depth buffer
-## (a mine's dust cloud, playtest 2026-11-11) went straight through it, and sorted against them by their
-## box centre, a player in dust stood out sharp in front of it. A material whose albedo has an alpha
-## channel (eyebrows, eyes, the shorts) is cut at half instead, still in the opaque pass.
-static func make_opaque(model: Node) -> void:
-	if model == null:
-		return
-	_materials_opaque = true
-	var meshes: Array[Node] = model.find_children("*", "MeshInstance3D", true, false)
-	for node: Node in meshes:
-		var inst := node as MeshInstance3D
-		if inst.mesh == null:
-			continue
-		for i in inst.mesh.get_surface_count():
-			var mat := inst.get_active_material(i) as BaseMaterial3D
-			if mat == null or mat.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA:
-				continue
-			var tex: Texture2D = mat.albedo_texture
-			if tex != null and tex.has_alpha():
-				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-				mat.alpha_scissor_threshold = 0.5
-			else:
-				mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 
 ## Freeze or resume the whole animation of this avatar: the AnimationPlayer stops posing the skeleton
 ## and this state machine stops running. For a REMOTE avatar that is off-screen or hidden — the pose
@@ -344,6 +323,7 @@ func setup(player_body, is_local: bool) -> void:
 		_poke = ScreenPoke.attach(_skeleton)  # after the wrist raise: the right arm, over the clip
 		if _is_local:
 			add_head_shadow(_skeleton, _head_bone, _neck_bone)
+		_sync_eye_height()
 	if _anim != null:
 		_anim.animation_finished.connect(_on_anim_finished)
 		_idle = _resolve_idle()
@@ -429,8 +409,47 @@ func _create_wrist() -> void:
 ## The device worn on the wrist names where its screen is (its own frame, +Y the screen's normal), so the
 ## raised forearm turns that screen, and not just the arm, towards the eye.
 func set_wrist_screen(screen_centre: Vector3) -> void:
+	_wrist_screen = screen_centre
 	if _wrist_raise != null:
 		_wrist_raise.set_screen(_wrist_mount_xf, screen_centre)
+
+
+## The skeleton's rests changed (HumanAppearance put another body on it): measure again everything taken
+## from them -- the arms of the hands on the wheel and of the screen tap, where the DataPad sits on the
+## forearm, the head's shadow capsule, the first-person eye height. Bone attachments follow by
+## themselves. Before setup() nothing is measured yet: setup() takes the new rests as they are.
+func on_rest_changed() -> void:
+	if _skeleton == null:
+		return
+	if _hands != null:
+		_hands.remeasure(_skeleton)
+	if _poke != null:
+		_poke.remeasure(_skeleton)
+	if _wrist_raise != null and _wrist_elbow != -1 and _wrist_hand != -1:
+		_wrist_mount_xf = WRIST_RAISE.mount_transform(_skeleton, _wrist_elbow, _wrist_hand, datapad_wrist_back)
+		var device := _player.wrist_mount as Node3D if _player != null else null
+		if device != null:
+			device.transform = _wrist_mount_xf
+		if _wrist_screen != null:
+			_wrist_raise.set_screen(_wrist_mount_xf, _wrist_screen)
+	var shadow: Node = _skeleton.get_node_or_null(^"HeadShadow")
+	if shadow != null:
+		_skeleton.remove_child(shadow)
+		shadow.queue_free()
+		add_head_shadow(_skeleton, _head_bone, _neck_bone)
+	_sync_eye_height()
+
+
+## Move the first-person eye with the head: the camera pivot was placed for the imported character, whose
+## head rest HumanAppearance kept on the skeleton (template_head_rest) before giving it another body.
+func _sync_eye_height() -> void:
+	if _skeleton == null or _head_bone == -1 or _player == null or not _skeleton.has_meta(&"template_head_rest"):
+		return
+	var template: Vector3 = _skeleton.get_meta(&"template_head_rest")
+	var moved: Vector3 = _skeleton.get_bone_global_rest(_head_bone).origin - template
+	var body_frame: Vector3 = (_player as Node3D).global_basis.inverse() * (_skeleton.global_basis * moved)
+	_head_cam.rest_changed(body_frame - _eye_shift_applied)
+	_eye_shift_applied = body_frame
 
 ## How far the wrist is raised, 0 (down) .. 1 (before the eyes): WristDatapad waits for 1 to zoom in.
 func wrist_weight() -> float:

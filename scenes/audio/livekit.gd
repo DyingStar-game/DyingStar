@@ -466,6 +466,7 @@ func _process(delta: float) -> void:
 	# ALWAYS drain the capture ring, even while muted: the audio thread fills it no matter what, and
 	# a full buffer would replay ~100 ms of what was said during the mute as soon as we unmute.
 	var available := _mic_capture.get_frames_available()
+	var mic_peak: float = 0.0  # of this frame, while sending: what moves our own face's mouth (FaceLife)
 	if available > 0:
 		var frames: PackedVector2Array = _mic_capture.get_buffer(available)
 		if _sending():
@@ -478,8 +479,11 @@ func _process(delta: float) -> void:
 				_mic_pending[base + i] = mono
 				if absf(mono) > _debug_mic_peak:
 					_debug_mic_peak = absf(mono)
+				mic_peak = maxf(mic_peak, absf(mono))
+		VoiceMeter.own_level = mic_peak
 
 	if not _sending():
+		VoiceMeter.own_level = 0.0
 		_mic_pending.clear()  # let go of the key: what was not sent yet goes with it
 		ClientPerf.scope_end("livekit_mic", _mic_token)
 		return  # nothing accumulated, and above all no capture_frame() -> we emit nothing at all
@@ -520,6 +524,7 @@ func shutdown() -> void:
 	# _start_microphone_publish reuses it cleanly next session.
 	_mic_publication = null
 	_mic_track = null
+	VoiceMeter.own_level = 0.0
 	_mic_source = null
 
 	# Stop receiving: close each reader thread and free each speaker.

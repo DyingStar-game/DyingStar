@@ -13,6 +13,7 @@ const SCREEN_OF_CATEGORY : Dictionary = {
 
 ## The top bar's entries.
 const ENTER : StringName = &"enter"
+const CHARACTER : StringName = &"character"
 const SETTINGS : StringName = &"settings"
 const CREDITS : StringName = &"credits"
 const QUIT : StringName = &"quit"
@@ -31,6 +32,8 @@ const _NOTICE_FONT_SIZE : int = 18
 ## to the game had loaded the settings another way. The editor loads scripts differently and never
 ## showed it.
 const SETTINGS_SCENE_PATH : String = "res://ui/settings_page/settings_page.tscn"
+## The character creator, loaded when opened, for the same reason.
+const CREATOR_SCENE_PATH : String = "res://ui/character_creator/character_creator.tscn"
 
 var is_ready: bool = false
 ## The settings (or credits) overlay while it is open, else null — so Esc closes it (back to the main
@@ -56,6 +59,7 @@ func _ready() -> void:
 	SafeArea.keep($Control)
 	bar = TopBar.new()
 	bar.add_entry(ENTER, "%%MAINPAGE_ENTER")
+	bar.add_entry(CHARACTER, "%%MENU_CHARACTER")
 	bar.add_entry(SETTINGS, "%%MENU_SETTINGS")
 	bar.add_entry(CREDITS, "%%MENU_CAT_CREDITS")
 	bar.add_entry(QUIT, "%%MENU_QUIT")
@@ -92,7 +96,13 @@ func _offer_pad() -> void:
 func _on_entry_pressed(key: StringName) -> void:
 	match key:
 		ENTER:
-			GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
+			# A player with no look kept here yet makes one first (or keeps the one offered).
+			if CharacterStore.saved() == null:
+				_open_creator(true)
+			else:
+				_enter_universe()
+		CHARACTER:
+			_open_creator(false)
 		SETTINGS:
 			_open_overlay(SETTINGS)
 		CREDITS:
@@ -108,6 +118,31 @@ func _unhandled_input(event: InputEvent) -> void:
 			and is_instance_valid(_settings_overlay):
 		_close_settings()
 		get_viewport().set_input_as_handled()
+
+
+func _enter_universe() -> void:
+	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
+
+
+## The character creator, in the overlay's place (Esc or the bar's arrow close it, as the settings).
+## [param first_enter]: opened by "Enter universe"; its main button saves and enters.
+func _open_creator(first_enter: bool) -> void:
+	if is_instance_valid(_settings_overlay):
+		if _overlay_entry == CHARACTER:
+			return
+		_settings_overlay.queue_free()
+	var creator : Node = (load(CREATOR_SCENE_PATH) as PackedScene).instantiate()
+	creator.set(&"first_enter", first_enter)
+	creator.enter_requested.connect(_enter_universe)
+	_settings_overlay = creator
+	_overlay_entry = CHARACTER
+	creator.tree_exited.connect(_on_settings_closed.bind(creator))
+	add_child(creator)
+	$Control.visible = false
+	_notice.visible = false
+	bar.set_active(CHARACTER)
+	bar.set_back_visible(true)
+	screen_changed.emit(CHARACTER)
 
 
 ## Back from the settings: Esc or the bar's arrow.

@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://test/animation/flowhmr_preview.gd" id="1_preview"]
+
+[node name="FlowHmrPreview" type="Node3D"]
+script = ExtResource("1_preview")

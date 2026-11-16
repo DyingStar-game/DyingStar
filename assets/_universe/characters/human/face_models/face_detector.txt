@@ -1,0 +1,1 @@
+Google MediaPipe - Face Detector (BlazeFace short range) - https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector - Apache-2.0

@@ -181,6 +181,11 @@ func _process_modification_with_delta(_delta: float) -> void:
 			reach.cross(palm).normalized())
 
 
+## Measure the hand again from the skeleton's rests: a new body (HumanAppearance) moved the joints.
+func remeasure(skeleton: Skeleton3D) -> void:
+	_measure(skeleton)
+
+
 ## The hand's frame at rest (as HandsOnWheel measures it) and the index's length, wrist to tip.
 func _measure(skeleton: Skeleton3D) -> void:
 	var rest: Transform3D = skeleton.get_bone_global_rest(_hand)

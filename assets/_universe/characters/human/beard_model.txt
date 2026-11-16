@@ -1,0 +1,2 @@
+NVIDIA - Flickr-Faces-HQ (FFHQ) - https://github.com/NVlabs/ffhq-dataset - CC BY-NC-SA 4.0
+Brno University of Technology (DCGM) - FFHQ features - https://github.com/DCGM/ffhq-features-dataset - CC BY-NC-SA 4.0

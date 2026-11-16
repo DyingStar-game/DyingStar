@@ -6,7 +6,7 @@ extends RefCounted
 ##   - the root Viewport (the game view). Never the settings page's own viewport: that page lives in
 ##     a SubViewport, and an option applied there would change nothing the player looks at;
 ##   - RenderingServer globals (shadow atlas and filter, SSAO/SSIL quality, SSR size, glow upscale, the
-##     planet_hex_quality shader global) — process-wide despite some of their names;
+##     planet_hex_quality and mesh_lod_threshold shader globals) — process-wide despite some of their names;
 ##   - the world Environment, which AtmosphereRenderer rebuilds on every spawn and attaches here.
 ##
 ## Options that someone else consumes (shadows, shadow distance, atmosphere quality, the two
@@ -70,6 +70,8 @@ func _apply(option: Dictionary) -> void:
 	var value : Variant = _settings.effective(key)
 	if option.has("viewport"):
 		_viewport.set(option["viewport"], value)
+		if key == "mesh_lod":  # a head of hair's shader keeps its coverage across the LODs with it
+			RenderingServer.global_shader_parameter_set("mesh_lod_threshold", float(value))
 		return
 	match key:
 		"fsr_sharpness":

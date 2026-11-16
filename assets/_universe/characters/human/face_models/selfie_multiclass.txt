@@ -1,0 +1,1 @@
+Google MediaPipe - Selfie multiclass segmentation 256x256 - https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter - Apache-2.0

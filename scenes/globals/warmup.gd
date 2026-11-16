@@ -56,6 +56,9 @@ const CATALOGUES: Array[String] = [
 	"res://scenes/_universe/props/food/dispenser_items/",
 	"res://scenes/_universe/props/tools/dispenser_items/",
 ]
+## The puppet a baked person is drawn on, and the frames it is shown in each of its material sets.
+const PERSON_SCENE := "res://scenes/_universe/characters/humanoids/human_puppet.tscn"
+const PERSON_FRAMES := 4
 ## Meshes drawn a frame while their shaders compile.
 const MESHES_PER_FRAME := 8
 
@@ -77,6 +80,8 @@ var _meshes_done: int = 0
 ## The neon signs of the layouts still to trace (NeonSign.mesh_params), one a frame.
 var _signs: Array = []
 var _label: Label
+var _person: Node = null
+var _person_frames: int = 0
 
 
 ## Start the warm-up once per session, where something is drawn.
@@ -191,6 +196,14 @@ func _ready() -> void:
 	lamp.omni_range = 10.0
 	lamp.shadow_enabled = true
 	_viewport.add_child(lamp)
+	# A person: a baked body is built at run time (HumanAppearance), so no scene names its skin, eye and
+	# hair shaders, and the first avatar drawn froze the game ~650 ms to compile them. One is baked and
+	# drawn here, in its close-up materials then its far ones; it also loads the character bank.
+	_person = (load(PERSON_SCENE) as PackedScene).instantiate()
+	_viewport.add_child(_person)
+	var looks := _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
+	if looks != null:
+		looks.set_appearance(CharacterAppearance.preset("default_male"))
 
 
 func _process(_delta: float) -> void:
@@ -218,6 +231,8 @@ func _process(_delta: float) -> void:
 		_draw(_to_draw.pop_back())
 		_meshes_done += 1
 	_show_progress()
+	if not _person_drawn():
+		return
 	if _loading.is_empty() and _to_draw.is_empty() and _drawn.is_empty() and _signs.is_empty():
 		print("[Warmup] %d scenes ready, their shaders compiled" % _held.size())
 		_viewport.queue_free()
@@ -227,6 +242,25 @@ func _process(_delta: float) -> void:
 
 
 ## How far it is (0..1): the scenes loaded for one half, the meshes drawn for the other. Pure.
+## Whether the person was drawn in both its material sets (a few frames each, for every pass to be met).
+func _person_drawn() -> bool:
+	if not is_instance_valid(_person):
+		return true
+	var looks := _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
+	if looks == null:
+		return true
+	if not looks.is_applied():
+		return false
+	_person_frames += 1
+	if _person_frames == PERSON_FRAMES:
+		looks.set_detail(false)
+	if _person_frames < PERSON_FRAMES * 2:
+		return false
+	_person.queue_free()
+	_person = null
+	return true
+
+
 static func progress(wanted: int, loading: int, drawn: int, to_draw: int) -> float:
 	var loaded: float = 1.0 if wanted == 0 else float(wanted - loading) / float(wanted)
 	var compiled: float = 1.0 if drawn + to_draw == 0 else float(drawn) / float(drawn + to_draw)

@@ -65,6 +65,9 @@ var horizon_tls_verify: bool = true
 var link = null
 var player_entity
 var players_list: Dictionary = {}
+## A player's slower channels (zone 1: its appearance), by uuid, while its channel 0 has not built it
+## yet: both zones enter together, in either order. Applied by create_player, dropped with the player.
+var _player_side_channels: Dictionary = {}
 var props_list: Dictionary = {
 	"planet": {},
 	"box50cm": {},
@@ -921,15 +924,12 @@ func _create_object(event: Dictionary) -> void:
 	# }
 	match event["object_type"]:
 		"player":
+			# Players are BUILT from channel 0 alone (props merge their channels, players do not); the
+			# other channels (1: the appearance) only add state to the body channel 0 made.
 			if int(event["channel"]) == 0:
 				create_player(event)
-			elif event["object_id"] == my_player_uuid:
-				# Players are built from channel 0 alone (props merge their channels, players do not).
-				# A zone entry for OUR body on any other channel is therefore dropped here, silently,
-				# and we would never spawn — worth a line, because the symptom (an eternal loading
-				# splash) looks nothing like the cause.
-				push_warning("[client] my player: zone entry ignored, it arrived on channel %s, not 0"
-						% event["channel"])
+			else:
+				_player_side_channel(str(event["object_id"]), event.get("zone_data", event.get("data", {})))
 
 		"star":
 			# The system star is a static node in the level (system_sandbox.tscn "Star"); ignore the
@@ -1257,8 +1257,24 @@ func create_player(event: Dictionary) -> void:
 	# helmet off, …), not just position/name/parent — the whole state rides the gorc_zone_enter
 	# snapshot. Same path as the live deltas below, so future properties are covered for free.
 	_apply_player_gameplay_props(players_list.get(event["object_id"], null), player_data)
+	# Its other channels, if they came first (the appearance).
+	if _player_side_channels.has(event["object_id"]):
+		_apply_player_gameplay_props(players_list.get(event["object_id"], null), _player_side_channels[event["object_id"]])
+		_player_side_channels.erase(event["object_id"])
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
+
+
+## A player's state from a channel other than 0 (zone entry or update): applied to its body, or kept
+## until create_player builds it.
+func _player_side_channel(object_id: String, data: Dictionary) -> void:
+	var player = players_list.get(object_id, null)
+	if player != null and is_instance_valid(player):
+		_apply_player_gameplay_props(player, data)
+		return
+	if not _player_side_channels.has(object_id):
+		_player_side_channels[object_id] = {}
+	(_player_side_channels[object_id] as Dictionary).merge(data, true)
 
 ## Is this object already waiting on a missing parent? Guards the queue against duplicates now that
 ## repeated updates for an unbuilt object also reach the create path.
@@ -1567,6 +1583,8 @@ func _update_generic_object(event: Dictionary) -> void:
 			if not is_instance_valid(player_instance):
 				return
 			_apply_player_gameplay_props(player_instance, object_data)
+		elif (object_data as Dictionary).has("appearance"):
+			_player_side_channel(str(object_id), object_data)  # its look, before its body: kept for it
 		else:
 			print("Update player property but player not found: %s" % object_id)
 		return
@@ -1633,6 +1651,7 @@ func _update_generic_object(event: Dictionary) -> void:
 func delete_player(event: Dictionary) -> void:
 	if not int(event["channel"]) == 0:
 		return
+	_player_side_channels.erase(event["object_id"])
 	# NEVER our own body. players_list holds it alongside every remote one, and this function used to
 	# free whatever uuid it was handed — so a zone exit naming OUR player deleted the body we are
 	# playing, and with it our camera and our input. The view then fell to whatever camera was left
