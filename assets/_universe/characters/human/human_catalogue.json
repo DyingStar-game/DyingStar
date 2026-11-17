@@ -1020,27 +1020,51 @@
   "outfit": [
    {
     "id": "male_casual01",
-    "gender": "male"
+    "gender": "male",
+    "garments": [
+     "mh_male_casualsuit01",
+     "mh_shoes03"
+    ]
    },
    {
     "id": "male_casual02",
-    "gender": "male"
+    "gender": "male",
+    "garments": [
+     "mh_male_casualsuit02",
+     "mh_shoes01"
+    ]
    },
    {
     "id": "male_casual04",
-    "gender": "male"
+    "gender": "male",
+    "garments": [
+     "mh_male_casualsuit04",
+     "mh_shoes04"
+    ]
    },
    {
     "id": "male_work01",
-    "gender": "male"
+    "gender": "male",
+    "garments": [
+     "mh_male_worksuit01",
+     "mh_shoes03"
+    ]
    },
    {
     "id": "female_casual01",
-    "gender": "female"
+    "gender": "female",
+    "garments": [
+     "mh_female_casualsuit01",
+     "mh_shoes04_female"
+    ]
    },
    {
     "id": "female_casual02",
-    "gender": "female"
+    "gender": "female",
+    "garments": [
+     "mh_female_casualsuit02",
+     "mh_shoes01_female"
+    ]
    }
   ]
  },
@@ -1082,5 +1106,162 @@
   "%%CHAR_ORIGIN_TELEGU",
   "%%CHAR_ORIGIN_SINHALESE",
   "%%CHAR_ORIGIN_KANNADA"
+ ],
+ "garments": [
+  {
+   "id": "mh_male_casualsuit01",
+   "zones": [
+    "3",
+    "4",
+    "8"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "cloth",
+   "gender": "male",
+   "label": "%%GARMENT_MH_MALE_CASUALSUIT01"
+  },
+  {
+   "id": "mh_shoes03",
+   "zones": [
+    "9"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "leather",
+   "gender": "male",
+   "label": "%%GARMENT_MH_SHOES03"
+  },
+  {
+   "id": "mh_male_casualsuit02",
+   "zones": [
+    "3",
+    "4",
+    "8"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "cloth",
+   "gender": "male",
+   "label": "%%GARMENT_MH_MALE_CASUALSUIT02"
+  },
+  {
+   "id": "mh_shoes01",
+   "zones": [
+    "9"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "leather",
+   "gender": "male",
+   "label": "%%GARMENT_MH_SHOES01"
+  },
+  {
+   "id": "mh_male_casualsuit04",
+   "zones": [
+    "3",
+    "4",
+    "8"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "cloth",
+   "gender": "male",
+   "label": "%%GARMENT_MH_MALE_CASUALSUIT04"
+  },
+  {
+   "id": "mh_shoes04",
+   "zones": [
+    "9"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "leather",
+   "gender": "male",
+   "label": "%%GARMENT_MH_SHOES04"
+  },
+  {
+   "id": "mh_male_worksuit01",
+   "zones": [
+    "3",
+    "4",
+    "8"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "cloth",
+   "gender": "male",
+   "label": "%%GARMENT_MH_MALE_WORKSUIT01"
+  },
+  {
+   "id": "mh_female_casualsuit01",
+   "zones": [
+    "3",
+    "4",
+    "8"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "cloth",
+   "gender": "female",
+   "label": "%%GARMENT_MH_FEMALE_CASUALSUIT01"
+  },
+  {
+   "id": "mh_shoes04_female",
+   "zones": [
+    "9"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "leather",
+   "gender": "female",
+   "label": "%%GARMENT_MH_SHOES04_FEMALE"
+  },
+  {
+   "id": "mh_female_casualsuit02",
+   "zones": [
+    "3",
+    "4",
+    "8"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "cloth",
+   "gender": "female",
+   "label": "%%GARMENT_MH_FEMALE_CASUALSUIT02"
+  },
+  {
+   "id": "mh_shoes01_female",
+   "zones": [
+    "9"
+   ],
+   "support": 0,
+   "layer": 1,
+   "access": 0,
+   "hides": [],
+   "material": "leather",
+   "gender": "female",
+   "label": "%%GARMENT_MH_SHOES01_FEMALE"
+  }
  ]
 }

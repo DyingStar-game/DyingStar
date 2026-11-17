@@ -23,7 +23,7 @@ const HAIR_STRANDS_SHADER := preload("res://assets/_universe/characters/human/sh
 const HAIR_SHELL_SHADER := preload("res://assets/_universe/characters/human/shaders/human_hair_shell.gdshader")
 const HAIR_SCALP_SHADER := preload("res://assets/_universe/characters/human/shaders/human_hair_scalp.gdshader")
 
-enum Role { SKIN, EYE, HAIR, TEETH, TONGUE, CLOTH, SHOES }
+enum Role { SKIN, EYE, HAIR, TEETH, TONGUE, CLOTH, SHOES, HARD, GLASS }
 
 ## Mesh name fragments -> role. The first match wins; anything unmatched is cloth. Eyebrows and
 ## eyelashes come before the generic "eye", which their names also contain.
@@ -35,7 +35,6 @@ const ROLE_BY_NAME: Array = [
 	["teeth", Role.TEETH], ["tongue", Role.TONGUE], ["shoes", Role.SHOES],
 ]
 
-const TEXTURES_DIR := "res://assets/_universe/characters/human/textures/"
 const SKIN_DIR := "res://assets/_universe/characters/human/skin/"
 ## How much darker than the hair the strands of each kind are (human_hair.gdshader darken).
 const DARKEN_BY_KIND: Dictionary = {"eyebrows": 0.25, "eyelashes": 0.8}
@@ -138,7 +137,7 @@ static func human_material(what: Variant, _appearance: CharacterAppearance, near
 	match String(asset.kind):
 		"hair", "eyebrows", "eyelashes", "beard":
 			return _hair_material(asset, near)
-	var cloth_role: Role = Role.SHOES if asset.part > 0 else Role.CLOTH
+	var cloth_role: Role = garment_role(asset)
 	return _shared(cloth_role, asset.albedo, func() -> Material:
 		var source := StandardMaterial3D.new()
 		source.albedo_texture = asset.albedo
@@ -149,6 +148,21 @@ static func human_material(what: Variant, _appearance: CharacterAppearance, near
 			source.ao_enabled = true
 			source.ao_texture = asset.ao
 		return _cloth_material(cloth_role, source))
+
+
+## How a garment is lit, from its material (GarmentFormat: cloth, leather, hard, glass); a bank outfit's pieces
+## after the first are its shoes.
+static func garment_role(asset: HumanAssetData) -> Role:
+	if asset.kind != &"garment":
+		return Role.SHOES if asset.part > 0 else Role.CLOTH
+	match String(asset.material):
+		"leather":
+			return Role.SHOES
+		"hard":
+			return Role.HARD
+		"glass":
+			return Role.GLASS
+	return Role.CLOTH
 
 
 ## The shared material of generated hair (tools/character/hair_groom): hairs -- a head of hair, a beard,
@@ -419,7 +433,8 @@ static func _mouth_material(role: Role, source: BaseMaterial3D) -> StandardMater
 	return mat
 
 
-## Clothes and shoes: the imported textures on an opaque, matte, coat-free material.
+## Clothes, shoes, a helmet's shell, a visor: the imported textures on an opaque (a visor: see-through), coat-free
+## material -- matte cloth, leather a little shinier, hard shells shinier still, glass smooth.
 static func _cloth_material(role: Role, source: BaseMaterial3D) -> StandardMaterial3D:
 	var mat: StandardMaterial3D = (source.duplicate() as StandardMaterial3D) if source is StandardMaterial3D else StandardMaterial3D.new()
 	var has_alpha: bool = mat.albedo_texture != null and mat.albedo_texture.has_alpha()
@@ -427,7 +442,10 @@ static func _cloth_material(role: Role, source: BaseMaterial3D) -> StandardMater
 	mat.alpha_scissor_threshold = 0.5
 	mat.clearcoat_enabled = false
 	mat.metallic = 0.0
-	mat.roughness = 0.6 if role == Role.SHOES else 0.88
-	mat.metallic_specular = 0.3
+	mat.roughness = {Role.SHOES: 0.6, Role.HARD: 0.35, Role.GLASS: 0.05}.get(role, 0.88)
+	mat.metallic_specular = 0.5 if role == Role.HARD or role == Role.GLASS else 0.3
+	if role == Role.GLASS:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(1.0, 1.0, 1.0, 0.35)
 	mat.cull_mode = BaseMaterial3D.CULL_BACK
 	return mat

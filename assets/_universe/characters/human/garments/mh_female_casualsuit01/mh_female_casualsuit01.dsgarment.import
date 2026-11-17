@@ -1,0 +1,14 @@
+[remap]
+
+importer="dyingstar.garment"
+type="Resource"
+uid="uid://7qnubqw4ojpe"
+path="res://.godot/imported/mh_female_casualsuit01.dsgarment-d8c345c6b30ba521c9f4c15684eda15a.res"
+
+[deps]
+
+source_file="res://assets/_universe/characters/human/garments/mh_female_casualsuit01/mh_female_casualsuit01.dsgarment"
+dest_files=["res://.godot/imported/mh_female_casualsuit01.dsgarment-d8c345c6b30ba521c9f4c15684eda15a.res"]
+
+[params]
+

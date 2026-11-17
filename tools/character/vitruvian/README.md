@@ -23,6 +23,9 @@ python3 tools/character/vitruvian/make_slider_labels.py .
 # 2b. hair, eyebrows, eyelashes: generated (tools/character/hair_groom), after the outfits
 python3 tools/character/hair_groom/make_textures.py .
 python3 tools/character/hair_groom/groom.py $B/human_bank.npz $B/vitruvian_raw.npz .
+# 2d. the outfits out of the bank, into garment files (one per piece: tools/character/garments/README.md)
+python3 tools/character/garments/convert_bank_outfits.py $B/human_bank.npz . --strip
+python3 tools/character/garments/garment_labels.py .
 # 2c. real faces' identity directions from FLAME 2023 Open (tools/character/flame/README.md)
 # 3. import the textures, then pack
 godot --headless --editor --path . --quit
@@ -51,7 +54,8 @@ is appended to the catalogue is appended too.
   Mouth, Tearline), normals computed over the whole welded body.
 - **Skin.** One set of maps for everyone: a light and a dark colour mixed by the person's skin tone, a
   normal map from the sculpt's height, roughness, and old-age wrinkles faded in with age.
-- **Outfits.** MakeHuman's, re-fitted (`refit_outfits.py`): the bones carry each garment from a MakeHuman
+- **Outfits.** Worn as garments now, each its own file (`tools/character/garments`); MakeHuman's six outfits came
+  from here, re-fitted (`refit_outfits.py`) then turned into garments (`convert_bank_outfits.py`): the bones carry each garment from a MakeHuman
   body to the Vitruvian one, about the centre of each bone's flesh and alike across its pieces (a top stays
   over the waistband); the old skin, so carried, is registered onto the new one and takes the garment along
   (MakeHuman's bust sat 4 cm higher); the clearance it had over the skin is restored, the garment is ironed

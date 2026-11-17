@@ -64,6 +64,13 @@ const EYE_SWATCHES: Dictionary = {
 	"deepblue": [Color(0.15, 0.25, 0.55), "%%CHAR_EYE_DEEPBLUE"], "grey": [Color(0.55, 0.58, 0.6), "%%CHAR_EYE_GREY"],
 	"ice": [Color(0.75, 0.85, 0.92), "%%CHAR_EYE_ICE"],
 }
+## The outfit tab: one group per GDD zone (the first zone of a garment's code), in this order.
+const GARMENT_ZONES: Array = [["1", "%%CHAR_GARMENT_HEAD"], ["3", "%%CHAR_GARMENT_TORSO"], ["4", "%%CHAR_GARMENT_ARMS"],
+	["5", "%%CHAR_GARMENT_HANDS"], ["8", "%%CHAR_GARMENT_LEGS"], ["9", "%%CHAR_GARMENT_FEET"], ["0", "%%CHAR_GARMENT_BODY"]]
+## ... and one picker per layer a character is created in (GDD layers 0..3: underwear to coat; armour is
+## equipment, worn in game).
+const GARMENT_LAYERS: Array = ["%%CHAR_GARMENT_LAYER_0", "%%CHAR_GARMENT_LAYER_1", "%%CHAR_GARMENT_LAYER_2",
+	"%%CHAR_GARMENT_LAYER_3"]
 ## Seconds a look must stay unchanged to become an undo step (a slider drag is one step, not fifty).
 const STEP_SETTLE_S: float = 0.4
 ## Width of the column of categories and sliders (px, before the interface scale).
@@ -279,7 +286,7 @@ func _build_rows() -> void:
 		&"eyes":
 			_eye_rows()
 		&"outfit":
-			_choice_row("%%CHAR_OUTFIT", "outfit", look.outfit, func(i: int) -> void: look.outfit = i)
+			_garment_rows()
 	SettingsRow.wrap_rows(_rows)
 	_scroll.scroll_vertical = 0
 	if not InputDevice.pointer:
@@ -462,8 +469,60 @@ func _eye_rows() -> void:
 	_rows.add_child(grid)
 
 
-## A line choosing one asset of [param kind] (hair, outfit...): "None", then "Style 1", "Style 2"...
-## (the outfits marked for the body they suit).
+## The garments, zone by zone (GARMENT_ZONES), a picker per layer that has garments there.
+func _garment_rows() -> void:
+	var entries: Array = CharacterAppearance.garment_entries()
+	for zone: Array in GARMENT_ZONES:
+		var titled: bool = false
+		for layer in GARMENT_LAYERS.size():
+			var choices: Array[int] = []
+			for i in entries.size():
+				var e: Dictionary = entries[i]
+				var zones: Array = e.get("zones", [])
+				if String(e["id"]) == "none" or zones.is_empty() or int(e.get("layer", 1)) != layer:
+					continue
+				if String(zones[0]).left(1) == zone[0]:
+					choices.append(i)
+			if choices.is_empty():
+				continue
+			if not titled:
+				_rows.add_child(_factory.header(zone[1]))
+				titled = true
+			_garment_row(GARMENT_LAYERS[layer], choices)
+
+
+## A picker among [param choices] (garment positions in the catalogue): "None" then their names (marked for the
+## body they suit). Picking one takes off what it cannot be worn with (GarmentRules): the last choice wins.
+func _garment_row(label_key: String, choices: Array[int]) -> void:
+	var entries: Array = CharacterAppearance.garment_entries()
+	var line: HBoxContainer = _factory.row(label_key)
+	var picker: OptionButton = _factory.option_button()
+	picker.add_item(tr("%%CHAR_NONE"))
+	var selected: int = 0
+	for k in choices.size():
+		var e: Dictionary = entries[choices[k]]
+		var text: String = tr(String(e.get("label", e["id"])))
+		if e.get("gender", "any") != "any":
+			text += "  (%s)" % tr("%%CHAR_FOR_WOMEN" if e["gender"] == "female" else "%%CHAR_FOR_MEN")
+		picker.add_item(text)
+		if look.garments.any(func(g: Array) -> bool: return int(g[0]) == choices[k]):
+			selected = k + 1
+	picker.select(selected)
+	SettingsRowFactory.fit_names(picker)
+	picker.item_selected.connect(func(i: int) -> void:
+		var kept: Array = look.garments.filter(func(g: Array) -> bool: return not choices.has(int(g[0])))
+		if i > 0:
+			kept.push_front([choices[i - 1], 0])
+		look.garments = CharacterAppearance.canonical_garments(kept)
+		_changed()
+		var scrolled: int = _scroll.scroll_vertical
+		_build_rows()  # what the choice took off shows as "None"
+		_scroll.set_deferred("scroll_vertical", scrolled))
+	line.add_child(picker)
+	_rows.add_child(line)
+
+
+## A line choosing one asset of [param kind] (eyebrows, eyelashes...): "None", then "Style 1", "Style 2"...
 func _choice_row(label_key: String, kind: String, current: int, apply: Callable) -> void:
 	var line: HBoxContainer = _factory.row(label_key)
 	var picker: OptionButton = _factory.option_button()
@@ -474,10 +533,7 @@ func _choice_row(label_key: String, kind: String, current: int, apply: Callable)
 			picker.add_item(tr("%%CHAR_NONE"))
 			continue
 		n += 1
-		var text: String = tr("%%CHAR_STYLE_N") % n
-		if kind == "outfit" and entry["gender"] != "any":
-			text += "  (%s)" % tr("%%CHAR_FOR_WOMEN" if entry["gender"] == "female" else "%%CHAR_FOR_MEN")
-		picker.add_item(text)
+		picker.add_item(tr("%%CHAR_STYLE_N") % n)
 	picker.select(current)
 	SettingsRowFactory.fit_names(picker)
 	picker.item_selected.connect(func(i: int) -> void:
@@ -613,7 +669,7 @@ func _randomise_tab() -> void:
 		&"eyes":
 			out.eye_colour = drawn.eye_colour
 		&"outfit":
-			out.outfit = CharacterAppearance.random_choice(rng, "outfit", gender, 0.0)
+			out.garments = CharacterAppearance.random_garments(rng.randi(), gender)
 	out.canonicalise()
 	_show(out)
 

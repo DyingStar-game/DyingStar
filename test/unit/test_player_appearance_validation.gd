@@ -44,13 +44,18 @@ func test_what_is_not_a_look_is_refused() -> void:
 
 
 func test_out_of_range_choices_are_brought_back_before_they_go_out() -> void:
-	var raw: PackedByteArray = CharacterAppearance.random(3).to_bytes()
-	raw[29] = 250  # an outfit that does not exist
+	var look: CharacterAppearance = CharacterAppearance.random(3)
+	var raw: PackedByteArray = look.to_bytes()
+	var suit_a: int = CharacterAppearance.garment_index("mh_male_casualsuit01")
+	var suit_b: int = CharacterAppearance.garment_index("mh_male_casualsuit02")
+	raw.resize(raw.size() - 1 - 3 * look.garments.size())  # the garments, written again below
+	# a garment that does not exist, then two suits on the same place
+	raw.append_array(PackedByteArray([3, 0xE7, 0x03, 0, suit_a, 0, 0, suit_b, 0, 0]))
 	var text: String = Marshalls.raw_to_base64(raw).replace("+", "-").replace("/", "_").trim_suffix("=").trim_suffix("=")
 	_server._set_appearance(text)
 	assert_eq(_player.sent.size(), 1)
 	var out: CharacterAppearance = CharacterAppearance.decode(_player.sent[0]["appearance"])
-	assert_lt(out.outfit, CharacterAppearance.choice_count("outfit"))
+	assert_eq(out.garments, [[suit_a, 0]], "the unknown garment and the second suit taken off")
 	assert_gte(out.years(), 18.0)
 
 

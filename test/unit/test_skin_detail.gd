@@ -42,10 +42,10 @@ func test_a_version_2_look_gets_details_that_suit_it() -> void:
 	var a: CharacterAppearance = CharacterAppearance.random(9)
 	a.macros["age"] = HumanMacros.age_of(70.0)
 	var v3: PackedByteArray = a.to_bytes()
-	# The same look as version 2 wrote it: no skin details, its slider count at byte 30.
+	# The same look as version 2 wrote it: no skin details, its slider count at byte 30, nothing after the sliders.
 	var v2 := PackedByteArray()
 	v2.append_array(v3.slice(0, 30))
-	v2.append_array(v3.slice(CharacterAppearance.HEADER_BYTES - 1))
+	v2.append_array(v3.slice(CharacterAppearance.HEADER_BYTES - 1, v3.size() - 1 - 3 * a.garments.size()))  # no garments
 	v2[0] = 2
 	var old: CharacterAppearance = CharacterAppearance.from_bytes(v2)
 	assert_not_null(old, "a version 2 look is still read")

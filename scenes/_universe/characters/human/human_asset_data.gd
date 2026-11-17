@@ -10,7 +10,7 @@ extends Resource
 ## offset scaled by how much the body grew along each axis (the distance between two reference vertices
 ## over its original length).
 
-## Asset kind: hair, eyebrows, eyelashes, eyes, teeth, tongue or outfit.
+## Asset kind: hair, eyebrows, eyelashes, eyes, teeth, tongue, outfit (the bank's old outfits) or garment.
 @export var kind: StringName
 ## Position of the choice in its kind's list (assets.json); what an appearance stores.
 @export var slot: int = 0
@@ -79,3 +79,25 @@ extends Resource
 @export var normal: Texture2D
 ## Ambient occlusion map, or null.
 @export var ao: Texture2D
+
+@export_group("Garment (GDD equipment)")
+## Garments only (kind "garment", a .dsgarment): the GDD zones it covers, the first being its official code
+## ("8" legs, "5G" left hand, "0" the whole body...). See GarmentRules.
+@export var zones: PackedStringArray
+## Garments only: the highest GDD layer (0 underwear .. 5 heavy armour) it can rest on -- the 2nd figure of
+## its code. Raising it lets it go over more; with `layer`, it sets where it sits in the stack.
+@export var support: int = 0
+## Garments only: the GDD layer it counts as (0 underwear, 1 clothing, 2 light jacket, 3 coat, 4 light armour,
+## 5 heavy armour) -- the 3rd figure of its code.
+@export var layer: int = 1
+## Garments only: 0 when it blocks reaching what is under it, 1 when not -- the 4th figure of its code.
+@export var access: int = 1
+## Garments only: what it hides of the head: "hair", "beard", "face" (a closed helmet hides all three).
+@export var hides: PackedStringArray
+## Garments only: how it is lit -- cloth, leather, hard (a helmet's shell) or glass (a visor).
+@export var material: StringName = &"cloth"
+## Garments only: per-pixel share of the albedo the wearer's tint colours (white = all), or null: not tintable.
+@export var tint_mask: Texture2D
+## Garments only: the body it was bound to (garment_bind.body_signature); the importer refuses a garment
+## whose signature is not the bank's.
+@export var body_signature: String

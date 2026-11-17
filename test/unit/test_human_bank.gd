@@ -53,6 +53,8 @@ func test_every_slider_target_is_in_the_bank() -> void:
 
 func test_every_asset_choice_has_a_mesh() -> void:
 	for kind in _bank.asset_catalogue:
+		if kind == "outfit":
+			continue  # the outfits of version 6 and before: worn as garments now (test_every_garment_has_its_file)
 		var choices: Array = _bank.asset_catalogue[kind]
 		for slot in choices.size():
 			var empty: bool = str(choices[slot]["id"]) == "none"
@@ -61,6 +63,30 @@ func test_every_asset_choice_has_a_mesh() -> void:
 				assert_eq(parts.size(), 0, "%s %s is the 'none' choice" % [kind, choices[slot]["id"]])
 			else:
 				assert_gt(parts.size(), 0, "%s %s needs its mesh" % [kind, choices[slot]["id"]])
+
+
+func test_every_garment_has_its_file() -> void:
+	var signature: String = GarmentFormat.bank_signature(_bank)
+	for entry: Dictionary in CharacterAppearance.garment_entries():
+		var g: HumanAssetData = GarmentLibrary.asset(String(entry["id"]))
+		assert_not_null(g, "garment %s is imported (%s)" % [entry["id"], GarmentFormat.path_of(entry["id"])])
+		if g == null:
+			continue
+		assert_eq(g.body_signature, signature, "%s is bound to this body" % entry["id"])
+		assert_eq(Array(g.zones), entry["zones"], "%s: the catalogue's zones are the file's" % entry["id"])
+		assert_eq([g.support, g.layer, g.access], [int(entry["support"]), int(entry["layer"]), int(entry["access"])],
+				"%s: the catalogue's GDD code is the file's" % entry["id"])
+		assert_not_null(g.albedo, "%s has its colours" % entry["id"])
+		var n: int = g.offsets.size()
+		assert_eq(g.refs.size(), n * 3, "%s refs" % entry["id"])
+		assert_eq(g.weights.size(), n * 3, "%s weights" % entry["id"])
+		for r in g.refs:
+			if r < 0 or r >= _bank.base.size():
+				fail_test("%s refers to body vertex %d" % [entry["id"], r])
+				break
+	for entry: Dictionary in _bank.asset_catalogue.get("outfit", []):
+		for id: Variant in entry.get("garments", []):
+			assert_ne(CharacterAppearance.garment_index(String(id)), -1, "outfit %s's garment %s" % [entry["id"], id])
 
 
 func test_assets_are_well_formed() -> void:

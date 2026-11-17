@@ -1,13 +1,13 @@
 class_name CharacterAppearance
 extends RefCounted
 
-## What a character looks like: body and face shape, skin, eyes, hair, beard and outfit -- small enough
-## to travel as one replicated string, and the same bytes on every machine.
+## What a character looks like: body and face shape, skin, eyes, hair, beard and the garments it wears --
+## small enough to travel as one replicated string, and the same bytes on every machine.
 ##
-## The wire form is a versioned byte string in base64url (no padding), 57 bytes plus 2 per face / body
-## slider moved off its default (version 6: the Vitruvian body, its skin details, its hair as settings):
+## The wire form is a versioned byte string in base64url (no padding), 58 bytes plus 2 per face / body
+## slider moved off its default and 3 per garment worn (version 7: garments, the GDD's equipment):
 ##
-##   0       version (6)
+##   0       version (7)
 ##   1..3    gender, age, height, u8 (HumanMacros)
 ##   4..15   origin weights, u8 (HumanMacros: the bank's 12 origin shapes)
 ##   16..18  skin: tone (0 = lightest .. 1 = darkest), warmth (0.5 = neutral), dimples (0 = none: the byte
@@ -17,14 +17,17 @@ extends RefCounted
 ##           length (cut off its tips: 1 since version 4, whose length is the cut's)
 ##   25..26  eyebrows, eyelashes
 ##   27..28  beard (0 = none, else the style it started from: assets.beard), length (cut: 1 since v4)
-##   29      outfit
+##   29      reserved, 0 (the outfit until version 6: a suit and its shoes, now garments)
 ##   30..35  skin details (SKIN_DETAILS order): freckles, moles, wrinkles, redness, eye bags, unevenness
 ##   36..47  the head of hair's settings (HairCut.to_bytes)
 ##   48..55  the beard's settings (BeardCut.to_bytes)
 ##   56      N sliders, then N x (slider id u8 = position in the catalogue, value s8 / 127)
+##   then    G garments, then G x (garment u16 little-endian = position in the catalogue's "garments", tint u8:
+##           0 = its own colours)
 ##
-## Versions 5 (a cut of 11 bytes: no flyaways, beard at 47, N at 55), 4 (10 bytes: nor a low hairline), 3 (no hair or beard settings, N at
-## 36) and 2 (nor skin details, N at 30) are still read: before version 4 the hair and the beard are their
+## Versions 6 (no garments: the outfit at byte 29, worn as the garments the catalogue lists for it), 5 (a cut of
+## 11 bytes: no flyaways, beard at 47, N at 55), 4 (10 bytes: nor a low hairline), 3 (no hair or beard settings, N
+## at 36) and 2 (nor skin details, N at 30) are still read: before version 4 the hair and the beard are their
 ## style's settings (HairCut / BeardCut.PRESETS) at the length they were cut to, the details their defaults.
 ##
 ## Every value lives on that byte grid, and an appearance is always kept CANONICAL (canonicalise): values
@@ -36,8 +39,15 @@ extends RefCounted
 ## only appending keeps saved characters valid. This class reads that small file, never the bank, so the
 ## dedicated server can validate appearances. Every body is an adult: the age slider starts at 18 years.
 
-const VERSION: int = 6
+const VERSION: int = 7
 const HEADER_BYTES: int = 57
+## Garments a look may wear at once (a dozen make a full outfit with gloves, a coat and a helmet).
+const MAX_GARMENTS: int = 24
+## Where a random look draws its garments, in order: [GDD zone, the layers drawn there, chance, only when nothing
+## worn yet covers the zone]. Clothing on the torso and legs (a suit covers both), shoes, sometimes a jacket or a coat,
+## rarely gloves or a hat.
+const RANDOM_GARMENT_PLACES: Array = [["3", [1], 1.0, true], ["8", [1], 1.0, true], ["9", [1, 2], 0.97, true],
+		["3", [2, 3], 0.25, false], ["5", [1, 2], 0.08, true], ["1", [1, 2, 3], 0.1, true]]
 ## Versions 5 and 4: a cut of HairCut.V5_BYTES / V4_BYTES, the beard's settings right after it, the slider count
 ## at the header's last byte.
 const V5_HEADER_BYTES: int = 56
@@ -91,7 +101,7 @@ const RANDOM_LEFT_ALONE: Array[String] = ["Generic_Assymetry", "Chin_ChinCleft",
 ## their own numbers (seeded by the look's seed), so that adding them left every NPC's face as it was -- as real faces
 ## spread along them: [mean, sd] of the sliders fitted to Ava-256's 3D faces (tools/character/face_survey/ava).
 const RANDOM_LATE_FACE: Dictionary = {"Nose_Dorsum_Hump": [-0.18, 0.48], "Nose_Dorsum_Curve": [-0.3, 0.23]}
-const MAX_BYTES: int = HEADER_BYTES + 2 * MAX_MODIFIERS
+const MAX_BYTES: int = HEADER_BYTES + 2 * MAX_MODIFIERS + 1 + 3 * MAX_GARMENTS
 const CATALOGUE_PATH: String = "res://assets/_universe/characters/human/human_catalogue.json"
 ## What real faces do with some sliders (tools/character/face_survey/stats.py, from FFHQ's adults): how far
 ## a slider's full travel reaches, and how faces spread around the neutral per sex.
@@ -129,7 +139,9 @@ var beard: int = 0
 var beard_length: float = 1.0
 ## The beard's settings (BeardGroom grows it), worn when [member beard] is not 0.
 var beard_cut: BeardCut = BeardCut.new()
-var outfit: int = 0
+## The garments worn: [position in the catalogue's "garments", tint 0..255 (0 = its own colours)] each. Kept
+## canonical: known garments that can be worn together (GarmentRules), sorted by position.
+var garments: Array = []
 ## Skin details, 0..1 (human_skin.gdshader): freckles; moles; expression lines (the old-age wrinkles come
 ## with the age); redness of cheeks, nose and ears; shadows under the eyes; an uneven, blotchy tone.
 var freckles: float = 0.0
@@ -191,9 +203,37 @@ static func slider_range(key: String) -> float:
 	return float((face_stats().get(key, {}) as Dictionary).get("range", 1.0))
 
 
-## Number of choices of an asset kind (hair, eyebrows, eyelashes, outfit...).
+## Number of choices of an asset kind (hair, eyebrows, eyelashes...).
 static func choice_count(kind: String) -> int:
 	return (catalogue()["assets"].get(kind, []) as Array).size()
+
+
+## The catalogue's garments: {id, zones, support, layer, access, hides, material, gender} each, in their
+## append-only order (a look stores positions in it).
+static func garment_entries() -> Array:
+	return catalogue().get("garments", [])
+
+
+## Position of a garment in the catalogue from its id, or -1.
+static func garment_index(id: String) -> int:
+	var entries: Array = garment_entries()
+	for i in entries.size():
+		if String(entries[i]["id"]) == id:
+			return i
+	return -1
+
+
+## The garments an outfit of version 6 and before is worn as (assets.outfit[slot].garments), as positions.
+static func outfit_garments(slot: int) -> Array:
+	var outfits: Array = catalogue()["assets"].get("outfit", [])
+	var out: Array = []
+	if slot < 0 or slot >= outfits.size():
+		return out
+	for id: Variant in (outfits[slot] as Dictionary).get("garments", []):
+		var i: int = garment_index(String(id))
+		if i != -1:
+			out.append(i)
+	return out
 
 
 ## Id of a slider from its catalogue key, or -1.
@@ -226,7 +266,7 @@ func to_bytes() -> PackedByteArray:
 	out[26] = eyelashes
 	out[27] = beard
 	out[28] = _u8(beard_length)
-	out[29] = outfit
+	out[29] = 0
 	for i in SKIN_DETAILS.size():
 		out[30 + i] = _u8(get(SKIN_DETAILS[i]))
 	var cut_bytes: PackedByteArray = cut.to_bytes()
@@ -241,6 +281,11 @@ func to_bytes() -> PackedByteArray:
 	for id: int in ids:
 		out.append(id)
 		out.append(_s8(modifiers[id]) & 0xFF)
+	out.append(garments.size())
+	for g: Array in garments:
+		out.append(int(g[0]) & 0xFF)
+		out.append((int(g[0]) >> 8) & 0xFF)
+		out.append(int(g[1]))
 	return out
 
 
@@ -252,14 +297,18 @@ func encode() -> String:
 ## An appearance from its bytes, canonicalised; null when they are not a valid appearance (another
 ## version included: a look of the first body does not describe this one).
 static func from_bytes(data: PackedByteArray) -> CharacterAppearance:
-	if data.size() < V2_HEADER_BYTES or data.size() > MAX_BYTES or not data[0] in [VERSION, 5, 4, 3, 2]:
+	if data.size() < V2_HEADER_BYTES or data.size() > MAX_BYTES or not data[0] in [VERSION, 6, 5, 4, 3, 2]:
 		return null
-	var header: int = {VERSION: HEADER_BYTES, 5: V5_HEADER_BYTES, 4: V4_HEADER_BYTES, 3: V3_HEADER_BYTES,
-			2: V2_HEADER_BYTES}[data[0]]
+	var header: int = {VERSION: HEADER_BYTES, 6: HEADER_BYTES, 5: V5_HEADER_BYTES, 4: V4_HEADER_BYTES,
+			3: V3_HEADER_BYTES, 2: V2_HEADER_BYTES}[data[0]]
 	if data.size() < header:
 		return null
 	var n: int = data[header - 1]
-	if data.size() != header + 2 * n:
+	var g_at: int = header + 2 * n
+	if data[0] >= 7:
+		if data.size() < g_at + 1 or data.size() != g_at + 1 + 3 * data[g_at]:
+			return null
+	elif data.size() != g_at:
 		return null
 	var a := CharacterAppearance.new()
 	for i in HumanMacros.MACROS.size():
@@ -279,14 +328,20 @@ static func from_bytes(data: PackedByteArray) -> CharacterAppearance:
 	a.eyelashes = data[26]
 	a.beard = data[27]
 	a.beard_length = data[28] / 255.0
-	a.outfit = data[29]
+	if data[0] >= 7:
+		for k in data[g_at]:
+			var at: int = g_at + 1 + 3 * k
+			a.garments.append([data[at] | (data[at + 1] << 8), data[at + 2]])
+	else:  # the outfit, as the garments it is now
+		for i: int in outfit_garments(data[29]):
+			a.garments.append([i, 0])
 	if data[0] >= 3:
 		for i in SKIN_DETAILS.size():
 			a.set(SKIN_DETAILS[i], data[30 + i] / 255.0)
 	else:
 		a.skin_defaults()
 	if data[0] >= 4:
-		var cut_bytes: int = {VERSION: HairCut.BYTES, 5: HairCut.V5_BYTES, 4: HairCut.V4_BYTES}[data[0]]
+		var cut_bytes: int = {VERSION: HairCut.BYTES, 6: HairCut.BYTES, 5: HairCut.V5_BYTES, 4: HairCut.V4_BYTES}[data[0]]
 		var beard_at: int = HAIR_CUT_AT + cut_bytes
 		a.cut = HairCut.from_bytes(data.slice(HAIR_CUT_AT, HAIR_CUT_AT + cut_bytes))
 		a.beard_cut = BeardCut.from_bytes(data.slice(beard_at, beard_at + BeardCut.BYTES))
@@ -341,7 +396,7 @@ func canonicalise() -> void:
 	eyelashes = _slot(eyelashes, choice_count("eyelashes"))
 	beard = _slot(beard, choice_count("beard"))
 	beard_length = _q(beard_length)
-	outfit = _slot(outfit, choice_count("outfit"))
+	garments = canonical_garments(garments)
 	for detail in SKIN_DETAILS:
 		set(detail, _q(float(get(detail))))
 	var sliders: Array = cat["modifiers"]
@@ -369,8 +424,8 @@ func equals(other: CharacterAppearance) -> bool:
 # --- hashes --------------------------------------------------------------------------------------------
 
 ## Hash of everything that changes the baked mesh: shape sliders, origins, and the worn meshes (hair and
-## its length, eyebrows, eyelashes, beard and its length, outfit). Colours are left out -- they never
-## rebuild a mesh.
+## its length, eyebrows, eyelashes, beard and its length, the garments). Colours are left out -- the skin's,
+## the hair's, the garments' tints: they never rebuild a mesh.
 func shape_hash() -> int:
 	var b: PackedByteArray = to_bytes()
 	var shape := PackedByteArray()
@@ -378,7 +433,11 @@ func shape_hash() -> int:
 	shape.append(b[20])
 	shape.append_array(b.slice(24, 30))
 	shape.append_array(b.slice(HAIR_CUT_AT, BEARD_CUT_AT + BeardCut.BYTES))
-	shape.append_array(b.slice(HEADER_BYTES - 1))  # the sliders (the skin details are colours: no new mesh)
+	# the sliders (the skin details are colours: no new mesh), then the garments without their tints
+	var g_at: int = HEADER_BYTES + 2 * b[HEADER_BYTES - 1]
+	shape.append_array(b.slice(HEADER_BYTES - 1, g_at + 1))
+	for k in b[g_at]:
+		shape.append_array(b.slice(g_at + 1 + 3 * k, g_at + 3 + 3 * k))
 	return fnv1a(shape)
 
 
@@ -586,7 +645,7 @@ static func random(seed_value: int) -> CharacterAppearance:
 	a.beard_length = 1.0
 	if not worn.is_empty() and not female:
 		_draw_beard(a, worn["beard"].values()[band], u, bell)
-	a.outfit = random_choice(rng, "outfit", "female" if female else "male", 0.0)
+	random_choice(rng, "outfit", "female" if female else "male", 0.0)  # drawn still: every draw after it stays put
 	# A face of their own: EVERY face slider moves (a face is the sum of many small differences -- a dozen
 	# sliders moved a little gave everyone the same face), and a few are pushed far: the nose, the jaw or
 	# the brow one remembers a person by. Then a few body sliders.
@@ -648,8 +707,87 @@ static func random(seed_value: int) -> CharacterAppearance:
 	a.unevenness = bell.call(0.1, 0.6)
 	# Cheek dimples: about one person in four (drawn last, so the rest of a seeded look stays as it was).
 	a.dimples = bell.call(0.4, 1.0) if u.call() < DIMPLE_CHANCE else 0.0
+	# Garments from their own numbers: the catalogue's garments grow, and a draw among them must leave the face be.
+	a.garments = random_garments(hash([seed_value, "garments"]), "female" if female else "male")
 	a.canonicalise()
 	return a
+
+
+## A plausible outfit for [param gender] ("male" / "female"), the same for the same seed: [[position, 0]...].
+## Drawn place after place (RANDOM_GARMENT_PLACES), among the garments that suit the gender and go with those
+## already drawn (GarmentRules).
+static func random_garments(seed_value: int, gender: String) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var entries: Array = garment_entries()
+	var worn: Array = []
+	var out: Array = []
+	for place: Array in RANDOM_GARMENT_PLACES:
+		var zone: Dictionary = {"zones": [place[0]]}
+		if float(rng.randi() & 0xFFFF) / 65536.0 >= float(place[2]):
+			continue
+		if place[3] and worn.any(func(w: Dictionary) -> bool: return GarmentRules.overlap(w, zone)):
+			continue
+		var fits: Array[int] = []
+		for i in entries.size():
+			var e: Dictionary = entries[i]
+			if String(e["id"]) == "none" or not (place[1] as Array).has(int(e.get("layer", 1))):
+				continue
+			if e.get("gender", "any") != gender and e.get("gender", "any") != "any":
+				continue
+			if not GarmentRules.overlap(e, zone):
+				continue
+			if worn.all(func(w: Dictionary) -> bool: return GarmentRules.conflict(w, e) == ""):
+				fits.append(i)
+		if fits.is_empty():
+			continue
+		var pick: int = fits[rng.randi() % fits.size()]
+		worn.append(entries[pick])
+		out.append([pick, 0])
+	return out
+
+
+## [param list] ([[position, tint]...]) made canonical: garments the catalogue has, each once, tints on 0..255,
+## each left out when it cannot be worn with one kept before it (GarmentRules), at most MAX_GARMENTS, sorted.
+static func canonical_garments(list: Array) -> Array:
+	var entries: Array = garment_entries()
+	var kept: Array = []
+	var seen: Dictionary = {}
+	for g: Variant in list:
+		if not g is Array or (g as Array).size() < 2:
+			continue
+		var i: int = int(g[0])
+		if i < 0 or i >= entries.size() or seen.has(i) or String(entries[i]["id"]) == "none":
+			continue
+		var compatible: bool = true
+		for k: Array in kept:
+			if GarmentRules.conflict(entries[k[0]], entries[i]) != "":
+				compatible = false
+				break
+		if not compatible or kept.size() >= MAX_GARMENTS:
+			continue
+		seen[i] = true
+		kept.append([i, clampi(int(g[1]), 0, 255)])
+	kept.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	return kept
+
+
+## The catalogue entries of the garments worn, inside out (GarmentRules.stack_order): the order they are drawn in.
+func worn_garments() -> Array:
+	var entries: Array = garment_entries()
+	var out: Array = []
+	for g: Array in garments:
+		if int(g[0]) < entries.size():
+			out.append(entries[g[0]])
+	return GarmentRules.stack_order(out)
+
+
+## Whether a garment worn hides [param what] ("hair", "beard", "face").
+func garments_hide(what: String) -> bool:
+	for e: Dictionary in worn_garments():
+		if (e.get("hides", []) as Array).has(what):
+			return true
+	return false
 
 
 ## A random look seeded by a text (a player or NPC uuid): the same text, the same person everywhere.
@@ -780,7 +918,8 @@ static func preset(preset_name: String) -> CharacterAppearance:
 	rng.seed = 7
 	a.hair = random_choice(rng, "hair", "female" if female else "male", 0.0)
 	a.cut = a.style_cut(a.hair)
-	a.outfit = random_choice(rng, "outfit", "female" if female else "male", 0.0)
+	for i: int in outfit_garments(random_choice(rng, "outfit", "female" if female else "male", 0.0)):
+		a.garments.append([i, 0])
 	a.skin_defaults()
 	a.canonicalise()
 	return a

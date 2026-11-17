@@ -1,0 +1,14 @@
+[remap]
+
+importer="dyingstar.garment"
+type="Resource"
+uid="uid://cark2g7ebrg55"
+path="res://.godot/imported/mh_male_worksuit01.dsgarment-17f24f23702cf40ee0101931d8d0a3d5.res"
+
+[deps]
+
+source_file="res://assets/_universe/characters/human/garments/mh_male_worksuit01/mh_male_worksuit01.dsgarment"
+dest_files=["res://.godot/imported/mh_male_worksuit01.dsgarment-17f24f23702cf40ee0101931d8d0a3d5.res"]
+
+[params]
+

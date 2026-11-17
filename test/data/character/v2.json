@@ -1,0 +1,129 @@
+{
+	"beard": {
+		"cut": {
+			"cheeks": 0.788,
+			"chin": 1.0,
+			"connect": 1.0,
+			"density": 0.6,
+			"length": 0.392,
+			"moustache": 1.0,
+			"neck": 0.529,
+			"shape": "ROUNDED"
+		},
+		"length": 1.0,
+		"style": "full"
+	},
+	"body": {
+		"age": 0.22,
+		"gender": 0.886,
+		"height": 0.608
+	},
+	"eyebrows": "eyebrows011",
+	"eyelashes": "eyelashes",
+	"eyes": {
+		"colour": "brown"
+	},
+	"format": "dyingstar.character",
+	"garments": [
+		{
+			"id": "mh_male_casualsuit01",
+			"tint": 0
+		},
+		{
+			"id": "mh_shoes03",
+			"tint": 0
+		}
+	],
+	"hair": {
+		"cut": {
+			"crown_bald": 0.122,
+			"curl": 0.141,
+			"density": 0.545,
+			"flyaways": 0.0,
+			"fringe": 0.318,
+			"length": 0.506,
+			"low_line": 0.094,
+			"part": "CREST",
+			"recession": 0.0,
+			"sides": 0.333,
+			"tie": "BUN",
+			"volume": 0.145
+		},
+		"eumelanin": 0.906,
+		"grey": 0.0,
+		"length": 1.0,
+		"pheomelanin": 0.149,
+		"style": "crest"
+	},
+	"origins": {
+		"Race_MiddleEastern": 0.867
+	},
+	"skin": {
+		"dimples": 0.608,
+		"eye_bags": 0.286,
+		"freckles": 0.0,
+		"moles": 0.157,
+		"redness": 0.184,
+		"tone": 0.412,
+		"unevenness": 0.471,
+		"warmth": 0.482,
+		"wrinkles": 0.322
+	},
+	"sliders": {
+		"Arms_Armpit_Loc_Z": -0.087,
+		"Arms_BicepSize": 0.157,
+		"Arms_TricepSize": 0.118,
+		"Chin_Portrusion": -0.22,
+		"Chin_PosZ": -0.291,
+		"Chin_Width": -0.197,
+		"Ears_Canal_Size": 0.157,
+		"Ears_Lobe": 0.37,
+		"Ears_Rot": 0.15,
+		"Ears_Round": 0.189,
+		"Eyes_Distance": -0.283,
+		"Eyes_EyeBagsProminence": -0.189,
+		"Eyes_EyebrowsAngle": -0.189,
+		"Eyes_EyebrowsDroop": 0.307,
+		"Eyes_EyelidsAngle2": 0.252,
+		"Eyes_VerticalShift": -0.205,
+		"FLAME_Identity_00": -0.346,
+		"FLAME_Identity_01": -0.134,
+		"FLAME_Identity_02": -0.173,
+		"FLAME_Identity_03": -0.087,
+		"FLAME_Identity_04": 0.016,
+		"FLAME_Identity_05": -0.417,
+		"FLAME_Identity_06": 0.346,
+		"FLAME_Identity_07": 0.228,
+		"FLAME_Identity_08": 0.189,
+		"FLAME_Identity_09": -0.252,
+		"FLAME_Identity_10": 0.465,
+		"FLAME_Identity_11": -0.039,
+		"FLAME_Identity_12": 0.047,
+		"FLAME_Identity_13": 0.142,
+		"FLAME_Identity_14": -0.181,
+		"FLAME_Identity_15": -0.37,
+		"FLAME_Identity_16": 0.315,
+		"FLAME_Identity_17": 0.008,
+		"FLAME_Identity_18": -0.15,
+		"FLAME_Identity_19": 0.291,
+		"Face_FrontalBone": 0.276,
+		"Face_FrontalBone_BrowRidge": -0.197,
+		"Hands_FingernailLength": 0.378,
+		"Head_TemporalLines": 0.268,
+		"Jaw_Definition": -0.205,
+		"Jaw_Mandible_GonialAngle": -0.165,
+		"Mouth_Lips_Height": 0.331,
+		"Mouth_Lips_UpperAngle": 0.205,
+		"Mouth_Lips_UpperLipArch": 0.717,
+		"Neck_ChinConnection": 0.165,
+		"Neck_Length": 0.165,
+		"Nose_BridgeProminence": -0.213,
+		"Nose_NasalBone_AnteriorNasalAperature": 0.976,
+		"Nose_NasalBone_AnteriorNasalSpine": -0.157,
+		"Nose_NoseHeight": 0.331,
+		"Nose_Tip_Potrusion": 0.197,
+		"Waist_GluteSize": 0.354
+	},
+	"version": 2,
+	"written_by": "0.0.1-dev"
+}

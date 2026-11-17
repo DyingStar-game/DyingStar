@@ -1382,24 +1382,6 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
-			"asset": "female_casualsuit01_*",
-			"path": "res://assets/_universe/characters/human/textures/female_casualsuit01_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
-			"asset": "female_casualsuit02_*",
-			"path": "res://assets/_universe/characters/human/textures/female_casualsuit02_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
 			"asset": "fire_station.png",
 			"path": "res://assets/textures/map_markers/fire_station.png",
 			"author": "WarpZone",
@@ -1787,42 +1769,6 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
-			"asset": "male_casualsuit01_*",
-			"path": "res://assets/_universe/characters/human/textures/male_casualsuit01_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
-			"asset": "male_casualsuit02_*",
-			"path": "res://assets/_universe/characters/human/textures/male_casualsuit02_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
-			"asset": "male_casualsuit04_*",
-			"path": "res://assets/_universe/characters/human/textures/male_casualsuit04_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
-			"asset": "male_worksuit01_*",
-			"path": "res://assets/_universe/characters/human/textures/male_worksuit01_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
 			"asset": "man_ddurieux.glb",
 			"path": "res://assets/_universe/characters/humanoids/man_ddurieux.glb",
 			"author": "Data Collection AB",
@@ -2001,6 +1947,105 @@
 			"id": "",
 			"url": "https://skfb.ly/oTVyP",
 			"license": "CC BY 4.0"
+		},
+		{
+			"asset": "mh_female_casualsuit01.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_female_casualsuit01/mh_female_casualsuit01.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_female_casualsuit02.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_female_casualsuit02/mh_female_casualsuit02.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_male_casualsuit01.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_male_casualsuit01/mh_male_casualsuit01.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_male_casualsuit02.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_male_casualsuit02/mh_male_casualsuit02.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_male_casualsuit04.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_male_casualsuit04/mh_male_casualsuit04.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_male_worksuit01.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_male_worksuit01/mh_male_worksuit01.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_shoes01.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_shoes01/mh_shoes01.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_shoes01_female.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_shoes01_female/mh_shoes01_female.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_shoes03.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_shoes03/mh_shoes03.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_shoes04.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_shoes04/mh_shoes04.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
+		},
+		{
+			"asset": "mh_shoes04_female.dsgarment",
+			"path": "res://assets/_universe/characters/human/garments/mh_shoes04_female/mh_shoes04_female.dsgarment",
+			"author": "Data Collection AB",
+			"source": "MakeHuman",
+			"id": "",
+			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
+			"license": "CC0"
 		},
 		{
 			"asset": "mini_truck.blend",
@@ -2316,33 +2361,6 @@
 			"id": "",
 			"url": "https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter",
 			"license": "Apache-2.0"
-		},
-		{
-			"asset": "shoes01_*",
-			"path": "res://assets/_universe/characters/human/textures/shoes01_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
-			"asset": "shoes03_*",
-			"path": "res://assets/_universe/characters/human/textures/shoes03_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
-		},
-		{
-			"asset": "shoes04_*",
-			"path": "res://assets/_universe/characters/human/textures/shoes04_albedo.webp",
-			"author": "Data Collection AB",
-			"source": "MakeHuman",
-			"id": "",
-			"url": "https://static.makehumancommunity.org/assets/assetpacks/index.html",
-			"license": "CC0"
 		},
 		{
 			"asset": "shop.png",
