@@ -1,16 +1,24 @@
 name: "Godot gut test"
 on:
+  # A pull request's own pushes are tested by its pull_request event; testing every branch push as
+  # well ran the whole suite twice per push.
   push:
     branches:
-      - '*'
+      - develop
+      - main
     tags:
-       - '*'
+      - '*'
   # Runs test suite when a PR is opened or synchronyzed
   pull_request:
   # Runs test suite every night
   schedule:
     - cron:  '0 0 * * *'
-  
+
+# A newer push to the same branch or pull request supersedes the run in progress.
+concurrency:
+  group: godot-tests-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   GODOT_VERSION: 4.7
   # The C# twins against their GDScript reference, bit for bit. Data-free: what needs tarsis_3's tile
@@ -18,37 +26,101 @@ env:
   NATIVE_TESTS: res://test/unit/test_tile_frame_native.gd,res://test/unit/test_crack_voronoi_native.gd,res://test/unit/test_native_script.gd,res://test/unit/test_rock_impurity_native.gd,res://test/unit/test_chunk_native_normals.gd,res://test/unit/test_chunk_native_verts.gd
 
 jobs:
+  # On the project's own runners (ARC, like the client build). Every test blocks: the verdict comes
+  # from tools/ci/run_gut.sh, which fails on a failing test AND on a test script that did not load.
   execute-gut:
     name: Run GUT tests
-    runs-on: ubuntu-latest
+    runs-on: dyingstar-runners
     timeout-minutes: 60
-    env:
-      GODOT: ${{ github.workspace }}/../godot/Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64
     steps:
+      - name: Install test tooling
+        run: |
+          # The self-hosted ARC runner image is minimal. python3 judges the run; the others are what
+          # the LiveKit extension links against: without them it does not load, scenes/audio/livekit.gd
+          # does not compile, and every test script that preloads it is skipped.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget unzip python3 \
+            libpipewire-0.3-0t64 libx11-6 libxext6 libxfixes3 libxinerama1 libsystemd0 libwayland-client0
+          echo "GODOT=$HOME/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSION}-stable_mono_linux.x86_64" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The Blender sources are not read by any test (the client build deletes them too).
+          sparse-checkout: |
+            /*
+            !/assets_blender/
+          sparse-checkout-cone-mode: false
 
       - name: Set up .NET 9.0
         uses: actions/setup-dotnet@v4
+        env:
+          # The ARC runner runs as an unprivileged user and cannot write to /usr/share/dotnet.
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: '9.0.x'
 
+      # Same key and path as build-client.yaml: one cached engine for both.
       - name: Cache Godot binary
         id: cache-godot
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/../godot
+          path: ~/godot
           key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
 
       - name: Install Godot
         if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/../godot"
-          wget -q -O /tmp/godot.zip \
+          mkdir -p ~/godot
+          wget -q -O "$RUNNER_TEMP/godot.zip" \
             "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
-          unzip -q /tmp/godot.zip -d "$GITHUB_WORKSPACE/../godot"
-          rm /tmp/godot.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
+          rm "$RUNNER_TEMP/godot.zip"
           chmod +x "$GODOT"
+
+      # Every LiveKit dependency present, or a clear error here rather than 2 skipped test scripts.
+      - name: LiveKit extension loads
+        run: |
+          missing=$(ldd addons/godot-livekit/bin/libgodot-livekit.linux.x86_64.so | grep "not found" || true)
+          if [ -n "$missing" ]; then
+            echo "::error::the LiveKit extension misses system libraries:"; echo "$missing"; exit 1
+          fi
+
+      # The network extension (HorizonLink) is built from horizonserver at the pinned commit, as the
+      # client build does; cached per pinned commit, so it is only compiled when the pin moves.
+      - name: Cache the network extension
+        id: cache-ds-net
+        uses: actions/cache@v4
+        with:
+          path: addons/ds_net/bin/libds_godot_net.linux.x86_64.so
+          key: ds-net-linux-${{ hashFiles('addons/ds_net/HORIZONSERVER_REV') }}
+
+      - name: Pin of the network extension
+        if: steps.cache-ds-net.outputs.cache-hit != 'true'
+        id: ds_net
+        run: echo "rev=$(cat addons/ds_net/HORIZONSERVER_REV)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout horizonserver (network extension source)
+        if: steps.cache-ds-net.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: DyingStar-game/horizonserver
+          ref: ${{ steps.ds_net.outputs.rev }}
+          path: .ds_net/horizonserver
+          submodules: true
+
+      - name: Build the network extension (addons/ds_net)
+        if: steps.cache-ds-net.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y --no-install-recommends build-essential curl
+          if ! command -v rustup > /dev/null && [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
+          fi
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install stable --profile minimal
+          RUSTUP_TOOLCHAIN=stable .ds_net/horizonserver/godot_net/build.sh "$GODOT" addons/ds_net/bin linux
+          # Out of the project before the import: Godot would import the checkout.
+          rm -rf .ds_net
 
       # The tests call C# twins (TileFrameNative, CrackVoronoiNative, the mountain twins). Without a
       # built assembly they would fall back to GDScript and the twins would never be tested at all.
@@ -56,7 +128,7 @@ jobs:
         run: |
           # Double-precision GodotSharp from the editor zip, not nuget.org's single-precision one
           # (see NuGet.Config and build-client.yaml).
-          export GODOT_SHARP_NUPKGS="$GITHUB_WORKSPACE/../godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs"
+          export GODOT_SHARP_NUPKGS="$HOME/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs"
           rm -rf ~/.nuget/packages/godotsharp/${GODOT_VERSION}* ~/.nuget/packages/godotsharpeditor/${GODOT_VERSION}* \
                  ~/.nuget/packages/godot.net.sdk/${GODOT_VERSION}* ~/.nuget/packages/godot.sourcegenerators/${GODOT_VERSION}*
           dotnet build DyingStar.csproj -c Debug
@@ -65,17 +137,18 @@ jobs:
       - name: Import project
         run: timeout 40m "$GODOT" --headless --path . --import || true
 
-      # The shared material library is generated from its material.json files (DyingStar > Rebuild
-      # shared materials, in the editor). A manifest changed without regenerating fails here, before a
-      # model ships with a stale material. Compared property by property, so Linux reads exactly what
-      # Windows wrote.
-      - name: Shared material library up to date
-        run: |
-          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_shared_material_library.gd -gexit
+      # The whole suite, the C# twins and the shared material library check included: they are in
+      # test/unit and block like every other test.
+      - name: GUT suite
+        run: tools/ci/run_gut.sh .godot/gut -gdir=res://test/unit
 
-      - name: C# twins against GDScript (bit for bit)
-        run: |
-          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest="$NATIVE_TESTS" -gexit
+      - name: Keep the GUT report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gut-report
+          path: .godot/gut/
+          if-no-files-found: ignore
 
       - name: Volcano activity, lifecycle and Tarsis III integration
         run: |
@@ -85,13 +158,6 @@ jobs:
           "$GODOT" --headless --path . res://test/lava/test_planet_integration.tscn -- --volcano-view --lava-long-test
           "$GODOT" --headless --path . res://test/lava/test_eruption_server.tscn -- --volcano-view
           "$GODOT" --headless --path . --script res://test/lava/test_sleep_week.gd
-
-      # The whole suite still carries known failures (test_collision_shape, a few road tests): it
-      # reports, it does not block, until they are fixed. The C# twins above do block.
-      - name: Whole GUT suite
-        continue-on-error: true
-        run: |
-          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gdir=res://test/unit -gexit
 
   # The C# twins reproduce GDScript bit for bit only while .NET's Math.Sin / Math.Atan2 return the
   # engine's own sin / atan2 bits. On Linux both are glibc; on Windows both should be the UCRT, and
@@ -238,6 +304,14 @@ jobs:
 
       - name: Credits generator unit tests
         run: python3 test/unit/test_generate_credits_py.py
+
+      # The planet exporter's geometry and pack format (partition of roads across levels…).
+      - name: Planet exporter unit tests
+        run: python3 test/unit/test_modifier_pack_py.py
+
+      # What turns the GUT job red (a failing test, a test script that did not load, no report).
+      - name: GUT verdict unit tests
+        run: python3 test/unit/test_gut_report_py.py
 
   linter:
     name: Run GDScript linter
