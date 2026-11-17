@@ -89,10 +89,9 @@
       ]
     },
     "maps": {
-      "description": "Map name to file name, relative to the material folder (hosted) or to the extracted archive (external).",
+      "description": "Map name to file name, relative to the material folder (hosted) or to the extracted archive (external). None is required.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["normal"],
       "properties": {
         "albedo": { "$ref": "#/$defs/fileName" },
         "normal": { "$ref": "#/$defs/fileName" },
@@ -104,7 +103,7 @@
         "emissive": { "$ref": "#/$defs/fileName" },
         "opacity": { "$ref": "#/$defs/fileName" }
       },
-      "$comment": "A base colour is required: maps.albedo, albedo_color, or both (validate.py). alpha needs maps.albedo; opacity is only read by Blender, the add-on packs it into the albedo's alpha (validate.py). orm and ao/roughness/metallic are mutually exclusive. Expressing that here with not/required is possible but yields unreadable errors, so validate.py checks it explicitly."
+      "$comment": "Every map is optional, and maps may be empty: a plain-coloured surface is albedo_color alone, and a material with no normal map is smooth. A base colour is required: maps.albedo, albedo_color, or both (validate.py). alpha needs maps.albedo; opacity is only read by Blender, the add-on packs it into the albedo's alpha (validate.py). orm and ao/roughness/metallic are mutually exclusive. Expressing that here with not/required is possible but yields unreadable errors, so validate.py checks it explicitly."
     }
   },
   "$defs": {

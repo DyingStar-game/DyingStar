@@ -219,9 +219,17 @@ class DYINGSTAR_PT_material_maps(_MaterialSubPanel, bpy.types.Panel):
         box = layout.box()
         box.label(text="Detected maps")
 
-        if not result.images:
-            _problem(box, "Nothing detected")
-            return
+        # No map is required: a plain colour is a complete material. Only a base
+        # colour the node walk could not read stops the export.
+        if result.albedo_color is not None:
+            red, green, blue = result.albedo_color
+            row = box.row()
+            row.label(text="plain colour")
+            row.label(text=f"{red:g}, {green:g}, {blue:g}")
+            if not result.images:
+                box.label(text="No map: a plain-coloured, smooth surface", icon="INFO")
+        elif "albedo" not in result.images:
+            _problem(box, "Base Color could not be read")
 
         for role in sorted(result.images):
             image = result.images[role]

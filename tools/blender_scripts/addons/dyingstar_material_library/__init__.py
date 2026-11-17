@@ -10,7 +10,7 @@ this folder. Or drop the folder in Blender's addons directory.
 bl_info = {
     "name": "Dying Star Material Library",
     "author": "Dying Star contributors",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (4, 0, 0),
     "location": "Properties > Material > Dying Star Library",
     "description": "Publish a Blender material into the shared PBR library",

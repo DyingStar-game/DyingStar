@@ -139,3 +139,22 @@ func test_a_standalone_opacity_map_asks_for_a_re_export() -> void:
 	assert_null(material.albedo_texture, "nothing assigned")
 	assert_eq(report.warnings.size(), 1)
 	assert_string_contains(report.warnings[0], "Re-export")
+
+
+## Every map is optional: a plain-coloured surface is albedo_color and nothing else. It builds without a
+## word: no texture to load, and no normal map for a roughness limiter to read.
+func test_a_material_with_no_map_is_a_plain_colour() -> void:
+	var builder := SharedMaterialBuilder.new()
+	var report := SharedMaterialBuilder.Report.new()
+	var folder := Resolver.MATERIALS_DIR.path_join("mat_test")
+	var manifest := {"id": "mat_test", "maps": {}, "albedo_color": [0.2, 0.4, 0.6]}
+	var material := StandardMaterial3D.new()
+	builder._pin_import_settings(folder, manifest, report, false)
+	builder._apply_maps(material, folder, manifest, "mat_test", report)
+	builder._apply_albedo_color(material, manifest, "mat_test", report)
+	assert_null(material.albedo_texture, "no albedo map")
+	assert_false(material.normal_enabled, "no normal map: a smooth surface")
+	assert_true(material.albedo_color.is_equal_approx(Color(0.2, 0.4, 0.6)), "the colour is the material")
+	assert_eq(report.warnings, PackedStringArray())
+	assert_eq(report.errors, PackedStringArray())
+	assert_eq(report.repinned, PackedStringArray(), "no texture to pin")

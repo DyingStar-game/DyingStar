@@ -116,10 +116,13 @@ def _copy_image(image: bpy.types.Image, target: Path) -> bool:
 
     # Blender writes using the datablock's file_format, so it has to be set.
     # Restore it afterwards: the artist's own image must come out unchanged.
+    # Saved as a copy for the same reason: a plain save turns an image painted
+    # in Blender, with no file behind it, into a file image with no path, which
+    # can no longer be read -- by the preview that follows, nor by the artist.
     original_format = image.file_format
     try:
         image.file_format = "PNG"
-        image.save(filepath=str(target))
+        image.save(filepath=str(target), save_copy=True)
     except (RuntimeError, OSError) as error:
         raise ExportError(f"Cannot write '{image.name}': {error}") from error
     finally:
@@ -242,6 +245,7 @@ def export(
             the glTF and what Godot matches against, so it — not the display
             name — determines the library id.
         images: map role -> image datablock, as produced by map_extractor.
+            May be empty: a plain-coloured material publishes no map at all.
         metadata: display_name, tags, physical_size_m, license, author, notes,
             albedo_color and alpha (None when absent).
         materials_dir: injectable target, defaults to the project layout.
@@ -251,12 +255,13 @@ def export(
         published under, and which maps were actually copied.
 
     Raises:
-        ExportError: on an invalid name, a missing map or an unwritable file.
+        ExportError: on an invalid name, a missing base colour or an unwritable file.
     """
-    has_base = "albedo" in images or metadata.get("albedo_color") is not None
-    if not has_base or "normal" not in images:
+    # Every map is optional, the base colour is not: it is an albedo map, a
+    # plain colour, or both, never nothing (validate.py, base_color_missing).
+    if "albedo" not in images and metadata.get("albedo_color") is None:
         raise ExportError(
-            "A library material needs a base colour (an albedo map or a plain colour) and a normal map"
+            "A library material needs a base colour: an albedo map or a plain colour"
         )
     if metadata.get("alpha") is not None and "albedo" not in images and "opacity" not in images:
         raise ExportError("Transparency needs an albedo map with alpha or an opacity map")

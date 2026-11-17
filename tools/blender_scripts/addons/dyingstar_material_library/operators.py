@@ -28,6 +28,30 @@ def _active_material(context) -> bpy.types.Material | None:
     return obj.active_material if obj is not None else None
 
 
+def _unreadable_base_colour(result: map_extractor.ExtractionResult) -> str:
+    """Why a material cannot be published, in the artist's terms.
+
+    No map is required, so the one thing left to stop an export is a base
+    colour the node walk could not read. The walk already said why, in its
+    warnings: repeat that reason here instead of a rule the artist would have
+    to guess the cause of.
+    """
+    reason = result.warnings[0] if result.warnings else "Base Color could not be read"
+    return (
+        f"{reason}. Wire an image or leave a plain colour on the Principled's "
+        "Base Color: no map is required, but the colour must be readable"
+    )
+
+
+def _found_summary(result: map_extractor.ExtractionResult) -> str:
+    """What Detect Maps found, a plain colour included."""
+    found = sorted(result.images)
+    if result.albedo_color is not None:
+        red, green, blue = result.albedo_color
+        found.insert(0, f"plain colour ({red:g}, {green:g}, {blue:g})")
+    return f"Found: {', '.join(found)}"
+
+
 class DYINGSTAR_OT_add_tag(bpy.types.Operator):
     bl_idname = "dyingstar.add_material_tag"
     bl_label = "Add Tag"
@@ -90,8 +114,8 @@ class DYINGSTAR_OT_detect_maps(bpy.types.Operator):
         for warning in result.warnings:
             self.report({"WARNING"}, warning)
 
-        if not result.images:
-            self.report({"ERROR"}, "No texture found behind the Principled BSDF")
+        if not result.is_usable():
+            self.report({"ERROR"}, _unreadable_base_colour(result))
             return {"CANCELLED"}
 
         metadata = material.dyingstar
@@ -102,7 +126,7 @@ class DYINGSTAR_OT_detect_maps(bpy.types.Operator):
         if result.alpha_threshold is not None:
             metadata.alpha_threshold = result.alpha_threshold
 
-        self.report({"INFO"}, f"Found: {', '.join(sorted(result.images))}")
+        self.report({"INFO"}, _found_summary(result))
         return {"FINISHED"}
 
 
@@ -137,7 +161,7 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
             self.report({"WARNING"}, warning)
 
         if not result.is_usable():
-            self.report({"ERROR"}, "An albedo and a normal map are required")
+            self.report({"ERROR"}, _unreadable_base_colour(result))
             return {"CANCELLED"}
 
         if not self._maps_pass_rules(
@@ -180,14 +204,16 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
                 "Read straight from the library, nothing to copy: "
                 + ", ".join(sorted(written.already_in_place)),
             )
-        self._write_preview(material, result.images, written.folder)
+        self._write_preview(material, result, written.folder)
         self._rebuild_library()
         return {"FINISHED"}
 
-    def _write_preview(self, material, images: dict, folder) -> None:
+    def _write_preview(self, material, result, folder) -> None:
         """Add the review preview. Its absence would fail validate.py."""
         try:
-            _, rendered = preview_writer.write(material, images, folder)
+            _, rendered = preview_writer.write(
+                material, result.images, folder, result.albedo_color
+            )
         except preview_writer.PreviewError as error:
             self.report({"WARNING"}, str(error))
             return
@@ -195,7 +221,7 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
         if not rendered:
             self.report(
                 {"WARNING"},
-                "Preview taken from the albedo: it shows no roughness or metallic "
+                "Preview taken from the base colour: it shows no roughness or metallic "
                 "response. Replace preview.jpg by hand for a better one.",
             )
 
