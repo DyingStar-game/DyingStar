@@ -11,8 +11,8 @@ The game sends (POST/PUT):
 ```json
 {
   "name": "Ada",
-  "appearance": { "format": "dyingstar.character", "version": 1, "...": "the look, see below" },
-  "appearance_version": 1,
+  "appearance": { "format": "dyingstar.character", "version": 2, "...": "the look, see below" },
+  "appearance_version": 2,
   "thumbnail": "<WebP image, 256 x 256, base64 (about 4-6 KB)>",
   "filters": { "gender": "female", "age": 34, "origin": "Race_White", "hair": "bob", "beard": "none" }
 }
@@ -37,12 +37,13 @@ Which character is worn in game is still sent separately, as the player's replic
 
 Every choice is stored **by name**:
 - a slider by its key;
-- a hair style, beard, eyebrows, outfit or eye colour by its catalogue id;
+- a hair style, beard, eyebrows, garment or eye colour by its catalogue id (`"garments": [{"id": ..., "tint": 0}]`,
+  what the character wears, by the GDD's zones and layers);
 - an origin by its name;
 - a hair parting, hair tie or beard shape by its enum name.
 
 A reordered or extended catalogue therefore never changes a saved character. Values are numbers from 0 to 1
-(sliders from -1 to 1), rounded to 0.001. The frozen sample `test/data/character/v1.json` shows a full
+(sliders from -1 to 1), rounded to 0.001. The frozen samples `test/data/character/v1.json` and `v2.json` show a full
 document.
 
 Reading is forgiving:
@@ -56,12 +57,17 @@ Only two things are refused:
 
 ## Versions
 
-`appearance.version` is an integer, currently **1**. It changes only for a **breaking** change:
+`appearance.version` is an integer, currently **2**. It changes only for a **breaking** change:
 - a rename;
 - a removal that must be carried over to something else;
 - a field whose meaning or scale changes.
 
-Adding a slider, style, outfit or field does **not** change the version.
+Adding a slider, style, garment or field does **not** change the version.
+
+| Version | What changed |
+|---|---|
+| 1 | First version: one `outfit` (a MakeHuman suit and its shoes). |
+| 2 | `garments` replaces `outfit`: a list of garments. Version 1's outfit becomes the garments the catalogue lists for it (`assets.outfit[i].garments`). |
 
 Each version adds one pure step, `Dictionary -> Dictionary`, in `CharacterMigrations`
 (`scenes/_universe/characters/human/character_migrations.gd`). Steps are chained, so any old document

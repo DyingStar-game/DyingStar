@@ -30,8 +30,8 @@ func _check(path: String, frozen: Array, now: Array) -> void:
 func test_saved_positions_keep_their_meaning() -> void:
 	var frozen: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(FROZEN))
 	var cat: Dictionary = CharacterAppearance.catalogue()
-	for list: String in ["modifiers", "eye_colours", "origins"]:
-		_check(list, frozen[list], cat[list])
+	for list: String in ["modifiers", "eye_colours", "origins", "garments"]:
+		_check(list, frozen.get(list, []), cat.get(list, []))
 	for kind: String in frozen["assets"]:
 		_check("assets/" + kind, frozen["assets"][kind], cat["assets"].get(kind, []))
 	pass_test("every frozen position still names the same entry")

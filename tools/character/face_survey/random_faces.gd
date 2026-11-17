@@ -17,7 +17,7 @@ const VIEWS: Dictionary = {"front": 0.0, "three_quarter": 0.6}
 const IMAGE_SIZE := Vector2i(480, 600)
 ## Frames drawn before a capture, once the look and the camera are set.
 const SETTLE_FRAMES: int = 4
-## The outfit everyone wears (its slot in the catalogue).
+## The outfit everyone wears (an outfit of the first catalogue: the garments it became).
 const OUTFIT: int = 1
 
 var _out: String = ""
@@ -52,7 +52,7 @@ func _ready() -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for seed_value in seeds:
 		var look: CharacterAppearance = CharacterAppearance.random(seed_value)
-		look.outfit = OUTFIT
+		look.garments = CharacterAppearance.outfit_garments(OUTFIT).map(func(i: int) -> Array: return [i, 0])
 		for key: String in zero:
 			look.modifiers.erase(CharacterAppearance.modifier_id(key))
 		_preview._looks.set_appearance_now(look)

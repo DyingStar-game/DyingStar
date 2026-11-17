@@ -3,7 +3,8 @@ extends Node3D
 ## A row of baked bodies with random looks (CharacterAppearance.random), idling, to eyeball the builder.
 ## Arguments after `--`: `--count=6 --seed=1` how many and from which seed; `--zoom=2 --aim_y=1.1` closer;
 ## `--face` frames the faces (same two, and `--yaw=70` turned; `--spacing=0.5` further apart, m); `--preset=default_male` one preset;
-## `--outfit=0` outfits from that one on, one per body, on the body they suit; `--gd` the GDScript morph;
+## `--outfit=0` the first catalogue's outfits (as garments) from that one on, one per body, on the body they suit;
+## `--garments=mh_shoes03,mh_male_worksuit01` garments by id; `--gd` the GDScript morph;
 ## `--beard=1` beard styles from that one on; `--eye=0` eye colours from that one on; `--hair=1` hair styles
 ## from that one on, `--brows=0` eyebrows,
 ## `--length=0.5` the cut; `--still` no idle clip; `--level` every head at the same height; `--life` gives
@@ -43,9 +44,15 @@ func _ready() -> void:
 		if args.has("looks"):  # encoded looks, one per body (CharacterAppearance.encode)
 			var codes: PackedStringArray = String(args["looks"]).split(",")
 			look = CharacterAppearance.decode(codes[i % codes.size()])
-		if args.has("outfit"):
-			look.outfit = (int(args["outfit"]) + i) % maxi(CharacterAppearance.choice_count("outfit"), 1)
-			look.macros["gender"] = 1.0 if CharacterAppearance.catalogue()["assets"]["outfit"][look.outfit]["gender"] == "male" else 0.0
+		if args.has("outfit"):  # an outfit of the first catalogue, as the garments it became
+			var slot: int = (int(args["outfit"]) + i) % maxi(CharacterAppearance.choice_count("outfit"), 1)
+			look.garments = CharacterAppearance.outfit_garments(slot).map(func(g: int) -> Array: return [g, 0])
+			look.macros["gender"] = 1.0 if CharacterAppearance.catalogue()["assets"]["outfit"][slot]["gender"] == "male" else 0.0
+		if args.has("garments"):  # garment ids, comma-separated (GarmentRules decides what goes together)
+			look.garments = []
+			for id: String in String(args["garments"]).split(","):
+				look.garments.append([CharacterAppearance.garment_index(id), 0])
+		look.canonicalise()
 		if args.has("cut"):  # a head of hair by its settings' bytes (HairCut.to_bytes, hex)
 			look.hair = maxi(look.hair, 1)
 			look.cut = HairCut.from_bytes(String(args["cut"]).hex_decode())

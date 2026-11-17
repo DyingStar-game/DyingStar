@@ -3,7 +3,10 @@ extends GutTest
 ## CharacterDocument (the named JSON a character is kept as) and CharacterMigrations (its versions).
 
 const SAMPLE_V1: String = "res://test/data/character/v1.json"
-## The look test/data/character/v1.json was written from (CharacterAppearance.random(6)), as its replicated string.
+## Version 2 (garments): the same character as v1.json, written again by the game once garments came.
+const SAMPLE_V2: String = "res://test/data/character/v2.json"
+## The look test/data/character/v1.json was written from (CharacterAppearance.random(6)), as its replicated string
+## (version 6: its outfit, male_casual01, at byte 29).
 const SAMPLE_V1_LOOK: String = "BuI4mwAAAADdAAAAAAAAAGl7mwAM5yYA_woAAf8AAChSL0l4gVUlJItRAB8FAhgA___Jh2SZ_wA1COcJ5A0UDy8QExEYFOsZ" \
 		+ "LR8wJOcmIygVLOgtJzAgMug1FDYPN_VDfETsRSpKKk3cTuZP21DmURVWIllbWhpcGV7lX9Rg72HqYvVjAmTLZSxmHWcYaOBpO2r7awZsEm3pb" \
 		+ "tFvKHABce1yJQ"
@@ -35,7 +38,23 @@ func test_the_frozen_version_1_document_still_reads() -> void:
 	assert_eq(back["error"], "")
 	assert_eq(back["from"], 1)
 	assert_eq(back["warnings"], [])
-	assert_eq((back["look"] as CharacterAppearance).encode(), SAMPLE_V1_LOOK, "the same character as when it was written")
+	assert_eq((back["look"] as CharacterAppearance).encode(), CharacterAppearance.decode(SAMPLE_V1_LOOK).encode(),
+			"the same character as when it was written")
+	assert_eq(_garment_ids(back["look"]), ["mh_male_casualsuit01", "mh_shoes03"], "its outfit, as the garments it became")
+
+
+func test_the_frozen_version_2_document_still_reads() -> void:
+	var back: Dictionary = CharacterDocument.from_document(JSON.parse_string(FileAccess.get_file_as_string(SAMPLE_V2)))
+	assert_eq(back["error"], "")
+	assert_eq(back["from"], 2)
+	assert_eq(back["warnings"], [])
+	assert_eq((back["look"] as CharacterAppearance).encode(), CharacterAppearance.decode(SAMPLE_V1_LOOK).encode())
+
+
+func _garment_ids(look: CharacterAppearance) -> Array:
+	var ids: Array = look.worn_garments().map(func(e: Dictionary) -> String: return e["id"])
+	ids.sort()
+	return ids
 
 
 func test_choices_are_kept_by_name_not_position() -> void:
@@ -50,14 +69,16 @@ func test_choices_are_kept_by_name_not_position() -> void:
 func test_unknown_names_are_skipped_with_a_warning() -> void:
 	var doc: Dictionary = _sample()
 	doc["sliders"]["Removed_Slider"] = 0.5
-	doc["outfit"] = "retired_outfit"
+	doc["version"] = 2
+	doc.erase("outfit")
+	doc["garments"] = [{"id": "retired_garment", "tint": 0}]
 	doc["hair"]["cut"]["tie"] = "BRAID"
 	doc["origins"]["Race_Martian"] = 1.0
 	var back: Dictionary = CharacterDocument.from_document(doc)
 	assert_eq(back["error"], "", "still read")
 	assert_eq((back["warnings"] as Array).size(), 4, str(back["warnings"]))
 	var look: CharacterAppearance = back["look"]
-	assert_eq(look.outfit, 0, "an unknown outfit: the first one")
+	assert_eq(look.garments, [], "an unknown garment: left off")
 	assert_eq(look.cut.tie, HairCut.Tie.LOOSE, "an unknown tie: the default one")
 
 
@@ -85,12 +106,13 @@ func test_other_formats_and_newer_versions_are_refused() -> void:
 func test_old_look_codes_import_as_they_are() -> void:
 	var back: Dictionary = CharacterDocument.parse("  %s\n" % SAMPLE_V1_LOOK)
 	assert_eq(back["error"], "")
-	assert_eq(back["from"], "compact v%d" % CharacterAppearance.VERSION)
-	assert_eq((back["look"] as CharacterAppearance).encode(), SAMPLE_V1_LOOK)
+	assert_eq(back["from"], "compact v6")
+	assert_eq(_garment_ids(back["look"]), ["mh_male_casualsuit01", "mh_shoes03"], "its outfit, as the garments it became")
 
 
 func test_a_migration_renames_and_remaps() -> void:
-	# A made-up version 2: a slider renamed, an outfit retired onto another, a field rescaled.
+	# A made-up step before the real one (outfit -> garments): a slider renamed, an outfit retired onto another, a
+	# field rescaled.
 	var to_v2 := func(doc: Dictionary) -> Dictionary:
 		var sliders: Dictionary = doc.get("sliders", {})
 		if sliders.has("Old_Name"):
@@ -105,7 +127,8 @@ func test_a_migration_renames_and_remaps() -> void:
 	old["sliders"].erase("Waist_GluteSize")
 	old["outfit"] = "gone_outfit"
 	old["skin"]["tone"] = 0.8
-	var steps: Array[Callable] = [to_v2]
+	var steps: Array[Callable] = [func(doc: Dictionary) -> Dictionary:
+			return CharacterMigrations.outfit_to_garments(to_v2.call(doc))]
 	var migrated: Dictionary = CharacterMigrations.migrate(old, steps)
 	assert_eq(migrated["from"], 1)
 	assert_eq(migrated["to"], 2)
@@ -114,7 +137,7 @@ func test_a_migration_renames_and_remaps() -> void:
 	var back: Dictionary = CharacterDocument.from_document(old, steps)
 	assert_eq(back["warnings"], [], "every name found after the step")
 	var look: CharacterAppearance = back["look"]
-	assert_eq(CharacterDocument._asset("outfit", look.outfit), "male_casual02")
+	assert_eq(_garment_ids(look), ["mh_male_casualsuit02", "mh_shoes01"], "the outfit it was remapped onto")
 	assert_almost_eq(look.skin_tone, 0.4, 0.003)
 	var ref: CharacterAppearance = CharacterAppearance.decode(SAMPLE_V1_LOOK)
 	var glute: int = CharacterAppearance.modifier_id("Waist_GluteSize")

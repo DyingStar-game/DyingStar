@@ -1,0 +1,14 @@
+[remap]
+
+importer="dyingstar.garment"
+type="Resource"
+uid="uid://82r0b6cdae4n"
+path="res://.godot/imported/mh_shoes04_female.dsgarment-b1bf2539d27ea3fa74d3bda27d2eb54b.res"
+
+[deps]
+
+source_file="res://assets/_universe/characters/human/garments/mh_shoes04_female/mh_shoes04_female.dsgarment"
+dest_files=["res://.godot/imported/mh_shoes04_female.dsgarment-b1bf2539d27ea3fa74d3bda27d2eb54b.res"]
+
+[params]
+

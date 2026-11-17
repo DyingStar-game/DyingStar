@@ -1,0 +1,14 @@
+[remap]
+
+importer="dyingstar.garment"
+type="Resource"
+uid="uid://dqlv8s1au5wa7"
+path="res://.godot/imported/mh_male_casualsuit04.dsgarment-06e76e3f697364e0a7071cbee5d1efd0.res"
+
+[deps]
+
+source_file="res://assets/_universe/characters/human/garments/mh_male_casualsuit04/mh_male_casualsuit04.dsgarment"
+dest_files=["res://.godot/imported/mh_male_casualsuit04.dsgarment-06e76e3f697364e0a7071cbee5d1efd0.res"]
+
+[params]
+

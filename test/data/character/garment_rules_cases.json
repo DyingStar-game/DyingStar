@@ -1,0 +1,57 @@
+{
+ "_doc": "Cases for the GDD equipment rules, read by tools/character/garments/test_garment_rules.py and test/unit/test_garment_rules.gd: the Python and GDScript rules must agree. Items are given by their GDD code zone-support-layer-access; 'zones' lists every zone an item covers.",
+ "items": {
+  "underpants": {"zones": ["8"], "support": 0, "layer": 0, "access": 0},
+  "trousers": {"zones": ["8"], "support": 0, "layer": 1, "access": 0},
+  "trousers_2": {"zones": ["8"], "support": 0, "layer": 1, "access": 0},
+  "ring": {"zones": ["5G4"], "support": 0, "layer": 1, "access": 0},
+  "glove_left": {"zones": ["5G"], "support": 1, "layer": 1, "access": 1},
+  "glove_right": {"zones": ["5D"], "support": 1, "layer": 1, "access": 1},
+  "holster": {"zones": ["8D"], "support": 4, "layer": 3, "access": 0},
+  "leg_armour": {"zones": ["8"], "support": 3, "layer": 4, "access": 0},
+  "hazmat": {"zones": ["0"], "support": 3, "layer": 4, "access": 0},
+  "tshirt": {"zones": ["3", "4"], "support": 0, "layer": 1, "access": 1},
+  "coat_on_skin": {"zones": ["3", "4"], "support": 0, "layer": 3, "access": 1},
+  "coat": {"zones": ["3", "4", "8"], "support": 2, "layer": 3, "access": 1},
+  "helmet": {"zones": ["1"], "support": 1, "layer": 3, "access": 1}
+ },
+ "zones": [
+  {"code": "5G4", "valid": true},
+  {"code": "9D", "valid": true},
+  {"code": "0", "valid": true},
+  {"code": "0G", "valid": false},
+  {"code": "3G", "valid": false},
+  {"code": "8D4", "valid": false},
+  {"code": "10", "valid": false},
+  {"code": "x", "valid": false}
+ ],
+ "overlaps": [
+  {"a": "0", "b": "5G4", "overlap": true},
+  {"a": "5G", "b": "5D", "overlap": false},
+  {"a": "5G", "b": "5G4", "overlap": true},
+  {"a": "5G", "b": "7G2", "overlap": true},
+  {"a": "5G", "b": "7D2", "overlap": false},
+  {"a": "4D", "b": "6D", "overlap": true},
+  {"a": "6G", "b": "5G", "overlap": true},
+  {"a": "3", "b": "8", "overlap": false},
+  {"a": "8", "b": "8D", "overlap": true}
+ ],
+ "sets": [
+  {"worn": ["underpants", "trousers"], "conflict": "", "order": ["underpants", "trousers"], "blocked": ["underpants"]},
+  {"worn": ["trousers", "underpants"], "conflict": "", "order": ["underpants", "trousers"], "blocked": ["underpants"]},
+  {"worn": ["trousers", "trousers_2"], "conflict": "same_place", "kept": ["trousers"]},
+  {"worn": ["ring", "glove_left"], "conflict": "", "order": ["ring", "glove_left"], "blocked": []},
+  {"worn": ["ring", "glove_right"], "conflict": "", "order": ["ring", "glove_right"], "blocked": []},
+  {"worn": ["leg_armour", "holster"], "conflict": "", "order": ["leg_armour", "holster"], "blocked": ["leg_armour"]},
+  {"worn": ["hazmat", "tshirt"], "conflict": "", "order": ["tshirt", "hazmat"], "blocked": ["tshirt"]},
+  {"worn": ["hazmat", "leg_armour"], "conflict": "same_place", "kept": ["hazmat"]},
+  {"worn": ["tshirt", "coat_on_skin"], "conflict": "cannot_rest", "kept": ["tshirt"]},
+  {"worn": ["tshirt", "coat"], "conflict": "", "order": ["tshirt", "coat"], "blocked": []},
+  {"worn": ["helmet", "trousers"], "conflict": "", "order": ["trousers", "helmet"], "blocked": []}
+ ],
+ "codes": [
+  {"item": "holster", "code": "8D-4-3-0"},
+  {"item": "ring", "code": "5G4-0-1-0"},
+  {"item": "hazmat", "code": "0-3-4-0"}
+ ]
+}

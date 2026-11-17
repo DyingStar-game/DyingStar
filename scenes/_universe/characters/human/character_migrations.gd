@@ -14,9 +14,24 @@ extends RefCounted
 ## test/data/character/v<N>.json that the tests read through the whole chain.
 
 
-## The steps, oldest first (none yet: version 1 is the first).
+## The steps, oldest first.
 static func steps() -> Array[Callable]:
-	return []
+	return [outfit_to_garments]
+
+
+## 1 -> 2: the character wears garments (GDD equipment), no longer one outfit. An outfit was a MakeHuman suit and
+## its shoes; the catalogue lists the garments each one became (assets.outfit[i].garments), in their own colours.
+static func outfit_to_garments(doc: Dictionary) -> Dictionary:
+	var out: Dictionary = doc.duplicate(true)
+	var outfit: String = String(out.get("outfit", ""))
+	out.erase("outfit")
+	var garments: Array = []
+	for entry: Variant in CharacterAppearance.catalogue()["assets"].get("outfit", []):
+		if entry is Dictionary and String(entry.get("id", "")) == outfit:
+			for id: Variant in entry.get("garments", []):
+				garments.append({"id": String(id), "tint": 0})
+	out["garments"] = garments
+	return out
 
 
 ## [param doc] at the version [param with_steps] lead to (null: the game's steps()): {"doc", "from", "to", "error"}.

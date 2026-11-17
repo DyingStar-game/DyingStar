@@ -70,6 +70,8 @@ class Order:
 	## The beard, grown likewise (BeardGroom) and worn at [member beard_at]; null: none.
 	var beard_cut: BeardCut = null
 	var beard_at: int = 0
+	## A garment hides the face (a closed helmet): nothing grows on it -- brows, lashes, beard.
+	var hide_face: bool = false
 	## Scale of the whole body (HumanMacros.stature).
 	var stature: float = 1.0
 	## Make levels of detail (~100 ms more): every avatar in the world; not the creator's preview.
@@ -82,8 +84,8 @@ class Order:
 const LOD_NORMAL_MERGE_DEG: float = 25.0
 ## Deprecated by Godot, still passed: the importer's default.
 const LOD_NORMAL_SPLIT_DEG: float = 60.0
-## Kinds of worn assets, in the order their surfaces are added.
-const WORN_KINDS: Array[String] = ["eyebrows", "eyelashes", "hair", "beard", "outfit"]
+## Kinds of worn assets, in the order their surfaces are added (garments inside out: GarmentLibrary.worn).
+const WORN_KINDS: Array[String] = ["eyebrows", "eyelashes", "hair", "beard", "garment"]
 ## Worn assets that hang on the face's skin and move with it: in the head mesh, with its blend shapes.
 const FACE_KINDS: Array[String] = ["eyebrows", "eyelashes", "beard"]
 ## The capsules a head of hair's strands keep out of (HairMotion), where long hair lies: [the bone that carries it (and
@@ -260,15 +262,21 @@ static func order_for(appearance: CharacterAppearance, lods: bool = true, live: 
 		order.targets.append(slot)
 		order.weights.append(pair[1])
 	var picks: Dictionary = {"eyebrows": appearance.eyebrows, "eyelashes": appearance.eyelashes, "hair": appearance.hair,
-			"beard": appearance.beard, "outfit": appearance.outfit}
+			"beard": appearance.beard}
+	order.hide_face = appearance.garments_hide("face")
 	for kind in WORN_KINDS:
-		if kind == "hair":  # grown from its settings
-			order.hair_cut = appearance.hair_cut()
+		if kind == "hair":  # grown from its settings, unless a helmet or a hat hides it
+			order.hair_cut = null if order.hide_face or appearance.garments_hide("hair") else appearance.hair_cut()
 			order.hair_at = order.assets.size()
 			continue
 		if kind == "beard":
-			order.beard_cut = appearance.beard_grown()
+			order.beard_cut = null if order.hide_face or appearance.garments_hide("beard") else appearance.beard_grown()
 			order.beard_at = order.assets.size()
+			continue
+		if kind == "garment":
+			order.assets.append_array(GarmentLibrary.worn(appearance))
+			continue
+		if order.hide_face and FACE_KINDS.has(kind):
 			continue
 		order.assets.append_array(bank.assets_of(kind, picks[kind]))
 	return order
@@ -307,6 +315,20 @@ static func build(order: Order, template: Array[Transform3D]) -> Baked:
 	for asset in worn:
 		for v in asset.delete:
 			hidden[v] = 1
+	# A garment under another is not drawn where it hangs on skin the one over it hides (a trouser leg in a boot).
+	var under: Dictionary = {}  # garment instance id -> per garment vertex, 1 when hidden by those over it
+	var over := PackedByteArray()
+	over.resize(points.size())
+	var covered: bool = false
+	for k in range(worn.size() - 1, -1, -1):
+		var garment: HumanAssetData = worn[k]
+		if garment.kind != &"garment":
+			continue
+		if covered:
+			under[garment.get_instance_id()] = GarmentLibrary.hidden_under(garment, over)
+		for v in garment.delete:
+			over[v] = 1
+		covered = covered or not garment.delete.is_empty()
 	# Normals over ALL the body's triangles (no crease at a zone's edge, nor at the neck), then one
 	# surface per zone, drawn where no outfit hides it.
 	var body: Array = morph.surface(points, bank.body_vertex, _body_index, bank.body_tangent, Vector3.ZERO)
@@ -352,14 +374,21 @@ static func build(order: Order, template: Array[Transform3D]) -> Baked:
 			_place_hair(baked, morph, points, asset)
 			continue
 		var topology: Array = _asset_topology.get(asset.get_instance_id(), [])
+		if topology.is_empty() and asset.kind == &"garment":
+			topology = GarmentLibrary.topology(asset)
 		if topology.is_empty():  # grown at runtime (HairGroom): not in the bank
 			topology = _topology_of(asset)
+		var drawn: PackedInt32Array = topology[0]
+		if under.has(asset.get_instance_id()):
+			drawn = morph.visible_triangles(drawn, asset.vertex, under[asset.get_instance_id()])
+			if drawn.is_empty():
+				continue
 		var arrays: Array = _asset_surface(morph, points, asset, topology[0])
 		var shapes: Array = []
 		for moved in moved_points:
 			shapes.append(_asset_surface(morph, moved, asset, topology[0]))
 		if asset.lods.is_empty():
-			_add_surface(head_importer if on_face else body_importer, arrays, asset.uv, topology[0], topology[1],
+			_add_surface(head_importer if on_face else body_importer, arrays, asset.uv, drawn, topology[1],
 					asset.bone_weights, "%s:%s:%d" % [asset.kind, asset.id, asset.part], asset.color, shapes)
 			(baked.head_surface_assets if on_face else baked.surface_assets).append(asset)
 		else:  # its own levels of detail: added once the engine has made the others'
@@ -428,7 +457,7 @@ static func _slice(surface: Array, a: int, b: int) -> Array:
 
 ## The capsules a head of hair's strands keep out of (HairMotion): per bone of HAIR_COLLIDERS, [bone name, the
 ## segment from its joint to its child's (in the bone's own space: the skeleton's pose carries it), radius (m)] --
-## the radius the 90th percentile of how far the body's skin and the worn outfit's cloth on that bone lie from the
+## the radius the 90th percentile of how far the body's skin and the garments' cloth on that bone lie from the
 ## segment: a thick collar makes a thicker neck.
 static func _hair_colliders(baked: Baked, bank: HumanBank, morph: HumanMorph, points: PackedVector3Array,
 		joints: PackedVector3Array, worn: Array[HumanAssetData]) -> Array:
@@ -445,7 +474,7 @@ static func _hair_colliders(baked: Baked, bank: HumanBank, morph: HumanMorph, po
 		if bones.has(b) and bank.skin_weights[v * 4] >= 0.5:
 			_collider_sample(bones[b], 2, points[v])
 	for asset in worn:
-		if asset.kind != &"outfit" or asset.bones.is_empty():
+		if not (asset.kind == &"outfit" or asset.kind == &"garment") or asset.bones.is_empty():
 			continue
 		var fitted: PackedVector3Array = morph.fit(points, asset)
 		for r in asset.vertex.size():
@@ -581,8 +610,12 @@ static func _add_late(mesh: ArrayMesh, late: Array, surface_assets: Array, with_
 		surface_assets.append(asset)
 
 
+## [triangles clockwise, skin bones as int32] of a worn asset (GarmentLibrary keeps its garments').
 ## The source triangles are counter-clockwise; Godot's front faces are clockwise.
-## [triangles clockwise, skin bones as int32] of a worn asset.
+static func topology_of(asset: HumanAssetData) -> Array:
+	return _topology_of(asset)
+
+
 static func _topology_of(asset: HumanAssetData) -> Array:
 	var bones := PackedInt32Array()
 	bones.resize(asset.bones.size())

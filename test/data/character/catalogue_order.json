@@ -222,5 +222,18 @@
    "female_casual01",
    "female_casual02"
   ]
- }
+ },
+ "garments": [
+  "mh_male_casualsuit01",
+  "mh_shoes03",
+  "mh_male_casualsuit02",
+  "mh_shoes01",
+  "mh_male_casualsuit04",
+  "mh_shoes04",
+  "mh_male_worksuit01",
+  "mh_female_casualsuit01",
+  "mh_shoes04_female",
+  "mh_female_casualsuit02",
+  "mh_shoes01_female"
+ ]
 }

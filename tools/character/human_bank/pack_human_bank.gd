@@ -9,7 +9,7 @@ extends Node
 
 const OUT_PATH := "res://assets/_universe/characters/human/human_bank.res"
 
-var _zip: ZIPReader = ZIPReader.new()
+var _reader: NpzReader = NpzReader.new()
 
 
 func _ready() -> void:
@@ -26,7 +26,7 @@ func _ready() -> void:
 
 
 func _pack(npz_path: String, textures_path: String) -> int:
-	if _zip.open(ProjectSettings.globalize_path(npz_path) if npz_path.begins_with("res://") else npz_path) != OK:
+	if _reader.open(npz_path) != OK:
 		push_error("cannot open %s" % npz_path)
 		return ERR_FILE_CANT_OPEN
 	var textures: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(textures_path)) if textures_path else {}
@@ -73,18 +73,7 @@ func _pack(npz_path: String, textures_path: String) -> int:
 		a.part = int(m["part"])
 		a.id = StringName(m["id"])
 		a.gender = StringName(m["gender"])
-		a.refs = PackedInt32Array(_array(p + "refs"))
-		a.weights = PackedFloat32Array(_array(p + "weights"))
-		a.offsets = _vec3(_array(p + "offsets"))
-		a.scale_pairs = PackedInt32Array(_array(p + "scale_pairs"))
-		a.scale_ref = PackedFloat32Array(_array(p + "scale_ref"))
-		a.vertex = PackedInt32Array(_array(p + "vertex"))
-		a.uv = _vec2(_array(p + "uv"))
-		a.index = PackedInt32Array(_array(p + "index"))
-		a.tangent = PackedFloat32Array(_array(p + "tangent"))
-		a.bones = _raw(p + "bones")
-		a.bone_weights = PackedFloat32Array(_array(p + "bone_weights"))
-		a.delete = PackedInt32Array(_array(p + "delete"))
+		GarmentFormat.read_geometry(_reader, p, a)
 		a.style = StringName(m.get("style", ""))
 		if _has(p + "strand_points"):
 			a.strand_points = _vec3(_array(p + "strand_points"))
@@ -109,60 +98,22 @@ func _pack(npz_path: String, textures_path: String) -> int:
 		if tex.has("ao"):
 			a.ao = load(tex["ao"])
 		bank.assets.append(a)
-	_zip.close()
+	_reader.close()
 	print("PACK %d vertices, %d targets, %d assets, %.1f MB of deltas" % [
 		bank.base.size(), bank.target_names.size(), bank.assets.size(), bank.delta.size() / 1e6])
 	return ResourceSaver.save(bank, OUT_PATH, ResourceSaver.FLAG_COMPRESS)
 
 
 func _has(name: String) -> bool:
-	return _zip.file_exists(name + ".npy")
+	return _reader.has(name)
 
 
-## The raw little-endian payload of an .npy member (no dtype conversion).
 func _raw(name: String) -> PackedByteArray:
-	var bytes: PackedByteArray = _zip.read_file(name + ".npy")
-	return bytes.slice(_header_end(bytes))
+	return _reader.raw(name)
 
 
-## An .npy member as a flat Array (numbers or strings).
 func _array(name: String) -> Array:
-	var bytes: PackedByteArray = _zip.read_file(name + ".npy")
-	var start: int = _header_end(bytes)
-	var header: String = bytes.slice(10 if bytes[6] < 2 else 12, start).get_string_from_ascii()
-	var descr: String = RegEx.create_from_string("'descr':\\s*'([^']+)'").search(header).get_string(1)
-	var payload: PackedByteArray = bytes.slice(start)
-	match descr:
-		"<f4":
-			return Array(payload.to_float32_array())
-		"<f8":
-			return Array(payload.to_float64_array())
-		"<i4":
-			return Array(payload.to_int32_array())
-		"<i8":
-			return Array(payload.to_int64_array())
-		"<i2":
-			var out_i16: Array = []
-			for k in payload.size() / 2:
-				out_i16.append(payload.decode_s16(k * 2))
-			return out_i16
-		"|u1", "<u1":
-			return Array(payload)
-	if descr.begins_with("<U"):
-		var width: int = int(descr.substr(2)) * 4
-		var out: Array = []
-		for k in payload.size() / maxi(width, 1):
-			# Fixed-width UTF-32: shorter strings are padded with NULs, which must not stay in the name.
-			out.append(payload.slice(k * width, (k + 1) * width).get_string_from_utf32().get_slice(char(0), 0))
-		return out
-	push_error("unsupported dtype %s in %s" % [descr, name])
-	return []
-
-
-func _header_end(bytes: PackedByteArray) -> int:
-	if bytes[6] < 2:
-		return 10 + bytes.decode_u16(8)
-	return 12 + bytes.decode_u32(8)
+	return _reader.array(name)
 
 
 func _vec3(flat: Array) -> PackedVector3Array:

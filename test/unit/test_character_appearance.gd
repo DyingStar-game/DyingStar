@@ -22,7 +22,7 @@ func test_canonical_form_is_idempotent() -> void:
 	a.macros["height"] = 1.7
 	a.origins[0] = 4.0
 	a.hair = 999
-	a.outfit = -4
+	a.garments = [[-4, 0], [100000, 3], [0, 999], [0, 1]]
 	a.modifiers = {1: 0.0, 5: 2.0, 0: -0.5, 100000: 1.0}
 	a.canonicalise()
 	var once: PackedByteArray = a.to_bytes()
@@ -32,7 +32,7 @@ func test_canonical_form_is_idempotent() -> void:
 	assert_eq(a.macros["height"], 1.0)
 	assert_eq(a.origins[0], 1.0)
 	assert_eq(a.hair, CharacterAppearance.choice_count("hair") - 1)
-	assert_eq(a.outfit, 0)
+	assert_eq(a.garments, [[0, 255]], "unknown garments and the second of a pair dropped, tint on a byte")
 	assert_eq(a.modifiers.keys(), [0, 5], "zero and unknown sliders dropped, sorted")
 
 
@@ -55,7 +55,7 @@ func test_a_version_4_look_still_reads() -> void:
 	a.cut.low_line = 0.0  # version 4 had none
 	a.cut.flyaways = 0.0
 	a.canonicalise()
-	var v5: PackedByteArray = a.to_bytes()
+	var v5: PackedByteArray = _without_garments(a)
 	var v4: PackedByteArray = v5.slice(0, CharacterAppearance.HAIR_CUT_AT + HairCut.V4_BYTES) \
 			+ v5.slice(CharacterAppearance.HAIR_CUT_AT + HairCut.BYTES)
 	v4[0] = 4
@@ -75,7 +75,7 @@ func test_a_version_5_look_still_reads() -> void:
 	a.cut.low_line = 0.4
 	a.cut.flyaways = 0.0
 	a.canonicalise()
-	var v6: PackedByteArray = a.to_bytes()
+	var v6: PackedByteArray = _without_garments(a)
 	var v5: PackedByteArray = v6.slice(0, CharacterAppearance.HAIR_CUT_AT + HairCut.V5_BYTES) \
 			+ v6.slice(CharacterAppearance.HAIR_CUT_AT + HairCut.BYTES)
 	v5[0] = 5
@@ -84,6 +84,12 @@ func test_a_version_5_look_still_reads() -> void:
 	assert_eq(back.cut.to_bytes(), a.cut.to_bytes(), "its hair, its low hairline kept")
 	assert_eq(back.beard_cut.to_bytes(), a.beard_cut.to_bytes(), "its beard")
 	assert_eq(back.modifiers, a.modifiers, "its sliders")
+
+
+## [param a]'s bytes with no garments after the sliders, as versions 6 and before ended (their version byte to set).
+func _without_garments(a: CharacterAppearance) -> PackedByteArray:
+	var b: PackedByteArray = a.to_bytes()
+	return b.slice(0, b.size() - 1 - 3 * a.garments.size())
 
 
 func test_wire_size_is_small() -> void:
@@ -111,8 +117,12 @@ func test_colours_do_not_change_the_shape() -> void:
 	b.eye_colour = 3
 	assert_eq(a.shape_hash(), b.shape_hash(), "colours never rebuild a mesh")
 	assert_ne(a.look_hash(), b.look_hash())
-	b.outfit = (a.outfit + 1) % CharacterAppearance.choice_count("outfit")
-	assert_ne(a.shape_hash(), b.shape_hash(), "another outfit is another mesh")
+	b.garments = a.garments.map(func(g: Array) -> Array: return [g[0], 77])
+	b.canonicalise()
+	assert_eq(a.shape_hash(), b.shape_hash(), "a garment's tint never rebuilds a mesh")
+	b.garments = []
+	b.canonicalise()
+	assert_ne(a.shape_hash(), b.shape_hash(), "other garments are another mesh")
 
 
 func test_random_looks_are_varied_and_plausible() -> void:
@@ -143,10 +153,60 @@ func test_a_look_of_the_first_body_is_refused() -> void:
 func test_presets_are_a_man_and_a_woman() -> void:
 	assert_false(CharacterAppearance.preset("default_male").is_female())
 	assert_true(CharacterAppearance.preset("default_female").is_female())
-	assert_eq(CharacterAppearance.catalogue()["assets"]["outfit"][CharacterAppearance.preset("default_female").outfit]["gender"], "female")
+	var woman: CharacterAppearance = CharacterAppearance.preset("default_female")
+	assert_false(woman.garments.is_empty(), "dressed")
+	for e: Dictionary in woman.worn_garments():
+		assert_eq(e["gender"], "female", "%s suits a woman" % e["id"])
 
 
-# Version 6; its hair drawn from hair_stats.json as re-measured with the level hairline and the low one, its flyaways
-# from the late fields' own numbers, the nose's bridge (Nose_Dorsum_*) from the late face sliders' (the face as before).
-const PINNED_NPC_0001 := "Bt5UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8CAFBbUWBRFHCNhZ4ZdV0AAAAT_wAAADeZAAAzAy0GKQjgCzQQGBEcEhcUGx8v" \
-		+ "JNQm2SjNLOgtOC_pMBsxIjKvN9c5Czv5PAJA9UPVRORMek0dTy1Q51EhXx1g-2H9YhxjLGT2ZfFm4Ge3aP1pYWrjaxlsAW37bhlvB3DtcfZy3ZHQ"
+func test_garments_travel_with_their_tints() -> void:
+	var a: CharacterAppearance = CharacterAppearance.random(3)
+	assert_false(a.garments.is_empty(), "a random look is dressed")
+	a.garments[0][1] = 200
+	var back: CharacterAppearance = CharacterAppearance.decode(a.encode())
+	assert_eq(back.garments, a.garments)
+
+
+func test_a_version_6_look_wears_its_outfit_as_garments() -> void:
+	# Version 6 had no garments: its outfit at byte 29, nothing after the sliders.
+	var a: CharacterAppearance = CharacterAppearance.random(11)
+	var v6: PackedByteArray = _without_garments(a)
+	v6[0] = 6
+	v6[29] = 4  # female_casual01
+	var back: CharacterAppearance = CharacterAppearance.from_bytes(v6)
+	assert_not_null(back, "a version 6 look reads")
+	var ids: Array = back.worn_garments().map(func(e: Dictionary) -> String: return e["id"])
+	assert_eq(ids, ["mh_female_casualsuit01", "mh_shoes04_female"], "the outfit's suit and shoes")
+	assert_eq(back.modifiers, a.modifiers, "its sliders")
+
+
+func test_garments_that_cannot_go_together_are_taken_off() -> void:
+	var a := CharacterAppearance.new()
+	var suit_a: int = CharacterAppearance.garment_index("mh_male_casualsuit01")
+	var suit_b: int = CharacterAppearance.garment_index("mh_male_casualsuit02")
+	var shoes: int = CharacterAppearance.garment_index("mh_shoes03")
+	a.garments = [[suit_b, 0], [suit_a, 0], [shoes, 0]]
+	a.canonicalise()
+	var expected: Array = [[suit_b, 0], [shoes, 0]]
+	expected.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	assert_eq(a.garments, expected, "two suits on the same place: the first given is kept")
+
+
+func test_random_garments_suit_the_body() -> void:
+	for seed_value in 40:
+		var a: CharacterAppearance = CharacterAppearance.random(seed_value)
+		var gender: String = "female" if a.is_female() else "male"
+		var covered: Dictionary = {}
+		for e: Dictionary in a.worn_garments():
+			assert_true(e["gender"] == gender or e["gender"] == "any", "seed %d: %s suits the body" % [seed_value, e["id"]])
+			for z: String in e["zones"]:
+				covered[z] = true
+		assert_true(covered.has("3") and covered.has("8"), "seed %d: torso and legs covered" % seed_value)
+
+
+# Version 7: the face, body and hair of version 6 to the byte (its hair drawn from hair_stats.json as re-measured with
+# the level hairline and the low one, its flyaways from the late fields' own numbers, the nose's bridge from the late
+# face sliders'), its garments drawn from their own numbers (the outfit it wore in version 6: the same suit and shoes).
+const PINNED_NPC_0001 := "B95UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8AAFBbUWBRFHCNhZ4ZdV0AAAAT_wAAADeZAAAzAy0GKQjgCzQQGBEcEhcUGx8v" \
+		+ "JNQm2SjNLOgtOC_pMBsxIjKvN9c5Czv5PAJA9UPVRORMek0dTy1Q51EhXx1g-2H9YhxjLGT2ZfFm4Ge3aP1pYWrjaxlsAW37bhlvB3DtcfZy3ZHQ" \
+		+ "AgQAAAUAAA"

@@ -68,7 +68,7 @@ ROOTS = ("assets", "assets_blender")
 
 AUDIO = {".ogg", ".mp3", ".wav", ".flac"}
 # What a new file must be credited for, besides sounds (always checked).
-MODELS_AND_TEXTURES = {".glb", ".gltf", ".blend", ".fbx", ".obj",
+MODELS_AND_TEXTURES = {".dsgarment", ".glb", ".gltf", ".blend", ".fbx", ".obj",
                        ".png", ".jpg", ".jpeg", ".exr", ".webp", ".tga", ".hdr"}
 # A library's own licence file, which credits everything in its folder.
 LIBRARY_LICENCES = {"license.txt", "license.md"}

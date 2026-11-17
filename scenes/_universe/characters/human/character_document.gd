@@ -3,15 +3,17 @@ extends RefCounted
 
 ## A character's look as a lasting JSON document: what the backend keeps, what a player exports or imports.
 ## Unlike the replicated string (CharacterAppearance.encode: positions in the catalogue, for the network), every
-## choice here is named -- a slider by its key, a hair style, a beard, eyebrows, an outfit or an eye colour by its
+## choice here is named -- a slider by its key, a hair style, a beard, eyebrows, a garment or an eye colour by its
 ## catalogue id, an origin by its name, a parting / tie / beard shape by its enum name -- so a reordered or pruned
 ## catalogue never turns a saved character into someone else.
 ##
 ##   {"format": "dyingstar.character", "version": 1, "written_by": "<game version>",
 ##    "body": {gender, age, height}, "origins": {name: weight}, "skin": {tone, warmth, dimples, freckles, ...},
 ##    "eyes": {"colour": id}, "hair": {style, eumelanin, pheomelanin, grey, length, "cut": {..., part, tie}},
-##    "eyebrows": id, "eyelashes": id, "beard": {style, length, "cut": {..., shape}}, "outfit": id,
-##    "sliders": {key: value}}
+##    "eyebrows": id, "eyelashes": id, "beard": {style, length, "cut": {..., shape}},
+##    "garments": [{"id": id, "tint": 0..255}, ...], "sliders": {key: value}}
+##
+## Version 2 wears garments; version 1 had one "outfit" (CharacterMigrations turns it into its garments).
 ##
 ## Values are floats rounded to 1e-3 (every one lives on a byte grid: k / 255 or k / 127, which 1e-3 keeps
 ## exactly), origins and sliders at 0 are left out. Reading is forgiving: a missing field takes its default, an
@@ -20,7 +22,7 @@ extends RefCounted
 
 const FORMAT: String = "dyingstar.character"
 ## The document's current version: 1 + CharacterMigrations.steps().size() (a test holds them together).
-const VERSION: int = 1
+const VERSION: int = 2
 ## Decimals kept on every value.
 const DECIMALS: float = 1000.0
 const HAIR_CUT_FIELDS: Array[String] = ["length", "sides", "volume", "curl", "density", "fringe", "recession",
@@ -66,7 +68,7 @@ static func to_document(look: CharacterAppearance) -> Dictionary:
 				"cut": hair_cut},
 		"eyebrows": _asset("eyebrows", look.eyebrows), "eyelashes": _asset("eyelashes", look.eyelashes),
 		"beard": {"style": _asset("beard", look.beard), "length": _r(look.beard_length), "cut": beard_cut},
-		"outfit": _asset("outfit", look.outfit),
+		"garments": _garments(look),
 		"sliders": sliders,
 	}
 
@@ -125,7 +127,15 @@ static func from_document(doc: Variant, with_steps: Variant = null) -> Dictionar
 	for field in BEARD_CUT_FIELDS:
 		look.beard_cut.set(field, _f(beard_cut, field, look.beard_cut.get(field)))
 	look.beard_cut.shape = _enum(BeardCut.Shape, beard_cut.get("shape"), look.beard_cut.shape, "beard shape", warnings)
-	look.outfit = _find_asset("outfit", d.get("outfit"), warnings)
+	var worn: Variant = d.get("garments")
+	for g: Variant in (worn if worn is Array else []):
+		var id: String = String((g as Dictionary).get("id", "")) if g is Dictionary else String(g)
+		var i: int = CharacterAppearance.garment_index(id)
+		if i == -1:
+			warnings.append("unknown garment '%s'" % id)
+			continue
+		var tint: Variant = (g as Dictionary).get("tint", 0) if g is Dictionary else 0
+		look.garments.append([i, int(tint) if tint is int or tint is float else 0])
 	var sliders: Dictionary = _dict(d, "sliders")
 	for key: Variant in sliders:
 		var id: int = CharacterAppearance.modifier_id(String(key))
@@ -170,6 +180,14 @@ static func _id(list: Array, slot: int) -> String:
 		return ""
 	var entry: Variant = list[slot]
 	return String(entry["id"]) if entry is Dictionary else String(entry)
+
+
+static func _garments(look: CharacterAppearance) -> Array:
+	var entries: Array = CharacterAppearance.garment_entries()
+	var out: Array = []
+	for g: Array in look.garments:
+		out.append({"id": String(entries[g[0]]["id"]), "tint": int(g[1])})
+	return out
 
 
 static func _asset(kind: String, slot: int) -> String:
