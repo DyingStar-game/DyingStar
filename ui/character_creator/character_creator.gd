@@ -492,12 +492,16 @@ func _garment_rows() -> void:
 
 
 ## A picker among [param choices] (garment positions in the catalogue): "None" then their names (marked for the
-## body they suit). Picking one takes off what it cannot be worn with (GarmentRules): the last choice wins.
+## body they suit). Picking one takes off what it cannot be worn with (GarmentRules): the last choice wins. No
+## "None" when taking off this row's garment would leave the body naked (CharacterAppearance.COVERED_ZONES).
 func _garment_row(label_key: String, choices: Array[int]) -> void:
 	var entries: Array = CharacterAppearance.garment_entries()
 	var line: HBoxContainer = _factory.row(label_key)
 	var picker: OptionButton = _factory.option_button()
-	picker.add_item(tr("%%CHAR_NONE"))
+	var others: Array = look.garments.filter(func(g: Array) -> bool: return not choices.has(int(g[0])))
+	var first: int = 0 if CharacterAppearance.bare_zones(others).is_empty() else 1  # first choice's position
+	if first == 0:
+		picker.add_item(tr("%%CHAR_NONE"))
 	var selected: int = 0
 	for k in choices.size():
 		var e: Dictionary = entries[choices[k]]
@@ -506,14 +510,14 @@ func _garment_row(label_key: String, choices: Array[int]) -> void:
 			text += "  (%s)" % tr("%%CHAR_FOR_WOMEN" if e["gender"] == "female" else "%%CHAR_FOR_MEN")
 		picker.add_item(text)
 		if look.garments.any(func(g: Array) -> bool: return int(g[0]) == choices[k]):
-			selected = k + 1
+			selected = k + 1 - first
 	picker.select(selected)
 	SettingsRowFactory.fit_names(picker)
 	picker.item_selected.connect(func(i: int) -> void:
 		var kept: Array = look.garments.filter(func(g: Array) -> bool: return not choices.has(int(g[0])))
-		if i > 0:
-			kept.push_front([choices[i - 1], 0])
-		look.garments = CharacterAppearance.canonical_garments(kept)
+		if i + first > 0:
+			kept.push_front([choices[i + first - 1], 0])
+		look.garments = CharacterAppearance.dressed(kept, "female" if look.is_female() else "male")
 		_changed()
 		var scrolled: int = _scroll.scroll_vertical
 		_build_rows()  # what the choice took off shows as "None"

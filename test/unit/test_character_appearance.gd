@@ -120,7 +120,9 @@ func test_colours_do_not_change_the_shape() -> void:
 	b.garments = a.garments.map(func(g: Array) -> Array: return [g[0], 77])
 	b.canonicalise()
 	assert_eq(a.shape_hash(), b.shape_hash(), "a garment's tint never rebuilds a mesh")
-	b.garments = []
+	var other: String = "mh_male_casualsuit02" if CharacterAppearance.garment_index("mh_male_casualsuit01") in a.garments.map(
+			func(g: Array) -> int: return g[0]) else "mh_male_casualsuit01"
+	b.garments = [[CharacterAppearance.garment_index(other), 0]]
 	b.canonicalise()
 	assert_ne(a.shape_hash(), b.shape_hash(), "other garments are another mesh")
 
@@ -190,6 +192,29 @@ func test_garments_that_cannot_go_together_are_taken_off() -> void:
 	var expected: Array = [[suit_b, 0], [shoes, 0]]
 	expected.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
 	assert_eq(a.garments, expected, "two suits on the same place: the first given is kept")
+
+
+func test_a_look_is_never_naked() -> void:
+	var shoes: int = CharacterAppearance.garment_index("mh_shoes03")
+	for female in [false, true]:
+		var a := CharacterAppearance.new()
+		a.macros["gender"] = 0.0 if female else 1.0
+		a.garments = [[shoes, 0]]
+		a.canonicalise()
+		var once: PackedByteArray = a.to_bytes()
+		assert_eq(CharacterAppearance.bare_zones(a.garments), [], "torso and legs covered")
+		assert_true(a.garments.has([shoes, 0]), "what it wore kept")
+		for e: Dictionary in a.worn_garments():
+			if e["id"] != "mh_shoes03":
+				assert_eq(e["gender"], "female" if female else "male", "%s suits the body" % e["id"])
+		a.garments = []
+		a.canonicalise()
+		assert_eq(a.garments.size(), 1, "nothing worn: one suit put on, no shoes")
+		a.garments.append([shoes, 0])
+		a.canonicalise()
+		assert_eq(a.to_bytes(), once, "the same suit every time")
+	var dressed: Array = CharacterAppearance.dressed([[shoes, 0]], "male")
+	assert_eq(CharacterAppearance.dressed(dressed, "male"), dressed, "dressing twice changes nothing")
 
 
 func test_random_garments_suit_the_body() -> void:

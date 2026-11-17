@@ -138,3 +138,24 @@ func test_an_overall_axis_moves_several_sliders() -> void:
 		if not is_equal_approx(float(creator.look.modifiers[id]), float(before.get(id, 0.0))):
 			moved += 1
 	assert_gt(moved, 2, "one axis, several sliders")
+
+
+func test_the_outfit_tab_never_leaves_the_body_naked() -> void:
+	# No underwear yet: the torso's suits have no "None", the shoes keep theirs.
+	var creator: CharacterCreator = _creator()
+	creator._open_tab(&"outfit")
+	var none: String = creator.tr("%%CHAR_NONE")
+	var firsts: Array = _outfit_pickers(creator).map(func(p: OptionButton) -> bool: return p.get_item_text(0) == none)
+	assert_true(firsts.has(false), "a picker without None (the suits)")
+	assert_true(firsts.has(true), "a picker with None (the shoes)")
+	var at: int = firsts.find(false)
+	for i in _outfit_pickers(creator)[at].item_count:  # every suit worn in turn: still dressed
+		var picker: OptionButton = _outfit_pickers(creator)[at]  # the rows are built again after a choice
+		picker.select(i)
+		picker.item_selected.emit(i)
+		assert_eq(CharacterAppearance.bare_zones(creator.look.garments), [], "dressed after choice %d" % i)
+
+
+func _outfit_pickers(creator: CharacterCreator) -> Array:
+	return creator._rows.find_children("*", "OptionButton", true, false).filter(
+			func(p: OptionButton) -> bool: return not p.is_queued_for_deletion())
