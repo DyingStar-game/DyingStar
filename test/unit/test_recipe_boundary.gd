@@ -428,6 +428,9 @@ func test_skirt_vertices_extend_below_surface() -> void:
 	## Build a tiny chunk mesh and verify that every skirt vertex
 	## (via CUSTOM0 offset) ends up below the terrain surface it
 	## originated from.
+	if not PlanetChunk.GlobalsDefs.is_dev_tool_enabled(&"build_chunk_skirts"):
+		pending("skirts are switched off (Globals ENABLED_DEV_TOOLS.build_chunk_skirts)")
+		return
 	var pd := _make_planet_data()
 
 	# Synthetic heightmap.

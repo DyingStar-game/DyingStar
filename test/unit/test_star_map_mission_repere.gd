@@ -147,8 +147,7 @@ func test_a_place_in_the_body_frame_draws_back_where_the_chart_drew_it() -> void
 	var drawn := spin * Vector3(0.3, 0.9, -0.2).normalized() * 4500.0
 	var place: Vector3 = STAR_MAP.body_local_offset(spin, drawn)
 	var back: Vector3 = spin * place
-	assert_almost_eq(back.dot(drawn), drawn.length(), 0.001,
-			"the same spot, seen from the same side")
+	assert_almost_eq((back - drawn).length(), 0.0, 0.001, "the same spot")
 
 
 # ---------------------------------------------------------------------------

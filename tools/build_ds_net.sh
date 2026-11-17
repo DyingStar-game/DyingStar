@@ -1,7 +1,11 @@
 #!/bin/bash
 #
 # Builds the client's network extension (addons/ds_net) from horizonserver/godot_net and copies
-# the libraries into addons/ds_net/bin.
+# the libraries into addons/ds_net/bin, with bin/BUILT_FROM naming the horizonserver commit.
+#
+# The libraries are committed: nobody needs Rust to run the game. On a pull request that moves
+# addons/ds_net/HORIZONSERVER_REV, .github/workflows/ds-net.yml builds and commits them; run this
+# by hand only to try a horizonserver change locally (do not commit a build of uncommitted code).
 #
 # Usage: tools/build_ds_net.sh [linux|windows|all]
 #   HORIZONSERVER_DIR  the horizonserver checkout (default: ../horizonserver), at the commit of
@@ -24,3 +28,5 @@ if [ "$expected" != "$actual" ]; then
     echo "note: $horizonserver is at $actual, addons/ds_net/HORIZONSERVER_REV says $expected" >&2
 fi
 "$horizonserver/godot_net/build.sh" "${GODOT_BIN:-godot}" addons/ds_net/bin "${1:-all}"
+# What the client build and the tests check against HORIZONSERVER_REV.
+echo "$actual" > addons/ds_net/bin/BUILT_FROM

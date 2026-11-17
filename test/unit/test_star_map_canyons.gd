@@ -12,6 +12,10 @@ extends GutTest
 const BODY: String = "tarsis_3"
 const RADIUS: float = 6356000.0
 const RES: int = StarMapGround.GRID_RES
+## Where the walks start: a mining village of tarsis_3 (M0002, "mining_village_02" before the POIs were
+## renamed), on the corundum ground the canyons cut. A place, not a POI's name or rank in the file:
+## both changed under these tests once already.
+const TOWN_LON_LAT := Vector2(-39.4094, 24.7776)
 
 var _data: PlanetData = null
 
@@ -32,10 +36,7 @@ func _no_planet() -> bool:
 ## look for a canyon that does not depend on knowing where one is.
 func _tiles_leaving_town(nside: int, count: int) -> PackedInt64Array:
 	var out := PackedInt64Array()
-	var pois: Array[Dictionary] = StarMapPoi.load_for(BODY)
-	if pois.is_empty():
-		return out
-	var from: Vector3 = pois[0]["dir"]
+	var from: Vector3 = HEALPix.lonlat2vec(TOWN_LON_LAT.x, TOWN_LON_LAT.y)
 	var sideways: Vector3 = from.cross(Vector3.UP).normalized()
 	var step: float = HEALPix.pixel_side_length(nside, 1.0)
 	for n: int in range(1, count + 1):
@@ -117,11 +118,20 @@ func test_a_fine_tile_carries_the_game_s_canyons() -> void:
 					floor_at = at
 				elif absf(drawn - whole) < 1.0:
 					rim_at = at
-		if floor_at < 0 or rim_at < 0:
-			continue  # solid block, or a town's sphere: the next tile along
+		if floor_at < 0 or rim_at < 0 or deepest > -0.5 * _data.crack_depth_m:
+			continue  # solid block, a town's sphere, no canyon under this one: the next tile along
 		assert_almost_eq(deepest, -_data.crack_depth_m, 1.0, "the floor stands a full canyon's depth down")
-		assert_eq(int(mesh.get_meta("source_nside", 0)), level,
-			"and the tile is final: it is not waiting for data nobody publishes")
+		# Final once the published tile under it is on this machine; until then it is drawn from a
+		# coarser one and says so (built again when the published one arrives), cache or no cache.
+		var finest: int = StarMapRelief.finest_nside(BODY)
+		@warning_ignore("integer_division")
+		var published: int = ipix >> (2 * int(round(log(float(level / finest)) / log(2.0))))
+		if StarMapTiles.for_body(BODY).has_own(finest, published):
+			assert_eq(int(mesh.get_meta("source_nside", 0)), level,
+				"and the tile is final: it is not waiting for data nobody publishes")
+		else:
+			assert_lt(int(mesh.get_meta("source_nside", 0)), finest,
+				"the published n%d tile is not on this machine: the tile says it is provisional" % finest)
 		assert_lt(colours[floor_at].get_luminance(), colours[rim_at].get_luminance() * 0.7,
 			"the floor is drawn in shadow")
 		return

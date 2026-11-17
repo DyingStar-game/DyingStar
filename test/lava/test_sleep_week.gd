@@ -59,4 +59,7 @@ func _run() -> void:
 		"scope": "stable deposited field, daily cold inputs, then hot reactivation; not continuous full-volcano discharge"}
 	FileAccess.open("user://lava-sleep-week.json", FileAccess.WRITE).store_string(JSON.stringify(report, "\t"))
 	print("LAVA_WEEK_RESULT ", JSON.stringify(report))
-	quit(0 if same and visits < 100 and heated_receivers > 1 and remaining == server.injected_q else 1)
+	var ok := same and visits < 100 and heated_receivers > 1 and remaining == server.injected_q
+	# The verdict CI reads (tools/ci/run_marked.py): the exit code is not reliable on every platform.
+	print("LAVA_WEEK pass=", ok)
+	quit(0 if ok else 1)

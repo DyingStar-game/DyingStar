@@ -24,6 +24,14 @@ const ALLOWED : Dictionary = {
 	"res://scenes/player/atmosphere_renderer.gd": "the aerial table follows the camera, 1024x36 texels",
 	# Does not ask for it: names the mode of each SubViewport in the benchmark report.
 	"res://scenes/benchmark/benchmark_facts.gd": "names the mode in the report, never sets it",
+	# Live only while a repair is on the screen and it is seen; otherwise drawn once (UPDATE_ONCE).
+	"res://ui/screens/wall_screen.gd": "live only during a repair, while the screen is seen",
+	# Authoring benches run by hand, never in the game: each renders its own preview every frame.
+	"res://tools/character/face_survey/random_faces.gd": "offline bench: renders faces to files",
+	"res://tools/character/face_survey/render_heads.gd": "offline bench: renders heads to files",
+	"res://tools/character/hair_groom/hair_bench.gd": "offline bench: hair preview",
+	"res://tools/character/hair_groom/hair_motion_bench.gd": "offline bench: hair motion preview",
+	"res://tools/stargrot/cave_workbench.gd": "offline workbench, only while its preview is visible",
 }
 const SKIPPED_DIRS : Array[String] = ["res://addons", "res://.godot", "res://test", "res://build"]
 

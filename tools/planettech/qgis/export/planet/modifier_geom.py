@@ -362,9 +362,63 @@ def partition_polyline(nside, points, tol_deg=None):
     adds one shared vertex to the two pieces that meet there — so concatenating
     all pieces reproduces the input polyline exactly once. This is what makes
     it impossible for two chunks to draw the same stretch of road.
+
+    One level on its own. A pyramid uses partition_polyline_levels(), which
+    keeps every level consistent with its children.
     """
-    if len(points) < 2:
+    out = {}
+    for pix, piece in _partition_sequence(nside, points, tol_deg):
+        out.setdefault(pix, []).append(piece)
+    return out
+
+
+def partition_polyline_levels(nsides, points, tol_deg=None):
+    """partition_polyline() for every level of a pyramid, from ONE partition.
+
+    Returns {nside: {ipix: [piece, …]}}. The line is partitioned once at the
+    finest level and each coarser tile gets its children's pieces, joined where
+    they follow each other along the line. So the four children of a tile hold
+    exactly the stretch of road their parent holds.
+
+    Partitioning each level on its own does not: the samples are a quarter of
+    the level's pixel apart, so at a coarse level a line that clips the corner
+    of a tile between two samples is given to the neighbour instead. The road
+    then sits in one tile at n64 and in another one's children at n128.
+    """
+    if not nsides:
         return {}
+    fine = max(nsides)
+    seq = _partition_sequence(fine, points, tol_deg)
+    out = {}
+    for nside in nsides:
+        ratio = fine // nside
+        if nside <= 0 or ratio * nside != fine or ratio & (ratio - 1):
+            raise ValueError("levels must be powers of two of each other: %r" % (nsides,))
+        # NESTED numbering: a pixel's parent [ratio] times coarser drops 2 bits per halving.
+        shift = 2 * (ratio.bit_length() - 1)
+        per_tile = {}
+        cur_pix = None
+        cur = None
+        for pix, piece in seq:
+            parent = pix >> shift
+            if parent == cur_pix:
+                # Consecutive pieces share their boundary vertex: keep it once.
+                cur.extend(piece[1:])
+                continue
+            if cur is not None:
+                per_tile.setdefault(cur_pix, []).append(cur)
+            cur_pix = parent
+            cur = list(piece)
+        if cur is not None:
+            per_tile.setdefault(cur_pix, []).append(cur)
+        out[nside] = per_tile
+    return out
+
+
+def _partition_sequence(nside, points, tol_deg=None):
+    """The pieces of partition_polyline(), as [(ipix, piece), …] in line order."""
+    if len(points) < 2:
+        return []
     if tol_deg is None:
         # The coordinate quantum (1e-7 deg, ~1.1 cm) — the finest the format can
         # represent. A tolerance scaled to the pixel size instead would leave
@@ -375,7 +429,7 @@ def partition_polyline(nside, points, tol_deg=None):
     step = 0.25 * pixel_side_deg(nside)
     dense = _densify(points, step)
 
-    out = {}
+    out = []
     cur_pix = pix_of(nside, dense[0][0], dense[0][1])
     cur = [dense[0]]
     for i in range(1, len(dense)):
@@ -387,11 +441,11 @@ def partition_polyline(nside, points, tol_deg=None):
         cut = _boundary_split(nside, dense[i - 1], p, cur_pix, pix, tol_deg)
         cur.append(cut)
         if len(cur) >= 2:
-            out.setdefault(cur_pix, []).append(cur)
+            out.append((cur_pix, cur))
         cur_pix = pix
         cur = [cut, p]
     if len(cur) >= 2:
-        out.setdefault(cur_pix, []).append(cur)
+        out.append((cur_pix, cur))
     return out
 
 

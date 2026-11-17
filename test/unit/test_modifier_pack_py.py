@@ -281,6 +281,47 @@ class TestGeometry(unittest.TestCase):
             self.assertEqual(a[-1], b[0],
                              "consecutive pieces must share an identical vertex")
 
+    def test_partition_levels_children_hold_their_parent_s_stretch(self):
+        # Partitioned level by level, a line clipping a tile corner between two
+        # coarse samples went to the neighbour at n64 and to the corner tile's
+        # children at n128 (test_road_no_double_render on the real pack).
+        pts = mg.with_cumulative(
+            [(-39.7 + 0.37 * i, 24.6 + 0.23 * i + 0.4 * math.sin(i)) for i in range(60)], MPD)
+        nsides = [16, 32, 64, 128, 256]
+        levels = mg.partition_polyline_levels(nsides, pts)
+        total = pts[-1][2]
+        for nside in nsides:
+            span = sum(pc[-1][2] - pc[0][2] for v in levels[nside].values() for pc in v)
+            self.assertAlmostEqual(span, total, delta=total * 1e-9, msg="n%d" % nside)
+        for parent_nside in nsides[:-1]:
+            child = levels[parent_nside * 2]
+            for ipix, pieces in levels[parent_nside].items():
+                parent_span = sum(pc[-1][2] - pc[0][2] for pc in pieces)
+                child_span = sum(pc[-1][2] - pc[0][2]
+                                 for c in range(4) for pc in child.get(ipix * 4 + c, []))
+                self.assertAlmostEqual(child_span, parent_span, delta=1e-6,
+                                       msg="n%d p%d" % (parent_nside, ipix))
+            self.assertEqual({p >> 2 for p in child}, set(levels[parent_nside]),
+                             "no child tile without its parent")
+
+    def test_partition_levels_finest_is_the_plain_partition(self):
+        pts = mg.with_cumulative(
+            [(-39.7 + 0.02 * i, 24.6 + 0.01 * i) for i in range(150)], MPD)
+        self.assertEqual(mg.partition_polyline_levels([64, 128], pts)[128],
+                         mg.partition_polyline(128, pts))
+
+    def test_partition_levels_pieces_still_live_in_their_own_pixel(self):
+        # Every vertex but the cut ones (on the boundary) is inside the tile.
+        # (A segment's midpoint is not checked: a pixel's edge is curved in
+        # lon/lat, so a chord near it can stray out at any level.)
+        pts = mg.with_cumulative(
+            [(-39.7 + 0.05 * i, 24.6 + 0.03 * i) for i in range(120)], MPD)
+        for nside, tiles in mg.partition_polyline_levels([32, 64, 128], pts).items():
+            for ipix, pieces in tiles.items():
+                for pc in pieces:
+                    for p in pc[1:-1]:
+                        self.assertEqual(mg.pix_of(nside, p[0], p[1]), ipix, "n%d" % nside)
+
     def test_partition_single_pixel_is_untouched(self):
         pts = mg.with_cumulative([(10.0, 20.0), (10.001, 20.001)], MPD)
         parts = mg.partition_polyline(64, pts)

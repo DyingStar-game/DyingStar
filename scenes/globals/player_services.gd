@@ -1073,7 +1073,11 @@ static func _jwt_payload(token: String) -> Dictionary:
 	var encoded: String = parts[1].replace("-", "+").replace("_", "/")
 	while encoded.length() % 4 != 0:
 		encoded += "="
-	var payload: Variant = JSON.parse_string(Marshalls.base64_to_utf8(encoded))
+	# JSON.parse_string logs an engine error on bad input; an unreadable token is not the engine's.
+	var json := JSON.new()
+	if json.parse(Marshalls.base64_to_utf8(encoded)) != OK:
+		return {}
+	var payload: Variant = json.data
 	if payload is Dictionary:
 		return payload
 	return {}

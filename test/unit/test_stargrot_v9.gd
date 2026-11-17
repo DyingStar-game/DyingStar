@@ -1,9 +1,21 @@
 extends GutTest
 ## Version 9: six more chamber families, eroded galleries, natural light shafts, and version 8 left untouched.
 
-## V8 reference geometry after the 2026-10-19 seam repair (complete portal edges and floor).
-## Layout/density remain v8; only the previously incomplete connector was repaired.
-const V8 := {"8,1,104729": "dfb98eef38b73602", "8,2,7": "7c94ef7d491eb353", "8,0,73": "a56a4d0bdfe4f89e"}
+## V8 reference geometry after the 2026-10-19 seam repair (complete portal edges and floor), as
+## [triangles, bounds, area m²]. Not a hash of the faces: the mesher's Pow/Sin/Cos come from the
+## platform's libm, a last bit apart from one machine to the next (Fedora, Ubuntu CI and the
+## pinning machine gave three hashes), which moves vertices by far less than a millimetre but
+## flips a byte. A change of the v8 layout moves these by metres and hundreds of triangles.
+const V8 := {
+    "8,1,104729": [39306, AABB(Vector3(-74.274, -8.726, 14.0), Vector3(113.990, 22.206, 166.0)), 10354.53],
+    "8,2,7": [153110, AABB(Vector3(-43.762, -54.413, 14.0), Vector3(148.601, 70.470, 266.0)), 40167.47],
+    "8,0,73": [22370, AABB(Vector3(-43.760, -7.420, 14.0), Vector3(53.669, 16.166, 86.0)), 4206.34],
+}
+## How far a platform's last bits may move a fingerprint: a few triangles (a marching-cubes sign
+## test on a vertex exactly at the iso level), a centimetre, a square metre.
+const V8_TRIANGLE_SLACK := 0.002
+const V8_BOUNDS_SLACK_M := 0.01
+const V8_AREA_SLACK_M2 := 1.0
 const NEW_FAMILIES := ["dome", "gallery", "terraced", "forest", "basin", "balcony"]
 
 
@@ -25,11 +37,15 @@ func _profile(size_index: int, seed_style: String = "auto") -> CaveProfile:
     return profile
 
 
-func _digest(faces: PackedVector3Array) -> String:
-    var hashing := HashingContext.new()
-    hashing.start(HashingContext.HASH_SHA256)
-    hashing.update(var_to_bytes(faces))
-    return hashing.finish().hex_encode().substr(0, 16)
+## [triangles, bounds, area m²] of [param faces], compared with the V8 references.
+func _fingerprint(faces: PackedVector3Array) -> Array:
+    var box := AABB(faces[0], Vector3.ZERO)
+    var area := 0.0
+    for i in range(0, faces.size(), 3):
+        box = box.expand(faces[i]).expand(faces[i + 1]).expand(faces[i + 2])
+        area += (faces[i + 1] - faces[i]).cross(faces[i + 2] - faces[i]).length() * 0.5
+    @warning_ignore("integer_division")
+    return [faces.size() / 3, box, area]
 
 
 ## Lowest air above [param point] in its column (the floor), or INF.
@@ -52,7 +68,15 @@ func test_version_8_keeps_its_exact_geometry() -> void:
         var cave := CaveGenerator.build(spec)
         assert_eq(str(cave.get("error", "")), "", key)
         if str(cave.get("error", "")).is_empty():
-            assert_eq(_digest(cave.faces), V8[key], "v8 geometry unchanged by version 9")
+            var got: Array = _fingerprint(cave.faces)
+            var want: Array = V8[key]
+            var msg := "%s: v8 geometry unchanged by version 9 (got %s)" % [key, str(got)]
+            assert_almost_eq(float(got[0]), float(want[0]), float(want[0]) * V8_TRIANGLE_SLACK, msg)
+            var gb: AABB = got[1]
+            var wb: AABB = want[1]
+            assert_almost_eq(gb.position, wb.position, Vector3.ONE * V8_BOUNDS_SLACK_M, msg)
+            assert_almost_eq(gb.end, wb.end, Vector3.ONE * V8_BOUNDS_SLACK_M, msg)
+            assert_almost_eq(float(got[2]), float(want[2]), V8_AREA_SLACK_M2, msg)
 
 
 func test_new_definitions_use_version_9_and_validate_erosion_and_shafts() -> void:

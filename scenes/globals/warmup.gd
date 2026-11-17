@@ -61,6 +61,7 @@ const CATALOGUES: Array[String] = [
 	"res://scenes/_universe/vehicles/specs/",
 	"res://scenes/_universe/props/food/dispenser_items/",
 	"res://scenes/_universe/props/tools/dispenser_items/",
+	"res://scenes/_universe/vehicles/terminal_items/",
 ]
 ## The puppet a baked person is put out on (hidden), in its close-up materials then its far ones.
 const PERSON_SCENE := "res://scenes/_universe/characters/humanoids/human_puppet.tscn"

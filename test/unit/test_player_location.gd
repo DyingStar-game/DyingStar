@@ -14,6 +14,7 @@ const RADIUS: float = 6.0e6
 
 func before_each() -> void:
 	# No agent, no network: the helpers must answer for a bare body with no registry behind it.
+	pass
 
 
 func test_a_body_in_deep_space_is_its_own_position() -> void:
@@ -29,8 +30,7 @@ func test_a_body_in_deep_space_is_its_own_position() -> void:
 func test_a_body_on_a_planet_carries_the_body_key_and_the_offset_from_its_centre() -> void:
 	var planet := _planet("tarsis_3", Vector3(1000.0, 0.0, 0.0))
 	var player := Node3D.new()
-	planet.add_child(player)
-	add_child_autofree(player)
+	planet.add_child(player)  # freed with the planet
 	player.position = Vector3(0.0, RADIUS, 0.0)
 	var where: Dictionary = PlayerLocation.presence_of(player)
 	assert_eq(str(where["scene"]), "tarsis_3", "the body key, which everything agrees on")
@@ -44,8 +44,7 @@ func test_the_offset_survives_the_planet_orbiting() -> void:
 	# absolute number goes stale the moment it is written.
 	var planet := _planet("tarsis_3", Vector3.ZERO)
 	var player := Node3D.new()
-	planet.add_child(player)
-	add_child_autofree(player)
+	planet.add_child(player)  # freed with the planet
 	player.position = Vector3(0.0, RADIUS, 0.0)
 	var first: Vector3 = PlayerLocation.presence_of(player)["position"] as Vector3
 	planet.position = Vector3(3.0e10, -1.5e10, 7.5e10)  # it moved a long way
@@ -58,8 +57,7 @@ func test_the_offset_survives_the_planet_spinning() -> void:
 	# question in the body's OWN rotating frame. to_local carries that frame along with the turn.
 	var planet := _planet("tarsis_3", Vector3.ZERO)
 	var player := Node3D.new()
-	planet.add_child(player)
-	add_child_autofree(player)
+	planet.add_child(player)  # freed with the planet
 	player.position = Vector3(0.0, RADIUS, 0.0)
 	var first: Vector3 = PlayerLocation.presence_of(player)["position"] as Vector3
 	planet.basis = Basis(Vector3.UP, PI * 0.5)  # a quarter turn
@@ -74,8 +72,7 @@ func test_the_offset_turns_with_the_planet_so_a_ground_spot_stays_put() -> void:
 	# player standing on it.
 	var planet := _planet("tarsis_3", Vector3.ZERO)
 	var player := Node3D.new()
-	planet.add_child(player)
-	add_child_autofree(player)
+	planet.add_child(player)  # freed with the planet
 	player.position = Vector3(120.0, RADIUS, -35.0)
 	var first: Vector3 = PlayerLocation.presence_of(player)["position"] as Vector3
 	planet.basis = Basis(Vector3.UP, 0.7)

@@ -179,6 +179,11 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
             "max_slope_deg": max_slope_deg(r),
         })
 
+    # One partition per road for the whole pyramid: a tile's children then hold
+    # exactly its stretch of road (see modifier_geom.partition_polyline_levels).
+    for road in prepared:
+        road["parts"] = mg.partition_polyline_levels(levels_ns, road["points"])
+
     levels = []
     counts = {"features": len(prepared), "records_per_level": {}}
     for nside in levels_ns:
@@ -187,7 +192,7 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
         for road in prepared:
             eps_m = mg.decim_eps_m(nside, radius_m, road["half_width_m"], res_max)
             eps_deg = eps_m / mpd
-            for ipix, pieces in mg.partition_polyline(nside, road["points"]).items():
+            for ipix, pieces in road["parts"][nside].items():
                 for piece in pieces:
                     piece = mg.douglas_peucker(piece, eps_deg)
                     if len(piece) < MIN_POINTS:

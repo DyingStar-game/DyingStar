@@ -1,16 +1,24 @@
 name: "Godot gut test"
 on:
+  # A pull request's own pushes are tested by its pull_request event; testing every branch push as
+  # well ran the whole suite twice per push.
   push:
     branches:
-      - '*'
+      - develop
+      - main
     tags:
-       - '*'
+      - '*'
   # Runs test suite when a PR is opened or synchronyzed
   pull_request:
   # Runs test suite every night
   schedule:
     - cron:  '0 0 * * *'
-  
+
+# A newer push to the same branch or pull request supersedes the run in progress.
+concurrency:
+  group: godot-tests-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   GODOT_VERSION: 4.7
   # The C# twins against their GDScript reference, bit for bit. Data-free: what needs tarsis_3's tile
@@ -18,37 +26,67 @@ env:
   NATIVE_TESTS: res://test/unit/test_tile_frame_native.gd,res://test/unit/test_crack_voronoi_native.gd,res://test/unit/test_native_script.gd,res://test/unit/test_rock_impurity_native.gd,res://test/unit/test_chunk_native_normals.gd,res://test/unit/test_chunk_native_verts.gd
 
 jobs:
+  # On the project's own runners (ARC, like the client build). Every test blocks: the verdict comes
+  # from tools/ci/run_gut.sh, which fails on a failing test AND on a test script that did not load.
   execute-gut:
     name: Run GUT tests
-    runs-on: ubuntu-latest
+    runs-on: dyingstar-runners
     timeout-minutes: 60
-    env:
-      GODOT: ${{ github.workspace }}/../godot/Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64
     steps:
+      - name: Install test tooling
+        run: |
+          # The self-hosted ARC runner image is minimal. python3 judges the run; fontconfig and a
+          # monospace face are what SystemFont looks for (the repair screens' boot log); the others are
+          # what the LiveKit extension links against: without them it does not load,
+          # scenes/audio/livekit.gd does not compile, and every test script that preloads it is skipped.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget unzip python3 libfontconfig1 fonts-dejavu-core \
+            libpipewire-0.3-0t64 libx11-6 libxext6 libxfixes3 libxinerama1 libsystemd0 libwayland-client0
+          echo "GODOT=$HOME/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSION}-stable_mono_linux.x86_64" >> "$GITHUB_ENV"
+
+      # The whole tree, assets_blender included: game resources still point into it (the iron
+      # mineral's roughness map), and without it the mineral catalogue does not compile.
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up .NET 9.0
         uses: actions/setup-dotnet@v4
+        env:
+          # The ARC runner runs as an unprivileged user and cannot write to /usr/share/dotnet.
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: '9.0.x'
 
+      # Same key and path as build-client.yaml: one cached engine for both.
       - name: Cache Godot binary
         id: cache-godot
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/../godot
+          path: ~/godot
           key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
 
       - name: Install Godot
         if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/../godot"
-          wget -q -O /tmp/godot.zip \
+          mkdir -p ~/godot
+          wget -q -O "$RUNNER_TEMP/godot.zip" \
             "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
-          unzip -q /tmp/godot.zip -d "$GITHUB_WORKSPACE/../godot"
-          rm /tmp/godot.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
+          rm "$RUNNER_TEMP/godot.zip"
           chmod +x "$GODOT"
+
+      # Every LiveKit dependency present, or a clear error here rather than 2 skipped test scripts.
+      - name: LiveKit extension loads
+        run: |
+          missing=$(ldd addons/godot-livekit/bin/libgodot-livekit.linux.x86_64.so | grep "not found" || true)
+          if [ -n "$missing" ]; then
+            echo "::error::the LiveKit extension misses system libraries:"; echo "$missing"; exit 1
+          fi
+
+      # The network extension (HorizonLink) is committed, built by ds-net.yml from horizonserver at the
+      # pinned commit: only check that what is committed is that build.
+      - name: Network extension matches its pin
+        run: tools/check_ds_net.sh
 
       # The tests call C# twins (TileFrameNative, CrackVoronoiNative, the mountain twins). Without a
       # built assembly they would fall back to GDScript and the twins would never be tested at all.
@@ -56,7 +94,7 @@ jobs:
         run: |
           # Double-precision GodotSharp from the editor zip, not nuget.org's single-precision one
           # (see NuGet.Config and build-client.yaml).
-          export GODOT_SHARP_NUPKGS="$GITHUB_WORKSPACE/../godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs"
+          export GODOT_SHARP_NUPKGS="$HOME/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs"
           rm -rf ~/.nuget/packages/godotsharp/${GODOT_VERSION}* ~/.nuget/packages/godotsharpeditor/${GODOT_VERSION}* \
                  ~/.nuget/packages/godot.net.sdk/${GODOT_VERSION}* ~/.nuget/packages/godot.sourcegenerators/${GODOT_VERSION}*
           dotnet build DyingStar.csproj -c Debug
@@ -65,33 +103,30 @@ jobs:
       - name: Import project
         run: timeout 40m "$GODOT" --headless --path . --import || true
 
-      # The shared material library is generated from its material.json files (DyingStar > Rebuild
-      # shared materials, in the editor). A manifest changed without regenerating fails here, before a
-      # model ships with a stale material. Compared property by property, so Linux reads exactly what
-      # Windows wrote.
-      - name: Shared material library up to date
-        run: |
-          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_shared_material_library.gd -gexit
+      # The whole suite, the C# twins and the shared material library check included: they are in
+      # test/unit and block like every other test.
+      - name: GUT suite
+        run: tools/ci/run_gut.sh .godot/gut -gdir=res://test/unit
 
-      - name: C# twins against GDScript (bit for bit)
-        run: |
-          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gtest="$NATIVE_TESTS" -gexit
+      - name: Keep the GUT report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gut-report
+          path: .godot/gut/
+          if-no-files-found: ignore
 
+      # Each test is judged by the result line it prints (tools/ci/run_marked.py): the engine's exit
+      # code is not the test's (it aborts at shutdown here, exits 1 now and then on Windows).
       - name: Volcano activity, lifecycle and Tarsis III integration
         run: |
-          "$GODOT" --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
-          "$GODOT" --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
-          "$GODOT" --headless --path . res://test/volcano/test_tarsis_volcano_vfx.tscn -- --volcano-view
-          "$GODOT" --headless --path . res://test/lava/test_planet_integration.tscn -- --volcano-view --lava-long-test
-          "$GODOT" --headless --path . res://test/lava/test_eruption_server.tscn -- --volcano-view
-          "$GODOT" --headless --path . --script res://test/lava/test_sleep_week.gd
-
-      # The whole suite still carries known failures (test_collision_shape, a few road tests): it
-      # reports, it does not block, until they are fixed. The C# twins above do block.
-      - name: Whole GUT suite
-        continue-on-error: true
-        run: |
-          "$GODOT" --headless --path . -s addons/gut/gut_cmdln.gd -gdir=res://test/unit -gexit
+          run() { python3 tools/ci/run_marked.py --pass "$1" -- "$GODOT" --headless --path . "${@:2}"; }
+          run 'LAVA_POLICY mode=normal pass=true' res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
+          run 'LAVA_POLICY mode=simulated pass=true' res://test/lava/test_policy.tscn -- --volcano-view
+          run 'VOLCANO TARSIS III: .* 0 failures' res://test/volcano/test_tarsis_volcano_vfx.tscn -- --volcano-view
+          run 'LAVA_PLANET_RESULT failures=0$' res://test/lava/test_planet_integration.tscn -- --volcano-view --lava-long-test
+          run 'LAVA_SERVER failures=0$' res://test/lava/test_eruption_server.tscn -- --volcano-view
+          run 'LAVA_WEEK pass=true' --script res://test/lava/test_sleep_week.gd
 
   # The C# twins reproduce GDScript bit for bit only while .NET's Math.Sin / Math.Atan2 return the
   # engine's own sin / atan2 bits. On Linux both are glibc; on Windows both should be the UCRT, and
@@ -148,13 +183,15 @@ jobs:
           & $env:GODOT --headless --path . -s addons/gut/gut_cmdln.gd "-gtest=$($env:NATIVE_TESTS)" -gexit
           exit $LASTEXITCODE
 
+      # Judged by the result line each test prints (tools/ci/run_marked.py): on Windows the engine
+      # exits 1 now and then after a test that passed and called quit(0).
       - name: Lava dormant deposits through one week (C# against reference)
         run: |
-          & $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
+          python tools/ci/run_marked.py --pass 'LAVA_POLICY mode=normal pass=true' -- $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
+          python tools/ci/run_marked.py --pass 'LAVA_POLICY mode=simulated pass=true' -- $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:GODOT --headless --path . --script res://test/lava/test_sleep_week.gd
+          python tools/ci/run_marked.py --pass 'LAVA_WEEK pass=true' -- $env:GODOT --headless --path . --script res://test/lava/test_sleep_week.gd
           exit $LASTEXITCODE
 
   lava-lockstep:
@@ -238,6 +275,22 @@ jobs:
 
       - name: Credits generator unit tests
         run: python3 test/unit/test_generate_credits_py.py
+
+      # The planet exporter: its geometry and pack format, and its pure-Python HEALPix (the one used
+      # without healpy, as here). numpy is the one package these checks install.
+      - name: Planet exporter unit tests
+        run: |
+          pip3 install --quiet numpy
+          python3 test/unit/test_healpix_utils_py.py
+          python3 test/unit/test_modifier_pack_py.py
+
+      # What turns the GUT job red (a failing test, a test script that did not load, no report).
+      - name: GUT verdict unit tests
+        run: python3 test/unit/test_gut_report_py.py
+
+      # What judges the lava / volcano tests (their result line, not the engine's exit code).
+      - name: Result-line runner unit tests
+        run: python3 test/unit/test_run_marked_py.py
 
   linter:
     name: Run GDScript linter

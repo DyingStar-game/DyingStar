@@ -153,42 +153,11 @@ jobs:
               || { echo "::error::dev tool '${tool}' not switched off in globals.gd"; exit 1; }
           done
 
-      - name: Pin of the network extension
-        id: ds_net
-        run: echo "rev=$(cat addons/ds_net/HORIZONSERVER_REV)" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout horizonserver (network extension source)
-        uses: actions/checkout@v4
-        with:
-          repository: DyingStar-game/horizonserver
-          ref: ${{ steps.ds_net.outputs.rev }}
-          path: .ds_net/horizonserver
-          submodules: true
-
-      - name: Build the network extension (addons/ds_net)
-        run: |
-          # The client's WebTransport + bitcode link to Horizon: a Rust GDExtension (godot-rust)
-          # from horizonserver/godot_net, at the commit pinned in addons/ds_net/HORIZONSERVER_REV.
-          # Windows is cross-built with MinGW-w64. The Windows job also builds the Linux library:
-          # the editor that runs the export is Linux, and without it HorizonLink would not exist
-          # when it loads the project (the export only ships the library of its platform).
-          sudo apt-get install -y build-essential gcc-mingw-w64-x86-64
-          if ! command -v rustup > /dev/null && [ ! -x "$HOME/.cargo/bin/rustup" ]; then
-            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
-          fi
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup toolchain install stable --profile minimal
-          LIBS=linux
-          if [ "${{ matrix.os_name }}" = windows ]; then
-            rustup target add --toolchain stable x86_64-pc-windows-gnu
-            LIBS=all
-          fi
-          rm -rf addons/ds_net/bin
-          RUSTUP_TOOLCHAIN=stable .ds_net/horizonserver/godot_net/build.sh \
-            ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64 \
-            addons/ds_net/bin "$LIBS"
-          # Out of the project before the export: Godot would import the checkout.
-          rm -rf .ds_net
+      # The network extension (addons/ds_net, HorizonLink) is committed, built by ds-net.yml from
+      # horizonserver at the pinned commit; both libraries are there, the Windows export needing the
+      # Linux one too (the editor that exports is Linux). Only check that they are that build.
+      - name: Network extension matches its pin
+        run: tools/check_ds_net.sh
 
       - name: Create build output directory
         run: |

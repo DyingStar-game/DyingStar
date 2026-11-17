@@ -3780,7 +3780,9 @@ func _apply_adopted_velocity() -> void:
 
 ## Server: the velocity in the vehicle's own axes, snapped so a parked truck replicates no noise.
 func _velocity_local_now() -> Dictionary:
-	var v: Vector3 = global_transform.basis.inverse() * linear_velocity
+	# Out of the tree (a vehicle instantiated, not yet added) its own basis is the global one.
+	var basis_now: Basis = global_basis if is_inside_tree() else basis
+	var v: Vector3 = basis_now.inverse() * linear_velocity
 	return {"x": snappedf(v.x, 0.01), "y": snappedf(v.y, 0.01), "z": snappedf(v.z, 0.01)}
 
 ## Server: the driver as it is NOW, for replication. The driver seat's occupant when someone sits in

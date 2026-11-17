@@ -457,15 +457,17 @@ func test_the_fences_are_laid_a_share_a_frame_and_the_old_node_stands_until_then
 func test_a_server_samples_no_fence_where_no_body_has_its_ground() -> void:
 	var t := _fenced()
 	t._build_village_fences(BED)
-	var at: int = t._fences_sampling[BED]["at"]
+	# Held here: a fast machine samples all the posts in one share and drops the entry.
+	var sampling: Dictionary = t._fences_sampling[BED]
+	var at: int = sampling["at"]
 	t._fence_sample_frame = -1
 	t._step_fence_sampling()
-	assert_eq(t._fences_sampling[BED]["at"], at, "nobody there: the village waits")
+	assert_eq(sampling["at"], at, "nobody there: the village waits")
 	_pin_fences(t)
 	t._fence_sample_frame = -1
 	t._fence_next_scan_ms = 0
 	t._step_fence_sampling()
-	assert_gt(t._fences_sampling[BED]["at"], at, "a body came: its turn")
+	assert_gt(sampling["at"], at, "a body came: its turn")
 
 
 func test_a_village_a_body_reaches_goes_before_those_queued_ahead_of_it() -> void:
@@ -522,10 +524,12 @@ func test_a_client_samples_its_villages_in_order_without_pins() -> void:
 	var t := _fenced()
 	t.is_server = false
 	t._build_village_fences(BED)
-	var at: int = t._fences_sampling[BED]["at"]
+	# Held here: a fast machine samples all the posts in one share and drops the entry.
+	var sampling: Dictionary = t._fences_sampling[BED]
+	var at: int = sampling["at"]
 	t._fence_sample_frame = -1
 	t._step_fence_sampling()
-	assert_gt(t._fences_sampling[BED]["at"], at)
+	assert_gt(sampling["at"], at)
 
 
 func test_a_fence_share_runs_once_a_frame() -> void:

@@ -777,6 +777,9 @@ func test_the_cut_widens_by_the_ribbons_half_width() -> void:
 ## two records replaced each other every frame and the depot's chunks were rebuilt without end.
 func test_a_machine_inside_a_building_leaves_the_ground_to_the_building() -> void:
 	var depot: Node = (load("res://scenes/_universe/structures/industrial/cargo_depot.tscn") as PackedScene).instantiate()
+	# A machine with a pad of its own, placed in the building (the depot's dispensers have moved to the
+	# changing rooms, and the tool dispenser carries no pad).
+	depot.add_child((load("res://scenes/_universe/structures/dispenser/food_dispenser.tscn") as PackedScene).instantiate())
 	var own: Array = []
 	var nested: Array = []
 	for node: Node in depot.find_children("*", "TerrainPad", true, false):

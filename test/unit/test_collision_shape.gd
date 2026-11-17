@@ -91,13 +91,20 @@ func _make_full_polygon(nside: int, ipix: int,
 	]
 
 
-## Return the minimum and maximum vertex distance from origin.
-func _vertex_range(shape: ConcavePolygonShape3D) -> Dictionary:
-	var faces := shape.get_faces()
+## Where a HEALPix chunk's collision faces are measured from: the chunk centre on a sphere of
+## [param radius], snapped like PlanetChunk.generate_collision_shape (faces are stored relative to
+## it so a far chunk keeps float32 precision; see PlanetTerrain._chunk_collision_origin).
+func _origin(radius: float = RADIUS, nside: int = NSIDE, ipix: int = IPIX) -> Vector3:
+	return PlanetChunk.snap_to_f32(HEALPix.pix2vec_nest(nside, ipix) * radius)
+
+
+## Return the minimum and maximum vertex distance from the planet centre.
+func _vertex_range(shape: ConcavePolygonShape3D, radius: float = RADIUS) -> Dictionary:
+	var origin := _origin(radius)
 	var vmin := INF
 	var vmax := -INF
-	for v in faces:
-		var d := v.length()
+	for v in shape.get_faces():
+		var d := (v + origin).length()
 		if d < vmin:
 			vmin = d
 		if d > vmax:
@@ -106,21 +113,23 @@ func _vertex_range(shape: ConcavePolygonShape3D) -> Dictionary:
 
 
 ## Return true if at least one vertex is significantly depressed below
-## the expected_radius (by more than threshold metres).
+## the expected_radius (by more than threshold metres). The planet's radius is [param expected_radius].
 func _has_depressed_vertex(shape: ConcavePolygonShape3D,
 		expected_radius: float, threshold: float = 1.0) -> bool:
+	var origin := _origin(expected_radius)
 	for v in shape.get_faces():
-		if v.length() < expected_radius - threshold:
+		if (v + origin).length() < expected_radius - threshold:
 			return true
 	return false
 
 
-## Return the deepest depression (positive = below expected_radius).
+## Return the deepest depression (positive = below expected_radius, the planet's radius).
 func _max_depression(shape: ConcavePolygonShape3D,
 		expected_radius: float) -> float:
+	var origin := _origin(expected_radius)
 	var worst := 0.0
 	for v in shape.get_faces():
-		var diff := expected_radius - v.length()
+		var diff := expected_radius - (v + origin).length()
 		if diff > worst:
 			worst = diff
 	return worst
