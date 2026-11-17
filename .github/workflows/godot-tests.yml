@@ -284,6 +284,15 @@ jobs:
           python3 test/unit/test_healpix_utils_py.py
           python3 test/unit/test_modifier_pack_py.py
 
+      # The shared material library: what a material.json may leave out (every map) and what it may
+      # not (a base colour), and how the Blender add-on packs an opacity map. jsonschema and pillow
+      # are what tools/validate.py reads a manifest and its maps with.
+      - name: Material library unit tests
+        run: |
+          pip3 install --quiet numpy jsonschema pillow
+          python3 test/unit/test_alpha_packer_py.py
+          python3 test/unit/test_material_manifest_py.py
+
       # What turns the GUT job red (a failing test, a test script that did not load, no report).
       - name: GUT verdict unit tests
         run: python3 test/unit/test_gut_report_py.py

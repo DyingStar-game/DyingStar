@@ -23,6 +23,9 @@ _BLENDER_PREVIEW_MAX = 256
 # The fallback crops the albedo instead. Larger, since no rendering is involved.
 _FALLBACK_SIZE = 512
 
+# A plain colour has no detail to show: a small swatch says all there is.
+_SWATCH_SIZE = 64
+
 _JPEG_QUALITY = 90
 
 
@@ -66,6 +69,12 @@ def _regenerate(material: bpy.types.Material) -> None:
 
 def _from_blender_preview(material: bpy.types.Material, target: Path) -> bool:
     """Use the material preview Blender renders for the Asset Browser."""
+    # Without a window there is no GPU to render the preview on: asking for one
+    # starts a render job with nothing to draw to, which can take Blender down.
+    # A scripted export falls through to the base colour instead.
+    if bpy.app.background:
+        return False
+
     _regenerate(material)
 
     preview = material.preview_ensure()
@@ -111,10 +120,29 @@ def _from_albedo(albedo: bpy.types.Image, target: Path) -> bool:
     return True
 
 
+def _from_plain_colour(albedo_color, target: Path) -> bool:
+    """A flat swatch of albedo_color, for a material that publishes no albedo map.
+
+    albedo_color is sRGB, and so are the bytes of a JPEG: the values go into the
+    buffer as they are, with no conversion.
+    """
+    if albedo_color is None:
+        return False
+
+    red, green, blue = (float(channel) for channel in albedo_color)
+    pixels = [red, green, blue, 1.0] * (_SWATCH_SIZE * _SWATCH_SIZE)
+    try:
+        _save_pixels("ds_preview_tmp", _SWATCH_SIZE, _SWATCH_SIZE, pixels, target)
+    except (RuntimeError, OSError):
+        return False
+    return True
+
+
 def write(
     material: bpy.types.Material,
     images: dict,
     folder: Path,
+    albedo_color=None,
 ) -> tuple[Path, bool]:
     """Write preview.jpg into a material folder.
 
@@ -122,13 +150,15 @@ def write(
         material: the material to preview.
         images: map role -> bpy Image, used for the fallback.
         folder: destination material folder.
+        albedo_color: the plain base colour (sRGB), the fallback of a material
+            with no albedo map.
 
     Returns:
         The written path, and whether it came from Blender's rendered preview
-        rather than the albedo fallback.
+        rather than a base colour fallback.
 
     Raises:
-        PreviewError: when neither route produced an image.
+        PreviewError: when no route produced an image.
     """
     target = folder / PREVIEW_NAME
 
@@ -136,6 +166,9 @@ def write(
         return target, True
 
     if _from_albedo(images.get("albedo"), target):
+        return target, False
+
+    if _from_plain_colour(albedo_color, target):
         return target, False
 
     raise PreviewError(

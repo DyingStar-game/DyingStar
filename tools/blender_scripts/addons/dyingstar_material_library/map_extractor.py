@@ -25,6 +25,7 @@ _IMAGE = "ShaderNodeTexImage"
 _MAPPING = "ShaderNodeMapping"
 _PRINCIPLED = "ShaderNodeBsdfPrincipled"
 _MATH = "ShaderNodeMath"
+_RGB = "ShaderNodeRGB"
 
 # Channel each role occupies in a packed ORM map, per the manifest schema.
 # Occlusion sits in red, but it reaches the Principled through the base colour
@@ -55,9 +56,14 @@ class ExtractionResult:
     warnings: list[str] = field(default_factory=list)
 
     def is_usable(self) -> bool:
-        """A library material needs a base colour (an image or a plain colour) and a normal."""
-        has_base = "albedo" in self.images or self.albedo_color is not None
-        return has_base and "normal" in self.images
+        """A library material needs a base colour, read from an image or from a plain colour.
+
+        Every map is optional: a painted panel is a colour and nothing else, and
+        a surface with no normal map is simply smooth. What cannot be published
+        is a base colour the walker could not read, since the material would
+        come out of the library a different colour than it was authored.
+        """
+        return "albedo" in self.images or self.albedo_color is not None
 
 
 def find_principled(material: bpy.types.Material) -> bpy.types.Node | None:
@@ -132,14 +138,24 @@ def _linear_to_srgb(channel: float) -> float:
     return 1.055 * channel ** (1.0 / 2.4) - 0.055
 
 
+def _plain_colour(value) -> tuple[float, float, float]:
+    """A colour socket's value as albedo_color: sRGB, as Godot reads it."""
+    return tuple(round(_linear_to_srgb(channel), 4) for channel in tuple(value)[:3])
+
+
 def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) -> None:
-    """Base Color may come straight from an image, or through an AO multiply."""
+    """Base Color may be a plain colour or an image, alone or under an AO multiply."""
     socket = principled.inputs["Base Color"]
     node = _linked_node(socket)
 
     if node is None:
-        # A plain colour: written as albedo_color (sRGB, as Godot reads it), no texture needed.
-        result.albedo_color = tuple(round(_linear_to_srgb(c), 4) for c in socket.default_value[:3])
+        # A plain colour: written as albedo_color, no texture needed.
+        result.albedo_color = _plain_colour(socket.default_value)
+        return
+
+    if node.bl_idname == _RGB:
+        # The same plain colour, picked in a node of its own.
+        result.albedo_color = _plain_colour(node.outputs[0].default_value)
         return
 
     if node.bl_idname == _IMAGE:
@@ -155,6 +171,14 @@ def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) ->
 
         if albedo is not None:
             result.images["albedo"] = albedo.image
+        elif not node.inputs[base_input].is_linked:
+            # A plain colour under an occlusion map: what material_builder wires
+            # for a manifest with albedo_color, an ao map and no albedo.
+            result.albedo_color = _plain_colour(node.inputs[base_input].default_value)
+        else:
+            result.warnings.append(
+                f"Base Color: the first input ({base_input}) of the Mix node leads to no image"
+            )
         if occlusion is not None and occlusion is not albedo:
             result.images["ao"] = occlusion.image
         elif occlusion is None:
