@@ -6,22 +6,46 @@ func test_join_keeps_every_edge_including_vertical_sides_and_uneven_floor() -> v
         Vector3(-3, 4, 0), Vector3(-4, 0, 0)])
     var loop := PackedVector3Array([Vector3(3, 0, 2), Vector3(3, 2, 2), Vector3(2.5, 4, 2),
         Vector3(0, 4.5, 2), Vector3(-2.5, 3, 2), Vector3(-3, 0.2, 2), Vector3(0, -0.3, 2)])
+    for boxed: bool in [false, true]:
+        var mesh := {"wall": CaveGenerator._empty_surface(), "floor": CaveGenerator._empty_surface()}
+        CaveMeshAssembly.join(mesh, arch, loop, Vector3(INF, INF, INF), boxed)
+        var edges := {}
+        for surface: Dictionary in [mesh.wall, mesh.floor]:
+            var vertices: PackedVector3Array = surface.vertices
+            for index in range(0, vertices.size(), 3):
+                for side in 3:
+                    var key := _edge(vertices[index + side], vertices[index + (side + 1) % 3])
+                    edges[key] = int(edges.get(key, 0)) + 1
+        for boundary: PackedVector3Array in [arch, loop]:
+            for index in boundary.size():
+                var key := _edge(boundary[index], boundary[(index + 1) % boundary.size()])
+                assert_eq(int(edges.get(key, 0)), 1, "original boundary edge retained exactly once")
+                edges.erase(key)
+        for count: int in edges.values():
+            assert_eq(count, 2, "interior edge shared by two triangles, no crack or duplicate")
+
+
+## Version 9 join of a low, wide porch ring (70 m × 4.2 m) to a tall, narrow gallery loop (8 m × 9 m), as tarsis_3
+## cave 027: raw angles sent the ring's floor corners to the gallery walls at mid-height, a 3 m sill across the
+## floor. In bounding boxes the floor between the two loops is the whole trapezoid between their floor chords.
+func test_boxed_join_keeps_the_floor_between_a_wide_porch_and_a_tall_gallery() -> void:
+    var arch := PackedVector3Array()
+    for index in CaveGenerator.RING_SEGMENTS + 1:
+        var angle := PI * index / CaveGenerator.RING_SEGMENTS
+        arch.append(Vector3(cos(angle) * 35.0, sin(angle) * 4.2, 0.0))
+    var loop := PackedVector3Array([Vector3(4, 0, 2), Vector3(4, 5, 2), Vector3(2, 8, 2), Vector3(0, 9, 2),
+        Vector3(-2, 8, 2), Vector3(-4, 5, 2), Vector3(-4, 0, 2), Vector3(-1.5, 0, 2), Vector3(1.5, 0, 2)])
     var mesh := {"wall": CaveGenerator._empty_surface(), "floor": CaveGenerator._empty_surface()}
-    CaveMeshAssembly.join(mesh, arch, loop, Vector3(INF, INF, INF))
-    var edges := {}
-    for surface: Dictionary in [mesh.wall, mesh.floor]:
-        var vertices: PackedVector3Array = surface.vertices
-        for index in range(0, vertices.size(), 3):
-            for side in 3:
-                var key := _edge(vertices[index + side], vertices[index + (side + 1) % 3])
-                edges[key] = int(edges.get(key, 0)) + 1
-    for boundary: PackedVector3Array in [arch, loop]:
-        for index in boundary.size():
-            var key := _edge(boundary[index], boundary[(index + 1) % boundary.size()])
-            assert_eq(int(edges.get(key, 0)), 1, "original boundary edge retained exactly once")
-            edges.erase(key)
-    for count: int in edges.values():
-        assert_eq(count, 2, "interior edge shared by two triangles, no crack or duplicate")
+    CaveMeshAssembly.join(mesh, arch, loop, Vector3(INF, INF, INF), true)
+    var area := 0.0
+    var vertices: PackedVector3Array = mesh.floor.vertices
+    for index in range(0, vertices.size(), 3):
+        area += (vertices[index + 1] - vertices[index]).cross(vertices[index + 2] - vertices[index]).length() * 0.5
+    assert_almost_eq(area, (70.0 + 8.0) * 0.5 * 2.0, 0.5, "floor joins floor: no sill across the seam")
+    var highest := -INF
+    for point in vertices:
+        highest = maxf(highest, point.y)
+    assert_almost_eq(highest, 0.0, 0.001, "the seam's floor stays at floor height")
 
 
 func _edge(a: Vector3, b: Vector3) -> String:

@@ -48,7 +48,7 @@ static func _vestibule(mesh: Dictionary, spec: Dictionary) -> void:
         for point in CavePortal.vestibule_section(spec):
             ring.append(Vector3(point.x, point.y, CaveNaturalOpening.REAR_Z))
         mesh.rings.append(ring)
-        _join_portal(mesh, mesh.entry, ring)
+        _join_portal(mesh, mesh.entry, ring, Vector3(INF, INF, INF), int(spec.version) >= 9)
     # Version 9 light shafts: each one's open loop on the lattice's top plane, where its walls rise to the ground.
     var loops: Array = mesh.get("lights", [])
     if loops.size() != (mesh.graph.get("lights", []) as Array).size() \
@@ -84,13 +84,15 @@ static func _arch(loop: PackedVector3Array) -> PackedVector3Array:
     return PackedVector3Array(points)
 
 
+## [param boxed]: match the two loops in their bounding boxes (CaveMeshAssembly.join), version 9 only so that
+## version 8 networks keep their exact geometry.
 static func _join_portal(mesh: Dictionary, loop: PackedVector3Array, before: PackedVector3Array,
-        interior: Vector3 = Vector3(INF, INF, INF)) -> void:
+        interior: Vector3 = Vector3(INF, INF, INF), boxed: bool = false) -> void:
     if loop.size() < 3 or before.size() < 3:
         mesh.error = "Le raccord du réseau est vide. Modifier la graine ou les dimensions."
         return
     # Keep every boundary edge, including the floor and vertical/overhanging sides.
-    CaveMeshAssembly.join(mesh, before, loop, interior)
+    CaveMeshAssembly.join(mesh, before, loop, interior, boxed)
 
 
 static func _at_x(arch: PackedVector3Array, x: float) -> Vector3:
