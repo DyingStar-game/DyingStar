@@ -43,6 +43,10 @@ const VERSION: int = 7
 const HEADER_BYTES: int = 57
 ## Garments a look may wear at once (a dozen make a full outfit with gloves, a coat and a helmet).
 const MAX_GARMENTS: int = 24
+## GDD zones a look always wears something on: the torso and the legs. There is no underwear yet, so a look with
+## nothing there would be naked; canonicalise puts on what is missing (dressed). Underwear (layer 0) will meet the
+## rule too, and be what a bare look gets: the lowest layer is put on first.
+const COVERED_ZONES: Array = ["3", "8"]
 ## Where a random look draws its garments, in order: [GDD zone, the layers drawn there, chance, only when nothing
 ## worn yet covers the zone]. Clothing on the torso and legs (a suit covers both), shoes, sometimes a jacket or a coat,
 ## rarely gloves or a hat.
@@ -396,7 +400,7 @@ func canonicalise() -> void:
 	eyelashes = _slot(eyelashes, choice_count("eyelashes"))
 	beard = _slot(beard, choice_count("beard"))
 	beard_length = _q(beard_length)
-	garments = canonical_garments(garments)
+	garments = dressed(garments, "female" if is_female() else "male")
 	for detail in SKIN_DETAILS:
 		set(detail, _q(float(get(detail))))
 	var sliders: Array = cat["modifiers"]
@@ -770,6 +774,56 @@ static func canonical_garments(list: Array) -> Array:
 		kept.append([i, clampi(int(g[1]), 0, 255)])
 	kept.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
 	return kept
+
+
+## [param list] made canonical (canonical_garments), then never naked: for each of the COVERED_ZONES it leaves
+## bare, the garment covering that zone that goes with what is worn -- of the lowest layer, suiting
+## [param gender] ("male" / "female") when one does, the first in the catalogue -- put on.
+static func dressed(list: Array, gender: String) -> Array:
+	var out: Array = canonical_garments(list)
+	var added: bool = false
+	for zone: String in COVERED_ZONES:
+		if not bare_zones(out).has(zone):  # worn, or covered by what the zone before got (a suit)
+			continue
+		var pick: int = _cover_for(out, zone, gender)
+		if pick < 0:
+			pick = _cover_for(out, zone, "")
+		if pick >= 0:
+			out.push_front([pick, 0])  # first: kept by canonical_garments even with MAX_GARMENTS worn
+			added = true
+	return canonical_garments(out) if added else out
+
+
+## The COVERED_ZONES nothing in [param list] ([[position, tint]...]) covers.
+static func bare_zones(list: Array) -> Array:
+	var entries: Array = garment_entries()
+	return COVERED_ZONES.filter(func(zone: String) -> bool:
+		return not list.any(func(g: Array) -> bool:
+			return int(g[0]) >= 0 and int(g[0]) < entries.size() and covers(entries[g[0]], zone)))
+
+
+## Whether the garment [param entry] covers the whole GDD zone [param zone] (or the whole body): one side of
+## it does not (a holster on the right leg, "8D").
+static func covers(entry: Dictionary, zone: String) -> bool:
+	return (entry.get("zones", []) as Array).any(func(z: Variant) -> bool: return str(z) == zone or str(z) == "0")
+
+
+## The garment that covers [param zone] and goes with [param worn], of the lowest layer, suiting [param gender]
+## (any garment when ""), the first in the catalogue; -1 when none does.
+static func _cover_for(worn: Array, zone: String, gender: String) -> int:
+	var entries: Array = garment_entries()
+	var best: int = -1
+	for i in entries.size():
+		var e: Dictionary = entries[i]
+		if String(e["id"]) == "none" or not covers(e, zone):
+			continue
+		if gender != "" and e.get("gender", "any") != gender and e.get("gender", "any") != "any":
+			continue
+		if not worn.all(func(g: Array) -> bool: return GarmentRules.conflict(entries[g[0]], e) == ""):
+			continue
+		if best < 0 or int(e.get("layer", 1)) < int(entries[best].get("layer", 1)):
+			best = i
+	return best
 
 
 ## The catalogue entries of the garments worn, inside out (GarmentRules.stack_order): the order they are drawn in.

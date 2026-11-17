@@ -78,7 +78,8 @@ func test_unknown_names_are_skipped_with_a_warning() -> void:
 	assert_eq(back["error"], "", "still read")
 	assert_eq((back["warnings"] as Array).size(), 4, str(back["warnings"]))
 	var look: CharacterAppearance = back["look"]
-	assert_eq(look.garments, [], "an unknown garment: left off")
+	assert_false(_garment_ids(look).has("retired_garment"), "an unknown garment: left off")
+	assert_eq(CharacterAppearance.bare_zones(look.garments), [], "and the body dressed all the same")
 	assert_eq(look.cut.tie, HairCut.Tie.LOOSE, "an unknown tie: the default one")
 
 
