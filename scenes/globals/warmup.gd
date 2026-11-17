@@ -8,8 +8,14 @@ extends Node
 ##
 ## It loads, on worker threads, the layouts of the places the world spawns (loading one loads every scene
 ## it is built of), the vehicles and the items of the dispensers, and keeps them for the session: the
-## game's own load() then finds them in memory. Then it draws their meshes, a few a frame, out of sight
-## in a viewport of its own, so their shaders are compiled. Only meshes and materials are read from the
+## game's own load() then finds them in memory. Then it puts their meshes out, a few at a time, HIDDEN in a
+## viewport of its own: Godot compiles a surface's pipelines on worker threads as soon as a render meets it,
+## shown or not, and those are the game's too (they follow the project's settings, not the viewport's). A
+## frame that DREW a surface whose pipelines are not ready would block the main thread until they are, behind
+## every compilation queued before them -- 12 to 17 s on a cold cache (the first launch, an update, a new
+## driver), and Windows closes a game "not responding" after 5 (exit code 0xCFFFFFFF, 2026-11-16). So nothing
+## is ever drawn here but SSS_PRIMER, once its own are ready, and nothing new is put out before what was put
+## out last is compiled (a marker task queued behind it has run). Only meshes and materials are read from the
 ## scenes (PackedScene.get_state), and what the terrain reads of a layout (LayoutData), which instances it
 ## out of the tree: nothing of the game runs. Read at the first village met, that froze the game ~1 s.
 ##
@@ -56,11 +62,18 @@ const CATALOGUES: Array[String] = [
 	"res://scenes/_universe/props/food/dispenser_items/",
 	"res://scenes/_universe/props/tools/dispenser_items/",
 ]
-## The puppet a baked person is drawn on, and the frames it is shown in each of its material sets.
+## The puppet a baked person is put out on (hidden), in its close-up materials then its far ones.
 const PERSON_SCENE := "res://scenes/_universe/characters/humanoids/human_puppet.tscn"
-const PERSON_FRAMES := 4
-## Meshes drawn a frame while their shaders compile.
-const MESHES_PER_FRAME := 8
+## The first subsurface scattering DRAWN in a session (any viewport) turns on the engine's "advanced" shader
+## group, and every shader then in memory compiles that group again (ShaderRD.enable_group): 4-6 s in one
+## frame once the scenes below are loaded, even with warm caches. SSS_PRIMER is drawn before they are, when
+## few shaders are in memory, and those loaded afterwards compile the group with the rest.
+const SSS_PRIMER := preload("res://assets/_universe/characters/human/shaders/sss_primer.gdshader")
+## Meshes put out at a time; the next ones wait until their pipelines are compiled.
+const MESHES_PER_BATCH := 8
+## Main-thread time (ms) a frame spends putting meshes out before it stops: a material's first use translates
+## its shader on this thread (0.2-0.5 s for a person's), and a scene taken in reads its meshes and layout.
+const FRAME_BUDGET_MS := 50
 
 ## What was loaded, kept for the session (path -> resource).
 static var _held: Dictionary = {}
@@ -71,17 +84,34 @@ static var _stand_in: Mesh = BoxMesh.new()
 var _loading: Array[String] = []
 ## The scenes, meshes and materials already gathered, over every scene loaded.
 var _seen: Dictionary = {}
-## [mesh, [materials]] still to draw.
+## [mesh, [materials]] still to put out.
 var _to_draw: Array = []
-var _drawn: Array[Node] = []
+## What was put out last (hidden), freed once its pipelines are compiled.
+var _batch: Array[Node] = []
 var _viewport: SubViewport
 var _wanted: int = 0
 var _meshes_done: int = 0
 ## The neon signs of the layouts still to trace (NeonSign.mesh_params), one a frame.
 var _signs: Array = []
 var _label: Label
+var _primer: MeshInstance3D = null
 var _person: Node = null
-var _person_frames: int = 0
+var _person_step: int = 0  # 0 not yet put out, 1 baking, 2 close-up materials out, 3 far ones out, 4 done
+## Frames run since the warm-up began, and the one in which something was last put out (-1: none waiting).
+var _frames: int = 0
+var _put_out_at: int = -1
+## The marker task queued behind the pipelines of what was put out (-1: none).
+var _marker: int = -1
+
+
+## A person's shaders (CharacterMaterials), put out on a stand-in too: a look met later may wear one the
+## warmed person does not (a scalp, a shell of hair), and its shader is compiled ahead all the same.
+static func person_shaders() -> Array[Shader]:
+	return [
+		CharacterMaterials.SKIN_SHADER, CharacterMaterials.SKIN_FAR_SHADER, CharacterMaterials.EYE_SHADER,
+		CharacterMaterials.EYE_WET_SHADER, CharacterMaterials.IRIS_SHADER, CharacterMaterials.HAIR_SHADER,
+		CharacterMaterials.HAIR_STRANDS_SHADER, CharacterMaterials.HAIR_SHELL_SHADER, CharacterMaterials.HAIR_SCALP_SHADER,
+	]
 
 
 ## Start the warm-up once per session, where something is drawn.
@@ -170,13 +200,6 @@ static func meshes_of(scene: PackedScene, seen: Dictionary = {}) -> Array:
 
 
 func _ready() -> void:
-	for path in wanted():
-		if _held.has(path) or not ResourceLoader.exists(path):
-			continue
-		if ResourceLoader.load_threaded_request(path, "", true) == OK:
-			_loading.append(path)
-	_wanted = _loading.size()
-	_to_draw.append_array(mine_meshes())
 	_viewport = SubViewport.new()
 	_viewport.own_world_3d = true  # out of the game's world: nothing drawn here shows anywhere else
 	_viewport.size = Vector2i(64, 64)
@@ -196,20 +219,106 @@ func _ready() -> void:
 	lamp.omni_range = 10.0
 	lamp.shadow_enabled = true
 	_viewport.add_child(lamp)
-	# A person: a baked body is built at run time (HumanAppearance), so no scene names its skin, eye and
-	# hair shaders, and the first avatar drawn froze the game ~650 ms to compile them. One is baked and
-	# drawn here, in its close-up materials then its far ones; it also loads the character bank.
-	_person = (load(PERSON_SCENE) as PackedScene).instantiate()
-	_viewport.add_child(_person)
-	var looks := _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
-	if looks != null:
-		looks.set_appearance(CharacterAppearance.preset("default_male"))
+	var primer := ShaderMaterial.new()
+	primer.shader = SSS_PRIMER
+	_primer = _instance(_stand_in, primer)
+	_put_out_at = 0
+
+
+func _exit_tree() -> void:
+	if _marker != -1:
+		WorkerThreadPool.wait_for_task_completion(_marker)
+		_marker = -1
+
+
+## Load the scenes on worker threads, and list the mines' meshes and a person's shaders: once SSS_PRIMER
+## was drawn.
+func _request_loads() -> void:
+	for path in wanted():
+		if _held.has(path) or not ResourceLoader.exists(path):
+			continue
+		if ResourceLoader.load_threaded_request(path, "", true) == OK:
+			_loading.append(path)
+	_wanted = _loading.size()
+	_to_draw.append_array(mine_meshes())
+	for shader in person_shaders():
+		_to_draw.append([_stand_in, [shader]])  # its material made when put out (_material)
 
 
 func _process(_delta: float) -> void:
-	for node in _drawn:
+	_frames += 1
+	_take_loaded()
+	if not _signs.is_empty():
+		NeonSign.shared_mesh(_signs.pop_back())
+	_show_progress()
+	if not _compiled():
+		return  # what was put out last is still compiling: nothing new meanwhile, the frames go on
+	for node in _batch:
 		node.queue_free()
-	_drawn.clear()
+	_batch.clear()
+	if _primer != null:
+		if not _primer.visible:
+			_primer.visible = true  # its pipelines are ready: drawn this frame, the SSS turned on
+			return
+		_primer.queue_free()  # drawn: the shaders and pipelines it made Godot redo were queued in that render
+		_primer = null
+		_put_out_at = _frames - 1
+		_request_loads()
+		return
+	if _loading.is_empty() and _person_step < 4:
+		_step_person()
+		return
+	var started: int = Time.get_ticks_msec()
+	for i in mini(MESHES_PER_BATCH, _to_draw.size()):
+		if i > 0 and Time.get_ticks_msec() - started > FRAME_BUDGET_MS:
+			break
+		var entry: Array = _to_draw.pop_back()
+		var materials: Array = entry[1]
+		for material: Variant in ([null] if materials.is_empty() else materials):
+			_batch.append(_instance(entry[0], _material(material)))
+		_meshes_done += 1
+		_put_out_at = _frames
+	if _loading.is_empty() and _to_draw.is_empty() and _batch.is_empty() and _signs.is_empty() \
+			and _put_out_at == -1:
+		print("[Warmup] %d scenes ready, their pipelines compiled" % _held.size())
+		_viewport.queue_free()
+		if _label != null:
+			_label.get_parent().queue_free()
+		set_process(false)
+
+
+## Whether the pipelines of what was put out are compiled: a render meets it in the frame it was put out in,
+## which queues them; the next frame queues a high-priority marker task behind them, and once that has run,
+## so have they (the queue is first in, first out). False meanwhile.
+func _compiled() -> bool:
+	if _put_out_at != -1 and _frames > _put_out_at:
+		_marker = WorkerThreadPool.add_task(_mark, true, "Warmup pipelines")
+		_put_out_at = -1
+		return false
+	if _marker != -1:
+		if not WorkerThreadPool.is_task_completed(_marker):
+			return false
+		WorkerThreadPool.wait_for_task_completion(_marker)
+		_marker = -1
+	return _put_out_at == -1
+
+
+static func _mark() -> void:
+	pass
+
+
+## A shader put out on its own gets its material here, when put out: making it translates the shader.
+static func _material(what: Variant) -> Variant:
+	if what is Shader:
+		var material := ShaderMaterial.new()
+		material.shader = what
+		return material
+	return what
+
+
+## One scene loaded since: kept, its meshes listed, its layout's signs read (one a frame: a layout read here
+## takes a second).
+func _take_loaded() -> void:
 	for path: String in _loading.duplicate():
 		var status := ResourceLoader.load_threaded_get_status(path)
 		if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
@@ -225,42 +334,42 @@ func _process(_delta: float) -> void:
 				if path == ROCK_SCENE:
 					with_rock_shader(meshes)
 				_to_draw.append_array(meshes)
-	if not _signs.is_empty():
-		NeonSign.shared_mesh(_signs.pop_back())
-	for i in mini(MESHES_PER_FRAME, _to_draw.size()):
-		_draw(_to_draw.pop_back())
-		_meshes_done += 1
-	_show_progress()
-	if not _person_drawn():
 		return
-	if _loading.is_empty() and _to_draw.is_empty() and _drawn.is_empty() and _signs.is_empty():
-		print("[Warmup] %d scenes ready, their shaders compiled" % _held.size())
-		_viewport.queue_free()
-		if _label != null:
-			_label.get_parent().queue_free()
-		set_process(false)
+
+
+## A person (hidden): a baked body is built at run time (HumanAppearance), so no scene names its skin, eye and
+## hair materials, and the first avatar seen froze the game to compile them. Put out once baked, in its
+## close-up materials, then its far ones.
+func _step_person() -> void:
+	var looks: HumanAppearance = null
+	if is_instance_valid(_person):
+		looks = _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
+	match _person_step:
+		0:
+			_person = (load(PERSON_SCENE) as PackedScene).instantiate()
+			(_person as Node3D).visible = false
+			_viewport.add_child(_person)
+			looks = _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
+			if looks == null:
+				_person_step = 4
+				return
+			looks.set_appearance(CharacterAppearance.preset("default_male"))
+			_person_step = 1
+		1:
+			if looks.is_applied():  # its body swapped in during the frame before: that render met it
+				_put_out_at = _frames - 1
+				_person_step = 2
+		2:
+			looks.set_detail(false)
+			_put_out_at = _frames
+			_person_step = 3
+		_:
+			_person.queue_free()
+			_person = null
+			_person_step = 4
 
 
 ## How far it is (0..1): the scenes loaded for one half, the meshes drawn for the other. Pure.
-## Whether the person was drawn in both its material sets (a few frames each, for every pass to be met).
-func _person_drawn() -> bool:
-	if not is_instance_valid(_person):
-		return true
-	var looks := _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
-	if looks == null:
-		return true
-	if not looks.is_applied():
-		return false
-	_person_frames += 1
-	if _person_frames == PERSON_FRAMES:
-		looks.set_detail(false)
-	if _person_frames < PERSON_FRAMES * 2:
-		return false
-	_person.queue_free()
-	_person = null
-	return true
-
-
 static func progress(wanted: int, loading: int, drawn: int, to_draw: int) -> float:
 	var loaded: float = 1.0 if wanted == 0 else float(wanted - loading) / float(wanted)
 	var compiled: float = 1.0 if drawn + to_draw == 0 else float(drawn) / float(drawn + to_draw)
@@ -288,14 +397,12 @@ func _show_progress() -> void:
 	_label.text = line
 
 
-## Draw [param entry]'s mesh once, with each of its materials in turn on its first surface.
-func _draw(entry: Array) -> void:
-	var mesh: Mesh = entry[0]
-	var materials: Array = entry[1]
-	for material: Variant in ([null] if materials.is_empty() else materials):
-		var shown := MeshInstance3D.new()
-		shown.mesh = mesh
-		shown.material_override = material
-		shown.scale = Vector3.ONE / maxf(mesh.get_aabb().get_longest_axis_size(), 0.001)
-		_viewport.add_child(shown)
-		_drawn.append(shown)
+## [param mesh] in [param material], hidden in the viewport: its pipelines compile all the same.
+func _instance(mesh: Mesh, material: Variant) -> MeshInstance3D:
+	var shown := MeshInstance3D.new()
+	shown.mesh = mesh
+	shown.material_override = material
+	shown.scale = Vector3.ONE / maxf(mesh.get_aabb().get_longest_axis_size(), 0.001)
+	shown.visible = false
+	_viewport.add_child(shown)
+	return shown

@@ -44,3 +44,14 @@ func test_progress_runs_from_nothing_to_all() -> void:
 	assert_eq(Warmup.progress(10, 10, 0, 0), 0.0, "nothing loaded yet")
 	assert_eq(Warmup.progress(10, 0, 0, 40), 0.5, "all loaded, nothing drawn")
 	assert_eq(Warmup.progress(10, 0, 40, 0), 1.0, "all drawn")
+
+
+func test_every_shader_of_a_person_is_drawn_alone_first() -> void:
+	# A person's shaders are warmed one a frame (each costs seconds on a cold cache): one left out of the list
+	# would compile with the person, all in the same frame again.
+	var listed: Array[Shader] = Warmup.person_shaders()
+	var constants: Dictionary = (load("res://scenes/_universe/characters/human/character_materials.gd") as GDScript) \
+			.get_script_constant_map()
+	for key: String in constants:
+		if constants[key] is Shader:
+			assert_true(constants[key] in listed, "CharacterMaterials.%s" % key)

@@ -1844,6 +1844,16 @@ func ensure_queries_loaded() -> void:
 	get_road_query()
 
 
+## The slowest of what Planet._ready reads, made now on the CALLING thread: the road query (its GeoJSON
+## parsed) and the biome cache. For a worker, while nothing else holds this PlanetData yet -- before its
+## planet enters the tree; Planet._ready then finds both done. On tarsis_3 that was 4.4 s of the main
+## thread (3.2 s of roads, 1.2 s of biomes) in the one frame the main menu's stage was built in, long enough
+## for Windows to call the game "not responding" and close it.
+func prepare_off_main_thread() -> void:
+	ensure_queries_loaded()
+	warm_biome_cache()
+
+
 ## Invalidate the cached recipe data for a single export-level chunk.
 ## Call this before re-loading a recipe that has been modified by a biome
 ## injection so the next _load_recipe_heightmap picks up fresh data.

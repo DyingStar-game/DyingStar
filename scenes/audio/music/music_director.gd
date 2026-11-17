@@ -261,9 +261,12 @@ func _step_fades(delta: float) -> void:
 	var step: float = minf(delta, FADE_MAX_STEP_S)
 	var running: Array[Dictionary] = []
 	for f: Dictionary in _fades:
-		var voice: AudioStreamPlayer = f["voice"]
-		if not is_instance_valid(voice):
+		# Checked before the typed assignment: a freed voice assigned to an AudioStreamPlayer aborts the
+		# function before _fades is replaced, so that error came back every frame, forever.
+		var held: Variant = f["voice"]
+		if not is_instance_valid(held):
 			continue
+		var voice := held as AudioStreamPlayer
 		f["elapsed"] = float(f["elapsed"]) + step
 		var t: float = clampf(float(f["elapsed"]) / maxf(float(f["length"]), 0.001), 0.0, 1.0)
 		voice.volume_linear = lerpf(float(f["from"]), float(f["to"]), t)
