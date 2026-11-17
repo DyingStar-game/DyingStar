@@ -304,15 +304,19 @@ func test_prefetch_queues_the_centre_and_its_ring_at_every_level() -> void:
 	# Ce qui compte n'est pas le total — un pixel HEALPix a 7 ou 8 voisins, et moins encore
 	# aux coins de n1 — mais que CHAQUE niveau soit couvert, centre compris. C'est la
 	# propriété qui fait qu'un chunk lointain trouve sa tuile grossière déjà là.
+	# Queued tiles live in _tile_jobs (id -> [job, dir, msec]), urgent ones in _urgent.
+	var jobs: Array[Vector3i] = rts._urgent.duplicate()
+	for rec: Array in rts._tile_jobs.values():
+		jobs.append(rec[0])
 	var by_level := {}
-	for job: Vector3i in rts._queue:
+	for job: Vector3i in jobs:
 		if job.z == RemoteTileSource.JOB_TILE:
 			by_level[job.y] = by_level.get(job.y, 0) + 1
 	for ns in [1, 2, 4]:
 		assert_true(by_level.has(ns), "le niveau n%d doit être préchargé" % ns)
 		assert_gt(int(by_level.get(ns, 0)), 1,
 				"n%d : le centre seul ne suffit pas, il faut l'anneau" % ns)
-		assert_true(rts._queue.has(Vector3i(HEALPix.vec2pix_nest(ns, Vector3.UP), ns,
+		assert_true(jobs.has(Vector3i(HEALPix.vec2pix_nest(ns, Vector3.UP), ns,
 				RemoteTileSource.JOB_TILE)), "n%d : la tuile sous le joueur en fait partie" % ns)
 
 

@@ -145,6 +145,12 @@ func test_grade_profiles_bake_fresh() -> void:
 		data.apply_chunk_manifest()
 		# The crossings: the POI spheres set first, as PlanetTerrain does.
 		data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(planet))
+		# Prepared like the bake and the game: a lava line's course follows the mountains and the
+		# volcanoes, so read cold its hash is not the one either of them computes.
+		data.ensure_queries_loaded()
+		data.warm_mountains()
+		data.warm_fumaroles()
+		data.has_lava()
 		if data.corundum_default_biome and data.has_roads():
 			checked += 1
 			assert_false(data._baked_bridges().is_empty(),

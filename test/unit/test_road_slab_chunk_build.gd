@@ -16,10 +16,14 @@ const PlanetDataScript := preload("res://scenes/planet/planet_data.gd")
 const ModifierPackScript := preload("res://scenes/planet/modifier_pack.gd")
 const CHUNK_DIR := "assets/qgis/export/tarsis_3_chunks"
 const PACK_PATH := "res://" + CHUNK_DIR + "/terrainmodifier.pack"
+const PLANET_SCENE := "res://scenes/systems/tarsis/tarsis_3.tscn"
 const RES := 16
 
 var _pd: PlanetData
 var _ipix: int = -1
+## A tile whose roads are all on the ground (no grade profile): their slab hugs the terrain. Every
+## highway of tarsis_3 is graded, so the highway tile's collision is a GradeBed, not that slab.
+var _flat_ipix: int = -1
 var _nside: int = 64
 var _mesh: ArrayMesh
 var _shape: ConcavePolygonShape3D
@@ -35,12 +39,14 @@ func before_all() -> void:
 	PlanetDataScript.new().warm_biome_cache()
 	if not FileAccess.file_exists(PACK_PATH):
 		return
-	_pd = PlanetDataScript.new()
-	_pd.planet_name = "tarsis_3"
-	_pd.chunk_heightmaps_dir = CHUNK_DIR
-	_pd.corundum_default_biome = true
-	_pd.chunk_heightmap_res = 32
+	# The planet as its scene configures it, prepared like the grade bake prepares it: with any
+	# other setting the baked chasm crossings do not match (bridge_bake_key) and warm_bridge_plans
+	# walks the whole planet's crossings at run time, minutes of it.
+	_pd = _scene_planet_data(PLANET_SCENE)
+	if _pd == null:
+		return
 	_pd.apply_chunk_manifest()
+	_pd.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions("tarsis_3"))
 	_pd.warm_biome_cache()
 	# The first n64 tile holding a highway piece long enough to extrude.
 	var pack = ModifierPackScript.new()
@@ -51,12 +57,17 @@ func before_all() -> void:
 	for ipix in pack.get_tile_ipix(_nside):
 		var t: Dictionary = pack.decode_tile(pack.read_tile(_nside, int(ipix)), mpd,
 				ModifierPackScript.MASK_ROAD)
+		var long_piece := false
+		var graded := false
 		for r in t["roads"]:
-			if RoadTerrain.get_road_type(r) == "highway" \
-					and (r["centerline"] as PackedVector2Array).size() >= 4:
+			var extrudes := (r["centerline"] as PackedVector2Array).size() >= 4
+			long_piece = long_piece or extrudes
+			graded = graded or GradeSettings.is_profiled(r)
+			if _ipix < 0 and extrudes and RoadTerrain.get_road_type(r) == "highway":
 				_ipix = int(ipix)
-				break
-		if _ipix >= 0:
+		if _flat_ipix < 0 and long_piece and not graded:
+			_flat_ipix = int(ipix)
+		if _ipix >= 0 and _flat_ipix >= 0:
 			break
 	pack.close()
 	if _ipix < 0:
@@ -65,18 +76,33 @@ func before_all() -> void:
 	_pd.warm_grade_profiles()
 	_mesh = PlanetChunk.generate_mesh_healpix(_pd, _nside, _ipix, RES,
 			HEALPix.pix2vec_nest(_nside, _ipix) * _pd.radius)
+	if _flat_ipix < 0:
+		return
 	_shape = PlanetChunk.generate_collision_shape(_pd, 0, 0.0, 0.0, 0.0, 0.0,
-			RES, _nside, _ipix)
+			RES, _nside, _flat_ipix)
 	# Ground altitude under every slab vertex (the faces after the grid's),
 	# sampled here because a missing heights.pack makes the sampler print.
 	# Without the cracks, as the builder samples it: a slab spans a crack.
 	var faces := _shape.get_faces()
-	var origin := PlanetChunk.snap_to_f32(HEALPix.pix2vec_nest(_nside, _ipix) * _pd.radius)
+	var origin := PlanetChunk.snap_to_f32(HEALPix.pix2vec_nest(_nside, _flat_ipix) * _pd.radius)
 	for i in range(RES * RES * 6, faces.size()):
 		var d := (faces[i] + origin).normalized()
 		_slab_alts.append((faces[i] + origin).length() - _pd.radius
 				- _pd.sample_height_for_direction(d, -1, -1, Vector2i(-1, -1), null, -1, null, 0.0,
 						CrackCarve.NONE))
+
+
+## The PlanetData [param scene] gives its planet, read from the scene's state and copied (the
+## sub-resource is shared with every instance of the scene), like tools/bake_grade_profiles.gd.
+func _scene_planet_data(scene: String) -> PlanetData:
+	var st := (load(scene) as PackedScene).get_state()
+	for ni in st.get_node_count():
+		for pi in st.get_node_property_count(ni):
+			if st.get_node_property_name(ni, pi) == &"planet_data":
+				var res: Variant = st.get_node_property_value(ni, pi)
+				if res is PlanetData:
+					return (res as PlanetData).duplicate(true)
+	return null
 
 
 func _skip() -> bool:
@@ -116,9 +142,11 @@ func test_mesh_carries_the_corundum_slab_surface() -> void:
 			var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
 			assert_eq(colors.size(), verts.size(), "the tint is baked per vertex")
 			assert_true(arrays[Mesh.ARRAY_TANGENT] != null, "tangents for the normal map")
+			# The ground's own colour (PlanetChunk.road_ground_tint): milky, iron or a dark emery
+			# outcrop, so only "tinted at all" holds everywhere.
 			var c := colors[0]
-			assert_true(c.r > 0.5 and c.g > 0.4 and c.b > 0.2 and c != Color.WHITE,
-					"milky / iron corundum tint, not white: %s" % c)
+			assert_true(c != Color.WHITE and c.r + c.g + c.b > 0.1,
+					"the ground's corundum tint, neither white nor black: %s" % c)
 			assert_eq((mat as StandardMaterial3D).cull_mode, BaseMaterial3D.CULL_DISABLED)
 	assert_true(found, "one surface uses the melted-corundum material with parallax kept")
 	var side_found := false
@@ -133,6 +161,9 @@ func test_mesh_carries_the_corundum_slab_surface() -> void:
 
 func test_collision_holds_the_slab_above_the_ground() -> void:
 	if _skip():
+		return
+	if _flat_ipix < 0:
+		pass_test("no n%d tile with only ungraded roads in this export" % _nside)
 		return
 	var shape := _shape
 	assert_not_null(shape)

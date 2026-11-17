@@ -12,6 +12,8 @@ const KEYBOARD_ONLY : Array[String] = [
 	"debug_toggle_moon_lights", "debug_isolate_light", "debug_light_probe", "toggle_debug", "walk_speed_up", "walk_speed_down",
 	"vehicle_reset", "vehicle_horn_special", "vehicle_speed_limiter", "vehicle_cruise_control", "vehicle_limiter_up",
 	"vehicle_limiter_down", "eva_stabilize", "star_map_menu", "star_map_tilt", "star_map_search",
+	# The UV torch: D-pad up is the torch and down the headlights, nothing left beside them.
+	"toggle_torch_uv",
 ]
 ## Mouse gestures, each with its pad twin: the same move made the pad's way (a drag is a stick, a wheel
 ## notch is a held trigger). The gesture has no pad binding; its twin must have one.

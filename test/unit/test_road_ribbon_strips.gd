@@ -134,7 +134,7 @@ func test_lane_uvs_span_whole_lanes_across_and_metres_along() -> void:
 
 
 func test_tint_is_baked_on_every_vertex() -> void:
-	var tint := func(d: Vector3) -> Color:
+	var tint := func(d: Vector3, _surface_height: float) -> Color:
 		return Color(0.5, d.x, 0.25)
 	var slab := _strip(Vector2(-3.0, 3.0), true, RoadRibbon.UvMode.LANE, tint)
 	var colors: PackedColorArray = slab["colors"]
