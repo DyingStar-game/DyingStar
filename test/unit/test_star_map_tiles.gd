@@ -139,11 +139,11 @@ func test_the_chart_draws_the_game_s_ground() -> void:
 	if data == null:
 		pending("pas de PlanetData ou de tuiles %s sur cette machine" % BODY)
 		return
+	# Under a mining village (M0002, "Mining village 02" before the POIs were renamed): a place, not a
+	# POI's name, which changed under this test once already (no tile was found, so none was built).
+	var village: Vector3 = HEALPix.lonlat2vec(-39.4094, 24.7776)
 	for level: int in [16, 256, 1024]:
-		var ipix: int = -1
-		for poi: Dictionary in StarMapPoi.load_for(BODY):
-			if str(poi["label"]) == "Mining village 02":
-				ipix = HEALPix.vec2pix_nest(level, poi["dir"])
+		var ipix: int = HEALPix.vec2pix_nest(level, village)
 		var mesh: ArrayMesh = StarMapRelief.build_tile(BODY, level, ipix, RES)
 		assert_not_null(mesh, "n%d builds" % level)
 		if mesh == null:
