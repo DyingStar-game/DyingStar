@@ -508,6 +508,21 @@ func _print_machine() -> void:
 	])
 
 
+## The command line as the log may show it: the value of every secret flag replaced by `xxxxx`.
+## The launcher passes the player's JWT as `--token=<jwt>`, and players paste this log in public
+## Discord channels to report a bug — anyone holding the token can play as them until it expires.
+static func redacted_args(args: PackedStringArray) -> PackedStringArray:
+	var out := PackedStringArray()
+	for arg: String in args:
+		var eq := arg.find("=")
+		var flag := arg.substr(0, eq).to_lower() if eq > 0 else ""
+		if flag.begins_with("--") and ("token" in flag or "secret" in flag or "password" in flag):
+			out.append(arg.substr(0, eq + 1) + "xxxxx")
+		else:
+			out.append(arg)
+	return out
+
+
 ## Everything about this machine, this build and this user's settings that a heartbeat can never
 ## show because it does not change. Verbose only, printed once. This is the half of a bug report
 ## that no player thinks to send: driver version, window mode, render scale, MSAA, and above all
@@ -534,7 +549,7 @@ func _print_boot_detail() -> void:
 	# integrated GPU?" (type) plus the API version is most of a driver diagnosis.
 	print("[CPerf] features=%s | args=%s | session=%s/%s | gpu_vendor=%s type=%d api=%s" % [
 		",".join(tags),
-		" ".join(OS.get_cmdline_args()),
+		" ".join(redacted_args(OS.get_cmdline_args())),
 		OS.get_environment("XDG_SESSION_TYPE"), OS.get_environment("WAYLAND_DISPLAY"),
 		RenderingServer.get_video_adapter_vendor(),
 		RenderingServer.get_video_adapter_type(), RenderingServer.get_video_adapter_api_version(),
