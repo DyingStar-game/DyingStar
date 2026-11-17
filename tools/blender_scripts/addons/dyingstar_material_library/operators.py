@@ -28,6 +28,17 @@ def _active_material(context) -> bpy.types.Material | None:
     return obj.active_material if obj is not None else None
 
 
+def _editable_material(context) -> bpy.types.Material | None:
+    """The active material, when the add-on may write to it.
+
+    A material linked from the library is read-only: Blender refuses every
+    write to it. The buttons that would fill it in or publish it are disabled
+    rather than left to fail on a click.
+    """
+    material = _active_material(context)
+    return material if material is not None and material.library is None else None
+
+
 def _unreadable_base_colour(result: map_extractor.ExtractionResult) -> str:
     """Why a material cannot be published, in the artist's terms.
 
@@ -60,7 +71,7 @@ class DYINGSTAR_OT_add_tag(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context) -> bool:
-        return _active_material(context) is not None
+        return _editable_material(context) is not None
 
     def execute(self, context):
         metadata = _active_material(context).dyingstar
@@ -88,7 +99,7 @@ class DYINGSTAR_OT_remove_tag(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context) -> bool:
-        return _active_material(context) is not None
+        return _editable_material(context) is not None
 
     def execute(self, context):
         _active_material(context).dyingstar.tags.remove(self.index)
@@ -105,7 +116,7 @@ class DYINGSTAR_OT_detect_maps(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context) -> bool:
-        return _active_material(context) is not None
+        return _editable_material(context) is not None
 
     def execute(self, context):
         material = _active_material(context)
@@ -140,7 +151,7 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context) -> bool:
-        return _active_material(context) is not None
+        return _editable_material(context) is not None
 
     def execute(self, context):
         material = _active_material(context)
@@ -295,7 +306,7 @@ class DYINGSTAR_OT_pack_orm(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context) -> bool:
-        material = _active_material(context)
+        material = _editable_material(context)
         if material is None or preferences.sources_dir() is None:
             return False
         return orm_packer.can_pack(map_extractor.extract(material).images)
@@ -329,7 +340,7 @@ class DYINGSTAR_OT_load_from_library(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context) -> bool:
-        material = _active_material(context)
+        material = _editable_material(context)
         if material is None:
             return False
         try:

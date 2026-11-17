@@ -1,6 +1,7 @@
 """The dyingstar_material_library addon end to end, in Blender without a window: enable it from this repository,
 publish materials an artist could have made -- a plain colour with no map at all, an albedo alone, a normal map
-alone, a colour picked in an RGB node, a colour under an occlusion map -- and read every export back.
+alone, a colour picked in an RGB node, a colour under an occlusion map, a tinted texture -- and read every
+export back; then link one of them, as a model does, and read what the panel says of it.
 
 usage: blender -b --factory-startup --python tools/blender_scripts/test_material_library_addon.py -- \
            [<scratch folder>]
@@ -62,6 +63,15 @@ def _material(obj, name):
 def _texture(tree, image):
     node = tree.nodes.new("ShaderNodeTexImage")
     node.image = image
+    return node
+
+
+def _multiply(tree):
+    """A Mix node that multiplies its two colours in full."""
+    node = tree.nodes.new("ShaderNodeMix")
+    node.data_type = "RGBA"
+    node.blend_type = "MULTIPLY"
+    node.inputs["Factor"].default_value = 1.0
     return node
 
 
@@ -178,6 +188,70 @@ def main():
     else:
         raise AssertionError("a base colour behind a ColorRamp was published")
     assert not os.path.exists(os.path.join(_export.materials_dir, name)), "and nothing was written"
+
+    # 7. A texture multiplied by a flat colour is a tint: the albedo and albedo_color.
+    name = "mat_metal_tinted"
+    material, tree, principled = _material(obj, name)
+    tint = _multiply(tree)
+    tree.links.new(_texture(tree, _image("grey_albedo", True)).outputs["Color"], tint.inputs["A"])
+    tint.inputs["B"].default_value = (1.0, 0.5, 0.25, 1.0)
+    tree.links.new(tint.outputs["Result"], principled.inputs["Base Color"])
+    manifest, files = _export(name)
+    assert manifest["maps"] == {"albedo": "tex_metal_tinted_albedo.png"}, manifest["maps"]
+    assert np.allclose(manifest["albedo_color"], [1.0, 0.7354, 0.5371], atol=2e-3), manifest["albedo_color"]
+    _round_trip(manifest, extractor, builder)
+
+    # 8. The same tinted texture under an occlusion map.
+    name = "mat_metal_tinted_ao"
+    material, tree, principled = _material(obj, name)
+    tint = _multiply(tree)
+    tree.links.new(_texture(tree, _image("grey_albedo_2", True)).outputs["Color"], tint.inputs["A"])
+    tint.inputs["B"].default_value = (0.25, 0.5, 1.0, 1.0)
+    shade = _multiply(tree)
+    tree.links.new(tint.outputs["Result"], shade.inputs["A"])
+    tree.links.new(_texture(tree, _image("occlusion_2", False)).outputs["Color"], shade.inputs["B"])
+    tree.links.new(shade.outputs["Result"], principled.inputs["Base Color"])
+    manifest, files = _export(name)
+    assert sorted(manifest["maps"]) == ["albedo", "ao"], manifest["maps"]
+    assert np.allclose(manifest["albedo_color"], [0.5371, 0.7354, 1.0], atol=2e-3), manifest["albedo_color"]
+    _round_trip(manifest, extractor, builder)
+
+    # 9. A colour laid over the texture any other way cannot be carried: it is said, not published.
+    name = "mat_metal_half_mixed"
+    material, tree, principled = _material(obj, name)
+    blend = _multiply(tree)
+    blend.inputs["Factor"].default_value = 0.5
+    tree.links.new(_texture(tree, _image("grey_albedo_3", True)).outputs["Color"], blend.inputs["A"])
+    blend.inputs["B"].default_value = (1.0, 0.0, 0.0, 1.0)
+    tree.links.new(blend.outputs["Result"], principled.inputs["Base Color"])
+    assert any("Multiply" in warning for warning in extractor.extract(material).warnings), "the way out is named"
+    manifest, files = _export(name)
+    assert "albedo_color" not in manifest, manifest
+
+    # 10. A material linked from the library is read-only: the panel shows what the library says of it,
+    # and the buttons that would write to it are off.
+    import dyingstar_material_library.ui as panel  # noqa: E402
+    library_file = os.path.join(scratch, "library.blend")
+    # The library file is generated without the add-on: its materials hold none of the panel's fields.
+    published = bpy.data.materials["mat_metal_plain_grey"]
+    published.dyingstar.display_name = ""
+    published.dyingstar.author = ""
+    published.dyingstar.tags.clear()
+    bpy.data.libraries.write(library_file, {published})
+    with bpy.data.libraries.load(library_file, link=True) as (source, target):
+        target.materials = ["mat_metal_plain_grey"]
+    linked = target.materials[0]
+    assert linked.library is not None, "linked, not appended"
+    obj.active_material = linked
+    rows = dict(panel.linked_summary(linked))
+    assert rows["Display Name"] == "mat_metal_plain_grey" and rows["Author"] == "tester", rows
+    assert rows["Tags"] == "metal" and rows["License"] == "AGPL-3.0" and rows["Tile size"] == "1 m x 1 m", rows
+    assert linked.dyingstar.display_name == "", "its own fields are empty, and cannot be filled"
+    for operator in (bpy.ops.dyingstar.export_material, bpy.ops.dyingstar.detect_material_maps,
+                     bpy.ops.dyingstar.load_material_from_library, bpy.ops.dyingstar.add_material_tag):
+        assert not operator.poll(), "%s is off on a linked material" % operator.idname()
+    obj.active_material = bpy.data.materials.new("mat_metal_local")
+    assert bpy.ops.dyingstar.detect_material_maps.poll(), "and on again on a material of this file"
 
     print("ADDON TEST OK (%s)" % scratch)
 

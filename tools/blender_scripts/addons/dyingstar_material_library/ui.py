@@ -58,6 +58,63 @@ def _problem(layout, text: str, detail: str = "") -> None:
         layout.label(text=detail)
 
 
+def is_linked(material) -> bool:
+    """Whether the material is linked from the library, and so read-only."""
+    return material.library is not None
+
+
+def linked_summary(material) -> list:
+    """What the library says of a linked material, as (label, value) rows.
+
+    The panel's fields are properties of the material, which the add-on fills in
+    from the manifest. It cannot write to a linked material, and the generated
+    library file does not hold them either, so the fields would show empty. The
+    manifest is the source of truth anyway: it is read and shown as it is.
+
+    Raises:
+        exporter.ExportError: when the material is not in the library.
+    """
+    manifest = exporter.load_manifest(exporter.slugify(material.name))
+    width, height = manifest_tile_size(manifest)
+    rows = [
+        ("Display Name", str(manifest.get("display_name", ""))),
+        ("Author", str(manifest.get("author", ""))),
+        ("License", str(manifest.get("license", ""))),
+        ("Tags", ", ".join(manifest.get("tags", []))),
+        ("Tile size", f"{width:g} m x {height:g} m"),
+    ]
+    alpha = manifest.get("alpha")
+    if alpha:
+        mode = str(alpha.get("mode", ""))
+        rows.append(("Transparency", f"{mode} at {alpha.get('threshold', 0.5):g}" if mode == "scissor" else mode))
+    if str(manifest.get("notes", "")).strip():
+        rows.append(("Notes", str(manifest["notes"]).strip()))
+    return rows
+
+
+def manifest_tile_size(manifest: dict) -> tuple:
+    """The real-world size of one UV tile a manifest declares, 1 m by 1 m when it says nothing."""
+    size = manifest.get("physical_size_m", [1.0, 1.0])
+    return float(size[0]), float(size[1])
+
+
+def _draw_linked(layout, material) -> None:
+    """The metadata of a linked material, read-only, straight from its manifest."""
+    layout.label(text="Linked from the library: read-only", icon="LINKED")
+    try:
+        rows = linked_summary(material)
+    except exporter.ExportError as error:
+        _problem(layout, str(error))
+        return
+
+    box = layout.box()
+    for label, value in rows:
+        row = box.row()
+        row.label(text=label)
+        row.label(text=value)
+    layout.label(text="Append it instead of linking to change it.", icon="INFO")
+
+
 class _MaterialPanel:
     """Shared placement and availability for every panel of this add-on."""
 
@@ -101,6 +158,12 @@ class DYINGSTAR_PT_material_library(_MaterialPanel, bpy.types.Panel):
 
         self._draw_identity(layout, material)
         layout.separator()
+        if is_linked(material):
+            # Nothing can be written to it: no export, and its metadata is under
+            # Metadata, read from the library.
+            layout.label(text="Linked from the library: read-only", icon="LINKED")
+            layout.label(text="Append it instead of linking to change it.")
+            return
         layout.operator("dyingstar.export_material", icon="EXPORT")
 
     @staticmethod
@@ -134,7 +197,8 @@ class DYINGSTAR_PT_material_library(_MaterialPanel, bpy.types.Panel):
 
         if exporter.find_manifest(material_id) is not None:
             box.label(text="Already in the library", icon="CHECKMARK")
-            box.operator("dyingstar.load_material_from_library", icon="IMPORT")
+            if not is_linked(material):
+                box.operator("dyingstar.load_material_from_library", icon="IMPORT")
 
 
 class DYINGSTAR_PT_material_metadata(_MaterialSubPanel, bpy.types.Panel):
@@ -145,7 +209,11 @@ class DYINGSTAR_PT_material_metadata(_MaterialSubPanel, bpy.types.Panel):
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context) -> None:
-        metadata = context.object.active_material.dyingstar
+        material = context.object.active_material
+        if is_linked(material):
+            _draw_linked(self.layout, material)
+            return
+        metadata = material.dyingstar
 
         column = self.layout.column(align=True)
         column.prop(metadata, "display_name")
@@ -189,6 +257,16 @@ class DYINGSTAR_PT_material_maps(_MaterialSubPanel, bpy.types.Panel):
         # the button's availability and the list below both read this result.
         result = map_extractor.extract(material)
 
+        if is_linked(material):
+            # Its tile size and transparency are the library's, shown under
+            # Metadata: the fields here would show a default it does not have.
+            try:
+                tile_size = manifest_tile_size(exporter.load_manifest(exporter.slugify(material.name)))
+            except exporter.ExportError:
+                tile_size = (1.0, 1.0)
+            self._draw_detected(layout, result, tile_size)
+            return
+
         row = layout.row(align=True)
         row.operator("dyingstar.detect_material_maps", icon="VIEWZOOM")
         # Only drawn when there are three separate maps to merge, so the button
@@ -211,10 +289,10 @@ class DYINGSTAR_PT_material_maps(_MaterialSubPanel, bpy.types.Panel):
             if metadata.alpha_mode == "SCISSOR":
                 row.prop(metadata, "alpha_threshold")
 
-        self._draw_detected(layout, result, metadata)
+        self._draw_detected(layout, result, (metadata.physical_size_x, metadata.physical_size_y))
 
     @staticmethod
-    def _draw_detected(layout, result, metadata) -> None:
+    def _draw_detected(layout, result, tile_size: tuple) -> None:
         """Show what the exporter would pick up, so surprises happen here."""
         box = layout.box()
         box.label(text="Detected maps")
@@ -238,7 +316,6 @@ class DYINGSTAR_PT_material_maps(_MaterialSubPanel, bpy.types.Panel):
             row.label(text=image.name if image is not None else "(empty)")
             row.label(text=_size_label(image))
 
-        tile_size = (metadata.physical_size_x, metadata.physical_size_y)
         for severity, message in _metadata_issues(result.images, tile_size):
             if severity == "error":
                 _problem(box, message)
