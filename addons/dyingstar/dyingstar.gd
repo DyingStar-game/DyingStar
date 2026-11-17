@@ -17,8 +17,24 @@ const ITEM_VIEW_DEFS := 4
 const ITEM_UPDATE_DEFS_LOCAL := 5
 const ITEM_REBUILD_MATERIALS := 6
 const ITEM_REBUILD_ATMOSPHERES := 7
+const ITEM_DYINGSTAR_COLOURS := 8
+const ITEM_RESTORE_COLOURS := 9
 const ITEM_LIBRARY_AT_START := 10
 
+## The editor in the game's colours, those of dyingstar-game.com: its near-black warm background
+## (--background) behind the docks, its amber (--primary) as the accent. The preset comes first:
+## while it is a named one, the editor writes that preset's colours over the two below.
+const EDITOR_COLOURS := {
+	"interface/theme/follow_system_theme": false,
+	"interface/theme/use_system_accent_color": false,
+	"interface/theme/color_preset": "Custom",
+	"interface/theme/base_color": Color("151413"),
+	"interface/theme/accent_color": Color("ffba08"),
+}
+## In EDITOR_METADATA_SECTION: the developer's own colours, kept while the game's are in use, and
+## whether the game's were given to this developer's editor once already.
+const THEME_BACKUP_KEY := "editor_colours_before"
+const COLOURS_GIVEN_KEY := "editor_colours_given_once"
 ## What each developer chooses for this plugin is kept in this section of the project's editor metadata
 ## (never committed).
 const EDITOR_METADATA_SECTION := "dyingstar"
@@ -102,6 +118,7 @@ func _enter_tree() -> void:
 	_defs_ready = ServerPropsIO.has_network_defs()
 	_refresh_menu_state()
 	_ask_refresh_defs.call_deferred()
+	_use_dyingstar_colours_once.call_deferred()
 
 
 ## The "Library" tab: the project's models, scenes, materials, textures, sounds and shaders by kind and
@@ -311,6 +328,11 @@ func _fill_popup(pm: PopupMenu) -> void:
 	pm.set_item_tooltip(pm.get_item_index(ITEM_LIBRARY_AT_START),
 		"Show the Library tab of the bottom panel as soon as the editor has read the project. Your own choice,\n"
 		+ "kept for this project.")
+	_add_item_with_icon(pm, &"Theme", "Use DyingStar colours", ITEM_DYINGSTAR_COLOURS)
+	pm.set_item_tooltip(pm.get_item_index(ITEM_DYINGSTAR_COLOURS),
+		"Put this editor in the game's colours (the website's dark background and amber). It changes your own editor\n"
+		+ "settings, for every project you open with this Godot.")
+	pm.add_item("Restore my editor colours", ITEM_RESTORE_COLOURS)
 	pm.id_pressed.connect(_on_menu_id)
 	_refresh_menu_state()
 
@@ -391,6 +413,10 @@ func _on_menu_id(id: int) -> void:
 			_rebuild_shared_materials()
 		ITEM_REBUILD_ATMOSPHERES:
 			_rebuild_atmosphere_profiles()
+		ITEM_DYINGSTAR_COLOURS:
+			_use_dyingstar_colours()
+		ITEM_RESTORE_COLOURS:
+			_restore_editor_colours()
 		ITEM_LIBRARY_AT_START:
 			_toggle_library_at_start()
 
@@ -404,6 +430,50 @@ func _rebuild_shared_materials() -> void:
 ## The same as File > Run on build_atmosphere_profiles.gd, one click away.
 func _rebuild_atmosphere_profiles() -> void:
 	AtmosphereProfiles.new()._run()
+
+
+## The first time a developer opens the project, the editor takes the game's colours. Once only: a
+## developer who went back to their own (DyingStar > Restore my editor colours) keeps them. Never
+## without a window (an import, the tests, CI): there is nobody to see colours there.
+func _use_dyingstar_colours_once() -> void:
+	var settings := EditorInterface.get_editor_settings()
+	if DisplayServer.get_name() == "headless" or settings.get_project_metadata(EDITOR_METADATA_SECTION, COLOURS_GIVEN_KEY, false):
+		return
+	settings.set_project_metadata(EDITOR_METADATA_SECTION, COLOURS_GIVEN_KEY, true)
+	_use_dyingstar_colours()
+
+
+## Put the editor in the game's colours. These are editor settings, not project ones: they are this
+## developer's own, for every project opened with this Godot, which is why it is done once and can be
+## undone from the menu. The colours in use before are kept, once, to be given back.
+func _use_dyingstar_colours() -> void:
+	var settings := EditorInterface.get_editor_settings()
+	# Kept once: applying again (after the colours changed here) must not take the game's colours for
+	# the developer's own. A setting added since is kept the first time it is seen.
+	var kept: Variant = settings.get_project_metadata(EDITOR_METADATA_SECTION, THEME_BACKUP_KEY, null)
+	var before: Dictionary = kept if kept is Dictionary else {}
+	for key: String in EDITOR_COLOURS:
+		if not before.has(key):
+			before[key] = settings.get_setting(key)
+	settings.set_project_metadata(EDITOR_METADATA_SECTION, THEME_BACKUP_KEY, before)
+	for key: String in EDITOR_COLOURS:
+		settings.set_setting(key, EDITOR_COLOURS[key])
+	_status("DyingStar: the editor wears the game's colours (DyingStar > Restore my editor colours to undo).")
+
+
+## Give the editor back the colours it had before "Use DyingStar colours".
+func _restore_editor_colours() -> void:
+	var settings := EditorInterface.get_editor_settings()
+	var before: Variant = settings.get_project_metadata(EDITOR_METADATA_SECTION, THEME_BACKUP_KEY, null)
+	if not before is Dictionary:
+		_status("DyingStar: no editor colours to restore, the DyingStar ones were never applied from here.")
+		return
+	# The preset first: while it is a named one, the editor writes that preset's colours over ours.
+	for key: String in EDITOR_COLOURS:
+		if (before as Dictionary).has(key):
+			settings.set_setting(key, before[key])
+	settings.set_project_metadata(EDITOR_METADATA_SECTION, THEME_BACKUP_KEY, null)
+	_status("DyingStar: editor colours restored.")
 
 
 func _on_import() -> void:
