@@ -7,7 +7,7 @@ extends RefCounted
 ##   alert        red, pinned — the dev clock is shifted (shown even with the debug panels off)
 ##   Universe     servers, players, local time, altitude / position / moving frame   (show debug)
 ##   Server       name, TPS, players, objects, scenes, border ahead of the camera   (show debug)
-##   Client       FPS, objects, scenes, x/y/z, VRAM, events/s, chunks on screen       (show debug)
+##   Client       FPS, objects, scenes, x/y/z, VRAM, events/s, ping, chunks on screen (show debug)
 ##   Ground       what we stand on and how it was decided                  (Settings: Surface debug)
 ##   Music        the track, its playlist, the rule that chose it         (Settings: Music debug)
 ##   Star map     bodies, focus, zoom, sim time, relief tiles, map open (Settings: Star map debug)
