@@ -1,6 +1,7 @@
 ; The client's link to Horizon: WebTransport + bitcode (class HorizonLink, used by server/client.gd).
 ; Rust (godot-rust), source in horizonserver/godot_net at the commit of HORIZONSERVER_REV. The
-; libraries are built, not committed: tools/build_ds_net.sh locally, the client workflow in CI.
+; libraries are committed in bin/ (bin/BUILT_FROM names their commit): .github/workflows/ds-net.yml
+; rebuilds them on a pull request that moves the pin; tools/build_ds_net.sh builds them locally.
 [configuration]
 entry_symbol = "gdext_rust_init"
 compatibility_minimum = "4.7"

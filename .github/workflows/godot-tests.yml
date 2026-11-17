@@ -82,41 +82,10 @@ jobs:
             echo "::error::the LiveKit extension misses system libraries:"; echo "$missing"; exit 1
           fi
 
-      # The network extension (HorizonLink) is built from horizonserver at the pinned commit, as the
-      # client build does; cached per pinned commit, so it is only compiled when the pin moves.
-      - name: Cache the network extension
-        id: cache-ds-net
-        uses: actions/cache@v4
-        with:
-          path: addons/ds_net/bin/libds_godot_net.linux.x86_64.so
-          key: ds-net-linux-${{ hashFiles('addons/ds_net/HORIZONSERVER_REV') }}
-
-      - name: Pin of the network extension
-        if: steps.cache-ds-net.outputs.cache-hit != 'true'
-        id: ds_net
-        run: echo "rev=$(cat addons/ds_net/HORIZONSERVER_REV)" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout horizonserver (network extension source)
-        if: steps.cache-ds-net.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: DyingStar-game/horizonserver
-          ref: ${{ steps.ds_net.outputs.rev }}
-          path: .ds_net/horizonserver
-          submodules: true
-
-      - name: Build the network extension (addons/ds_net)
-        if: steps.cache-ds-net.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get install -y --no-install-recommends build-essential curl
-          if ! command -v rustup > /dev/null && [ ! -x "$HOME/.cargo/bin/rustup" ]; then
-            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
-          fi
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup toolchain install stable --profile minimal
-          RUSTUP_TOOLCHAIN=stable .ds_net/horizonserver/godot_net/build.sh "$GODOT" addons/ds_net/bin linux
-          # Out of the project before the import: Godot would import the checkout.
-          rm -rf .ds_net
+      # The network extension (HorizonLink) is committed, built by ds-net.yml from horizonserver at the
+      # pinned commit: only check that what is committed is that build.
+      - name: Network extension matches its pin
+        run: tools/check_ds_net.sh
 
       # The tests call C# twins (TileFrameNative, CrackVoronoiNative, the mountain twins). Without a
       # built assembly they would fall back to GDScript and the twins would never be tested at all.

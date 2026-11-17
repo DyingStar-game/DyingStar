@@ -1,0 +1,128 @@
+name: "Network extension"
+
+# Builds the client's network extension (addons/ds_net: HorizonLink, Rust / godot-rust, source in
+# horizonserver/godot_net) at the commit pinned in addons/ds_net/HORIZONSERVER_REV, and commits the
+# two libraries (Linux .so, Windows .dll) with addons/ds_net/bin/BUILT_FROM naming that commit. So
+# nobody needs Rust or MinGW to run the game or its tests, and the client build and the tests only
+# check that BUILT_FROM matches the pin.
+#
+# On a pull request that moves the pin (or touches this workflow): when BUILT_FROM is not the pin,
+# build both libraries and push them onto the pull request's branch as their own commit. A pull
+# request from a fork cannot be pushed to: it fails with the command to run.
+#
+# Repository settings this needs (Settings > Actions > General), like credits.yml:
+#   * Workflow permissions: "Read and write permissions".
+#   * Optional secret DS_NET_BOT_TOKEN (fine-grained token, Contents: read and write on this
+#     repository): a commit pushed with the default GITHUB_TOKEN does not start the other workflows,
+#     so the pull request's checks only run again on its next push. With this token they start at once.
+on:
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - "addons/ds_net/**"
+      - ".github/workflows/ds-net.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ds-net-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7
+
+jobs:
+  build:
+    name: Build the network extension
+    runs-on: dyingstar-runners
+    steps:
+      # The branch itself, not the merge commit GitHub tests by default: the bot pushes onto it.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          token: ${{ secrets.DS_NET_BOT_TOKEN || github.token }}
+
+      - name: Are the libraries those of the pin?
+        id: pin
+        run: |
+          rev=$(cat addons/ds_net/HORIZONSERVER_REV)
+          built=$(cat addons/ds_net/bin/BUILT_FROM 2>/dev/null || true)
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          if [ "$built" = "$rev" ] && [ -f addons/ds_net/bin/libds_godot_net.linux.x86_64.so ] \
+              && [ -f addons/ds_net/bin/ds_godot_net.windows.x86_64.dll ]; then
+            echo "The libraries are built from $rev already."
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Built from '${built:-nothing}', pinned $rev: rebuilding."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install build tooling
+        if: steps.pin.outputs.stale == 'true'
+        run: |
+          # The self-hosted ARC runner image is minimal.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget unzip curl build-essential gcc-mingw-w64-x86-64
+          if ! command -v rustup > /dev/null && [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # The bindings are generated from the project's own engine (4.7, double precision).
+      - name: Cache Godot binary
+        if: steps.pin.outputs.stale == 'true'
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
+
+      - name: Install Godot
+        if: steps.pin.outputs.stale == 'true' && steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          wget -q -O "$RUNNER_TEMP/godot.zip" \
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
+          rm "$RUNNER_TEMP/godot.zip"
+
+      - name: Checkout horizonserver
+        if: steps.pin.outputs.stale == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: DyingStar-game/horizonserver
+          ref: ${{ steps.pin.outputs.rev }}
+          path: .ds_net/horizonserver
+          submodules: true
+
+      - name: Build both libraries
+        if: steps.pin.outputs.stale == 'true'
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add --toolchain stable x86_64-pc-windows-gnu
+          godot="$HOME/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSION}-stable_mono_linux.x86_64"
+          chmod +x "$godot"
+          HORIZONSERVER_DIR=.ds_net/horizonserver GODOT_BIN="$godot" RUSTUP_TOOLCHAIN=stable \
+            tools/build_ds_net.sh all
+          rm -rf .ds_net
+
+      - name: Push them onto the pull request
+        if: steps.pin.outputs.stale == 'true'
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error file=addons/ds_net/HORIZONSERVER_REV::The network extension is not built from the pinned commit. Run 'tools/build_ds_net.sh all' (Rust + MinGW) and commit addons/ds_net/bin."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addons/ds_net/bin
+          git commit -m "chore(network): build the network extension at horizonserver ${{ steps.pin.outputs.rev }}"
+          git push
