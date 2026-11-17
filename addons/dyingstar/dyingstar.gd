@@ -17,10 +17,30 @@ const ITEM_VIEW_DEFS := 4
 const ITEM_UPDATE_DEFS_LOCAL := 5
 const ITEM_REBUILD_MATERIALS := 6
 const ITEM_REBUILD_ATMOSPHERES := 7
+const ITEM_LIBRARY_AT_START := 10
+
+## What each developer chooses for this plugin is kept in this section of the project's editor metadata
+## (never committed).
+const EDITOR_METADATA_SECTION := "dyingstar"
+## In that section: whether the asset library opens when the editor starts. It does unless the
+## developer unticks it in the menu.
+const LIBRARY_AT_START_KEY := "asset_library_opens_at_start"
 
 ## Local horizonserver checkout, next to this project: the PRIMARY source of the network definitions
 ## (no network, same branch as the server you run). GitHub is the fallback when it is absent.
 const HORIZON_PROPS_DIR := "../horizonserver/ds_genericprops/props"
+
+## The asset library's panel (bottom panel tab "Library"). Loaded by path at start-up, not preloaded: if
+## it fails to load, the menu and the importers of this plugin must still come up.
+const ASSET_LIBRARY_PANEL := "res://addons/dyingstar/asset_library/asset_library_panel.gd"
+## The Library button's icon: the first of these editor icons that this editor has.
+const LIBRARY_ICONS: Array[StringName] = [&"AssetLib", &"ResourcePreloader", &"Filesystem", &"FileList"]
+## Opening the library at start: seconds left to the editor to lay itself out before each try, and
+## how many tries.
+const LIBRARY_OPEN_DELAY := 2.0
+const LIBRARY_OPEN_ATTEMPTS := 3
+## Distance of the Library button from the corner of the 3D view, in pixels at 100 % editor scale.
+const LIBRARY_BUTTON_MARGIN := 14
 
 ## GitHub source of the network definitions (<type>_def.json), when there is no local horizonserver.
 const DEFS_API := "https://api.github.com/repos/DyingStar-game/horizonserver/contents/ds_genericprops/props?ref=develop"
@@ -45,6 +65,9 @@ var _defs_abort := false  # set by "Keep current defs" to stop the in-progress d
 var _inspector_plugin: EditorInspectorPlugin = null
 var _build_id_export: EditorExportPlugin = null
 var _garment_importer: EditorImportPlugin = null
+var _asset_library: Control = null
+var _library_button: Button = null
+var _library_button_in_toolbar := false
 
 
 func _enable_plugin() -> void:
@@ -61,6 +84,7 @@ func _enter_tree() -> void:
 		load(globals_script.STARGROT_LIFETIME).prepare(true)  # load(), not preload(): see Globals._ready()
 	main_panel_instance = MainPanel.instantiate()
 	add_control_to_bottom_panel(main_panel_instance, "DyingStar")
+	_add_asset_library()
 	_http = HTTPRequest.new()
 	_http.timeout = 20.0  # never hang forever (would lock _defs_loading and the menus)
 	EditorInterface.get_base_control().add_child(_http)
@@ -80,7 +104,115 @@ func _enter_tree() -> void:
 	_ask_refresh_defs.call_deferred()
 
 
+## The "Library" tab: the project's models, scenes, materials, textures, sounds and shaders by kind and
+## by tag, to drag into the 3D view (addons/dyingstar/asset_library/).
+func _add_asset_library() -> void:
+	var panel_script := load(ASSET_LIBRARY_PANEL) as Script
+	if panel_script == null or not panel_script.can_instantiate():
+		push_warning("DyingStar: the asset library could not be loaded, its tab is left out.")
+		return
+	_asset_library = panel_script.new()
+	add_control_to_bottom_panel(_asset_library, "Library")
+	# Its tab is one word among the bottom panel's many: a button in the 3D view itself, where level
+	# design happens, opens and closes it.
+	_library_button = Button.new()
+	_library_button.text = "Library"
+	_library_button.toggle_mode = true
+	_library_button.tooltip_text = ("Show or hide the asset library: the project's models, scenes, materials, textures\n"
+			+ "and sounds, to drag into the scene.")
+	var theme := EditorInterface.get_editor_theme()
+	for icon: StringName in LIBRARY_ICONS:
+		if theme != null and theme.has_icon(icon, &"EditorIcons"):
+			_library_button.icon = theme.get_icon(icon, &"EditorIcons")
+			break
+	_library_button.toggled.connect(_on_library_button_toggled)
+	_place_library_button()
+	_asset_library.visibility_changed.connect(_on_library_visibility_changed)
+	if _library_opens_at_start():
+		_open_library_once_ready()
+
+
+func _library_opens_at_start() -> bool:
+	return bool(EditorInterface.get_editor_settings().get_project_metadata(
+			EDITOR_METADATA_SECTION, LIBRARY_AT_START_KEY, true))
+
+
+## Open the library once the editor has settled. The editor lays its panels out after the plugins are
+## in, and closes what was opened before that; and while it reads the project, the index the library
+## lists is still being filled. Asked again once if the editor closed it all the same.
+func _open_library_once_ready() -> void:
+	var file_system := EditorInterface.get_resource_filesystem()
+	for attempt in LIBRARY_OPEN_ATTEMPTS:
+		await get_tree().create_timer(LIBRARY_OPEN_DELAY).timeout
+		while file_system.is_scanning():
+			await get_tree().process_frame
+		if not is_instance_valid(_asset_library) or _asset_library.is_visible_in_tree():
+			return
+		make_bottom_panel_item_visible(_asset_library)
+
+
+## The menu's tick: whether the library opens by itself when the editor starts. Each developer's own
+## choice, kept in this project's editor metadata.
+func _toggle_library_at_start() -> void:
+	var at_start := not _library_opens_at_start()
+	EditorInterface.get_editor_settings().set_project_metadata(EDITOR_METADATA_SECTION, LIBRARY_AT_START_KEY, at_start)
+	for pm: PopupMenu in [_ds_popup, (_menu_button.get_popup() if is_instance_valid(_menu_button) else null)]:
+		if pm != null and pm.get_item_index(ITEM_LIBRARY_AT_START) >= 0:
+			pm.set_item_checked(pm.get_item_index(ITEM_LIBRARY_AT_START), at_start)
+	_status("DyingStar: the asset library %s when the editor starts." % ("opens" if at_start else "stays closed"))
+
+
+## In the bottom left corner of the 3D view, over the scene. The editor has no official place there: the
+## button is hung on the control that holds the first 3D viewport. If this editor is not built that way,
+## it goes to the 3D view's toolbar instead.
+func _place_library_button() -> void:
+	var viewport := EditorInterface.get_editor_viewport_3d(0)
+	var holder: Control = null
+	if viewport != null and viewport.get_parent() != null:
+		holder = viewport.get_parent().get_parent() as Control
+	if holder == null:
+		_library_button.theme_type_variation = &"FlatButton"
+		add_control_to_container(EditorPlugin.CONTAINER_SPATIAL_EDITOR_MENU, _library_button)
+		_library_button_in_toolbar = true
+		return
+	var margin := LIBRARY_BUTTON_MARGIN * EditorInterface.get_editor_scale()
+	holder.add_child(_library_button)
+	# Held by the bottom left corner and growing away from it, whatever the view's size.
+	_library_button.anchor_left = 0.0
+	_library_button.anchor_right = 0.0
+	_library_button.anchor_top = 1.0
+	_library_button.anchor_bottom = 1.0
+	_library_button.grow_horizontal = Control.GROW_DIRECTION_END
+	_library_button.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_library_button.offset_left = margin
+	_library_button.offset_bottom = -margin
+
+
+func _on_library_button_toggled(pressed: bool) -> void:
+	if pressed:
+		make_bottom_panel_item_visible(_asset_library)
+	else:
+		hide_bottom_panel()
+
+
+## The button shows whether the library is open, however it was opened or closed.
+func _on_library_visibility_changed() -> void:
+	if is_instance_valid(_library_button) and is_instance_valid(_asset_library):
+		_library_button.set_pressed_no_signal(_asset_library.is_visible_in_tree())
+
+
 func _exit_tree() -> void:
+	if is_instance_valid(_library_button):
+		if _library_button_in_toolbar:
+			remove_control_from_container(EditorPlugin.CONTAINER_SPATIAL_EDITOR_MENU, _library_button)
+		elif _library_button.get_parent() != null:
+			_library_button.get_parent().remove_child(_library_button)
+		_library_button.queue_free()
+		_library_button = null
+	if is_instance_valid(_asset_library):
+		remove_control_from_bottom_panel(_asset_library)
+		_asset_library.queue_free()
+		_asset_library = null
 	remove_control_from_bottom_panel(main_panel_instance)
 	if is_instance_valid(main_panel_instance):
 		main_panel_instance.queue_free()
@@ -173,6 +305,12 @@ func _fill_popup(pm: PopupMenu) -> void:
 	pm.set_item_tooltip(pm.get_item_index(ITEM_REBUILD_ATMOSPHERES),
 		"After the system data changes (services/resourcesDynamic/data/system/tarsis.json): regenerate every\n"
 		+ "body's AtmosphereProfile — scattering, pressure, scale height — in scenes/planet/atmospheres/.")
+	pm.add_separator()
+	pm.add_check_item("Open the asset library at start", ITEM_LIBRARY_AT_START)
+	pm.set_item_checked(pm.get_item_index(ITEM_LIBRARY_AT_START), _library_opens_at_start())
+	pm.set_item_tooltip(pm.get_item_index(ITEM_LIBRARY_AT_START),
+		"Show the Library tab of the bottom panel as soon as the editor has read the project. Your own choice,\n"
+		+ "kept for this project.")
 	pm.id_pressed.connect(_on_menu_id)
 	_refresh_menu_state()
 
@@ -253,6 +391,8 @@ func _on_menu_id(id: int) -> void:
 			_rebuild_shared_materials()
 		ITEM_REBUILD_ATMOSPHERES:
 			_rebuild_atmosphere_profiles()
+		ITEM_LIBRARY_AT_START:
+			_toggle_library_at_start()
 
 
 # ── Actions ──────────────────────────────────────────────────────────────────
