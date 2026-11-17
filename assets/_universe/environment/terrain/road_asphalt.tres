@@ -3,3 +3,4 @@
 [resource]
 resource_name = "road_asphalt"
 albedo_color = Color(0.18, 0.18, 0.2, 1)
+clearcoat_roughness = 1.0

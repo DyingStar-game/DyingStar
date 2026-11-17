@@ -50,6 +50,7 @@ size = Vector2(0.56, 0.13)
 collision_layer = 4
 collision_mask = 15
 mass = 1425.0
+linear_damp_mode = 1
 script = ExtResource("1_vehicle")
 torque_response = 1.0
 brake_deceleration = 10.0
@@ -206,7 +207,7 @@ transform = Transform3D(-1, -2.4651903e-32, 1.2246063538223775e-16, 8.6343371992
 screen = NodePath("../Model/Carrosserie/Screen_Rear")
 
 [node name="RearCameraRetroL" parent="." unique_id=1162117254 node_paths=PackedStringArray("screen") instance=ExtResource("6_nd433")]
-transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.060540212046014e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
+transform = Transform3D(-1, -3.698526287045972e-32, 1.2246063538223775e-16, 6.123031769111884e-17, 0.8660254037844387, 0.49999999999999994, -1.0605402120460141e-16, 0.49999999999999994, -0.8660254037844387, -1.00805571025538, 1.673670425970804, -0.777821705103517)
 screen = NodePath("../Model/Carrosserie/ScreenL_Retro")
 resolution = Vector2i(320, 320)
 mirror = true
@@ -269,22 +270,22 @@ debug_color = Color(0.9607843, 0, 0.5254902, 0.41960785)
 transform = Transform3D(-1, 0, -1.2246064e-16, 0, 1, 0, 1.2246064e-16, 0, -1, -0.00206990235642834, 0.4319164637378363, 1.061855327619314)
 
 [node name="SlotFL" type="Marker3D" parent="." unique_id=740110021]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.17, 0.04)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.69, 0.17, 0.04)
 script = ExtResource("91_slot")
 door_id = "hatch_fl"
 
 [node name="SlotFR" type="Marker3D" parent="." unique_id=740110022]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.17, 0.04)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.69, 0.17, 0.04)
 script = ExtResource("91_slot")
 door_id = "hatch_fr"
 
 [node name="SlotRL" type="Marker3D" parent="." unique_id=740110023]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.17, 0.74)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.69, 0.17, 0.74)
 script = ExtResource("91_slot")
 door_id = "hatch_rl"
 
 [node name="SlotRR" type="Marker3D" parent="." unique_id=740110024]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.17, 0.74)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.69, 0.17, 0.74)
 script = ExtResource("91_slot")
 door_id = "hatch_rr"
 

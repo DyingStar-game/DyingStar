@@ -18,6 +18,10 @@ const SCAN_EVERY_FRAMES: int = 30
 const MAX_MASKS: int = 16
 const MIN_VOLUME_M3: float = 20.0
 const MIN_HEIGHT_M: float = 2.0
+## Larger than this on any side (m), a box is not a building but a whole set (the menu's outpost is one
+## node over every piece of it, and a shape not yet placed stretched its box to 6e10 m: the dust gone
+## from the whole stage, 2026-10-09). Never masked. The largest building in play, a cargo depot, is 95 m.
+const MAX_SIDE_M: float = 200.0
 const MASK_LAYERS: int = (1 << 0) | (1 << 3)
 const META: StringName = &"weather_mask_aabb"
 ## A building once found stays masked until it is this far (m): the scan's hits vary from one pass to
@@ -59,6 +63,26 @@ func masks_for(camera_pos: Vector3) -> Array[Projection]:
 		var basis: Basis = root.global_basis * Basis.from_scale(box.size)
 		out.append(Projection(Transform3D(basis, (entry[3] as Vector3) - camera_pos).affine_inverse()))
 	return out
+
+
+## The boxes in reach, nearest first, for the dust probe: name, size (m) and distance (m) of each.
+func describe(camera_pos: Vector3) -> String:
+	var rows: Array = []
+	for root: Node3D in _roots:
+		if not is_instance_valid(root) or not root.is_inside_tree():
+			continue
+		var box: AABB = root.get_meta(META)
+		if box.size == Vector3.ZERO:
+			continue
+		var centre: Vector3 = root.global_transform * box.get_center()
+		var size: Vector3 = box.size * root.global_basis.get_scale()
+		rows.append([centre.distance_to(camera_pos), "%s %.0fx%.0fx%.0f m at %.0f m" % [
+			root.name, size.x, size.y, size.z, centre.distance_to(camera_pos)]])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var names: PackedStringArray = []
+	for r: Array in rows.slice(0, MAX_MASKS):
+		names.append(r[1])
+	return ", ".join(names)
 
 
 ## Is [param world_pos] inside one of the buildings in reach?
@@ -129,7 +153,8 @@ static func _box(root: Node3D) -> void:
 		var placed: AABB = (to_root * cs.global_transform) * local
 		box = placed if first else box.merge(placed)
 		first = false
-	if first or box.size.x * box.size.y * box.size.z < MIN_VOLUME_M3 or box.size.y < MIN_HEIGHT_M:
+	var widest: float = maxf(box.size.x, maxf(box.size.y, box.size.z))
+	if first or box.size.x * box.size.y * box.size.z < MIN_VOLUME_M3 or box.size.y < MIN_HEIGHT_M or widest > MAX_SIDE_M:
 		root.set_meta(META, AABB())
 		return
 	root.set_meta(META, box)

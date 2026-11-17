@@ -67,7 +67,7 @@ func part_name() -> String:
 ## Built at runtime rather than authored per scene: the texture belongs to the SPEC, so a new tier
 ## or a whole new kind of component ships a .tres and a PNG and gets its markings for free. And the
 ## placement is derived from the part's own collision box, so it is right whatever size that box is
-## — nothing here repeats the 0.4 x 0.3 x 0.6 typed into engine_t1.tscn.
+## — nothing here repeats the 0.3 x 0.4 x 0.6 typed into engine_t1.tscn.
 ##
 ## Server-side this is skipped outright: a dedicated server draws nothing, and 16 trucks x 3 motors
 ## would be 96 sprites built and kept for an eye that does not exist.

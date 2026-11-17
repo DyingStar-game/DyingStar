@@ -7,8 +7,9 @@ extends RefCounted
 ## objects Horizon delivered), so the wind that pushes the truck on the server is the wind the
 ## client draws.
 ##
-## Conventions (the service's): east = the direction the body turns toward, which is DEcreasing
-## longitude in the body frame (HEALPix: lon = atan2(z, x)); north = toward the body's +Y pole.
+## Conventions (the service's): east = the direction the body turns toward, which is INcreasing
+## longitude in the body frame (HEALPix: lon = atan2(-z, x), the QGIS convention since the planet's
+## re-export of 2026-10-08); north = toward the body's +Y pole.
 ## Winds are (east, north) m/s; `wind_from_deg` is where the wind comes FROM, 0 = north, clockwise.
 
 const BAND_CALM := &"calm"
@@ -95,8 +96,8 @@ static func offset_on_sphere(r: float, from_lon_deg: float, from_lat_deg: float,
 	var dlon: float = lon2 - lon1
 	var a: float = pow(sin((lat2 - lat1) / 2.0), 2.0) + cos(lat1) * cos(lat2) * pow(sin(dlon / 2.0), 2.0)
 	var d: float = 2.0 * r * asin(minf(sqrt(a), 1.0))
-	# East is the direction of DEcreasing longitude in this frame.
-	var east: float = -(sin(dlon) * cos(lat2))
+	# East is the direction of INcreasing longitude in this frame.
+	var east: float = sin(dlon) * cos(lat2)
 	var north: float = cos(lat2) * sin(lat1) * cos(dlon) * -1.0 + sin(lat2) * cos(lat1)
 	var n: float = sqrt(east * east + north * north)
 	if n < 1e-12:
@@ -260,12 +261,13 @@ static func surface_temperature_k(p: ClimateProfile, lat_deg: float, local_solar
 
 
 ## East and north unit vectors of the ground at (lon, lat) in the body-fixed frame (the service's
-## `local_axes`): east is the direction the body turns toward, DEcreasing longitude in this frame.
+## `local_axes`): east is the direction the body turns toward, INcreasing longitude in this frame
+## (HEALPix.lonlat2vec: z = -cos lat sin lon).
 static func local_axes(lon_deg: float, lat_deg: float) -> Array:
 	var lon: float = deg_to_rad(lon_deg)
 	var lat: float = deg_to_rad(lat_deg)
-	var east := Vector3(sin(lon), 0.0, -cos(lon))
-	var north := Vector3(-sin(lat) * cos(lon), cos(lat), -sin(lat) * sin(lon))
+	var east := Vector3(-sin(lon), 0.0, -cos(lon))
+	var north := Vector3(-sin(lat) * cos(lon), cos(lat), sin(lat) * sin(lon))
 	return [east, north]
 
 

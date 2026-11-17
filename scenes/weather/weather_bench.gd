@@ -46,6 +46,7 @@ static var no_storm: bool = false
 static var no_veil: bool = false
 
 var _renderer: AtmosphereRenderer = null
+var _banner: DevBanner = null  # the stage on screen: the run was invisible, and a 2nd Alt+B aborted it
 var _stage: int = 0
 var _clock: float = 0.0
 var _gpu: PackedFloat64Array = []
@@ -57,6 +58,8 @@ var _results: Array = []
 func _init(renderer: AtmosphereRenderer) -> void:
 	_renderer = renderer
 	name = "WeatherBench"
+	_banner = DevBanner.new("WeatherBenchBanner")
+	add_child(_banner)
 
 
 func _ready() -> void:
@@ -100,6 +103,8 @@ func _enter(stage: int) -> void:
 	_frame.clear()
 	_apply(STAGES[stage][1])
 	print("[WeatherBench] %d/%d %s ..." % [stage + 1, STAGES.size(), STAGES[stage][0]])
+	_banner.show_text("weather bench %d/%d: %s  (about %d s left; stand still; Alt+B: abort)" % [
+		stage + 1, STAGES.size(), STAGES[stage][0], roundi((STAGES.size() - stage) * (SETTLE_S + MEASURE_S))])
 
 
 func _finish() -> void:
@@ -108,6 +113,10 @@ func _finish() -> void:
 	for line: String in table(_results):
 		print("[WeatherBench] %s" % line)
 	print("[WeatherBench] done. %s" % _context())
+	# The banner outlives the bench a little: the run's end on screen, the numbers in the log.
+	_banner.show_text("weather bench done: the results are in the client log ([WeatherBench])")
+	_banner.reparent(get_parent())
+	get_tree().create_timer(10.0).timeout.connect(_banner.queue_free)
 	queue_free()
 
 

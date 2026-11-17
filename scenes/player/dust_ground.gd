@@ -17,10 +17,13 @@ extends RefCounted
 ## not thread safe). The grid in use stays on screen until the next one is complete, then both swap
 ## at once: texture and frame together.
 
+## 128 cells of 16 m: the grid reaches 1 km each way, the near layer's range (WeatherSky.NEAR_LAYER_RANGE_M);
+## at 5.5 m it stopped at 352 m and the layer, 6 m thick, read as nothing (2026-10-09). A layer 25 m
+## thick does not need the finer cells; the queries are as many as before.
 const SIZE: int = 128
-const CELL_M: float = 5.5
+const CELL_M: float = 16.0
 ## How far (m, along the ground) the camera goes from the anchor before a new grid is started.
-const REBUILD_M: float = 40.0
+const REBUILD_M: float = 120.0
 ## Time spent building per frame, ms.
 const BUDGET_MS: float = 1.5
 

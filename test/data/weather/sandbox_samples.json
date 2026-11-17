@@ -14,7 +14,7 @@
         "dust_tau": 0.0,
         "humidity": 0.0,
         "lat_deg": 24.7,
-        "local_solar_hours": 20.935679912006442,
+        "local_solar_hours": 15.669013245339778,
         "lon_deg": -39.5,
         "precipitation_mm_h": 0.0,
         "pressure_anomaly_pa": -37.957936899484494,
@@ -22,12 +22,12 @@
         "systems": [
           8910692977185195333
         ],
-        "temperature_k": 283.477517700787,
+        "temperature_k": 291.05002122790046,
         "visibility_m": 1000000.0,
-        "wind_east_m_s": -5.1666522600994185,
-        "wind_from_deg": 72.49899656634271,
-        "wind_north_m_s": -1.6291386808285024,
-        "wind_speed_m_s": 5.417415289431119
+        "wind_east_m_s": -5.176813153419529,
+        "wind_from_deg": 72.87297397517696,
+        "wind_north_m_s": -1.5952690364281334,
+        "wind_speed_m_s": 5.417035879888908
       }
     },
     {
@@ -52,9 +52,9 @@
         ],
         "temperature_k": 298.8541764462307,
         "visibility_m": 5453.328876449808,
-        "wind_east_m_s": 7.548907212764264,
-        "wind_from_deg": 266.26204745479055,
-        "wind_north_m_s": 0.49318743046825986,
+        "wind_east_m_s": 6.030819362692225,
+        "wind_from_deg": 307.1364410131967,
+        "wind_north_m_s": -4.567105403105206,
         "wind_speed_m_s": 7.5650005914405725
       }
     },
@@ -70,7 +70,7 @@
         "dust_tau": 0.029806365934571963,
         "humidity": 0.0,
         "lat_deg": -45.0,
-        "local_solar_hours": 10.302346578673111,
+        "local_solar_hours": 2.302346578673113,
         "lon_deg": 120.0,
         "precipitation_mm_h": 0.0,
         "pressure_anomaly_pa": 149.68601931421082,
@@ -79,12 +79,12 @@
           17406297729874085722,
           2659048729848939577
         ],
-        "temperature_k": 287.86159329351733,
+        "temperature_k": 279.0410595310227,
         "visibility_m": 131247.13051524773,
-        "wind_east_m_s": 7.60403968758156,
-        "wind_from_deg": 294.1664910043881,
-        "wind_north_m_s": -3.4120469545254895,
-        "wind_speed_m_s": 8.334475627788597
+        "wind_east_m_s": 8.15970957109536,
+        "wind_from_deg": 280.8221274110577,
+        "wind_north_m_s": -1.5598140094794908,
+        "wind_speed_m_s": 8.30745930045966
       }
     },
     {
@@ -99,7 +99,7 @@
         "dust_tau": 0.11921684756648625,
         "humidity": 0.0,
         "lat_deg": 70.0,
-        "local_solar_hours": 5.635679912006442,
+        "local_solar_hours": 6.969013245339778,
         "lon_deg": -170.0,
         "precipitation_mm_h": 0.0,
         "pressure_anomaly_pa": -58.13021125823183,
@@ -108,12 +108,12 @@
           1152528849811449313,
           12825058295333626716
         ],
-        "temperature_k": 250.1880381197311,
+        "temperature_k": 250.8453201018074,
         "visibility_m": 32814.15403823952,
-        "wind_east_m_s": -6.380768498393325,
-        "wind_from_deg": 71.85028450932046,
-        "wind_north_m_s": -2.091686425286109,
-        "wind_speed_m_s": 6.71486103592731
+        "wind_east_m_s": -6.438365757024999,
+        "wind_from_deg": 73.56084900580608,
+        "wind_north_m_s": -1.8996955631805303,
+        "wind_speed_m_s": 6.712778623938069
       }
     },
     {
@@ -128,7 +128,7 @@
         "dust_tau": 0.0,
         "humidity": 0.0,
         "lat_deg": 10.0,
-        "local_solar_hours": 15.302346578673111,
+        "local_solar_hours": 21.30234657867311,
         "lon_deg": 45.0,
         "precipitation_mm_h": 0.0,
         "pressure_anomaly_pa": 29.787743325772038,
@@ -137,16 +137,16 @@
           11478315865859721983,
           8637251749032412823
         ],
-        "temperature_k": 299.6404725545197,
+        "temperature_k": 290.33953083647407,
         "visibility_m": 1000000.0,
-        "wind_east_m_s": -5.950287001546659,
-        "wind_from_deg": 86.45102815429118,
-        "wind_north_m_s": -0.3690402661894021,
-        "wind_speed_m_s": 5.961720063777254
+        "wind_east_m_s": -5.786020562346065,
+        "wind_from_deg": 69.83363119725492,
+        "wind_north_m_s": -2.124985885335442,
+        "wind_speed_m_s": 6.163894788262234
       }
     }
   ],
-  "substellar_lon_deg": 94.53519868009667,
+  "substellar_lon_deg": -94.53519868009667,
   "systems": [
     {
       "band": 0,

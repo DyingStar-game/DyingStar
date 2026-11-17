@@ -1,5 +1,5 @@
 class_name WeatherIsolate
-extends CanvasLayer
+extends DevBanner
 ## A dev tool (Alt+U, Globals dev tool "debug_weather_isolate") to find which weather layer draws an
 ## artefact: each press takes the next layer away, and says on screen what is off, until the stage
 ## that takes them all away; the press after that puts everything back and closes the tool. Made for
@@ -19,19 +19,10 @@ const STAGES: Array = [
 ]
 
 var _stage: int = 0
-var _label: Label = null
 
 
 func _init() -> void:
-	name = "WeatherIsolate"
-	layer = 100
-	_label = Label.new()
-	_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_label.position.y = 90.0
-	_label.add_theme_font_size_override(&"font_size", 22)
-	_label.add_theme_color_override(&"font_outline_color", Color.BLACK)
-	_label.add_theme_constant_override(&"outline_size", 6)
-	add_child(_label)
+	super("WeatherIsolate")
 
 
 ## Go to the next stage; past the last one, everything back on and the tool gone. Returns what is
@@ -43,8 +34,8 @@ func next() -> String:
 		queue_free()
 		return ""
 	apply(STAGES[_stage][1])
-	_label.text = "%s  (%d/%d, Alt+U: next)" % [STAGES[_stage][0], _stage, STAGES.size() - 1]
-	return _label.text
+	show_text("%s  (%d/%d, Alt+U: next)" % [STAGES[_stage][0], _stage, STAGES.size() - 1])
+	return shown()
 
 
 func _exit_tree() -> void:

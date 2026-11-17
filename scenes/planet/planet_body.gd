@@ -1147,7 +1147,8 @@ func weather_local_at(world_pos: Vector3) -> Dictionary:
 	var gust: float = float(weather_override["gust_factor"]) if weather_override.has("gust_factor") \
 			else WeatherLocal.gust_factor(profile.weather_seed, float(sample["lon_deg"]), float(sample["lat_deg"]),
 			Globals.sim_time())
-	var out: Dictionary = WeatherLocal.apply(sample, canyon_at(world_pos), gust, profile.wind_scale_max_ms)
+	var out: Dictionary = WeatherLocal.apply(sample, canyon_at(world_pos), gust, profile.wind_scale_max_ms,
+			surface_altitude_of(world_pos))
 	_memo_put(_weather_local_memo, key, out)
 	return out
 

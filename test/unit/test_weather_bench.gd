@@ -77,3 +77,10 @@ func test_a_building_boxed_during_a_run_without_colliders_gets_a_hidden_one() ->
 	var collider := root.get_node_or_null(^"WeatherMaskCollider") as GPUParticlesCollisionBox3D
 	assert_not_null(collider)
 	assert_false(collider.visible)
+
+
+func test_the_bench_says_on_screen_that_it_runs() -> void:
+	var bench := WeatherBench.new(null)
+	var banner := bench.get_node_or_null("WeatherBenchBanner") as DevBanner
+	assert_not_null(banner, "a banner: a run only in the log looked like nothing happened")
+	bench.free()

@@ -112,14 +112,17 @@ var weather_storm_slab_bottom_m: float = 0.0
 var weather_storm_slab_top_m: float = 0.0
 ## Its multiple scattering, as an isotropic phase added to the single one (WeatherSky.storm_slab_ms).
 var weather_storm_slab_ms: float = 0.0
-## The dust the wind blows off the ground around the observer (WeatherSky.blow_*): a thin slab between
-## the two altitudes (m over the reference sphere, laid about the observer's own ground) of grey
-## extinction weather_blow_beta (1/m) and of the ground's colour as its albedo. 0 = none. Not a key of
-## the transmittance table.
-var weather_blow_beta: float = 0.0
-var weather_blow_albedo: Vector3 = Vector3.ONE
-var weather_blow_bottom_m: float = 0.0
-var weather_blow_top_m: float = 0.0
+## The cloud sea is drawn as a volume (DustVolume): the aerial pass then leaves the profile's 1-D veil
+## out (it would count the cloud twice); the sky dome keeps it, for the sky and the light it gives.
+var weather_deck_volume: bool = false
+## The ground around the eye (m over the reference sphere, DustVolume): where the sky dome's rays going
+## down stop (atmosphere_common ground_stop_m). 0 = the reference sphere.
+var weather_ground_floor_m: float = 0.0
+## client.ini debug_corundum_lift_m: see _haze_lift.
+var corundum_lift_m: float = ClientConfig.get_float("debug_corundum_lift_m", 0.0)
+## The colour of the dust the wind lifts off the ground around the observer (WeatherSky.blow_albedo_of):
+## the near layer's and the storm slab's albedo.
+var weather_dust_albedo: Vector3 = Vector3.ONE
 var _weather_sky: WeatherSky = WeatherSky.new()
 ## The buildings the weather stays out of (WeatherMasks), made with the renderer.
 var weather_masks: WeatherMasks = null
@@ -398,8 +401,20 @@ func _process(_delta: float) -> void:
 		_weather_sky.update(self, body, player.global_position)
 		_weather_sky.animate_dust(self, body, player.camera, _delta)
 		_weather_sky.animate_storm(self, body, player.camera)
-		_weather_sky.smooth_blow(self, _delta)
+		_weather_sky.glide_slabs(self, _delta)
 	_push_profile(profile, star_direction)
+	_apply_overrides()
+
+
+## The layers switched off in the weather panel (WeatherPanel, Alt+P), over what was pushed this frame.
+func _apply_overrides() -> void:
+	for pair: Array in [[WeatherPanel.SKY, _sky_material], [WeatherPanel.AERIAL, _aerial_material]]:
+		var material: ShaderMaterial = pair[1]
+		if material == null:
+			continue
+		var forced: Dictionary = WeatherPanel.overrides(pair[0])
+		for param: StringName in forced:
+			material.set_shader_parameter(param, forced[param])
 
 
 ## Hand the star's disc to whichever of the two things that draw it is right here.
@@ -459,11 +474,14 @@ func altitude_above_sphere() -> float:
 	return body.elevation_of(player.global_position)  # one formula, shared with the debug readout
 
 
-## How far to raise the haze ceiling, in metres. See debug_pretend_lowlands.
+## How far to raise the haze ceiling, in metres: client.ini debug_corundum_lift_m (the whole corundum
+## veil raised, sky, light and the cloud sea's volume alike, to see it over terrain higher than its
+## 4 km top), plus debug_pretend_lowlands.
 func _haze_lift() -> float:
-	if not debug_pretend_lowlands:
-		return 0.0
-	return altitude_above_sphere() - debug_pretend_altitude
+	var lift: float = corundum_lift_m
+	if debug_pretend_lowlands:
+		lift += altitude_above_sphere() - debug_pretend_altitude
+	return lift
 
 
 ## Fraction of the light arriving from [param sin_elevation] above the local horizon, per channel,
@@ -528,22 +546,46 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"light_steps": light_steps,
 		"sky_exposure": _sky_exposure(profile),
 		"use_transmittance_lut": _use_lut,
-		"blow_beta": Vector3.ONE * weather_blow_beta,
-		"blow_albedo": weather_blow_albedo,
-		"blow_bottom": weather_blow_bottom_m + _haze_lift(),
-		"blow_top": weather_blow_top_m + _haze_lift(),
 	}
 	_refresh_transmittance_lut(values, profile)
 	_apply(values)
+	# The cloud sea drawn as a volume (DustVolume): the aerial pass leaves the profile's 1-D veil out
+	# (it would count the sea twice); the sky dome keeps it, for the sky and the light it gives, with
+	# the multiple scattering the volume has and a single-scattering slab has not.
+	if weather_deck_volume and _aerial_material != null:
+		_aerial_material.set_shader_parameter("mie_beta", Vector3.ZERO)
+	_sky_material.set_shader_parameter("mie_ms", _veil_multiple_scattering(profile))
 	# The sky dome only: the aerial pass leaves its own storm slab at zero (it draws the volume).
 	_sky_material.set_shader_parameter("storm_slab_beta", Vector3.ONE * weather_storm_slab_beta)
 	_sky_material.set_shader_parameter("storm_slab_albedo", weather_storm_slab_albedo)
 	_sky_material.set_shader_parameter("storm_slab_bottom", weather_storm_slab_bottom_m + _haze_lift())
 	_sky_material.set_shader_parameter("storm_slab_top", weather_storm_slab_top_m + _haze_lift())
 	_sky_material.set_shader_parameter("storm_slab_ms", weather_storm_slab_ms)
+	# Never over the eye: a ray from under that sphere would see no ground at all.
+	_sky_material.set_shader_parameter("ground_stop_m", minf(weather_ground_floor_m, altitude_above_sphere() - 50.0))
 	_sky_material.set_shader_parameter("star_angular_diameter", profile.star_angular_diameter)
 	_sky_material.set_shader_parameter("star_limb_softness", star_limb_softness)
 	_sky_material.set_shader_parameter("star_brightness", star_brightness)
+
+
+## The veil's multiple scattering for the sky dome (atmosphere_common mie_ms): each sample of the slab
+## glows as a Lambertian emitter, 1 / pi, with the diffuse light the shader works out over it (the
+## two-stream estimate, the same DustLight makes for the dust). 0 without a slab (a thin exponential
+## haze bounces nothing worth the cost).
+func _veil_multiple_scattering(profile: AtmosphereProfile) -> float:
+	return 1.0 / PI if profile.haze_top > profile.haze_bottom else 0.0
+
+
+## The profile's veil over the eye as a vertical optical depth (0 without a slab, or over it): what dims
+## the star's beam before any storm does, and what the dust's light is worked out from (DustLight).
+func veil_tau_above() -> float:
+	var profile := current_profile()
+	if profile == null or profile.haze_top <= profile.haze_bottom:
+		return 0.0
+	var beta: float = profile.mie_beta.length() / sqrt(3.0) * weather_haze_scale
+	var bottom: float = _weather_haze_bottom(profile)
+	var h: float = altitude_above_sphere() - _haze_lift()
+	return beta * clampf(profile.haze_top - h, 0.0, profile.haze_top - bottom)
 
 
 ## Open space, or an airless body: zero the coefficients so scatter() returns nothing and its

@@ -216,6 +216,17 @@ static func offset(dir: Vector3, radius: float, zones: Array, ridges: Array,
 	var ll := Vector2.ZERO
 	for zv in zones:
 		var z: Zone = zv
+		# Defence in depth: reading a property off a null entry RAISES, and a raised error abandons
+		# the rest of this function — so one malformed feature would cost the whole chunk its
+		# relief, silently, and the planet would come out flat.
+		#
+		# Seen for real, though not for the reason it looked like: after a pull, the C# assembly
+		# had not been rebuilt, MountainSet could not be instantiated, and every chunk fell back to
+		# this GDScript path with lists it was not given properly — 8832 errors on `full`, then 200
+		# on `width_m` below. `dotnet build` was the actual fix. These guards stay because skipping
+		# one feature is a better failure than losing a chunk.
+		if z == null:
+			continue
 		var env := 1.0
 		if not z.full:
 			if not have_ll:
@@ -232,6 +243,8 @@ static func offset(dir: Vector3, radius: float, zones: Array, ridges: Array,
 		total += env * h
 	for rv in ridges:
 		var rd: Ridge = rv
+		if rd == null:
+			continue  # same as the zones above: the list can hold non-Ridge entries
 		if eff_spacing_m >= rd.width_m:
 			continue
 		if not have_ll:

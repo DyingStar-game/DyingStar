@@ -17,6 +17,11 @@
 // Planet centre, in camera-relative coordinates. The camera itself is at vec3(0).
 uniform vec3 planet_center = vec3(0.0);
 uniform float planet_radius = 0.0;
+// Where a view ray going down stops on the solid ground, in metres over planet_radius: the sky dome
+// sets the ground around the eye (DustVolume, the storm grid's low ground). Where no terrain is drawn
+// (past its range) the dome is what shows below the horizon, and stopped on the reference sphere its
+// rays crossed the whole corundum veil under a ground 5 km up: a white band all around the horizon.
+uniform float ground_stop_m = 0.0;
 uniform float atmosphere_top = 0.0;
 
 uniform vec3 rayleigh_beta = vec3(0.0);
@@ -27,38 +32,18 @@ uniform float mie_g = 0.0;
 // 1.0 = the haze only redistributes light, it cannot darken. Corundum (Al2O3) has k ~ 0 in the
 // visible, so Sandbox's veil sits exactly at 1.0; a value below it means a genuinely absorbing dust.
 uniform float mie_albedo = 1.0;
+// The haze's MULTIPLE scattering: each sample of it glows with the diffuse light the column over it
+// lets through (two-stream, 1 / (1 + 3/4 (1 - g) tau), see mie_depth_above), as a Lambertian emitter
+// (1 / pi, AtmosphereRenderer). Single scattering alone, with corundum's forward lobe, left the valleys
+// under the cloud sea in the dark at eight in the morning (2026-10-08): the sea lets ~70 % of the light
+// through, nearly all of it diffuse, and the dome is what lights the world. 0 = none.
+uniform float mie_ms = 0.0;
 // haze_top > 0 selects a well-mixed SLAB between haze_bottom and haze_top; 0 a plain exponential.
 uniform float haze_top = 0.0;
 uniform float haze_bottom = 0.0;
 uniform float haze_falloff = 1.0;
 uniform float mie_scale_height = 1200.0;
 
-// A second, thin slab of dust BLOWN off the ground by the wind, between blow_bottom and blow_top
-// (altitudes over the reference sphere, laid around the observer's own ground by WeatherSky): the
-// haze of a blow on the plains, what whitens the far side of a field in a 10 m/s wind. Its own
-// coefficients, not the veil's: grains far larger than the wavelength extinguish GREY (blow_beta, 1/m,
-// the same in every channel, so what stands behind the haze dims without changing hue), and the dust
-// itself is coloured by what it absorbs (blow_albedo, the ground's own colour: the light it scatters
-// toward the eye is ochre where the ground is). Zero = none. Not in the transmittance table (its
-// vertical depth is a few hundredths): it dims the horizon, never the sun.
-uniform vec3 blow_beta = vec3(0.0);
-uniform vec3 blow_albedo = vec3(1.0);
-uniform float blow_bottom = 0.0;
-uniform float blow_top = 0.0;
-uniform float blow_falloff = 10.0;
-// How far from the eye (m) the blown slab reaches: full to half of it, gone at it. The blow is the
-// wind's lift HERE (WeatherSky reads it at the observer), not a shell around the planet: unbounded,
-// seen from altitude it closed the horizon with a dark band, and it blinked every half second as its
-// height was laid again under a fast camera (2026-10-08).
-uniform float blow_reach = 3000.0;
-// The lifted sand thins with height: full at the ground (blow_bottom + blow_ground_offset), divided by
-// e every blow_scale metres above it (blown dust concentration falls roughly exponentially). A slab
-// with a hard top drew a sharp band at the horizon to an eye inside it.
-uniform float blow_ground_offset = 30.0;
-uniform float blow_scale = 12.0;
-// The blown sand lit by the whole sky as well as by the sun, as an isotropic phase added to the single
-// one: with the sand's forward phase alone the band read black away from the sun.
-uniform float blow_ms = 0.12;
 // The storm the observer stands in, for the SKY DOME only (AtmosphereRenderer pushes it to the sky
 // material alone; the aerial pass draws storms as a volume): a local grey slab of the storm's own
 // extinction (storm_slab_beta, 1/m) and colour from storm_slab_bottom to storm_slab_top (m over the
@@ -166,16 +151,14 @@ float mie_density(float altitude) {
 }
 
 
-// The blown sand's profile, 0..1: from blow_bottom (under the ground, for the relief's dips), full at
-// the ground and thinning exponentially above it, cut off softly at blow_top.
-float blow_profile(float altitude) {
-	if (blow_top <= blow_bottom) {
-		return 0.0;
+// The haze's vertical optical depth over [param altitude] (the channels' mean): the slab left above
+// it, or the exponential's tail.
+float mie_depth_above(float altitude) {
+	float beta = (mie_beta.r + mie_beta.g + mie_beta.b) / 3.0;
+	if (haze_top > 0.0) {
+		return beta * clamp(haze_top - altitude, 0.0, haze_top - haze_bottom);
 	}
-	float ground = blow_bottom + blow_ground_offset;
-	return smoothstep(blow_bottom - blow_falloff, blow_bottom + blow_falloff, altitude)
-			* exp(-max(altitude - ground, 0.0) / max(blow_scale, 1.0))
-			* (1.0 - smoothstep(blow_top - blow_falloff, blow_top + blow_falloff, altitude));
+	return beta * mie_scale_height * exp(-altitude / mie_scale_height);
 }
 
 
@@ -189,7 +172,6 @@ float absorption_density(float altitude) {
 vec3 atmo_extinction(float altitude) {
 	return rayleigh_beta * rayleigh_density(altitude)
 		+ mie_beta * mie_density(altitude)
-		+ blow_beta * blow_profile(altitude)
 		+ absorption_beta * absorption_density(altitude);
 }
 
@@ -295,7 +277,7 @@ vec3 scatter(
 	float t_enter = max(shell.x, 0.0);
 	float t_exit = min(shell.y, max_distance);
 	// The solid planet stops the view ray before the far side of the shell does.
-	vec2 ground = ray_sphere(origin, dir, planet_radius);
+	vec2 ground = ray_sphere(origin, dir, planet_radius + ground_stop_m);
 	if (ground.x > 0.0) {
 		t_exit = min(t_exit, ground.x);
 	}
@@ -329,7 +311,7 @@ vec3 scatter(
 	vec3 depth_view = vec3(0.0);
 	vec3 sum_rayleigh = vec3(0.0);
 	vec3 sum_mie = vec3(0.0);
-	vec3 sum_blow = vec3(0.0);
+	vec3 sum_mie_ms = vec3(0.0);
 	vec3 sum_storm = vec3(0.0);
 
 	for (int i = 0; i < steps_view; i++) {
@@ -353,13 +335,12 @@ vec3 scatter(
 		float h = atmo_altitude(p);
 		float density_r = rayleigh_density(h);
 		float density_m = mie_density(h);
-		float density_b = blow_profile(h) * (1.0 - smoothstep(blow_reach * 0.5, blow_reach, t));
 		float density_s = (storm_slab_top > storm_slab_bottom)
 				? smoothstep(storm_slab_bottom - 50.0, storm_slab_bottom + 50.0, h)
 					* (1.0 - smoothstep(storm_slab_top - 150.0, storm_slab_top + 150.0, h))
 					* (1.0 - smoothstep(storm_slab_reach * 0.5, storm_slab_reach, t))
 				: 0.0;
-		depth_view += (atmo_extinction(h) + blow_beta * (density_b - blow_profile(h)) + storm_slab_beta * density_s)
+		depth_view += (atmo_extinction(h) + storm_slab_beta * density_s)
 				* step_width;
 
 		// Is this sample in the planet's own shadow? A star ray that enters the ground never gets
@@ -368,13 +349,14 @@ vec3 scatter(
 		if (ray_sphere(p, to_star, planet_radius).x > 0.0) {
 			continue;
 		}
+		vec3 view_t = exp(-depth_view);
 		vec3 transmittance;
 		if (use_transmittance_lut) {
 			// Below the reference sphere (a valley) the air is as dense as at its floor: read the floor.
 			vec3 from_centre = p - planet_center;
 			float r = clamp(length(from_centre), planet_radius, planet_radius + atmosphere_top);
 			float mu = dot(from_centre, to_star) / max(length(from_centre), 1.0);
-			transmittance = exp(-depth_view) * texture(transmittance_lut, transmittance_lut_uv(r, mu)).rgb;
+			transmittance = view_t * texture(transmittance_lut, transmittance_lut_uv(r, mu)).rgb;
 		} else {
 			float to_top = ray_sphere(p, to_star, planet_radius + atmosphere_top).y;
 			vec3 depth_light = optical_depth(p, to_star, to_top, steps_light);
@@ -382,15 +364,21 @@ vec3 scatter(
 		}
 		sum_rayleigh += density_r * transmittance * step_width;
 		sum_mie += density_m * transmittance * step_width;
-		sum_blow += density_b * transmittance * step_width;
+		if (mie_ms > 0.0 && density_m > 0.0) {
+			// What bounced its way down to this sample: the diffuse light through the column over it,
+			// under the star's height there; seen through the air to the eye, not through its own direct
+			// beam (that one is 1 % at the bottom of the sea, the diffuse light 70 %).
+			float mu0 = max(dot(normalize(p - planet_center), to_star), 0.0);
+			float through = 1.0 / (1.0 + 0.75 * (1.0 - mie_g) * mie_depth_above(h));
+			sum_mie_ms += density_m * view_t * through * mu0 * step_width;
+		}
 		sum_storm += density_s * transmittance * step_width;
 	}
 
 	view_transmittance = exp(-depth_view);
 	return star_irradiance * star_color * (
 		rayleigh_beta * phase_r * sum_rayleigh
-		+ mie_beta * mie_albedo * phase_m * sum_mie
-		+ blow_beta * blow_albedo * (phase_m + blow_ms) * sum_blow
+		+ mie_beta * mie_albedo * (phase_m * sum_mie + mie_ms * sum_mie_ms)
 		+ storm_slab_beta * storm_slab_albedo * (phase_m + storm_slab_ms) * sum_storm
 	) * sky_exposure;
 }

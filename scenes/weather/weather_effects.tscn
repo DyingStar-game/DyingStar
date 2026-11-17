@@ -33,22 +33,9 @@ upwind_m = 12.0
 height_m = 2.5
 grains = 2
 
-[sub_resource type="Resource" id="Pop_veils"]
-script = ExtResource("6_pop")
-rate_full = 0.0
-size_m = 9.0
-opacity = 0.12
-stretch_per_ms = 0.12
-lifetime_s = 3.5
-upwind_m = 7.2
-spread_m = 24.0
-height_m = 1.2
-speed_share = 0.9
-patch_m = 1.5
-
 [sub_resource type="Resource" id="Pop_streaks"]
 script = ExtResource("6_pop")
-rate_full = 80.0
+rate_full = 0.0
 size_m = 0.35
 stretch_per_ms = 0.08
 lifetime_s = 0.8
@@ -84,6 +71,5 @@ layers = Array[ExtResource("3_layer")]([SubResource("Resource_wind"), SubResourc
 [node name="Dust" type="Node" parent="." unique_id=1622723016]
 script = ExtResource("5_dust")
 clouds = SubResource("Pop_clouds")
-veils = SubResource("Pop_veils")
 streaks = SubResource("Pop_streaks")
 wisps = SubResource("Pop_wisps")

@@ -1,6 +1,6 @@
 class_name DustPopulation
 extends Resource
-## One population of the weather's dust (WeatherDust: the clouds past the visor, the low veils, the
+## One population of the weather's dust (WeatherDust: the clouds past the visor, the
 ## saltation streaks, the wisps): how many a second at full strength, how big, how faint, how they
 ## stream, where around the camera they are born and how they move. Tuned in the weather effects scene
 ## (res://scenes/weather/weather_effects.tscn) and read live by StormDust, so a change in the Inspector

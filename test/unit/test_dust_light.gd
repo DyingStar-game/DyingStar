@@ -39,3 +39,13 @@ func test_the_slabs_are_laid_at_once_then_glide() -> void:
 	slabs.glide(renderer, 0.25)
 	assert_almost_eq(renderer.weather_storm_slab_top_m, 8000.0 + 1000.0 * (1.0 - exp(-1.0)), 0.01, "they glide")
 	renderer.free()
+
+
+
+func test_the_free_beam_crosses_the_air_but_no_dust() -> void:
+	var noon: Vector3 = DustLight.free_beam(Color(1.0, 0.95, 0.9), 2.0, Color.WHITE)
+	assert_almost_eq(noon.x, 2.0, 1e-9, "clear air at noon: the star at the engine's energy")
+	var dawn: Vector3 = DustLight.free_beam(Color.WHITE, 2.0, Color(0.4, 0.15, 0.05))
+	assert_gt(dawn.x, dawn.z * 4.0, "at sunrise the beam is orange and faint, not white")
+	var night: Vector3 = DustLight.free_beam(Color.WHITE, 2.0, Color.BLACK)
+	assert_eq(night, Vector3.ZERO, "the star under the horizon lights no dust")

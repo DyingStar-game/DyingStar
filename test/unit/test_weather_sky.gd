@@ -72,4 +72,12 @@ func test_the_blown_slab_follows_the_lift_and_takes_the_grounds_colour() -> void
 	assert_almost_eq(ochre.x, WeatherSky.BLOW_ALBEDO_MAX, 1e-9, "the brightest channel at the cap")
 	assert_almost_eq(ochre.y / ochre.x, 0.75, 1e-6, "the ground's own hue kept (Color is float32)")
 	assert_almost_eq(ochre.z / ochre.x, 0.5, 1e-6)
-	assert_eq(WeatherSky.blow_albedo_of(Color.BLACK), WeatherSky.blow_albedo_of(WeatherSky.BLOW_FALLBACK_COLOUR), "no colour: the plains' ochre")
+	assert_eq(WeatherSky.blow_albedo_of(Color.BLACK), WeatherSky.blow_albedo_of(WeatherSky.BLOW_FALLBACK_COLOUR),
+			"no colour: the plains' ochre")
+
+
+func test_the_near_layer_is_for_an_eye_near_the_ground() -> void:
+	assert_eq(WeatherSky.near_layer_share(-400.0), 0.0, "under the terrain (god mode): none")
+	assert_eq(WeatherSky.near_layer_share(1.7), 1.0, "standing: all of it")
+	assert_eq(WeatherSky.near_layer_share(WeatherSky.NEAR_LAYER_FULL_M), 1.0, "low flight: all of it")
+	assert_eq(WeatherSky.near_layer_share(WeatherSky.NEAR_LAYER_GONE_M), 0.0, "high in EVA: none")

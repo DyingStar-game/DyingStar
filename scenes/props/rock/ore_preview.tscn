@@ -1,0 +1,40 @@
+[gd_scene format=3 uid="uid://bj58mhkpbgk13"]
+
+[ext_resource type="Script" uid="uid://cvhtsnytpb1vv" path="res://scenes/props/rock/ore_preview.gd" id="1_ore"]
+[ext_resource type="Material" uid="uid://ciygceyikv12a" path="res://assets/_universe/_shared/materials/minerals/gold/gold_material.tres" id="2_0wy1l"]
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("Sky_mat")
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+reflected_light_source = 2
+
+[node name="OrePreview" type="Node3D" unique_id=1490216911]
+script = ExtResource("1_ore")
+ore_color = Color(0.9207721, 0.5759338, 1.1551381e-06, 1)
+ore_ext_threshold = 0.674
+groove_width = 0.02
+groove_darkness = 0.307
+groove_strength = 0.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1357147721]
+environment = SubResource("Env")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=649776115]
+transform = Transform3D(1, 0, 0, 0, 0.7071067811865476, -0.7071067811865476, 0, 0.7071067811865476, 0.7071067811865476, 0, -2.7271621189251167, 3.4757690641567347)
+shadow_enabled = true
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=458218177]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 2.2)
+
+[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=784588764]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9780113236606842, 0, 1.3724059111353755)
+material_override = ExtResource("2_0wy1l")
+
+[node name="OmniLight3D" type="OmniLight3D" parent="." unique_id=1460236665]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5717437022367569, 0.5237895105634702, -0.8196873247551653)

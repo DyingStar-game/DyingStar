@@ -294,7 +294,7 @@ static func weather_lines(sample: Dictionary) -> PackedStringArray:
 static func _add_effects(sample: Dictionary, planet: Planet, body: Node3D) -> void:
 	var profile : ClimateProfile = planet.climate_profile()
 	var speed : float = float(sample.get("wind_speed_m_s", 0.0))
-	var lift : float = StormDust.saltation_rate(speed, profile.v10_threshold_m_s if profile != null else 0.0)
+	var lift : float = StormDust.ground_lift(speed, profile.v10_threshold_m_s if profile != null else 0.0)
 	var shelter : float = float((sample.get("shelter", {}) as Dictionary).get("shelter", 0.0))
 	var ext : float = (WeatherSky.blow_extinction(lift) + float(sample.get("dust_tau", 0.0)) / WeatherSampler.DUST_LAYER_M) \
 			* WeatherSky.DUST_LAYER_STRENGTH * (1.0 - 0.9 * shelter)

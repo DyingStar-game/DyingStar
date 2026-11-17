@@ -8,7 +8,7 @@
 [ext_resource type="AudioStream" uid="uid://dc3vhkdoy0k5j" path="res://assets/_universe/audio/sfx/props/crate-pick-up.mp3" id="sfx_pick"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_engine"]
-size = Vector3(0.4, 0.3, 0.6)
+size = Vector3(0.3, 0.4, 0.6)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_engine"]
 albedo_color = Color(0.22, 0.24, 0.27, 1)
@@ -16,7 +16,7 @@ metallic = 0.8
 roughness = 0.45
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_engine"]
-size = Vector3(0.4, 0.3, 0.6)
+size = Vector3(0.3, 0.4, 0.6)
 
 [node name="EngineT1" type="RigidBody3D" unique_id=926427760]
 collision_layer = 8
@@ -51,13 +51,13 @@ monitoring = false
 shape = SubResource("BoxShape3D_engine")
 
 [node name="IdFrameTop" type="Label3D" parent="." unique_id=1965806543 groups=["prop_id_label"]]
-transform = Transform3D(1.3669316428620764e-17, 0.3282112443506985, 1.110223e-16, 0, -4.163336342344336e-17, 1.0000000000000002, 0.22324425128049644, -2.009647876139071e-17, -6.797931e-33, 0.1349999999947613, 0.15099999999802094, 0)
+transform = Transform3D(1.3669316428620764e-17, 0.3282112443506985, 1.110223e-16, 0, -4.163336342344336e-17, 1.0000000000000002, 0.22324425128049644, -2.009647876139071e-17, -6.797931e-33, 0.10125, 0.201, 0)
 text = "ARES-ENG-XXXXXXXX"
 
 [node name="IdFrameLeft" type="Label3D" parent="." unique_id=341997329 groups=["prop_id_label"]]
-transform = Transform3D(1.3669316428620758e-17, 0, -1, 0, 0.3282112443506984, 0, 0.2232442512804964, 0, 6.123032e-17, -0.20014930447905763, 0.08706938597529035, 0)
+transform = Transform3D(1.3669316428620758e-17, 0, -1, 0, 0.3282112443506984, 0, 0.2232442512804964, 0, 6.123032e-17, -0.1501, 0.1161, 0)
 text = "ARES-ENG-XXXXXXXX"
 
 [node name="IdFrameRight" type="Label3D" parent="." unique_id=341997330 groups=["prop_id_label"]]
-transform = Transform3D(0, 0, 1, 0, 0.3282112443506984, 0, -0.2232442512804964, 0, 0, 0.20014930447905763, 0.08706938597529035, 0)
+transform = Transform3D(0, 0, 1, 0, 0.3282112443506984, 0, -0.2232442512804964, 0, 0, 0.1501, 0.1161, 0)
 text = "ARES-ENG-XXXXXXXX"

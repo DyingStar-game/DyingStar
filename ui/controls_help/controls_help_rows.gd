@@ -37,6 +37,7 @@ const SECTIONS : Array = [
 	["%%KM_GROUP_GENERAL", [
 		{"label": "%%ACT_PAUSE", "actions": [&"pause"]},
 		{"label": "%%ACT_STAR_MAP", "actions": [&"star_map"]},
+		{"label": "%%ACT_SERVICES", "actions": [&"toggle_services"]},
 		{"label": "%%ACT_SCREENSHOT", "actions": [&"screenshot"]},
 		{"label": "%%ACT_GAME_RECORD", "actions": [&"game_record"]},
 	]],

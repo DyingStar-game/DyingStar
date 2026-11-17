@@ -248,18 +248,20 @@ func setup() -> void:
 	_star_map.setup(player)  # so the chart can mark where you are
 	_help = ControlsHelp.new()
 	player.add_child(_help)
-	# Services terminal (F3): social / mission / economie, opened as a full-screen modal like the chart.
+	# Services terminal (F3): social / mission / economie, a full-screen modal. Its NAVIGATION tab hosts
+	# the chart's face: the tablet shows the tab and asks, the chart opens there (F2 opens that tab);
+	# the tab left, the chart closes. The tablet never reaches for the chart on its own.
 	_services = TerminalUI.new()
 	player.get_node("UserInterface").add_child(_services)
-	# Its NAVIGATION tab hands the screen over to the chart, the way F2 would: the tablet closes
-	# itself and asks, it never reaches for the chart on its own.
+	_star_map.host_in(_services.navigation_slot())
 	_services.navigation_requested.connect(_open_navigation)
+	_services.navigation_closed.connect(_close_navigation)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
 	var can_take_pointer := func() -> bool: return not _input_locked()
 	var graphics : OverlayPanel = GraphicsOverlay.in_game()
-	for panel: OverlayPanel in [graphics, DevOverlay.create(player,
+	for panel: OverlayPanel in [graphics, WeatherPanel.create(), DevOverlay.create(player,
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
 			_driven_vehicle, _star_map)]:
 		player.get_node("UserInterface").add_child(panel.setup(can_take_pointer, _menu_open))
@@ -762,7 +764,9 @@ func _in_god_mode() -> bool:
 	return _god_mode and player.floating
 
 
-## The god mode speed, top centre of the HUD, built once and shown only in flight.
+## The god mode speed, top centre of the HUD, built once and shown only in flight. Our own body is
+## hidden meanwhile: flying is looking, and arms and a torch in front of the lens only get in the way.
+## On this client only — the others see the avatar as before.
 func _build_god_mode_label() -> void:
 	_god_mode_label = Label.new()
 	_god_mode_label.name = "GodModeSpeed"
@@ -780,7 +784,10 @@ func _build_god_mode_label() -> void:
 func _update_god_mode_label() -> void:
 	if _god_mode_label == null:
 		return
-	_god_mode_label.visible = _in_god_mode()
+	var flying := _in_god_mode()
+	if player.puppet.visible == flying:
+		player.puppet.visible = not flying
+	_god_mode_label.visible = flying
 	if _god_mode_label.visible:
 		_god_mode_label.text = (tr("%%HUD_GOD_MODE_SPEED") % GOD_MODE.speed_text(_god_mode_speed)
 				+ "\n" + _prompt(&"god_mode_land", tr("%%HUD_GOD_MODE_LAND")))
@@ -878,20 +885,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.get_node("UserInterface").toggle_speaker()
 	if InputCombo.pressed(event, "toggle_microphone"):
 		player.get_node("UserInterface").toggle_microphone()
-	if InputCombo.pressed(event, "star_map") and _star_map != null:
+	if InputCombo.pressed(event, "star_map") and _star_map != null and _services != null:
 		if _star_map.is_open():
-			_star_map.close()
+			_services.close()  # the tablet goes, its NAVIGATION tab with it, the chart with the tab
 		elif event is InputEventJoypadButton:
 			# On the pad the press is only noted: let go soon, it opens the chart; held, the help shows.
 			_map_pad_down = true
 			_map_pad_held_s = 0.0
 		else:
-			_star_map.open()
+			_services.open_navigation()
 		return
 	if _map_pad_down and event is InputEventJoypadButton and event.is_action_released(&"star_map"):
 		_map_pad_down = false  # let go before HELP_HOLD_S (past it, _update_controls_help took the press)
-		if _star_map != null:
-			_star_map.open()
+		if _services != null:
+			_services.open_navigation()
 		return
 	if InputCombo.pressed(event, "controls_help"):
 		_open_controls_help(InputDevice.Kind.KEYBOARD_MOUSE)
@@ -900,10 +907,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _services.is_open():
 			_services.close()
 		else:
-			# One full-screen modal at a time: the chart yields the screen to the tablet, as the
-			# tablet yields it to the chart (see _open_navigation).
-			if _star_map != null and _star_map.is_open():
-				_star_map.close()
 			_services.open()
 		return
 	if _star_map_open() or _services_open(): return
@@ -1320,6 +1323,11 @@ func _handle_dev_toggles(event: InputEvent) -> void:
 			player.add_child(isolate)
 		print("[WeatherIsolate] %s" % isolate.next())
 
+	# A switch per layer of the weather and atmosphere shaders, the mouse with AltGr (WeatherPanel).
+	if (InputCombo.pressed(event, "debug_weather_panel")
+			and Globals.is_dev_tool_enabled("debug_weather_panel")):
+		WeatherPanel.open = not WeatherPanel.open
+
 	# Debug panels on the HUD, persisted so the settings menu stays in sync with the key; the panel
 	# follows the setting's signal (DevOverlay).
 	if InputCombo.pressed(event, "toggle_debug"):
@@ -1457,7 +1465,7 @@ func _offer_play_hints() -> void:
 	PlayHints.provide(self, &"on_foot", [
 		PlayHints.row(move, "%%HELP_MOVE"), PlayHints.row(&"jump"), PlayHints.row(&"sprint"),
 		PlayHints.row(&"crouch"), PlayHints.row(&"toggle_flashlight"), PlayHints.row(&"star_map"),
-		PlayHints.row(&"controls_help"),
+		PlayHints.row(&"toggle_services"), PlayHints.row(&"controls_help"),
 		PlayHints.row(&"prone", "", 1),
 		PlayHints.row([&"walk_speed_up", &"walk_speed_down"], "%%HINT_WALK_PACE", 1),
 		PlayHints.row(&"emote_wheel", "", 1), PlayHints.row(&"write_in_chat", "", 1),
@@ -1499,11 +1507,15 @@ func _services_open() -> bool:
 
 ## The tablet's NAVIGATION tab: it closes itself and asks for the chart, which is exactly what F2
 ## does — one full-screen modal hands over to the other, they never stand side by side.
+## The tablet shows its NAVIGATION tab: the chart, hosted there, opens; the tab left, it closes.
 func _open_navigation() -> void:
-	if _services != null:
-		_services.close()
 	if _star_map != null and not _star_map.is_open():
 		_star_map.open()
+
+
+func _close_navigation() -> void:
+	if _star_map != null and _star_map.is_open():
+		_star_map.close()
 
 
 ## The mouse/camera is taken over: input is locked (menu/wheel), a 3D screen holds the pointer, OR

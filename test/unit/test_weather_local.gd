@@ -77,3 +77,19 @@ func test_apply_keeps_the_regional_wind_beside_the_local_one() -> void:
 	assert_almost_eq(capped["wind_speed_m_s"], 20.0, 1e-9, "the body's ceiling holds")
 	var plain : Dictionary = WeatherLocal.apply(sample, {}, 1.0, 45.0)
 	assert_almost_eq(plain["wind_east_m_s"], 10.0, 1e-9, "no canyon, no gust: the regional wind")
+
+
+func test_the_wind_grows_with_height_over_ten_metres_then_holds() -> void:
+	assert_eq(WeatherLocal.height_factor(0.0), 1.0, "on the ground: the 10 m wind, nothing changes there")
+	assert_eq(WeatherLocal.height_factor(10.0), 1.0, "at the reference height")
+	assert_almost_eq(WeatherLocal.height_factor(100.0), pow(10.0, WeatherLocal.WIND_SHEAR_EXP), 1e-9,
+			"100 m: the power law, ~1.38")
+	assert_almost_eq(WeatherLocal.height_factor(1000.0), pow(100.0, WeatherLocal.WIND_SHEAR_EXP), 1e-9,
+			"the top of the boundary layer: ~1.9")
+	assert_eq(WeatherLocal.height_factor(4000.0), WeatherLocal.height_factor(1000.0), "above it: the gradient wind holds")
+	var sample := {"wind_east_m_s": 3.0, "wind_north_m_s": 4.0, "wind_speed_m_s": 5.0}
+	var high: Dictionary = WeatherLocal.apply(sample, {}, 1.0, 60.0, 1000.0)
+	assert_almost_eq(float(high["wind_speed_m_s"]), 5.0 * WeatherLocal.height_factor(1000.0), 1e-9, "the local wind sheared")
+	assert_almost_eq(float(high["wind_mean_speed_m_s"]), 5.0, 1e-9, "the regional wind kept as read")
+	var capped: Dictionary = WeatherLocal.apply(sample, {}, 1.0, 6.0, 1000.0)
+	assert_almost_eq(float(capped["wind_speed_m_s"]), 6.0, 1e-9, "the body's ceiling still holds")

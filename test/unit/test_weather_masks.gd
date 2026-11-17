@@ -36,6 +36,23 @@ func test_small_or_flat_props_are_not_masked() -> void:
 	assert_eq(slab.get_meta(WeatherMasks.META), AABB(), "a slab: too flat")
 
 
+func test_a_whole_set_is_not_a_building() -> void:
+	var set_root : Node3D = _building(Vector3(10.0, 4.0, 6.0), Vector3.ZERO)
+	var far := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(4.0, 4.0, 4.0)
+	cs.shape = shape
+	cs.position = Vector3(5000.0, 0.0, 0.0)  # a piece of the set far away, or not placed yet
+	far.add_child(cs)
+	set_root.add_child(far)
+	WeatherMasks._box(set_root)
+	assert_eq(set_root.get_meta(WeatherMasks.META), AABB(), "kilometres wide: never masked")
+	var depot : Node3D = _building(Vector3(20.0, 12.0, 95.0), Vector3(0.0, 6.0, 0.0))
+	WeatherMasks._box(depot)
+	assert_ne(depot.get_meta(WeatherMasks.META), AABB(), "the cargo depot still is")
+
+
 func test_the_dust_layers_box_maps_the_building_to_the_unit_cube() -> void:
 	var root : Node3D = _building(Vector3(10.0, 4.0, 6.0), Vector3(0.0, 2.0, 0.0))
 	root.position = Vector3(100.0, 0.0, 50.0)

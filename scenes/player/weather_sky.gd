@@ -29,6 +29,17 @@ const BLOW_ALBEDO_MAX: float = 0.92
 ## The dust layer near the eye against the model's extinction (1 = the model's visibility at the
 ## ground), and the period (m) its noise offset is wrapped at.
 const DUST_LAYER_STRENGTH: float = 1.0
+## The near layer belongs to an eye on or near the ground: none under it (god mode through the
+## terrain drew the whole screen dust-grey), whole from the ground up, gone past NEAR_LAYER_GONE_M
+## over it (a wrong ground under a fast flight laid it round the eye in EVA).
+const NEAR_LAYER_FULL_M: float = 80.0
+## The near layer's e-folding height over the ground (m) and how far it is marched (m). It was 6 m over
+## 300 m: lit like the ground and of its colour, a 6 m sheet of dust read as nothing at all, even at a
+## 2.9 km visibility (lab, 2026-10-09: 2/765 between on and off). 25 m thick and 1 km long, it veils the
+## far relief and the horizon the way a blowing day does. Within the ground grid (DustGround.half_m).
+const NEAR_LAYER_HEIGHT_M: float = 25.0
+const NEAR_LAYER_RANGE_M: float = 1000.0
+const NEAR_LAYER_GONE_M: float = 300.0
 const DUST_WRAP_M: float = 100000.0
 ## The fine gusts travel this much faster than the air (the coarse ones ride it).
 const FINE_GUST_SPEED: float = 1.37
@@ -55,6 +66,8 @@ var _wind_dir: Vector3 = Vector3.ZERO
 var _anchor: Vector3 = Vector3.ZERO
 var _anchor_set: bool = false
 var _noise: NoiseTexture3D = null
+## The cellular (Worley) noise the billows' puffs are made of, shared like _noise.
+var _worley: NoiseTexture3D = null
 ## The real ground around the camera the layer lies on (DustGround), and the planet it was laid on.
 var _ground: DustGround = DustGround.new()
 var _ground_planet: int = 0
@@ -74,6 +87,7 @@ var _probe_on: bool = ClientConfig.get_bool("debug_dust_probe", false)
 var _probe_last: Dictionary = {}
 var _probe_light_last: Array = []
 var _probe_summary_at: int = 0
+var _probe_boxes: String = ""  # the masked buildings in reach (WeatherMasks.describe), for the probe
 var _refills: int = 0
 
 
@@ -106,12 +120,12 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	# The dust the wind lifts off this ground: the near layer's (the sky's slab of it is gone: drawn as
 	# a shell round the eye, it closed the horizon with a band; the near layer and the volume carry it).
 	var climate: ClimateProfile = planet.climate_profile()
-	var lifted: float = StormDust.saltation_rate(float(sample.get("wind_speed_m_s", 0.0)),
+	var lifted: float = StormDust.ground_lift(float(sample.get("wind_speed_m_s", 0.0)),
 			climate.v10_threshold_m_s if climate != null else 0.0)
 	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
 	var ground_colour: Color = GroundLook.at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR).color \
 			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
-	renderer.weather_blow_albedo = blow_albedo_of(ground_colour)
+	renderer.weather_dust_albedo = blow_albedo_of(ground_colour)
 	# The wind's dust layer near the eye: the same extinction as the slab (the lift), plus the storm's
 	# when no storm volume carries it.
 	_dust_density = (blow_extinction(lifted) + (0.0 if storm_volume else tau_here / WeatherSampler.DUST_LAYER_M)) \
@@ -134,9 +148,10 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 		_sheltered_start = true
 	var start: float = ShelterProbe.REACH_M if _sheltered_start else 0.0
 	renderer.set_dust_param(&"dust_start", start)
+	renderer.set_dust_param(&"dust_height", NEAR_LAYER_HEIGHT_M)
+	renderer.set_dust_param(&"dust_range", NEAR_LAYER_RANGE_M)
 	_probe_start = start
-	renderer.set_dust_param(&"dust_density", _dust_density)
-	renderer.set_dust_param(&"dust_albedo", renderer.weather_blow_albedo)
+	renderer.set_dust_param(&"dust_albedo", renderer.weather_dust_albedo)
 	# The storm the observer stands in, for the sky dome (its diffuse light): the sampler's τ here over
 	# DUST_LAYER_M from the ground, the ground's colour; gone once the eye rises out of the column (the
 	# volume shows it from outside).
@@ -146,13 +161,13 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	_slabs.storm_bottom = _volume.ground_elev_m - BLOW_BELOW_M
 	_slabs.storm_top = _volume.lid_top_elev_m if _volume.lid_known \
 			else _volume.ground_elev_m + WeatherSampler.DUST_LAYER_M
-	renderer.weather_storm_slab_albedo = renderer.weather_blow_albedo
+	renderer.weather_storm_slab_albedo = renderer.weather_dust_albedo
 	_slabs.settle(renderer)
 	return knobs
 
 
-## Every frame: glide the sky dome's two dust slabs toward the last reading's targets.
-func smooth_blow(renderer: AtmosphereRenderer, delta: float) -> void:
+## Every frame: glide the sky dome's storm slab toward the last reading's targets.
+func glide_slabs(renderer: AtmosphereRenderer, delta: float) -> void:
 	_slabs.glide(renderer, delta)
 
 
@@ -207,6 +222,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	renderer.set_dust_param(&"dust_offset_fine", wrap_to_period(cam_q + _scroll_fine, period_f))
 	renderer.set_dust_param(&"dust_up", up)
 	renderer.set_dust_param(&"dust_cam_height", height)
+	renderer.set_dust_param(&"dust_density", _dust_density * near_layer_share(height))
 	var masks: Array[Projection] = renderer.weather_masks.masks_for(camera.global_position) \
 			if renderer.weather_masks != null and not WeatherBench.no_masks else ([] as Array[Projection])
 	renderer.set_dust_param(&"dust_mask_count", masks.size())
@@ -215,6 +231,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	if _probe_on:
 		_probe_light(renderer)
 	if _probe_on:
+		_probe_boxes = renderer.weather_masks.describe(camera.global_position) if renderer.weather_masks != null else ""
 		_probe(_scroll, wind_planet, masks.size(), height, delta)
 	DustLight.push(renderer, up, _tau_above)
 
@@ -231,6 +248,9 @@ func _ensure_noise(renderer: AtmosphereRenderer) -> void:
 	if _noise == null:
 		_noise = _make_noise()
 		renderer.set_dust_param(&"dust_noise", _noise)
+	if _worley == null:
+		_worley = _make_worley()
+		renderer.set_dust_param(&"dust_worley", _worley)
 
 
 ## Keep the ground grid around [param ground_point] (planet-local, the ground under the camera) and
@@ -257,11 +277,11 @@ func _lay_ground(renderer: AtmosphereRenderer, planet: Planet, ground_point: Vec
 	renderer.set_dust_param(&"dust_ground_lift", maxf(0.0, _ground.top_m - under_cam))
 
 
-## The probe's light side: the sun's energy and colour (> 2 %), the veil's two knobs, the blown slab.
+## The probe's light side: the sun's energy and colour (> 2 %), the veil's two knobs.
 func _probe_light(renderer: AtmosphereRenderer) -> void:
 	var sun_e: float = renderer.sun.light_energy if is_instance_valid(renderer.sun) else 0.0
 	var sun_c: Color = renderer.sun.light_color if is_instance_valid(renderer.sun) else Color.BLACK
-	var now := [sun_e, sun_c, renderer.weather_haze_scale, renderer.weather_haze_floor_m, renderer.weather_blow_beta]
+	var now := [sun_e, sun_c, renderer.weather_haze_scale, renderer.weather_haze_floor_m]
 	if not _probe_light_last.is_empty():
 		var why: PackedStringArray = []
 		var e0: float = _probe_light_last[0]
@@ -272,8 +292,6 @@ func _probe_light(renderer: AtmosphereRenderer) -> void:
 			why.append("sun colour %s -> %s" % [c0, sun_c])
 		if _probe_light_last[2] != now[2] or _probe_light_last[3] != now[3]:
 			why.append("veil knobs %s,%s -> %s,%s" % [_probe_light_last[2], _probe_light_last[3], now[2], now[3]])
-		if absf(float(_probe_light_last[4]) - float(now[4])) > 1e-6:
-			why.append("blown slab %.5f -> %.5f" % [_probe_light_last[4], now[4]])
 		if not why.is_empty():
 			print("[DustProbe] f%d t%.2f LIGHT %s" % [Engine.get_frames_drawn(), Time.get_ticks_msec() * 0.001, " | ".join(why)])
 	_probe_light_last = now
@@ -302,9 +320,7 @@ func _probe(offset: Vector3, wind: Vector3, masks: int, height: float, delta: fl
 		if not wrapped and (travel - expected).length() > 0.5:
 			why.append("offset jumped %.2f m (moved %s, wind expects %s)" % [(travel - expected).length(), travel, expected])
 		if int(last["masks"]) != masks:
-			why.append("masks %d -> %d" % [int(last["masks"]), masks])
-		if absf(float(last["height"]) - height) > 1.0:
-			why.append("camera height %.1f -> %.1f m" % [float(last["height"]), height])
+			why.append("masks %d -> %d [%s]" % [int(last["masks"]), masks, _probe_boxes])
 		if float(last["start"]) != _probe_start:
 			why.append("start %.0f -> %.0f m" % [float(last["start"]), _probe_start])
 	if not why.is_empty():
@@ -317,6 +333,8 @@ func _probe(offset: Vector3, wind: Vector3, masks: int, height: float, delta: fl
 		print("[DustProbe] storm grid %s, ground %.0f ms for %d cells, strongest storm %.4f /m (visibility %.0f m), over the eye τ %.2f" % [
 			"ready" if _volume.field.ready else "building", _volume.field.last_ground_ms, StormField.SIZE * StormField.SIZE,
 			_volume.field.beta_max, 3.912 / maxf(_volume.field.beta_max, 1e-9), _tau_above])
+		print("[DustProbe] planet map %s (%d x %d, %.0f ms on its worker)" % [
+			"ready" if _volume.map.ready else "building", CloudPlanetMap.WIDTH, CloudPlanetMap.HEIGHT, _volume.map.last_build_ms])
 		if _volume.field.ground_heights.size() > 0 and _volume.planet_radius > 0.0:
 			var lo: float = INF
 			var hi: float = -INF
@@ -362,8 +380,34 @@ static func _make_noise() -> NoiseTexture3D:
 	return tex
 
 
-## The blown slab's grey extinction (1/m) for a ground lifted [param lifted] (0..1,
-## StormDust.saltation_rate): β = 3.912 / BLOW_VISIBILITY_FULL_M × lifted^BLOW_POWER (Koschmieder). 0 without lift.
+## A seamless cellular noise (the distance to the nearest of NOISE_CELLS cells across, 0..1), the stuff
+## of the billows' rounded puffs: 1 - d² is a dome over each cell with a crease between (the cauliflower
+## top of a cloud, after Schneider's Perlin-Worley clouds); a smooth noise alone gave soft, shapeless
+## swells. One octave: the shader layers the scales.
+static func _make_worley() -> NoiseTexture3D:
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_CELLULAR
+	noise.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
+	noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
+	noise.fractal_type = FastNoiseLite.FRACTAL_NONE
+	noise.frequency = NOISE_CELLS / float(NOISE_TEXELS)
+	var tex := NoiseTexture3D.new()
+	tex.width = NOISE_TEXELS
+	tex.height = NOISE_TEXELS
+	tex.depth = NOISE_TEXELS
+	tex.seamless = true
+	tex.noise = noise
+	return tex
+
+
+## How much of the near layer an eye [param height_m] over the ground sees (see NEAR_LAYER_FULL_M).
+static func near_layer_share(height_m: float) -> float:
+	return smoothstep(-2.0, 0.5, height_m) * (1.0 - smoothstep(NEAR_LAYER_FULL_M, NEAR_LAYER_GONE_M, height_m))
+
+
+## The near layer's grey extinction (1/m) for a ground lifted [param lifted] (0..1,
+## StormDust.saltation_rate): β = 3.912 / BLOW_VISIBILITY_FULL_M × lifted^BLOW_POWER (Koschmieder).
+## 0 without lift. (It once fed a blown slab in the sky too, gone on 2026-10-08.)
 static func blow_extinction(lifted: float) -> float:
 	if lifted <= 0.0:
 		return 0.0

@@ -6,7 +6,8 @@ extends CanvasLayer
 ## [ServiceStyle]; no scene, no shared theme.
 ##
 ## The bar carries the six apps that fit a tab (home, profile, economy, inventory, missions,
-## social, system), the star chart and the PLUS grid for the rest. The right-hand column is the
+## social, system), the star chart (NAVIGATION: the chart's face is hosted in the content card, see
+## [method navigation_slot]) and the PLUS grid for the rest. The right-hand column is the
 ## segment's action half: panels build their forms and buttons into [member ServicePanel.side_slot]
 ## instead of stacking them under their lists, and a segment that is nothing but a form leaves the
 ## left card empty so the column takes the whole width.
@@ -42,15 +43,15 @@ const APPS: Array = [
 ]
 
 ## The bottom bar, left to right. `app` is what the tab opens: an APPS id, `""` for the overview,
-## `"plus"` for the grid of the apps with no tab of their own, and `"navigation"` for the star chart
-## — which the tablet hands the whole screen to (see [signal navigation_requested]).
+## `"plus"` for the grid of the apps with no tab of their own, and NAVIGATION for the star chart,
+## drawn in the content card (see [signal navigation_requested]).
 const NAV: Array = [
 	{"app": "", "title": "%%SVC_NAV_HOME"},
 	{"app": "identity", "title": "%%SVC_NAV_PROFILE"},
 	{"app": "bank", "title": "%%SVC_NAV_ECONOMY"},
 	{"app": "inventory", "title": "%%SVC_NAV_INVENTORY"},
 	{"app": "missions", "title": "%%SVC_NAV_MISSIONS"},
-	{"app": "navigation", "title": "%%SVC_NAV_NAVIGATION"},
+	{"app": NAVIGATION, "title": "%%SVC_NAV_NAVIGATION"},
 	{"app": "contacts", "title": "%%SVC_NAV_SOCIAL"},
 	{"app": "diagnostics", "title": "%%SVC_NAV_SYSTEM"},
 	{"app": "plus", "title": "%%SVC_NAV_PLUS"},
@@ -61,15 +62,20 @@ const PLUS_APPS: PackedStringArray = ["squad", "corporations", "pois", "market",
 
 ## The action column's width while the left card still has something to show beside it.
 const SIDE_WIDTH: float = 400.0
+## The tab that shows the star chart: not an app of APPS, a slot in the content card the chart's face
+## is hosted in.
+const NAVIGATION: String = "navigation"
 
 ## The lore's manufacturer mark (a white wordmark on transparent, see the ARES decal assets). Cropped
 ## to its own bounds and left white, so it reads as the tablet's brand at any size.
 const ARES_LOGO := preload("res://assets/textures/decals/ares_logo/ares_logo_decal_alpha.png")
 const ARES_LOGO_REGION := Rect2(51, 67, 416, 131)
 
-## The tablet gives the star chart the screen (the NAVIGATION tab). PlayerClient closes the tablet
-## and opens the chart, the way F2 does — this file never reaches for [StarMap] itself.
+## The NAVIGATION tab is on show: its slot ([method navigation_slot]) is visible and empty-handed.
+## PlayerClient opens the chart hosted there — this file never reaches for [StarMap] itself.
 signal navigation_requested
+## The NAVIGATION tab is left (another tab, home, the tablet closed): PlayerClient closes the chart.
+signal navigation_closed
 
 var _overview: ServiceOverviewScreen = null
 ## id -> ServicePanel, and id -> the `area` its mutations announce on.
@@ -86,6 +92,8 @@ var _main_card: PanelContainer = null
 var _side_card: PanelContainer = null
 var _content: MarginContainer = null
 var _plus: Control = null
+## The NAVIGATION tab's content: whatever is hosted in it (the chart's face), full card.
+var _navigation: Control = null
 var _clock: Label = null
 ## The open app id, "plus" for the grid, or "" when the overview is showing.
 var _active_id: String = ""
@@ -157,10 +165,27 @@ func open() -> void:
 	_go_home()
 
 
+## Open on the NAVIGATION tab: the F2 of the chart, which lives there. Already on it, nothing moves
+## (open() would go home first, closing the chart only to open it again).
+func open_navigation() -> void:
+	if GameOrchestrator.is_server():
+		return
+	_ensure_built()
+	show()
+	_show_navigation()
+
+
 func close() -> void:
 	_close_armed = false
 	release_fields()
+	_leave_navigation()
 	hide()
+
+
+## The content card's slot of the NAVIGATION tab, for the chart's face to be hosted in.
+func navigation_slot() -> Control:
+	_ensure_built()
+	return _navigation
 
 
 func is_open() -> bool:
@@ -256,6 +281,11 @@ func _build() -> void:
 	_plus = _build_plus()
 	_plus.visible = false
 	_content.add_child(_plus)
+
+	_navigation = Control.new()
+	_navigation.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_navigation.visible = false
+	_content.add_child(_navigation)
 
 	# Every app gets its chrome slot and its column up front: the panel fills the slots it is handed
 	# in _build, and the tablet only ever shows one of each — nothing is ever reparented.
@@ -458,10 +488,10 @@ func _on_language_changed(_language: String) -> void:
 # Navigation (the bottom bar)
 # ---------------------------------------------------------------------------------------------
 
-## One tab of the bar: open what it stands for, or hand the screen to the star chart.
+## One tab of the bar: open what it stands for.
 func _nav_to(app: String) -> void:
-	if app == "navigation":
-		navigation_requested.emit()
+	if app == NAVIGATION:
+		_show_navigation()
 	elif app == "":
 		_go_home()
 	elif app == "plus":
@@ -478,17 +508,47 @@ func _set_nav_active(app: String) -> void:
 		(_nav_tabs[key] as NavTab).set_active(key == lit)
 
 
-func _open_app(id: String) -> void:
-	if not _panels.has(id):
+## The chart's tab: one card, no chrome, the slot shown — and the chart asked for, once the slot is up.
+func _show_navigation() -> void:
+	if _active_id == NAVIGATION:
 		return
-	_active_id = id
+	_show_nothing()
+	_active_id = NAVIGATION
+	_navigation.visible = true
+	_set_chrome("")
+	_set_nav_active(NAVIGATION)
+	_apply_pane_layout(true, false)
+	navigation_requested.emit()
+
+
+## Hide every content (the overview, the grid, the apps, the chart's slot) before showing one.
+func _show_nothing() -> void:
+	_leave_navigation()
 	_overview.visible = false
 	if _plus != null:
 		_plus.visible = false
 	for key: String in _panels:
-		(_panels[key] as ServicePanel).visible = key == id
+		(_panels[key] as ServicePanel).visible = false
 	for key: String in _side_slots:
-		(_side_slots[key] as Control).visible = key == id
+		(_side_slots[key] as Control).visible = false
+
+
+## Off the NAVIGATION tab, if that is where we were: the slot hidden, the chart told.
+func _leave_navigation() -> void:
+	if _navigation != null:
+		_navigation.visible = false
+	if _active_id == NAVIGATION:
+		_active_id = ""
+		navigation_closed.emit()
+
+
+func _open_app(id: String) -> void:
+	if not _panels.has(id):
+		return
+	_show_nothing()
+	_active_id = id
+	(_panels[id] as ServicePanel).visible = true
+	(_side_slots[id] as Control).visible = true
 	_set_chrome(id)
 	_set_nav_active(id)
 	var panel := _panels[id] as ServicePanel
@@ -498,12 +558,8 @@ func _open_app(id: String) -> void:
 
 
 func _open_plus() -> void:
+	_show_nothing()
 	_active_id = "plus"
-	_overview.visible = false
-	for key: String in _panels:
-		(_panels[key] as ServicePanel).visible = false
-	for key: String in _side_slots:
-		(_side_slots[key] as Control).visible = false
 	if _plus != null:
 		_plus.visible = true
 	_set_chrome("")
@@ -512,13 +568,8 @@ func _open_plus() -> void:
 
 
 func _go_home() -> void:
+	_show_nothing()
 	_active_id = ""
-	for key: String in _panels:
-		(_panels[key] as ServicePanel).visible = false
-	for key: String in _side_slots:
-		(_side_slots[key] as Control).visible = false
-	if _plus != null:
-		_plus.visible = false
 	_overview.visible = true
 	_set_chrome("")
 	_set_nav_active("")
@@ -568,8 +619,11 @@ func _apply_pane_layout(has_main: bool, has_side: bool) -> void:
 # Screen contract (see ScreenZone)
 # ---------------------------------------------------------------------------------------------
 
-## True while a field of the visible screen holds the keyboard.
+## True while a field of the visible screen holds the keyboard — an app's, or one of whatever is
+## hosted in the NAVIGATION slot (the chart's search box), which is only known by its focus.
 func is_typing() -> bool:
+	if _hosted_field() != null:
+		return true
 	if _active_id == "" or not _panels.has(_active_id):
 		return false
 	var panel: ServicePanel = _panels[_active_id]
@@ -580,3 +634,14 @@ func is_typing() -> bool:
 func release_fields() -> void:
 	for key: String in _panels:
 		(_panels[key] as ServicePanel).release_fields()
+	var hosted: Control = _hosted_field()
+	if hosted != null:
+		hosted.release_focus()
+
+
+## The focused control inside the NAVIGATION slot, if the focus is there.
+func _hosted_field() -> Control:
+	if _navigation == null or not _navigation.visible or not is_inside_tree():
+		return null
+	var owner: Control = get_viewport().gui_get_focus_owner()
+	return owner if owner != null and _navigation.is_ancestor_of(owner) else null

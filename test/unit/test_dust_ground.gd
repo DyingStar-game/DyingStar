@@ -11,12 +11,12 @@ func _smooth(_dir: Vector3) -> float:
 	return R
 
 
-## A 30 m hill, 40 m wide, 60 m east of the anchor.
+## A 30 m hill, 120 m wide (several 16 m cells), 200 m east of the anchor.
 func _hill(dir: Vector3) -> float:
 	var f: Array = DustGround.tangent_frame(ANCHOR)
 	var p: Vector3 = dir * R - ANCHOR
-	var d: float = p.distance_to((f[0] as Vector3) * 60.0)
-	return R + 30.0 * exp(-d * d / (40.0 * 40.0))
+	var d: float = p.distance_to((f[0] as Vector3) * 200.0)
+	return R + 30.0 * exp(-d * d / (120.0 * 120.0))
 
 
 func _build(g: DustGround, at: Vector3, fn: Callable) -> void:
@@ -33,16 +33,17 @@ func test_a_smooth_planet_reads_flat() -> void:
 	assert_almost_eq(h, 0.0, 0.01, "under the anchor: the tangent plane")
 	var corner: float = DustGround.ground_at(g._heights, g.east, g.north, g.east * 200.0 + g.north * 200.0)
 	assert_almost_eq(corner, -(400.0 * 400.0 * 0.5) / (2.0 * R), 0.01, "200 m out: the curvature, millimetres")
-	assert_true(is_nan(DustGround.ground_at(g._heights, g.east, g.north, g.east * 500.0)), "off the grid")
+	assert_true(is_nan(DustGround.ground_at(g._heights, g.east, g.north, g.east * (DustGround.half_m() + 100.0))),
+			"off the grid")
 
 
 func test_a_hill_shows_at_its_place_and_height() -> void:
 	var g := DustGround.new()
 	_build(g, ANCHOR, _hill)
-	var top: float = DustGround.ground_at(g._heights, g.east, g.north, g.east * 60.0)
-	assert_almost_eq(top, 30.0, 1.0, "the hill's top, 60 m east")
-	var away: float = DustGround.ground_at(g._heights, g.east, g.north, -g.east * 150.0)
-	assert_almost_eq(away, 0.0, 0.5, "150 m the other way: flat")
+	var top: float = DustGround.ground_at(g._heights, g.east, g.north, g.east * 200.0)
+	assert_almost_eq(top, 30.0, 1.0, "the hill's top, 200 m east")
+	var away: float = DustGround.ground_at(g._heights, g.east, g.north, -g.east * 400.0)
+	assert_almost_eq(away, 0.0, 0.5, "400 m the other way: flat")
 	assert_almost_eq(g.top_m, 30.0, 1.0, "the grid's highest ground: the hill")
 
 
@@ -58,6 +59,10 @@ func test_the_build_is_spread_over_frames_and_swaps_whole() -> void:
 	assert_eq(g.anchor, first, "the grid in use stays until the new one is complete")
 	_build(g, moved, _hill)
 	assert_eq(g.anchor, moved, "then both swap at once")
+
+
+func test_the_grid_reaches_the_near_layer_range() -> void:
+	assert_true(DustGround.half_m() >= WeatherSky.NEAR_LAYER_RANGE_M, "the layer never marches past its ground")
 
 
 func test_a_small_move_keeps_the_grid() -> void:

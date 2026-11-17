@@ -52,7 +52,7 @@ func test_every_golden_sample_is_reproduced() -> void:
 		var lon : float = float(entry["lon"])
 		var lat : float = float(entry["lat"])
 		var alt : float = float(entry["alt"])
-		var hours : float = fposmod((sub_lon - lon) / 360.0 * 24.0 + 12.0, 24.0)
+		var hours : float = fposmod((lon - sub_lon) / 360.0 * 24.0 + 12.0, 24.0)  # spin.rs local_solar_hours
 		var got : Dictionary = WeatherSampler.sample(_profile, systems, lon, lat, alt, hours, decl)
 		var where : String = "at lon %.1f lat %.1f" % [lon, lat]
 		assert_almost_eq(got["wind_east_m_s"], float(expected["wind_east_m_s"]), 1e-3, "wind east " + where)
@@ -87,8 +87,8 @@ func test_a_low_turns_counter_clockwise_north_of_the_equator() -> void:
 	var low := {"id": 1, "name": "", "kind": WeatherSampler.KIND_DEPRESSION, "lon": 10.0, "lat": 45.0,
 		"sigma_m": 300000.0, "intensity": 1.0, "pressure_anomaly_pa": -2000.0, "wind_peak": 20.0,
 		"dust_tau": 0.0, "precipitation_mm_h": 0.0, "humidity": 0.0}
-	# East of the centre is the direction of DEcreasing longitude.
-	var east_point_lon : float = 10.0 - rad_to_deg(300000.0 / (_profile.radius_m * cos(deg_to_rad(45.0))))
+	# East of the centre is the direction of INcreasing longitude (the QGIS convention).
+	var east_point_lon : float = 10.0 + rad_to_deg(300000.0 / (_profile.radius_m * cos(deg_to_rad(45.0))))
 	var k : Dictionary = WeatherSampler.contribution(_profile, low, east_point_lon, 45.0)
 	assert_gt(k["north"], 0.0, "east of a northern low the wind blows north: %s" % str(k))
 	assert_almost_eq(k["weight"], exp(-0.5), 1e-3, "about one sigma away (great circle vs flat offset)")

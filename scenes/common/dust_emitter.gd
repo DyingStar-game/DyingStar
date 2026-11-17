@@ -51,6 +51,10 @@ var _stretch_per_ms: float = 0.0
 ## The look of the grains: ground_dust.gdshader uniforms by name (WeatherDust), pushed with the air.
 var _look: Dictionary = {}
 var _ground_read_at: float = -INF  # seconds (ticks); -INF = read at the next puff
+## What became of the puffs asked of this emitter since the probe last read them (StormDust's dust
+## probe, client.ini debug_dust_probe): drawn, too faint (the ground's dustiness × the strength), too far
+## from the camera, or no frame to lay them in. Grains drawn.
+var probe_counts: Dictionary = {"drawn": 0, "faint": 0, "far": 0, "no_frame": 0, "grains": 0}
 
 
 
@@ -79,10 +83,16 @@ func puff(global_pos: Vector3, family: StringName, strength: float, velocity: Ve
 	if not enabled() or _dust == null or _actor == null or not _actor.is_inside_tree():
 		return
 	var amount: float = _dust.amount(family) * strength
-	if amount <= 0.01 or not _near_camera(global_pos):
+	if amount <= 0.01:
+		probe_counts["faint"] += 1
+		return
+	if not _near_camera(global_pos):
+		probe_counts["far"] += 1
 		return
 	if not _ensure_anchor():
+		probe_counts["no_frame"] += 1
 		return
+	probe_counts["drawn"] += 1
 	_refresh_ground(global_pos)
 	var color: Color = _dust.color(family, _ground_color)
 	color.a = clampf(amount, 0.0, 1.0)
@@ -90,6 +100,7 @@ func puff(global_pos: Vector3, family: StringName, strength: float, velocity: Ve
 	var local_pos: Vector3 = _particles.to_local(global_pos)
 	var local_vel: Vector3 = to_local * velocity
 	var n: int = maxi(1, roundi(count * clampf(amount, 0.25, 1.5)))
+	probe_counts["grains"] += n
 	for i in n:
 		var offset := Vector3(randf_range(-spread, spread), 0.0, randf_range(-spread, spread))
 		var grain_size: float = size * randf_range(0.7, 1.3) * lerpf(0.6, 1.0, clampf(amount, 0.0, 1.0))

@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/structures/test_track/slope_ramp.gd" id="1_ramp"]
+[ext_resource type="Script" uid="uid://crq5yq1gfb42p" path="res://scenes/globals/prop_sync.gd" id="2_sync"]
+
+[node name="SlopeRamp" type="Node3D"]
+script = ExtResource("1_ramp")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_sync")
+type_name = "simple_building"

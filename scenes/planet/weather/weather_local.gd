@@ -27,6 +27,14 @@ const GUST_HZ: Array[float] = [0.05, 0.13, 0.31, 0.5]
 const GUST_WEIGHT: Array[float] = [0.5, 0.3, 0.15, 0.05]
 ## Side of a gust's cell on the ground, in degrees of longitude and latitude: ~2 km on Tarsis III.
 const GUST_CELL_DEG: float = 0.02
+## The wind over the ground: the regional wind is the 10 m wind (WIND_REF_M), and it grows with height
+## by the power law of the surface layer (Hellmann: v(z) = v10 (z / 10)^WIND_SHEAR_EXP, 0.14 over open
+## ground) up to WIND_SHEAR_TOP_M, the top of the boundary layer, then holds (the gradient wind; no jet
+## is modelled). Nothing changes under 10 m, where every threshold of the model is set: a cloud sea's
+## top 4 km up drifts in a wind ~1.9 times the one at the eye on the ground.
+const WIND_REF_M: float = 10.0
+const WIND_SHEAR_EXP: float = 0.14
+const WIND_SHEAR_TOP_M: float = 1000.0
 
 
 ## The wind (east, north) in a canyon: its part along [param axis] (a unit (east, north) along the
@@ -70,19 +78,27 @@ static func _cell_swing(seed: int, ix: int, iy: int, t: float) -> float:
 	return s
 
 
+## How much stronger than the 10 m wind the wind is [param height_m] over the ground (see WIND_REF_M).
+static func height_factor(height_m: float) -> float:
+	return pow(clampf(height_m, WIND_REF_M, WIND_SHEAR_TOP_M) / WIND_REF_M, WIND_SHEAR_EXP)
+
+
 ## The sample with the local wind in place of the regional one: [param canyon] is Planet.canyon_at's
 ## answer ({} or {"depth", "axis"}), [param gust] the gust factor, [param cap] the body's gameplay
-## ceiling on the wind (ClimateProfile.wind_scale_max_ms). The regional wind stays under
-## wind_mean_*; gust_factor, canyon_depth and canyon_axis say what was done.
-static func apply(sample: Dictionary, canyon: Dictionary, gust: float, cap: float) -> Dictionary:
+## ceiling on the wind (ClimateProfile.wind_scale_max_ms), [param height_m] the height over the ground
+## (height_factor). The regional wind stays under wind_mean_*; gust_factor, canyon_depth, canyon_axis and
+## height_factor say what was done.
+static func apply(sample: Dictionary, canyon: Dictionary, gust: float, cap: float, height_m: float = 0.0) -> Dictionary:
 	var out: Dictionary = sample.duplicate()
 	var east: float = float(sample.get("wind_east_m_s", 0.0))
 	var north: float = float(sample.get("wind_north_m_s", 0.0))
 	var depth: float = float(canyon.get("depth", 0.0))
 	var axis: Vector2 = canyon.get("axis", Vector2.ZERO)
-	var local: Vector2 = canyon_wind(east, north, axis, depth) * gust
+	var shear: float = height_factor(height_m)
+	var local: Vector2 = canyon_wind(east, north, axis, depth) * gust * shear
 	if cap > 0.0:
 		local = local.limit_length(cap)
+	out["height_factor"] = shear
 	out["wind_mean_east_m_s"] = east
 	out["wind_mean_north_m_s"] = north
 	out["wind_mean_speed_m_s"] = float(sample.get("wind_speed_m_s", 0.0))
