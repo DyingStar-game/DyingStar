@@ -52,6 +52,16 @@ static func check(raw: String, since_last: float, queued: int, is_npc: bool = fa
 	return ""
 
 
+## Each rejection reason's message, spelled out: test_localisation_keys finds the keys the code uses
+## by reading it, and a key built by concatenation would read as unused.
+const _MESSAGE_KEYS: Dictionary = {
+	ERR_EMPTY: "%%CHAT_SAY_REJECTED_EMPTY",
+	ERR_TOO_LONG: "%%CHAT_SAY_REJECTED_TOO_LONG",
+	ERR_TOO_FAST: "%%CHAT_SAY_REJECTED_TOO_FAST",
+	ERR_QUEUE_FULL: "%%CHAT_SAY_REJECTED_QUEUE_FULL",
+}
+
+
 ## Localisation key of the message shown to the speaker for a rejection reason.
 static func message_key(error: String) -> String:
-	return "%%CHAT_SAY_REJECTED_" + error.to_upper()
+	return str(_MESSAGE_KEYS.get(error, "%%CHAT_SAY_REJECTED_EMPTY"))

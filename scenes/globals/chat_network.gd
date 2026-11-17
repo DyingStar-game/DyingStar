@@ -56,7 +56,7 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 	var title := str(envelope.get("title", ""))
 	var body := str(envelope.get("body", ""))
 	if body != "":
-		return title if title == "" else "%s — %s" % [title, body]
+		return body if title == "" else "%s — %s" % [title, body]
 	if title != "":
 		return title
 
@@ -505,7 +505,11 @@ static func is_my_notify_topic(topic: String, me: String) -> bool:
 ## The notification envelope published on `notify/<me>`, or {} when the payload is not a
 ## JSON object (the envelope is {id, type, title?, body?, data?, sentAt}).
 static func parse_notification(payload: String) -> Dictionary:
-	var data: Variant = JSON.parse_string(payload)
+	# JSON.parse_string logs an engine error on bad input; a peer's garbage is not the engine's.
+	var json := JSON.new()
+	if json.parse(payload) != OK:
+		return {}
+	var data: Variant = json.data
 	if data is Dictionary:
 		return data
 	return {}

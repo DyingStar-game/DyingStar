@@ -80,7 +80,7 @@ static func flank_uv(mode: int, along_m: float, drop_m: float, tile_m: float) ->
 ## (the chunk centre for the mesh, the collision origin for the shape).
 ## [param want_visual]: false builds only the collision faces.
 ## [param outward]: collision winding, see GradeBed.build_piece.
-## [param tint]: func(dir: Vector3) -> Color baked into the vertex colour, or
+## [param tint]: func(dir: Vector3, surface_height: float) -> Color baked into the vertex colour, or
 ## an invalid Callable for WHITE.
 ##
 ## Returns {verts, norms, uvs, colors, indices, side_indices, faces}: per
