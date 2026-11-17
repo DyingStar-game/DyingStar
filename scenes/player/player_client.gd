@@ -272,10 +272,10 @@ func setup() -> void:
 	_animator = animator
 	if animator != null:
 		animator.setup(player, not player.remote_player)
-	# Our own face is seen close up (a mirror) and will move: baked apart, with its face units.
+	# Our own face is seen close up (a mirror) and will move: alive before its first bake (face_life).
 	var looks := _looks()
 	if looks != null and not player.remote_player:
-		looks.face_units = true
+		looks.set_life(true)
 	_wear_default_look.call_deferred()  # deferred: a remote's uuid is set right after it enters the tree
 	_mount_torch()  # every avatar, owner and remote alike: the beam belongs on the head, not on a camera
 	_mount_wrist_datapad(animator)  # every avatar too, before our own body moves to its render layer

@@ -72,7 +72,11 @@ static func _ordered(points: PackedVector3Array, center: Vector2, horizontal: bo
 
 
 ## Zipper triangulation: every original boundary edge is used exactly once; no resampling of a curved seam.
-static func join(mesh: Dictionary, arch: PackedVector3Array, loop: PackedVector3Array, inside: Vector3) -> void:
+## With [param boxed] (version 9) each loop's angles are taken in its own bounding box scaled to a square, so the
+## floor corners of a low, wide arch meet those of a tall, narrow loop. Raw angles sent a 70 m × 4 m porch's floor
+## corners (near 0° and 180°) to the gallery's walls at mid-height: a 3 m sill across the floor (tarsis_3 cave 027).
+static func join(mesh: Dictionary, arch: PackedVector3Array, loop: PackedVector3Array, inside: Vector3,
+        boxed: bool = false) -> void:
     var center := Vector2.ZERO
     for point in loop:
         center += Vector2(point.x, point.y)
@@ -81,10 +85,22 @@ static func join(mesh: Dictionary, arch: PackedVector3Array, loop: PackedVector3
     for point in arch:
         other_center += Vector2(point.x, point.y)
     other_center /= arch.size()
-    var a := _ordered(arch, other_center)
-    var b := _ordered(loop, center)
-    var ta := _angles(a, other_center)
-    var tb := _angles(b, center)
+    var a: PackedVector3Array
+    var b: PackedVector3Array
+    var ta: PackedFloat64Array
+    var tb: PackedFloat64Array
+    if boxed:
+        var box_a := _box(arch)
+        var box_b := _box(loop)
+        a = _ordered_in_box(arch, box_a)
+        b = _ordered_in_box(loop, box_b)
+        ta = _box_angles(a, box_a)
+        tb = _box_angles(b, box_b)
+    else:
+        a = _ordered(arch, other_center)
+        b = _ordered(loop, center)
+        ta = _angles(a, other_center)
+        tb = _angles(b, center)
     var i := 0
     var j := 0
     # Start at the -PI cut, and close the two complete loops once.
@@ -114,4 +130,33 @@ static func _angles(points: PackedVector3Array, center: Vector2) -> PackedFloat6
     var result := PackedFloat64Array()
     for point in points:
         result.append(atan2(point.y - center.y, point.x - center.x))
+    return result
+
+
+## The loop's extent in its section (x lateral, y up).
+static func _box(points: PackedVector3Array) -> Rect2:
+    var box := Rect2(Vector2(points[0].x, points[0].y), Vector2.ZERO)
+    for point in points:
+        box = box.expand(Vector2(point.x, point.y))
+    return box
+
+
+## Angle of [param point] around [param box]'s centre, the box scaled to a square first.
+static func _box_angle(point: Vector3, box: Rect2) -> float:
+    var half := (box.size * 0.5).max(Vector2(0.001, 0.001))
+    var center := box.get_center()
+    return atan2((point.y - center.y) / half.y, (point.x - center.x) / half.x)
+
+
+static func _ordered_in_box(points: PackedVector3Array, box: Rect2) -> PackedVector3Array:
+    var ordered: Array[Vector3] = []
+    ordered.assign(points)
+    ordered.sort_custom(func(a: Vector3, b: Vector3) -> bool: return _box_angle(a, box) < _box_angle(b, box))
+    return PackedVector3Array(ordered)
+
+
+static func _box_angles(points: PackedVector3Array, box: Rect2) -> PackedFloat64Array:
+    var result := PackedFloat64Array()
+    for point in points:
+        result.append(_box_angle(point, box))
     return result
