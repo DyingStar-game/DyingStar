@@ -23,6 +23,9 @@ def main(argv=None):
                         help="regex a line of the output must match for the test to pass")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
+    # Echoed as it comes, whatever the console's code page (cp1252 on Windows cannot write the
+    # replacement characters Godot prints).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("no command after --")

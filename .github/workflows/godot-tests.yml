@@ -288,6 +288,10 @@ jobs:
       - name: GUT verdict unit tests
         run: python3 test/unit/test_gut_report_py.py
 
+      # What judges the lava / volcano tests (their result line, not the engine's exit code).
+      - name: Result-line runner unit tests
+        run: python3 test/unit/test_run_marked_py.py
+
   linter:
     name: Run GDScript linter
     runs-on: ubuntu-latest
