@@ -134,6 +134,15 @@ func test_the_client_readout_without_a_session() -> void:
 	var lines : PackedStringArray = ClientReadout.new().lines(body)
 	assert_has(lines, "x: 0.00", "coordinates")
 	assert_has(lines, "- chunks", "no planet, no chunks")
+	assert_has(lines, "- ms ping", "no session, no ping")
+
+
+func test_the_ping_is_graded_lower_is_better() -> void:
+	assert_eq(ClientReadout.ping_text(0.0), "- ms ping", "no sample yet")
+	assert_string_contains(ClientReadout.ping_text(40.0), SettingsStyle.GOOD_COLOR.to_html(false), "green")
+	assert_string_contains(ClientReadout.ping_text(120.0), SettingsStyle.FAIR_COLOR.to_html(false), "orange")
+	assert_string_contains(ClientReadout.ping_text(300.0), SettingsStyle.ALERT_COLOR.to_html(false), "red")
+	assert_string_contains(ClientReadout.ping_text(42.4), "]42[/color] ms ping", "whole milliseconds")
 
 
 func test_the_music_readout_names_the_track_and_the_rule_that_chose_it() -> void:

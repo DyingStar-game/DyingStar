@@ -2,10 +2,19 @@ class_name ClientReadout
 extends RefCounted
 ## The debug panel's Client section: this client's frame rate, what it holds, where it is, and the
 ## chunks the planet under it draws. An object rather than static functions because the event rates
-## are measured between two of its own refreshes (see EventRate).
+## are measured between two of its own refreshes (see EventRate), and the ping is held between two
+## readings.
+
+## Ping (ms) up to which the line is green, then orange up to PING_FAIR, red above.
+const PING_GOOD : float = 80.0
+const PING_FAIR : float = 150.0
+## The ping is read once a second: the section is redrawn twice as often.
+const PING_EVERY_MS : int = 1000
 
 var _received := EventRate.new()
 var _sent := EventRate.new()
+var _ping_ms : float = 0.0
+var _ping_at : int = -PING_EVERY_MS
 
 
 func lines(body: Node3D) -> PackedStringArray:
@@ -26,6 +35,10 @@ func lines(body: Node3D) -> PackedStringArray:
 	out.append("%.0f events received/s · %.0f sent/s" % [
 		_received.per_second(_total("network/events_received"), now),
 		_sent.per_second(_total("network/events_sent"), now)])
+	if now - _ping_at >= PING_EVERY_MS:
+		_ping_ms = _rtt_ms(agent)
+		_ping_at = now
+	out.append(ping_text(_ping_ms))
 	out.append(chunks_line(body))
 	return out
 
@@ -37,6 +50,21 @@ static func chunks_line(body: Node3D) -> String:
 	if planet == null or planet.planet_terrain == null:
 		return "- chunks"
 	return "%d chunks (%s)" % [planet.planet_terrain.active_chunk_count(), planet.name]
+
+
+## The round trip to Horizon: QUIC's smoothed RTT, measured by the WebTransport session itself.
+## 0 = not known (no session yet, or no sample).
+static func ping_text(rtt_ms: float) -> String:
+	if rtt_ms <= 0.0:
+		return "- ms ping"
+	return ReadoutFormat.graded(rtt_ms, PING_GOOD, PING_FAIR, "ms ping", true)
+
+
+## HorizonLink.get_rtt_ms(); 0 on the dedicated server (no link) and before the client connects.
+static func _rtt_ms(agent: Node) -> float:
+	if agent == null or not "link" in agent or agent.link == null:
+		return 0.0
+	return float(agent.link.get_rtt_ms())
 
 
 static func _scenes(agent: Node) -> String:
