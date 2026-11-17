@@ -116,14 +116,17 @@ jobs:
           path: .godot/gut/
           if-no-files-found: ignore
 
+      # Each test is judged by the result line it prints (tools/ci/run_marked.py): the engine's exit
+      # code is not the test's (it aborts at shutdown here, exits 1 now and then on Windows).
       - name: Volcano activity, lifecycle and Tarsis III integration
         run: |
-          "$GODOT" --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
-          "$GODOT" --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
-          "$GODOT" --headless --path . res://test/volcano/test_tarsis_volcano_vfx.tscn -- --volcano-view
-          "$GODOT" --headless --path . res://test/lava/test_planet_integration.tscn -- --volcano-view --lava-long-test
-          "$GODOT" --headless --path . res://test/lava/test_eruption_server.tscn -- --volcano-view
-          "$GODOT" --headless --path . --script res://test/lava/test_sleep_week.gd
+          run() { python3 tools/ci/run_marked.py --pass "$1" -- "$GODOT" --headless --path . "${@:2}"; }
+          run 'LAVA_POLICY mode=normal pass=true' res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
+          run 'LAVA_POLICY mode=simulated pass=true' res://test/lava/test_policy.tscn -- --volcano-view
+          run 'VOLCANO TARSIS III: .* 0 failures' res://test/volcano/test_tarsis_volcano_vfx.tscn -- --volcano-view
+          run 'LAVA_PLANET_RESULT failures=0$' res://test/lava/test_planet_integration.tscn -- --volcano-view --lava-long-test
+          run 'LAVA_SERVER failures=0$' res://test/lava/test_eruption_server.tscn -- --volcano-view
+          run 'LAVA_WEEK pass=true' --script res://test/lava/test_sleep_week.gd
 
   # The C# twins reproduce GDScript bit for bit only while .NET's Math.Sin / Math.Atan2 return the
   # engine's own sin / atan2 bits. On Linux both are glibc; on Windows both should be the UCRT, and
@@ -180,13 +183,15 @@ jobs:
           & $env:GODOT --headless --path . -s addons/gut/gut_cmdln.gd "-gtest=$($env:NATIVE_TESTS)" -gexit
           exit $LASTEXITCODE
 
+      # Judged by the result line each test prints (tools/ci/run_marked.py): on Windows the engine
+      # exits 1 now and then after a test that passed and called quit(0).
       - name: Lava dormant deposits through one week (C# against reference)
         run: |
-          & $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
+          python tools/ci/run_marked.py --pass 'LAVA_POLICY mode=normal pass=true' -- $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view --authored-lava
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
+          python tools/ci/run_marked.py --pass 'LAVA_POLICY mode=simulated pass=true' -- $env:GODOT --headless --path . res://test/lava/test_policy.tscn -- --volcano-view
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:GODOT --headless --path . --script res://test/lava/test_sleep_week.gd
+          python tools/ci/run_marked.py --pass 'LAVA_WEEK pass=true' -- $env:GODOT --headless --path . --script res://test/lava/test_sleep_week.gd
           exit $LASTEXITCODE
 
   lava-lockstep:
