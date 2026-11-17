@@ -166,11 +166,12 @@ def vec2pix_nest(nside, x, y, z):
         temp2 = nside * y * 0.75  # y = cos(theta) = z in standard coords
         jp = int(temp1 - temp2)
         jm = int(temp1 + temp2)
-        nl2 = 2 * nside
-        ifp = min((jp + nside) // nl2, 3)
-        ifm = min((jm + nside) // nl2, 3)
+        # Face column jp >> order (= jp // nside), as in HEALPix and the game's healpix.gd. The
+        # former (jp + nside) // (2 * nside) put about half the directions on the wrong face.
+        ifp = jp // nside
+        ifm = jm // nside
         if ifp == ifm:
-            face = ifp + 4
+            face = ifp | 4  # ifp == 4 wraps round to face 4
         elif ifp < ifm:
             face = ifp
         else:
@@ -303,11 +304,9 @@ def vec2pix_nest_vectorized(nside, x_arr, y_arr, z_arr):
     za = np.abs(y_arr)
     phi = np.arctan2(-z_arr, x_arr)
     phi = np.where(phi < 0, phi + 2.0 * math.pi, phi)
-    tt = phi / (math.pi * 0.5)
-    tt = np.clip(tt, 0.0, 3.9999)
+    tt = np.mod(phi / (math.pi * 0.5), 4.0)
 
     npface = nside * nside
-    nl2 = 2 * nside
 
     result = np.zeros_like(x_arr, dtype=np.int64)
 
@@ -318,9 +317,10 @@ def vec2pix_nest_vectorized(nside, x_arr, y_arr, z_arr):
         temp2 = nside * y_arr[equat] * 0.75
         jp = (temp1 - temp2).astype(np.int64)
         jm = (temp1 + temp2).astype(np.int64)
-        ifp = np.minimum((jp + nside) // nl2, 3)
-        ifm = np.minimum((jm + nside) // nl2, 3)
-        face = np.where(ifp == ifm, ifp + 4,
+        # Face column jp >> order, as in vec2pix_nest.
+        ifp = jp // nside
+        ifm = jm // nside
+        face = np.where(ifp == ifm, ifp | 4,
                         np.where(ifp < ifm, ifp, ifm + 8))
         ix = jm & (nside - 1)
         iy = nside - (jp & (nside - 1)) - 1
@@ -451,29 +451,69 @@ def get_neighbor_pixels(nside, ipix):
         neighbors = hp.get_all_neighbours(nside, ipix, nest=True)
         return [int(n) for n in neighbors if n >= 0]
 
-    # Pure Python fallback: sample directions near pixel boundary
-    # and find which pixels they belong to
+    # Pure Python fallback: HEALPix's own neighbours_nest (healpix_base), with its face and swap
+    # tables, so it gives exactly what healpy gives. (Sampling just past the edges, as it did,
+    # missed neighbours near the corners of the base faces.)
     npface = nside * nside
     face = ipix // npface
-    local = ipix % npface
-    ix, iy = nest2xy(local)
+    ix, iy = nest2xy(ipix % npface)
+    out = []
+    for i in range(8):
+        x = ix + _NB_XOFFSET[i]
+        y = iy + _NB_YOFFSET[i]
+        nbnum = 4
+        if x < 0:
+            x += nside
+            nbnum -= 1
+        elif x >= nside:
+            x -= nside
+            nbnum += 1
+        if y < 0:
+            y += nside
+            nbnum -= 3
+        elif y >= nside:
+            y -= nside
+            nbnum += 3
+        f = _NB_FACEARRAY[nbnum][face]
+        if f < 0:
+            continue  # one of the 8 that do not exist round a base corner
+        bits = _NB_SWAPARRAY[nbnum][face >> 2]
+        if bits & 1:
+            x = nside - x - 1
+        if bits & 2:
+            y = nside - y - 1
+        if bits & 4:
+            x, y = y, x
+        out.append(f * npface + xy2nest(x, y))
+    return out
 
-    neighbor_set = set()
-    # Sample points just outside each edge and corner
-    offsets = [
-        (0.5, -0.1), (0.5, 1.1),  # S, N center
-        (-0.1, 0.5), (1.1, 0.5),  # W, E center
-        (-0.1, -0.1), (1.1, -0.1), (-0.1, 1.1), (1.1, 1.1),  # corners
-    ]
-    for dx, dy in offsets:
-        fx = float(ix) + dx
-        fy = float(iy) + dy
-        x, y, z = face_xy_to_vec(face, fx, fy, nside)
-        nb_pix = vec2pix_nest(nside, x, y, z)
-        if nb_pix != ipix:
-            neighbor_set.add(nb_pix)
 
-    return sorted(neighbor_set)
+# Tables of healpix_base::neighbors (NESTED), indexed by the neighbour's offset class nbnum
+# (4 = same face; -1/+1 west/east, -3/+3 south/north of it) and the base face.
+_NB_XOFFSET = (-1, -1, 0, 1, 1, 1, 0, -1)
+_NB_YOFFSET = (0, 1, 1, 1, 0, -1, -1, -1)
+_NB_FACEARRAY = (
+    (8, 9, 10, 11, -1, -1, -1, -1, 10, 11, 8, 9),   # S
+    (5, 6, 7, 4, 8, 9, 10, 11, 9, 10, 11, 8),        # SE
+    (-1, -1, -1, -1, 5, 6, 7, 4, -1, -1, -1, -1),    # E
+    (4, 5, 6, 7, 11, 8, 9, 10, 11, 8, 9, 10),        # SW
+    (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),          # centre
+    (1, 2, 3, 0, 0, 1, 2, 3, 5, 6, 7, 4),            # NE
+    (-1, -1, -1, -1, 7, 4, 5, 6, -1, -1, -1, -1),    # W
+    (3, 0, 1, 2, 3, 0, 1, 2, 4, 5, 6, 7),            # NW
+    (2, 3, 0, 1, -1, -1, -1, -1, 0, 1, 2, 3),        # N
+)
+_NB_SWAPARRAY = (
+    (0, 0, 3),  # S
+    (0, 0, 6),  # SE
+    (0, 0, 0),  # E
+    (0, 0, 5),  # SW
+    (0, 0, 0),  # centre
+    (5, 0, 0),  # NE
+    (0, 0, 0),  # W
+    (6, 0, 0),  # NW
+    (3, 0, 0),  # N
+)
 
 
 # ============================================================

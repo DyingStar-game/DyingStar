@@ -276,13 +276,13 @@ jobs:
       - name: Credits generator unit tests
         run: python3 test/unit/test_generate_credits_py.py
 
-      # The planet exporter's road partition across levels. Its HEALPix helpers need numpy, the one
-      # package these checks install. Only the partition tests for now: five mountain / populate
-      # part tests pass on Python 3.15 + numpy 2.5 and not on this image, still to look into.
-      - name: Planet exporter unit tests (road partition)
+      # The planet exporter: its geometry and pack format, and its pure-Python HEALPix (the one used
+      # without healpy, as here). numpy is the one package these checks install.
+      - name: Planet exporter unit tests
         run: |
           pip3 install --quiet numpy
-          python3 test/unit/test_modifier_pack_py.py -k partition
+          python3 test/unit/test_healpix_utils_py.py
+          python3 test/unit/test_modifier_pack_py.py
 
       # What turns the GUT job red (a failing test, a test script that did not load, no report).
       - name: GUT verdict unit tests
