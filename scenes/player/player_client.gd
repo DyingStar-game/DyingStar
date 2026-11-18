@@ -562,6 +562,7 @@ func _process(_delta: float) -> void:
 	_weather_listener_of().buried = _places.buried() if _places != null else 0.0
 	_weather_listener_of().update(_delta)
 	_keep_camera_ours()  # same reason: a seated driver can lose the view too
+	_keep_seat_true(_delta)  # the seat the server has us in, never one that left the game
 	# Seated in a vehicle: ride the seat HERE, in sync with the vehicle's own _process
 	# interpolation, so the camera stays glued to the (smoothly moving) cabin — no jitter/blur.
 	if is_instance_valid(player._seat_node):
@@ -1518,19 +1519,12 @@ func _enter_seat(seat: Node) -> void:
 		return
 	if _seat_is_taken(seat):
 		return  # driver seat already occupied (server-replicated) — don't enter optimistically
-	player._seat_node = seat
-	player._seat_vehicle_node = veh
-	player._seat_vehicle_uuid = str(veh.uuid)
-	player._seat_is_driver = seat.is_driver_seat()
-	player.seated_role = "driver" if seat.is_driver_seat() else "passenger"  # drives the sit/drive pose
-	_aim_past_seats(veh, true)
+	_bind_seat(seat)
 	player.client_send_action_to_server({
 		"action": "enter_vehicle",
 		"target_uuid": player._seat_vehicle_uuid,
 		"seat": VehicleNetKey.of(seat),
 	})
-	player.active = false  # lock walking while seated
-	player.set_seated(true)
 	# The FRAME is not ours to choose. The server decides it and announces it as `parent_id`;
 	# client.player_update then reparents us and applies the position measured in that frame,
 	# atomically. This used to reparent optimistically right here, and it was invisible only
@@ -1544,6 +1538,81 @@ func _enter_seat(seat: Node) -> void:
 	# See dyingstar-parenting-server-authority: the client applies the frame, never picks it.
 	# The driver's readout needs no call here: the debug panel asks driven_vehicle() (DevOverlay).
 
+## The local half of sitting in [param seat]: ride it, walking locked, the body out of the cab's way.
+## Ours when we board (_enter_seat, which also asks the server), the server's when it seats us itself
+## (_keep_seat_true).
+func _bind_seat(seat: Node) -> void:
+	var veh: Node = seat.vehicle()
+	if is_instance_valid(player._seat_vehicle_node):
+		_aim_past_seats(player._seat_vehicle_node, false)  # the seats of a cab we were bound to before
+	player._seat_node = seat
+	player._seat_vehicle_node = veh
+	player._seat_vehicle_uuid = str(veh.uuid)
+	player._seat_is_driver = seat.is_driver_seat()
+	player.seated_role = "driver" if seat.is_driver_seat() else "passenger"  # drives the sit/drive pose
+	_aim_past_seats(veh, true)
+	player.active = false  # lock walking while seated
+	player.set_seated(true)
+
+
+## How long (ms) after the server said we left a seat its own state may still show us in it: the
+## vehicle's seat map and our frame come by other messages than the "unseat". Not seated again from
+## them meanwhile.
+const UNSEAT_SETTLE_MS := 3000
+## Seconds the walk may stay locked for a seat that is no longer in the game before we stand up.
+const SEAT_LOST_S := 2.0
+
+## When the server last said we left a seat (ms), 0 once it seats us again; and for how long (s) the
+## seat we are bound to has been gone.
+var _unseated_ms: int = 0
+var _seat_lost_s: float = 0.0
+
+
+## OWNER, every frame: sit where the SERVER has us seated, and never ride a seat that left the game.
+##
+## The seat is the server's to give. Its state says it twice: our frame is a vehicle (parent_id) and that
+## vehicle's seat map names us. Read from there, a seat it gave us without our asking is taken (put back
+## at the wheel after a teleport, Teleporter._take_out_of_seat), and so is the same seat on another
+## node, the vehicle having left our zone and come back.
+##
+## And a seat that is gone -- freed, or on a vehicle retired from the game -- is let go of at once: the
+## walk used to stay locked on it, the look with it, until the player relogged (playtest 2026-11-17).
+## If the server does not seat us again within SEAT_LOST_S, we stand up.
+func _keep_seat_true(delta: float) -> void:
+	var given: Node = seat_given(player, _unseated_ms, Time.get_ticks_msec())
+	if given != null and given != player._seat_node:
+		_bind_seat(given)
+	if player._seat_vehicle_uuid == "" or seat_is_live(player._seat_node):
+		_seat_lost_s = 0.0
+		return
+	player._seat_node = null
+	_seat_lost_s += delta
+	if _seat_lost_s >= SEAT_LOST_S:
+		push_warning("[PlayerClient] seated in %s with no seat left in the game: standing up"
+				% player._seat_vehicle_uuid)
+		_leave_vehicle()
+
+
+## The seat the server's state has [param body] in: its frame is a vehicle whose seat map names it.
+## Null on foot, and for UNSEAT_SETTLE_MS after the server said it left a seat ([param unseated_ms], 0
+## for never): that state lags the word. Pure, for the tests.
+static func seat_given(body: Player, unseated_ms: int, now_ms: int) -> Node:
+	if unseated_ms != 0 and now_ms - unseated_ms < UNSEAT_SETTLE_MS:
+		return null
+	var veh := body.get_parent() as Vehicle
+	var who: String = str(body.client_uuid)
+	if veh == null or who == "":  # no name: every free seat of the map would be "ours"
+		return null
+	return veh.find_seat(veh.seat_name_of(who))
+
+
+## Whether [param seat] can be ridden: alive, in the tree, and not on a vehicle retired from the game
+## (out of our zone, hidden and paused until it is freed: NetworkAgent._retire). Untyped: a freed seat
+## is exactly what is asked about, and a freed instance cannot be passed as a Node.
+static func seat_is_live(seat: Variant) -> bool:
+	return is_instance_valid(seat) and seat.is_inside_tree() and seat.can_process()
+
+
 ## Leave the seat we occupy (driver or passenger): walk again, un-parent back into the world. NEVER
 ## called on our own initiative — only when the server says we are out ("unseat"), whether that is our
 ## own Y request granted or a seat it refused us. One writer, so the two can never disagree about who is
@@ -1554,7 +1623,8 @@ func _leave_vehicle() -> void:
 	player.camera_pivot.rotation = Vector3.ZERO  # restore walking look (yaw goes back on the body)
 	# No un-parenting here either: server_exit puts us back in the vehicle's own frame and
 	# says so. Doing it locally would re-open the same race, in the other direction.
-	_aim_past_seats(player._seat_vehicle_node, false)
+	if is_instance_valid(player._seat_vehicle_node):  # freed with its zone: its seats went with it
+		_aim_past_seats(player._seat_vehicle_node, false)
 	player._seat_vehicle_uuid = ""
 	player._seat_vehicle_node = null
 	player._seat_node = null
@@ -2580,19 +2650,24 @@ func client_channel_data_update(data: Dictionary) -> void:
 				_play_clothes_sfx(true)  # sitting down
 			if player.remote_player:
 				player.seated_role = action.split(":")[1]  # "seat:<role>:<n>" -> drive/passenger sit pose
+			else:
+				_unseated_ms = 0  # the server seats us: its state is to be believed again (_keep_seat_true)
 		elif action.begins_with("unseat") and action != _last_seat_action:
 			_last_seat_action = action
 			if _sfx_live:
 				_play_clothes_sfx(true)  # getting up
 			if player.remote_player:
 				player.seated_role = ""  # left the seat -> normal locomotion pose
-			elif player._seat_vehicle_uuid != "":
-				# We are out: either the seat we optimistically took was refused (occupied/blocked), or
-				# the exit we asked for was granted. Both land here, and both mean the same thing.
-				# Keyed on the VEHICLE uuid, not on _seat_node: the seat node dies with the vehicle when
-				# it leaves our GORC radius, and a freed reference must not be what decides whether we
-				# are allowed to stand up again.
-				_leave_vehicle()
+			else:
+				# The server's state shows us seated a moment longer than its word (_keep_seat_true).
+				_unseated_ms = Time.get_ticks_msec()
+				if player._seat_vehicle_uuid != "":
+					# We are out: either the seat we optimistically took was refused (occupied/blocked), or
+					# the exit we asked for was granted. Both land here, and both mean the same thing.
+					# Keyed on the VEHICLE uuid, not on _seat_node: the seat node dies with the vehicle when
+					# it leaves our GORC radius, and a freed reference must not be what decides whether we
+					# are allowed to stand up again.
+					_leave_vehicle()
 		elif action.begins_with("stow:") and action != _last_stow_action:
 			# Boarding put our tools away. An EVENT rather than the `tools` state, because the state is
 			# delta-compressed and a stow that changes nothing on the wire never arrives.
