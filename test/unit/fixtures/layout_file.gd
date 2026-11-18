@@ -10,10 +10,12 @@ const LOCALISATION := "res://tools/localization/localisation.csv"
 
 
 ## The networked items [param layout] (res:// path) places, in its file's order: {scene, xform (in the
-## layout's frame), key, parent}. With [param nested], the items placed UNDER a direct child (the
-## containers of a storage area) too, their key "parent/name" as poi_villages draws their uuid from;
-## else the direct children only, their key their name. A node with no transform line stands at its
-## parent's origin: Godot leaves an identity transform out of the file.
+## layout's frame), key, parent}. A folder (a bare Node3D with no script, poi_villages.is_folder) is
+## seen through: what stands in it counts as standing under the root, its key its name alone. With
+## [param nested], the items placed UNDER one of those (the containers of a storage area) too, their
+## key "parent/name" as poi_villages draws their uuid from; else those only, their key their name.
+## A node with no transform line stands at its parent's origin: Godot leaves an identity transform
+## out of the file.
 static func items(layout: String, nested: bool = true) -> Array:
 	var text := FileAccess.get_file_as_string(layout).replace("\r\n", "\n")
 	var paths := {}
@@ -21,25 +23,39 @@ static func items(layout: String, nested: bool = true) -> Array:
 		paths[ext.get_string(2)] = ext.get_string(1)
 	var head := RegEx.create_from_string("^name=\"([^\"]+)\" parent=\"([^\"]+)\"[^\\]]*instance=ExtResource\\(\"([^\"]+)\"\\)")
 	var place := RegEx.create_from_string("\\ntransform = (Transform3D\\([^)]*\\))")
-	var frames := {}  # a direct child's name -> its transform: what the items under it are local to
+	var folder := RegEx.create_from_string("^name=\"([^\"]+)\" type=\"Node3D\" parent=\"([^\"]+)\"")
+	var folders := {".": Transform3D.IDENTITY}  # a folder's path -> its transform in the layout's frame
+	var frames := {}  # the path of an item under the root or a folder -> [its transform, its key]
 	var out: Array = []
 	for block in text.split("\n[node "):
+		var t := place.search(block)
+		var xf: Transform3D = str_to_var(t.get_string(1)) if t != null else Transform3D.IDENTITY
+		var f := folder.search(block)
+		if f != null and folders.has(f.get_string(2)) and not block.contains("\nscript = "):
+			folders[_path(f.get_string(2), f.get_string(1))] = folders[f.get_string(2)] * xf
+			continue
 		var m := head.search(block)
 		if m == null:
 			continue
-		var t := place.search(block)
-		var xf: Transform3D = str_to_var(t.get_string(1)) if t != null else Transform3D.IDENTITY
 		var name := m.get_string(1)
 		var parent := m.get_string(2)
-		if parent == ".":
-			frames[name] = xf
+		if folders.has(parent):
+			xf = folders[parent] * xf
+			frames[_path(parent, name)] = [xf, name]
+			parent = "."
 		elif not nested or not frames.has(parent):
 			continue
 		else:
-			xf = frames[parent] * xf
+			xf = frames[parent][0] * xf
+			parent = frames[parent][1]
 			name = "%s/%s" % [parent, name]
 		out.append({"scene": paths.get(m.get_string(3), ""), "xform": xf, "key": name, "parent": parent})
 	return out
+
+
+## The scene-file path of the node [param name] under [param parent] ("." = the root).
+static func _path(parent: String, name: String) -> String:
+	return name if parent == "." else "%s/%s" % [parent, name]
 
 
 ## The scenes instanced straight under [param layout]'s root, each once.

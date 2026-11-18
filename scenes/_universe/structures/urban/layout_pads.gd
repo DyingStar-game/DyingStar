@@ -1,11 +1,14 @@
 class_name LayoutPads
 extends RefCounted
-## The TerrainPads placed straight under a village or city layout's root (not inside a building): an
+## The TerrainPads placed straight under a village or city layout's root or in one of its folders (not
+## inside a building): an
 ## area of the layout to level on its own (the mine's yard, a square). A layout never spawns them — they
 ## belong to no networked item — so the server and every client read them from the layout file, as
 ## LayoutRoads reads the roads, and register them with the village's ground (PlanetTerrain), through
 ## the village bed's frame: the same record on every machine.
 
+## The layout reader that says what stands under the root, folders seen through (top_nodes).
+const PoiVillagesScript := preload("res://scenes/_universe/structures/urban/poi_villages.gd")
 ## In the uuid of every layout area's record: how the village roads tell an area from a building.
 const UUID_TAG := "|pad|"
 
@@ -19,7 +22,7 @@ static func of(scene_path: String) -> Array:
 ## The root pads of an instantiated [param layout] (not in the tree), as [method of] returns them.
 static func of_layout(layout: Node) -> Array:
 	var out: Array = []
-	for n: Node in layout.get_children():
+	for n: Node in PoiVillagesScript.top_nodes(layout):
 		if not n is TerrainPad:
 			continue
 		var t: Dictionary = (n as TerrainPad).template_relative_to(layout)

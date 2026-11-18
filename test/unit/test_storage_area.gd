@@ -77,3 +77,27 @@ func test_the_village_spawns_what_the_layout_put_under_an_area() -> void:
 	assert_eq(POI_VILLAGES.layout_children(area, layout), [box] as Array[Node],
 			"the container, and not the area's PropSync or TerrainPad")
 	layout.free()
+
+
+## A level designer tidies a layout in folders (bare Node3D, nested or not): what stands in one is
+## spawned as if it stood under the root, at its place in the layout, and counts in the footprint.
+func test_the_village_sees_through_a_folder() -> void:
+	var layout := Node3D.new()
+	var folder := Node3D.new()
+	folder.position = Vector3(10.0, 0.0, -4.0)
+	layout.add_child(folder)
+	var inner := Node3D.new()
+	inner.position = Vector3(0.0, 0.0, 4.0)
+	folder.add_child(inner)
+	var area: Node3D = load(AREA).instantiate()
+	area.position = Vector3(2.0, 0.0, 0.0)
+	inner.add_child(area)
+	assert_true(POI_VILLAGES.is_folder(folder))
+	assert_false(POI_VILLAGES.is_folder(area), "a scene is an item, not a folder")
+	assert_eq(POI_VILLAGES.top_items(layout), [area] as Array[Node], "the area, not the folders")
+	assert_eq(LayoutLine.frame_in(area, layout).origin, Vector3(12.0, 0.0, 0.0), "the folders' offsets count")
+	var fp := LayoutFootprint.of_layout(layout)
+	assert_false(fp.is_empty(), "an item in a folder is part of the village's ground")
+	if not fp.is_empty():
+		assert_almost_eq((fp["centre"] as Vector2).x, 12.0, 0.5)
+	layout.free()
