@@ -10,13 +10,45 @@ func test_the_key_is_an_action_filed_with_the_captures() -> void:
 	assert_eq(gallery.get("bug_report"), "%%ACT_BUG_REPORT", "listed in Settings > Controls, with F7 and F8")
 
 
-func test_the_form_wants_a_title_and_a_description() -> void:
-	assert_eq(BugReportDialog.error_key("ab", "it broke"), "%%BUG_REPORT_TITLE_SHORT")
-	assert_eq(BugReportDialog.error_key("  a  ", "it broke"), "%%BUG_REPORT_TITLE_SHORT", "spaces do not count")
-	assert_eq(BugReportDialog.error_key("Stuck in the truck", "   "), "%%BUG_REPORT_DESCRIPTION_EMPTY")
-	assert_eq(BugReportDialog.error_key("Stuck in the truck", "x".repeat(BugReportDialog.DESCRIPTION_MAX + 1)),
-			"%%BUG_REPORT_DESCRIPTION_LONG")
-	assert_eq(BugReportDialog.error_key("Stuck in the truck", "Teleported from the seat."), "", "good to send")
+## A report on the QA team's template, every part filled in.
+const FILLED := {
+	"title": "Stuck in the truck",
+	"description": "Teleporting from the driver's seat freezes me.",
+	"steps": "1. Sit at the wheel\n2. Use the teleporter",
+	"actual": "Cannot walk nor look around",
+	"expected": "Arriving at the wheel",
+}
+
+
+func _typed(changes: Dictionary) -> Dictionary:
+	var typed: Dictionary = FILLED.duplicate()
+	typed.merge(changes, true)
+	return typed
+
+
+## The template: a title, then the description, the steps, the actual and the expected result.
+func test_the_template_is_the_qa_team_s_and_every_part_is_asked() -> void:
+	var keys: Array = BugReportDialog.PARTS.map(func(part: Dictionary) -> String: return part["key"])
+	assert_eq(keys, ["description", "steps", "actual", "expected"])
+	assert_eq(BugReportDialog.problem(FILLED), {}, "all filled in: good to send")
+	assert_eq(BugReportDialog.problem(_typed({"title": "  a  "})).get("key"), "%%BUG_REPORT_TITLE_SHORT",
+			"spaces do not count")
+	for part: Dictionary in BugReportDialog.PARTS:
+		var empty: Dictionary = BugReportDialog.problem(_typed({part["key"]: "   "}))
+		assert_eq(empty.get("key"), "%%BUG_REPORT_PART_EMPTY", "%s left empty" % part["key"])
+		assert_eq(empty.get("label"), part["label"], "and the form names it")
+		var long: Dictionary = BugReportDialog.problem(_typed({part["key"]: "x".repeat(int(part["max"]) + 1)}))
+		assert_eq(long.get("key"), "%%BUG_REPORT_PART_LONG", "%s too long" % part["key"])
+	assert_eq(BugReportDialog.problem(_typed({"steps": "", "expected": ""})).get("label"), "%%BUG_REPORT_STEPS",
+			"the first part missing, in the template's order")
+
+
+## The four parts go out as one Discord message of 4096 characters at most, their headings included.
+func test_the_four_parts_fit_one_discord_message() -> void:
+	var room: int = 0
+	for part: Dictionary in BugReportDialog.PARTS:
+		room += int(part["max"])
+	assert_lte(room, 3900, "the texts, with room left for the four headings")
 
 
 func test_the_form_sends_cleaned_texts_and_says_what_is_wrong() -> void:
@@ -25,16 +57,16 @@ func test_the_form_sends_cleaned_texts_and_says_what_is_wrong() -> void:
 	watch_signals(form)
 	form.open_with(null)
 	assert_true(form.is_open())
-	form._title.text = "a"
-	form._description.text = "it broke"
-	form._submit()
-	assert_signal_not_emitted(form, "submitted", "a title too short is not sent")
-	assert_ne(form._status.text, "", "and the form says why")
 	form._title.text = "  Stuck in the truck "
-	form._description.text = "Teleported from the seat.\n"
+	for key: String in ["description", "steps", "actual"]:
+		(form._fields[key] as TextEdit).text = "  %s\n" % FILLED[key]
+	form._submit()
+	assert_signal_not_emitted(form, "submitted", "the expected result is missing: not sent")
+	assert_ne(form._status.text, "", "and the form says which part")
+	(form._fields["expected"] as TextEdit).text = str(FILLED["expected"])
 	form._with_log.button_pressed = false
 	form._submit()
-	assert_signal_emitted_with_parameters(form, "submitted", ["Stuck in the truck", "Teleported from the seat.", false])
+	assert_signal_emitted_with_parameters(form, "submitted", [FILLED, false])
 
 
 func test_where_reports_are_not_relayed_the_form_says_so_and_sends_nothing() -> void:
@@ -44,8 +76,9 @@ func test_where_reports_are_not_relayed_the_form_says_so_and_sends_nothing() -> 
 	form.open_with(null, "not relayed from here")
 	assert_true(form._send.disabled, "nothing to send to")
 	assert_eq(form._status.text, "not relayed from here")
-	form._title.text = "Stuck in the truck"
-	form._description.text = "Teleported from the seat."
+	form._title.text = str(FILLED["title"])
+	for key: String in form._fields:
+		(form._fields[key] as TextEdit).text = str(FILLED[key])
 	form._clear_error()
 	assert_eq(form._status.text, "not relayed from here", "typing does not wipe the reason")
 	form._submit()
