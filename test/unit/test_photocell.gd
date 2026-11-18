@@ -228,3 +228,37 @@ func test_one_photocell_ticks_them_all() -> void:
 	remove_child(first)
 	assert_true(second.is_processing(), "the driver gone, another takes over")
 	first.free()
+
+
+## A prop that leaves the player's zone stays in the tree, hidden and paused, until it is freed
+## (NetworkAgent._retire): the driver's role must not stay with its photocell.
+func test_a_driver_paused_with_its_prop_hands_over() -> void:
+	var gone := Node3D.new()
+	var first := Photocell.new()
+	gone.add_child(first)
+	add_child_autofree(gone)
+	var second := Photocell.new()
+	add_child_autofree(second)
+	assert_true(first.is_processing(), "the first drives")
+	gone.process_mode = Node.PROCESS_MODE_DISABLED
+	assert_false(first.is_processing(), "paused with its prop, it stands down")
+	assert_true(second.is_processing(), "and a lamp still here takes over")
+	var late := Photocell.new()
+	add_child_autofree(late)
+	assert_false(late.is_processing(), "a lamp arriving finds a driver that runs")
+	gone.process_mode = Node.PROCESS_MODE_INHERIT
+	assert_false(first.is_processing(), "woken up, it is driven like the others")
+	assert_true(second.is_processing())
+
+
+## A lamp arriving while the only one known is paused: it drives, the paused one does not.
+func test_a_lamp_arriving_among_paused_ones_drives() -> void:
+	var gone := Node3D.new()
+	gone.process_mode = Node.PROCESS_MODE_DISABLED
+	var paused := Photocell.new()
+	gone.add_child(paused)
+	add_child_autofree(gone)
+	assert_false(paused.is_processing(), "paused from the start: it cannot drive")
+	var here := Photocell.new()
+	add_child_autofree(here)
+	assert_true(here.is_processing(), "the first lamp that runs drives")
