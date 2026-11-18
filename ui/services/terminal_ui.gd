@@ -637,14 +637,18 @@ func _show_nothing() -> void:
 		(_side_slots[key] as Control).visible = false
 
 
-## Off the NAVIGATION tab, if that is where we were: the slot hidden, the chart told.
+## Off the NAVIGATION tab, if that is where we were: the chart told, then the slot hidden.
+##
+## In that order. The chart is open while its face is on show (StarMap.is_open), and whoever closes it
+## asks first (PlayerClient._close_navigation): told after the slot was hidden, it read as closed
+## already and never closed -- the right click's menu, a window, stayed over the next tab.
 func _leave_navigation() -> void:
 	_opened_for_navigation = false
-	if _navigation != null:
-		_navigation.visible = false
 	if _active_id == NAVIGATION:
 		_active_id = ""
 		navigation_closed.emit()
+	if _navigation != null:
+		_navigation.visible = false
 
 
 func _open_app(id: String) -> void:
