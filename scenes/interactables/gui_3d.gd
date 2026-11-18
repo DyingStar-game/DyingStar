@@ -196,6 +196,14 @@ func point_at_uv(uv: Vector2) -> Vector3:
 	return node_quad.global_transform * Vector3((uv.x - 0.5) * size.x, (0.5 - uv.y) * size.y, 0.0)
 
 
+## Hand the interface a mouse button coming back up OFF the screen, where the pointer last was on it.
+## A button pressed on the screen and let go beside it is still let go: never told, the viewport goes
+## on believing it held, and gives the clicks of the other buttons to the control that had the mouse.
+func push_release(input_event: InputEventMouseButton) -> void:
+	if not input_event.pressed:
+		_push_at_pixel(input_event.duplicate(), last_event_pos_2d)
+
+
 ## Press or release ([param pressed]) the left button at [param point] (a hit()).
 func click_at(point: Vector3, pressed: bool) -> void:
 	var click := InputEventMouseButton.new()

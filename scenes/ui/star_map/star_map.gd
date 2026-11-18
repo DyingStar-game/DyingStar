@@ -3770,7 +3770,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if _gestures != null and _gestures.input(event):
-		get_viewport().set_input_as_handled()
+		_claim(event)
 		return
 	if not _dragging:
 		return
@@ -3781,7 +3781,28 @@ func _input(event: InputEvent) -> void:
 		_turn_view((event as InputEventMouseMotion).relative)
 	else:
 		return
+	_claim(event)
+
+
+## [param event] was the chart's: nothing else acts on it.
+##
+## But for a mouse button coming back up while the face is in another viewport (the DataPad's, a cab
+## screen's). The mouse is carried there by someone who reads it AFTER the chart (WristDatapad,
+## PlayerClient for the cab), and the press went through them: kept from the release, that viewport
+## went on believing the button held, and a click of ANOTHER button is given to whoever holds the mouse
+## -- after a right click every left click went to the chart, then to the last tab pressed, and the
+## DataPad's tabs were dead (playtest 2026-11-18). The face makes nothing of a release (_gesture).
+func _claim(event: InputEvent) -> void:
+	if releases_pass_on(event, _surface.get_viewport() != get_viewport()):
+		return
 	get_viewport().set_input_as_handled()
+
+
+## A mouse button coming back up, with the chart's face [param hosted_elsewhere] (in another viewport
+## than the chart's own): the one event the chart acts on without keeping it (_claim). Static and pure.
+static func releases_pass_on(event: InputEvent, hosted_elsewhere: bool) -> bool:
+	var button := event as InputEventMouseButton
+	return hosted_elsewhere and button != null and not button.pressed
 
 
 ## Turn the view by [param relative], in pixels of drag: the mouse's middle button and the gamepad's

@@ -93,7 +93,11 @@ func input(event: InputEvent) -> bool:
 				# On the ground, nothing else under the cursor: the pin, to read where it is.
 				_map._pins.pin = {} if _map._named_under(at) else _map._point_under(at)
 			&"star_map_menu":
-				open_context(at)
+				# Once this release has gone all its way, not now: on a screen (the DataPad, a cab), it
+				# still has to be carried into that screen's viewport after us, and a menu already up
+				# there would take it -- the screen would go on believing the right button held, and
+				# give every left click that follows to the chart (StarMap._claim).
+				open_context.call_deferred(at)
 	return true
 
 
