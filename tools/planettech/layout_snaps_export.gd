@@ -2,6 +2,8 @@ extends Node
 ## Writes assets/qgis/export/layout_snaps.json (LayoutSnaps): the footprint and the road snaps of
 ## every village and city layout, for the QGIS road export. Run it after moving a building or a
 ## RoadSnap in a layout, then re-export the roads (export_roads.py): test_layout_snaps fails until then.
+## On a pull request, .github/workflows/layout-snaps.yml runs it and commits the file; the road export
+## stays by hand (it needs QGIS).
 ##
 ##   godot --headless --path . res://tools/planettech/layout_snaps_export.tscn
 ##

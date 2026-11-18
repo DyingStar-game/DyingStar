@@ -1,0 +1,129 @@
+name: "Layout snaps"
+
+# Keeps assets/qgis/export/layout_snaps.json -- the footprint and the road snaps of every village and
+# city layout, which the QGIS road export reads (LayoutSnaps) -- in step with the layout scenes, so a
+# level designer who moves a road or a building has nothing to regenerate by hand.
+#
+# On a pull request that touches a structure scene: write the file again with the game itself
+# (tools/planettech/layout_snaps_export.tscn) and, when it changed, push it onto the pull request's
+# branch as its own commit. A pull request from a fork cannot be pushed to: it fails with the command
+# to run.
+#
+# What this does NOT do: re-export the planet's roads (tools/planettech/qgis/export_roads.py needs QGIS
+# and its PostGIS database). Until someone does, the roads of the planet still stop at the old
+# footprint and lead to the old snaps: the run says so in a warning.
+#
+# Repository settings this needs (Settings > Actions > General), like credits.yml and ds-net.yml:
+#   * Workflow permissions: "Read and write permissions".
+#   * Optional secret LAYOUT_SNAPS_BOT_TOKEN (fine-grained token, Contents: read and write on this
+#     repository): a commit pushed with the default GITHUB_TOKEN does not start the other workflows,
+#     so the pull request's tests (test_layout_snaps) only run again on its next push. With this token
+#     they start at once.
+on:
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - "scenes/_universe/structures/**"
+      - "tools/planettech/layout_snaps_export.*"
+      - ".github/workflows/layout-snaps.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: layout-snaps-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7
+  SNAPS_FILE: assets/qgis/export/layout_snaps.json
+
+jobs:
+  snaps:
+    name: Regenerate the layout snaps
+    runs-on: dyingstar-runners
+    timeout-minutes: 60
+    steps:
+      # The same system libraries as the test job (godot-tests.yml): the file must be the one
+      # test_layout_snaps computes there, and a script that does not compile changes what a layout holds.
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget unzip python3 libfontconfig1 fonts-dejavu-core \
+            libpipewire-0.3-0t64 libx11-6 libxext6 libxfixes3 libxinerama1 libsystemd0 libwayland-client0
+          echo "GODOT=$HOME/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSION}-stable_mono_linux.x86_64" >> "$GITHUB_ENV"
+
+      # The branch itself, not the merge commit GitHub tests by default: the bot pushes onto it.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          token: ${{ secrets.LAYOUT_SNAPS_BOT_TOKEN || github.token }}
+
+      - name: Set up .NET 9.0
+        uses: actions/setup-dotnet@v4
+        env:
+          # The ARC runner runs as an unprivileged user and cannot write to /usr/share/dotnet.
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: '9.0.x'
+
+      # Same key and path as godot-tests.yml and build-client.yaml: one cached engine for all.
+      - name: Cache Godot binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
+
+      - name: Install Godot
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          wget -q -O "$RUNNER_TEMP/godot.zip" \
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
+          rm "$RUNNER_TEMP/godot.zip"
+          chmod +x "$GODOT"
+
+      # As the test job builds it (double-precision GodotSharp from the editor zip).
+      - name: Build C#
+        run: |
+          export GODOT_SHARP_NUPKGS="$HOME/godot/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs"
+          rm -rf ~/.nuget/packages/godotsharp/${GODOT_VERSION}* ~/.nuget/packages/godotsharpeditor/${GODOT_VERSION}* \
+                 ~/.nuget/packages/godot.net.sdk/${GODOT_VERSION}* ~/.nuget/packages/godot.sourcegenerators/${GODOT_VERSION}*
+          dotnet build DyingStar.csproj -c Debug
+
+      # Registers every class_name (the export scene references them) and imports the resources.
+      - name: Import project
+        run: timeout 40m "$GODOT" --headless --path . --import || true
+
+      # Judged by the line the tool prints, not by the engine's exit code (it aborts at shutdown here).
+      - name: Write the layout snaps
+        run: |
+          python3 tools/ci/run_marked.py --pass '^written .*layout_snaps\.json$' -- \
+            "$GODOT" --headless --path . res://tools/planettech/layout_snaps_export.tscn
+
+      - name: Push them onto the pull request
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if git diff --quiet -- "$SNAPS_FILE"; then
+            echo "$SNAPS_FILE is already up to date."
+            exit 0
+          fi
+          git --no-pager diff --stat -- "$SNAPS_FILE"
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error file=$SNAPS_FILE::The layout snaps are out of date. Run 'godot --headless --path . res://tools/planettech/layout_snaps_export.tscn' and commit $SNAPS_FILE."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$SNAPS_FILE"
+          git commit -m "chore(planettech): regenerate the layout snaps"
+          git push
+          echo "::warning file=$SNAPS_FILE::A layout's footprint or road snaps moved. The planet's roads are not re-exported here: run tools/planettech/qgis/export_roads.py (QGIS) so they stop at the new footprint and join the new snaps."
