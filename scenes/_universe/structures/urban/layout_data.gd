@@ -16,20 +16,33 @@ static var _cache: Dictionary = {}
 ## {footprint: Dictionary (LayoutFootprint.of_layout), roads: Array (LayoutRoads.of_layout), pads:
 ## Array (LayoutPads.of_layout), fences: Array (LayoutFences.of_layout), signs: Array (NeonSign.mesh_params,
 ## once each)} of the layout
-## [param scene_path] (res:// or not); every part empty when the scene cannot be read.
+## [param scene_path] (res:// or not); every part empty when the scene cannot be read or instantiated.
 static func of(scene_path: String) -> Dictionary:
 	var path := scene_path if scene_path.begins_with("res://") else "res://" + scene_path
 	if _cache.has(path):
 		return _cache[path]
-	var out := {"footprint": {}, "roads": [], "pads": [], "fences": [], "signs": []}
 	var packed := load(path) as PackedScene if ResourceLoader.exists(path) else null
-	if packed != null:
-		var layout: Node = packed.instantiate()
-		out = {"footprint": LayoutFootprint.of_layout(layout), "roads": LayoutRoads.of_layout(layout),
-				"pads": LayoutPads.of_layout(layout), "fences": LayoutFences.of_layout(layout),
-				"signs": _signs_of(layout)}
-		layout.free()
+	var out := of_scene(packed, path)
 	_cache[path] = out
+	return out
+
+
+## The parts of [method of] read from [param packed] (loaded from [param path], for the error), every part
+## empty when it is null or does not instantiate. A null layout must never reach the readers: in a release
+## build, a method called on a null typed node crashes the game instead of raising an error (a player's
+## game crashed at the menu's warm-up, 2026-11-18, on a layout that did not instantiate).
+static func of_scene(packed: PackedScene, path: String) -> Dictionary:
+	var out := {"footprint": {}, "roads": [], "pads": [], "fences": [], "signs": []}
+	if packed == null:
+		return out
+	var layout: Node = packed.instantiate()
+	if layout == null:
+		push_error("[LayoutData] %s does not instantiate: its ground, roads, pads, fences and signs are left empty" % path)
+		return out
+	out = {"footprint": LayoutFootprint.of_layout(layout), "roads": LayoutRoads.of_layout(layout),
+			"pads": LayoutPads.of_layout(layout), "fences": LayoutFences.of_layout(layout),
+			"signs": _signs_of(layout)}
+	layout.free()
 	return out
 
 
