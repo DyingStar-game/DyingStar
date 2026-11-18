@@ -144,7 +144,7 @@ def _plain_colour(value) -> tuple[float, float, float]:
 
 
 def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) -> None:
-    """Base Color may be a plain colour or an image, alone or under an AO multiply."""
+    """Base Color may be a plain colour or an image, tinted or not, alone or under an AO multiply."""
     socket = principled.inputs["Base Color"]
     node = _linked_node(socket)
 
@@ -163,43 +163,100 @@ def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) ->
         return
 
     if node.bl_idname in (_MIX, _MIX_LEGACY):
-        base_input = "A" if "A" in node.inputs else "Color1"
-        modulation_input = "B" if "B" in node.inputs else "Color2"
-
-        albedo = _walk_to_image(node.inputs[base_input])
+        base_input, modulation_input = _mix_inputs(node)
         occlusion = _walk_to_image(node.inputs[modulation_input])
+        if occlusion is None:
+            # No occlusion map in B: the albedo in A, tinted or not by the colour in B.
+            _extract_tinted_albedo(node, result)
+            return
 
-        if albedo is not None:
-            result.images["albedo"] = albedo.image
-        elif not node.inputs[base_input].is_linked:
-            # A plain colour under an occlusion map: what material_builder wires
-            # for a manifest with albedo_color, an ao map and no albedo.
-            result.albedo_color = _plain_colour(node.inputs[base_input].default_value)
+        # Occlusion in B, multiplied over what is in A: the albedo, itself tinted
+        # or not (a Mix of its own, as material_builder wires it), or a plain colour.
+        base = _linked_node(node.inputs[base_input])
+        if base is not None and base.bl_idname in (_MIX, _MIX_LEGACY):
+            _extract_tinted_albedo(base, result)
         else:
-            result.warnings.append(
-                f"Base Color: the first input ({base_input}) of the Mix node leads to no image"
-            )
-        if occlusion is not None and occlusion is not albedo:
+            _extract_tinted_albedo(node, result, tinted=False)
+        if occlusion.image != result.images.get("albedo"):
             result.images["ao"] = occlusion.image
-        elif occlusion is None:
-            _warn_flat_modulation(node.inputs[modulation_input], result)
         return
 
     result.warnings.append(
-        f"Base Color goes through an unsupported node ({node.bl_idname})"
+        f"Base Color goes through an unsupported node ({node.bl_idname}). To tint a texture, "
+        "multiply it by a flat colour in a Mix node (Multiply, Factor 1), which is published "
+        "as albedo_color; any other colour work is done in Godot or flattened into the image"
     )
+
+
+def _mix_inputs(node: bpy.types.Node) -> tuple[str, str]:
+    """The names of a Mix node's two colour inputs: the base, then what modulates it."""
+    return ("A", "B") if "A" in node.inputs else ("Color1", "Color2")
+
+
+def _is_full_multiply(node: bpy.types.Node) -> bool:
+    """Whether a Mix node multiplies its two colours in full, which is what Godot does
+    with an albedo map and albedo_color: the one tint the manifest can carry."""
+    factor = node.inputs.get("Factor") or node.inputs.get("Fac")
+    return (
+        getattr(node, "blend_type", "") == "MULTIPLY"
+        and factor is not None
+        and not factor.is_linked
+        and abs(float(factor.default_value) - 1.0) < 1e-4
+    )
+
+
+def _extract_tinted_albedo(mix: bpy.types.Node, result: ExtractionResult, tinted: bool = True) -> None:
+    """Read the base colour out of a Mix node: its first input, then its second as a tint.
+
+    A is the albedo image, or a plain colour when nothing is wired there. With
+    tinted, B is a flat colour laid over it: multiplied in full, it is published
+    as albedo_color, which Godot multiplies over the albedo map the same way --
+    one grey texture then gives every colour of a surface, with no new image.
+    Laid over it any other way, it cannot be carried and is reported.
+    """
+    base_input, modulation_input = _mix_inputs(mix)
+    base_socket = mix.inputs[base_input]
+    albedo = _walk_to_image(base_socket)
+
+    if albedo is None:
+        if base_socket.is_linked:
+            result.warnings.append(
+                f"Base Color: the first input ({base_input}) of the Mix node leads to no image"
+            )
+        else:
+            # A plain colour under an occlusion map: what material_builder wires
+            # for a manifest with albedo_color, an ao map and no albedo.
+            result.albedo_color = _plain_colour(base_socket.default_value)
+        if tinted:
+            _warn_flat_modulation(mix.inputs[modulation_input], result)
+        return
+
+    result.images["albedo"] = albedo.image
+    if not tinted:
+        return
+    tint_socket = mix.inputs[modulation_input]
+    if tint_socket.is_linked or _is_white(tint_socket.default_value):
+        return
+    if _is_full_multiply(mix):
+        result.albedo_color = _plain_colour(tint_socket.default_value)
+    else:
+        _warn_flat_modulation(tint_socket, result)
+
+
+def _is_white(value) -> bool:
+    return all(round(float(channel), 3) == 1.0 for channel in tuple(value)[:3])
 
 
 def _warn_flat_modulation(socket, result: ExtractionResult) -> None:
     """Name a base colour tint that the library cannot carry.
 
-    The convention is albedo in A, occlusion in B. A flat colour in B instead
-    is a tint the artist sees in the viewport but which lives in the node tree,
-    not in the image. Only the image is published, so the material would come
-    out of the library paler than it was authored, with nothing in the manifest
-    to explain the difference. The library does not bake colour operations: the
-    published albedo is the final image, so the tint has to be flattened into
-    it before export.
+    A flat colour multiplied in full over the albedo is published as
+    albedo_color (_extract_tinted_albedo). Laid over it any other way -- another
+    blend mode, a factor under 1 or driven by a node -- it is a tint the artist
+    sees in the viewport but which lives in the node tree only: the material
+    would come out of the library a different colour than it was authored, with
+    nothing in the manifest to explain the difference. The library does not
+    bake colour operations.
     """
     if socket.is_linked:
         return
@@ -213,9 +270,9 @@ def _warn_flat_modulation(socket, result: ExtractionResult) -> None:
         return
 
     result.warnings.append(
-        f"Base Color is tinted by a flat colour ({red}, {green}, {blue}) "
-        "instead of an occlusion map. Flatten it into the albedo image, "
-        "the library publishes the image only"
+        f"Base Color is tinted by a flat colour ({red}, {green}, {blue}) in a way the library "
+        "cannot carry. Set the Mix node to Multiply with Factor 1 (the tint is then published "
+        "as albedo_color), or flatten it into the albedo image"
     )
 
 
