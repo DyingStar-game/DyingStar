@@ -47,6 +47,9 @@ const LIGHT_GROUP := "vehicle_light"
 const MODEL_GROUP := "vehicle_model"
 ## How far the horn is taken down (dB) during its fade-out, before the player is stopped.
 const HORN_FADE_DB := -30.0
+## SERVER: how long (s) the horn's state stays on once pressed, however short the tap. Pressed and
+## released between two updates, the "on" reached nobody: a tap made no sound, only a held key did.
+const HORN_MIN_HOLD_S := 0.3
 ## Below this envelope level a scrub loop is inaudible and is stopped outright, rather than left
 ## running at -60 dB for the rest of the session.
 const TYRE_SILENT := 0.001
@@ -589,7 +592,8 @@ const OWNER_PLATE_GROUP := &"prop_owner_label"
 @export_range(0.0, 5.0, 0.1) var sfx_engine_idle_fade_in_s: float = 1.5
 
 @export_subgroup("Horn")
-## Normal horn (key H): HELD — it blows for as long as the key is down (looped automatically).
+## Normal horn (key H): HELD — it blows for as long as the key is down (looped automatically); a tap
+## gives a short honk.
 @export var sfx_horn: AudioStream
 ## Loudness in decibels (0 = the sample's own level, negative = quieter).
 @export_range(-40.0, 12.0, 0.5) var sfx_horn_db: float = 0.0
@@ -937,7 +941,9 @@ var _engine_on: bool = false                # engine running (server state; mirr
 ## (the truck's current state, which we are only now hearing about) and must be applied SILENTLY;
 ## anything after it is a real change and gets its sound. Late-join guard for engine + hand brake.
 var _spawned: bool = false
-var _horn_on: bool = false                  # server: normal horn key held by the driver
+var _horn_on: bool = false                  # server: the normal horn blows (key held, or a tap's honk)
+var _horn_hold_left: float = 0.0            # server: seconds the horn still has to stay on (HORN_MIN_HOLD_S)
+var _horn_release_due: bool = false         # server: the key came up before that, the horn stops when it is over
 var _horn_special_count: int = 0            # server: number of special-horn (Alt) shots fired so far
 var _net_horn_special_count: int = -1       # client: last shot count seen (-1 = none received yet)
 var _horn_player: AudioStreamPlayer3D = null  # client: the looping horn sound while it blows
@@ -2718,11 +2724,12 @@ func _start_or_stop_engine_sound(on: bool) -> void:
 	_idle_player.play()
 
 ## SERVER: the driver presses / releases a horn key. The two horns behave differently on purpose:
-##   - normal (H): HELD — a replicated bool, so everyone around hears it for as long as it is held;
+##   - normal (H): HELD — a replicated bool, so everyone around hears it for as long as it is held.
+##     A tap honks too: the state stays on HORN_MIN_HOLD_S at least (_hold_horn), or a press and its
+##     release squashed into one delta update would never reach the clients;
 ##   - special (Alt+H): ONE SHOT — the sample is played once, in full, on the press (the release does
 ##     nothing). It is replicated as a counter that ticks up on each press, because a "moment" cannot
-##     be carried by an on/off state: a quick tap could be squashed into a single delta update and
-##     never reach the clients.
+##     be carried by an on/off state.
 ## Only the pilot can honk (checked by the caller in player_server); a driver leaving the seat
 ## releases the held horn (see server_exit).
 func set_horn(on: bool, special: bool = false) -> void:
@@ -2731,10 +2738,31 @@ func set_horn(on: bool, special: bool = false) -> void:
 			_horn_special_count += 1
 			_play_special_horn()  # bench (no replication loop): honk here — muted on a game server
 		return
-	if _horn_on == on:
+	if on:
+		_horn_release_due = false  # pressed again before the tap's honk was over: held from here
+		if not _horn_on:
+			_horn_hold_left = HORN_MIN_HOLD_S
+			_horn_on = true
+			_apply_horn(true)
 		return
-	_horn_on = on
-	_apply_horn(on)
+	if not _horn_on:
+		return
+	if _horn_hold_left > 0.0:
+		_horn_release_due = true  # _hold_horn lets go once the honk has had its time
+		return
+	_horn_on = false
+	_apply_horn(false)
+
+
+## Every physics frame, where the horn is decided (the server, the bench): a tap's honk gets its time
+## (HORN_MIN_HOLD_S), then the horn stops if the key came up meanwhile.
+func _hold_horn(delta: float) -> void:
+	if _horn_hold_left <= 0.0:
+		return
+	_horn_hold_left -= delta
+	if _horn_hold_left <= 0.0 and _horn_release_due:
+		_horn_release_due = false
+		set_horn(false)
 
 ## Start the looping horn. STOPPING is not done here: releasing the key only asks for it, and
 ## _update_horn takes care of the minimum honk + the fade-out. One player node is reused (kept).
@@ -2838,6 +2866,7 @@ func _physics_process(delta: float) -> void:
 func _physics_process_impl(delta: float) -> void:
 	# Before the replica guard below: a client has physics off but still hears its own tyres.
 	_update_tyre_audio(delta)
+	_hold_horn(delta)  # nothing to do on a replica, which is told the horn's state
 	# And sees their dust: keep the cached ground family fresh from HERE, the only place a probe works
 	# (the dust itself is raised from _process, on the smoothed pose).
 	if dust != null and DustEmitter.enabled():
