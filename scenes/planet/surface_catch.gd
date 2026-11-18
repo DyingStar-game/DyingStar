@@ -2,6 +2,8 @@ class_name SurfaceCatch
 extends RefCounted
 ## The real ground for the server's below-surface catch (PlayerServer, Vehicle).
 ##
+## The decision itself is rescue_dist, shared by every body with a net: the player, the truck, the mining rocks.
+##
 ## The catch measures a body against the THEORETICAL surface, the relief sampled at
 ## the body's own point (PlanetData.carved_surface_dist). The collision the body
 ## stands on is a grid of triangles ~25 m apart, and on a sharp convex crest the
@@ -37,3 +39,35 @@ static func ground_dist(space: PhysicsDirectSpaceState3D, planet: Node3D, dir: V
 	if hit.is_empty():
 		return -1.0
 	return (basis.inverse() * ((hit["position"] as Vector3) - planet.global_position)).length()
+
+
+## Where the lowest point of a body belongs, as a distance from the centre of [param planet], when it has
+## clearly gone under the ground; -1.0 when it has not: at the surface or above it (within [param margin], m),
+## in a cave, in a village mine's dug air, in a cutting or a tunnel of a profiled line, or standing on the
+## collision where it runs under the theoretical crest.
+##
+## [param local_body] is the body in the planet's frame, [param bottom_dist] the distance of its lowest point from
+## the planet's centre (its feet, its wheels, the underside of a rock), [param global_point] the body in the world
+## (for the mine test). The cheap raw relief is asked first; the dearer tests only once it says "under".
+## The rescue into a mine (MineSite.mine_near) is left to the caller: each body is released at its own height.
+static func rescue_dist(space: PhysicsDirectSpaceState3D, planet: Node3D, pdata: PlanetData, local_body: Vector3,
+		bottom_dist: float, global_point: Vector3, margin: float, exclude: Array[RID]) -> float:
+	if local_body.length_squared() < 1.0:
+		return -1.0
+	var dir: Vector3 = local_body.normalized()
+	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
+	if bottom_dist >= surface_dist - margin:
+		return -1.0  # at or above the ground: the collision handles it
+	# Under the relief on purpose: a cave, a village mine (its lift, a station, a gallery).
+	if CavePlanetRegistry.contains(pdata, local_body) or MineSite.contains_point(global_point):
+		return -1.0
+	# A cutting or a tunnel is ground carved away on purpose, and the body stands on its floor.
+	surface_dist = pdata.carved_surface_dist(dir)
+	if bottom_dist >= surface_dist - margin:
+		return -1.0
+	var ground: float = ground_dist(space, planet, dir, surface_dist, bottom_dist, margin, exclude)
+	if ground > 0.0:
+		if bottom_dist >= ground - margin:
+			return -1.0  # on the collision, under the theoretical crest: nothing fell through
+		return ground
+	return surface_dist
