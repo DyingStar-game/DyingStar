@@ -109,18 +109,31 @@ static func hold_action(n: int, point: Vector3) -> String:
 	return "hold:%d:%.3f:%.3f:%.3f" % [n, point.x, point.y, point.z]
 
 
+## The `action` event of a screen's button answering a press, the [param n]-th, at [param point] (the
+## body's frame, where the finger is): "blip:<n>:x:y:z". Heard, not seen: the tap already moved the arm.
+static func blip_action(n: int, point: Vector3) -> String:
+	return "blip:%d:%.3f:%.3f:%.3f" % [n, point.x, point.y, point.z]
+
+
 ## The point of a hold_action, null when [param action] is not one.
 static func parse_hold(action: String) -> Variant:
-	var parts: PackedStringArray = action.split(":")
-	if parts.size() != 5 or parts[0] != "hold":
-		return null
-	return Vector3(parts[2].to_float(), parts[3].to_float(), parts[4].to_float())
+	return _point_of("hold", action)
 
 
 ## The point of a "tap:<n>:x:y:z" event, or null when [param action] is not a tap.
 static func parse_tap(action: String) -> Variant:
+	return _point_of("tap", action)
+
+
+## The point of a blip_action, null when [param action] is not one.
+static func parse_blip(action: String) -> Variant:
+	return _point_of("blip", action)
+
+
+## The point of a "<kind>:<n>:x:y:z" event, null when [param action] is not of that [param kind].
+static func _point_of(kind: String, action: String) -> Variant:
 	var parts: PackedStringArray = action.split(":")
-	if parts.size() != 5 or parts[0] != "tap":
+	if parts.size() != 5 or parts[0] != kind:
 		return null
 	return Vector3(parts[2].to_float(), parts[3].to_float(), parts[4].to_float())
 

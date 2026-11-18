@@ -312,6 +312,17 @@ var stand_body_height: float = 1.8
 ## Hard cut-off (m) of a screen tap: further away it is not played at all.
 @export_range(1.0, 100.0, 1.0) var sfx_screen_tap_distance: float = 6.0
 
+@export_subgroup("Screen button blip")
+## The blip of a screen's button that answers a press (a lift's Call, Up, Stop, Down), heard where the
+## finger is, after the tap. Null = no blip.
+@export var sfx_screen_blip: AudioStream = null
+## Loudness (dB) of a screen button's blip at its Falloff distance.
+@export_range(-40.0, 12.0, 0.5) var sfx_screen_blip_db: float = -14.0
+## Reference distance (m) of a screen button's blip: past it the sound starts really fading.
+@export_range(0.5, 50.0, 0.5) var sfx_screen_blip_falloff: float = 2.0
+## Hard cut-off (m) of a screen button's blip: further away it is not played at all.
+@export_range(1.0, 100.0, 1.0) var sfx_screen_blip_distance: float = 12.0
+
 @export_group("Ground dust")
 ## How much dust each kind of ground gives up under the feet (see SurfaceDust): a puff per step, a
 ## bigger one on landing. Null = no dust.
@@ -1244,3 +1255,18 @@ func server_teleport_to(destination: Node, local_pos: Vector3) -> void:
 	if _role == null or not _role.has_method("teleport_to"):
 		return
 	_role.teleport_to(destination, local_pos)
+
+
+## A screen's button answers a press with its blip, at [param p] (this body's frame): on the owner as it
+## clicks (ScreenTarget.blip), on the others by the server's "blip:" event.
+func play_screen_blip(p: Vector3) -> void:
+	if Sfx3D.muted():
+		return
+	Sfx3D.play_pitched(self, sfx_screen_blip, sfx_screen_blip_db, sfx_screen_blip_falloff,
+			sfx_screen_blip_distance, Sfx3D.Attenuation.VERY_SHORT, 1.0, p)
+
+
+## SERVER: a screen took this player's button press (a lift's call): the others hear its blip.
+func server_screen_blip() -> void:
+	if _role != null and _role.has_method("relay_screen_blip"):
+		_role.relay_screen_blip()

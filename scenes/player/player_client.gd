@@ -170,6 +170,7 @@ var _last_land_action: String = ""  # last "land:<n>" seen (crisp jump-loop end 
 var _last_emote_action: String = ""  # last "emote:<key>:<n>" seen, so a re-broadcast isn't re-triggered
 var _last_tap_action: String = ""  # last "tap:<n>:x:y:z" seen (ScreenPoke.tap_action)
 var _last_hold_action: String = ""  # last "hold:<n>:x:y:z" seen (ScreenPoke.hold_action)
+var _last_blip_action: String = ""  # last "blip:<n>:x:y:z" seen (ScreenPoke.blip_action)
 ## OWNER: the button is held down on a screen since a tap, and when the others were last told (ms).
 var _tap_holding: bool = false
 var _hold_said_ms: int = 0
@@ -2557,6 +2558,12 @@ func client_channel_data_update(data: Dictionary) -> void:
 			var tapped: Variant = ScreenPoke.parse_tap(action)
 			if player.remote_player and _sfx_live and tapped != null:
 				show_screen_tap(tapped)
+		elif action.begins_with("blip:") and action != _last_blip_action:
+			_last_blip_action = action
+			# A screen's button answered another body's press. Ours already played on the click.
+			var blipped: Variant = ScreenPoke.parse_blip(action)
+			if player.remote_player and _sfx_live and blipped != null:
+				player.play_screen_blip(blipped)
 		elif action.begins_with("hold:") and action != _last_hold_action:
 			_last_hold_action = action
 			# Another body keeping its finger on a screen: the arm stays out a little longer, there.
