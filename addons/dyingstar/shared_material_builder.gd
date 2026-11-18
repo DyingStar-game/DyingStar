@@ -154,6 +154,7 @@ func _build_material(folder_name: String, report: Report, write: bool) -> void:
 	material.resource_name = material_id
 	_apply_tiling(material, manifest, material_id, report)
 	_apply_maps(material, folder_path, manifest, material_id, report)
+	_apply_surface_values(material, manifest, material_id, report)
 	_apply_albedo_color(material, manifest, material_id, report)
 	_apply_alpha(material, manifest, material_id, report)
 
@@ -213,6 +214,26 @@ func _apply_tiling(
 		return
 
 	material.uv1_scale = Vector3(1.0 / width, 1.0 / height, 1.0)
+
+
+## "roughness" and "metallic" are the surface's value where no map gives it: what the artist set by hand on
+## the Principled BSDF. Under a map (its own, or a packed orm) the value is left alone: Godot multiplies the
+## two, and the map alone is what Blender showed.
+func _apply_surface_values(
+	material: StandardMaterial3D, manifest: Dictionary, material_id: String, report: Report
+) -> void:
+	var maps: Dictionary = manifest.get("maps", {})
+	for value_name: String in ["roughness", "metallic"]:
+		if not manifest.has(value_name):
+			continue
+		if maps.has(value_name) or maps.has("orm"):
+			report.warnings.append("%s: %s is given by a map, its value is not read." % [material_id, value_name])
+			continue
+		var value: Variant = manifest[value_name]
+		if not (value is float or value is int) or float(value) < 0.0 or float(value) > 1.0:
+			report.warnings.append("%s: %s must be a number from 0 to 1, left at its default." % [material_id, value_name])
+			continue
+		material.set(value_name, float(value))
 
 
 ## albedo_color is the base colour (sRGB, 0 to 1): Godot's albedo_color, which tints the albedo map

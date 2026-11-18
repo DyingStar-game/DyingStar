@@ -141,6 +141,27 @@ func test_a_standalone_opacity_map_asks_for_a_re_export() -> void:
 	assert_string_contains(report.warnings[0], "Re-export")
 
 
+## The roughness and metallic set by hand in Blender are the surface's value where no map gives it: a
+## polished screen stays polished. Under a map, the map decides and the value is said to be unread.
+func test_roughness_and_metallic_values_apply_where_no_map_gives_them() -> void:
+	var builder := SharedMaterialBuilder.new()
+	var report := SharedMaterialBuilder.Report.new()
+	var polished := StandardMaterial3D.new()
+	builder._apply_surface_values(polished, {"maps": {}, "roughness": 0.077, "metallic": 0.25}, "mat_test", report)
+	assert_almost_eq(polished.roughness, 0.077, 0.0001)
+	assert_almost_eq(polished.metallic, 0.25, 0.0001)
+	assert_eq(report.warnings, PackedStringArray())
+	var plain := StandardMaterial3D.new()
+	builder._apply_surface_values(plain, {"maps": {}}, "mat_test", report)
+	assert_almost_eq(plain.roughness, 1.0, 0.0001, "no value: Godot's default")
+	var mapped := StandardMaterial3D.new()
+	builder._apply_surface_values(mapped, {"maps": {"orm": "tex_x_orm.png"}, "roughness": 0.2}, "mat_test", report)
+	assert_almost_eq(mapped.roughness, 1.0, 0.0001, "the map decides")
+	builder._apply_surface_values(mapped, {"maps": {}, "metallic": 4}, "mat_test", report)
+	assert_almost_eq(mapped.metallic, 0.0, 0.0001, "out of range: left alone")
+	assert_eq(report.warnings.size(), 2, "both said so")
+
+
 ## Every map is optional: a plain-coloured surface is albedo_color and nothing else. It builds without a
 ## word: no texture to load, and no normal map for a roughness limiter to read.
 func test_a_material_with_no_map_is_a_plain_colour() -> void:

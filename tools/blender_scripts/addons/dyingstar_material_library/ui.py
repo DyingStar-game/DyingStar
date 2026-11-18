@@ -309,6 +309,14 @@ class DYINGSTAR_PT_material_maps(_MaterialSubPanel, bpy.types.Panel):
         elif "albedo" not in result.images:
             _problem(box, "Base Color could not be read")
 
+        # The values set by hand on the Principled, published as numbers.
+        for name in ("roughness", "metallic"):
+            value = getattr(result, name)
+            if value is not None:
+                row = box.row()
+                row.label(text=name)
+                row.label(text=f"{value:g}")
+
         for role in sorted(result.images):
             image = result.images[role]
             row = box.row()

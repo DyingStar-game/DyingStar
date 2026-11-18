@@ -175,6 +175,9 @@ def _build_manifest(
         manifest["albedo_color"] = list(metadata["albedo_color"])
     if metadata.get("alpha") is not None:
         manifest["alpha"] = dict(metadata["alpha"])
+    for value in ("roughness", "metallic"):
+        if metadata.get(value) is not None:
+            manifest[value] = metadata[value]
     manifest["license"] = metadata["license"]
     manifest["author"] = metadata["author"]
     manifest["ai_generated"] = False
@@ -247,7 +250,7 @@ def export(
         images: map role -> image datablock, as produced by map_extractor.
             May be empty: a plain-coloured material publishes no map at all.
         metadata: display_name, tags, physical_size_m, license, author, notes,
-            albedo_color and alpha (None when absent).
+            albedo_color, alpha, roughness and metallic (None when absent).
         materials_dir: injectable target, defaults to the project layout.
 
     Returns:

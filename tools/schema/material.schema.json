@@ -50,6 +50,18 @@
       "minItems": 3,
       "maxItems": 3
     },
+    "roughness": {
+      "description": "Roughness of the whole surface, from 0 (mirror) to 1 (matte), when no map gives it (maps.roughness, maps.orm). The value set on the Principled BSDF in Blender. Without it, Godot's default applies (1).",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "metallic": {
+      "description": "Metalness of the whole surface, from 0 to 1, when no map gives it (maps.metallic, maps.orm). The value set on the Principled BSDF in Blender. Without it, Godot's default applies (0).",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
     "alpha": {
       "description": "Transparency read from the albedo map's alpha channel, where the Dying Star Blender add-on packs the opacity at export. scissor cuts the surface where alpha falls below threshold (a hard edge, no sorting: decals, grilles); blend fades it (a soft edge, sorted, costlier).",
       "type": "object",

@@ -202,6 +202,8 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
                     "notes": metadata.notes,
                     "albedo_color": result.albedo_color,
                     "alpha": alpha,
+                    "roughness": result.roughness,
+                    "metallic": result.metallic,
                 },
             )
         except exporter.ExportError as error:
