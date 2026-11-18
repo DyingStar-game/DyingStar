@@ -105,8 +105,12 @@ const DEFAULT_WEATHER: WeatherSource = preload("res://scenes/planet/weather/unif
 ## 0.25 Hz (one step every 4 s): every step moves every lamp of the planet at once, and some of them
 ## came out of it with a wrong shadow — the light of the spawn apartments and the cargo depot through
 ## their walls — until the next step. Measured 2026-10-01 at the spawn, frame by frame: shadows switching
-## at 3 Hz and 1 Hz, none over 8 steps at 0.25 Hz. The rendering cause is NOT found (not the atlas, not
-## the camera, not a one-frame lag, not the moons); this rate makes it rare enough not to be seen.
+## at 3 Hz and 1 Hz, none over 8 steps at 0.25 Hz. The cause was found on 2026-11-18 and it is the
+## engine's: its spatial index skips a move shorter than 1e-5 of the coordinate — hundreds of km out
+## here — so after a step the lamps look for their shadow casters where they no longer are. How often
+## it shows depends on where the planet is on its orbit, not on this rate (every other step that day).
+## The RenderIndexRefresh node of the local player files the instances near the camera again after
+## each step (scenes/player/render_index_refresh.gd).
 ## Fewer steps are also fewer hitches: each is the whole subtree's transforms and Jolt's re-insertion.
 ## The price is a bigger step (~1.8 km of arc at SandBox's surface), so a bigger one-step lag above.
 @export var rotation_update_hz: float = 0.25
