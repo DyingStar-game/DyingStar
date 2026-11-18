@@ -30,7 +30,6 @@ func _ready() -> void:
 	data.crack_depth_m = 180.0
 	data.chunk_heightmaps_dir = "assets/qgis/export/tarsis_3_chunks"
 	data.chunk_heightmap_res = 32
-	data.roads_geojson = "assets/qgis/export/tarsis_3_roads_buffered.json"
 
 	var rts := RemoteTileSource.new()
 	rts.planet = "tarsis_3"
@@ -42,6 +41,7 @@ func _ready() -> void:
 	data.remote_source = rts
 
 	data.apply_chunk_manifest()
+	data.attach_remote_modifiers()
 	say("PROBE manifest: radius=%.0f export_nside=%d nside_min=%d tile_res=%d off=%.1f maxh=%.1f exag=%s" % [
 		data.radius, data.export_nside, data.export_nside_min, data.chunk_heightmap_res,
 		data.height_offset, data.max_height, str(data.terrain_exaggeration)])

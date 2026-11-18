@@ -11,6 +11,7 @@ func _ready() -> void:
 	data.chunk_heightmaps_dir = "assets/qgis/export/tarsis_8_chunks"
 	data.chunk_heightmap_res = 32
 	data.apply_chunk_manifest()
+	data.connect_tile_service()
 	print("PROBE fingerprint=%s" % data.populate_fingerprint())
 	var bd = data.get_biome_by_type("outcrop-plateau")
 	print("PROBE bd=%s override=%s" % [bd, bd.terrain_material_override if bd else null])

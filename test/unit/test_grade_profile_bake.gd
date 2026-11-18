@@ -41,6 +41,9 @@ func _data() -> PlanetData:
 	d.use_modifier_pack = false
 	d.chunk_heightmaps_dir = DIR
 	d.radius = RADIUS
+	# Read back the file this test writes, as the bake tool does: the game itself reads only the
+	# published bake (body <planet>.lines) and never this path.
+	d.grade_bake_local_path = d.grade_bake_path()
 	return d
 
 
@@ -133,7 +136,7 @@ func test_bridges_round_trip_and_refusal() -> void:
 ## its planet's bake — a re-export without a re-bake makes the game profile
 ## the lines at run time (tens of minutes for a line round tarsis_3). Fix:
 ##   godot --headless --path . res://tools/bake_grade_profiles.tscn -- --planet=<name>
-## Reads keys only: no tile is downloaded.
+## Reads keys only: the modifier manifest and floor and the published bake, no fine tile.
 func test_grade_profiles_bake_fresh() -> void:
 	var tool = load("res://tools/bake_grade_profiles.gd").new()
 	var scenes: Dictionary = tool._planet_scenes()
@@ -143,28 +146,28 @@ func test_grade_profiles_bake_fresh() -> void:
 		if data == null or data.chunk_heightmaps_dir == "":
 			continue
 		data.apply_chunk_manifest()
+		data.connect_tile_service()
 		# The crossings: the POI spheres set first, as PlanetTerrain does.
 		data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(planet))
 		# Prepared like the bake and the game: a lava line's course follows the mountains and the
 		# volcanoes, so read cold its hash is not the one either of them computes.
-		data.ensure_queries_loaded()
 		data.warm_mountains()
 		data.warm_fumaroles()
 		data.has_lava()
 		if data.corundum_default_biome and data.has_roads():
 			checked += 1
 			assert_false(data._baked_bridges().is_empty(),
-					"%s: the chasm crossings are not baked in %s — re-bake: godot --headless --path . "
-					% [planet, data.grade_bake_path()]
+					"%s: the chasm crossings are not in the published bake (%s.lines) — re-bake and publish: godot --headless --path . "
+					% [planet, planet]
 					+ "res://tools/bake_grade_profiles.tscn -- --planet=%s" % planet)
 		if not data.has_profiled_lines():
 			continue
 		for road in data._whole_profiled_lines():
 			checked += 1
 			assert_false(data._grade_baked_profile(road).is_empty(),
-					"%s: line fid %d (%s) is not in %s — re-bake: godot --headless --path . "
+					"%s: line fid %d (%s) is not in the published bake (%s.lines) — re-bake and publish: godot --headless --path . "
 					% [planet, int(road.get("feature_id", -1)), str(road.get("road_type", "")),
-					data.grade_bake_path()]
+					planet]
 					+ "res://tools/bake_grade_profiles.tscn -- --planet=%s" % planet)
 	tool.free()
 	gut.p("%d profiled line(s) and crossing set(s) checked" % checked)

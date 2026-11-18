@@ -8,7 +8,6 @@ extends Resource
 ## between sphere surface and equirectangular UV (matching QGIS EPSG:4326).
 
 const PlanetPackScript = preload("res://scenes/planet/planet_pack.gd")
-const HeightPackScript = preload("res://scenes/planet/height_pack.gd")
 const ModifierPackScript = preload("res://scenes/planet/modifier_pack.gd")
 const LavaTerrainCacheScript = preload("res://scenes/planet/lava/lava_terrain_cache.gd")
 
@@ -376,9 +375,8 @@ var chunk_data_version: String = ""
 @export var chunk_heightmaps_dir: String = ""
 ## Samples per edge of each exported .r32 tile (matches TILE_RES in the exporter).
 @export var chunk_heightmap_res: int = 25
-## Read roads, craters, rivers, caves and biome zones from
-## <chunk_heightmaps_dir>/terrainmodifier.pack. Turn off to fall back to the
-## legacy roads_geojson/BiomeQuery path — an A/B switch for comparing the two.
+## Read roads, craters, rivers, caves and biome zones from the modifier pack (streamed as
+## <planet>.mod). Turn off to run the planet without any modifier: an A/B switch for comparing.
 @export var use_modifier_pack: bool = true
 
 @export_group("Mining zones")
@@ -448,12 +446,6 @@ var chunk_data_version: String = ""
 @export var bridge_profile: BridgeProfile = null
 
 @export_group("Roads")
-## Path to a GeoJSON file with road polygons (buffered from LineStrings).
-## Exported by the QGIS pipeline as {planet}_roads_buffered.json.
-## When provided, road overlays are rendered on terrain chunks.
-## Path is relative to res://, e.g. "assets/qgis/.export/tarsis_3_roads_buffered.json".
-@export var roads_geojson: String = ""
-
 ## When true, crater profiles are already baked into chunk heightmaps
 ## by the QGIS export pipeline — skip runtime crater displacement.
 var craters_baked: bool = false
@@ -481,8 +473,6 @@ var _biome_query = null  # BiomeQuery (null = not tried, false = tried & failed)
 var _biome_query_tried: bool = false
 
 ## Road query — separate BiomeQuery for road polygons.
-var _road_query = null   # BiomeQuery for roads_geojson
-var _road_query_tried: bool = false
 
 ## Cache of loaded road materials: path → Material.
 var _road_material_cache: Dictionary = {}
@@ -507,6 +497,11 @@ var _chunk_floats: Dictionary = {}
 ## cherchée dans son cache disque — jamais sur le réseau depuis le chemin chaud : c'est
 ## PlanetTerrain qui met en file et diffère le chunk (voir request_chunk_tiles).
 var remote_source: RemoteTileSource = null
+## The streamed modifier pack, set by [method attach_remote_modifiers]: the ONLY source of this
+## planet's modifiers ([method _ensure_modifier_pack]) — a terrainmodifier.pack on disk is never
+## read. Null when no tile service serves it, and in every unit test that does not attach one, so
+## none talks to the network.
+var remote_modifiers: RemoteModifierPack = null
 var _empty_chunk_logged: bool = false
 var _chunk_format_logged: bool = false
 
@@ -519,15 +514,6 @@ var _pack = null  # PlanetPackScript instance
 var _pack_tried: bool = false
 var _pack_open_mutex: Mutex = Mutex.new()
 
-## ── Height pack (dense .r32 tile archive) ────────────────────────
-## All pyramid elevation tiles of chunk_heightmaps_dir packed into a single
-## heights.pack file (written by tools/planettech/qgis/export_elevation.py). This is the
-## ONLY source of elevation tiles: O(1) arithmetic offsets, per-thread read
-## handles (lock-free from WorkerThreadPool tasks) and coarse levels
-## preloaded in RAM.
-var _height_pack = null  # HeightPackScript instance
-var _height_pack_tried: bool = false
-var _height_pack_mutex: Mutex = Mutex.new()
 
 ## ── Modifier pack (sparse per-chunk vector archive) ──────────────
 ## terrainmodifier.pack: roads, craters, linear features, radial features and
@@ -557,6 +543,11 @@ var _modifier_seq: int = 0
 var _modifier_bytes: int = 0
 var _modifier_mutex: Mutex = Mutex.new()
 const MAX_MODIFIER_CACHE_BYTES: int = 64 * 1024 * 1024
+## Populate zones of a tile merged with its ancestors' FULL zones ([method populate_zones_at]),
+## keyed "pz_nN_pP", under [member _modifier_mutex]. Arrays of references to zones the decoded tiles
+## already hold, so cheap; wiped whole past [constant MAX_POPULATE_MERGED] rather than ranked.
+var _populate_merged: Dictionary = {}
+const MAX_POPULATE_MERGED: int = 16384
 ## Rough Variant overhead of a decoded tile over its packed payload. Estimating
 ## from the payload size is far cheaper and more stable than trying to measure
 ## Dictionary/Array memory.
@@ -715,6 +706,12 @@ const GRADE_PREFETCH_BUDGET_MS := 5000
 ## The baked profiles, next to terrainmodifier.pack (".pack": the export
 ## presets already ship that extension).
 const GRADE_BAKE_FILE := "grade_profiles.pack"
+## Body the line bake is published under on the tile service (publish_tiles.py, file mode): its own
+## versions, so a re-bake republishes one file, not the modifier tiles it was computed from.
+const GRADE_BAKE_BODY_SUFFIX := ".lines"
+## A bake read from THIS file instead of the published one: set by tools/bake_grade_profiles.gd to
+## check the file it has just written. Empty in the game, which reads only what the service serves.
+var grade_bake_local_path: String = ""
 ## Bump when GradeProfile.compute or the height sampler changes in a way no
 ## fingerprint of grade_bake_key() captures: every bake is then refused.
 const GRADE_BAKE_VERSION := 1
@@ -826,20 +823,6 @@ func _get_biome_query():
 	return _biome_query
 
 
-## Return the BiomeQuery for road polygons, lazily loaded from roads_geojson.
-func get_road_query():
-	if _road_query == null and not _road_query_tried and not roads_geojson.is_empty():
-		_road_query_tried = true
-		var rq = BiomeQuery.new()
-		var path := "res://" + roads_geojson if not roads_geojson.begins_with("res://") else roads_geojson
-		if rq.load_geojson(path):
-			_road_query = rq
-			print("PlanetData: loaded road query with %d zone(s)" % rq.zone_count())
-		else:
-			push_warning("PlanetData: failed to load roads geojson '%s'" % path)
-	return _road_query
-
-
 func get_biomemap_image() -> Image:
 	if _biomemap_image == null and biomemap:
 		_biomemap_image = biomemap.get_image()
@@ -944,9 +927,6 @@ func load_from_planet_json(path: String = "") -> bool:
 		var rel_dir := export_dir
 		if rel_dir.begins_with("res://"):
 			rel_dir = rel_dir.substr(6)
-		if roads_geojson.is_empty() and files.has("roads_buffered"):
-			roads_geojson = rel_dir + str(files["roads_buffered"])
-			print("PlanetData: auto-set roads_geojson = '%s'" % roads_geojson)
 		if (biomes_geojson.is_empty() or biomes_geojson.ends_with("/_biomes.json")) and files.has("biomes"):
 			biomes_geojson = rel_dir + str(files["biomes"])
 			print("PlanetData: auto-set biomes_geojson = '%s'" % biomes_geojson)
@@ -1304,11 +1284,9 @@ func load_chunk_heightmap(ipix: int, nside: int = -1) -> Image:
 func pack_is_sparse() -> bool:
 	# Une source distante implique la remontée de niveau : l'arborescence publiée vient
 	# d'un pack qui peut être creux, et sans pack local il n'y a personne pour le dire.
-	if remote_source != null:
-		return true
-	# Pas d'inférence ici : _ensure_height_pack() ne déclare pas de type de retour.
-	var pack = _ensure_height_pack()
-	return pack != null and pack.is_sparse()
+	# Sans source, aucune tuile du tout : rien à remonter. Le jeu ne lit plus de heights.pack
+	# local (HTTP uniquement, cache disque compris).
+	return remote_source != null
 
 
 ## Plus fin ancêtre de (ipix, nside) dont la tuile est réellement stockée, en
@@ -1532,32 +1510,30 @@ func _chunk_base_path() -> String:
 	return base
 
 
-## Open chunk_heightmaps_dir/heights.pack once (thread-safe, idempotent).
-## Returns the open pack or null when the planet ships loose tiles instead.
-## apply_chunk_manifest() calls this on the main thread so worker tasks
-## normally find the pack already open.
-func _ensure_height_pack():
-	if _height_pack_tried:
-		return _height_pack
-	_height_pack_mutex.lock()
-	if not _height_pack_tried:
-		var pack = HeightPackScript.new()
-		# Honour manifest["pack_file"] instead of hardcoding the name, so a
-		# planet can ship a differently-named archive. The field was written by
-		# the exporter and silently ignored here for a long time.
-		var path := _chunk_base_path() + "/" + _manifest_file(
-				"pack_file", "heights.pack")
-		if FileAccess.file_exists(path) and pack.open(path):
-			_height_pack = pack
-			print("[PlanetData] heights.pack opened: %s" % path)
-		_height_pack_tried = true
-	_height_pack_mutex.unlock()
-	return _height_pack
-
-
 ## Open chunk_heightmaps_dir/terrainmodifier.pack once (thread-safe, idempotent).
 ## Returns the open pack, or null when the planet has no modifier data — in
 ## which case every accessor below degrades to the pre-pack behaviour.
+## Hook this planet to the tile service, the only place its tiles come from: the elevation source
+## (unless one is set already — a probe's own, a test's fake) and the streamed modifiers. For
+## everything that prepares a PlanetData outside PlanetTerrain (star map, tools, probes); a
+## blocking first call, never from a unit test that must stay off the network. True with a source.
+func connect_tile_service() -> bool:
+	if remote_source == null and chunk_heightmaps_dir != "":
+		remote_source = RemoteTileSource.for_planet(planet_name)
+	attach_remote_modifiers()
+	return remote_source != null
+
+
+## Stream the modifiers from the tile service — the only place they are read from: a local
+## terrainmodifier.pack (a developer who just exported) is ignored, publish it to see it
+## (publish_tiles.py, channel unstable). Called by PlanetTerrain BEFORE anything reads the pack (its
+## cache key does); blocking the first time (RemoteModifierPack.shared_for).
+func attach_remote_modifiers() -> void:
+	if not use_modifier_pack or chunk_heightmaps_dir == "" or _modifier_pack_tried:
+		return
+	remote_modifiers = RemoteModifierPack.shared_for(planet_name)
+
+
 func _ensure_modifier_pack():
 	if _modifier_pack_tried:
 		return _modifier_pack
@@ -1565,15 +1541,16 @@ func _ensure_modifier_pack():
 	if not _modifier_pack_tried:
 		_modifier_pack_tried = true
 		if use_modifier_pack and chunk_heightmaps_dir != "":
-			var pack = ModifierPackScript.new()
-			var path := _chunk_base_path() + "/" + _manifest_file(
-					"modifiers_file", "terrainmodifier.pack")
-			if not FileAccess.file_exists(path):
-				push_warning("[PlanetData] no terrainmodifier.pack at %s — " % path
-						+ "roads, craters, rivers and biome overlays will be "
-						+ "absent. Produce it with tools/planettech/qgis/export_roads.py "
-						+ "(and the other export_*.py), which relink it.")
-			elif pack.open(path):
+			var pack = remote_modifiers
+			var path := ""
+			if pack != null:
+				path = pack.get_path()
+			else:
+				push_warning("[PlanetData] '%s': no tile service serves its modifiers " % planet_name
+						+ "(body %s%s) — roads, craters, rivers and biome overlays will be "
+						% [planet_name, RemoteModifierPack.SUFFIX]
+						+ "absent. Publish the linked pack with tools/planettech/publish/publish_tiles.py.")
+			if pack != null:
 				_modifier_pack = pack
 				var caps: Dictionary = pack.get_manifest().get("kind_max_nside", {})
 				var road_cap := int(caps.get("road", 0))
@@ -1701,6 +1678,7 @@ func _evict_modifier_lru() -> void:
 func clear_modifier_cache() -> void:
 	_modifier_mutex.lock()
 	_modifier_tiles.clear()
+	_populate_merged.clear()
 	_modifier_tick.clear()
 	_modifier_bytes = 0
 	_modifier_mutex.unlock()
@@ -1709,22 +1687,16 @@ func clear_modifier_cache() -> void:
 ## Read and decode a raw float32 (.r32) tile for [param ipix] into a FORMAT_RF
 ## Image. Tiles are normalized [0,1]; sample_height_for_direction() converts the
 ## sample to metres via height_offset + value*max_height.
-## Tiles are read exclusively from heights.pack (O(1) offset, per-thread
-## handles) — there is no loose-file fallback; a planet without a pack has no
+## Tiles come ONLY from the tile service, through its disk cache
+## (remote_source.take(), never the network): no local heights.pack is read, even
+## when one sits in chunk_heightmaps_dir. Without a source a planet has no
 ## elevation tiles and callers fall back to the global heightmap.
 func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
 	var ns := nside if nside > 0 else export_nside
 	var res := chunk_heightmap_res
 	var expected := res * res * 4
-	# Le pack local est FACULTATIF quand une source distante est branchée : une planète
-	# entièrement streamée n'en a pas du tout. Sortir ici parce qu'il manque rendrait le
-	# cache distant inatteignable — exactement le cas d'un test où l'on retire le pack
-	# pour vérifier que le streaming suffit.
-	var pack = _ensure_height_pack()
 	var bytes := PackedByteArray()
-	if pack != null:
-		bytes = pack.read_tile(ns, ipix)
-	if bytes.is_empty() and remote_source != null:
+	if remote_source != null:
 		# Repli sur ce qui a déjà été téléchargé. take() ne touche pas au réseau.
 		var raw := remote_source.take(ns, ipix)
 		if not raw.is_empty():
@@ -1750,23 +1722,13 @@ func _read_r32_tile(ipix: int, nside: int = -1) -> Image:
 func apply_chunk_manifest() -> bool:
 	if chunk_heightmaps_dir == "":
 		return false
-	# Open heights.pack now (main thread) so WorkerThreadPool tasks never pay
-	# the open cost, and so the embedded manifest can replace a missing
-	# manifest.json (packed exports may ship the single .pack file only).
-	var pack = _ensure_height_pack()
-	if pack == null:
-		# No pack = no elevation tiles at all (there is no loose-file
-		# fallback) — every height sample will hit the global heightmap.
-		push_warning("[PlanetData] heights.pack missing in %s — planet has no "
-				% _chunk_base_path()
-				+ "elevation tiles (re-run tools/planettech/qgis/export_elevation.py)")
+	# The manifest is the ONE local file still read: a small versioned descriptor (radius,
+	# nside, tile_res) needed before the tile service is even contacted. The tiles
+	# themselves only come from the service (see _read_r32_tile).
 	var path := _chunk_base_path() + "/manifest.json"
 	var data: Variant
 	if FileAccess.file_exists(path):
 		data = JSON.parse_string(FileAccess.get_file_as_string(path))
-	elif pack != null:
-		data = pack.get_manifest()
-		path = "heights.pack (embedded)"
 	else:
 		push_warning("[PlanetData] chunk manifest not found: %s" % path)
 		return false
@@ -1837,20 +1799,12 @@ func store_chunk_image(key: String, img: Image, craters: Array,
 		_chunk_radial_features[key] = radial_features
 
 
-## Force-initialise the road query on the calling thread.
-## Must be called from the main thread before the first mesh WorkerThreadPool
-## task is submitted, so that background tasks see the query as read-only.
-func ensure_queries_loaded() -> void:
-	get_road_query()
-
-
-## The slowest of what Planet._ready reads, made now on the CALLING thread: the road query (its GeoJSON
-## parsed) and the biome cache. For a worker, while nothing else holds this PlanetData yet -- before its
-## planet enters the tree; Planet._ready then finds both done. On tarsis_3 that was 4.4 s of the main
-## thread (3.2 s of roads, 1.2 s of biomes) in the one frame the main menu's stage was built in, long enough
-## for Windows to call the game "not responding" and close it.
+## The slowest of what Planet._ready reads, made now on the CALLING thread: the biome cache. For a
+## worker, while nothing else holds this PlanetData yet -- before its planet enters the tree; Planet._ready
+## then finds it done. On tarsis_3 that was 4.4 s of the main thread (3.2 s of a road GeoJSON since
+## retired, 1.2 s of biomes) in the one frame the main menu's stage was built in, long enough for Windows
+## to call the game "not responding" and close it.
 func prepare_off_main_thread() -> void:
-	ensure_queries_loaded()
 	warm_biome_cache()
 
 
@@ -2337,6 +2291,70 @@ func _load_neighbor_recipe_craters(ipix: int) -> Array:
 	return data.get("craters", [])
 
 
+## Populate zones of the pack tile ([param nside], [param ipix]) in first-match order.
+##
+## A pack whose populate part says [code]full_inherit[/code] writes a zone FULL only on the coarsest
+## tile it entirely covers, and nothing below it (tools/planettech/qgis/export/planet/biomes.py): the
+## zones of a tile are then its own records plus the FULL records of each of its ancestors, re-sorted
+## by the records' rank. Without the flag (older packs) the tile's own list is the answer, as before.
+## Thread-safe; the merge is remembered per tile.
+func populate_zones_at(nside: int, ipix: int) -> Array:
+	var own: Array = get_chunk_modifiers(nside, ipix).get("populate_zones", [])
+	var pack = _ensure_modifier_pack()
+	if pack == null or not pack.populate_inherits():
+		return own
+	var key := "pz_n%d_p%d" % [nside, ipix]
+	_modifier_mutex.lock()
+	var hit: Variant = _populate_merged.get(key)
+	_modifier_mutex.unlock()
+	if hit != null:
+		return hit
+	var levels: PackedInt64Array = pack.get_levels()
+	var coarsest: int = int(levels[0]) if not levels.is_empty() else 1
+	var ancestors: Array = []
+	# A streamed tile still on its way reads as empty: the merge is then provisional and is not
+	# remembered (TileResidency keeps the chunks that need it waiting meanwhile).
+	var complete: bool = pack.tile_state(nside, ipix) != ModifierPack.TILE_PENDING
+	@warning_ignore("integer_division")
+	var ns: int = nside / 2
+	var ip: int = ipix >> 2
+	while ns >= coarsest:
+		if pack.tile_state(ns, ip) == ModifierPack.TILE_PENDING:
+			complete = false
+		ancestors.append(get_chunk_modifiers(ns, ip).get("populate_zones", []))
+		@warning_ignore("integer_division")
+		ns = ns / 2
+		ip = ip >> 2
+	var out: Array = ModifierPack.merge_inherited_zones(own, ancestors)
+	if not complete:
+		return out
+	_modifier_mutex.lock()
+	if _populate_merged.size() >= MAX_POPULATE_MERGED:
+		_populate_merged.clear()
+	_populate_merged[key] = out
+	_modifier_mutex.unlock()
+	return out
+
+
+## Is the modifier tile that shapes the ground of tile ([param ipix], [param nside]) still on its
+## way? True only with a streamed pack: its export-level ancestor (the mountains, volcanoes and
+## rock fields displace the relief from there; a coarser tile reads its own level) is published
+## but not downloaded yet. Sampling a height now would leave the relief out, silently — callers
+## treat it like a missing elevation tile (TileResidency.tile_available). Queues the tile.
+func modifiers_pending_at(ipix: int, nside: int) -> bool:
+	if remote_modifiers == null:
+		return false
+	var pack = _ensure_modifier_pack()
+	if pack == null or not pack.is_streamed():
+		return false
+	var ns := nside
+	var ip := ipix
+	while ns > export_nside:
+		ns >>= 1
+		ip >>= 2
+	return pack.tile_state(ns, ip) == ModifierPack.TILE_PENDING
+
+
 ## Modifier records of one kind for an export-level chunk: the pack's tile,
 ## plus runtime injections, minus runtime removals.
 ##
@@ -2348,6 +2366,8 @@ func _modifiers_of(ipix: int, list_key: String, legacy: Dictionary) -> Array:
 		# already written into them. Applying the overlay too would return every
 		# injected feature twice.
 		return legacy.get("hp_n%d_p%d" % [export_nside, ipix], [])
+	if list_key == "populate_zones":
+		return _apply_overlay(populate_zones_at(export_nside, ipix), list_key, ipix)
 	return _apply_overlay(
 		get_chunk_modifiers(export_nside, ipix).get(list_key, []), list_key, ipix)
 
@@ -2940,6 +2960,9 @@ func _plan_one_span(s: Dictionary, profile: BridgeProfile, plans: Dictionary) ->
 		# elle ou son ancêtre publié) au lieu de l'abandonner — sauf si rien n'est
 		# publié jusqu'en haut de la pyramide, auquel cas attendre serait attendre
 		# pour rien et la file de rattrapage ne se viderait jamais.
+		if modifiers_pending_at(ipix, export_nside):
+			_bridge_spans_starved.append(s)
+			return false
 		if remote_source == null:
 			return false
 		if TileResidency.finest_published_ancestor_state(self, ipix, export_nside, true) \
@@ -3789,6 +3812,8 @@ func _grade_tiles_missing(tiles: Dictionary) -> Dictionary:
 		if _grade_tile_available(ipix):
 			continue
 		missing += 1
+		if modifiers_pending_at(ipix, export_nside):
+			continue  # its relief is on its way: starved, not hopeless
 		if remote_source == null:
 			hopeless = true
 			continue
@@ -3996,7 +4021,12 @@ func _load_grade_bake_doc() -> Dictionary:
 	_grade_bake_doc_mutex.lock()
 	if not _grade_bake_doc_read:
 		_grade_bake_doc_read = true
-		var path := grade_bake_path() if chunk_heightmaps_dir != "" else ""
+		# The published bake (body <planet>.lines), through the tile cache — never the
+		# grade_profiles.pack beside the export. Its key is checked below like any bake's: a stale
+		# one is only slow, never wrong.
+		var path := grade_bake_local_path
+		if path == "" and chunk_heightmaps_dir != "":
+			path = RemoteTileSource.fetch_file(planet_name + GRADE_BAKE_BODY_SUFFIX, GRADE_BAKE_FILE)
 		if path != "" and FileAccess.file_exists(path):
 			var t0 := Time.get_ticks_msec()
 			var f := FileAccess.open_compressed(path, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)

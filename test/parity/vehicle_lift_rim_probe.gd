@@ -43,6 +43,7 @@ func _ready() -> void:
 	data = body.get("planet_data")
 	data.apply_chunk_manifest()
 	data.remote_source = RemoteTileSource.for_planet(data.planet_name)
+	data.attach_remote_modifiers()
 	data.warm_mountains()
 	data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(data.planet_name))
 	say("PROBE %s radius=%.0f spacing=%.0f width=%.0f depth=%.0f tiles=%s" % [data.planet_name,

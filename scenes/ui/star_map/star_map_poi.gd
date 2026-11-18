@@ -36,19 +36,10 @@ const KEEP_UPPER: Array[String] = ["hq", "poi", "lz"]
 ## it is given and says nothing when there is nothing.
 static func load_for(body_key: String) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	if body_key == "":
+	var parsed: Dictionary = _read_export(body_key)
+	if parsed.is_empty():
 		return out
-	var path: String = "%s/%s_poi.json" % [POI_DIR, body_key]
-	if not FileAccess.file_exists(path):
-		return out
-	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return out
-	var parsed: Variant = JSON.parse_string(file.get_as_text())
-	file.close()
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return out
-	var raw: Variant = (parsed as Dictionary).get("pois", [])
+	var raw: Variant = parsed.get("pois", [])
 	if typeof(raw) != TYPE_ARRAY:
 		return out
 	for item: Variant in (raw as Array):
@@ -58,6 +49,136 @@ static func load_for(body_key: String) -> Array[Dictionary]:
 		if not entry.is_empty():
 			out.append(entry)
 	return out
+
+
+## The parsed [code]<body>_poi.json[/code] of [param body_key], or {} — no file, an unreadable one and
+## one that is not a JSON object all read as "nothing", never as an error.
+static func _read_export(body_key: String) -> Dictionary:
+	if body_key == "":
+		return {}
+	var path: String = "%s/%s_poi.json" % [POI_DIR, body_key]
+	if not FileAccess.file_exists(path):
+		return {}
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return {}
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	return parsed as Dictionary if typeof(parsed) == TYPE_DICTIONARY else {}
+
+
+## Named regions already parsed, body key → [method regions_from]'s array. A region lookup can run
+## every frame (the place the player stands in), so the file is read once per body and per process —
+## it is shipped data, it cannot change under a running game.
+static var _regions_cache: Dictionary = {}
+
+
+## The named regions of [param body_key] ("Rox Planum Centralis"…): lore names that label a part of the
+## map and change nothing on the ground. Written by the QGIS export_poi.py next to the POIs, smallest
+## first so a region drawn inside another wins ([method region_in]). Empty when the body has none.
+static func regions_for(body_key: String) -> Array[Dictionary]:
+	if _regions_cache.has(body_key):
+		return _regions_cache[body_key]
+	var out: Array[Dictionary] = regions_from(_read_export(body_key))
+	_regions_cache[body_key] = out
+	return out
+
+
+## The regions of a parsed export, each [code]{name, label, rings: Array[PackedVector2Array] (lon, lat
+## degrees), bbox: Rect2, dir}[/code], in file order. [code]dir[/code] is the body-fixed direction a
+## label stands at: the mean of the largest ring's vertices. Malformed entries are dropped. Pure.
+static func regions_from(parsed: Dictionary) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var raw: Variant = parsed.get("regions", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	for item: Variant in (raw as Array):
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var name: String = str((item as Dictionary).get("name", "")).strip_edges()
+		var rings: Array[PackedVector2Array] = []
+		var box := Rect2()
+		var largest: PackedVector2Array = PackedVector2Array()
+		var largest_area: float = -1.0
+		for ring_raw: Variant in (item as Dictionary).get("rings", []):
+			if typeof(ring_raw) != TYPE_ARRAY or (ring_raw as Array).size() < 3:
+				continue
+			var ring := PackedVector2Array()
+			for p: Variant in (ring_raw as Array):
+				if typeof(p) == TYPE_ARRAY and (p as Array).size() >= 2:
+					ring.append(Vector2(float(p[0]), float(p[1])))
+			if ring.size() < 3:
+				continue
+			box = Rect2(ring[0], Vector2.ZERO) if rings.is_empty() else box
+			for v: Vector2 in ring:
+				box = box.expand(v)
+			rings.append(ring)
+			var area: float = absf(_ring_area(ring))
+			if area > largest_area:
+				largest_area = area
+				largest = ring
+		if name == "" or rings.is_empty():
+			continue
+		var mean := Vector3.ZERO
+		for v: Vector2 in largest:
+			mean += HEALPix.lonlat2vec(v.x, v.y)
+		out.append({
+			"name": name,
+			"label": name,
+			"rings": rings,
+			"bbox": box,
+			"dir": mean.normalized(),
+		})
+	return out
+
+
+## The name of the region of [param body_key] holding the body-fixed direction [param dir], or "".
+static func region_at(body_key: String, dir: Vector3) -> String:
+	return region_in(regions_for(body_key), dir)
+
+
+## The name of the FIRST of [param regions] holding [param dir], or "". First, because the export sorts
+## them smallest first: a region drawn inside another one names the ground before its host. Pure.
+static func region_in(regions: Array[Dictionary], dir: Vector3) -> String:
+	if dir == Vector3.ZERO:
+		return ""
+	var ll: Vector2 = HEALPix.vec2lonlat(dir)
+	for region: Dictionary in regions:
+		var box: Rect2 = region["bbox"]
+		if ll.x < box.position.x or ll.x > box.end.x or ll.y < box.position.y or ll.y > box.end.y:
+			continue
+		for ring: PackedVector2Array in region["rings"]:
+			if point_in_ring(ll, ring):
+				return str(region["name"])
+	return ""
+
+
+## Ray-casting point-in-polygon in lon/lat, the same rule as the exporter's modifier_geom.point_in_ring.
+static func point_in_ring(p: Vector2, ring: PackedVector2Array) -> bool:
+	var n: int = ring.size()
+	if n < 3:
+		return false
+	var inside: bool = false
+	var j: int = n - 1
+	for i: int in range(n):
+		var yi: float = ring[i].y
+		var yj: float = ring[j].y
+		if (yi > p.y) != (yj > p.y):
+			var x: float = (ring[j].x - ring[i].x) * (p.y - yi) / (yj - yi) + ring[i].x
+			if p.x < x:
+				inside = not inside
+		j = i
+	return inside
+
+
+## Signed shoelace area of a lon/lat ring, in square degrees.
+static func _ring_area(ring: PackedVector2Array) -> float:
+	var s: float = 0.0
+	for i: int in range(ring.size()):
+		var a: Vector2 = ring[i]
+		var b: Vector2 = ring[(i + 1) % ring.size()]
+		s += a.x * b.y - b.x * a.y
+	return 0.5 * s
 
 
 ## One record, with its ground direction resolved.

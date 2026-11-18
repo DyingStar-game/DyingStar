@@ -19,6 +19,8 @@ extends GutTest
 ##     -gtest=res://test/unit/test_height_pack_v2.gd -gexit
 
 const HeightPackScript := preload("res://scenes/planet/height_pack.gd")
+const FakeTileCache := preload("res://test/unit/fake_tile_cache.gd")
+const TILE_CACHE := "user://test_dshp_v2_tiles/"
 
 ## 16 et non 2 : le noyau bilinéaire du sampler de PlanetData déborde d'un texel dans les
 ## tuiles voisines aux bords. À tile_res 2 aucun échantillon ne rend sa seule propre
@@ -53,6 +55,7 @@ func before_all() -> void:
 
 
 func after_all() -> void:
+	RemoteTileSource._remove_tree(TILE_CACHE)
 	var d := DirAccess.open(DIR)
 	if d:
 		d.list_dir_begin()
@@ -274,17 +277,22 @@ func test_unsupported_version_is_refused() -> void:
 # Remontée de niveau (PlanetData sur pack creux)
 # ===================================================================
 
+## The game reads no local heights.pack: the planet's tiles are served from the tile cache, as the
+## service would have filled it ([code]fake_tile_cache.gd[/code]), with the same values and the same
+## sparse pattern the pack would hold.
 func _planet_data_on(name: String, sparse: bool) -> PlanetData:
 	var dir := DIR + name + "/"
-	DirAccess.make_dir_recursive_absolute(dir)
-	_write(dir + "heights.pack", true, sparse, true)
-	var mf := FileAccess.open(dir + "manifest.json", FileAccess.WRITE)
-	mf.store_string(_manifest_json())
-	mf.close()
+	var tiles := {}
+	for nside in _levels:
+		var payload := FakeTileCache.flat_u16(TILE_RES, _level_value(nside))
+		for ipix in 12 * nside * nside:
+			if not sparse or _present(nside, ipix):
+				tiles[Vector2i(ipix, nside)] = payload
 	# Champs posés à la main plutôt que par apply_chunk_manifest() : celui-ci imprime un
 	# récapitulatif, et tout print traverse le pont OpenTelemetry dont l'erreur est comptée
 	# par GUT comme un échec de test. Le parsing du manifeste est déjà couvert ailleurs.
 	var pd := PlanetData.new()
+	pd.remote_source = FakeTileCache.make(TILE_CACHE, name, TILE_RES, NSIDE_MIN, NSIDE_MAX, tiles)
 	pd.chunk_heightmaps_dir = dir
 	pd.export_nside = NSIDE_MAX
 	pd.export_nside_min = NSIDE_MIN
@@ -297,10 +305,10 @@ func _planet_data_on(name: String, sparse: bool) -> PlanetData:
 	return pd
 
 
-func test_pack_is_sparse_only_reports_sparse_packs() -> void:
-	assert_true(_pd_sparse.pack_is_sparse(), "pack creux")
-	assert_false(_pd_dense.pack_is_sparse(),
-			"un pack dense ne doit faire payer la remontée à personne")
+func test_level_climb_is_armed_only_with_a_tile_source() -> void:
+	# Les tuiles ne viennent plus que du service : c'est lui qui peut avoir élagué.
+	assert_true(_pd_sparse.pack_is_sparse(), "avec une source, la remontée est armée")
+	assert_false(PlanetData.new().pack_is_sparse(), "sans source, il n'y a rien à remonter")
 
 
 func test_has_usable_tile_accepts_an_absent_tile_with_a_present_ancestor() -> void:

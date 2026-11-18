@@ -35,8 +35,8 @@ func _run() -> void:
 	if "--remote-tiles" in OS.get_cmdline_user_args():
 		# As a game server: elevation from the tile service, POIs spared by the cracks (PlanetTerrain.initialize).
 		data.remote_source = RemoteTileSource.for_planet(data.planet_name)
+		data.attach_remote_modifiers()
 		data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(data.planet_name))
-	data.ensure_queries_loaded()
 	data.warm_mountains()
 	var volcano: VolcanoRelief.Volcano = null
 	for ip in 12:

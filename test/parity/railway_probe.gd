@@ -53,6 +53,7 @@ func _ready() -> void:
 
 	if OS.get_environment("RAILWAY_PROBE_REMOTE") == "1":
 		data.remote_source = RemoteTileSource.for_planet(planet)
+		data.attach_remote_modifiers()
 		say("PROBE remote source: %s" % ("none (service unreachable or not configured)"
 				if data.remote_source == null else data.remote_source.base_url))
 

@@ -44,6 +44,7 @@ func _ready() -> void:
 	var t := Time.get_ticks_usec()
 	_data.apply_chunk_manifest()
 	_data.remote_source = RemoteTileSource.for_planet(planet)
+	_data.attach_remote_modifiers()
 	_nside = 1 << _data.max_quadtree_depth
 	_res = _data.chunk_resolution
 	_col_res = _data.collision_col_res_for(_nside)
@@ -80,7 +81,7 @@ func _ready() -> void:
 		_data.set_mountain_overrides([], [], recs)
 
 	# ── Warm-up, the PlanetTerrain.initialize order ──
-	for step in ["ensure_queries_loaded", "warm_mountains", "warm_fumaroles", "has_lava",
+	for step in ["warm_mountains", "warm_fumaroles", "has_lava",
 			"get_bridge_spans", "warm_bridge_plans", "warm_grade_profiles"]:
 		t = Time.get_ticks_usec()
 		_data.call(step)

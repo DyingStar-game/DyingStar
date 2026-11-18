@@ -454,33 +454,17 @@ static func generate_mesh(
 	var _relief_bds: Array = []
 	var _relief_index: Dictionary = {}        # biome_type → k
 
-	# Road overlay. Normally the tile from terrainmodifier.pack already holds
-	# this chunk's own disjoint stretch, so the test is just "is it empty".
-	# The BiomeQuery/roads_geojson path below is the transition fallback for
-	# planets that have not been re-exported yet (and for use_modifier_pack=off).
+	# Road overlay. The tile from the modifier pack holds this chunk's own
+	# disjoint stretch, so the test is just "is it empty".
 	var has_road_overlap := not _road_arr.is_empty() or not _lava_arr.is_empty()
 	# Far LODs carry no road overlay at all (RoadTerrain.OVERLAY_MIN_RES);
 	# the carve and the relief flattening below stay, they are the ground.
 	var _road_overlay_wanted := res >= RoadTerrain.OVERLAY_MIN_RES
-	var rq = null
-	if not has_road_overlap and data.get_modifier_pack() == null:
-		rq = data.get_road_query()  # may be null
 
 	# HEALPix lon/lat bounding box (reused for road overlay).
 	var _cbb: Array[Vector2] = []
 	if hp_mode:
 		_cbb = _healpix_lonlat_bbox(hp_nside, hp_ipix)
-		var _cbb_mn: Vector2 = _cbb[0]
-		var _cbb_mx: Vector2 = _cbb[1]
-		if rq and rq.is_loaded():
-			for _rz in rq.get_zones_for_region(_cbb_mn, _cbb_mx):
-				if BiomeQuery._aabb_overlap(_cbb_mn, _cbb_mx, _rz.bbox_min, _rz.bbox_max):
-					has_road_overlap = true
-					break
-	else:
-		if rq and rq.is_loaded():
-			has_road_overlap = rq.chunk_overlaps_any_zone(
-				face, u_min, u_max, v_min, v_max)
 
 	# ── Recipe-based overlap detection ─────────────────────────────
 	# Populate zones (polygon/point biomes).
@@ -2294,22 +2278,11 @@ static func generate_mesh(
 		else:
 			_rd_cbb = BiomeQuery._chunk_lonlat_bbox(
 				face, u_min, u_max, v_min, v_max)
-		var _rd_cbb_min: Vector2 = _rd_cbb[0]
-		var _rd_cbb_max: Vector2 = _rd_cbb[1]
 		# Group slab geometry by material path — see _road_group().
 		var road_groups: Dictionary = {}
 
-		# Pack path: _road_arr holds this chunk's own pieces, already clipped.
-		# Legacy path: whole global centerlines from BiomeQuery, which is why the
-		# ribbon used to be built N times over and float above the terrain.
+		# _road_arr holds this chunk's own pieces from the pack, already clipped.
 		var _rd_sources: Array = _road_arr
-		if _rd_sources.is_empty() and rq:
-			_rd_sources = []
-			for _z in rq.get_zones_for_region(_rd_cbb_min, _rd_cbb_max):
-				if RoadTerrain.is_road_zone(_z) and BiomeQuery._aabb_overlap(
-						_rd_cbb_min, _rd_cbb_max, _z.bbox_min, _z.bbox_max):
-					RoadTerrain.prepare_zone(_z, data.radius)
-					_rd_sources.append(_z)
 
 		# Profiled lines — railways and graded roads — leave the ribbon path:
 		# their bed is built at the profile's altitude by GradeBed below. One
@@ -4106,7 +4079,7 @@ static func _get_recipe_biome_data(data: PlanetData,
 		# behaviour, no modifier at all on the coarse levels.
 		var own: Dictionary = data.get_chunk_modifiers(hp_nside, hp_ipix)
 		return [
-			own.get("populate_zones", []),
+			data.populate_zones_at(hp_nside, hp_ipix),
 			own.get("linear_features", []),
 			own.get("radial_features", []),
 			own.get("craters", []),

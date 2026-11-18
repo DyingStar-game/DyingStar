@@ -32,6 +32,8 @@ const CHUNK_NSIDE := 64
 const CHUNK_RES := 8
 
 const DIR := "user://test_chunk_sampling_precompute/"
+const TILE_CACHE := "user://test_chunk_sampling_precompute_tiles/"
+const FakeTileCache := preload("res://test/unit/fake_tile_cache.gd")
 const SPARSE_NSIDE_MIN := 1
 const SPARSE_NSIDE_MAX := 8
 
@@ -50,6 +52,7 @@ func before_all() -> void:
 
 
 func after_all() -> void:
+	RemoteTileSource._remove_tree(TILE_CACHE)
 	var d := DirAccess.open(DIR)
 	if d:
 		d.list_dir_begin()
@@ -102,19 +105,25 @@ func _dense_planet() -> PlanetData:
 	return pd
 
 
+## The game reads no local heights.pack: the sparse planet is served from the tile cache, as the
+## service would have filled it (fake_tile_cache.gd) — same texels, same pruning pattern.
 func _sparse_planet() -> PlanetData:
-	_write_sparse_pack(DIR + "heights.pack")
-	var mf := FileAccess.open(DIR + "manifest.json", FileAccess.WRITE)
-	mf.store_string(JSON.stringify({
-		"planet_name": "precomp", "tile_res": TILE_RES, "nside": SPARSE_NSIDE_MAX,
-		"nside_min": SPARSE_NSIDE_MIN, "nside_max": SPARSE_NSIDE_MAX, "pyramid": true,
-		"radius": 1000000.0, "height_offset": 0.0, "max_height": 1.0,
-		"packed": true, "pack_file": "heights.pack",
-	}))
-	mf.close()
+	var tiles := {}
+	for nside in _levels():
+		for ipix in 12 * nside * nside:
+			if not _present(nside, ipix):
+				continue
+			var b := PackedByteArray()
+			b.resize(TILE_RES * TILE_RES * 2)
+			for y in TILE_RES:
+				for x in TILE_RES:
+					b.encode_u16((y * TILE_RES + x) * 2, int(round(_texel(ipix, x, y) * 65535.0)))
+			tiles[Vector2i(ipix, nside)] = b
 	# Champs posés à la main : apply_chunk_manifest() imprime un récapitulatif (voir
 	# before_all). Son parsing est couvert par test_height_pack_v2.gd.
 	var pd := _planet(SPARSE_NSIDE_MAX)
+	pd.remote_source = FakeTileCache.make(TILE_CACHE, "precomp", TILE_RES, SPARSE_NSIDE_MIN,
+			SPARSE_NSIDE_MAX, tiles)
 	pd.chunk_heightmaps_dir = DIR
 	return pd
 
@@ -130,50 +139,6 @@ func _levels() -> Array[int]:
 		out.append(ns)
 		ns *= 2
 	return out
-
-
-## DSHP v2 creux, même format que test_height_pack_v2.gd — mais des tuiles à contenu
-## variable, sans quoi la remontée de niveau ne serait pas observable.
-func _write_sparse_pack(path: String) -> void:
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	assert_not_null(f, "impossible d'écrire %s" % path)
-	var manifest := JSON.stringify({
-		"planet_name": "precomp", "tile_res": TILE_RES, "nside": SPARSE_NSIDE_MAX,
-		"nside_min": SPARSE_NSIDE_MIN, "nside_max": SPARSE_NSIDE_MAX, "pyramid": true,
-		"radius": 1000000.0, "height_offset": 0.0, "max_height": 1.0,
-	}).to_utf8_buffer()
-	var bitmap_bytes := 0
-	for nside in _levels():
-		bitmap_bytes += (12 * nside * nside + 7) >> 3
-
-	f.store_buffer("DSHP".to_ascii_buffer())
-	f.store_32(2)
-	f.store_32(TILE_RES)
-	f.store_32(SPARSE_NSIDE_MIN)
-	f.store_32(SPARSE_NSIDE_MAX)
-	f.store_32(1 | 2)  # uint16 + creux
-	f.store_32(32 + manifest.size() + bitmap_bytes)
-	f.store_32(manifest.size())
-	f.store_buffer(manifest)
-
-	for nside in _levels():
-		var npix := 12 * nside * nside
-		var bits := PackedByteArray()
-		bits.resize((npix + 7) >> 3)
-		bits.fill(0)
-		for ipix in npix:
-			if _present(nside, ipix):
-				bits[ipix >> 3] = bits[ipix >> 3] | (1 << (ipix & 7))
-		f.store_buffer(bits)
-
-	for nside in _levels():
-		for ipix in 12 * nside * nside:
-			if not _present(nside, ipix):
-				continue
-			for y in TILE_RES:
-				for x in TILE_RES:
-					f.store_16(int(round(_texel(ipix, x, y) * 65535.0)))
-	f.close()
 
 
 # ===================================================================

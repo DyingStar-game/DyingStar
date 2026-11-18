@@ -38,7 +38,6 @@ mining_zone_minerals = PackedStringArray("iron", "gold", "cryptonite")
 mining_zone_mineral_weights = PackedFloat32Array(0, 1, 0)
 mining_zone_host_rock = "corundum_sapphire"
 mining_zone_poi_margin = 10.0
-roads_geojson = "assets/qgis/export/tarsis_3_roads_buffered.json"
 
 [node name="Tarsis3" type="Node3D" unique_id=134586975]
 script = ExtResource("script_body")

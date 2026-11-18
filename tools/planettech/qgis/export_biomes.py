@@ -116,6 +116,13 @@ def _read_export_nside():
 #: replace the rock colour under the fumaroles).
 RETIRED_BIOME_TYPES = ("volcanic_geothermal-fumarole_field",)
 
+#: Polygon layers that are NOT biomes even when the project put a `biome_type`
+#: on them. `region` names a part of the map (lore, labels): it changes nothing
+#: on the ground and goes to <planet>_poi.json through export_poi.py. As a
+#: biome it was written FULL into every tile it covers at every level — 180 MB
+#: of tarsis_3's pack for ~95 names.
+NOT_BIOME_LAYERS = ("region",)
+
 
 def find_region_layers():
     """Polygon layers carrying a `biome_type` custom property, with their identity."""
@@ -129,6 +136,9 @@ def find_region_layers():
         if not btype:
             continue
         if str(layer.customProperty("ds_kind", "") or "") or btype in RETIRED_BIOME_TYPES:
+            continue
+        if btype in NOT_BIOME_LAYERS or layer.name().lower() in NOT_BIOME_LAYERS:
+            print(f"  · '{layer.name()}' skipped: not a biome (exported by export_poi.py)")
             continue
         out.append({
             "layer": layer,
@@ -202,6 +212,8 @@ def collect_zones(entries):
 # Export
 # ============================================================
 def export_populate_part(zones):
+    # The team's parts and string table first: this export rewrites only its own part.
+    link_modifiers.pull_parts(PLANET_NAME, EXPORT_DIR)
     parts_dir = link_modifiers.parts_dir_for(PLANET_NAME, EXPORT_DIR)
     os.makedirs(parts_dir, exist_ok=True)
 

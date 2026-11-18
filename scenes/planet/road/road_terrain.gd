@@ -2,10 +2,9 @@
 class_name RoadTerrain
 ## Terrain module for the **road** overlay system.
 ##
-## Roads are exported from QGIS as LineStrings buffered into polygons
-## (with the original centerline preserved in properties).  They are
-## stored in a separate GeoJSON file (roads_geojson on PlanetData) and
-## loaded by a dedicated BiomeQuery instance.
+## Roads are exported from QGIS (export_roads.py) as centerlines with their
+## properties into the ROAD part of the modifier pack; each chunk reads its own
+## clipped stretch (PlanetData.get_roads_for_chunk).
 ##
 ## Unlike biome overlays, roads do NOT depress the terrain.  They are
 ## slabs SURFACE_THICKNESS_M thick laid on the ground (top face, two flanks,

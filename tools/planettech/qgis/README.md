@@ -15,7 +15,7 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export_elevation.py` | QGIS Python Console | **Elevation-only**: builds the whole height pyramid into a single `heights.pack`. Documented at [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export). |
 | `export_poi.py` | QGIS Python Console | **POI-only**: flattens the `poi` point layer to `<planet>_poi.json`, read back by the `PlanetTerrain` inspector button. See below. |
 | `export_cave_sites.py` | QGIS Python Console | **Caves-only**: the `cave_site` point layer → `<planet>_cave_items.json`, the admin-panel import (and `<planet>_cave_sites.json`), in a private folder outside the repository. The game server fits each cave to the relief when a player comes near. See "Caves pipeline" below. |
-| `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`; also still writes the legacy `<planet>_roads_buffered.json`. See below. |
+| `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`. See below. |
 | `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
 | `export_mountains.py` | QGIS Python Console | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
 | `export_volcanoes.py` | QGIS Python Console | **Volcanoes-only**: the `volcano` points, `lava_flow` lines and `fumarole_field` / `fumarole_vent` features → `parts/volcanoes.dsmpart`, `parts/lava_flows.dsmpart`, `parts/fumaroles.dsmpart`, and relinks the pack. See "Volcanoes, lava flows and fumaroles" below. |
@@ -33,7 +33,6 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export/planet/modifier_geom.py` | library | Tile assignment, clipping, decimation. Holds the road **partition** that makes double-rendering impossible. |
 | `export/planet/dsmp_strings.py` | library | The append-only `parts/strings.json` intern table. |
 | `export/planet/roads.py` | library | Road widths (the single Python mirror of `RoadTerrain.HALF_WIDTH_M`) and the ROAD part builder. |
-| `export_planet_old.py` | QGIS Python Console | **Retired** full pipeline (biome GeoJSON, spatial tiles, `.planetpack` recipes). Kept for reference; its outputs are no longer read at runtime. |
 
 ---
 
@@ -167,13 +166,9 @@ mesh generator.
    ```python
    exec(open('…/tools/planettech/qgis/export_roads.py').read())
    ```
-   Two outputs, in this order:
-   - `<planet>_chunks/parts/roads.dsmpart` — **what the game reads**, then merged
-     into `<planet>_chunks/terrainmodifier.pack` by the automatic relink;
-   - `<EXPORT_DIR>/<planet>_roads_buffered.json` — the legacy GeoJSON, still read
-     by `BiomeQuery` during the transition.
-3. **Nothing to wire in Godot**: chunks read `terrainmodifier.pack` from
-   `chunk_heightmaps_dir` directly. Reopen the scene to regenerate the preview.
+   Output: `<planet>_chunks/parts/roads.dsmpart`, merged into
+   `<planet>_chunks/terrainmodifier.pack` by the automatic relink, then published.
+3. **Nothing to wire in Godot**: chunks stream the published pack.
 
 ---
 
@@ -213,6 +208,19 @@ tarsis_8, 13.9 km tiles) and every HEALPix tile the polygon touches
 So a chunk only ever loads the zones of its own tile: thousands of regions on a
 planet cost nothing to a chunk that sees two of them. Only the OUTER ring of a
 polygon is exported — an enclave is another region drawn on top.
+
+**Full coverage is inherited** (`full_inherit` in the part manifest). A zone is
+written **full** only on the COARSEST tile it entirely covers; the tiles under it,
+at every finer level, carry nothing for that zone. The runtime adds a tile's
+ancestors' full records to its own (`PlanetData.populate_zones_at`) and re-sorts
+the merged list by the records' **rank** (the u16 after `vertex_count`: the
+zone's place in the overlap order). Without it one plateau was rewritten in 10 M
+tiles: tarsis_3's `biomes.dsmpart` went from 1.2 GB to ~275 MB with it.
+
+**The `region` layer is not a biome.** Named regions ("Rox Planum Centralis") are
+lore and map labels: `export_biomes.py` skips the layer, and `export_poi.py`
+writes their simplified outlines into `<planet>_poi.json` (`regions`), read by
+the star map (`StarMapPoi.regions_for` / `region_at`).
 
 ### Overlap rule
 
@@ -430,8 +438,8 @@ group lays five discs, flat to very rugged, eastward from `debug_rock_lonlat`
 
 The per-chunk, per-LOD archive of everything that modifies terrain — roads,
 craters, linear features (rivers, lava, dry beds, canyons), radial features
-(caves, fumaroles, volcanoes) and biome populate zones. POIs are **not** in it:
-they are an editor-only import baked into the `.tscn`.
+(caves, fumaroles, volcanoes) and biome populate zones. POIs and named regions
+are **not** in it: they live in `<planet>_poi.json` (`export_poi.py`).
 
 ```
 assets/qgis/export/<planet>_chunks/
@@ -443,6 +451,65 @@ assets/qgis/export/<planet>_chunks/
         roads.dsmpart       written by export_roads.py
         …                   one part per feature family
 ```
+
+**The game reads nothing local, only the tile service.** `heights.pack`,
+`terrainmodifier.pack` and `grade_profiles.pack` are gitignored, excluded from every
+export preset, and never read by the game, the server, the star map or the tools
+even when they sit on disk: everything comes over HTTP into `user://tile_cache/`.
+To see an export, publish it — first on `unstable`, then promote:
+
+```
+# 1. export in QGIS (relinks terrainmodifier.pack), then publish the tiles
+python3 tools/planettech/publish/publish_tiles.py \
+    assets/qgis/export/tarsis_3_chunks/terrainmodifier.pack --out <dist> --compress
+# 2. bake the line profiles FROM the published tiles
+godot --headless --path . res://tools/bake_grade_profiles.tscn -- --planet=tarsis_3 --tile-channel=unstable
+# 3. publish the bake (its own body, its own version)
+python3 tools/planettech/publish/publish_tiles.py \
+    assets/qgis/export/tarsis_3_chunks/grade_profiles.pack --out <dist>
+# 4. play on unstable (--tile-channel=unstable), then promote both bodies
+python3 tools/planettech/publish/stream_channels.py --dist <dist> --to dev --planet tarsis_3.mod
+python3 tools/planettech/publish/stream_channels.py --dist <dist> --to dev --planet tarsis_3.lines
+```
+
+**Publishing straight to the server.** With a target in
+`tools/planettech/qgis/export_config.ini` `[publish]` (or `$DS_PUBLISH_SSH`), every step above
+publishes by itself, in the background (`<planet>_chunks/publish.log`): `link_modifiers.link()`
+and `export_elevation.py` at the end of an export, `bake_grade_profiles.gd` after a complete
+bake. `tools/planettech/publish/publish_remote.py` sends the pack ONCE over SSH (rsync when both
+sides have it: only the changed blocks) and runs `publish_tiles.py` on the server, where the
+millions of tile files are created; then it checks a sample over HTTP from your machine. An
+unchanged export is not sent again. By hand:
+
+```
+python3 tools/planettech/publish/publish_remote.py --check                 # ssh, python3, dist writable
+python3 tools/planettech/publish/publish_remote.py <chunks>/terrainmodifier.pack
+python3 tools/planettech/publish/publish_remote.py --promote dev --planet tarsis_3.mod tarsis_3.lines
+python3 tools/planettech/publish/publish_remote.py --gc                    # --gc --yes deletes
+python3 tools/planettech/publish/publish_remote.py --adopt --planet tarsis_3  # published before channels
+```
+
+**The parts live on the server, not in git.** The server keeps the last published
+`terrainmodifier.pack` (in its publish workdir), and that pack holds every part:
+`link_modifiers.explode()` gives them back, byte for byte (`link(explode(pack)) == pack`).
+Every exporter starts with `link_modifiers.pull_parts()`: when the server has a newer pack than
+this machine last saw, it is fetched (rsync delta) and exploded into `parts/`, then the exporter
+rewrites ITS part on top and appends to the server's `strings.json`. If both this machine and
+the server changed the pack since they last agreed, the export stops (`PartsConflict`) and
+publishing refuses to overwrite the other change; `publish_remote.py --pull <planet> --force`
+takes the server's, `publish_remote.py --force <pack>` keeps yours. By hand:
+`python3 tools/planettech/publish/publish_remote.py --pull tarsis_3`.
+
+A body that no channel names (elevation published before the channels, served through
+its `latest.json`) is never touched by `--gc`; `--adopt` records its `latest.json` version
+in `unstable`, after which it is promoted and collected like the others.
+
+The modifiers are body `<planet>.mod` (version = the linker's `data_version`; only
+the shards holding tiles are written, roads go down to n8192), the bake is body
+`<planet>.lines` (version = its bytes, so a re-bake republishes one file, not the
+tiles). In game `RemoteModifierPack` fetches the manifest and the floor n1..n16
+once, finer tiles on demand; chunks wait for theirs in `TileResidency`. Only the
+small `manifest.json` descriptors are still read locally.
 
 **Each exporter owns one part.** Re-running `export_roads.py` rewrites
 `roads.dsmpart` and relinks the pack from every part present, so it replaces the
@@ -608,21 +675,11 @@ Widths: `tracks` decides for a railway (see the table below), which has no
 `godot --headless --path . res://test/parity/railway_probe.tscn` writes the
 profile summary and a mesh/collision parity check to `user://railway_probe.txt`.
 
-### Why buffered polygons (legacy GeoJSON)
+### The ribbon
 
-Godot loads that file through `BiomeQuery`, whose parser **only accepts `Polygon`
-geometry** — a raw LineString export is silently ignored. So each road is
-buffered into a polygon and the original line is kept in `properties.centerline`:
-
-- the **polygon** is only a coarse detection volume (deliberately
-  `DETECTION_MULTIPLIER` = 3× wider than the road) so a chunk crossed by a narrow
-  trail is never missed by the bounding-box test;
-- the **visible ribbon** is extruded from the centerline at the real half-width,
-  with flow-aligned UVs, as a slab `SURFACE_THICKNESS_M` = 8 cm thick laid on
-  the ground (top face at +8 cm, flanks buried 10 cm).
-
-The pack needs neither: its tiles are partitioned, not bbox-tested. This file
-disappears once `PlanetData.roads_geojson` is retired.
+The **visible ribbon** is extruded from each chunk's own stretch of centerline at the
+real half-width, with flow-aligned UVs, as a slab `SURFACE_THICKNESS_M` = 8 cm thick
+laid on the ground (top face at +8 cm, flanks buried 10 cm).
 
 Roads do **not** displace the terrain. Every road surface has its own
 collision: the ribbon slab is built into the chunk's collision shape
@@ -835,52 +892,20 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 
 ### Step 3: Export from QGIS
 
-> **This section describes the retired `export_planet.py` pipeline** (now
-> `export_planet_old.py`): global heightmap, 16-bit per-chunk PNGs, cube-sphere projection,
-> `.planetpack` recipes. None of it is read at runtime any more, and the command below will not
-> resolve.
->
-> For **elevation**, use `export_elevation.py` — see
-> [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export).
-> The sections above cover POI, roads and the modifier pack. Biomes and water still go through
-> the retired path and have not been re-documented.
+One script per family, each run from the QGIS Python Console with the planet project open
+(`exec(open('<repo>/tools/planettech/qgis/<script>').read())`):
 
-When your planet design is ready (or whenever you want to test in Godot):
+- `export_elevation.py` — the elevation (`heights.pack`), see
+  [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export);
+- `export_poi.py` — points of interest and named regions (`<planet>_poi.json`, read locally:
+  commit it);
+- `export_biomes.py`, `export_roads.py`, `export_mountains.py`, `export_volcanoes.py`,
+  `export_rocky_terrain.py` — one part each of the modifier pack (sections above).
 
-1. In the QGIS Python Console, **edit the configuration** at the top of `export_planet.py`:
-   - `PLANET_NAME` — must match what you used in Step 1
-   - `PLANET_RADIUS` — your planet radius in meters (e.g., `5000`)
-   - `EXPORT_DIR` — path to `assets/qgis/export/` in your project
-   - `ELEV_MIN` / `ELEV_MAX` — elevation range for heightmap normalization
-2. Run the export:
-   ```python
-   exec(open('/datas/developpement/sources/StarDeception/StarDeception/tools/planettech/qgis/export_planet.py').read())
-   ```
-3. The script performs **6 steps** automatically:
-   1. **Exports all vector layers** as GeoJSON files to `assets/qgis/export/`
-   2. **Generates a global heightmap** (TIF) from contour lines using TIN/IDW interpolation
-   3. **Generates chunked heightmaps** — splits the global heightmap into per-chunk
-      16-bit PNGs using the same cube-sphere projection as Godot's terrain system.
-      The max quadtree depth is computed automatically from the planet radius.
-   4. **Generates a biome raster map** from biome polygons
-   5. **Generates a far-LOD color map** (small RGB image for ultra-distance rendering)
-   6. **Creates a planet metadata JSON** with file references, chunk manifest, and LOD configuration
-
-Output files in `assets/qgis/export/`:
-```
-tarsis_4_elevation.geojson    ← contour lines
-tarsis_4_biomes.geojson       ← biome polygons
-tarsis_4_roads.geojson        ← road network
-tarsis_4_poi.geojson          ← points of interest
-tarsis_4_water.geojson        ← water bodies
-tarsis_4_heightmap.tif        ← global rasterized elevation (source for chunks)
-tarsis_4_chunks/              ← per-chunk 16-bit heightmap PNGs
-│   chunk_manifest.json       ← chunk metadata (face, depth, UV bounds)
-│   face_0/ ... face_5/       ← 256×256 PNG per chunk (e.g. f0_d3_0_0.png)
-tarsis_4_biomemap.tif         ← rasterized biome indices
-tarsis_4_colormap.png         ← far-LOD color texture
-tarsis_4_planet.json          ← metadata + LOD config + chunk manifest ref
-```
+With a `[publish]` target configured, each export pulls the team's parts from the server,
+relinks and publishes on its own; then bake the line profiles and promote (see "Publishing
+straight to the server" above). The game reads nothing of this locally but the
+`manifest.json` descriptors and the POI JSON.
 
 ---
 

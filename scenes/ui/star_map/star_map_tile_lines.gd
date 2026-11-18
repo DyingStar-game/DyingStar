@@ -160,6 +160,9 @@ func _available() -> bool:
 ## Asked once per batch, on the main thread, and that is where it must resolve whatever needs one — a
 ## planet's data, a noise built on first use. The second element says whether the Callable may then
 ## run on a worker: it may when it holds everything it reads and touches nothing of the node.
+##
+## An EMPTY array (not two empty ones) means "not yet": the tile's data is still streaming in
+## (RemoteModifierPack). It is not remembered, so the tile is laid again on a later refresh.
 func _laying() -> Array:
 	return [Callable(), false]
 
@@ -192,7 +195,9 @@ func _start_missing() -> void:
 	var lay: Callable = how[0]
 	if not bool(how[1]):
 		for id: int in missing:
-			_segments[id] = lay.call(id)
+			var laid: Array = lay.call(id)
+			if not laid.is_empty():
+				_segments[id] = laid
 		_dirty = true
 		return
 	var slot: Dictionary = {}
@@ -215,6 +220,8 @@ func _take() -> void:
 	# Laid the old way while [method lay_again] was being asked for: not kept, so it is laid afresh.
 	if not _job_outdated:
 		for id: int in _job:
+			if (_job[id] as Array).is_empty():
+				continue  # still streaming in: asked again on a later refresh
 			_segments[id] = _job[id]
 			_outdated.erase(id)
 	_job_outdated = false

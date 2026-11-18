@@ -29,6 +29,7 @@ from export.planet import roads as roads_mod                      # noqa: E402
 from export.planet import biomes as biomes_mod                    # noqa: E402
 from export.planet import mountains as mountains_mod              # noqa: E402
 from export.planet import volcanoes as volcanoes_mod              # noqa: E402
+from export.planet import regions as regions_mod                  # noqa: E402
 from export.planet.dsmp_strings import StringTable                # noqa: E402
 import link_modifiers                                             # noqa: E402
 
@@ -667,15 +668,99 @@ class TestPopulatePart(unittest.TestCase):
                  {"ring": small, "biome_type": "regolith-sand", "biome_index": 101,
                   "priority": p_small, "props": {}}],
                 3467000.0, 64, 64, table, verbose=False)
-            _n, tiles = levels[-1]
-            for _ipix, payload in tiles:
-                recs = _records_of(payload)
+            nside, tiles = levels[-1]
+            for ipix, _payload in tiles:
+                recs = biomes_mod.flatten_tile(levels, nside, ipix)
                 if len(recs) == 2:
-                    return [r[1] for r in recs]
+                    return [struct.unpack_from("<i", r, 4)[0] for _rank, r in recs]
             self.fail("no tile holds both zones")
         self.assertEqual(order(200, 100), [105, 101], "higher priority first")
         self.assertEqual(order(100, 200), [101, 105])
         self.assertEqual(order(0, 0), [101, 105], "equal priority: smaller area first")
+
+    def _first_match(self, levels, nside, lon, lat):
+        """biome_index of the zone the runtime picks at (lon, lat), or None."""
+        ipix = mg.pix_of(nside, lon, lat)
+        for _rank, rec in biomes_mod.flatten_tile(levels, nside, ipix):
+            _sid, cov, nprops, bidx, nverts, _r = struct.unpack_from("<HBBiHH", rec, 0)
+            if cov == dsmp.COVERAGE_FULL:
+                return bidx
+            if cov == dsmp.COVERAGE_PARTIAL:
+                base = 12 + 8 * nprops
+                ring = [(struct.unpack_from("<i", rec, base + 8 * k)[0] * 1e-7,
+                         struct.unpack_from("<i", rec, base + 8 * k + 4)[0] * 1e-7)
+                        for k in range(nverts)]
+                if mg.point_in_ring(lon, lat, ring):
+                    return bidx
+        return None
+
+    def test_full_zones_are_inherited_not_repeated(self):
+        """A FULL tile's descendants carry nothing for that zone."""
+        levels, manifest = biomes_mod.build_populate_part(
+            [{"ring": self.SQUARE, "biome_type": "x", "biome_index": 1, "props": {}}],
+            3467000.0, 64, 64, StringTable(), verbose=False)
+        self.assertTrue(manifest["full_inherit"])
+        counts = manifest["counts"]
+        self.assertGreater(sum(counts["inherited_per_level"].values()), 0)
+        by_level = {ns: dict(tiles) for ns, tiles in levels}
+        for ns, tiles in levels:
+            for ipix, payload in tiles:
+                for rec in biomes_mod.split_records(payload):
+                    if rec[2] != dsmp.COVERAGE_FULL:
+                        continue
+                    child = ns * 2
+                    while child in by_level:
+                        sh = 2 * ((child // ns).bit_length() - 1)
+                        for c in range(ipix << sh, (ipix + 1) << sh):
+                            self.assertNotIn(c, by_level[child],
+                                             "n%d/%d is under a FULL tile" % (child, c))
+                        child *= 2
+
+    def test_inheritance_answers_like_the_flat_export(self):
+        """First match through ancestors == the pre-inheritance export's own tile."""
+        zones = [
+            {"ring": [(-60.0, 0.0), (0.0, 0.0), (0.0, 50.0), (-60.0, 50.0)],
+             "biome_type": "plain", "biome_index": 1, "priority": 0, "props": {}},
+            {"ring": [(-40.0, 10.0), (-20.0, 10.0), (-20.0, 30.0), (-40.0, 30.0)],
+             "biome_type": "sand", "biome_index": 2, "priority": 200, "props": {}},
+            {"ring": [(-35.0, 15.0), (-25.0, 15.0), (-25.0, 22.0), (-35.0, 22.0)],
+             "biome_type": "plateau", "biome_index": 3, "priority": 100, "props": {}},
+            {"ring": [(-10.0, 40.0), (20.0, 40.0), (5.0, 62.0), (-12.0, 55.0)],
+             "biome_type": "ice", "biome_index": 4, "priority": 0, "props": {}},
+        ]
+        new, _m = biomes_mod.build_populate_part(
+            zones, 3467000.0, 32, 32, StringTable(), verbose=False)
+        flat, m_flat = biomes_mod.build_populate_part(
+            zones, 3467000.0, 32, 32, StringTable(), verbose=False, full_inherit=False)
+        self.assertFalse(m_flat["full_inherit"])
+        flat_only = [(ns, tiles) for ns, tiles in flat]
+        import random
+        rnd = random.Random(7)
+        for nside in (4, 8, 16, 32):
+            only_this = [(ns, t) for ns, t in flat_only if ns == nside]
+            for _ in range(1500):
+                lon, lat = rnd.uniform(-70.0, 30.0), rnd.uniform(-5.0, 65.0)
+                self.assertEqual(self._first_match(new, nside, lon, lat),
+                                 self._first_match(only_this, nside, lon, lat),
+                                 "(%.3f, %.3f) at n%d" % (lon, lat, nside))
+        new_n32 = sum(len(t) for ns, t in new if ns == 32)
+        flat_n32 = sum(len(t) for ns, t in flat if ns == 32)
+        self.assertLess(new_n32, flat_n32, "the interior tiles are gone at the finest level")
+
+    def test_rank_follows_the_overlap_order(self):
+        zones = [{"ring": self.SQUARE, "biome_type": "a", "biome_index": 1, "priority": 0,
+                  "props": {}},
+                 {"ring": [(-38.0, 25.0), (-36.0, 25.0), (-36.0, 27.0), (-38.0, 27.0)],
+                  "biome_type": "b", "biome_index": 2, "priority": 50, "props": {}}]
+        levels, _m = biomes_mod.build_populate_part(zones, 3467000.0, 16, 16,
+                                                    StringTable(), verbose=False)
+        ranks = {}
+        for _ns, tiles in levels:
+            for _ipix, payload in tiles:
+                for rec in biomes_mod.split_records(payload):
+                    ranks.setdefault(struct.unpack_from("<i", rec, 4)[0], set()).add(
+                        int.from_bytes(rec[10:12], "little"))
+        self.assertEqual(ranks, {2: {0}, 1: {1}}, "higher priority ranks first")
 
     def test_deterministic_fingerprint(self):
         zone = {"ring": self.SQUARE, "biome_type": "x", "biome_index": 1, "props": {"a": 1}}
@@ -685,6 +770,43 @@ class TestPopulatePart(unittest.TestCase):
         zone2 = dict(zone, props={"a": 2})
         _l3, m3 = biomes_mod.build_populate_part([zone2], 3467000.0, 16, 16, StringTable(), verbose=False)
         self.assertNotEqual(m1["fingerprint"], m3["fingerprint"])
+
+
+# ── Named regions (export_poi.py) ───────────────────────────────────────
+
+class TestRegions(unittest.TestCase):
+    """The `region` layer goes to <planet>_poi.json, not into the pack."""
+
+    def test_outer_rings_drop_holes_and_the_closing_vertex(self):
+        poly = {"type": "Polygon", "coordinates": [
+            [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+            [[2, 2], [3, 2], [3, 3], [2, 2]]]}
+        self.assertEqual(regions_mod.outer_rings(poly),
+                         [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]])
+        multi = {"type": "MultiPolygon", "coordinates": [
+            [[[0, 0], [1, 0], [1, 1], [0, 0]]], [[[5, 5], [6, 5], [6, 6], [5, 5]]]]}
+        self.assertEqual(len(regions_mod.outer_rings(multi)), 2)
+        self.assertEqual(regions_mod.outer_rings({"type": "Point", "coordinates": [0, 0]}), [])
+
+    def test_build_regions_sorts_smallest_first_and_drops_the_nameless(self):
+        big = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)]
+        small = [(5.0, 5.0), (6.0, 5.0), (6.0, 6.0), (5.0, 6.0)]
+        out = regions_mod.build_regions([
+            {"name": "Big Planitia", "rings": [big]},
+            {"name": "  ", "rings": [small]},
+            {"name": "Small Planum", "rings": [small]},
+            {"name": "Degenerate", "rings": [[(0.0, 0.0), (1.0, 1.0)]]},
+        ])
+        self.assertEqual([r["name"] for r in out], ["Small Planum", "Big Planitia"])
+        self.assertEqual(out[1]["bbox"], [0.0, 0.0, 20.0, 20.0])
+        self.assertNotIn("_area", out[0])
+
+    def test_outlines_are_simplified(self):
+        # A wiggly edge well under the tolerance collapses to the square's corners.
+        ring = [(0.0, 0.0)] + [(x * 0.1, 0.001 * (x % 2)) for x in range(1, 100)] \
+            + [(10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+        out = regions_mod.build_regions([{"name": "R", "rings": [ring]}])
+        self.assertLessEqual(len(out[0]["rings"][0]), 5)
 
 
 # ── Mountains ───────────────────────────────────────────────────────────
@@ -1041,6 +1163,24 @@ class TestLinker(unittest.TestCase):
         link_modifiers.link(self.planet, self.export_dir, verbose=False)
         after = hashlib.sha256(open(p, "rb").read()).hexdigest()
         self.assertEqual(before, after, "link(explode(pack)) == pack")
+
+    def test_explode_brings_back_an_empty_family(self):
+        # tarsis_3 has a fumarole part with no fumarole in it: no tile names it, yet it is
+        # in the manifest, and without it the relinked pack was no longer byte-identical —
+        # which is what the parts kept on the server (publish_remote.pull) rely on.
+        self._write_roads()
+        m = self._base_manifest("fumarole")
+        m["counts"] = {"features": 0, "records_per_level": {"1": 0, "64": 0}}
+        dsmp.write_part(link_modifiers.part_path(self.planet, "fumarole", self.export_dir),
+                        dsmp.KIND_FUMAROLE, [(1, []), (64, [])], m)
+        p = link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        before = open(p, "rb").read()
+        for f in os.listdir(self.parts):
+            os.remove(os.path.join(self.parts, f))
+        link_modifiers.explode(self.planet, self.export_dir, verbose=False)
+        self.assertTrue(os.path.exists(os.path.join(self.parts, "fumaroles.dsmpart")))
+        link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        self.assertEqual(open(p, "rb").read(), before)
 
     def test_link_rejects_shallow_road_level(self):
         # A road baked shallower than the quadtree would make deep chunks share

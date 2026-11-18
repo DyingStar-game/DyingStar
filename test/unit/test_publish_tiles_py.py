@@ -272,8 +272,139 @@ class FloorBundle(unittest.TestCase):
         self.assertGreater(bad, 0)
 
 
+def write_modifier_pack(path, tiles):
+    """terrainmodifier.pack (DSMP v1) minimal : {(nside, ipix): payload}.
+
+    Écrit par l'encodeur de l'export lui-même, pour que le lecteur de publication soit
+    éprouvé sur le format réel et pas sur une copie qui pourrait dériver.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                                    "tools", "planettech", "qgis"))
+    from export.planet import dsmp
+    levels = {}
+    for (nside, ipix), payload in tiles.items():
+        levels.setdefault(nside, []).append((ipix, payload))
+    dsmp.write_pack(path, [(n, sorted(levels[n])) for n in sorted(levels)],
+                    {"planet_name": "modtest", "data_version": "beef0001",
+                     "strings": ["a"], "levels": sorted(levels)})
+
+
+class ModifierPackTree(unittest.TestCase):
+    """Le pack de modificateurs : creux à l'extrême, publié sous <planète>.mod."""
+
+    #: n1 et n16 dans le plancher, n64 et n8192 au-delà. n8192 a 805 M de pixels :
+    #: le parcourir pixel par pixel, comme l'altitude, ne finirait pas.
+    TILES = {(1, 3): b"\x01\x00\x00\x00", (16, 5): b"n16-5", (16, 3071): b"n16-last",
+             (64, 7): b"n64-7", (64, 40000): b"n64-40000", (8192, 123456789): b"deep road"}
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.pack_path = os.path.join(self.dir, "terrainmodifier.pack")
+        write_modifier_pack(self.pack_path, self.TILES)
+        self.pack = PT.open_pack(self.pack_path)
+        self.out = os.path.join(self.dir, "dist")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_magic_picks_the_modifier_reader(self):
+        self.assertIsInstance(self.pack, PT.DsmpPack)
+        self.assertEqual(self.pack.levels, [1, 16, 64, 8192])
+        self.assertEqual(self.pack.data_version(), "beef0001")
+        for (nside, ipix), payload in self.TILES.items():
+            self.assertTrue(self.pack.has_tile(nside, ipix))
+            self.assertEqual(self.pack.raw_tile(nside, ipix), payload)
+        self.assertFalse(self.pack.has_tile(64, 8))
+
+    def test_only_inhabited_shards_are_written(self):
+        written, _r, _o, _f = PT.publish(self.pack, self.out, "modtest.mod", "beef0001", True)
+        self.assertEqual(written, len(self.TILES))
+        root = os.path.join(self.out, "modtest.mod", "beef0001")
+        maps = [os.path.relpath(d, root) for d, _s, fs in os.walk(root) if "present.bin" in fs]
+        self.assertEqual(sorted(maps), sorted([
+            "n1/f0", "n16/f0", "n64/f0", "n64/f%d" % (40000 // PT.SHARD_TILES),
+            "n8192/f%d" % (123456789 // PT.SHARD_TILES)]))
+        bad, checked = PT.verify(self.pack, self.out, "modtest.mod", "beef0001")
+        self.assertEqual((bad, checked), (0, len(self.TILES)))
+
+    def test_floor_reaches_n16_for_modifiers(self):
+        bundle = PT.read_floor_bundle(PT.floor_bundle(self.pack, False))
+        self.assertEqual(sorted((n, i) for n, i, _b in bundle),
+                         [(1, 3), (16, 5), (16, 3071)])
+
+    def test_a_legacy_pack_without_data_version_is_named_by_its_bytes(self):
+        path = os.path.join(self.dir, "old.pack")
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                                        "tools", "planettech", "qgis"))
+        from export.planet import dsmp
+        dsmp.write_pack(path, [(1, [(0, b"x")])], {"planet_name": "old"})
+        v1 = PT.open_pack(path).data_version()
+        dsmp.write_pack(path, [(1, [(0, b"y")])], {"planet_name": "old"})
+        self.assertNotEqual(v1, PT.open_pack(path).data_version())
+        self.assertEqual(len(v1), 16)
+
+    def test_a_line_bake_beside_the_pack_does_not_touch_the_tiles_version(self):
+        with open(os.path.join(self.dir, "grade_profiles.pack"), "wb") as fh:
+            fh.write(b"bake-1")
+        self.assertEqual(self.pack.data_version(), "beef0001",
+                         "a re-bake must never republish the modifier tiles")
+
+    def test_main_publishes_under_the_mod_body_with_no_tile_res(self):
+        rc = PT.main([self.pack_path, "--out", self.out])
+        self.assertEqual(rc, 0)
+        with open(os.path.join(self.out, "modtest.mod", "latest.json")) as fh:
+            entry = json.load(fh)
+        self.assertEqual(entry["data_version"], "beef0001")
+        self.assertEqual(entry["dataset"], "modifiers")
+        self.assertEqual(entry["floor_nside_max"], PT.MODIFIER_FLOOR_NSIDE_MAX)
+        self.assertNotIn("tile_res", entry)
+        with open(os.path.join(self.out, "channels", "unstable.json")) as fh:
+            self.assertIn("modtest.mod", json.load(fh)["planets"])
+
+
+class LineBakeFile(unittest.TestCase):
+    """grade_profiles.pack : un fichier entier, sous son propre corps <planète>.lines."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        chunks = os.path.join(self.dir, "lineplanet_chunks")
+        os.makedirs(chunks)
+        self.path = os.path.join(chunks, "grade_profiles.pack")
+        with open(self.path, "wb") as fh:
+            fh.write(b"bake-1" * 100)
+        self.out = os.path.join(self.dir, "dist")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_main_publishes_the_file_under_its_own_body(self):
+        self.assertEqual(PT.main([self.path, "--out", self.out]), 0)
+        with open(os.path.join(self.out, "lineplanet.lines", "latest.json")) as fh:
+            entry = json.load(fh)
+        self.assertEqual(entry["dataset"], "file")
+        self.assertEqual(entry["file"], "grade_profiles.pack")
+        self.assertEqual(entry["data_version"], PT.file_version(self.path))
+        root = os.path.join(self.out, "lineplanet.lines", entry["data_version"])
+        with open(os.path.join(root, "grade_profiles.pack"), "rb") as fh:
+            self.assertEqual(PT.read_tile_blob(fh.read()), b"bake-1" * 100)
+        self.assertTrue(os.path.exists(os.path.join(root, "manifest.json")))
+        from tools.planettech.publish import stream_channels as SC
+        self.assertEqual(SC.tree_problems(self.out, "lineplanet.lines", entry), [])
+        self.assertEqual(PT.main([self.path, "--out", self.out, "--verify"]), 0)
+
+    def test_a_rebake_is_a_new_version_and_verify_catches_a_stale_copy(self):
+        PT.main([self.path, "--out", self.out])
+        v1 = PT.file_version(self.path)
+        with open(self.path, "wb") as fh:
+            fh.write(b"bake-2")
+        self.assertNotEqual(PT.file_version(self.path), v1)
+        self.assertEqual(PT.verify_file(self.path, self.out, "lineplanet.lines", v1), 1)
+
+
 if __name__ == "__main__":
     suite = unittest.TestSuite()
-    for cls in (TileEnvelope, PublishTree, FloorBundle):
+    for cls in (TileEnvelope, PublishTree, FloorBundle, ModifierPackTree, LineBakeFile):
         suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
     sys.exit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)

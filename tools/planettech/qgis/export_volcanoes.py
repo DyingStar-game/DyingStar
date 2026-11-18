@@ -242,6 +242,8 @@ def _ground_sampler(volcano_points):
 # Export
 # ============================================================
 def export_parts(volcanoes, flows, fields, vents):
+    # The team's parts and string table first: this export rewrites only its own part.
+    link_modifiers.pull_parts(PLANET_NAME, EXPORT_DIR)
     parts_dir = link_modifiers.parts_dir_for(PLANET_NAME, EXPORT_DIR)
     os.makedirs(parts_dir, exist_ok=True)
     export_nside = _read_export_nside()

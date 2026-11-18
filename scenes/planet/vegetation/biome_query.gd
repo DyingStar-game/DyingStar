@@ -9,7 +9,6 @@ extends RefCounted
 ## checks populate_zones first and falls back to BiomeQuery when unavailable.
 ## BiomeQuery remains authoritative for:
 ##   • Per-vertex terrain effects (liquid overlay, rivers, cliffs, craters)
-##   • Road queries (loaded separately via roads_geojson)
 ##   • Static geometry utilities (_dir_to_lonlat, _aabb_overlap, etc.)
 ## Gradual migration: as more terrain effects move to recipe data, this
 ## class will shrink to road/POI queries and geometry helpers only.

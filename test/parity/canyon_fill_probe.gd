@@ -47,6 +47,7 @@ func _ready() -> void:
 	data.apply_chunk_manifest()
 	data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(PLANET))
 	data.remote_source = RemoteTileSource.for_planet(PLANET)
+	data.attach_remote_modifiers()
 	var ll := Vector2(-39.5194, 24.7381)
 	var forced := OS.get_environment("CANYON_PROBE_LONLAT")
 	if forced != "":

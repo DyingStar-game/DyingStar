@@ -80,6 +80,7 @@ func _all_planets() -> PackedStringArray:
 		var data := _planet_data(name)
 		if data != null and data.chunk_heightmaps_dir != "":
 			data.apply_chunk_manifest()
+			data.connect_tile_service()  # the lines are in the streamed modifiers
 			if data.has_profiled_lines():
 				out.append(name)
 	return out
@@ -120,9 +121,16 @@ func _bake(planet: String) -> bool:
 	# The same preparation as PlanetTerrain.initialize, in the same order.
 	data.apply_chunk_manifest()
 	data.remote_source = RemoteTileSource.for_planet(planet)
+	data.attach_remote_modifiers()
 	if data.remote_source == null:
 		_err("[GradeBake] %s: no tile service — the elevation is not in the repository, "
 				% planet + "configure the service in client.ini")
+		return false
+	if data.remote_modifiers == null:
+		_err("[GradeBake] %s: the tile service serves no modifiers (body %s%s) on channel %s — "
+				% [planet, planet, RemoteModifierPack.SUFFIX, StreamChannel.configured_name()]
+				+ "publish the linked terrainmodifier.pack first (publish_tiles.py), then bake "
+				+ "with --tile-channel=unstable")
 		return false
 	# Compute, never read back an older bake while doing so.
 	data._grade_bake_tried = true
@@ -130,7 +138,6 @@ func _bake(planet: String) -> bool:
 	# The crack network spares the POI spheres: set them as PlanetTerrain
 	# does, BEFORE the crossings are walked (bridge_bake_key holds them).
 	data.set_crack_exclusions(_scene_crack_pois(planet))
-	data.ensure_queries_loaded()
 	data.warm_mountains()
 	data.warm_fumaroles()
 	data.has_lava()
@@ -218,6 +225,8 @@ func _bake(planet: String) -> bool:
 		_err("[GradeBake] %s: cannot write %s (%s)" % [planet, data.grade_bake_path(), error_string(err)])
 		return false
 	var size := FileAccess.get_file_as_bytes(data.grade_bake_path()).size()
+	# Read back THIS file, not the published bake the game would fetch.
+	data.grade_bake_local_path = data.grade_bake_path()
 	data._grade_bake_doc_read = false
 	data._grade_bake_doc = {}
 	data._grade_bake_tried = false
@@ -235,8 +244,23 @@ func _bake(planet: String) -> bool:
 			float(size) / 1048576.0, (Time.get_ticks_msec() - t_start) / 1000])
 	if data.remote_source != null:
 		data.remote_source.stop()
-	return readable == baked_lines.size() and baked_lines.size() == lines.size() \
+	var complete := readable == baked_lines.size() and baked_lines.size() == lines.size() \
 			and bridges_ok and (bridges.is_empty() or bridges_read)
+	# Only a complete bake goes out; an incomplete one (lines or crossings missing) stays local.
+	if complete:
+		_publish(data.grade_bake_path())
+	return complete
+
+
+## Hand the fresh bake to the tile service (tools/planettech/publish/publish_remote.py, in the
+## background): the game reads only the published bake (body <planet>.lines). Without a target
+## configured the script says so and nothing is sent.
+func _publish(bake_path: String) -> void:
+	var script := ProjectSettings.globalize_path("res://tools/planettech/publish/publish_remote.py")
+	var out: Array = []
+	OS.execute("python3", [script, ProjectSettings.globalize_path(bake_path), "--background"], out, true)
+	for line: Variant in out:
+		_say("[GradeBake] %s" % str(line).strip_edges())
 
 
 ## Download [param tiles] (export level) with _fetchers connections of their
@@ -345,7 +369,7 @@ func _wait_tiles(data: PlanetData, tiles: Dictionary, fid: int) -> bool:
 				_say("[GradeBake]   first missing tile chain:%s" % chain)
 				break
 			_say("[GradeBake] %s fid %d: waiting for %d tile(s) — states %s — source queue %d, fetched %d, failed %d"
-					% [data.planet_name, fid, missing, str(hist), src._queue.size(),
+					% [data.planet_name, fid, missing, str(hist), int(src.queue_stats()["queued"]),
 					src.stat_fetched, src.stat_failed])
 		if bool(state["hopeless"]):
 			_err("[GradeBake] %s fid %d: %d tile(s) can never be read — line not baked"
