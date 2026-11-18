@@ -1,9 +1,10 @@
 class_name BugReporter
 extends Node
 ## CLIENT, own player only: the "bug_report" key (F9). It takes the bug-report capture (Screenshot, the
-## F8 one: the screen as it is, debug panels shown), then asks for a title and a description
-## (BugReportDialog) and sends them with the capture, where the player stands, the build and the end of
-## the game's log to service-social, which posts the report in the QA channel on Discord.
+## F8 one: the screen as it is, debug panels shown), then asks for the report on the QA team's template
+## (BugReportDialog: title, description, steps, actual and expected result) and sends it with the
+## capture, where the player stands, the build and the end of the game's log to service-social, which
+## posts the report in the QA channel on Discord.
 ##
 ## The game never talks to Discord itself: posting there takes a webhook URL, a secret this open-source
 ## client cannot hold. Where the service relays none (local dev, a server without the webhook) the form
@@ -67,13 +68,14 @@ func start() -> void:
 	var relayed: bool = bool(status.get("ok", false)) and status.get("data") is Dictionary \
 			and bool((status["data"] as Dictionary).get("enabled", false))
 	var off_text: String = "" if relayed else tr("%%BUG_REPORT_OFF") % _capture_path.get_base_dir()
-	_dialog.open_with(preview_of(image), off_text)
+	_dialog.open_with(preview_of(image), off_text, ProjectSettings.globalize_path(log_path()))
 
 
-func _on_submitted(title: String, description: String, with_log: bool) -> void:
+## [param report]: the form's texts, on the QA template ({title, description, steps, actual, expected}).
+func _on_submitted(report: Dictionary, with_log: bool) -> void:
 	_dialog.set_sending(true)
-	var result: Dictionary = await PlayerServices.bug_report_create(title, description, context_of(_player),
-			_capture, log_tail() if with_log else "")
+	var result: Dictionary = await PlayerServices.bug_report_create(report, context_of(_player), _capture,
+			log_tail() if with_log else "")
 	if bool(result.get("ok", false)):
 		_dialog.close()
 		_busy = false
@@ -130,11 +132,18 @@ static func context_of(body: Node3D) -> Dictionary:
 	return out
 
 
+## Where the game writes its log: user://logs/godot.log unless the project says otherwise (on Windows,
+## %APPDATA%\Godot\app_userdata\DyingStar\logs\godot.log). The sessions before this one are kept beside
+## it, dated: after a crash, the one to send is the newest of those.
+static func log_path() -> String:
+	return str(ProjectSettings.get_setting("debug/file_logging/log_path", "user://logs/godot.log"))
+
+
 ## The end of the game's log ([param max_bytes] of it), with no token in it (scrub). "" when the log
 ## cannot be read.
 static func log_tail(path: String = "", max_bytes: int = LOG_TAIL_BYTES) -> String:
 	if path == "":
-		path = str(ProjectSettings.get_setting("debug/file_logging/log_path", "user://logs/godot.log"))
+		path = log_path()
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return ""
