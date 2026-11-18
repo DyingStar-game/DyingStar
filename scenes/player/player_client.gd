@@ -203,8 +203,6 @@ var _cab: CabScreenPointer = null
 var _help: ControlsHelp = null
 ## The place the player stands in — its banner, and its name asked of its discoverer (PlaceWatcher).
 var _places: PlaceWatcher = null
-## The bug report key (F9): the capture, then the form sent to the QA channel (BugReporter).
-var _bug_reporter: BugReporter = null
 ## The diagnosis and repair of a broken machine (MachineRepair).
 var _repairs: MachineRepair = null
 ## The chart's pad button is down: a short press opens the chart when it comes up, a long one opens the
@@ -413,10 +411,9 @@ func setup() -> void:
 	_places.name = "PlaceWatcher"
 	add_child(_places)
 	_places.setup(player, _screens_root(), func(text: String) -> void: _notifications.push(text), _input_locked)
-	_bug_reporter = BugReporter.new()
-	_bug_reporter.name = "BugReporter"
-	add_child(_bug_reporter)
-	_bug_reporter.setup(player, _screens_root(), func(text: String) -> void: _notifications.push(text), _input_locked)
+	# The bug report (F9) is the Screenshot autoload's, so that it answers in the menus too: from here it
+	# only learns whose body says where the player stands.
+	Screenshot.bug_reporter.body = player
 	_repairs = MachineRepair.new()
 	_repairs.name = "MachineRepair"
 	add_child(_repairs)
@@ -2025,7 +2022,7 @@ func _help_open() -> bool:
 ## box has the keyboard.
 func _modal_open() -> bool:
 	return _menu_open() or _any_wheel_open() or _chat_writing() or _star_map_open() or _help_open() or _services_open() \
-			or (_places != null and _places.is_open()) or (_bug_reporter != null and _bug_reporter.is_open())
+			or (_places != null and _places.is_open()) or Screenshot.bug_reporter.is_open()
 
 ## The play hints of our own situations (see PlayHints): on foot, floating, at the wheel or a passenger,
 ## carrying, the drill out. Each is a plain state of ours, asked by the panel a few times a second.

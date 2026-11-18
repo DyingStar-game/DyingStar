@@ -206,6 +206,8 @@ func advance(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if phase != Phase.OPEN or _model == null:
 		return
+	if Screenshot.bug_reporter.is_open():
+		return  # the bug report form is over the tablet: the mouse and the keys are the form's
 	if event is InputEventMouse:
 		var mouse := event as InputEventMouse
 		var at: Variant = _model.gui.hit(_camera.project_ray_origin(mouse.position),

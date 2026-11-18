@@ -1,12 +1,12 @@
 class_name BugReportDialog
 extends CanvasLayer
-## The bug report form (BugReporter), on the QA team's template: a title, then what is wrong, how to get
-## there, what happened and what should have. The capture was taken before the form opened, debug panels
-## shown; it is displayed, small, so the player sees what is sent. Escape or "Cancel" closes it and
-## nothing leaves.
+## The bug report form (BugReporter), on the QA team's template: a title and how bad it is, then what is
+## wrong, how to get there, what happened and what should have. The capture was taken before the form
+## opened, debug panels shown; it is displayed, small, so the player sees what is sent. Tab goes from
+## one field to the next, in the template's order. Escape or "Cancel" closes it and nothing leaves.
 
-## Emitted with the cleaned texts ({title, description, steps, actual, expected}) once they follow the
-## template (problem).
+## Emitted with the report ({title, severity, description, steps, actual, expected}, texts cleaned)
+## once it follows the template (problem).
 signal submitted(report: Dictionary, with_log: bool)
 ## Closed without sending.
 signal dismissed
@@ -20,6 +20,19 @@ const RIGHT_PX := 400.0
 const PREVIEW_HEIGHT_PX := 150.0
 const TITLE_MIN := 3
 const TITLE_MAX := 80
+## How bad the bug is, worst first: the key the report carries (service-social's BUG_SEVERITIES), the
+## name the form shows and the colour of its round mark -- the one that opens the report's title in
+## Discord (red, orange, yellow, purple), so the form and the QA channel speak the same.
+const SEVERITIES: Array[Dictionary] = [
+	{"key": "blocker", "label": "%%BUG_REPORT_SEVERITY_BLOCKER", "colour": Color("d32f2f")},
+	{"key": "major", "label": "%%BUG_REPORT_SEVERITY_MAJOR", "colour": Color("f57c00")},
+	{"key": "minor", "label": "%%BUG_REPORT_SEVERITY_MINOR", "colour": Color("fbc02d")},
+	{"key": "cosmetic", "label": "%%BUG_REPORT_SEVERITY_COSMETIC", "colour": Color("9c27b0")},
+]
+## Side (px) of a severity's round mark in the list.
+const MARK_PX := 14
+## The one a form opens on: most reports are of something annoying one can play around.
+const DEFAULT_SEVERITY := "minor"
 ## The template's parts, in the order they are asked and checked: the key the report carries them
 ## under, their label, their placeholder, the most they may hold (what service-social accepts,
 ## createBugReportBody: the four together fit one Discord message) and their height in the form (px).
@@ -35,6 +48,7 @@ const PARTS: Array[Dictionary] = [
 const LEFT_PARTS: Array[String] = ["description", "steps"]
 
 var _title: LineEdit
+var _severity: OptionButton
 ## The template's fields, by the key of their part.
 var _fields: Dictionary = {}
 var _with_log: CheckBox
@@ -44,6 +58,8 @@ var _send: Button
 var _cancel: Button
 var _can_send: bool = true
 var _sending: bool = false
+## What MenuFocus.modal was when the form opened, given back when it closes.
+var _menus_were_modal: bool = false
 
 
 func _init() -> void:
@@ -57,6 +73,7 @@ func _init() -> void:
 ## checkbox attaches is, shown when it is hovered.
 func open_with(capture: Texture2D, off_text: String = "", log_path: String = "") -> void:
 	_title.text = ""
+	_severity.select(severity_index(DEFAULT_SEVERITY))
 	for key: String in _fields:
 		(_fields[key] as TextEdit).text = ""
 	_preview.texture = capture
@@ -64,6 +81,13 @@ func open_with(capture: Texture2D, off_text: String = "", log_path: String = "")
 	_can_send = off_text == ""
 	set_sending(false)
 	show_status(off_text)
+	if not visible:
+		# Over a menu as over the world: the menus leave the keys to the form (MenuFocus.modal, as for a
+		# pad popup), and the form is the last under its parent -- the first asked about a key (_input).
+		_menus_were_modal = MenuFocus.modal
+		MenuFocus.modal = true
+		if get_parent() != null:
+			get_parent().move_child(self, -1)
 	visible = true
 	_title.grab_focus.call_deferred()
 
@@ -72,6 +96,8 @@ func close() -> void:
 	var focused: Control = get_viewport().gui_get_focus_owner() if is_inside_tree() else null
 	if focused != null and is_ancestor_of(focused):
 		focused.release_focus()
+	if visible:
+		MenuFocus.modal = _menus_were_modal
 	visible = false
 
 
@@ -92,12 +118,35 @@ func show_status(text: String) -> void:
 	_status.text = text
 
 
-## The report as typed: its title and the template's parts, spaces around them taken off.
+## The report as typed: its title, how bad it is and the template's parts, spaces around the texts
+## taken off.
 func report() -> Dictionary:
-	var out: Dictionary = {"title": _title.text.strip_edges()}
+	var out: Dictionary = {
+		"title": _title.text.strip_edges(),
+		"severity": str(SEVERITIES[maxi(_severity.selected, 0)]["key"]),
+	}
 	for key: String in _fields:
 		out[key] = (_fields[key] as TextEdit).text.strip_edges()
 	return out
+
+
+## A round mark of [param colour], MARK_PX wide, its edge softened.
+static func mark_of(colour: Color) -> Texture2D:
+	var image := Image.create_empty(MARK_PX, MARK_PX, false, Image.FORMAT_RGBA8)
+	var radius: float = MARK_PX * 0.5
+	for y: int in MARK_PX:
+		for x: int in MARK_PX:
+			var off: float = Vector2(x + 0.5 - radius, y + 0.5 - radius).length()
+			image.set_pixel(x, y, Color(colour, clampf(radius - off, 0.0, 1.0)))
+	return ImageTexture.create_from_image(image)
+
+
+## Where [param key] stands in SEVERITIES, -1 when it is not one of them.
+static func severity_index(key: String) -> int:
+	for i: int in SEVERITIES.size():
+		if SEVERITIES[i]["key"] == key:
+			return i
+	return -1
 
 
 ## What keeps [param typed] (report) from being sent, {} when nothing does: {"key"} for a title too
@@ -130,11 +179,33 @@ static func problem_text(found: Dictionary) -> String:
 
 
 func _input(event: InputEvent) -> void:
-	# Before the GUI: Escape closes the form instead of opening the pause menu (as the place name dialog).
-	if visible and (event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel")):
+	if not visible:
+		return
+	# Before the GUI and before whatever is under the form: Escape closes the form instead of the menu
+	# or the DataPad behind it (as the place name dialog), and Tab walks the form's fields instead of
+	# being the chat's or the chart's key.
+	if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		if not _sending:
 			_dismiss()
+	elif event.is_action_pressed("ui_focus_next", true, true):
+		get_viewport().set_input_as_handled()
+		walk_focus(false)
+	elif event.is_action_pressed("ui_focus_prev", true, true):
+		get_viewport().set_input_as_handled()
+		walk_focus(true)
+
+
+## Tab ([param back]: Shift + Tab): the keyboard goes to the next field of the form, in the template's
+## order, round and round; to the title when it was nowhere in the form.
+func walk_focus(back: bool) -> void:
+	var from: Control = get_viewport().gui_get_focus_owner() if is_inside_tree() else null
+	if from == null or not is_ancestor_of(from):
+		_title.grab_focus()
+		return
+	var to: Control = from.find_prev_valid_focus() if back else from.find_next_valid_focus()
+	if to != null and is_ancestor_of(to):
+		to.grab_focus()
 
 
 func _submit() -> void:
@@ -193,6 +264,22 @@ func _build() -> void:
 	_title.text_changed.connect(func(_t: String) -> void: _clear_error())
 	_title.text_submitted.connect(func(_t: String) -> void: (_fields[PARTS[0]["key"]] as TextEdit).grab_focus())
 	left.add_child(_title)
+	# On its own line, under the title: beside it, the title had no room left to be read.
+	var grade := HBoxContainer.new()
+	grade.add_theme_constant_override("separation", 10)
+	left.add_child(grade)
+	var grade_label := _caption("%%BUG_REPORT_SEVERITY", ServiceStyle.TEXT, 13)
+	grade_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	ServiceStyle.font_of(grade_label, 13, true)
+	grade.add_child(grade_label)
+	_severity = OptionButton.new()
+	_severity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for severity: Dictionary in SEVERITIES:
+		_severity.add_icon_item(mark_of(severity["colour"]), str(severity["label"]))
+	_severity.tooltip_text = "%%BUG_REPORT_SEVERITY_TIP"
+	_severity.custom_minimum_size = Vector2(0, 40)
+	ServiceStyle.apply_option(_severity)
+	grade.add_child(_severity)
 	_preview = TextureRect.new()
 	_preview.custom_minimum_size = Vector2(0, PREVIEW_HEIGHT_PX)
 	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -252,6 +339,7 @@ func _add_part(side: VBoxContainer, part: Dictionary) -> void:
 	var field := TextEdit.new()
 	field.placeholder_text = str(part["hint"])
 	field.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	field.tab_input_mode = false  # Tab goes to the next field, as in any form: no tab is typed in a report
 	field.custom_minimum_size = Vector2(0, float(part["height"]))
 	ServiceStyle.apply_textarea(field)
 	field.text_changed.connect(_clear_error)

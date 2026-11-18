@@ -13,6 +13,7 @@ func test_the_key_is_an_action_filed_with_the_captures() -> void:
 ## A report on the QA team's template, every part filled in.
 const FILLED := {
 	"title": "Stuck in the truck",
+	"severity": "minor",
 	"description": "Teleporting from the driver's seat freezes me.",
 	"steps": "1. Sit at the wheel\n2. Use the teleporter",
 	"actual": "Cannot walk nor look around",
@@ -41,6 +42,37 @@ func test_the_template_is_the_qa_team_s_and_every_part_is_asked() -> void:
 		assert_eq(long.get("key"), "%%BUG_REPORT_PART_LONG", "%s too long" % part["key"])
 	assert_eq(BugReportDialog.problem(_typed({"steps": "", "expected": ""})).get("label"), "%%BUG_REPORT_STEPS",
 			"the first part missing, in the template's order")
+
+
+## How bad it is: chosen in a list, worst first, and sent as the key the service knows.
+func test_the_report_says_how_bad_the_bug_is() -> void:
+	var keys: Array = BugReportDialog.SEVERITIES.map(func(severity: Dictionary) -> String: return severity["key"])
+	assert_eq(keys, ["blocker", "major", "minor", "cosmetic"], "service-social's BUG_SEVERITIES, worst first")
+	var form := BugReportDialog.new()
+	add_child_autofree(form)
+	form.open_with(null)
+	assert_eq(form.report().get("severity"), BugReportDialog.DEFAULT_SEVERITY, "a form opens on the default")
+	form._severity.select(BugReportDialog.severity_index("blocker"))
+	assert_eq(form.report().get("severity"), "blocker")
+	form.open_with(null)
+	assert_eq(form.report().get("severity"), BugReportDialog.DEFAULT_SEVERITY, "the next report starts over")
+	assert_eq(BugReportDialog.severity_index("unheard of"), -1)
+
+
+## Tab walks the form in the template's order. A text area would type the tab instead: told not to.
+func test_tab_goes_from_one_field_to_the_next() -> void:
+	var form := BugReportDialog.new()
+	add_child_autofree(form)
+	form.open_with(null)
+	var order: Array[Control] = [form._title, form._severity]
+	for part: Dictionary in BugReportDialog.PARTS:
+		var field: TextEdit = form._fields[part["key"]]
+		assert_false(field.tab_input_mode, "%s: Tab is not typed" % part["key"])
+		order.append(field)
+	order.append(form._with_log)
+	for i: int in order.size() - 1:
+		assert_eq(order[i].find_next_valid_focus(), order[i + 1], "Tab from field %d" % i)
+		assert_eq(order[i + 1].find_prev_valid_focus(), order[i], "Shift + Tab back to field %d" % i)
 
 
 ## The four parts go out as one Discord message of 4096 characters at most, their headings included.
@@ -116,6 +148,44 @@ func test_the_report_says_the_build_and_where_the_body_stands() -> void:
 				"%s: a short text or a number, as the service takes it" % key)
 		assert_lte(str(value).length(), 200, "%s fits the service's limit" % key)
 	assert_true(BugReporter.context_of(null).has("version"), "with no body, the build and the machine still")
+	assert_lte(context.size(), 20, "the service keeps 20 entries of the context")
+
+
+## What QA asks first: on what machine. One short line a subject, and nothing that names its owner.
+func test_the_report_describes_the_machine() -> void:
+	var machine: Dictionary = BugReporter.machine_of()
+	for key: String in ["os", "cpu", "ram", "gpu", "gpu_driver", "vram", "renderer", "display", "engine"]:
+		assert_true(machine.has(key), "%s is told" % key)
+		assert_true(machine.get(key) is String, "%s: a text" % key)
+		assert_lte(str(machine.get(key, "")).length(), BugReporter.CONTEXT_VALUE_MAX, "%s fits the service's limit" % key)
+	var user: String = OS.get_environment("USERNAME") + OS.get_environment("USER")
+	if user.length() >= 3:
+		assert_false(str(machine).contains(user), "the account's name is nowhere in it")
+	assert_eq(BugReporter.size_text(34252779520), "31.9 GB")
+	assert_eq(BugReporter.size_text(536870912), "512 MB")
+	assert_eq(BugReporter.size_text(-1), "unknown", "what the system could not read")
+
+
+## An export carries its build id. Run from the sources there is none: the branch and the commit say
+## which game it was.
+func test_a_game_run_from_its_sources_says_which() -> void:
+	var dir := OS.get_user_data_dir().path_join("test_bug_report_git")
+	DirAccess.make_dir_recursive_absolute(dir.path_join(".git/refs/heads/feat"))
+	assert_eq(BugReporter.build_of(dir), "sources", "no git there")
+	_write(dir.path_join(".git/HEAD"), "ref: refs/heads/feat/horn\n")
+	assert_eq(BugReporter.build_of(dir), "sources feat/horn", "the commit is packed away: the branch alone")
+	_write(dir.path_join(".git/refs/heads/feat/horn"), "1a2b3c4d5e6f7890\n")
+	assert_eq(BugReporter.build_of(dir), "sources feat/horn@1a2b3c4")
+	_write(dir.path_join(".git/HEAD"), "9f8e7d6c5b4a3210\n")
+	assert_eq(BugReporter.build_of(dir), "sources @9f8e7d6", "a commit checked out by itself")
+	OS.move_to_trash(dir)
+	assert_ne(BugReporter.build_of(), "", "the running game always says something")
+
+
+func _write(path: String, text: String) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(text)
+	file.close()
 
 
 func test_no_token_leaves_with_the_log() -> void:
@@ -144,3 +214,33 @@ func test_only_the_end_of_the_log_is_sent() -> void:
 func test_the_version_is_the_project_s_then_the_build_s() -> void:
 	var version := str(ProjectSettings.get_setting("application/config/version", ""))
 	assert_true(BuildInfo.version_text().begins_with(version), "what the DataPad shows under the logo")
+
+
+## A bug shows in a menu as well as in the world: the key is the capture keys' autoload's, not the
+## player's, and nothing locks it.
+func test_the_key_answers_without_a_player() -> void:
+	assert_not_null(Screenshot.bug_reporter, "made with the capture keys, before any world")
+	assert_false(Screenshot.bug_reporter.is_open())
+	assert_true(BugReporter.context_of(null).has("build"), "no body: the build and the machine are still told")
+
+
+## Over a menu, the form has the keys: the menus stand back (MenuFocus.modal) until it closes, and
+## Tab is the form's own -- the chat and the chart each have a use for it otherwise.
+func test_the_form_keeps_the_keys_from_what_is_under_it() -> void:
+	var form := BugReportDialog.new()
+	add_child_autofree(form)
+	MenuFocus.modal = false
+	form.open_with(null)
+	assert_true(MenuFocus.modal, "open: the menus leave the focus alone")
+	assert_eq(form.get_index(), form.get_parent().get_child_count() - 1, "and the form is asked first about a key")
+	form._title.grab_focus()
+	form.walk_focus(false)
+	assert_eq(get_viewport().gui_get_focus_owner(), form._severity, "Tab: on to the severity")
+	form.walk_focus(false)
+	assert_eq(get_viewport().gui_get_focus_owner(), form._fields["description"], "then the description")
+	form.walk_focus(true)
+	assert_eq(get_viewport().gui_get_focus_owner(), form._severity, "Shift + Tab: back")
+	form.close()
+	assert_false(MenuFocus.modal, "closed: the menus have their keys back")
+	form.close()
+	assert_false(MenuFocus.modal, "closing twice changes nothing")

@@ -1,10 +1,12 @@
 class_name BugReporter
 extends Node
-## CLIENT, own player only: the "bug_report" key (F9). It takes the bug-report capture (Screenshot, the
-## F8 one: the screen as it is, debug panels shown), then asks for the report on the QA team's template
-## (BugReportDialog: title, description, steps, actual and expected result) and sends it with the
-## capture, where the player stands, the build and the end of the game's log to service-social, which
-## posts the report in the QA channel on Discord.
+## CLIENT: the "bug_report" key (F9), wherever the player is -- in the world, in the pause menu, the
+## settings, the DataPad, the main menu: a bug is reported from where it shows. A child of the Screenshot
+## autoload, with the other capture keys. It takes the bug-report capture (Screenshot, the F8 one: the
+## screen as it is, debug panels shown), then asks for the report on the QA team's template
+## (BugReportDialog: title, severity, description, steps, actual and expected result) and sends it with
+## the capture, the build, the machine, where the player stands when there is one, and the end of the
+## game's log to service-social, which posts the report in the QA channel on Discord.
 ##
 ## The game never talks to Discord itself: posting there takes a webhook URL, a secret this open-source
 ## client cannot hold. Where the service relays none (local dev, a server without the webhook) the form
@@ -17,10 +19,28 @@ const CAPTURE_MAX_WIDTH := 1920
 const JPEG_QUALITY := 0.8
 ## Width of the capture shown in the form.
 const PREVIEW_WIDTH := 480
+## The most characters a value of the report's context may hold (service-social's createBugReportBody).
+const CONTEXT_VALUE_MAX := 200
+## The kind of graphics card, as the report names it: a game drawn by the integrated one is a slow game.
+const GPU_KINDS: Dictionary = {
+	RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU: "integrated",
+	RenderingDevice.DEVICE_TYPE_DISCRETE_GPU: "dedicated",
+	RenderingDevice.DEVICE_TYPE_VIRTUAL_GPU: "virtual",
+	RenderingDevice.DEVICE_TYPE_CPU: "software",
+}
+## The window's mode, as the report names it.
+const WINDOW_MODES: Dictionary = {
+	DisplayServer.WINDOW_MODE_WINDOWED: "windowed",
+	DisplayServer.WINDOW_MODE_MINIMIZED: "minimized",
+	DisplayServer.WINDOW_MODE_MAXIMIZED: "maximized",
+	DisplayServer.WINDOW_MODE_FULLSCREEN: "fullscreen",
+	DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN: "exclusive fullscreen",
+}
 
-var _player: Node3D = null
+## The local player's body, for the report to say where it stood; null in the menus, before the world.
+## PlayerClient sets it. Checked when read: the body goes with the world, the reporter stays.
+var body: Node3D = null
 var _notify: Callable
-var _input_locked: Callable
 var _dialog: BugReportDialog = null
 ## A report is under way, from the key press to the form closed: one at a time.
 var _busy: bool = false
@@ -29,29 +49,34 @@ var _capture: String = ""
 var _capture_path: String = ""
 
 
-## [param screens] holds the form; [param notify] shows a line to the player; [param input_locked]
-## says when something else owns the keyboard (the key then does nothing).
-func setup(player: Node3D, screens: Node, notify: Callable, input_locked: Callable) -> void:
-	_player = player
+## [param notify] shows a line to the player (the report left).
+func setup(notify: Callable) -> void:
 	_notify = notify
-	_input_locked = input_locked
-	_dialog = BugReportDialog.new()
-	_dialog.submitted.connect(_on_submitted)
-	_dialog.dismissed.connect(func() -> void: _busy = false)
-	screens.add_child(_dialog)
 
 
-## The form has the keyboard (PlayerClient._modal_open).
+## The form has the keyboard and the mouse: the game under it stands still (PlayerClient._modal_open),
+## and the DataPad no longer takes the clicks (WristDatapad).
 func is_open() -> bool:
 	return _dialog != null and _dialog.is_open()
 
 
+## No lock: the key answers under a menu, the DataPad or the chart as it does in the world -- that is
+## where half the bugs are. A key being bound in Settings > Controls never comes this far (handled there).
 func _unhandled_input(event: InputEvent) -> void:
-	if _busy or _dialog == null or not InputCombo.pressed(event, &"bug_report"):
-		return
-	if _input_locked.is_valid() and _input_locked.call():
+	if _busy or GameOrchestrator.is_server() or not InputCombo.pressed(event, &"bug_report"):
 		return
 	start()
+
+
+## The form, made at the first report. Under the tree's root and not under whoever is on screen: it
+## outlives the menu or the world it was opened over.
+func _form() -> BugReportDialog:
+	if _dialog == null:
+		_dialog = BugReportDialog.new()
+		_dialog.submitted.connect(_on_submitted)
+		_dialog.dismissed.connect(func() -> void: _busy = false)
+		get_tree().root.add_child(_dialog)
+	return _dialog
 
 
 ## Take the capture, then open the form over it.
@@ -68,13 +93,13 @@ func start() -> void:
 	var relayed: bool = bool(status.get("ok", false)) and status.get("data") is Dictionary \
 			and bool((status["data"] as Dictionary).get("enabled", false))
 	var off_text: String = "" if relayed else tr("%%BUG_REPORT_OFF") % _capture_path.get_base_dir()
-	_dialog.open_with(preview_of(image), off_text, ProjectSettings.globalize_path(log_path()))
+	_form().open_with(preview_of(image), off_text, ProjectSettings.globalize_path(log_path()))
 
 
 ## [param report]: the form's texts, on the QA template ({title, description, steps, actual, expected}).
 func _on_submitted(report: Dictionary, with_log: bool) -> void:
 	_dialog.set_sending(true)
-	var result: Dictionary = await PlayerServices.bug_report_create(report, context_of(_player), _capture,
+	var result: Dictionary = await PlayerServices.bug_report_create(report, context_of(body), _capture,
 			log_tail() if with_log else "")
 	if bool(result.get("ok", false)):
 		_dialog.close()
@@ -110,17 +135,17 @@ static func _no_wider_than(image: Image, width: int) -> Image:
 	return copy
 
 
-## What the report says of where and on what it happened: the build, the machine, and the body's place.
-## The capture carries the rest (the debug panels are on it). Values are short texts or numbers, as the
-## service takes them.
+## What the report says of where and on what it happened: the build, the machine (machine_of), and the
+## body's place. The capture carries the rest (the debug panels are on it). Values are short texts or
+## numbers, as the service takes them (20 keys at most, 200 characters each).
 static func context_of(body: Node3D) -> Dictionary:
 	var out: Dictionary = {
 		"version": BuildInfo.version_text(),
-		"os": "%s %s" % [OS.get_name(), OS.get_version()],
-		"gpu": RenderingServer.get_video_adapter_name(),
+		"build": build_of(),
 		"fps": roundi(Engine.get_frames_per_second()),
 		"language": TranslationServer.get_locale(),
 	}
+	out.merge(machine_of())
 	if is_instance_valid(body):
 		var planet: Planet = Planet.of(body)
 		if planet != null:
@@ -130,6 +155,68 @@ static func context_of(body: Node3D) -> Dictionary:
 			out["frame"] = str(parent.name)
 		out["position"] = "%.1f, %.1f, %.1f" % [body.position.x, body.position.y, body.position.z]
 	return out
+
+
+## Which game this is: the export's build id, or -- run from its sources, where nothing was exported --
+## the branch and the commit they stand at ("sources develop@1a2b3c4"), read from the project's .git.
+## [param project_dir]: the project's folder (the running one's by default).
+static func build_of(project_dir: String = "") -> String:
+	if BuildInfo.build_id() != "" and project_dir == "":
+		return BuildInfo.build_id()
+	if project_dir == "":
+		project_dir = ProjectSettings.globalize_path("res://")
+	var git: String = project_dir.path_join(".git")
+	if not FileAccess.file_exists(git.path_join("HEAD")):
+		return "sources"
+	var head: String = FileAccess.get_file_as_string(git.path_join("HEAD")).strip_edges()
+	if not head.begins_with("ref: "):
+		return "sources @%s" % head.left(7)  # a commit checked out by itself
+	var ref: String = head.trim_prefix("ref: ")
+	var branch: String = ref.trim_prefix("refs/heads/")
+	if not FileAccess.file_exists(git.path_join(ref)):
+		return "sources %s" % branch  # the branch's commit is in the packed refs: the name is enough
+	var commit: String = FileAccess.get_file_as_string(git.path_join(ref)).strip_edges().left(7)
+	return ("sources %s@%s" % [branch, commit]).left(CONTEXT_VALUE_MAX)
+
+
+## The player's machine, as QA needs it to tell a bug from a setup: system, processor, memory, graphics
+## card and its driver, what draws the game and on which screen. One line a subject, so a report stays
+## readable in Discord. No name, no path, no serial number: nothing that says whose machine it is.
+static func machine_of() -> Dictionary:
+	var memory: Dictionary = OS.get_memory_info()
+	var driver: PackedStringArray = OS.get_video_adapter_driver_info()  # [name, version], may be empty
+	var screen: Vector2i = DisplayServer.screen_get_size()
+	var window: Vector2i = DisplayServer.window_get_size()
+	var out: Dictionary = {
+		"os": "%s %s (%s)" % [OS.get_distribution_name(), OS.get_version(), Engine.get_architecture_name()],
+		"cpu": "%s, %d threads" % [OS.get_processor_name(), OS.get_processor_count()],
+		"ram": "%s, %s free, %s used by the game" % [size_text(int(memory.get("physical", 0))),
+				size_text(int(memory.get("available", 0))), size_text(OS.get_static_memory_usage())],
+		"gpu": "%s (%s, %s)" % [RenderingServer.get_video_adapter_name(), RenderingServer.get_video_adapter_vendor(),
+				GPU_KINDS.get(RenderingServer.get_video_adapter_type(), "other")],
+		"gpu_driver": " ".join(driver) if not driver.is_empty() else "unknown",
+		"vram": "%s used" % size_text(int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED))),
+		"renderer": "%s %s, %s" % [RenderingServer.get_current_rendering_driver_name(),
+				RenderingServer.get_video_adapter_api_version(), RenderingServer.get_current_rendering_method()],
+		"display": "%dx%d at %d Hz, window %dx%d (%s)" % [screen.x, screen.y,
+				roundi(DisplayServer.screen_get_refresh_rate()), window.x, window.y,
+				WINDOW_MODES.get(DisplayServer.window_get_mode(), "windowed")],
+		"engine": str(Engine.get_version_info().get("string", "")),
+	}
+	for key: String in out:
+		out[key] = str(out[key]).left(CONTEXT_VALUE_MAX)
+	return out
+
+
+## [param bytes] as a size a person reads: "31.9 GB", "512 MB". "unknown" for what the system did not say
+## (0 or less: OS.get_memory_info gives -1 for a value it cannot read).
+static func size_text(bytes: int) -> String:
+	if bytes <= 0:
+		return "unknown"
+	var gigabytes: float = bytes / 1073741824.0
+	if gigabytes >= 1.0:
+		return "%.1f GB" % gigabytes
+	return "%d MB" % roundi(bytes / 1048576.0)
 
 
 ## Where the game writes its log: user://logs/godot.log unless the project says otherwise (on Windows,
