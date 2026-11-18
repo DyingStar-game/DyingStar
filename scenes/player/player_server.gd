@@ -3552,6 +3552,11 @@ func teleport_to(destination: Node, local_pos: Vector3) -> void:
 		return
 	if not player.is_inside_tree() or not destination.is_inside_tree():
 		return
+	# Never moved with a seat still held: the body left the cab while the server kept riding its seat
+	# and the owner's client kept its walk locked on a seat that was gone -- no walking, no looking
+	# around, until they relogged (playtest 2026-11-17). A caller that wants the seat back at the
+	# arrival takes the player out itself first (Teleporter); whoever else gets here arrives standing.
+	unseat_in_place()
 	if player.get_parent() != destination:
 		player.npc_goal_keep_world(destination)
 		player.reparent(destination)
@@ -3569,6 +3574,54 @@ func teleport_to(destination: Node, local_pos: Vector3) -> void:
 	# hs_server_move) instead of on the body, so the teleport reparent was never replicated at all.
 	# Going through the body's single emitter removes the whole class of mistake.
 	player.emit_move()
+
+
+## Out of the seat it rides, WHERE IT IS: the seat, the pilot and the weight are released, the body is
+## solid again and everyone is told ("unseat"). No exit move and no door asked, unlike
+## Vehicle.server_exit: what follows moves the body (a teleport).
+##
+## Returns what [method reseat] needs to give the seat back ({"vehicle", "seat"}), empty when the
+## player was not seated. [param ends_ride] false when it will be given back within a few frames:
+## service-mission then hears nothing (a passenger transport is not over because its truck went through
+## a teleporter), and the body stays as the seat had it, without collision -- its vehicle lands on the
+## very spot it waits at, and a solid body there would be shoved out of it, or shove it.
+func unseat_in_place(ends_ride: bool = true) -> Dictionary:
+	var seat: Node = player._seat_node
+	if not is_instance_valid(seat) or not seat.has_method("vehicle"):
+		return {}
+	var vehicle: Node = seat.vehicle()
+	if vehicle == null or not vehicle.has_method("server_release_seat"):
+		return {}
+	var kept := {"vehicle": vehicle, "seat": VehicleNetKey.of(seat)}
+	vehicle.server_release_seat(player)
+	if ends_ride:
+		player.set_seated(false)  # server_release_seat leaves the body as the seat had it
+		MissionHeartbeat.on_player_dismounted(player.client_uuid)
+	_seat_count += 1
+	player.server_send_properties_to_client({"action": "unseat:%d" % _seat_count, "seat": ""})
+	return kept
+
+
+## Back in the seat [method unseat_in_place] took the player out of ([param kept], its answer), whatever
+## its door: they never left the cab of their own will. False when the seat cannot be had again (the
+## vehicle gone, the seat taken meanwhile, hands full): the ride is then over, and said so.
+func reseat(kept: Dictionary) -> bool:
+	var vehicle: Variant = kept.get("vehicle")  # untyped: it may have been freed since
+	var seated: bool = false
+	if is_instance_valid(vehicle) and vehicle.is_inside_tree() and not is_instance_valid(player._seat_node):
+		var seat: Node = vehicle.find_seat(str(kept.get("seat", "")))
+		if seat != null and seat.is_free():
+			vehicle.server_enter(player, str(kept["seat"]), true)
+			seated = is_instance_valid(player._seat_node)
+	if not seated:
+		player.set_seated(false)  # solid again: unseat_in_place left that to us
+		MissionHeartbeat.on_player_dismounted(player.client_uuid)
+		return false
+	_seat_count += 1
+	var role := "driver" if player._seat_node.is_driver_seat() else "passenger"
+	# The state and the event in ONE message, as boarding does ("enter_vehicle").
+	player.server_send_properties_to_client({"action": "seat:%s:%d" % [role, _seat_count], "seat": role})
+	return true
 
 
 ## Walk the player back [param distance] m along the world direction [param dir] (flattened on the ground), at

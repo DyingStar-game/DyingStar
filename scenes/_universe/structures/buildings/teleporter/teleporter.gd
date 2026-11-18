@@ -54,6 +54,10 @@ var _pending: Dictionary = {}
 var _riders: Array[Node3D] = []
 var _rider_trip: Dictionary = {}
 var _rider_wait: int = 0
+## Server: the seats the travellers were taken out of for the trip ({"player", "vehicle", "seat"}), given
+## back once their vehicle has landed, and the physics frames left before that. See _take_out_of_seat.
+var _seats_kept: Array[Dictionary] = []
+var _reseat_wait: int = 0
 
 
 func _ready() -> void:
@@ -83,21 +87,25 @@ func _physics_process(_delta: float) -> void:
 		var trip: Dictionary = _pending
 		_pending = {}
 		_riders = _travellers_inside()  # the ONE place the space state answers
+		# You travel with what you sit in: the truck of an actor pressing from its seat makes the trip
+		# even when the sweep missed it (parked at the door). Not to a station, which takes no vehicle.
+		var own: Vehicle = _vehicle_of(_actor)
+		if own != null and trip["body"] is Planet and not _riders.has(own):
+			_riders.append(own)
 		call_deferred("_move_actor", trip["body"], trip["pos"])
-		if _riders.is_empty():
-			set_physics_process(false)
-			return
-		# The garage follows a few frames later, on its own — see RIDER_DELAY_FRAMES.
-		_rider_trip = trip
-		_rider_wait = RIDER_DELAY_FRAMES
-		return
-	if _rider_wait > 0:
+		if not _riders.is_empty():
+			# The garage follows a few frames later, on its own — see RIDER_DELAY_FRAMES.
+			_rider_trip = trip
+			_rider_wait = RIDER_DELAY_FRAMES
+	elif _rider_wait > 0:
 		_rider_wait -= 1
 		if _rider_wait == 0:
-			set_physics_process(false)
 			call_deferred("_move_riders")
-		return
-	set_physics_process(false)
+	elif _reseat_wait > 0:
+		_reseat_wait -= 1
+		if _reseat_wait == 0:
+			call_deferred("_reseat")
+	set_physics_process(_rider_wait > 0 or _reseat_wait > 0)
 
 
 ## CLIENT: Escape gives the keyboard back to the game rather than opening the pause menu — but only
@@ -215,7 +223,50 @@ static func find_station(agent: Object, uuid: String) -> OrbitalStation:
 func _move_actor(frame: Node3D, local_pos: Vector3) -> void:
 	if not is_instance_valid(_actor) or not is_instance_valid(frame):
 		return
+	# _riders still holds the sweep of this very trip: it is taken by _move_riders, frames from now.
+	_take_out_of_seat(_actor, frame is Planet and _riders.has(_vehicle_of(_actor)))
 	_actor.server_teleport_to(frame, local_pos)
+
+
+## The vehicle [param player] is seated in, null on foot.
+static func _vehicle_of(player: Player) -> Vehicle:
+	if not is_instance_valid(player) or not is_instance_valid(player._seat_node):
+		return null
+	return player._seat_node.vehicle() as Vehicle
+
+
+## SERVER: [param traveller] out of the seat it rides, just before it is moved. [param follows]: its
+## vehicle makes the trip too.
+##
+## SEATED TRAVELLERS MAKE THE TRIP ON FOOT, AND SIT DOWN AGAIN. A vehicle moved with somebody in it is
+## the one transition the network does badly: its own occupant watches it leave their zone and come
+## back as another node, their body still hanging from the first. So the trip is cut into three moves
+## that each work everywhere else in the game: the traveller leaves the seat and arrives like anyone
+## (here), the vehicle follows (_move_riders), and they are put back at the same place in it (_reseat).
+## To the player it reads as arriving at the wheel.
+##
+## The seat is kept only when its vehicle makes the trip too: not to a station, which takes none. The
+## traveller then arrives standing and the ride is over.
+func _take_out_of_seat(traveller: Player, follows: bool) -> void:
+	if _vehicle_of(traveller) == null:
+		return
+	var kept: Dictionary = traveller.server_unseat_in_place(not follows)
+	if follows and not kept.is_empty():
+		kept["player"] = traveller
+		_seats_kept.append(kept)
+
+
+## SERVER, deferred, a few frames after the vehicles landed: the travellers taken out of their seats
+## are put back in them (_take_out_of_seat).
+func _reseat() -> void:
+	var kept: Array[Dictionary] = _seats_kept
+	_seats_kept = []
+	var seated: int = 0
+	for seat: Dictionary in kept:
+		var traveller := seat.get("player") as Player
+		if is_instance_valid(traveller) and traveller.is_inside_tree() and traveller.server_reseat(seat):
+			seated += 1
+	print("[Teleporter] %d of %d seated traveller(s) back in their seat" % [seated, kept.size()])
 
 
 ## SERVER, deferred: send what was parked in the garage, a few frames behind the actor.
@@ -253,6 +304,13 @@ func _move_riders() -> void:
 			_place_passenger(passenger, body, spot, int(trip["mode"]))
 			continue
 		var vehicle := rider as Vehicle
+		# Whoever is still seated in it (the actor is out already) goes first, on foot, from where
+		# they sit: see _take_out_of_seat.
+		for occupant: Player in _seated_in(vehicle):
+			var seat_offset: Vector3 = cabin_inv * (occupant.global_position - global_position)
+			_take_out_of_seat(occupant, true)
+			_place_passenger(occupant, body, local_pos + landing * Vector3(seat_offset.x, 0.0, seat_offset.z),
+					int(trip["mode"]))
 		# Heading is carried the same way the offset is: read in the cabin's frame, replayed in the
 		# landing one. A truck that was nose-out of the door arrives nose-out of nothing in particular,
 		# but at least it does not arrive across its own axis.
@@ -260,6 +318,20 @@ func _move_riders() -> void:
 		_place_vehicle(vehicle, body, spot, offset.y, int(trip["mode"]),
 				landing * Vector3(nose.x, 0.0, nose.z))
 	print("[Teleporter] %d traveller(s) followed" % moved)
+	if not _seats_kept.is_empty():
+		# The seats are given back once the vehicles are there, as its own move: RIDER_DELAY_FRAMES.
+		_reseat_wait = RIDER_DELAY_FRAMES
+		set_physics_process(true)
+
+
+## The players seated in [param vehicle]: they hang from it in the tree.
+static func _seated_in(vehicle: Vehicle) -> Array[Player]:
+	var seated: Array[Player] = []
+	for child: Node in vehicle.get_children():
+		var player := child as Player
+		if player != null and is_instance_valid(player._seat_node):
+			seated.append(player)
+	return seated
 
 
 ## SERVER: the garage, bound for a station. Stations take PLAYERS only, for now: the other passengers
@@ -291,8 +363,8 @@ func _move_riders_aboard(station: OrbitalStation, local_pos: Vector3, riders: Ar
 ##
 ## Goes through the same Player API the actor uses, so a passenger arrives exactly as correctly as
 ## the person who pressed the button: reparented, velocity cleared, ground hold re-armed.
-## Somebody SEATED in a travelling vehicle is not here and does not need to be — they hang from the
-## vehicle in the tree, so they move with it and their parent-local position never changes.
+## Somebody SEATED in a travelling vehicle comes this way too, taken out of the seat first and put back
+## in it at the arrival (_take_out_of_seat).
 func _place_passenger(passenger: Player, body: Planet, spot: Vector3, height_mode: int) -> void:
 	var dir: Vector3 = spot.normalized()
 	var radius: float = spot.length()
@@ -313,17 +385,9 @@ func _place_vehicle(vehicle: Vehicle, body: Planet, spot: Vector3, lift: float,
 		TeleportGround.ensure_tile(body.planet_data, dir)
 		radius = body.planet_data.crack_aware_surface_dist(dir) + maxf(lift, 0.0) + VEHICLE_CLEARANCE_M
 	var local: Vector3 = dir * radius
-	# ⚠️ KNOWN LIMITATION (WIP). Somebody still SEATED travels with the vehicle through the scene
-	# tree — the server places them correctly and other clients see them in the seat — but THEIR OWN
-	# client comes out of the jump wrong: the view ends up somewhere else in the cab and their input
-	# stops answering. Measured, not reproduced in a diagnosis yet, and it lives in the seat/
-	# replication path rather than here. Said out loud so a broken passenger is a known limit rather
-	# than a mystery; get out before jumping until it is fixed.
-	for child: Node in vehicle.get_children():
-		if child is Player:
-			push_warning("[Teleporter] %s travels with somebody seated in it — that passenger's own client"
-					% vehicle.name + " is known to come out of the jump broken (WIP). Step out before jumping.")
-			break
+	# Nobody is seated in it by now: its occupants went ahead on foot and sit down again once it has
+	# landed (_take_out_of_seat). A vehicle moved with its occupant left that occupant's own client
+	# with the view somewhere else in the cab and a walk that no longer answered.
 	if vehicle.get_parent() != body:
 		vehicle.reparent(body)
 	# A RigidBody that was asleep stays asleep through a teleport, and both PropNet.server_tick and

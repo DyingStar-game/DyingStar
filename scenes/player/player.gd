@@ -1228,6 +1228,20 @@ func server_action_received(data: Dictionary) -> void:
 	_role.server_action_received(data)
 
 
+## SERVER: out of the seat this body rides, where it is, before something moves it (a teleport); see
+## PlayerServer.unseat_in_place. Returns what server_reseat needs, empty when not seated.
+func server_unseat_in_place(ends_ride: bool = true) -> Dictionary:
+	if _role == null or not _role.has_method("unseat_in_place"):
+		return {}
+	return _role.unseat_in_place(ends_ride)
+
+
+## SERVER: back in the seat server_unseat_in_place took this body out of ([param kept]); false when
+## it cannot be had again.
+func server_reseat(kept: Dictionary) -> bool:
+	return _role != null and _role.has_method("reseat") and _role.reseat(kept)
+
+
 ## SERVER: walk this body back [param distance] m along the world direction [param dir], facing the way it looks
 ## (a mine layer it broke falls in front of it). The client role has no such method.
 func server_retreat(dir: Vector3, distance: float) -> void:
