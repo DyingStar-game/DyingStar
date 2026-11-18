@@ -124,6 +124,12 @@ var _seat_count: int = 0
 ## Screen taps relayed (ScreenPoke.tap_action), and when the last one was (ms).
 var _tap_count: int = 0
 var _last_tap_ms: int = -1000000
+## Where the last relayed tap was (the body's frame): a screen's blip is heard there. Before any tap,
+## a hand's reach in front of the chest.
+var _last_tap_p: Vector3 = Vector3(0.0, 1.4, -0.5)
+## Screen button blips relayed (ScreenPoke.blip_action), and when the last one was (ms).
+var _blip_count: int = 0
+var _last_blip_ms: int = -1000000
 ## Vault (climb-onto): a scripted forward+up slide over a low obstacle / ledge, replicated like the
 ## jump ("vault:<key>:<n>" on the whitelisted action field) so every body plays the matching climb clip.
 ## While _vaulting the physics step just drives the slide (gravity/input/move suspended).
@@ -606,6 +612,7 @@ func server_action_received(data: Dictionary) -> void:
 				var now: int = Time.get_ticks_msec()
 				if may_relay_tap(p, now - _last_tap_ms):
 					_last_tap_ms = now
+					_last_tap_p = p
 					_tap_count += 1
 					player.server_send_properties_to_client({"action": ScreenPoke.tap_action(_tap_count, p)})
 		"screen_hold":
@@ -3076,6 +3083,18 @@ func _npc_nav_world_root() -> Node3D:
 ## one may be relayed: within the eye's height plus an arm's reach, not faster than TAP_MIN_MS. Pure.
 static func may_relay_tap(p: Vector3, since_ms: int) -> bool:
 	return since_ms >= TAP_MIN_MS and p.length() <= TAP_BODY_REACH_M
+
+
+## A screen took this player's button press (a lift's Call, Up, Stop, Down): an EVENT for the others to
+## hear, where the finger last tapped, at a tap's pace. The owner's client played it on the click
+## (ScreenTarget.blip); no client asks for it, a screen's own server side does (Player.server_screen_blip).
+func relay_screen_blip() -> void:
+	var now: int = Time.get_ticks_msec()
+	if not may_relay_tap(_last_tap_p, now - _last_blip_ms):
+		return
+	_last_blip_ms = now
+	_blip_count += 1
+	player.server_send_properties_to_client({"action": ScreenPoke.blip_action(_blip_count, _last_tap_p)})
 
 ## A bed was used (BedSpot.server_use): lie on it with empty hands when nobody does, or get up from it
 ## when lying there -- standing at its stand point, solid again. Replicated as the seat state ("bed"),
