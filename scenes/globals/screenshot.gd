@@ -18,6 +18,10 @@ extends Node
 
 enum Kind { PHOTO, DEBUG }
 
+## A capture is over: where it was to be written, the picture itself (as saved, no alpha) and whether
+## the file is there. For who needs the picture and not only the file (BugReporter).
+signal saved(path: String, image: Image, ok: bool)
+
 var _toast: ScreenToast = null
 var _readback: ScreenReadback = null
 var _busy: bool = false
@@ -76,11 +80,12 @@ func _force_debug_panels(on: bool) -> void:
 func _save(image: Image, path: String) -> void:
 	image.convert(Image.FORMAT_RGB8)  # the viewport carries an alpha channel nobody wants in a shot
 	var err: Error = image.save_png(path)
-	_saved.call_deferred(path, err)
+	_saved.call_deferred(path, image, err)
 
 
-func _saved(path: String, err: Error) -> void:
+func _saved(path: String, image: Image, err: Error) -> void:
 	_busy = false
+	saved.emit(path, image, err == OK)
 	if err != OK:
 		push_warning("Screenshot: cannot write %s (%s)" % [path, error_string(err)])
 		_toast.show_message(tr("%%SCREENSHOT_FAILED") % path)
