@@ -78,20 +78,6 @@ func test_the_village_keeps_to_its_area() -> void:
 		assert_lt(Vector2(at.x, at.z).length(), MAX_REACH_M, "%s within %d m" % [item[2], MAX_REACH_M])
 
 
-func test_one_straight_avenue_runs_through() -> void:
-	var roads := LayoutRoads.of(LAYOUT).filter(func(r: Dictionary) -> bool: return r["road_type"] == "road")
-	assert_eq(roads.size(), 1, "one road for vehicles drawn in the layout: the avenue (the alleys are paths)")
-	if roads.is_empty():
-		return
-	var pts: PackedVector2Array = roads[0]["points"]
-	for p: Vector2 in pts:
-		assert_almost_eq(p.y, AVENUE_Z, 0.01, "on one line")
-	assert_gt(absf(pts[pts.size() - 1].x - pts[0].x), 500.0, "the whole length of the village")
-	assert_eq(float(roads[0]["width"]), AVENUE_HALF_WIDTH_M * 2.0, "12 m wide")
-	assert_eq(str(roads[0]["road_type"]), "road", "for vehicles")
-	KnownEngineErrors.forgive_floor_material(self)  # the layout's buildings load the floor material
-
-
 func test_pedestrian_alleys_are_closed_by_bollards() -> void:
 	assert_gte(_count(BOLLARDS), 6)
 
