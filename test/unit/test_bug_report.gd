@@ -164,6 +164,10 @@ func test_the_report_describes_the_machine() -> void:
 	assert_eq(BugReporter.size_text(34252779520), "31.9 GB")
 	assert_eq(BugReporter.size_text(536870912), "512 MB")
 	assert_eq(BugReporter.size_text(-1), "unknown", "what the system could not read")
+	# "available" counts the page file: on a 32 GB machine it read 61 GB free (playtest 2026-11-18).
+	var memory := {"physical": 33500000000, "free": 7300000000, "available": 65700000000}
+	assert_eq(BugReporter.ram_text(memory, 1717986918), "31.2 GB, 6.8 GB free, 1.6 GB used by the game",
+			"the memory free in the machine, never more than it has")
 
 
 ## An export carries its build id. Run from the sources there is none: the branch and the commit say

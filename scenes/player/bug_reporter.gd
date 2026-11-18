@@ -244,8 +244,7 @@ static func machine_of() -> Dictionary:
 	var out: Dictionary = {
 		"os": "%s %s (%s)" % [OS.get_distribution_name(), OS.get_version(), Engine.get_architecture_name()],
 		"cpu": "%s, %d threads" % [OS.get_processor_name(), OS.get_processor_count()],
-		"ram": "%s, %s free, %s used by the game" % [size_text(int(memory.get("physical", 0))),
-				size_text(int(memory.get("available", 0))), size_text(OS.get_static_memory_usage())],
+		"ram": ram_text(memory, OS.get_static_memory_usage()),
 		"gpu": "%s (%s, %s)" % [RenderingServer.get_video_adapter_name(), RenderingServer.get_video_adapter_vendor(),
 				GPU_KINDS.get(RenderingServer.get_video_adapter_type(), "other")],
 		"gpu_driver": " ".join(driver) if not driver.is_empty() else "unknown",
@@ -260,6 +259,14 @@ static func machine_of() -> Dictionary:
 	for key: String in out:
 		out[key] = str(out[key]).left(CONTEXT_VALUE_MAX)
 	return out
+
+
+## The memory line of a report, from [param memory] (OS.get_memory_info) and what the game holds
+## ([param game_bytes]): "31.2 GB, 6.8 GB free, 1.6 GB used by the game". Its "free" and not its
+## "available", which counts the page file with it: a 32 GB machine read "61 GB free". Static and pure.
+static func ram_text(memory: Dictionary, game_bytes: int) -> String:
+	return "%s, %s free, %s used by the game" % [size_text(int(memory.get("physical", 0))),
+			size_text(int(memory.get("free", 0))), size_text(game_bytes)]
 
 
 ## [param bytes] as a size a person reads: "31.9 GB", "512 MB". "unknown" for what the system did not say
