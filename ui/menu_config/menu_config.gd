@@ -55,6 +55,7 @@ const ACTION_GROUPS : Dictionary = {
 		"%%KM_SECTION_GALLERY": {
 			"screenshot": "%%ACT_SCREENSHOT",
 			"screenshot_debug": "%%ACT_SCREENSHOT_DEBUG",
+			"bug_report": "%%ACT_BUG_REPORT",
 			"game_record": "%%ACT_GAME_RECORD",
 		},
 	},
