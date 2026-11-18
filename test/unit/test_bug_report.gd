@@ -244,3 +244,18 @@ func test_the_form_keeps_the_keys_from_what_is_under_it() -> void:
 	assert_false(MenuFocus.modal, "closed: the menus have their keys back")
 	form.close()
 	assert_false(MenuFocus.modal, "closing twice changes nothing")
+
+
+## The key is recalled in a corner of the screen, everywhere: written as the prompts write a key, with
+## the key bound now, and on a layer of its own so the F7 photo hides it with the rest.
+func test_the_key_is_recalled_in_the_corner_of_the_screen() -> void:
+	assert_eq(BugReporter.hint_text("F9", "Report a bug"), "[F9] Report a bug")
+	assert_eq(BugReporter.hint_text("", "Report a bug"), "", "no key bound: nothing to press, nothing said")
+	var reporter := BugReporter.new()
+	add_child_autofree(reporter)
+	reporter._refresh_hint()
+	assert_not_null(reporter._hint, "made at the first look")
+	assert_true(reporter._hint.get_parent() is CanvasLayer, "interface: hidden from a photo")
+	assert_eq(reporter._hint.mouse_filter, Control.MOUSE_FILTER_IGNORE, "it never takes a click")
+	assert_true(reporter._hint.text.begins_with("[%s]" % InputLabel.for_action(&"bug_report")), "the key as it is bound")
+	assert_true(reporter._hint.visible)

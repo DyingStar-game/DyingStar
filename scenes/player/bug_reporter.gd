@@ -19,6 +19,15 @@ const CAPTURE_MAX_WIDTH := 1920
 const JPEG_QUALITY := 0.8
 ## Width of the capture shown in the form.
 const PREVIEW_WIDTH := 480
+## The reminder of the key, in the bottom right corner: how often (s) it is written again, its layer
+## (over the loading screen, where a game that hangs is reported from; under the toasts), its size
+## (px), how see-through it is (0..1) and how far (px) from the right and the bottom edges -- under the
+## main menu's own corner (the quality button, the shader warm-up line).
+const HINT_REFRESH_S := 0.5
+const HINT_LAYER := 110
+const HINT_FONT_PX := 12
+const HINT_ALPHA := 0.7
+const HINT_MARGIN_PX := Vector2(16.0, 2.0)
 ## The most characters a value of the report's context may hold (service-social's createBugReportBody).
 const CONTEXT_VALUE_MAX := 200
 ## The kind of graphics card, as the report names it: a game drawn by the integrated one is a slow game.
@@ -42,6 +51,8 @@ const WINDOW_MODES: Dictionary = {
 var body: Node3D = null
 var _notify: Callable
 var _dialog: BugReportDialog = null
+## The reminder of the key in the corner of the screen (_refresh_hint).
+var _hint: Label = null
 ## A report is under way, from the key press to the form closed: one at a time.
 var _busy: bool = false
 ## The capture as it will be sent (base64 JPEG), and where its PNG was saved.
@@ -52,6 +63,49 @@ var _capture_path: String = ""
 ## [param notify] shows a line to the player (the report left).
 func setup(notify: Callable) -> void:
 	_notify = notify
+
+
+## The reminder is looked after from the start, a few times a second: nothing tells of a key bound
+## again or of a language changed, and a line of text is cheap to write twice.
+func _ready() -> void:
+	var clock := Timer.new()
+	clock.wait_time = HINT_REFRESH_S
+	clock.timeout.connect(_refresh_hint)
+	add_child(clock)
+	clock.start()
+
+
+## The line in the corner of the screen, wherever the player is: "[F9] Report a bug", with the key as
+## it is bound now. Gone while the form is up (it has done its job), with a key unbound, and on a
+## server, which has no screen -- known only once the game has chosen its role, hence made here and
+## not at the start. A CanvasLayer: the F7 photo hides it with the rest of the interface.
+func _refresh_hint() -> void:
+	if GameOrchestrator.is_server():
+		return
+	if _hint == null:
+		var layer := CanvasLayer.new()
+		layer.layer = HINT_LAYER
+		add_child(layer)
+		_hint = Label.new()
+		_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_hint.add_theme_font_size_override("font_size", HINT_FONT_PX)
+		_hint.add_theme_constant_override("outline_size", 4)
+		_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		_hint.modulate = Color(1.0, 1.0, 1.0, HINT_ALPHA)
+		layer.add_child(_hint)
+		_hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		_hint.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		_hint.offset_right = -HINT_MARGIN_PX.x
+		_hint.offset_bottom = -HINT_MARGIN_PX.y
+	_hint.text = hint_text(InputLabel.for_action(&"bug_report"), tr("%%BUG_REPORT_TITLE"))
+	_hint.visible = _hint.text != "" and not is_open()
+
+
+## The reminder's line: the key in brackets, as the game's prompts write it, then what it does. ""
+## with no [param key]: nothing to press, nothing to say. Static and pure.
+static func hint_text(key: String, what: String) -> String:
+	return "" if key == "" else "[%s] %s" % [key, what]
 
 
 ## The form has the keyboard and the mouse: the game under it stands still (PlayerClient._modal_open),
