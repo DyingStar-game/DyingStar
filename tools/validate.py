@@ -53,6 +53,8 @@ MAX_SCHEMA_MESSAGE_LENGTH = 140
 # orm packs ao, roughness and metallic into one file. Declaring both forms
 # leaves the addon no way to know which one is authoritative.
 PACKED_MAP = "orm"
+# The surface values a manifest may give as a number, where no map gives them.
+SURFACE_VALUES = ("roughness", "metallic")
 UNPACKED_MAPS = ("ao", "roughness", "metallic")
 
 # Shared material ids are mat_<family>_<descriptor>. The family segment is read
@@ -171,6 +173,29 @@ def _check_base_color(manifest: dict) -> list[Issue]:
     ]
 
 
+def _check_surface_values(manifest: dict) -> list[Issue]:
+    """roughness and metallic are the surface's value where no map gives it.
+
+    Beside a map of the same name (or a packed orm), the value is not read:
+    the map decides, in Blender as in Godot. It is reported so that nobody
+    tunes a number that changes nothing.
+    """
+    maps = manifest.get("maps", {})
+    shadowed = [
+        name for name in SURFACE_VALUES
+        if name in manifest and (name in maps or PACKED_MAP in maps)
+    ]
+    if not shadowed:
+        return []
+    return [
+        Issue(
+            "warning",
+            "value_under_map",
+            f"{', '.join(shadowed)}: a map gives it, the value is not read. Remove one of the two.",
+        )
+    ]
+
+
 def _check_alpha(manifest: dict) -> list[Issue]:
     """Transparency travels in the albedo map's alpha, never in a map of its own.
 
@@ -261,6 +286,7 @@ def validate_material(
     issues.extend(_check_map_consistency(manifest))
     issues.extend(_check_base_color(manifest))
     issues.extend(_check_alpha(manifest))
+    issues.extend(_check_surface_values(manifest))
     issues.extend(_check_tags(manifest, known_tags))
     issues.extend(_check_family_segment(manifest, families))
     issues.extend(_check_folder_layout(folder, manifest))

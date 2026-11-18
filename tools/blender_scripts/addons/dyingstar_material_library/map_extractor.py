@@ -47,6 +47,10 @@ class ExtractionResult:
     physical_size_m: tuple[float, float] = (1.0, 1.0)
     # sRGB base colour of a Base Color left unlinked (a plain-coloured surface), else None
     albedo_color: tuple[float, float, float] | None = None
+    # The Principled's own Roughness and Metallic, when no map is wired there: the
+    # surface's value, which the manifest carries as a number. None under a map.
+    roughness: float | None = None
+    metallic: float | None = None
     # Whether the Principled Alpha is fed by an image (the albedo's own alpha or
     # an opacity map), and the mode and threshold the wiring suggests: a Greater
     # Than node is a scissor at its second value, a direct link a blend.
@@ -170,6 +174,19 @@ def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) ->
             _extract_tinted_albedo(node, result)
             return
 
+        layered = getattr(node, "blend_type", "") != "MULTIPLY" and _walk_to_image(node.inputs[base_input]) is not None
+        if layered:
+            # Two images blended by a mask or a factor: a layered base colour (paint
+            # over bare metal), not an albedo and its occlusion. Read as such, the
+            # second image would darken the first, and the material would come out
+            # of the library looking like neither.
+            _extract_tinted_albedo(node, result, tinted=False)
+            result.warnings.append(
+                "Base Color blends two images in a Mix node that is not a Multiply: "
+                "only the first one is published. Bake the blend into one albedo image"
+            )
+            return
+
         # Occlusion in B, multiplied over what is in A: the albedo, itself tinted
         # or not (a Mix of its own, as material_builder wires it), or a plain colour.
         base = _linked_node(node.inputs[base_input])
@@ -232,6 +249,12 @@ def _extract_tinted_albedo(mix: bpy.types.Node, result: ExtractionResult, tinted
         return
 
     result.images["albedo"] = albedo.image
+    behind = _linked_node(base_socket)
+    if behind is not albedo:
+        result.warnings.append(
+            f"Base Color: the albedo goes through a node ({behind.bl_idname}) whose work is not "
+            "published. The library shows the image as it is: bake that work into it"
+        )
     if not tinted:
         return
     tint_socket = mix.inputs[modulation_input]
@@ -306,10 +329,15 @@ def _extract_scalar(
     map_name: str,
     result: ExtractionResult,
 ) -> None:
-    """Roughness and metallic: an image, possibly via an ORM channel split."""
-    node = _walk_to_image(principled.inputs[input_name])
+    """Roughness and metallic: an image, possibly via an ORM channel split, or the value set by hand."""
+    socket = principled.inputs[input_name]
+    node = _walk_to_image(socket)
     if node is not None:
         result.images[map_name] = node.image
+    elif not socket.is_linked:
+        # Set by hand: without it, the material would come back from the library
+        # with the default, and a polished surface would turn matte.
+        setattr(result, map_name, round(float(socket.default_value), 4))
 
 
 def _extract_simple(

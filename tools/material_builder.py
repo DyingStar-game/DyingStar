@@ -245,12 +245,16 @@ def _connect_scalar_inputs(
     node_tree: bpy.types.NodeTree,
     principled: bpy.types.Node,
     scalar_sources: dict[str, tuple[bpy.types.Node, str]],
+    manifest: dict,
 ) -> None:
+    """Roughness and metallic: their map, or the manifest's value for the whole surface."""
     for map_name, input_name in (("roughness", "Roughness"), ("metallic", "Metallic")):
         source = scalar_sources.get(map_name)
         if source is not None:
             node, output = source
             node_tree.links.new(node.outputs[output], principled.inputs[input_name])
+        elif manifest.get(map_name) is not None:
+            principled.inputs[input_name].default_value = float(manifest[map_name])
 
 
 def _connect_emission(
@@ -353,7 +357,7 @@ def build_material(manifest: dict, folder: Path) -> bpy.types.Material:
         scalar_sources.get("ao"),
         manifest.get("albedo_color"),
     )
-    _connect_scalar_inputs(node_tree, principled, scalar_sources)
+    _connect_scalar_inputs(node_tree, principled, scalar_sources, manifest)
     _connect_surface_normal(node_tree, principled, texture_nodes)
     _connect_emission(node_tree, principled, texture_nodes)
     _connect_alpha(material, node_tree, principled, texture_nodes, manifest.get("alpha"))

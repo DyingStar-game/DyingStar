@@ -71,6 +71,26 @@ class TestEveryMapIsOptional(unittest.TestCase):
         self.assertEqual(validate.inspect([], validate.RulesConfig(), (1.0, 1.0)), [])
 
 
+class TestSurfaceValues(unittest.TestCase):
+    """roughness and metallic as numbers: what was set by hand on the Principled BSDF."""
+
+    def test_a_value_stands_for_a_missing_map(self) -> None:
+        manifest = _manifest({}, albedo_color=[0.1, 0.1, 0.1], roughness=0.077, metallic=0.0)
+        self.assertEqual(validate._check_schema(manifest, _VALIDATOR), [])
+        self.assertEqual(validate._check_surface_values(manifest), [])
+
+    def test_a_value_is_from_0_to_1(self) -> None:
+        for wrong in (1.5, -0.1, "shiny"):
+            manifest = _manifest({}, albedo_color=[0.1, 0.1, 0.1], roughness=wrong)
+            self.assertEqual(_codes(validate._check_schema(manifest, _VALIDATOR)), ["schema"], wrong)
+
+    def test_a_value_under_its_map_is_reported(self) -> None:
+        own = _manifest({"albedo": "tex_metal_test_albedo.png", "roughness": "tex_metal_test_roughness.png"}, roughness=0.3)
+        packed = _manifest({"albedo": "tex_metal_test_albedo.png", "orm": "tex_metal_test_orm.png"}, metallic=1.0)
+        self.assertEqual(_codes(validate._check_surface_values(own)), ["value_under_map"])
+        self.assertEqual(_codes(validate._check_surface_values(packed)), ["value_under_map"])
+
+
 class TestWhatStaysRequired(unittest.TestCase):
     def test_a_base_colour_is_required(self) -> None:
         for maps in ({}, {"normal": "tex_metal_test_normal.png"}):

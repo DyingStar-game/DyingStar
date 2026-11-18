@@ -90,6 +90,10 @@ def _round_trip(manifest, extractor, builder):
     result = extractor.extract(rebuilt)
     assert sorted(result.images) == sorted(manifest["maps"]), "%s: maps read back %s" % (
         manifest["id"], sorted(result.images))
+    for value in ("roughness", "metallic"):
+        if value in manifest:
+            assert abs(getattr(result, value) - manifest[value]) < 1e-3, "%s: %s read back %s, published %s" % (
+                manifest["id"], value, getattr(result, value), manifest[value])
     expected = manifest.get("albedo_color")
     if expected is not None:
         assert result.albedo_color is not None and np.allclose(result.albedo_color, expected, atol=1e-3), \
@@ -227,6 +231,37 @@ def main():
     assert any("Multiply" in warning for warning in extractor.extract(material).warnings), "the way out is named"
     manifest, files = _export(name)
     assert "albedo_color" not in manifest, manifest
+
+    # 9a. Two images blended by a factor are a layered colour, not an albedo and its occlusion.
+    name = "mat_metal_layered"
+    material, tree, principled = _material(obj, name)
+    layers = _multiply(tree)
+    layers.blend_type = "MIX"
+    layers.inputs["Factor"].default_value = 0.5
+    tree.links.new(_texture(tree, _image("paint", True)).outputs["Color"], layers.inputs["A"])
+    tree.links.new(_texture(tree, _image("bare_metal", True)).outputs["Color"], layers.inputs["B"])
+    tree.links.new(layers.outputs["Result"], principled.inputs["Base Color"])
+    assert any("two images" in warning for warning in extractor.extract(material).warnings), "the blend is named"
+    manifest, files = _export(name)
+    assert sorted(manifest["maps"]) == ["albedo"], "the second image is not taken for an occlusion map"
+
+    # 9b. The roughness and metallic set by hand travel as numbers; under a map, the map does.
+    name = "mat_glass_screen_off"
+    material, tree, principled = _material(obj, name)
+    principled.inputs["Base Color"].default_value = (0.01, 0.01, 0.012, 1.0)
+    principled.inputs["Roughness"].default_value = 0.077
+    principled.inputs["Metallic"].default_value = 0.25
+    manifest, files = _export(name)
+    assert abs(manifest["roughness"] - 0.077) < 1e-4 and abs(manifest["metallic"] - 0.25) < 1e-4, manifest
+    assert manifest["maps"] == {}, manifest["maps"]
+    _round_trip(manifest, extractor, builder)
+    name = "mat_metal_rough_mapped"
+    material, tree, principled = _material(obj, name)
+    tree.links.new(_texture(tree, _image("roughness_map", False)).outputs["Color"], principled.inputs["Roughness"])
+    manifest, files = _export(name)
+    assert "roughness" not in manifest and "roughness" in manifest["maps"], manifest
+    assert manifest["metallic"] == 0.0, "the other one is still a value"
+    _round_trip(manifest, extractor, builder)
 
     # 10. A material linked from the library is read-only: the panel shows what the library says of it,
     # and the buttons that would write to it are off.
