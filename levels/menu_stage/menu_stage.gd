@@ -56,7 +56,8 @@ func _ready() -> void:
 	_menu.screen_changed.connect(go_to)
 	Warmup.start(get_tree())  # what the game needs first, loaded while the menu shows (stage on or off)
 	if not SettingsManager.render.is_menu_stage_enabled():
-		print("[MenuStage] switched off in Settings > General: the menu keeps its still image.")
+		print("[MenuStage] switched off in Settings > General%s: the menu keeps its still image."
+			% (" (off by default on this machine)" if SettingsManager.render.is_weak_machine() else ""))
 		return
 	# The splash first, over the menu: its buttons appear with the stage, not before it.
 	_splash(true)

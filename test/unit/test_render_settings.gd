@@ -200,6 +200,34 @@ func test_the_overlay_switch_persists_and_tells() -> void:
 	assert_eq(_saves, 1, "saved")
 
 
+
+func test_the_menu_stage_is_on_by_default_on_a_capable_machine() -> void:
+	var s := _settings({"method": "forward_plus", "tier": GpuTier.MEDIUM, "threads": 16})
+	assert_false(s.is_weak_machine(), "medium GPU, 16 threads")
+	assert_true(s.is_menu_stage_enabled(), "on when never chosen")
+
+
+func test_the_menu_stage_is_off_by_default_on_a_weak_machine() -> void:
+	# The reported case: GeForce GT 710 + i3-6100 (4 threads) froze the menu until Windows closed the game.
+	for caps in [{"method": "forward_plus", "tier": GpuTier.LOW, "threads": 16},
+			{"method": "forward_plus", "tier": GpuTier.MEDIUM, "threads": 4}]:
+		var s := _settings(caps)
+		assert_true(s.is_weak_machine(), "weak: %s" % caps)
+		assert_false(s.is_menu_stage_enabled(), "off when never chosen: %s" % caps)
+
+
+func test_an_unknown_thread_count_is_not_weak() -> void:
+	assert_false(_settings({"method": "forward_plus", "tier": GpuTier.MEDIUM}).is_weak_machine(), "no threads in caps")
+
+
+func test_a_chosen_menu_stage_wins_over_the_machine() -> void:
+	var weak := _settings({"method": "forward_plus", "tier": GpuTier.LOW, "threads": 4})
+	weak.set_menu_stage_enabled(true)
+	assert_true(weak.is_menu_stage_enabled(), "switched on by the player on a weak machine")
+	var strong := _settings({"method": "forward_plus", "tier": GpuTier.HIGH, "threads": 16})
+	strong.set_menu_stage_enabled(false)
+	assert_false(strong.is_menu_stage_enabled(), "switched off by the player on a strong machine")
+
 # ── Transient values: the benchmark's sweep ──
 
 func test_a_transient_value_applies_without_being_stored_or_saved() -> void:

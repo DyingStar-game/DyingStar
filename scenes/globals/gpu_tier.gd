@@ -75,7 +75,8 @@ static func _nvidia(name: String) -> String:
 		return HIGH if model >= 70 else MEDIUM
 	if _has("gtx\\s*16|gtx\\s*10[78]0", name):
 		return MEDIUM
-	if _has("gtx", name):
+	# Older GTX and the GT / GTS line (GT 710, GT 1030…): entry cards, far below the game's needs.
+	if _has("gtx|\\bgts?\\s*\\d", name):
 		return LOW
 	return ""
 
