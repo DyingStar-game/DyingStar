@@ -22,12 +22,15 @@ signal overlay_changed(on: bool)
 const OVERLAY_SECTION : String = "general"
 const OVERLAY_KEY : String = "graphics_overlay"
 const MENU_STAGE_KEY : String = "menu_stage"
+## At most this many CPU threads is a weak machine (an i3 / old i5: 1 high-priority worker thread).
+const WEAK_MAX_THREADS : int = 4
 
 ## What the machine can do, measured once by current_caps() — or handed in by a test:
 ##   method      the rendering method ("forward_plus", "mobile", "gl_compatibility")
 ##   overridden  option keys a client.ini debug key currently forces
 ##   tier        GpuTier's guess for this GPU
 ##   adapter     the GPU's name, for the "Recommended for" line
+##   threads     the CPU's hardware threads (OS.get_processor_count()), 0 when unknown
 var caps : Dictionary = {}
 
 var _config : ConfigFile
@@ -59,6 +62,7 @@ static func current_caps() -> Dictionary:
 		"overridden": overridden,
 		"tier": GpuTier.detect(),
 		"adapter": RenderingServer.get_video_adapter_name(),
+		"threads": OS.get_processor_count(),
 	}
 
 
@@ -180,8 +184,18 @@ func detected() -> String:
 
 ## The main menu's live 3D stage (Settings > General). Off: the menu keeps its still image and
 ## loads no planet — faster to start, for development, or by taste. Read when the menu opens.
+## Never chosen: on, except on a weak machine (is_weak_machine()).
 func is_menu_stage_enabled() -> bool:
-	return bool(_config.get_value(OVERLAY_SECTION, MENU_STAGE_KEY, true))
+	return bool(_config.get_value(OVERLAY_SECTION, MENU_STAGE_KEY, not is_weak_machine()))
+
+
+## A machine the menu stage would freeze. With cold shader caches (first launch, an update, a new
+## driver) building the stage holds the main thread 18-26 s at a time even on 4 threads of a fast
+## PC; Windows calls the game "not responding" after 5 s and closes it, the caches are only half
+## written, and the next launch freezes again. A LOW GPU or at most 4 CPU threads is too slow for it.
+func is_weak_machine() -> bool:
+	var threads : int = int(caps.get("threads", 0))
+	return detected() == GpuTier.LOW or (threads > 0 and threads <= WEAK_MAX_THREADS)
 
 
 func set_menu_stage_enabled(on: bool) -> void:
