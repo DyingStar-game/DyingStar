@@ -1152,6 +1152,9 @@ objet qui ne peut pas changer.
 location ~ ^/dist/[^/]+/latest\.json$ {
     add_header Cache-Control "no-cache";      # le pointeur DOIT être relu
 }
+location ^~ /dist/channels/ {
+    add_header Cache-Control "no-cache";      # les canaux aussi : une promotion doit se voir
+}
 location ~ ^/dist/[^/]+/[0-9a-f]+/ {
     add_header Cache-Control "public, max-age=31536000, immutable";
     types { }  default_type application/octet-stream;
@@ -1491,3 +1494,46 @@ temps de génération, et c'est là qu'il faut chercher — localement, pas sur 
 *Décisions actées : streaming des tuiles et non des meshes (§2) ; tarsis_3 à 198 m et
 les 19 autres corps à 4 065 m (§4) ; un fichier par tuile aux niveaux fins, un objet
 unique pour le plancher (§4) ; adressage par chemin (§7).*
+
+
+## 10. Le pack de modificateurs passe sur le même chemin — 2026-11-18
+
+`terrainmodifier.pack` (routes, biomes, montagnes, volcans, lave, fumerolles, rocky) était
+commité et embarqué dans le `.pck` client ET serveur. Il a atteint 1,4 Go sur tarsis_3 : 1,2 Go
+de biomes, pour deux raisons mesurées sur la part (`biomes.dsmpart`) :
+
+| biomes.dsmpart | tuiles | blob | index | total |
+|---|---|---|---|---|
+| avant | 14,8 M | 993 Mo | 237 Mo | 1 230 Mo |
+| sans `region` | 14,8 M | 695 Mo | 237 Mo | 932 Mo |
+| sans `region` + héritage FULL | 2,65 M | 232 Mo | 42 Mo | 274 Mo |
+
+- **`region`** (≈ 95 noms de planitia/planum) n'est pas un biome : c'est de l'étiquetage. Il part
+  dans `<planète>_poi.json` (`export_poi.py`, `StarMapPoi.regions_for`).
+- **Héritage des zones FULL** : une zone n'est écrite FULL que sur la tuile la plus grossière
+  qu'elle couvre entièrement ; le runtime fusionne les FULL des ancêtres, triés par rang
+  (`PlanetData.populate_zones_at`, `ModifierPack.merge_inherited_zones`).
+- **Streaming** : le reste grossit avec chaque polygone dessiné (géométrie de bord), donc le pack
+  sort du build. `publish_tiles.py` le publie sous le corps `<planète>.mod`, sans code par couche
+  puisqu'une tuile publiée est la tuile du pack telle quelle. Seuls les shards habités sont
+  écrits : les routes descendent à n8192, soit 805 M de pixels pour ~130 k tuiles.
+  `RemoteModifierPack` (hérite de `ModifierPack`, donc le décodage est inchangé) lit le manifeste
+  et le plancher n1..n16 d'un bloc à l'ouverture, parce que les lignes ENTIÈRES du niveau le plus
+  grossier (ponts, profils, clés de bake) sont mémorisées une fois. Il ne touche plus jamais le
+  réseau ensuite : `tile_state` rend PENDING et met en file.
+- **Attente** : `TileResidency.request_chunk_tiles` exige aussi les tuiles de modificateurs du
+  chunk (`modifier_tile_set` : tuile d'export + 8 voisines, ses ancêtres, tuiles route/lave), et
+  `tile_available` refuse une tuile dont les montagnes sont en route (`modifiers_pending_at`) —
+  une hauteur sans relief serait la même erreur silencieuse qu'une tuile d'altitude absente.
+  Profils de ligne, ponts et pads en héritent sans code propre.
+- `grade_profiles.pack` est publié en fichier entier sous son propre corps `<planète>.lines`
+  (`publish_tiles.py` mode fichier, `RemoteTileSource.fetch_file`) : il se cuit APRÈS la
+  publication des tuiles, qu'il lit en HTTP, et ne doit pas en changer la version. Le GeoJSON de
+  routes hérité (92 Mo, `*_roads_buffered.json`) n'est plus chargé ni embarqué.
+- **HTTP uniquement** : le jeu, le serveur, la carte stellaire et les outils ne lisent plus aucun
+  pack local (`heights.pack`, `terrainmodifier.pack`, `grade_profiles.pack`), même présent sur
+  disque — seulement le cache `user://tile_cache/` alimenté par le service. Seuls les
+  `manifest.json` (descripteurs versionnés) restent lus en local ; un écart entre leur
+  `data_version` et la version servie est signalé au démarrage. Pour voir un export avant de le
+  promouvoir : le publier sur `unstable` et lancer avec `--tile-channel=unstable`.
+

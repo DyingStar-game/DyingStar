@@ -46,8 +46,10 @@ or from a shell:
 No QGIS import: this module is pure stdlib + the dsmp encoder.
 """
 import glob
+import hashlib
 import json
 import os
+import struct
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -63,6 +65,79 @@ MAX_TILES_PER_LEVEL = 2_000_000
 #: Fallback when neither the environment nor export_config.ini says otherwise.
 _DEFAULT_EXPORT_DIR = ("/datas/developpement/sources/DyingStar-game/DyingStar"
                        "/assets/qgis/export")
+
+
+def auto_publish(path):
+    """Hand [path] to tools/planettech/publish/publish_remote.py, in the background.
+
+    Only when a target is configured (export_config.ini [publish] ssh, or $DS_PUBLISH_SSH):
+    the game reads nothing local any more, so an export is only seen once published. Loaded
+    from its file on every call — the QGIS console keeps one interpreter alive, and a stale
+    module would publish with yesterday's code. Never raises: a failed hand-over must not
+    fail the export, it is reported. Returns the log path or None.
+
+    Only a file of the REAL export directory (resolve_export_dir) is ever published: a test
+    linking a pack in a temporary directory must not ship it to the players' service.
+    """
+    if not _in_export_dir(path):
+        return None
+    try:
+        log = _publish_remote().publish_in_background(path)
+    except Exception as exc:  # noqa: BLE001 — the export itself succeeded
+        print("  ! publication not started: %s" % exc)
+        return None
+    if log:
+        print("  ⇪ publishing %s to the tile service in the background — log: %s"
+              % (os.path.basename(path), log))
+    return log
+
+
+def _in_export_dir(path):
+    export_root = os.path.abspath(resolve_export_dir()) + os.sep
+    return os.path.abspath(path).startswith(export_root)
+
+
+def _publish_remote():
+    """tools/planettech/publish/publish_remote.py, chargé de son fichier à chaque appel."""
+    import importlib.util
+    script = os.path.abspath(os.path.join(_HERE, "..", "publish", "publish_remote.py"))
+    spec = importlib.util.spec_from_file_location("ds_publish_remote", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def pull_parts(planet_name, export_dir=None):
+    """Bring parts/ up to the server's version BEFORE an exporter writes its own part.
+
+    The parts are no longer in git: the server keeps the last published pack, which holds
+    them all (explode). Every exporter calls this first, so that it rewrites ONE family on
+    top of the team's latest and appends to the server's string table. See publish_remote.py
+    "LES PARTS VIVENT SUR LE SERVEUR". A no-op without a [publish] target, or outside the
+    real export directory (tests).
+
+    Raises when this machine AND the server both changed the pack since they last agreed:
+    going on would overwrite one of the two. Any other failure (server unreachable…) is
+    reported and the export goes on with the local parts — publishing will refuse later
+    if that would overwrite someone.
+    """
+    pack = os.path.join(chunks_dir_for(planet_name, export_dir), "terrainmodifier.pack")
+    if not _in_export_dir(pack):
+        return None
+    try:
+        mod = _publish_remote()
+    except Exception as exc:  # noqa: BLE001
+        print("  ! parts not synchronised: %s" % exc)
+        return None
+    try:
+        state = mod.pull_for_export(pack)
+    except mod.PartsConflict:
+        raise
+    except Exception as exc:  # noqa: BLE001 — the local parts are still usable
+        print("  ! parts not synchronised with the server: %s" % exc)
+        return None
+    print("  parts %s: %s" % (planet_name, state))
+    return state
 
 
 def resolve_export_dir():
@@ -187,8 +262,12 @@ def _merge_levels(parts):
     return merged
 
 
-def link(planet_name, export_dir=None, verbose=True):
-    """Rebuild terrainmodifier.pack from every part present. Returns its path."""
+def link(planet_name, export_dir=None, verbose=True, publish=True):
+    """Rebuild terrainmodifier.pack from every part present. Returns its path.
+
+    [publish]: then hand the pack to the tile service in the background (auto_publish), when
+    a target is configured — the game reads nothing else.
+    """
     chunks_dir = chunks_dir_for(planet_name, export_dir)
     parts_dir = os.path.join(chunks_dir, "parts")
     if not os.path.isdir(parts_dir):
@@ -219,7 +298,8 @@ def link(planet_name, export_dir=None, verbose=True):
         }
         # Per-kind metadata the runtime decoder needs before it reads a tile:
         # the ROAD record layout revision and whether any road is grade-limited.
-        for key in ("record_layout", "profiled_roads", "fingerprint", "priority_rule"):
+        for key in ("record_layout", "profiled_roads", "fingerprint", "priority_rule",
+                    "full_inherit"):
             if key in m:
                 part_info[name][key] = m[key]
 
@@ -240,6 +320,12 @@ def link(planet_name, export_dir=None, verbose=True):
 
     levels = []
     tile_counts = {}
+    # The pack's identity, from what a reader sees: every tile's bytes and the
+    # string table. It names the published version (publish_tiles.py serves
+    # <planet>.mod/<data_version>/), so two links of the same parts give the
+    # same version and any changed byte gives a new one.
+    version_digest = hashlib.blake2b(digest_size=8)
+    version_digest.update(json.dumps(table.as_list(), ensure_ascii=False).encode("utf-8"))
     for nside in sorted(merged):
         per_level = merged[nside]
         if len(per_level) > MAX_TILES_PER_LEVEL:
@@ -250,7 +336,10 @@ def link(planet_name, export_dir=None, verbose=True):
         by_kind = {}
         for ipix in sorted(per_level):
             blocks = per_level[ipix]
-            tiles.append((ipix, dsmp.build_tile(blocks)))
+            payload = dsmp.build_tile(blocks)
+            tiles.append((ipix, payload))
+            version_digest.update(struct.pack("<III", nside, ipix, len(payload)))
+            version_digest.update(payload)
             for k in blocks:
                 by_kind[dsmp.KIND_NAMES.get(k, str(k))] = \
                     by_kind.get(dsmp.KIND_NAMES.get(k, str(k)), 0) + 1
@@ -273,10 +362,13 @@ def link(planet_name, export_dir=None, verbose=True):
         "strings": table.as_list(),
         "parts": part_info,
         "tile_counts": tile_counts,
+        "data_version": version_digest.hexdigest(),
     }
 
     out_path = os.path.join(chunks_dir, "terrainmodifier.pack")
     dsmp.write_pack(out_path, levels, manifest)
+    if publish:
+        auto_publish(out_path)
 
     if verbose:
         total_tiles = sum(len(t) for _n, t in levels)
@@ -332,6 +424,17 @@ def explode(planet_name, export_dir=None, verbose=True):
                     continue
                 per_kind.setdefault(kind, {}).setdefault(nside, []).append(
                     (ipix, dsmp.part_tile(count, records)))
+
+    # A family exported with nothing in it (no fumarole on this planet) has no tile to be
+    # found by, yet its part is in the manifest and must come back: relinking without it
+    # would drop it from the manifest, and the pack would no longer be byte-identical.
+    kind_of = {name: kind for kind, name in dsmp.KIND_NAMES.items()}
+    for name, info in manifest.get("parts", {}).items():
+        kind = kind_of.get(name)
+        if kind is not None and kind not in per_kind:
+            per_level = info.get("counts", {}).get("records_per_level", {}) \
+                or {manifest.get("kind_max_nside", {}).get(name, 0): 0}
+            per_kind[kind] = {int(ns): [] for ns in per_level if int(ns) > 0}
 
     written = []
     for kind, levels_map in sorted(per_kind.items()):

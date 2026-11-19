@@ -57,6 +57,61 @@ static func stitch_parent_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int
 	return chunk_tile_set(data, p_nside, hp_ipix >> 2)
 
 
+## The terrain-modifier tiles a chunk's build reads, as Vector2i(ipix, nside).
+##
+## - its export-level ancestor (a coarser chunk reads its own level) and that tile's eight
+##   neighbours: the zones, craters and fumaroles of the chunk, and the mountain relief, which the
+##   sampler evaluates per direction — the skirt and the normals reach across the edge;
+## - that tile's ancestors: a zone FULL there is written only on the coarsest tile it covers
+##   (PlanetData.populate_zones_at). The coarse ones are in the floor, so they cost nothing;
+## - the road and lava tiles, which are baked deeper than the export level.
+static func modifier_tile_set(data: PlanetData, hp_nside: int, hp_ipix: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var ns := hp_nside
+	var ip := hp_ipix
+	while ns > data.export_nside:
+		ns >>= 1
+		ip >>= 2
+	out.append(Vector2i(ip, ns))
+	for nb: int in HEALPix.get_neighbors_nest(ns, ip).values():
+		if nb >= 0:
+			out.append(Vector2i(nb, ns))
+	var a_ns := ns >> 1
+	var a_ip := ip >> 2
+	while a_ns >= 1:
+		out.append(Vector2i(a_ip, a_ns))
+		a_ns >>= 1
+		a_ip >>= 2
+	for kind: int in [ModifierPack.KIND_ROAD, ModifierPack.KIND_LAVA]:
+		var cap := data.modifier_max_nside_for(kind)
+		if cap <= 0:
+			continue
+		var l_ns := hp_nside
+		var l_ip := hp_ipix
+		while l_ns > cap:
+			l_ns >>= 1
+			l_ip >>= 2
+		var t := Vector2i(l_ip, l_ns)
+		if not out.has(t):
+			out.append(t)
+	return out
+
+
+## Are the modifier tiles of [param tiles] all readable — downloaded, or known to hold nothing?
+## Queues the missing ones. Always true without a streamed pack (a local pack has everything).
+static func modifiers_ready(data: PlanetData, tiles: Array[Vector2i]) -> bool:
+	if data.remote_modifiers == null:
+		return true
+	var pack = data.get_modifier_pack()
+	if pack == null or not pack.is_streamed():
+		return true
+	var ready := true
+	for t in tiles:
+		if pack.tile_state(t.y, t.x) == ModifierPack.TILE_PENDING:
+			ready = false
+	return ready
+
+
 ## Every tile of [param tiles] readable locally (see tile_available)?
 static func tiles_available(data: PlanetData, tiles: Array[Vector2i]) -> bool:
 	for t in tiles:
@@ -68,11 +123,15 @@ static func tiles_available(data: PlanetData, tiles: Array[Vector2i]) -> bool:
 ## Une hauteur est-elle disponible localement pour cette tuile, directement ou via un
 ## ancêtre ? Ne déclenche aucun réseau.
 static func tile_available(data: PlanetData, ipix: int, nside: int) -> bool:
+	# The relief is not the elevation tile alone: the mountains, volcanoes and rock fields of the
+	# modifier pack displace it inside the sampler. A streamed one still on its way would give a
+	# height without them — the same silent wrong answer as a missing elevation tile.
+	if data.modifiers_pending_at(ipix, nside):
+		return false
 	if not data.load_chunk_floats(ipix, nside).is_empty():
 		return true
-	# Sans source distante, le pack local est l'autorité : ce qu'il n'a pas, il ne l'aura
-	# jamais, et sur un pack creux l'ancêtre EST la tuile — l'exportateur ne l'élague que
-	# si la reconstruction s'en écarte de moins de SPARSE_EPSILON_M (1 m).
+	# Sans source distante, aucune tuile n'arrivera jamais (le jeu ne lit plus de pack local) :
+	# ce qui n'est pas déjà là ne le sera pas, et les appelants retombent sur la carte globale.
 	if data.remote_source == null:
 		return data._finest_present_ancestor(ipix, nside).y > 0
 	# Avec une source distante, « absente ici » ne dit PAS « absente là-haut », et les deux
@@ -141,9 +200,13 @@ static func finest_published_ancestor_state(data: PlanetData, ipix: int, nside: 
 ## along the chunk edge, 400-1300 m tall, seen from 7-27 km (2026-09-14).
 static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int,
 		with_parent: bool = false) -> bool:
+	# The modifier tiles first, and all of them: each one is queued as it is looked at. Not even
+	# listed with a local pack, which has them all: this runs per waiting chunk and per frame.
+	var mods_ready := data.remote_modifiers == null \
+			or modifiers_ready(data, modifier_tile_set(data, hp_nside, hp_ipix))
 	if data.remote_source == null:
-		return true
-	var ready := true
+		return mods_ready
+	var ready := mods_ready
 	var unknown := false
 	var tiles := chunk_tile_set(data, hp_nside, hp_ipix)
 	if with_parent and hp_nside >= 2:
@@ -185,8 +248,13 @@ static func request_chunk_tiles(data: PlanetData, hp_nside: int, hp_ipix: int,
 ## Ne compte pas dans les compteurs du garde : ce n'est pas une décision de résidence,
 ## c'est une anticipation. Rend le nombre de chunks examinés.
 static func prefetch_chunks(data: PlanetData, keys: Array) -> int:
-	if data == null or data.remote_source == null:
+	if data == null:
 		return 0
+	if data.remote_modifiers != null:
+		for entry in keys:
+			modifiers_ready(data, modifier_tile_set(data, entry.x, entry.y))
+	if data.remote_source == null:
+		return keys.size() if data.remote_modifiers != null else 0
 	var seen := {}
 	var n := 0
 	for entry in keys:
@@ -251,11 +319,12 @@ const PREFETCH_REFRESH_MS := 5000
 ## joueur, et c'est ce qui fait arriver le terrain avant qu'on y soit.
 ## Rend le nombre de tuiles mises en file.
 static func prefetch(data: PlanetData, local_cam: Vector3, cam_history: PackedVector3Array) -> int:
-	if data == null or data.remote_source == null:
+	if data == null or (data.remote_source == null and data.remote_modifiers == null):
 		return 0
 	if local_cam.length_squared() <= 0.0:
 		return 0
 	var src: RemoteTileSource = data.remote_source
+	var mods: RemoteModifierPack = data.remote_modifiers
 	var dirs: Array[Vector3] = [local_cam.normalized()]
 	if cam_history.size() >= 2:
 		var ahead := local_cam + (cam_history[-1] - cam_history[0]) * PREFETCH_LEAD
@@ -287,6 +356,10 @@ static func prefetch(data: PlanetData, local_cam: Vector3, cam_history: PackedVe
 				if seen.has(k):
 					continue
 				seen[k] = true
+				if mods != null:
+					mods.prefetch_tile(ns, ip)
+				if src == null:
+					continue
 				# presence_of ne bloque jamais : un shard inconnu se met en file tout seul
 				# et l'anneau sera complété au passage suivant.
 				var state := src.presence_of(ns, ip)

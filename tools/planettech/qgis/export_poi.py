@@ -20,6 +20,12 @@ Elevation
     (the normal case) it is exported as null and Godot samples the terrain
     heightmap instead, which is what puts the POI on the actual ground.
 
+Regions
+-------
+    The `region` polygon layer (lore names, map labels — not a biome) is
+    exported here too, as one simplified outline per region: see
+    export/planet/regions.py. It no longer goes into the terrain-modifier pack.
+
 Output
 ------
     <EXPORT_DIR>/<planet>_poi.json
@@ -33,6 +39,10 @@ Output
         {"id": 1, "name": "Mine Village", "poi_type": "mining village",
          "population": 1200, "radius": 200.0, "description": "…",
          "lon": -83.7, "lat": 11.5, "elevation": null}
+      ],
+      "regions": [
+        {"name": "Rox Planum Centralis", "rings": [[[lon, lat], …]],
+         "bbox": [lon0, lat0, lon1, lat1]}
       ]
     }
 
@@ -41,6 +51,7 @@ Run from the QGIS Python Console:
 """
 import os
 import json
+import sys
 
 from qgis.core import (
     QgsProject,
@@ -48,6 +59,22 @@ from qgis.core import (
     QgsWkbTypes,
     QgsExpressionContextUtils,
 )
+
+# ── Make tools/planettech/qgis importable, then drop stale modules ─────────────
+# Same guard as export_biomes.py: the console interpreter outlives the session.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
+    if "__file__" in globals() else \
+    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+for _name in list(sys.modules):
+    _mod = sys.modules.get(_name)
+    _file = getattr(_mod, "__file__", None) or ""
+    if _file and os.path.abspath(_file).startswith(_THIS_DIR + os.sep) \
+            and "export_poi" not in _name:
+        del sys.modules[_name]
+
+from export.planet import regions as regions_lib        # noqa: E402
 
 # ============================================================
 # CONFIGURATION — edit for your planet
@@ -72,6 +99,8 @@ DEFAULT_RADIUS = 100.0
 # Layer name candidates, in priority order, before falling back to a substring
 # search. setup_planet_project.py names the PostGIS table plainly `poi`.
 _LAYER_NAMES = ("poi", f"{PLANET_NAME}_poi")
+# The named-region polygon layer (tools/planettech/qgis/layers/base.py).
+_REGION_LAYER_NAMES = ("region", f"{PLANET_NAME}_region")
 
 
 # ============================================================
@@ -96,6 +125,38 @@ def _find_poi_layer():
                 and l.geometryType() == QgsWkbTypes.PointGeometry:
             return l
     return None
+
+
+def _find_region_layer():
+    """The `region` polygon layer, by exact name only (a substring would catch biomes)."""
+    for l in QgsProject.instance().mapLayers().values():
+        if not isinstance(l, QgsVectorLayer) \
+                or l.geometryType() != QgsWkbTypes.PolygonGeometry:
+            continue
+        if l.name().lower() in [n.lower() for n in _REGION_LAYER_NAMES]:
+            return l
+    return None
+
+
+def collect_regions():
+    """The `regions` array of the JSON, [] when the project has no region layer."""
+    layer = _find_region_layer()
+    if layer is None:
+        print("  Regions    : no 'region' polygon layer — none exported")
+        return []
+    features = []
+    for feat in layer.getFeatures():
+        geom = feat.geometry()
+        if geom is None or geom.isEmpty():
+            continue
+        features.append({
+            "name": _str(feat, "name"),
+            "rings": regions_lib.outer_rings(json.loads(geom.asJson())),
+        })
+    out = regions_lib.build_regions(features)
+    print(f"  Regions    : {layer.name()} ({layer.featureCount()} features) "
+          f"→ {len(out)} named region(s)")
+    return out
 
 
 def _is_null(value):
@@ -160,18 +221,20 @@ def run_export():
     print("=" * 64)
 
     layer = _find_poi_layer()
-    if layer is None:
+    regions = collect_regions()
+    if layer is None and not regions:
         print("  ✗ No POI layer found. Expected a point layer named 'poi' "
               "(created by setup_planet_project.py).")
         return
-    print(f"  Layer      : {layer.name()} ({layer.featureCount()} features)")
+    if layer is not None:
+        print(f"  Layer      : {layer.name()} ({layer.featureCount()} features)")
 
     pois = []
     skipped_nogeom = 0
     skipped_stub = 0
     fixed_radius = 0
 
-    for feat in layer.getFeatures():
+    for feat in (layer.getFeatures() if layer is not None else []):
         lonlat = _point_of(feat.geometry())
         if lonlat is None:
             skipped_nogeom += 1
@@ -213,6 +276,7 @@ def run_export():
         "crs": "EPSG:4326",
         "count": len(pois),
         "pois": pois,
+        "regions": regions,
     }
 
     os.makedirs(EXPORT_DIR, exist_ok=True)
@@ -228,7 +292,7 @@ def run_export():
         by_type[key] = by_type.get(key, 0) + 1
 
     print("=" * 64)
-    print(f"  ✓ Done. {len(pois)} POI → {out_path}")
+    print(f"  ✓ Done. {len(pois)} POI, {len(regions)} region(s) → {out_path}")
     for key in sorted(by_type):
         print(f"    {key:<14} {by_type[key]}")
     if skipped_nogeom:

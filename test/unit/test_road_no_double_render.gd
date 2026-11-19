@@ -14,16 +14,17 @@ extends GutTest
 ## chunks can extrude the same metre of asphalt. These tests assert exactly that,
 ## on the real exported pack.
 ##
-## The export directory is gitignored (assets ship as a tarball), so every test
-## skips cleanly when the pack is absent — the partition maths itself is covered
-## without any asset by test/unit/test_modifier_pack_py.py.
+## The pack is read from the tile service, like the game reads it (body tarsis_3.mod), so every
+## test skips cleanly when no service serves it — the partition maths itself is covered without
+## any asset by test/unit/test_modifier_pack_py.py. Streamed, only the floor levels (the ones
+## fetched whole, n1..n16) can be enumerated: the checks run on those.
 ##
 ## Run with:
 ##     godot --headless -s addons/gut/gut_cmdln.gd \
 ##       -gtest=res://test/unit/test_road_no_double_render.gd
 
 const ModifierPackScript := preload("res://scenes/planet/modifier_pack.gd")
-const PACK_PATH := "res://assets/qgis/export/tarsis_3_chunks/terrainmodifier.pack"
+const PLANET := "tarsis_3"
 
 ## Along-road distances are float32 in the pack; 1 mm is far below anything
 ## visible and well above the representation error at 40 km.
@@ -34,25 +35,32 @@ var _m_per_deg: float = 0.0
 
 
 func before_all() -> void:
-	if not FileAccess.file_exists(PACK_PATH):
-		return
-	_pack = ModifierPackScript.new()
-	if not _pack.open(PACK_PATH):
-		_pack = null
+	_pack = RemoteModifierPack.shared_for(PLANET)
+	if _pack == null:
 		return
 	_m_per_deg = float(_pack.get_manifest().get("radius", 6356000.0)) * PI / 180.0
 
 
-func after_all() -> void:
-	if _pack != null:
-		_pack.close()
+## The levels a streamed pack can enumerate: the floor, fetched whole.
+func _levels() -> PackedInt64Array:
+	var out := PackedInt64Array()
+	for ns: int in _pack.get_levels():
+		if ns <= _pack.source.floor_nside_max:
+			out.append(ns)
+	return out
+
+
+## The deepest enumerable level.
+func _deepest() -> int:
+	var levels := _levels()
+	return int(levels[levels.size() - 1]) if not levels.is_empty() else 0
 
 
 ## True when the exported pack is unavailable; the caller should return.
 func _skip_without_pack() -> bool:
 	if _pack != null:
 		return false
-	pass_test("skipped: %s not present (export assets are gitignored)" % PACK_PATH)
+	pass_test("skipped: no tile service serves %s%s" % [PLANET, RemoteModifierPack.SUFFIX])
 	return true
 
 
@@ -92,7 +100,7 @@ func test_total_road_length_is_identical_at_every_level() -> void:
 	# and would be drawn — more than once.
 	if _skip_without_pack():
 		return
-	var levels: PackedInt64Array = _pack.get_levels()
+	var levels: PackedInt64Array = _levels()
 	assert_gt(levels.size(), 1, "the pack has several levels")
 	var reference := -1.0
 	var ref_nside := 0
@@ -115,7 +123,7 @@ func test_pieces_of_one_road_never_overlap_within_a_level() -> void:
 	# not both contain the same stretch of the same road.
 	if _skip_without_pack():
 		return
-	for nside_v in _pack.get_levels():
+	for nside_v in _levels():
 		var nside := int(nside_v)
 		if nside > 1024:
 			break
@@ -137,18 +145,18 @@ func test_children_partition_their_parent() -> void:
 	# out among its four quadtree children, never duplicated into them.
 	if _skip_without_pack():
 		return
-	var levels: PackedInt64Array = _pack.get_levels()
+	var levels: PackedInt64Array = _levels()
 	var parent_nside := 0
 	for nside_v in levels:
 		var nside := int(nside_v)
-		if nside >= 64 and nside <= 256:
+		if nside >= 4 and nside <= 256 and _levels().has(nside * 2):
 			parent_nside = nside
 			break
 	if parent_nside == 0:
 		pass_test("no suitable level pair in this pack")
 		return
 	var child_nside := parent_nside * 2
-	if not _pack.get_levels().has(child_nside):
+	if not _levels().has(child_nside):
 		pass_test("n%d not baked" % child_nside)
 		return
 
@@ -186,7 +194,7 @@ func test_roads_are_baked_to_the_quadtree_depth() -> void:
 	# two chunks ended up drawing the same road.
 	if _skip_without_pack():
 		return
-	var cap: int = _pack.max_nside_for_kind(ModifierPackScript.KIND_ROAD)
+	var cap: int = _pack.max_nside_for_kind(ModifierPackScript.KIND_ROAD)  # manifest: every level
 	var quadtree_nside := 1 << 13    # tarsis_3.tscn: max_quadtree_depth = 13
 	assert_true(cap >= quadtree_nside,
 			"roads baked to n%d but the quadtree reaches n%d" % [cap, quadtree_nside])
@@ -198,8 +206,9 @@ func test_pieces_carry_absolute_along_distances() -> void:
 	if _skip_without_pack():
 		return
 	var found_offset_piece := false
-	for ipix in _pack.get_tile_ipix(1024):
-		var raw: PackedByteArray = _pack.read_tile(1024, int(ipix))
+	var deepest := _deepest()
+	for ipix in _pack.get_tile_ipix(deepest):
+		var raw: PackedByteArray = _pack.read_tile(deepest, int(ipix))
 		if raw.is_empty():
 			continue
 		var t: Dictionary = _pack.decode_tile(
@@ -211,4 +220,4 @@ func test_pieces_carry_absolute_along_distances() -> void:
 			if cum[0] > SPAN_EPS_M:
 				found_offset_piece = true
 	assert_true(found_offset_piece,
-			"at n1024 at least one piece must start partway along its road")
+			"at the deepest enumerable level at least one piece must start partway along its road")

@@ -4,9 +4,8 @@ extends GutTest
 ## melted-corundum surface as its own mesh surface (vertex-tinted, parallax
 ## kept) and the slab's faces in the collision shape, on top of the ground.
 ##
-## Runs on the exported pack (gitignored, shipped as a tarball) and skips
-## cleanly without it. heights.pack may be absent too: every height then reads
-## the global fallback, which is fine for the road code path exercised here.
+## Runs on the published planet, read from the tile service like the game reads it, and skips
+## cleanly when no service serves it.
 ##
 ## Run with:
 ##     godot --headless -s addons/gut/gut_cmdln.gd \
@@ -14,8 +13,6 @@ extends GutTest
 
 const PlanetDataScript := preload("res://scenes/planet/planet_data.gd")
 const ModifierPackScript := preload("res://scenes/planet/modifier_pack.gd")
-const CHUNK_DIR := "assets/qgis/export/tarsis_3_chunks"
-const PACK_PATH := "res://" + CHUNK_DIR + "/terrainmodifier.pack"
 const PLANET_SCENE := "res://scenes/systems/tarsis/tarsis_3.tscn"
 const RES := 16
 
@@ -37,8 +34,6 @@ var _slab_alts := PackedFloat64Array()
 ## built once and the tests only read it.
 func before_all() -> void:
 	PlanetDataScript.new().warm_biome_cache()
-	if not FileAccess.file_exists(PACK_PATH):
-		return
 	# The planet as its scene configures it, prepared like the grade bake prepares it: with any
 	# other setting the baked chasm crossings do not match (bridge_bake_key) and warm_bridge_plans
 	# walks the whole planet's crossings at run time, minutes of it.
@@ -46,15 +41,28 @@ func before_all() -> void:
 	if _pd == null:
 		return
 	_pd.apply_chunk_manifest()
+	if not _pd.connect_tile_service() or _pd.get_modifier_pack() == null:
+		_pd = null  # no tile service: the tiles and the roads are not in the repository
+		return
 	_pd.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions("tarsis_3"))
 	_pd.warm_biome_cache()
-	# The first n64 tile holding a highway piece long enough to extrude.
-	var pack = ModifierPackScript.new()
-	if not pack.open(PACK_PATH):
-		_pd = null
-		return
+	# The first n64 tile holding a highway piece long enough to extrude. Streamed, the tile is
+	# fetched now (blocking — a test, off the game's hot path).
+	var pack = _pd.get_modifier_pack()
 	var mpd := _pd.radius * PI / 180.0
-	for ipix in pack.get_tile_ipix(_nside):
+	# Streamed, a level finer than the floor cannot be listed: the candidates are the n64 tiles under
+	# the whole roads (read from the floor), sampled along each centerline.
+	var candidates: Array[int] = []
+	for r: Dictionary in _pd.get_whole_roads():
+		var cl: PackedVector2Array = r["centerline"]
+		@warning_ignore("integer_division")
+		var step: int = maxi(1, cl.size() / 40)
+		for k in range(0, cl.size(), step):
+			var at := HEALPix.vec2pix_nest(_nside, HEALPix.lonlat2vec(cl[k].x, cl[k].y))
+			if not candidates.has(at):
+				candidates.append(at)
+	for ipix in candidates:
+		pack.source.fetch_now(_nside, int(ipix))
 		var t: Dictionary = pack.decode_tile(pack.read_tile(_nside, int(ipix)), mpd,
 				ModifierPackScript.MASK_ROAD)
 		var long_piece := false
@@ -69,7 +77,6 @@ func before_all() -> void:
 			_flat_ipix = int(ipix)
 		if _ipix >= 0 and _flat_ipix >= 0:
 			break
-	pack.close()
 	if _ipix < 0:
 		return
 	_pd.warm_bridge_plans()
@@ -108,7 +115,7 @@ func _scene_planet_data(scene: String) -> PlanetData:
 func _skip() -> bool:
 	if _pd != null and _ipix >= 0:
 		return false
-	pass_test("skipped: %s not present, or no highway piece at n%d" % [PACK_PATH, _nside])
+	pass_test("skipped: no tile service serving tarsis_3, or no highway piece at n%d" % _nside)
 	return true
 
 

@@ -70,6 +70,7 @@ func _ready() -> void:
 	# would be cut by a 180 m canyon it does not have in game.
 	data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(PLANET))
 	data.remote_source = RemoteTileSource.for_planet(PLANET)
+	data.attach_remote_modifiers()
 	say("PROBE %s : rayon %.0f m, export n%d, grille la plus fine n%d, %d POI"
 			% [PLANET, data.radius, data.export_nside, 1 << data.max_quadtree_depth,
 			data.crack_pois().size()])

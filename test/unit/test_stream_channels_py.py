@@ -199,7 +199,8 @@ class GarbageCollection(unittest.TestCase):
         # latest.json suit la dernière publication : s'il faisait autorité, une version
         # publiée puis abandonnée ne pourrait jamais être supprimée.
         self._tree("tarsis_3", "abandonnee")
-        os.makedirs(os.path.join(self.dist, "tarsis_3"), exist_ok=True)
+        self._tree("tarsis_3", "promue")
+        SC.record(self.dist, "dev", "tarsis_3", entry("promue"))
         with open(os.path.join(self.dist, "tarsis_3", "latest.json"), "w") as fh:
             json.dump({"data_version": "abandonnee"}, fh)
         dead = [(p, v) for p, v, _d in SC.dead_versions(self.dist)]
@@ -209,6 +210,7 @@ class GarbageCollection(unittest.TestCase):
         # Le mode par défaut, et il le reste : effacer cinq millions de fichiers ne se
         # rejoue pas.
         vdir = self._tree("tarsis_3", "old", files=5)
+        SC.record(self.dist, "dev", "tarsis_3", entry("new"))
         found = SC.collect(self.dist, dry_run=True)
         self.assertEqual([(p, v, f) for p, v, f, _s in found], [("tarsis_3", "old", 5)])
         self.assertTrue(os.path.isdir(vdir))
@@ -238,13 +240,65 @@ class GarbageCollection(unittest.TestCase):
         # Sur un volume à table d'inodes fixe ce sont les fichiers qui s'épuisent en
         # premier : 5,1 M par version contre 16,7 M libres.
         self._tree("tarsis_3", "old", files=7)
+        SC.record(self.dist, "dev", "tarsis_3", entry("new"))
         found = SC.collect(self.dist, dry_run=True)
         self.assertEqual(found[0][2], 7)
         self.assertEqual(found[0][3], 700)
 
+    def test_a_body_no_channel_cites_is_left_whole(self):
+        # Le dist d'avant les canaux : tarsis_3 servi par latest.json seul. Aucune de ses
+        # versions n'est « citée », mais les effacer couperait le terrain des joueurs.
+        old = self._tree("tarsis_3", "af18")
+        cur = self._tree("tarsis_3", "ee59")
+        self._tree("tarsis_3.mod", "cafe")
+        SC.record(self.dist, "unstable", "tarsis_3.mod", entry("cafe"))
+        self.assertEqual(SC.untracked(self.dist), ["tarsis_3"])
+        self.assertEqual(SC.collect(self.dist, dry_run=False), [])
+        self.assertTrue(os.path.isdir(old) and os.path.isdir(cur))
+
+
+class Adoption(unittest.TestCase):
+    """Un corps publié avant les canaux entre dans le cycle par son latest.json."""
+
+    def setUp(self):
+        self.dist = tempfile.mkdtemp()
+
+    def _published(self, planet, version):
+        root = os.path.join(self.dist, planet, version)
+        os.makedirs(os.path.join(root, "n64"), exist_ok=True)
+        open(os.path.join(root, "manifest.json"), "w").write("{}")
+        open(os.path.join(root, "floor.bin"), "wb").write(b"x")
+        with open(os.path.join(self.dist, planet, "latest.json"), "w") as fh:
+            json.dump(entry(version), fh)
+        return root
+
+    def test_adopting_records_the_latest_version_in_unstable(self):
+        self._published("tarsis_3", "af18")
+        self._published("tarsis_3", "ee59")
+        done, problems = SC.adopt(self.dist, ["tarsis_3"])
+        self.assertEqual((done, problems), ([("tarsis_3", "ee59")], []))
+        self.assertEqual(SC.load(self.dist, "unstable")["planets"]["tarsis_3"]["data_version"],
+                         "ee59")
+        self.assertEqual(SC.untracked(self.dist), [])
+        dead = [(p, v) for p, v, _d in SC.dead_versions(self.dist)]
+        self.assertEqual(dead, [("tarsis_3", "af18")], "now the old one is collectable")
+
+    def test_adoption_is_all_or_nothing(self):
+        self._published("tarsis_3", "ee59")
+        os.makedirs(os.path.join(self.dist, "tarsis_1"))
+        done, problems = SC.adopt(self.dist, ["tarsis_3", "tarsis_1"])
+        self.assertEqual(done, [])
+        self.assertTrue(problems)
+        self.assertEqual(SC.load(self.dist, "unstable")["planets"], {})
+
+    def test_an_incomplete_tree_is_not_adopted(self):
+        root = self._published("tarsis_3", "ee59")
+        os.remove(os.path.join(root, "manifest.json"))
+        self.assertEqual(SC.adopt(self.dist, ["tarsis_3"])[0], [])
+
 
 if __name__ == "__main__":
     suite = unittest.TestSuite()
-    for cls in (Lifecycle, GarbageCollection):
+    for cls in (Lifecycle, GarbageCollection, Adoption):
         suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
     sys.exit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)

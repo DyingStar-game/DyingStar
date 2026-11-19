@@ -34,7 +34,7 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest()
-	data.ensure_queries_loaded()
+	data.connect_tile_service()
 	data.warm_mountains()
 	var volcano: VolcanoRelief.Volcano = null
 	for ip in 12:

@@ -25,7 +25,6 @@ func _make_data(cache_root: String):
 	data.crack_depth_m = 180.0
 	data.chunk_heightmaps_dir = "assets/qgis/export/tarsis_3_chunks"
 	data.chunk_heightmap_res = 32
-	data.roads_geojson = "assets/qgis/export/tarsis_3_roads_buffered.json"
 	var rts := RemoteTileSource.new()
 	rts.planet = "tarsis_3"
 	rts.version = "ee59ef5f423a73da"
@@ -39,6 +38,7 @@ func _make_data(cache_root: String):
 	rts.cache_root = cache_root
 	data.remote_source = rts
 	data.apply_chunk_manifest()
+	data.attach_remote_modifiers()
 	return data
 
 

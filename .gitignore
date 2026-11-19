@@ -53,6 +53,18 @@ assets/qgis/checksum.txt
 assets/qgis/creationtime.txt
 assets/qgis/export.tar.gz
 heights.pack
+# Streamed from the tile service like heights.pack (publish_tiles.py -> <planet>.mod): linked locally by
+# tools/planettech/qgis/link_modifiers.py from the parts/*.dsmpart.
+terrainmodifier.pack
+# The parts live on the server too: it keeps the last published pack, which holds them all, and every
+# exporter pulls them first (link_modifiers.pull_parts, publish_remote.py --pull <planet>).
+assets/qgis/export/*_chunks/parts/
+# Baked by tools/bake_grade_profiles.gd, published as body <planet>.lines (publish_tiles.py file mode).
+grade_profiles.pack
+# publish_remote.py bookkeeping beside the exports
+publish.log
+.published.json
+.publish.lock
 
 # F7 screenshots taken while running from the editor (CapturePaths.screenshots_dir)
 /screenshots/

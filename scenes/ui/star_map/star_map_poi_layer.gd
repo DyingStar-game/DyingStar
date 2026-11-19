@@ -70,6 +70,13 @@ const PLAYER_PLACE_TINT: Color = Color(1.0, 0.82, 0.35)
 ## The group marker's colour. The towns' own neutral: a group is of no one kind.
 const CLUSTER_TINT: Color = Color(0.82, 0.86, 0.92, 1.0)
 
+## Up to how close the named regions ("Rox Planum Centralis") are printed, as drawn-radius over camera
+## distance. A region spans hundreds of km: seen from closer than this its name stands over ground the
+## screen no longer shows the edges of, and it would only fight the towns' names for room.
+const REGION_MAX_RATIO: float = 1.2
+## The regions' ink: paler and smaller than a town, the way an atlas prints a plain under its cities.
+const REGION_TINT: Color = Color(0.78, 0.84, 0.95, 0.75)
+
 ## Records currently drawn, in the order the picker and the search index use.
 var entries: Array[Dictionary] = []
 
@@ -87,6 +94,8 @@ var _service_dirty: bool = true
 
 var _icons: Array[Sprite3D] = []
 var _labels: Array[Label3D] = []
+## One name per region of the body ([StarMapPoi.regions_for]), parallel to that array.
+var _region_labels: Array[Label3D] = []
 ## Cache key, so turning a planet does not re-read the file every frame.
 var _loaded_key: String = ""
 ## World position of each marker drawn ON ITS OWN, parallel to [member entries]; NAN for one facing
@@ -151,6 +160,7 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 		# [method _hide_tail].
 		if body_changed or entries.is_empty():
 			_release_pool()
+	_place_regions(body_key, centre, rotation, radius, camera)
 	if entries.is_empty():
 		# The pick index has to go with them. Left behind, it still answers with the PREVIOUS body's
 		# towns: clicking empty sky near a bare moon would select a village on the planet you just left.
@@ -407,6 +417,46 @@ func _place_labels(drawn: Array[int], camera: Camera3D, selected: int, hovered: 
 		label.show()
 
 
+## Print the names of the body's regions at their middle, the facing ones only, a name that would land
+## on another one's pixels giving way. Hidden altogether once the camera is too close for a region to
+## be a place on screen ([constant REGION_MAX_RATIO]).
+func _place_regions(body_key: String, centre: Vector3, rotation: Basis, radius: float,
+		camera: Camera3D) -> void:
+	var regions: Array[Dictionary] = StarMapPoi.regions_for(body_key)
+	var eye: Vector3 = camera.global_position
+	var view: float = eye.distance_to(centre)
+	var shown: bool = view > 0.0 and radius / view <= REGION_MAX_RATIO
+	var taken := PackedVector2Array()
+	for i: int in range(regions.size()):
+		while _region_labels.size() <= i:
+			var made: Label3D = _new_text(0.0005)
+			made.modulate = REGION_TINT
+			_region_labels.append(made)
+		var label: Label3D = _region_labels[i]
+		var region: Dictionary = regions[i]
+		if not shown:
+			label.hide()
+			continue
+		if not region.has("surface"):
+			# Once per region and process: the ground under a region's middle does not move.
+			region["surface"] = StarMapRelief.surface_factor(body_key, region["dir"])
+		var normal: Vector3 = (rotation * (region["dir"] as Vector3)).normalized()
+		var world: Vector3 = centre + normal * (radius * float(region["surface"]))
+		if not StarMapPoi.faces_camera(world, normal, eye) or camera.is_position_behind(world):
+			label.hide()
+			continue
+		var at: Vector2 = camera.unproject_position(world)
+		if _collides(at, taken, 0.6):
+			label.hide()
+			continue
+		taken.append(at)
+		label.text = str(region["label"])
+		label.position = world
+		label.show()
+	for i: int in range(regions.size(), _region_labels.size()):
+		_region_labels[i].hide()
+
+
 static func _collides(at: Vector2, taken: PackedVector2Array, keenness: float) -> bool:
 	for used: Vector2 in taken:
 		if absf(used.x - at.x) < LABEL_CLEAR_X * keenness \
@@ -483,7 +533,7 @@ func _hide(index: int) -> void:
 
 
 func _release_pool() -> void:
-	for pool: Array in [_icons, _labels, _cluster_icons, _cluster_counts, _cluster_names]:
+	for pool: Array in [_icons, _labels, _cluster_icons, _cluster_counts, _cluster_names, _region_labels]:
 		for node: Node in pool:
 			node.queue_free()
 		pool.clear()

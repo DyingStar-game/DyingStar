@@ -86,6 +86,7 @@ func _ready() -> void:
 	# Already-cached tiles answer offline, so a scan finds a site without asking
 	# the service for anything.
 	data.remote_source = RemoteTileSource.for_planet(planet)
+	data.attach_remote_modifiers()
 	say("PROBE tile source: %s" % ("aucune — le relief sera plat"
 			if data.remote_source == null else data.remote_source.base_url))
 	var side := HEALPix.pixel_side_length(NSIDE, data.radius)

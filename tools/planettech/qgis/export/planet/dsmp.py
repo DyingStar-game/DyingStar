@@ -84,7 +84,10 @@ Padding keeps every f32/i32 field 4-byte aligned.
                    point_count and the runtime decoder walks 24-byte headers
                    for them.
     POPULATE       u16 biome_type_sid | u8 coverage | u8 prop_count
-                   i32 biome_index | u16 vertex_count | u16 rsv
+                   i32 biome_index | u16 vertex_count | u16 rank
+                   (rank: the zone's place in the first-match order, read only
+                   when the part manifest says "full_inherit" — see biomes.py;
+                   0 for every other kind using this layout)
                    prop_count x { u16 key_sid | u8 vtype | u8 pad | u32 value }
                    coverage == point   : i32 lon | i32 lat
                    coverage == partial : vertex_count x { i32 lon | i32 lat }
@@ -309,8 +312,12 @@ def pack_lava(type_sid, state_sid, name_sid, width_start_m, width_end_m, depth_m
 
 
 def pack_populate(biome_type_sid, biome_index, coverage, props=(),
-                  vertices=(), lon=None, lat=None, min_vertices=3):
+                  vertices=(), lon=None, lat=None, min_vertices=3, rank=0):
     """coverage: "full" | "partial" | "point" (or the numeric code).
+
+    rank: the zone's place in the first-match order (u16), stored in the slot
+    that used to be reserved. Only the POPULATE kind of a "full_inherit" part
+    sets it; the default 0 keeps every other record byte-identical.
 
     props: iterable of (key_sid, vtype, value). For VTYPE_SID the value is a
     string id; for VTYPE_F32 a float; for VTYPE_I32 a signed int.
@@ -330,11 +337,13 @@ def pack_populate(biome_type_sid, biome_index, coverage, props=(),
         raise DsmpError("a populate zone carries at most 65535 vertices")
     if cov == COVERAGE_POINT and (lon is None or lat is None):
         raise DsmpError("a point-coverage zone needs lon/lat")
+    if not 0 <= int(rank) <= 0xFFFF:
+        raise DsmpError("a populate rank is a u16, got %r" % (rank,))
 
     out = bytearray()
     out += struct.pack(
         "<HBBiHH", _sid(biome_type_sid), cov, len(props),
-        int(biome_index), len(verts), 0)
+        int(biome_index), len(verts), int(rank))
     for key_sid, vtype, value in props:
         out += struct.pack("<HBB", _sid(key_sid), int(vtype), 0)
         if vtype == VTYPE_F32:

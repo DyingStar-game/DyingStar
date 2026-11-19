@@ -11,7 +11,7 @@ func _ready() -> void:
 	data.chunk_heightmaps_dir = "assets/qgis/export/tarsis_3_chunks"
 	data.chunk_heightmap_res = 32
 	data.apply_chunk_manifest()
-	data.ensure_queries_loaded()
+	data.connect_tile_service()
 	data.warm_mountains()
 
 	var body := Node3D.new()

@@ -82,7 +82,13 @@ def _repo_root(start):
     return start
 
 sys.path.insert(0, _repo_root(os.path.dirname(os.path.abspath(__file__))))
-from tools.planettech.analyze_pack_sparsity import Pack
+# Le lecteur DSHP (altitude) s'appuie sur numpy, que le serveur de tuiles n'a pas forcément :
+# publier des modificateurs ou un fichier entier n'en a pas besoin (publish_remote.py lance
+# ce script SUR le serveur). analyze_pack_sparsity fait sys.exit sans numpy, d'où SystemExit.
+try:
+    from tools.planettech.analyze_pack_sparsity import Pack
+except (ImportError, SystemExit):  # pragma: no cover - dépend de l'environnement
+    Pack = None
 from tools.planettech.publish import stream_channels
 
 TILE_MAGIC = b"DSTL"
@@ -133,24 +139,222 @@ def shard_of(ipix):
     return ipix // SHARD_TILES
 
 
-def floor_bundle(pack, compress, nside_max=FLOOR_NSIDE_MAX):
+## Suffixe du corps sous lequel se publie le pack de modificateurs d'une planète :
+## <dist>/tarsis_3.mod/<version>/… à côté de <dist>/tarsis_3/<version>/… (l'altitude). Un
+## corps à part entière pour les canaux, la promotion et --gc, qui n'ont rien à apprendre.
+MODIFIER_SUFFIX = ".mod"
+## Plancher des modificateurs. Plus profond que celui de l'altitude : le niveau le plus
+## grossier porte les routes ENTIÈRES (PlanetData._whole_lines), et les zones FULL héritées
+## (biomes.py « full_inherit ») vivent surtout dans les niveaux grossiers. Le client le
+## récupère d'un bloc à l'ouverture (RemoteModifierPack).
+MODIFIER_FLOOR_NSIDE_MAX = 16
+
+
+class DsmpPack:
+    """Lecteur DSMP v1 (terrainmodifier.pack) en lecture seule, par seek.
+
+    Même interface que le lecteur DSHP pour publish() / verify() / floor_bundle() :
+    `manifest`, `levels`, `has_tile`, `raw_tile`, plus `tile_ipix(nside)` — un pack de
+    modificateurs est creux à l'extrême (les routes descendent à n8192, soit 805 M de
+    pixels pour quelques centaines de milliers de tuiles), on ne le parcourt donc jamais
+    pixel par pixel. Seul l'index est gardé en mémoire ; les tuiles sont lues à la demande.
+    """
+
+    sparse = True
+    version = 1
+
+    def __init__(self, path):
+        self.path = path
+        with open(path, "rb") as fh:
+            head = fh.read(32)
+            if head[:4] != b"DSMP":
+                raise ValueError("%s : magic DSMP absent" % path)
+            (ver, level_count, flags, index_start, self.blob_start,
+             json_len, _rsv) = struct.unpack("<7I", head[4:32])
+            if ver != 1:
+                raise ValueError("DSMP v%d non supporté" % ver)
+            if flags & 1:
+                raise ValueError("DSMP compressé par tuile : non supporté")
+            self.manifest = json.loads(fh.read(json_len).decode("utf-8"))
+            dir_start = (32 + json_len + 15) // 16 * 16
+            fh.seek(dir_start)
+            directory = [struct.unpack("<IIQ", fh.read(16)) for _ in range(level_count)]
+            self._index = {}
+            for nside, count, idx_off in directory:
+                fh.seek(index_start + idx_off)
+                raw = fh.read(count * 16)
+                entries = {}
+                for k in range(count):
+                    ipix, off, size = struct.unpack_from("<IQI", raw, k * 16)
+                    entries[ipix] = (off, size)
+                self._index[nside] = entries
+        self.levels = sorted(self._index)
+        self.nside_min = self.levels[0] if self.levels else 0
+        self.nside_max = self.levels[-1] if self.levels else 0
+        self.planet_name = str(self.manifest.get("planet_name", ""))
+        self.floor_nside_max = MODIFIER_FLOOR_NSIDE_MAX
+        self._fh = open(path, "rb")
+
+    def has_tile(self, nside, ipix):
+        return ipix in self._index.get(nside, ())
+
+    def tile_ipix(self, nside):
+        return sorted(self._index.get(nside, ()))
+
+    def raw_tile(self, nside, ipix):
+        off, size = self._index[nside][ipix]
+        self._fh.seek(self.blob_start + off)
+        return self._fh.read(size)
+
+    def data_version(self):
+        """Celle du linker ; à défaut (pack plus ancien), une empreinte du fichier."""
+        v = str(self.manifest.get("data_version", ""))
+        if v:
+            return v
+        import hashlib
+        h = hashlib.blake2b(digest_size=8)
+        with open(self.path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+
+## Suffixe du corps d'un fichier entier publié pour une planète : le bake des profils de ligne
+## (grade_profiles.pack) part sous <dist>/tarsis_3.lines/<version>/. Un corps à lui, versionné sur
+## ses propres octets : il se cuit APRÈS la publication des tuiles (l'outil de bake les lit en
+## HTTP), et le ranger dans la version .mod republierait toutes les tuiles à chaque re-cuisson.
+FILE_BODY_SUFFIX = {"grade_profiles.pack": ".lines"}
+
+
+def file_version(path):
+    """Version d'URL d'un fichier publié entier : son empreinte."""
+    import hashlib
+    h = hashlib.blake2b(digest_size=8)
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def planet_of_file(path):
+    """La planète d'un fichier posé dans assets/qgis/export/<planète>_chunks/."""
+    parent = os.path.basename(os.path.dirname(os.path.abspath(path)))
+    return parent[:-len("_chunks")] if parent.endswith("_chunks") else ""
+
+
+def publish_file(path, out_root, body, version):
+    """<out>/<corps>/<version>/<nom> dans l'enveloppe DSTL (sans compression : le bake l'est
+    déjà), et un manifest.json qui le décrit — stream_channels.tree_problems l'exige."""
+    name = os.path.basename(path)
+    root = os.path.join(out_root, body, version)
+    os.makedirs(root, exist_ok=True)
+    with open(path, "rb") as fh:
+        data = fh.read()
+    with open(os.path.join(root, name), "wb") as fh:
+        fh.write(tile_blob(data, False))
+    with open(os.path.join(root, "manifest.json"), "w", encoding="utf-8") as fh:
+        json.dump({"file": name, "size": len(data), "data_version": version}, fh, indent=2)
+    return len(data)
+
+
+def verify_file(path, out_root, body, version):
+    """0 si l'objet publié rend exactement les octets du fichier, 1 sinon."""
+    served = os.path.join(out_root, body, version, os.path.basename(path))
+    try:
+        with open(served, "rb") as fh:
+            got = read_tile_blob(fh.read())
+    except (OSError, ValueError, zlib.error) as exc:
+        print("  FICHIER %s illisible : %s" % (served, exc))
+        return 1
+    with open(path, "rb") as fh:
+        if got != fh.read():
+            print("  FICHIER %s diffère du fichier local" % served)
+            return 1
+    return 0
+
+
+def _main_file(args):
+    """Mode fichier : un fichier entier (grade_profiles.pack) sous <planète><suffixe>."""
+    name = os.path.basename(args.pack)
+    planet = args.planet or planet_of_file(args.pack)
+    if not planet:
+        print("ERREUR : planète inconnue pour %s — passez --planet" % args.pack)
+        return 1
+    body = planet + FILE_BODY_SUFFIX[name]
+    version = file_version(args.pack)
+    print("%s — fichier %s, version %s" % (body, name, version))
+    if args.verify:
+        bad = verify_file(args.pack, args.out, body, version)
+        print("  %d désaccord(s)" % bad)
+        return 1 if bad else 0
+    size = publish_file(args.pack, args.out, body, version)
+    entry = {"data_version": version, "dataset": "file", "file": name}
+    ptr = os.path.join(args.out, body, "latest.json")
+    with open(ptr, "w", encoding="utf-8") as fh:
+        json.dump(entry, fh, indent=2)
+    chan = stream_channels.record(args.out, args.channel, body, entry)
+    print("  %s publié : %.1f Mo" % (name, size / 1e6))
+    print("  pointeur : %s" % ptr)
+    print("  canal '%s' : %s" % (args.channel, chan))
+    return 0
+
+
+def open_pack(path):
+    """Le bon lecteur selon la magie : DSHP (altitude) ou DSMP (modificateurs)."""
+    with open(path, "rb") as fh:
+        magic = fh.read(4)
+    if magic == b"DSMP":
+        return DsmpPack(path)
+    if Pack is None:
+        raise SystemExit("numpy requis pour publier un heights.pack (DSHP) : pip install numpy")
+    return Pack(path)
+
+
+def _floor_max(pack):
+    return getattr(pack, "floor_nside_max", FLOOR_NSIDE_MAX)
+
+
+def _shards_of(pack, nside):
+    """[(base, end, [ipix présents])] des shards à écrire pour ce niveau.
+
+    Un pack dense ou modérément creux (l'altitude) écrit TOUS ses shards, y compris une
+    carte de présence vide : c'est ce que les clients connaissent. Un pack qui expose
+    `tile_ipix` (les modificateurs) n'écrit que les shards habités — un shard sans
+    present.bin répond 404, que RemoteTileSource.has_tile retient comme « vide ».
+    """
+    npix = 12 * nside * nside
+    if hasattr(pack, "tile_ipix"):
+        by_shard = {}
+        for ipix in pack.tile_ipix(nside):
+            by_shard.setdefault(shard_of(ipix), []).append(ipix)
+        for shard in sorted(by_shard):
+            base = shard * SHARD_TILES
+            yield base, min(base + SHARD_TILES, npix), by_shard[shard]
+        return
+    for base in range(0, npix, SHARD_TILES):
+        end = min(base + SHARD_TILES, npix)
+        yield base, end, [i for i in range(base, end) if pack.has_tile(nside, i)]
+
+
+def floor_bundle(pack, compress, nside_max=None):
     """Concatène les niveaux grossiers en un objet unique, index en tête.
 
     Les charges utiles sont les octets EXACTEMENT servis pour une tuile isolée, si bien
     que le client se contente de les écrire dans son cache : rien à décoder de plus, et
     un plancher et une tuile ne peuvent pas diverger.
     """
+    if nside_max is None:
+        nside_max = _floor_max(pack)
     entries, blobs, off = [], [], 0
     for nside in pack.levels:
         if nside > nside_max:
             continue
-        for ipix in range(12 * nside * nside):
-            if not pack.has_tile(nside, ipix):
-                continue
-            blob = tile_blob(pack.raw_tile(nside, ipix), compress)
-            entries.append((nside, ipix, off, len(blob)))
-            blobs.append(blob)
-            off += len(blob)
+        for _base, _end, present in _shards_of(pack, nside):
+            for ipix in present:
+                blob = tile_blob(pack.raw_tile(nside, ipix), compress)
+                entries.append((nside, ipix, off, len(blob)))
+                blobs.append(blob)
+                off += len(blob)
     head = struct.pack("<4sII", FLOOR_MAGIC, FLOOR_VERSION, len(entries))
     index = b"".join(struct.pack("<IIII", *e) for e in entries)
     # Les offsets sont relatifs au début des charges utiles, que l'index précède et dont
@@ -187,15 +391,11 @@ def publish(pack, out_root, planet, version, compress):
 
     written = raw_bytes = out_bytes = 0
     for nside in pack.levels:
-        npix = 12 * nside * nside
-        for base in range(0, npix, SHARD_TILES):
-            end = min(base + SHARD_TILES, npix)
+        for base, end, present in _shards_of(pack, nside):
             sdir = os.path.join(root, "n%d" % nside, "f%d" % shard_of(base))
             os.makedirs(sdir, exist_ok=True)
             bits = bytearray((end - base + 7) // 8)
-            for ipix in range(base, end):
-                if not pack.has_tile(nside, ipix):
-                    continue
+            for ipix in present:
                 i = ipix - base
                 bits[i >> 3] |= 1 << (i & 7)
                 payload = pack.raw_tile(nside, ipix)
@@ -223,9 +423,7 @@ def verify(pack, out_root, planet, version):
     root = os.path.join(out_root, planet, version)
     bad = checked = 0
     for nside in pack.levels:
-        npix = 12 * nside * nside
-        for base in range(0, npix, SHARD_TILES):
-            end = min(base + SHARD_TILES, npix)
+        for base, end, _present in _shards_of(pack, nside):
             sdir = os.path.join(root, "n%d" % nside, "f%d" % shard_of(base))
             try:
                 with open(os.path.join(sdir, "present.bin"), "rb") as fh:
@@ -289,12 +487,13 @@ def _verify_floor(pack, root):
             print("  PLANCHER n%d f%d diffère du pack" % (nside, ipix))
             bad += 1
     for nside in pack.levels:
-        if nside > FLOOR_NSIDE_MAX:
+        if nside > _floor_max(pack):
             continue
-        for ipix in range(12 * nside * nside):
-            if pack.has_tile(nside, ipix) and (nside, ipix) not in seen:
-                print("  PLANCHER n%d f%d manquante" % (nside, ipix))
-                bad += 1
+        for _base, _end, present in _shards_of(pack, nside):
+            for ipix in present:
+                if (nside, ipix) not in seen:
+                    print("  PLANCHER n%d f%d manquante" % (nside, ipix))
+                    bad += 1
     return bad
 
 
@@ -347,10 +546,22 @@ def verify_http(pack, base, planet, version, samples=40, seed=1):
     for nside in pack.levels:
         npix = 12 * nside * nside
         picks = rng.sample(range(npix), min(samples, npix))
+        inhabited = None
+        if hasattr(pack, "tile_ipix"):
+            # Creux : des pixels tirés au hasard tombent presque tous dans le vide. On
+            # tire autant de tuiles réellement publiées, et l'on sait quels shards existent.
+            stored = pack.tile_ipix(nside)
+            picks += rng.sample(stored, min(samples, len(stored)))
+            inhabited = {shard_of(i) for i in stored}
         for ipix in picks:
             sdir = "%s/n%d/f%d" % (root, nside, shard_of(ipix))
             base_i = shard_of(ipix) * SHARD_TILES
             code, bits, _h = _http("%s/present.bin" % sdir)
+            if code == 404 and inhabited is not None and shard_of(ipix) not in inhabited:
+                # Shard vide d'un pack creux : il n'est pas publié, et le 404 est la réponse
+                # que le client attend (RemoteTileSource.has_tile le retient comme vide).
+                absent_ok += 1
+                continue
             if code != 200:
                 print("  ECHEC %s/present.bin -> HTTP %d" % (sdir, code))
                 bad += 1
@@ -426,16 +637,26 @@ def main(argv=None):
                          % stream_channels.PUBLISH_CHANNEL)
     args = ap.parse_args(argv)
 
-    pack = Pack(args.pack)
-    planet = args.planet or pack.planet_name
-    version = str(pack.manifest.get("data_version", "")) or "nodataversion"
-    if version == "nodataversion":
-        print("ATTENTION : le manifeste ne porte pas de data_version. La version d'URL "
-              "sera 'nodataversion' et deux exports différents s'écraseraient. "
-              "Ré-exportez avec un exporteur qui l'écrit.")
-    print("%s — DSHP v%d, %s%s, niveaux n%d..n%d, version %s"
-          % (planet, pack.version, "uint16" if pack.u16 else "float32",
-             ", creux" if pack.sparse else "", pack.nside_min, pack.nside_max, version))
+    if os.path.basename(args.pack) in FILE_BODY_SUFFIX:
+        return _main_file(args)
+    pack = open_pack(args.pack)
+    modifiers = isinstance(pack, DsmpPack)
+    if modifiers:
+        planet = args.planet or (pack.planet_name + MODIFIER_SUFFIX)
+        version = pack.data_version()
+        print("%s — DSMP (modificateurs), niveaux n%d..n%d, %d tuiles, version %s"
+              % (planet, pack.nside_min, pack.nside_max,
+                 sum(len(pack.tile_ipix(n)) for n in pack.levels), version))
+    else:
+        planet = args.planet or pack.planet_name
+        version = str(pack.manifest.get("data_version", "")) or "nodataversion"
+        if version == "nodataversion":
+            print("ATTENTION : le manifeste ne porte pas de data_version. La version d'URL "
+                  "sera 'nodataversion' et deux exports différents s'écraseraient. "
+                  "Ré-exportez avec un exporteur qui l'écrit.")
+        print("%s — DSHP v%d, %s%s, niveaux n%d..n%d, version %s"
+              % (planet, pack.version, "uint16" if pack.u16 else "float32",
+                 ", creux" if pack.sparse else "", pack.nside_min, pack.nside_max, version))
 
     if args.verify_http:
         bad, _checked = verify_http(pack, args.verify_http, planet, version, args.samples)
@@ -449,9 +670,15 @@ def main(argv=None):
     written, raw_bytes, out_bytes, floor_bytes = publish(
         pack, args.out, planet, version, args.compress)
     entry = {"data_version": version, "nside_min": pack.nside_min,
-             "nside_max": pack.nside_max, "tile_res": pack.tile_res,
+             "nside_max": pack.nside_max,
              "shard_tiles": SHARD_TILES,
-             "floor_nside_max": FLOOR_NSIDE_MAX}
+             "floor_nside_max": _floor_max(pack)}
+    if modifiers:
+        # Pas de tile_res : une tuile de modificateurs est un blob de taille variable.
+        # RemoteTileSource ouvre un tel corps sur ce champ.
+        entry["dataset"] = "modifiers"
+    else:
+        entry["tile_res"] = pack.tile_res
     # Pointeur par corps : le repli quand aucun canal n'est en place, et ce que lisaient
     # les clients avant les canaux.
     ptr = os.path.join(args.out, planet, "latest.json")
@@ -465,7 +692,7 @@ def main(argv=None):
     print("  %d tuiles publiées, %.1f Mo (%.0f%% de la charge brute)"
           % (written, out_bytes / 1e6, ratio))
     print("  plancher n1..n%d en un objet : floor.bin, %.2f Mio en une requête"
-          % (FLOOR_NSIDE_MAX, floor_bytes / 1048576.0))
+          % (_floor_max(pack), floor_bytes / 1048576.0))
     print("  pointeur : %s" % ptr)
     print("  canal '%s' : %s" % (args.channel, chan))
     print("  promotion : python3 tools/planettech/publish/stream_channels.py --dist %s --to %s --planet %s"

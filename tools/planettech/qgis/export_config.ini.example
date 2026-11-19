@@ -19,3 +19,20 @@
 # Where export_cave_sites.py writes <planet>_cave_sites.json (private, outside the repository).
 # Default: ~/dyingstar-private/caves
 # cave_export_dir = ~/dyingstar-private/caves
+
+[publish]
+# Publish every export straight onto the tile service (nginx), over SSH — the game reads
+# nothing local, so an export is only seen once published. With `ssh` set, the exporters
+# (link_modifiers.link, export_elevation.py) and tools/bake_grade_profiles.gd publish on their
+# own, in the background (log: <planet>_chunks/publish.log). Each key can be overridden by
+# $DS_PUBLISH_<KEY>. Check the target first:
+#     python3 tools/planettech/publish/publish_remote.py --check
+# See tools/planettech/publish/publish_remote.py.
+#
+# ssh     = deploy@planettech.dyingstar-game.space
+# port    = 22
+# dist    = /var/www/dist
+# workdir = ds-publish
+# python  = python3
+# channel = unstable
+# http    = https://planettech.dyingstar-game.space

@@ -1,6 +1,6 @@
 """
-Export the `roads` line layer to the buffered-polygon GeoJSON Godot renders.
-===========================================================================
+Export the road line layers to the ROAD part of the terrain-modifier pack.
+=========================================================================
 
 Road layers are created by setup_planet_project.py (layers/roads.py) as one
 PostGIS LineString table per road type — `highway`, `road`, `path`, `trail`, `railway` —
@@ -14,17 +14,6 @@ cuttings, tunnels and viaducts, like a railway.  The
 legacy single `roads` table with a per-feature `road_type` field is still read
 when present, so older planets export unchanged.
 
-Why polygons and not lines
---------------------------
-    Godot loads this file through BiomeQuery, whose feature parser ACCEPTS
-    ONLY `Polygon` geometry — a raw LineString export is silently dropped.
-    So each road is buffered into a polygon used for coarse chunk-bbox
-    detection, and the original line is preserved in `properties.centerline`.
-    The visible ribbon is extruded from that centerline by planet_chunk.gd,
-    so the buffer is deliberately DETECTION_MULTIPLIER× wider than the road:
-    it only has to guarantee that a chunk crossed by a narrow trail is not
-    missed by the bounding-box test.
-
 Width
 -----
     `width` is the TOTAL road width in metres. The designer may leave it at
@@ -34,44 +23,21 @@ Width
     RoadTerrain.get_half_width_m() applies exactly the same rules on the Godot
     side — keep the two in sync.
 
-Two outputs
------------
-    1. <planet>_chunks/parts/roads.dsmpart  — THE ONE THE GAME USES.
-       Per-chunk, per-LOD road pieces, already clipped to their HEALPix tile and
-       decimated for their level. Written here and then merged into
-       <planet>_chunks/terrainmodifier.pack by link_modifiers.link(), which
-       rebuilds the pack from every part present — so running this script
-       replaces the roads and leaves craters, rivers and biomes untouched.
+Output
+------
+    <planet>_chunks/parts/roads.dsmpart — per-chunk, per-LOD road pieces, already
+    clipped to their HEALPix tile and decimated for their level. Written here and
+    then merged into <planet>_chunks/terrainmodifier.pack by link_modifiers.link(),
+    which rebuilds the pack from every part present — so running this script
+    replaces the roads and leaves craters, rivers and biomes untouched.
 
-       The clipping is what fixes the "two roads, one 2 m above the other" bug:
-       a road used to be stored once, globally, and every chunk whose bounding
-       box touched it re-extruded the WHOLE centerline. Neighbouring chunks at
-       different LODs sampled terrain height at different pyramid levels, so the
-       duplicate ribbons ended up at different altitudes. Now each tile owns its
-       own disjoint piece and no two chunks can draw the same stretch.
-
-    2. <planet>_roads_buffered.json — the legacy buffered-polygon GeoJSON,
-       still read by BiomeQuery while the runtime transitions to the pack.
-       It will stop being written once PlanetData.roads_geojson is retired.
-
-Legacy GeoJSON layout
----------------------
-    <EXPORT_DIR>/<planet>_roads_buffered.json
-
-    {
-      "type": "FeatureCollection",
-      "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
-      "features": [
-        {"type": "Feature",
-         "geometry": {"type": "Polygon", "coordinates": [[[lon, lat], ...]]},
-         "properties": {"name": "...", "road_type": "road", "surface": "asphalt",
-                        "lanes": 2, "width": 6.0,
-                        "centerline": [[lon, lat], ...]}}
-      ]
-    }
-
-    PlanetData.roads_geojson must point at it, e.g.
-    "assets/qgis/export/tarsis_4_roads_buffered.json" (already set on tarsis_4).
+    The clipping is what fixes the "two roads, one 2 m above the other" bug: a
+    road used to be stored once, globally (a buffered-polygon GeoJSON, retired),
+    and every chunk whose bounding box touched it re-extruded the WHOLE
+    centerline. Neighbouring chunks at different LODs sampled terrain height at
+    different pyramid levels, so the duplicate ribbons ended up at different
+    altitudes. Now each tile owns its own disjoint piece and no two chunks can
+    draw the same stretch.
 
 Run from the QGIS Python Console:
     exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_roads.py').read())
@@ -83,10 +49,8 @@ import math
 import sys
 
 from qgis.core import (
-    QgsPointXY,
     QgsProject,
     QgsVectorLayer,
-    QgsGeometry,
     QgsWkbTypes,
     QgsExpressionContextUtils,
 )
@@ -121,7 +85,7 @@ _proj_planet_name = QgsExpressionContextUtils.projectScope(_project).variable("p
 _proj_planet_radius = QgsExpressionContextUtils.projectScope(_project).variable("planet_radius_m")
 
 PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_4"
-# Planet radius in metres — drives the metre → degree conversion of the buffer.
+# Planet radius in metres — drives the metre → degree conversions (village reroutes, the part).
 PLANET_RADIUS = int(_proj_planet_radius) if _proj_planet_radius else 6_356_000
 
 # DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> the historical path.
@@ -154,16 +118,12 @@ MAX_QUADTREE_DEPTH = int(_proj_depth) if _proj_depth else 13
 # tolerance (a quarter of the vertex spacing at each level).
 CHUNK_RESOLUTION = 32
 
-# Half-widths, detection multiplier and field list now live in
+# Half-widths and field list now live in
 # export/planet/roads.py so RoadTerrain.HALF_WIDTH_M has exactly one Python
 # mirror instead of two that can drift.
 HALF_WIDTH_M = roads_lib.HALF_WIDTH_M
 DEFAULT_HALF_WIDTH_M = roads_lib.DEFAULT_HALF_WIDTH_M
-DETECTION_MULTIPLIER = roads_lib.DETECTION_MULTIPLIER
 ROAD_FIELDS = roads_lib.ROAD_FIELDS
-
-# Segments per quarter circle when buffering (QgsGeometry.buffer).
-BUFFER_SEGMENTS = 8
 
 # Set True to skip the relink, e.g. when chaining several exporters and you want
 # a single link at the end (then call link_modifiers.link('<planet>')).
@@ -249,8 +209,7 @@ def _line_parts(geom):
 
     Multipart roads are split into one feature per part rather than merged:
     concatenating disjoint parts into a single centerline would invent a
-    straight segment joining them, and buffering them together can yield a
-    MultiPolygon that BiomeQuery would reject.
+    straight segment joining them.
     """
     if geom is None or geom.isEmpty():
         return []
@@ -258,18 +217,6 @@ def _line_parts(geom):
         return [part for part in geom.asMultiPolyline() if len(part) >= 2]
     line = geom.asPolyline()
     return [line] if len(line) >= 2 else []
-
-
-def _polygons_of(geom):
-    """GeoJSON geometry dicts for [param geom], one per polygon part."""
-    raw = json.loads(geom.asJson())
-    gtype = raw.get("type")
-    if gtype == "Polygon":
-        return [raw]
-    if gtype == "MultiPolygon":
-        return [{"type": "Polygon", "coordinates": rings}
-                for rings in raw.get("coordinates", [])]
-    return []
 
 
 # ============================================================
@@ -282,6 +229,8 @@ def export_road_part(roads):
     the same dicts the GeoJSON branch builds, so the two outputs can never
     describe different roads.
     """
+    # The team's parts and string table first: this export rewrites only its own part.
+    link_modifiers.pull_parts(PLANET_NAME, EXPORT_DIR)
     parts_dir = link_modifiers.parts_dir_for(PLANET_NAME, EXPORT_DIR)
     os.makedirs(parts_dir, exist_ok=True)
 
@@ -345,11 +294,8 @@ def run_export():
         print(f"  Villages   : {len(villages)} (roads cut out of them, led to their snaps)")
     else:
         print(f"  ! Villages not read ({STARTUP_ITEMS} / {LAYOUT_SNAPS}): roads may cross them")
-    features = []
-    # Same road dicts feed the pack part, so the two outputs cannot disagree.
     roads = []
     skipped_short = 0
-    skipped_empty_buffer = 0
     defaulted_width = 0
 
     for feat, road_type in ((f, rt) for layer, rt in road_layers for f in layer.getFeatures()):
@@ -378,60 +324,14 @@ def run_export():
             line = [[float(pt.x()), float(pt.y())] for pt in part]
             pieces.extend(village_snaps.reroute(line, props.get("road_type"), villages, m_per_deg))
         for centerline in pieces:
-            part_pts = [QgsPointXY(x, y) for x, y in centerline]
-
             road = dict(props)
             road["centerline"] = centerline
             road["width"] = hw_m * 2.0
             roads.append(road)
 
-            part_geom = QgsGeometry.fromPolylineXY(part_pts)
-            buffered = part_geom.buffer(
-                (hw_m * DETECTION_MULTIPLIER) / m_per_deg, BUFFER_SEGMENTS)
-            polygons = _polygons_of(buffered) if not buffered.isEmpty() else []
-            if not polygons:
-                skipped_empty_buffer += 1
-                continue
-
-            for polygon in polygons:
-                part_props = dict(props)
-                part_props["centerline"] = centerline
-                # Total width in metres — RoadTerrain.get_half_width_m() halves it.
-                part_props["width"] = hw_m * 2.0
-                features.append({
-                    "type": "Feature",
-                    "geometry": polygon,
-                    "properties": part_props,
-                })
-
-    payload = {
-        "type": "FeatureCollection",
-        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
-        "features": features,
-    }
-
-    os.makedirs(EXPORT_DIR, exist_ok=True)
-    out_path = os.path.join(EXPORT_DIR, f"{PLANET_NAME}_roads_buffered.json")
-    tmp_path = out_path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as out:
-        json.dump(payload, out, ensure_ascii=False)
-    os.replace(tmp_path, out_path)
-
-    by_type = {}
-    for feature in features:
-        key = feature["properties"].get("road_type") or "(none)"
-        by_type[key] = by_type.get(key, 0) + 1
-
-    size_kb = os.path.getsize(out_path) / 1024.0
     print("-" * 64)
-    print(f"  legacy GeoJSON: {len(features)} polygon(s) → {out_path} "
-          f"({size_kb:.1f} KB)")
-    for key in sorted(by_type):
-        print(f"    {key:<14} {by_type[key]}")
     if skipped_short:
         print(f"    skipped (< 2 vertices)  : {skipped_short}")
-    if skipped_empty_buffer:
-        print(f"    skipped (empty buffer)  : {skipped_empty_buffer}")
     if defaulted_width:
         print(f"    width from road_type    : {defaulted_width}")
 
@@ -440,8 +340,7 @@ def run_export():
 
     print("=" * 64)
     print(f"  ✓ Done. {len(roads)} road(s) exported.")
-    print("    → In Godot nothing to click: chunks read terrainmodifier.pack "
-          "directly. Reopen the scene to regenerate the preview chunks.")
+    print("    → In Godot nothing to click: once published, chunks stream the pack.")
     print("=" * 64)
 
 

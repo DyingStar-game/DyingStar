@@ -53,6 +53,11 @@ var shard_tiles: int = 4096
 ## Dernier niveau contenu dans floor.bin, annoncé par le serveur. 0 = pas de plancher
 ## servi, on retombe alors sur les tuiles isolées.
 var floor_nside_max: int = 0
+## Ce que porte le corps : "" pour l'altitude (tuiles de tile_res² échantillons), "modifiers"
+## pour un pack de modificateurs (corps <planète>.mod, blobs DSMP de taille variable, sans
+## tile_res), "file" pour un fichier entier (corps <planète>.lines : grade_profiles.pack, voir
+## [method fetch_file]). Lu dans l'entrée de canal, écrit par publish_tiles.py.
+var dataset: String = ""
 ## La version vient-elle du manifeste de canal, ou du pointeur par corps ?
 ## Le repli n'a aucune garantie de cohérence entre client et serveur : il faut le voir.
 var from_channel: bool = false
@@ -225,7 +230,10 @@ static func configured_base_url() -> String:
 ## Null couvre les deux cas normaux : aucun service configuré, et service injoignable. Un
 ## service en panne ne doit pas empêcher de jouer — la planète retombe simplement sur son
 ## pack local, qui est le comportement d'aujourd'hui.
-static func for_planet(planet_name: String) -> RemoteTileSource:
+##
+## [param queue_floor] faux laisse le plancher à l'appelant : RemoteModifierPack le récupère
+## lui-même, de façon synchrone, et un second téléchargement concurrent serait du gâchis.
+static func for_planet(planet_name: String, queue_floor: bool = true) -> RemoteTileSource:
 	var url := configured_base_url()
 	if url == "" or planet_name == "":
 		return null
@@ -247,7 +255,7 @@ static func for_planet(planet_name: String) -> RemoteTileSource:
 	src.start()
 	# À l'approche de la planète, pas au menu : une requête, au moment où cela devient
 	# utile. Sur le fil, donc sans jamais retarder l'affichage.
-	if src.floor_nside_max > 0:
+	if src.floor_nside_max > 0 and queue_floor:
 		src._enqueue(0, 0, JOB_FLOOR)
 	print("[RemoteTileSource] '%s' version=%s tile_res=%d n%d..n%d%s%s"
 			% [planet_name, src.version, src.tile_res, src.nside_min, src.nside_max,
@@ -289,7 +297,51 @@ func open_planet(p_base_url: String, p_planet: String) -> bool:
 	nside_max = int(d.get("nside_max", 0))
 	shard_tiles = int(d.get("shard_tiles", 4096))
 	floor_nside_max = int(d.get("floor_nside_max", 0))
-	return version != "" and tile_res > 0 and nside_max > 0
+	dataset = str(d.get("dataset", ""))
+	if dataset == "file":
+		return version != ""  # un fichier entier : ni niveaux ni tuiles
+	# Un pack de modificateurs n'a pas de tile_res : ses tuiles sont de taille variable.
+	return version != "" and (tile_res > 0 or dataset == "modifiers") and nside_max > 0
+
+
+## Objets d'une version déjà demandés et absents du service : demandés une fois par session.
+var _missing_objects: Dictionary = {}
+
+
+## Un objet entier de la version courante ([param object_name], ex. grade_profiles.pack) : le chemin
+## de sa copie dans le cache, téléchargée une fois par version — BLOQUANT, donc à n'appeler qu'au
+## démarrage d'une planète, comme on lisait le fichier embarqué. "" quand le service ne l'a pas.
+## L'objet est servi dans l'enveloppe DSTL d'une tuile : une page d'erreur mise en cache à sa place
+## est rejetée par sa magie, un objet corrompu par son CRC.
+func fetch_object(object_name: String) -> String:
+	if version == "":
+		return ""
+	var path := "%s%s/%s/%s" % [cache_root, planet, version, object_name]
+	if FileAccess.file_exists(path):
+		return path
+	if _missing_objects.has(object_name):
+		return ""
+	var res: Array = _request("%s/%s/%s/%s" % [base_url, planet, version, object_name])
+	var payload := decode_envelope(res[1]) if int(res[0]) == 200 else PackedByteArray()
+	if payload.is_empty() or not AtomicFile.write_buffer(path, payload):
+		_missing_objects[object_name] = true
+		return ""
+	return path
+
+
+## Fichier [param object_name] du corps [param body] (ex. "tarsis_3.lines", publié par
+## publish_tiles.py en mode fichier) : chemin de sa copie en cache, "" sans service ou sans ce
+## corps. Bloquant au premier appel d'une version ; aucun fil de téléchargement n'est démarré, et
+## les versions précédentes du corps sont purgées.
+static func fetch_file(body: String, object_name: String) -> String:
+	var url := configured_base_url()
+	if url == "" or body == "":
+		return ""
+	var src := RemoteTileSource.new()
+	if not src.open_planet(url, body) or src.dataset != "file":
+		return ""
+	src.purge_other_versions()
+	return src.fetch_object(object_name)
 
 
 ## Répertoire d'un shard, côté service.
@@ -563,11 +615,31 @@ func purge_other_versions() -> int:
 	return removed
 
 
+## Les sources dont les fils tournent, pour [method stop_all]. Une source arrêtée en sort.
+static var _running: Array[RemoteTileSource] = []
+static var _running_mutex: Mutex = Mutex.new()
+
+
+## Arrête les fils de toutes les sources encore démarrées. Appelé à la sortie (GameOrchestrator._exit_tree) :
+## personne n'arrête le pack de modificateurs partagé (RemoteModifierPack.shared_for), ni la source d'une
+## PlanetData sans PlanetTerrain (tests, carte stellaire). Leurs fils tournaient encore quand le moteur
+## démontait ses singletons ("Cannot call method 'get_ticks_msec' on a null value", puis signal 11).
+static func stop_all() -> void:
+	_running_mutex.lock()
+	var running := _running.duplicate()
+	_running_mutex.unlock()
+	for src: RemoteTileSource in running:
+		src.stop()
+
+
 ## Démarre les fils de téléchargement. Idempotent.
 func start() -> void:
 	if not _threads.is_empty():
 		return
 	_quit = false
+	_running_mutex.lock()
+	_running.append(self)
+	_running_mutex.unlock()
 	for _i in maxi(download_threads, 1):
 		var t := Thread.new()
 		t.start(_worker)
@@ -586,6 +658,9 @@ func stop() -> void:
 	for t in _threads:
 		t.wait_to_finish()
 	_threads.clear()
+	_running_mutex.lock()
+	_running.erase(self)
+	_running_mutex.unlock()
 	_mutex.lock()
 	_links.clear()
 	_mutex.unlock()

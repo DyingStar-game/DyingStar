@@ -3,6 +3,9 @@ const Builder = preload("res://scenes/planet/lava/lava_planet_patch.gd")
 const Runtime = preload("res://scenes/planet/lava/lava_planet_runtime.gd")
 const CoreScript = preload("res://scenes/planet/lava/lava_fixed_core.gd")
 const CacheRules = preload("res://scenes/planet/lava/lava_terrain_cache.gd")
+## Longest wait (s) for a volcano's elevation and modifier tiles: the planet is read from the tile service only, and a
+## runner starts with an empty cache.
+const TERRAIN_WAIT_S := 180.0
 var failures := 0
 
 
@@ -15,7 +18,7 @@ func check(ok: bool, text: String) -> void:
 func _ready() -> void:
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest()
-	data.ensure_queries_loaded()
+	data.connect_tile_service()
 	data.warm_mountains()
 	data.has_lava()
 	data.warm_grade_profiles()
@@ -52,7 +55,9 @@ func _ready() -> void:
 				continue
 			seen[key] = true
 			check(volcano.tilt == 0.0, "QGIS spillway tilt is removed from decoded volcano")
-			var candidate := Builder.build(data, volcano) if packet.is_empty() else {}
+			var candidate := {}
+			if packet.is_empty() and await wait_terrain(data, volcano):
+				candidate = Builder.build(data, volcano)
 			print("LAVA_SITE ", key, " crater=", volcano.rc, " tilt=", volcano.tilt,
 				" result=", "ok" if not candidate.is_empty() else "not sampled")
 			if packet.is_empty() and not candidate.is_empty():
@@ -107,6 +112,19 @@ func _ready() -> void:
 	replica.queue_free()
 	print("LAVA_PLANET_RESULT failures=", failures)
 	get_tree().quit(0 if failures == 0 else 1)
+
+
+## Wait until every tile the patch of [param volcano] samples is resident; false after TERRAIN_WAIT_S. The download
+## threads fetch them: the main thread only asks again every frame.
+func wait_terrain(data: PlanetData, volcano: VolcanoRelief.Volcano) -> bool:
+	var deadline := Time.get_ticks_msec() + int(TERRAIN_WAIT_S * 1000.0)
+	while not Builder.terrain_ready(data, volcano):
+		if Time.get_ticks_msec() > deadline:
+			print("LAVA_SITE %s tiles still missing after %.0f s: %d of %d"
+				% [VolcanoFeatures.key_of(volcano), TERRAIN_WAIT_S, Builder.last_missing, Builder.last_required])
+			return false
+		await get_tree().process_frame
+	return true
 
 
 func check_terrain_overlay_lifecycle(data: PlanetData, packet: Dictionary) -> void:

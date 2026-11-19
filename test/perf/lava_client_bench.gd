@@ -30,7 +30,7 @@ func _run() -> void:
 	var frames := int(_arg("frames", 400.0))
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest()
-	data.ensure_queries_loaded()
+	data.connect_tile_service()
 	data.warm_mountains()
 	var volcano: VolcanoRelief.Volcano = null
 	for ip in 12:

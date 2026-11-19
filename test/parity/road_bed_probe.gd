@@ -11,6 +11,7 @@ func _ready() -> void:
 	data.chunk_heightmaps_dir = "assets/qgis/export/tarsis_8_chunks"
 	data.chunk_heightmap_res = 32
 	data.apply_chunk_manifest()
+	data.connect_tile_service()
 	data.warm_grade_profiles()
 	var road := {}
 	for r in data.get_whole_roads():

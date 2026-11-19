@@ -10,7 +10,6 @@ extends RefCounted
 ## The zone a point falls in is decided here by its outline, not by the game's [code]first_zone_at[/code]
 ## — which resolves a great deal more than a colour and is, on this export, silent past n256.
 
-const PACK_PATH: String = "%s/%s_chunks/terrainmodifier.pack"
 
 var body_key: String = ""
 ## The rock this body falls back on where no zone names one. Read from the planet's scene by the chart.
@@ -43,7 +42,12 @@ func tile_of(nside: int, ipix: int) -> Dictionary:
 	var ridges: Array = []
 	var volcanoes: Array = []
 	var mountain_set: RefCounted = null
-	if _open() and _pack.has_tile(nside, ipix):
+	var state: int = _pack.tile_state(nside, ipix) if _open() else ModifierPack.TILE_ABSENT
+	if state == ModifierPack.TILE_PENDING:
+		# Streaming in: answered as bare ground for now, and NOT remembered — asked again next time.
+		return {"fallback": default_rock, "patches": patches, "mountains": mountains, "ridges": ridges,
+				"volcanoes": volcanoes, "mountain_set": null, "pending": true}
+	if state == ModifierPack.TILE_READY:
 		# One read and one decode for both questions. The pack prepares the massifs and crests as
 		# MountainRelief's own Zone and Ridge objects, so there is nothing to convert here.
 		var tile: Dictionary = _pack.decode_tile(_pack.read_tile(nside, ipix), m_per_deg,
@@ -78,9 +82,9 @@ func tile_of(nside: int, ipix: int) -> Dictionary:
 
 
 func close() -> void:
-	if _pack != null:
-		_pack.close()
-		_pack = null
+	if _pack != null and not _pack.is_streamed():
+		_pack.close()  # a streamed pack is shared with the terrain: never closed here
+	_pack = null
 	_known.clear()
 	_tried = false
 	body_key = ""
@@ -95,8 +99,5 @@ func _open() -> bool:
 	if _tried or body_key == "":
 		return false
 	_tried = true
-	var made := ModifierPack.new()
-	if not made.open(PACK_PATH % [StarMapRelief.EXPORT_ROOT, body_key]):
-		return false
-	_pack = made
-	return true
+	_pack = RemoteModifierPack.shared_for(body_key)
+	return _pack != null

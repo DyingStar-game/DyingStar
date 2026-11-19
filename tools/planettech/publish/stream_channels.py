@@ -42,6 +42,7 @@ Run:
     python3 tools/planettech/publish/stream_channels.py --dist DIR --to dev
     python3 tools/planettech/publish/stream_channels.py --dist DIR --to prod --planet tarsis_3
     python3 tools/planettech/publish/stream_channels.py --dist DIR --gc --dry-run
+    python3 tools/planettech/publish/stream_channels.py --dist DIR --adopt --planet tarsis_3
 """
 
 import argparse
@@ -192,18 +193,65 @@ def referenced(dist):
     return live
 
 
+def _bodies(dist):
+    for planet in sorted(os.listdir(dist)):
+        if planet != "channels" and os.path.isdir(os.path.join(dist, planet)):
+            yield planet
+
+
+def untracked(dist):
+    """Corps qu'AUCUN canal ne cite : publiés avant les canaux, ou à la main.
+
+    Le gc ne les touche pas. Faute de canal, rien ne dit laquelle de leurs versions est
+    servie (les clients les lisent par latest.json) : tout effacer couperait le terrain.
+    `--adopt` les inscrit dans unstable, après quoi ils suivent le cycle normal.
+    """
+    cited = {planet for planet, _v in referenced(dist)}
+    return [planet for planet in _bodies(dist) if planet not in cited]
+
+
+def adopt(dist, planets, channel=PUBLISH_CHANNEL):
+    """Inscrit dans [channel] la version que désigne `<corps>/latest.json`. Rend
+    (adoptés, problèmes), tout ou rien comme une promotion.
+
+    Pour un corps publié avant les canaux : sans cela il reste hors cycle, ni promu ni
+    nettoyé. La version n'est pas recopiée, seul le pointeur entre dans le canal.
+    """
+    problems = []
+    found = []
+    for planet in planets:
+        try:
+            with open(os.path.join(dist, planet, "latest.json"), encoding="utf-8") as fh:
+                entry = json.load(fh)
+        except (OSError, ValueError) as exc:
+            problems.append("%s : latest.json illisible (%s)" % (planet, exc))
+            continue
+        bad = tree_problems(dist, planet, entry)
+        if bad:
+            problems.extend(bad)
+            continue
+        found.append((planet, entry))
+    if problems:
+        return [], problems
+    for planet, entry in found:
+        record(dist, channel, planet, entry)
+    return [(planet, entry["data_version"]) for planet, entry in found], []
+
+
 def dead_versions(dist):
     """Répertoires de version qu'aucun canal ne cite. Rend [(corps, version, chemin)].
 
     Le pointeur `latest.json` par corps est délibérément IGNORÉ : il suit la dernière
     publication, donc s'il faisait autorité une version publiée puis abandonnée serait
-    immortelle. Ce sont les canaux qui décident.
+    immortelle. Ce sont les canaux qui décident — pour les corps qu'au moins un canal
+    cite. Un corps qu'aucun ne cite (voir untracked) est laissé entier.
     """
     live = referenced(dist)
+    cited = {planet for planet, _v in live}
     dead = []
-    for planet in sorted(os.listdir(dist)):
+    for planet in _bodies(dist):
         pdir = os.path.join(dist, planet)
-        if planet == "channels" or not os.path.isdir(pdir):
+        if planet not in cited:
             continue
         for version in sorted(os.listdir(pdir)):
             vdir = os.path.join(pdir, version)
@@ -267,6 +315,8 @@ def describe(dist):
         for planet in sorted(planets):
             out.append("            %-24s %s" % (
                 planet, planets[planet].get("data_version", "?")))
+    for planet in untracked(dist):
+        out.append("hors canal %-21s lu par latest.json ; --adopt --planet %s" % (planet, planet))
     return out
 
 
@@ -280,11 +330,31 @@ def main(argv=None):
     ap.add_argument("--gc", action="store_true",
                     help="supprime les versions qu'aucun canal ne cite. Combiner avec "
                          "--dry-run pour ne que les lister (fortement conseillé d'abord).")
+    ap.add_argument("--adopt", action="store_true",
+                    help="inscrit dans %s la version latest.json des --planet qu'aucun "
+                         "canal ne cite (publiés avant les canaux)" % PUBLISH_CHANNEL)
     ap.add_argument("--dry-run", action="store_true",
                     help="dit ce qui serait promu, sans rien écrire")
     args = ap.parse_args(argv)
 
+    if args.adopt:
+        if not args.planet:
+            print("--adopt demande --planet <corps> (voir --list : « hors canal »)")
+            return 1
+        done, problems = adopt(args.dist, args.planet)
+        for p in problems:
+            print("  BLOQUE %s" % p)
+        if problems:
+            print("Rien adopté.")
+            return 1
+        for planet, version in done:
+            print("  %s : %s -> %s" % (planet, version, PUBLISH_CHANNEL))
+        return 0
+
     if args.gc:
+        for planet in untracked(args.dist):
+            print("  ignoré %-24s cité par aucun canal (--adopt --planet %s pour l'y inscrire)"
+                  % (planet, planet))
         found = collect(args.dist, dry_run=args.dry_run)
         if not found:
             print("Aucune version morte : tout ce qui est publié est cité par un canal.")

@@ -15,7 +15,6 @@ extends StarMapTileLines
 ## The life of those lines — which tiles, laid when, kept how long — is [StarMapTileLines]'s.
 
 ## Where a body's modifier pack lives, beside its height tiles.
-const PACK_PATH: String = "%s/%s_chunks/terrainmodifier.pack"
 
 ## What each kind of way is drawn in. Bright enough to hold against sunlit ground, and distinct from
 ## one another rather than merely from the terrain: the point of showing a railway is that it is not a
@@ -94,10 +93,8 @@ func _available() -> bool:
 		return _pack.is_open()
 	if body_key == "":
 		return false
-	_pack = ModifierPack.new()
-	if not _pack.open(PACK_PATH % [StarMapRelief.EXPORT_ROOT, body_key]):
-		return false
-	return true
+	_pack = RemoteModifierPack.shared_for(body_key)
+	return _pack != null and _pack.is_open()
 
 
 ## On a worker when the body's PlanetData is there to sample, on this thread otherwise, where the
@@ -124,9 +121,9 @@ func _laying() -> Array:
 
 
 func _release() -> void:
-	if _pack != null:
-		_pack.close()
-		_pack = null
+	if _pack != null and not _pack.is_streamed():
+		_pack.close()  # a streamed pack is shared with the terrain: never closed here
+	_pack = null
 	_spans = {}
 	_spans_from = Vector2i(-1, -1)
 	_drawn_spans = {}
@@ -267,8 +264,11 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 	# pixel beside a bright way on dark ground is not seen.
 	var strips := PackedVector3Array()
 	var strip_colours := PackedColorArray()
-	if not pack.has_tile(nside, ipix):
-		return [points, colours]
+	match pack.tile_state(nside, ipix):
+		ModifierPack.TILE_PENDING:
+			return []  # streaming in: laid again on a later refresh (StarMapTileLines._laying)
+		ModifierPack.TILE_ABSENT:
+			return [points, colours]
 	var tile: Dictionary = pack.decode_tile(pack.read_tile(nside, ipix), 0.0, ModifierPack.MASK_ROAD)
 	# One step of the tile's mesh, as an angle: no piece of a way is drawn longer than that.
 	var step: float = mesh_step(nside)

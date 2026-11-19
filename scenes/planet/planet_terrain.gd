@@ -543,6 +543,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# height range) before anything reads these values below.
 	if data.chunk_heightmaps_dir != "":
 		data.apply_chunk_manifest()
+		# Every tile of the planet comes from the tile service, through its disk cache — elevation
+		# and modifiers (roads, biomes, mountains…) alike; no local pack is read. Attached before
+		# anything samples a height or opens the modifiers (the cache key below reads their
+		# fingerprints). Null without a reachable service: the planet then runs on the global map.
+		data.remote_source = RemoteTileSource.for_planet(data.planet_name)
+		_warn_version_mismatch(data)
+		data.attach_remote_modifiers()
 	if not _pending_village_beds.is_empty():
 		_replay_pending_village_beds.call_deferred()
 
@@ -839,8 +846,6 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_cache_version += "_pd" + PadSettings.signature()
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
-	# Streaming : null si aucun service n'est configuré — la planète lit son pack local.
-	planet_data.remote_source = RemoteTileSource.for_planet(planet_data.planet_name)
 	# The rail modules, loaded here on the main thread: the mesh tasks lay them (RailwayTrack.stamp_rails).
 	if not server_mode and planet_data.has_railways():
 		RailwayTrack.module_meshes()
@@ -926,9 +931,6 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		else:
 			push_warning("[PlanetTerrain] no safety-net mesh available for '%s'" % planet_data.planet_name)
 
-	# Pre-load biome/road queries on the main thread so that background mesh
-	# generation tasks see them as purely read-only (no lazy-init side-effects).
-	planet_data.ensure_queries_loaded()
 	# Procedural mountains: resolve the planet gate and the debug features on
 	# THIS thread, before the bridge spans and grade profiles below read the
 	# sampler — they must stand on the mountains too.
@@ -4624,15 +4626,6 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	var nside: int = info.nside
 	var ipix: int = info.ipix
 
-	# Pre-load road tile files on the main thread so that worker threads
-	# do not trigger ResourceLoader.load() inside BiomeQuery
-	# (which re-enters the WorkerThreadPool and causes heap corruption).
-	if nside > 0:
-		var _tile_bb := BiomeQuery._healpix_lonlat_bbox(nside, ipix)
-		var _rq = pd.get_road_query()
-		if _rq and _rq.is_loaded():
-			_rq.preload_region(_tile_bb[0], _tile_bb[1])
-
 	# result_ref[0] will be set to the ArrayMesh (or null on failure),
 	# result_ref[1] to the unpublished disk-cache copy (see _publish_cache_write).
 	var result_ref: Array = [null, ""]
@@ -6228,6 +6221,19 @@ func _chunk_key_hp(nside: int, ipix: int) -> String:
 ## the populate zones cached from the recipe (v7+).
 ## Returns an empty Array if zones are not available (pre-v7 recipes or
 ## recipe not yet loaded).
+## The local manifest.json (radius, nside, tile_res, data_version) and the elevation version the
+## service serves should be the same export. They can drift: a re-export committed but not yet
+## published, or published but not pulled. Said loudly, since the cache key and the geometry then
+## follow the manifest while the tiles follow the service.
+func _warn_version_mismatch(data: PlanetData) -> void:
+	if data.remote_source == null or data.chunk_data_version == "":
+		return
+	if data.remote_source.version != data.chunk_data_version:
+		push_warning("[PlanetTerrain] '%s': manifest.json is data_version %s but the tile service serves %s "
+				% [data.planet_name, data.chunk_data_version, data.remote_source.version]
+				+ "(channel %s) — pull the export or publish it." % StreamChannel.configured_name())
+
+
 func _get_chunk_populate_zones(info: Dictionary) -> Array:
 	var nside: int = info.get("nside", 0)
 	var ipix: int = info.get("ipix", -1)

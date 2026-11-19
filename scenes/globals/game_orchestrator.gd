@@ -101,6 +101,12 @@ func _ready():
 		get_tree().root.add_child.call_deferred(instance)
 		change_game_state(GameStates.UNIVERSE_MENU)
 
+## Every way out of the process passes here, the server's and the tests' get_tree().quit() included, while the
+## engine's singletons are still alive: join the tile service's download threads now (RemoteTileSource.stop_all).
+func _exit_tree() -> void:
+	RemoteTileSource.stop_all()
+
+
 func _notification(what):
 	match what:
 		NOTIFICATION_WM_CLOSE_REQUEST:

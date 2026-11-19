@@ -19,7 +19,7 @@ func _ready() -> void:
 	await _test_rock_cleanup()
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest()
-	data.ensure_queries_loaded()
+	data.connect_tile_service()
 	data.warm_mountains()
 	var seen := {}
 	var smoking := 0

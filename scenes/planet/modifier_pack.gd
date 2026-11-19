@@ -159,6 +159,12 @@ const RADIAL_SIZE := 20
 ## Bytes per polyline point: i32 lon | i32 lat | f32 along.
 const POINT_SIZE := 12
 
+## States of [method tile_state]. A local pack only ever answers ABSENT or READY; a streamed one
+## (RemoteModifierPack) answers PENDING while a tile is published but not yet on disk.
+const TILE_ABSENT := 0
+const TILE_PENDING := 1
+const TILE_READY := 2
+
 ## Populate zone coverage codes.
 const COVERAGE_FULL := 0
 const COVERAGE_PARTIAL := 1
@@ -217,14 +223,7 @@ func open(res_path: String) -> bool:
 
 	var manifest_txt := fa.get_buffer(json_len).get_string_from_utf8()
 	var parsed: Variant = JSON.parse_string(manifest_txt)
-	_manifest = parsed if typeof(parsed) == TYPE_DICTIONARY else {}
-	var raw_strings: Array = _manifest.get("strings", [])
-	_strings = PackedStringArray()
-	_strings.resize(raw_strings.size())
-	for i in raw_strings.size():
-		_strings[i] = String(raw_strings[i])
-	var road_part: Dictionary = (_manifest.get("parts", {}) as Dictionary).get("road", {})
-	_road_layout = int(road_part.get("record_layout", 1))
+	_apply_manifest(parsed if typeof(parsed) == TYPE_DICTIONARY else {})
 
 	var file_len := fa.get_length()
 	if _index_start < 32 or _blob_start < _index_start or _blob_start > file_len:
@@ -276,6 +275,22 @@ func open(res_path: String) -> bool:
 	return true
 
 
+## Take [param manifest] as this pack's: the string table and the per-kind decoding switches come
+## from it. Shared with RemoteModifierPack, whose manifest is published beside the tiles.
+func _apply_manifest(manifest: Dictionary) -> void:
+	_manifest = manifest
+	var raw_strings: Array = _manifest.get("strings", [])
+	_strings = PackedStringArray()
+	_strings.resize(raw_strings.size())
+	for i in raw_strings.size():
+		_strings[i] = String(raw_strings[i])
+	var parts: Variant = _manifest.get("parts", {})
+	var road_part: Variant = (parts as Dictionary).get("road", {}) \
+			if typeof(parts) == TYPE_DICTIONARY else {}
+	_road_layout = int((road_part as Dictionary).get("record_layout", 1)) \
+			if typeof(road_part) == TYPE_DICTIONARY else 1
+
+
 func close() -> void:
 	_handles_mutex.lock()
 	for tid: int in _handles:
@@ -312,6 +327,34 @@ func get_levels() -> PackedInt64Array:
 	return _levels_sorted
 
 
+## True when the POPULATE part writes a zone FULL only on the coarsest tile it covers and nothing
+## under it, so a tile's zones include its ancestors' FULL ones (PlanetData.populate_zones_at).
+func populate_inherits() -> bool:
+	var parts: Variant = _manifest.get("parts", {})
+	if typeof(parts) != TYPE_DICTIONARY:
+		return false
+	var part: Variant = (parts as Dictionary).get("populate", {})
+	return typeof(part) == TYPE_DICTIONARY and bool((part as Dictionary).get("full_inherit", false))
+
+
+## A tile's populate zones once its ancestors' are folded in: [param own] plus the FULL zones of each
+## list of [param ancestor_lists] (the decoded populate_zones of the parent, grand-parent…), sorted by
+## their [code]_rank[/code] so "first match wins" keeps the export's overlap order. Returns
+## [param own] itself when no ancestor contributes. Pure and static.
+static func merge_inherited_zones(own: Array, ancestor_lists: Array) -> Array:
+	var merged: Array = []
+	for zones: Variant in ancestor_lists:
+		for zone: Dictionary in (zones as Array):
+			if str(zone.get("coverage", "")) == "full":
+				merged.append(zone)
+	if merged.is_empty():
+		return own
+	merged.append_array(own)
+	merged.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("_rank", 0)) < int(b.get("_rank", 0)))
+	return merged
+
+
 ## Deepest nside at which [param kind] was baked, from manifest["kind_max_nside"].
 ## Returns 0 when the kind is absent from this pack.
 func max_nside_for_kind(kind: int) -> int:
@@ -339,6 +382,18 @@ static func kind_name(kind: int) -> String:
 ## True when this pack holds a (non-empty) tile for [param ipix] at [param nside].
 func has_tile(nside: int, ipix: int) -> bool:
 	return _find_entry(nside, ipix).x >= 0
+
+
+## Whether tile ([param nside], [param ipix]) can be read now: TILE_READY (read_tile has it),
+## TILE_ABSENT (it holds nothing, now and later) or TILE_PENDING (streamed, still on its way —
+## the caller defers whatever depends on it). Never blocks.
+func tile_state(nside: int, ipix: int) -> int:
+	return TILE_READY if has_tile(nside, ipix) else TILE_ABSENT
+
+
+## True for a pack whose tiles arrive over the network (RemoteModifierPack).
+func is_streamed() -> bool:
+	return false
 
 
 ## Every non-empty ipix at [param nside], ascending.
@@ -762,13 +817,16 @@ func _decode_populate(b: PackedByteArray, off: int, count: int) -> Array:
 		var prop_count := b.decode_u8(p + 3)
 		var biome_index := b.decode_s32(p + 4)
 		var vertex_count := b.decode_u16(p + 8)
-		# p + 10 : u16 reserved — keeps biome_index 4-aligned.
+		# p + 10 : u16 rank — the zone's place in the first-match order, which
+		# populate_zones_at() re-sorts by once ancestors' zones are merged in.
+		var rank := b.decode_u16(p + 10)
 		p += 12
 
 		var zone := {
 			"biome_type": biome_type,
 			"biome_index": biome_index,
 			"coverage": _coverage_name(coverage_code),
+			"_rank": rank,
 		}
 		for _pi in prop_count:
 			var key := _sid(b.decode_u16(p))

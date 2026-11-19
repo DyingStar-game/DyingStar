@@ -6,7 +6,7 @@ func _ready() -> void:
 func _run() -> void:
 	var simulated := not "--authored-lava" in OS.get_cmdline_user_args()
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
-	data.apply_chunk_manifest(); data.ensure_queries_loaded()
+	data.apply_chunk_manifest(); data.connect_tile_service()
 	var key := data.grade_bake_key()
 	var ok := data.has_lava() == (not simulated)
 	ok = ok and data.get_whole_lava().is_empty() == simulated

@@ -32,11 +32,11 @@ func _ready() -> void:
 func _run() -> void:
 	var data: PlanetData = SystemScenes.root_properties("res://scenes/systems/tarsis/tarsis_3.tscn").planet_data.duplicate(true)
 	data.apply_chunk_manifest()
+	# Elevation and modifiers (the volcanoes among them) come from the tile service only: no pack is read from disk.
+	data.connect_tile_service()
 	if "--remote-tiles" in OS.get_cmdline_user_args():
-		# As a game server: elevation from the tile service, POIs spared by the cracks (PlanetTerrain.initialize).
-		data.remote_source = RemoteTileSource.for_planet(data.planet_name)
+		# As a game server: POIs spared by the cracks (PlanetTerrain.initialize).
 		data.set_crack_exclusions(PlanetTerrain.poi_crack_exclusions(data.planet_name))
-	data.ensure_queries_loaded()
 	data.warm_mountains()
 	var volcano: VolcanoRelief.Volcano = null
 	for ip in 12:

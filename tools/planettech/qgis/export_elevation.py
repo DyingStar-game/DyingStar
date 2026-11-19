@@ -757,6 +757,10 @@ def run_export():
         _sample_norm, _loose_dir if WRITE_LOOSE_TILES else None)
     os.replace(tmp_path, pack_path)
     pack_mb = os.path.getsize(pack_path) / (1 << 20)
+    # The game reads only the tile service: publish the pack there (background, when a target
+    # is configured in export_config.ini [publish] — see tools/planettech/publish/publish_remote.py).
+    import link_modifiers
+    link_modifiers.auto_publish(pack_path)
 
     print("=" * 64)
     print(f"  ✓ Done. {written} tiles ({len(levels)} levels) → "

@@ -179,28 +179,19 @@ func test_concurrent_reads_from_threads() -> void:
 # ===================================================================
 
 
-func test_planet_data_reads_from_pack() -> void:
+func test_planet_data_never_reads_a_local_pack() -> void:
+	# Tiles come only from the tile service, through its cache: a heights.pack lying in
+	# chunk_heightmaps_dir — here the one this suite wrote — is not a source any more, and its
+	# embedded manifest no longer stands in for a missing manifest.json.
 	var pd := PlanetData.new()
 	pd.chunk_heightmaps_dir = PACK_DIR
-	# No loose manifest.json in PACK_DIR → must fall back to the manifest
-	# embedded in heights.pack.
-	assert_true(pd.apply_chunk_manifest(), "manifest applied from pack")
-	assert_eq(pd.export_nside, NSIDE_MAX)
-	assert_eq(pd.export_nside_min, NSIDE_MIN)
-	assert_eq(pd.chunk_heightmap_res, TILE_RES)
-	assert_true(pd.chunk_is_pyramid)
-	# Coarse (preloaded) and fine (file-handle) tiles decode to FORMAT_RF
-	# images carrying the exact marker values.
-	for nside: int in [NSIDE_MIN, NSIDE_MAX]:
-		var ipix := 12 * nside * nside - 1
-		var img := pd.load_chunk_heightmap(ipix, nside)
-		assert_not_null(img, "image for n%d/f%d" % [nside, ipix])
-		if img == null:
-			continue
-		assert_eq(img.get_format(), Image.FORMAT_RF)
-		assert_eq(img.get_width(), TILE_RES)
-		assert_almost_eq(img.get_pixel(0, 0).r, _tile_value(nside, ipix),
-				0.001, "decoded height n%d/f%d" % [nside, ipix])
+	assert_true(FileAccess.file_exists(PACK_PATH), "the local pack is there")
+	assert_false(pd.apply_chunk_manifest(), "no manifest.json: the pack's own is not read")
+	pd.export_nside = NSIDE_MAX
+	pd.export_nside_min = NSIDE_MIN
+	pd.chunk_heightmap_res = TILE_RES
+	pd.chunk_is_pyramid = true
+	assert_null(pd.load_chunk_heightmap(0, NSIDE_MIN), "no tile source: no tile, pack or not")
 
 
 func test_planet_data_missing_tile_dir_falls_back_to_null() -> void:
