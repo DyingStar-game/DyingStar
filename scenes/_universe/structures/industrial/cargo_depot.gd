@@ -69,6 +69,9 @@ var uuid: String:
 		if _sync != null:
 			_sync.uuid = value
 
+## What the storekeeper says of a crate left on the counter because the warehouse buys no more of it.
+const SAY_WAREHOUSE_FULL := "%%NPC_WAREHOUSE_FULL"
+
 # is there a player in reception area?
 var reception_players: Array = []
 
@@ -369,6 +372,18 @@ func _server_player_exists(uuid: String) -> bool:
 	return agent.players_list.has(uuid)
 
 
+## SERVER: the storekeeper holding the reception says [param line], a translation key: it travels as it
+## is and each player reads it in their own language (PlayerClient.said_text). Nothing when nobody holds
+## the reception: the crate just stays on the counter.
+func _reception_says(line: String) -> void:
+	var agent = NetworkOrchestrator.network_agent
+	if reception_owner == "" or agent == null or not ("players_list" in agent):
+		return
+	var keeper: Variant = agent.players_list.get(reception_owner)
+	if is_instance_valid(keeper) and keeper.has_method("server_action_received"):
+		keeper.server_action_received({"action": "dialog", "text": line})
+
+
 ## Server-authoritative: a PNJ asks to take the reception role. Granted only when nobody owns it
 ## (single-threaded server, so this read-check-set is atomic). Returns true when this PNJ is the
 ## owner afterwards (freshly granted or it already held it), false when someone else owns it.
@@ -546,6 +561,11 @@ func _on_box_counter_body_entered(body: Node3D) -> void:
 	var depositor := WarehouseDelivery.depositor_of(body, null)
 	if not await WarehouseDelivery.may_deposit(body, depositor):
 		print("[cargo_depot] %s left on the counter: %s may not deposit it" % [id, depositor])
+		return
+	# Nor one the warehouse buys no more: shelved by a storekeeper, it would be given away.
+	if is_instance_valid(body) and WarehouseDelivery.refuses(uuid, body.get("content")):
+		print("[cargo_depot] %s left on the counter: the warehouse buys no more of it" % id)
+		_reception_says(SAY_WAREHOUSE_FULL)
 		return
 	var counter := get_node_or_null("Reception Desk/PNJBoxDepositPlayer") as Area3D
 	if not is_instance_valid(body) or pnj_reception_deposited_item.has(id) \

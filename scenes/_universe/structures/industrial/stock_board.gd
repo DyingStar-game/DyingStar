@@ -130,17 +130,7 @@ static func stock_rows(crates: Array) -> Array:
 ## The goods a warehouse buys no more, from the simulator's view of it ([param data], its `stocks`):
 ## those it holds its capacity of, or more. A good without a capacity is always bought. Pure, for the tests.
 static func full_goods(data: Dictionary) -> Array:
-	var full: Array = []
-	var stocks: Variant = data.get("stocks")
-	if not (stocks is Array):
-		return full
-	for stock: Variant in stocks:
-		if not (stock is Dictionary) or (stock as Dictionary).get("capacity") == null:
-			continue
-		var good := str((stock as Dictionary).get("goodType", (stock as Dictionary).get("code", "")))
-		if good != "" and float((stock as Dictionary).get("quantity", 0)) >= float((stock as Dictionary).get("capacity")):
-			full.append(good)
-	return full
+	return WarehouseDelivery.full_goods(data)  # the server refuses the same goods at the shelf
 
 
 ## [param rows] (stock_rows) with `full` set on those of the goods in [param full]. Pure, for the tests.
