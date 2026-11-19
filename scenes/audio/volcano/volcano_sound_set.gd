@@ -74,6 +74,9 @@ extends Resource
 @export_range(0.0, 600.0, 1.0) var explosion_repeat_s: float = 35.0
 
 @export_group("Tremor")
+## Speed (m/s) of a blast through the ground: the view shakes distance / this late, well before the sound
+## arrives. Lower = the shake and the sound closer together.
+@export_range(340.0, 8000.0, 10.0) var ground_speed_m_s: float = 3000.0
 ## The ground shakes the view at its full strength up to this distance (m) from the vent.
 @export_range(1.0, 50000.0, 1.0) var tremor_full_m: float = 2500.0
 ## No shake of the view beyond this distance (m).

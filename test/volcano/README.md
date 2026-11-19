@@ -247,7 +247,8 @@ le grondement tout de suite, puis l'explosion suivante. Un panache seul ne fait 
 
 - **Tremblement** : à moins de 8 km du cratère (plein effet sous 2,5 km), la vue d'un
   joueur au sol tremble par vagues de quelques secondes pendant l'éruption, et chaque
-  explosion donne une secousse. Seuls les décalages de la caméra bougent (`h_offset`,
+  explosion donne une secousse, sentie avant d'être entendue : le sol la porte à
+  3 km/s, l'air à 340 m/s (à 3 km, 1 s contre 9 s). Seuls les décalages de la caméra bougent (`h_offset`,
   `v_offset`), jamais sa position. Une vue zoomée (le DataPad lu au poignet) ne tremble pas.
 
 Les niveaux, les portées et les durées se règlent dans

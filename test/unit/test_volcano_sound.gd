@@ -105,6 +105,8 @@ func test_the_ground_shakes_the_view_near_the_volcano_only() -> void:
 		shaking += int(wave >= 0.5)
 	assert_gt(still, 200, "the tremor comes in waves: the ground is still most of the time")
 	assert_gt(shaking, 60, "and shakes for a while")
+	assert_lt(Acoustics.delay_s(3000.0, s.ground_speed_m_s) + 5.0, Acoustics.delay_s(3000.0, s.sound_speed_m_s),
+			"a blast is felt in the feet seconds before it is heard")
 	assert_eq(Sound.steady_share(12.0), 0.0, "the DataPad read on the wrist does not shake")
 	assert_eq(Sound.steady_share(75.0), 1.0, "the walking view does")
 

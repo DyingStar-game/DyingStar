@@ -44,6 +44,8 @@ static var _alive: Array[VolcanoSound] = []
 ## Time of the last blast played, by volcano key: the terrain rebuilds a volcano's nodes as the listener
 ## moves, and a new node must not play again the blast the one before just played.
 static var _played: Dictionary = {}
+## The same for the kicks of the ground, which come first.
+static var _felt: Dictionary = {}
 
 var sounds: SoundSet
 var _plume: VolcanoPlume
@@ -58,7 +60,7 @@ var _elapsed: float = UPDATE_S
 var _air_elapsed: float = AIR_S
 var _air: float = 0.0
 var _last_take: AudioStream = null
-var _rumble_now: float = 0.0
+var _ground_level: float = 0.0
 var _tremor: float = 0.0
 var _kick: float = 0.0
 var _shaken: Camera3D = null
@@ -319,13 +321,9 @@ func _hear(cam: Camera3D) -> void:
 			_dist, sounds.muffle_near_m, sounds.muffle_far_m, sounds.reverb_near, sounds.reverb_far)
 	_drive(_steam, level_db(sounds.steam_db, Acoustics.gain_db(_dist, sounds.steam_full_m, sounds.steam_range_m,
 			sounds.far_db), 0.0 if model.dormant else 1.0, _air))
-	_rumble_now = rumble_level(window, heard, sounds.build_up_s, sounds.rumble_before, sounds.rumble_rise_s)
 	_drive(_rumble, level_db(sounds.rumble_db + boost, Acoustics.gain_db(_dist, sounds.rumble_full_m,
-			sounds.rumble_range_m, sounds.far_db), _rumble_now, _air))
-	_tremor = 0.0
-	if _voice == 0 and _dist < sounds.tremor_range_m:
-		if _plume.height_over_ground(_plume.to_local(cam.global_position)) < GROUND_M:
-			_tremor = tremor_share(_dist, sounds.tremor_full_m, sounds.tremor_range_m)
+			sounds.rumble_range_m, sounds.far_db), rumble_level(window, heard, sounds.build_up_s,
+			sounds.rumble_before, sounds.rumble_rise_s), _air))
 	_drive(_cracks, level_db(sounds.cracks_db + boost, Acoustics.gain_db(_dist, sounds.cracks_full_m,
 			sounds.cracks_range_m, sounds.far_db), cracks_level(window, heard, sounds.build_up_s,
 			sounds.cracks_fade_s), _air))
@@ -335,9 +333,32 @@ func _hear(cam: Camera3D) -> void:
 	if index >= 0:
 		_played[model.volcano_key] = blast_time_of(window, index, sounds.explosion_repeat_s, salt)
 		var drop: float = blast_drop_db(index, sounds.explosion_repeat_drop_db, salt)
-		_kick = db_to_linear(drop)
 		_blast(level_db(sounds.explosion_db + boost + drop, Acoustics.gain_db(_dist, sounds.explosion_full_m,
 				sounds.explosion_range_m, sounds.far_db), 1.0, _air))
+	_feel(cam)
+
+
+## Reads the schedule at the time the GROUND brings, and sets the shake of the view: rock carries a blast
+## some ten times faster than air, so it is felt in the feet seconds before it is heard.
+func _feel(cam: Camera3D) -> void:
+	_tremor = 0.0
+	_ground_level = 0.0
+	if _voice != 0 or _dist >= sounds.tremor_range_m:
+		return
+	if _plume.height_over_ground(_plume.to_local(cam.global_position)) >= GROUND_M:
+		return
+	_tremor = tremor_share(_dist, sounds.tremor_full_m, sounds.tremor_range_m)
+	var model: VolcanoPlumeModel = _plume.model
+	var felt: float = Acoustics.heard_time(VolcanoPlume.clock(), _dist, sounds.ground_speed_m_s)
+	var window: Dictionary = window_at(model.profile, felt, sounds.build_up_s, model.volcano_seed,
+			model.volcano_key, model.dormant)
+	_ground_level = rumble_level(window, felt, sounds.build_up_s, sounds.rumble_before, sounds.rumble_rise_s)
+	var salt: int = model.volcano_seed ^ int(float(window.get("start_unix", 0.0)))
+	var last: float = float(_felt.get(model.volcano_key, NAN))
+	var index: int = blast_due(window, felt, last, BLAST_GRACE_S, sounds.explosion_repeat_s, salt)
+	if index >= 0:
+		_felt[model.volcano_key] = blast_time_of(window, index, sounds.explosion_repeat_s, salt)
+		_kick = db_to_linear(blast_drop_db(index, sounds.explosion_repeat_drop_db, salt))
 
 
 ## Moves the view with the ground, every frame: the tremor of the eruption and the kick of each blast,
@@ -345,7 +366,7 @@ func _hear(cam: Camera3D) -> void:
 func _shake(cam: Camera3D, delta: float) -> void:
 	_kick = move_toward(_kick, 0.0, delta / sounds.tremor_kick_s)
 	var t: float = float(Time.get_ticks_msec()) / 1000.0
-	var reach: float = _tremor * (sounds.tremor_m * _rumble_now * swell(t) + sounds.tremor_kick_m * _kick * _kick)
+	var reach: float = _tremor * (sounds.tremor_m * _ground_level * swell(t) + sounds.tremor_kick_m * _kick * _kick)
 	reach *= steady_share(cam.fov)
 	if reach <= 0.0001:
 		_still()
@@ -418,7 +439,7 @@ func _set_voice(voice: int) -> void:
 
 
 func _silence() -> void:
-	_rumble_now = 0.0
+	_ground_level = 0.0
 	_tremor = 0.0
 	for player: AudioStreamPlayer3D in [_steam, _rumble, _cracks]:
 		if player != null and player.playing:
