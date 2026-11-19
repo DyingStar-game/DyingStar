@@ -7,6 +7,11 @@ files, manifests or the UI.
 Identification is by connection, not by file name. A file called
 "Rough_02_final.png" wired into the Roughness input is the roughness map,
 whatever the texturing tool decided to call it.
+
+Only a wiring the manifest says in full is read as images and numbers. Any
+other -- a mask blending two paints, a map passed through a contrast node -- is
+node work, which exists nowhere but in the tree: the input is then left to the
+baker (map_baker), named in ExtractionResult.bake.
 """
 
 from __future__ import annotations
@@ -57,6 +62,9 @@ class ExtractionResult:
     alpha_linked: bool = False
     alpha_mode: str | None = None
     alpha_threshold: float | None = None
+    # map role -> the Principled input whose node work no image and no number
+    # says: to be baked into that map at export (map_baker).
+    bake: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
     def is_usable(self) -> bool:
@@ -67,7 +75,7 @@ class ExtractionResult:
         is a base colour the walker could not read, since the material would
         come out of the library a different colour than it was authored.
         """
-        return "albedo" in self.images or self.albedo_color is not None
+        return "albedo" in self.images or self.albedo_color is not None or "albedo" in self.bake
 
 
 def find_principled(material: bpy.types.Material) -> bpy.types.Node | None:
@@ -147,9 +155,69 @@ def _plain_colour(value) -> tuple[float, float, float]:
     return tuple(round(_linear_to_srgb(channel), 4) for channel in tuple(value)[:3])
 
 
+def _is_image(socket) -> bool:
+    """Whether a socket is fed by an Image Texture node and nothing else."""
+    node = _linked_node(socket)
+    return node is not None and node.bl_idname == _IMAGE
+
+
+def _is_image_or_channel(socket) -> bool:
+    """An image wired as it is, or one of its channels split by a Separate Color node."""
+    node = _linked_node(socket)
+    if node is not None and node.bl_idname == _SEPARATE_COLOR:
+        return _is_image(node.inputs["Color"])
+    return _is_image(socket)
+
+
+def _is_tint(node: bpy.types.Node) -> bool:
+    """An image multiplied in full by a flat colour: the albedo and albedo_color."""
+    base_input, modulation_input = _mix_inputs(node)
+    modulation = node.inputs[modulation_input]
+    if not _is_image(node.inputs[base_input]) or modulation.is_linked:
+        return False
+    return _is_full_multiply(node) or (
+        getattr(node, "blend_type", "") == "MULTIPLY" and _is_white(modulation.default_value)
+    )
+
+
+def _base_colour_is_exact(socket) -> bool:
+    """Whether the manifest says all of what feeds Base Color.
+
+    It can say a plain colour, an image, an image multiplied by a flat colour,
+    and any of those under an occlusion map multiplied over it. Whatever else
+    the nodes do -- a mask blending two paints, a hue shift, a Color Ramp, an
+    occlusion laid over a blend -- is work only a bake can carry.
+    """
+    node = _linked_node(socket)
+    if node is None or node.bl_idname in (_RGB, _IMAGE):
+        return True
+    if node.bl_idname not in (_MIX, _MIX_LEGACY) or getattr(node, "data_type", "RGBA") != "RGBA":
+        return False
+    if _is_tint(node):
+        return True
+
+    base_input, modulation_input = _mix_inputs(node)
+    factor = node.inputs.get("Factor") or node.inputs.get("Fac")
+    occluded = (
+        getattr(node, "blend_type", "") == "MULTIPLY"
+        and (factor is None or not factor.is_linked)
+        and _is_image_or_channel(node.inputs[modulation_input])
+    )
+    if not occluded:
+        return False
+    base_socket = node.inputs[base_input]
+    base = _linked_node(base_socket)
+    if base is None or _is_image(base_socket):
+        return True
+    return base.bl_idname in (_MIX, _MIX_LEGACY) and _is_tint(base)
+
+
 def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) -> None:
     """Base Color may be a plain colour or an image, tinted or not, alone or under an AO multiply."""
     socket = principled.inputs["Base Color"]
+    if not _base_colour_is_exact(socket):
+        result.bake["albedo"] = socket
+        return
     node = _linked_node(socket)
 
     if node is None:
@@ -174,19 +242,6 @@ def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) ->
             _extract_tinted_albedo(node, result)
             return
 
-        layered = getattr(node, "blend_type", "") != "MULTIPLY" and _walk_to_image(node.inputs[base_input]) is not None
-        if layered:
-            # Two images blended by a mask or a factor: a layered base colour (paint
-            # over bare metal), not an albedo and its occlusion. Read as such, the
-            # second image would darken the first, and the material would come out
-            # of the library looking like neither.
-            _extract_tinted_albedo(node, result, tinted=False)
-            result.warnings.append(
-                "Base Color blends two images in a Mix node that is not a Multiply: "
-                "only the first one is published. Bake the blend into one albedo image"
-            )
-            return
-
         # Occlusion in B, multiplied over what is in A: the albedo, itself tinted
         # or not (a Mix of its own, as material_builder wires it), or a plain colour.
         base = _linked_node(node.inputs[base_input])
@@ -196,13 +251,6 @@ def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) ->
             _extract_tinted_albedo(node, result, tinted=False)
         if occlusion.image != result.images.get("albedo"):
             result.images["ao"] = occlusion.image
-        return
-
-    result.warnings.append(
-        f"Base Color goes through an unsupported node ({node.bl_idname}). To tint a texture, "
-        "multiply it by a flat colour in a Mix node (Multiply, Factor 1), which is published "
-        "as albedo_color; any other colour work is done in Godot or flattened into the image"
-    )
 
 
 def _mix_inputs(node: bpy.types.Node) -> tuple[str, str]:
@@ -229,74 +277,28 @@ def _extract_tinted_albedo(mix: bpy.types.Node, result: ExtractionResult, tinted
     tinted, B is a flat colour laid over it: multiplied in full, it is published
     as albedo_color, which Godot multiplies over the albedo map the same way --
     one grey texture then gives every colour of a surface, with no new image.
-    Laid over it any other way, it cannot be carried and is reported.
+    Only the wirings _base_colour_is_exact accepts reach this point.
     """
     base_input, modulation_input = _mix_inputs(mix)
     base_socket = mix.inputs[base_input]
     albedo = _walk_to_image(base_socket)
 
     if albedo is None:
-        if base_socket.is_linked:
-            result.warnings.append(
-                f"Base Color: the first input ({base_input}) of the Mix node leads to no image"
-            )
-        else:
-            # A plain colour under an occlusion map: what material_builder wires
-            # for a manifest with albedo_color, an ao map and no albedo.
-            result.albedo_color = _plain_colour(base_socket.default_value)
-        if tinted:
-            _warn_flat_modulation(mix.inputs[modulation_input], result)
+        # A plain colour under an occlusion map: what material_builder wires
+        # for a manifest with albedo_color, an ao map and no albedo.
+        result.albedo_color = _plain_colour(base_socket.default_value)
         return
 
     result.images["albedo"] = albedo.image
-    behind = _linked_node(base_socket)
-    if behind is not albedo:
-        result.warnings.append(
-            f"Base Color: the albedo goes through a node ({behind.bl_idname}) whose work is not "
-            "published. The library shows the image as it is: bake that work into it"
-        )
     if not tinted:
         return
     tint_socket = mix.inputs[modulation_input]
-    if tint_socket.is_linked or _is_white(tint_socket.default_value):
-        return
-    if _is_full_multiply(mix):
+    if not tint_socket.is_linked and not _is_white(tint_socket.default_value):
         result.albedo_color = _plain_colour(tint_socket.default_value)
-    else:
-        _warn_flat_modulation(tint_socket, result)
 
 
 def _is_white(value) -> bool:
     return all(round(float(channel), 3) == 1.0 for channel in tuple(value)[:3])
-
-
-def _warn_flat_modulation(socket, result: ExtractionResult) -> None:
-    """Name a base colour tint that the library cannot carry.
-
-    A flat colour multiplied in full over the albedo is published as
-    albedo_color (_extract_tinted_albedo). Laid over it any other way -- another
-    blend mode, a factor under 1 or driven by a node -- it is a tint the artist
-    sees in the viewport but which lives in the node tree only: the material
-    would come out of the library a different colour than it was authored, with
-    nothing in the manifest to explain the difference. The library does not
-    bake colour operations.
-    """
-    if socket.is_linked:
-        return
-
-    value = getattr(socket, "default_value", None)
-    if value is None:
-        return
-
-    red, green, blue = (round(channel, 3) for channel in tuple(value)[:3])
-    if red == green == blue == 1.0:
-        return
-
-    result.warnings.append(
-        f"Base Color is tinted by a flat colour ({red}, {green}, {blue}) in a way the library "
-        "cannot carry. Set the Mix node to Multiply with Factor 1 (the tint is then published "
-        "as albedo_color), or flatten it into the albedo image"
-    )
 
 
 def _extract_normal_and_height(
@@ -331,6 +333,10 @@ def _extract_scalar(
 ) -> None:
     """Roughness and metallic: an image, possibly via an ORM channel split, or the value set by hand."""
     socket = principled.inputs[input_name]
+    if socket.is_linked and not _is_image_or_channel(socket):
+        # A map reshaped on its way in (contrast, range, a mask's alpha): node work.
+        result.bake[map_name] = socket
+        return
     node = _walk_to_image(socket)
     if node is not None:
         result.images[map_name] = node.image

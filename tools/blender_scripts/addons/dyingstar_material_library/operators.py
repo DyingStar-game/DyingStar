@@ -13,6 +13,7 @@ from . import (  # noqa: E402
     bpy_loader,
     exporter,
     library_builder,
+    map_baker,
     map_extractor,
     orm_packer,
     preferences,
@@ -57,6 +58,8 @@ def _unreadable_base_colour(result: map_extractor.ExtractionResult) -> str:
 def _found_summary(result: map_extractor.ExtractionResult) -> str:
     """What Detect Maps found, a plain colour included."""
     found = sorted(result.images)
+    if result.bake:
+        found.append(f"to bake at export: {', '.join(sorted(result.bake))}")
     if result.albedo_color is not None:
         red, green, blue = result.albedo_color
         found.insert(0, f"plain colour ({red:g}, {green:g}, {blue:g})")
@@ -175,6 +178,23 @@ class DYINGSTAR_OT_export_material(bpy.types.Operator):
             self.report({"ERROR"}, _unreadable_base_colour(result))
             return {"CANCELLED"}
 
+        # What the nodes compute and no image holds is baked into one, for the
+        # time of the export: the artist's file keeps its nodes.
+        baked_roles = sorted(result.bake)
+        try:
+            baked = map_baker.resolve(context, material, result)
+        except map_baker.BakeError as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        if baked_roles:
+            self.report({"INFO"}, f"Baked from the nodes: {', '.join(baked_roles)}")
+        try:
+            return self._publish(material, metadata, result)
+        finally:
+            map_baker.discard(baked)
+
+    def _publish(self, material, metadata, result):
+        """Check the maps, write them and the manifest, then the preview and the Asset Browser library."""
         if not self._maps_pass_rules(
             result.images, (metadata.physical_size_x, metadata.physical_size_y)
         ):

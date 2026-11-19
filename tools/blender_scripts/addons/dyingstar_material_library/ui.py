@@ -306,8 +306,14 @@ class DYINGSTAR_PT_material_maps(_MaterialSubPanel, bpy.types.Panel):
             row.label(text=f"{red:g}, {green:g}, {blue:g}")
             if not result.images:
                 box.label(text="No map: a plain-coloured, smooth surface", icon="INFO")
-        elif "albedo" not in result.images:
+        elif "albedo" not in result.images and "albedo" not in result.bake:
             _problem(box, "Base Color could not be read")
+
+        # What the nodes compute and no image holds: baked into a map at export.
+        for role in sorted(result.bake):
+            row = box.row()
+            row.label(text=role)
+            row.label(text="baked from the nodes at export", icon="RENDER_STILL")
 
         # The values set by hand on the Principled, published as numbers.
         for name in ("roughness", "metallic"):
