@@ -32,6 +32,8 @@ const QUIET_DB := -70.0
 const REPEAT_JITTER := 0.7
 ## The mixed sounds of one volcano never go over this (dB): the levels can be pushed without clipping.
 const CEILING_DB := -0.5
+## Level (dB) of the first echo against the sound itself: closer to 0 = a wider, emptier space.
+const ECHO_DB := -9.0
 ## The view shakes for a camera lower than this (m) over the ground: a ship flying by feels nothing.
 const GROUND_M := 8.0
 ## Fields of view (degrees): no shake under the first (a view zoomed on a screen), all of it from the second.
@@ -208,7 +210,7 @@ static func level_db(base_db: float, distance_db: float, level: float, air: floa
 
 
 ## The mixer bus of the voice [param voice], made on first use under SFX: a low-pass (effect 0) and a
-## reverberation (effect 1), then a limiter.
+## reverberation (effect 1), then an echo and a limiter.
 static func ensure_bus(voice: int) -> StringName:
 	var bus := StringName("%s%d" % [BUS_PREFIX, voice])
 	if AudioServer.get_bus_index(bus) >= 0:
@@ -220,16 +222,33 @@ static func ensure_bus(voice: int) -> StringName:
 	var filter := AudioEffectLowPassFilter.new()
 	filter.cutoff_hz = Acoustics.OPEN_CUTOFF_HZ
 	AudioServer.add_bus_effect(idx, filter)
-	# A wide open space: long, dark, late -- the relief answering, not a room.
+	# A wide open space, kept dark and without feedback: brighter or fed back, its combs ring like a
+	# saucepan on a rumble (heard 2026-11-19). The feeling of space comes from the echo below.
 	var reverb := AudioEffectReverb.new()
-	reverb.room_size = 0.95
-	reverb.damping = 0.7
+	reverb.room_size = 0.85
+	reverb.damping = 0.95
 	reverb.spread = 1.0
-	reverb.predelay_msec = 250.0
-	reverb.predelay_feedback = 0.35
+	reverb.predelay_msec = 120.0
+	reverb.predelay_feedback = 0.0
 	reverb.dry = 1.0
 	reverb.wet = 0.0
 	AudioServer.add_bus_effect(idx, reverb)
+	# The slopes answering: two late, duller repeats, one on each side, and their own fading tail.
+	var echo := AudioEffectDelay.new()
+	echo.dry = 1.0
+	echo.tap1_active = true
+	echo.tap1_delay_ms = 380.0
+	echo.tap1_level_db = ECHO_DB
+	echo.tap1_pan = -0.6
+	echo.tap2_active = true
+	echo.tap2_delay_ms = 820.0
+	echo.tap2_level_db = ECHO_DB - 4.0
+	echo.tap2_pan = 0.6
+	echo.feedback_active = true
+	echo.feedback_delay_ms = 1100.0
+	echo.feedback_level_db = ECHO_DB - 6.0
+	echo.feedback_lowpass = 2500.0
+	AudioServer.add_bus_effect(idx, echo)
 	var limiter := AudioEffectHardLimiter.new()
 	limiter.ceiling_db = CEILING_DB
 	AudioServer.add_bus_effect(idx, limiter)
