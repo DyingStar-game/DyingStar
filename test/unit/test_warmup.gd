@@ -55,3 +55,23 @@ func test_every_shader_of_a_person_is_drawn_alone_first() -> void:
 	for key: String in constants:
 		if constants[key] is Shader:
 			assert_true(constants[key] in listed, "CharacterMaterials.%s" % key)
+
+
+func test_a_material_s_shader_is_started_without_making_the_material() -> void:
+	# Every pass of a chain, a ShaderMaterial (compiled since it was loaded) and a mesh drawn in its own
+	# surfaces' materials, or in none, are gone through without an error.
+	var standard := StandardMaterial3D.new()
+	var shader_pass := ShaderMaterial.new()
+	shader_pass.shader = Warmup.SSS_PRIMER
+	var last := StandardMaterial3D.new()
+	last.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	standard.next_pass = shader_pass
+	shader_pass.next_pass = last
+	Warmup._compile(standard)
+	Warmup._compile(null)
+	var mesh := BoxMesh.new()
+	mesh.material = standard
+	Warmup._start_compiling(mesh, null)
+	Warmup._start_compiling(BoxMesh.new(), null)
+	Warmup._start_compiling(mesh, shader_pass)
+	assert_engine_error_count(0, "no engine error")
