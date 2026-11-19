@@ -615,11 +615,31 @@ func purge_other_versions() -> int:
 	return removed
 
 
+## Les sources dont les fils tournent, pour [method stop_all]. Une source arrêtée en sort.
+static var _running: Array[RemoteTileSource] = []
+static var _running_mutex: Mutex = Mutex.new()
+
+
+## Arrête les fils de toutes les sources encore démarrées. Appelé à la sortie (GameOrchestrator._exit_tree) :
+## personne n'arrête le pack de modificateurs partagé (RemoteModifierPack.shared_for), ni la source d'une
+## PlanetData sans PlanetTerrain (tests, carte stellaire). Leurs fils tournaient encore quand le moteur
+## démontait ses singletons ("Cannot call method 'get_ticks_msec' on a null value", puis signal 11).
+static func stop_all() -> void:
+	_running_mutex.lock()
+	var running := _running.duplicate()
+	_running_mutex.unlock()
+	for src: RemoteTileSource in running:
+		src.stop()
+
+
 ## Démarre les fils de téléchargement. Idempotent.
 func start() -> void:
 	if not _threads.is_empty():
 		return
 	_quit = false
+	_running_mutex.lock()
+	_running.append(self)
+	_running_mutex.unlock()
 	for _i in maxi(download_threads, 1):
 		var t := Thread.new()
 		t.start(_worker)
@@ -638,6 +658,9 @@ func stop() -> void:
 	for t in _threads:
 		t.wait_to_finish()
 	_threads.clear()
+	_running_mutex.lock()
+	_running.erase(self)
+	_running_mutex.unlock()
 	_mutex.lock()
 	_links.clear()
 	_mutex.unlock()
