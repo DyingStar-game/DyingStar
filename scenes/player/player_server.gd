@@ -875,6 +875,10 @@ func server_action_received(data: Dictionary) -> void:
 				if _aims_into_foreign_home():
 					# Not into someone else's home: keep it, and set back the client that predicted the drop.
 					player.server_send_properties_to_client({"carrying": true})
+				elif _warehouse_refuses(_shelf_of_drop()):
+					# Nor onto the shelf of a warehouse that buys no more of it (the prompt says why): kept
+					# in hand rather than given away for nothing.
+					player.server_send_properties_to_client({"carrying": true})
 				else:
 					# In hands (always solid now): release it (drop / bed-load). Shared with the auto-drop.
 					_server_drop_carried_item()
@@ -3194,7 +3198,9 @@ func _server_drop_carried_item() -> void:
 		# Drop ONTO a shelf slot -> the shelf takes the crate under it, onto the nearest free slot, and
 		# freezes it once it has settled on its tier (see Shelf). No free slot left: an ordinary drop.
 		var shelf = place["shelf"] if place["shelf"] != null else _shelf_for_drop(place["position"])
-		if shelf != null and shelf.store_at_nearest_slot(item):
+		# A warehouse that buys no more of it takes it on no shelf (a drop forced by a jump or a crouch
+		# comes here): an ordinary drop, at the foot of the shelf.
+		if shelf != null and not _warehouse_refuses(shelf) and shelf.store_at_nearest_slot(item):
 			WarehouseDelivery.on_stored(item, shelf, player)  # into the depot's stock, once
 			player.hands_item = null
 			player.server_send_properties_to_client({"carrying": false})
@@ -3360,6 +3366,22 @@ func _server_update_carry_prompt(delta: float) -> void:
 		player._carry_prompt = state
 		player.server_send_properties_to_client({"carry_prompt": state})
 
+## The shelf a drop would snap onto, by the placement of the last physics tick; null when none.
+func _shelf_of_drop() -> Variant:
+	if not _place.has("position"):
+		return null
+	return _place["shelf"] if _place.get("shelf") != null else _shelf_for_drop(_place["position"])
+
+
+## Whether [param shelf] is a warehouse's that refuses what the player holds (WarehouseDelivery.refuses).
+## Never a storekeeper: what they carry was let through at the counter, and a crate they could put on no
+## shelf stayed in their arms (playtest 2026-11-19).
+func _warehouse_refuses(shelf: Variant) -> bool:
+	if not (shelf is Node) or player.hands_item == null or player.is_npc:
+		return false
+	return WarehouseDelivery.refuses(WarehouseDelivery.depot_uuid_of(shelf), player.hands_item.get("content"))
+
+
 ## What E would do right now (server side): if we hold something, "cargo" when the drop would load
 ## it onto a truck (it sticks), else "drop"; if our hands are empty, "carry" when we aim at a
 ## grabbable prop that is reachable (not carried by another, clear line of sight).
@@ -3373,6 +3395,8 @@ func _compute_carry_prompt() -> String:
 		if _cargo_bed_for_drop(point) != null:
 			return "cargo"  # dropping here loads it into the bed (sticks)
 		if _place.get("shelf") != null:
+			if _warehouse_refuses(_place.get("shelf")):
+				return "shelf_full"  # a warehouse that buys no more of it: the HUD says why E does nothing
 			return "cargo"  # dropping here snaps it into a shelf slot (sticks)
 		return "drop"
 	player.interact_ray.force_raycast_update()

@@ -177,6 +177,46 @@ func test_the_depot_board_says_who_collects_what_where() -> void:
 	assert_eq(int(rows[0]["count"]), 2)
 
 
+func test_the_stock_board_marks_the_goods_the_warehouse_buys_no_more() -> void:
+	var full := StockBoard.full_goods({"stocks": [
+		{"goodType": "ore.gold", "quantity": 8367, "capacity": 5000},
+		{"goodType": "ingot.gold", "quantity": 120, "capacity": 5000},
+		{"goodType": "water", "quantity": 99999, "capacity": null},
+		{"code": "ore.iron", "quantity": 10, "capacity": 10},
+	]})
+	assert_eq(full, ["ore.gold", "ore.iron"], "at its capacity or past it; none without a capacity")
+	assert_eq(StockBoard.full_goods({}), [], "no answer: nothing is said full")
+	var rows := StockBoard.mark_full([{"good": "ore.gold", "kg": 8367}, {"good": "ingot.gold", "kg": 120}], full)
+	assert_true(bool(rows[0].get("full", false)))
+	assert_false(bool(rows[1].get("full", false)))
+
+
+func test_a_warehouse_refuses_the_players_own_goods_it_buys_no_more() -> void:
+	var mined := CrateContent.crushed("gold", 0.02, 0.04, 108.0, "kira", "kira")
+	var good := CrateContent.good_type(mined)
+	WarehouseDelivery.note_limits("depot-full", [good])
+	WarehouseDelivery.note_limits("depot-open", [])
+	assert_true(WarehouseDelivery.refuses("depot-full", mined), "their own goods, a full warehouse")
+	assert_false(WarehouseDelivery.refuses("depot-open", mined), "room left")
+	assert_false(WarehouseDelivery.refuses("", mined), "a shelf anywhere else")
+	var loaded := mined.duplicate()
+	loaded["carrier_id"] = "kira"
+	assert_false(WarehouseDelivery.refuses("depot-full", loaded), "a transport's load is never refused")
+	var kept := mined.duplicate()
+	kept["for_mission"] = {"id": "m1"}
+	assert_false(WarehouseDelivery.refuses("depot-full", kept), "nor a mission's crate")
+	assert_true(WarehouseDelivery.limits_are_old({}, 0), "never asked")
+	assert_false(WarehouseDelivery.limits_are_old({"at": 1000}, 1000 + WarehouseDelivery.LIMITS_TTL_MS - 1))
+	assert_true(WarehouseDelivery.limits_are_old({"at": 1000}, 1000 + WarehouseDelivery.LIMITS_TTL_MS))
+
+
+func test_a_line_the_game_has_an_npc_say_is_read_in_the_players_language() -> void:
+	assert_eq(PlayerClient.said_text("Hello Kira"), "Hello Kira", "what somebody typed: as it was said")
+	var said := PlayerClient.said_text("%%NPC_WAREHOUSE_FULL")
+	assert_false(said.begins_with("%%"), "the key is translated, not shown")
+	assert_string_contains(said, "ARES")
+
+
 func test_the_stock_board_lists_each_good_its_crates_kg_and_shelves() -> void:
 	var shelf := Node3D.new()
 	shelf.name = "shelf_cargo_row1_1"

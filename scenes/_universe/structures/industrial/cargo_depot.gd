@@ -69,6 +69,16 @@ var uuid: String:
 		if _sync != null:
 			_sync.uuid = value
 
+## What the storekeeper says of a crate left on the counter because the warehouse buys no more of it.
+const SAY_WAREHOUSE_FULL := "%%NPC_WAREHOUSE_FULL"
+## How far (m) from the counter a storekeeper is still the one to speak of a crate left on it.
+const SAY_RANGE_M := 20.0
+## Seconds before the same crate is spoken of again: the counter sees it enter more than once.
+const SAY_AGAIN_S := 30.0
+
+## SERVER: when each crate left on the counter was last spoken of (ticks msec), by its uuid.
+var _said_of: Dictionary = {}
+
 # is there a player in reception area?
 var reception_players: Array = []
 
@@ -369,6 +379,39 @@ func _server_player_exists(uuid: String) -> bool:
 	return agent.players_list.has(uuid)
 
 
+## SERVER: a storekeeper says [param line] of the crate [param crate_id] left on the counter at
+## [param at]. The line is a translation key: it travels as it is and each player reads it in their own
+## language (PlayerClient.said_text). The NPC nearest the counter speaks, the one the player is facing --
+## the reception's holder may be in the back (playtest 2026-11-19: they spoke, out of sight). Nobody
+## within SAY_RANGE_M: nothing is said, the crate just stays. Once per crate every SAY_AGAIN_S.
+func _counter_says(crate_id: String, line: String, at: Vector3) -> void:
+	var now := Time.get_ticks_msec()
+	if not may_say_again(_said_of.get(crate_id), now):
+		return
+	var agent = NetworkOrchestrator.network_agent
+	if agent == null or not ("players_list" in agent):
+		return
+	var keeper: Node3D = null
+	var nearest := SAY_RANGE_M
+	for body: Variant in agent.players_list.values():
+		if not is_instance_valid(body) or not (body is Node3D) or not bool(body.get("is_npc")):
+			continue
+		var away := (body as Node3D).global_position.distance_to(at)
+		if away < nearest:
+			nearest = away
+			keeper = body
+	if keeper == null or not keeper.has_method("server_action_received"):
+		return
+	_said_of[crate_id] = now
+	keeper.server_action_received({"action": "dialog", "text": line})
+
+
+## Whether a crate last spoken of at [param last] (ticks msec, null when never) may be spoken of again
+## at [param now]. Pure, for the tests.
+static func may_say_again(last: Variant, now: int) -> bool:
+	return last == null or now - int(last) >= int(SAY_AGAIN_S * 1000.0)
+
+
 ## Server-authoritative: a PNJ asks to take the reception role. Granted only when nobody owns it
 ## (single-threaded server, so this read-check-set is atomic). Returns true when this PNJ is the
 ## owner afterwards (freshly granted or it already held it), false when someone else owns it.
@@ -546,6 +589,14 @@ func _on_box_counter_body_entered(body: Node3D) -> void:
 	var depositor := WarehouseDelivery.depositor_of(body, null)
 	if not await WarehouseDelivery.may_deposit(body, depositor):
 		print("[cargo_depot] %s left on the counter: %s may not deposit it" % [id, depositor])
+		return
+	# Nor one the warehouse buys no more: shelved by a storekeeper, it would be given away. Asked of the
+	# simulator first: on an answer not known yet a storekeeper took the crate, then could shelve it
+	# nowhere (playtest 2026-11-19).
+	if is_instance_valid(body) and await WarehouseDelivery.refuses_now(uuid, body.get("content")):
+		print("[cargo_depot] %s left on the counter: the warehouse buys no more of it" % id)
+		if is_instance_valid(body):
+			_counter_says(id, SAY_WAREHOUSE_FULL, body.global_position)
 		return
 	var counter := get_node_or_null("Reception Desk/PNJBoxDepositPlayer") as Area3D
 	if not is_instance_valid(body) or pnj_reception_deposited_item.has(id) \

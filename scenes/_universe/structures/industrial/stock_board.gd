@@ -5,10 +5,23 @@ extends PickupBoard
 ## warehouse holds (playtest 2026-11-08) -- a row per good with its picto, its crates, its weight, and the
 ## shelves it is on in tags. The crates are the truth (StockReconciler keeps the stock equal to them), so
 ## it reads the crates shelved in its depot, all replicated. The same screen and rules as the pickup board.
+##
+## One thing it asks: what the warehouse buys no more. A warehouse past its capacity for a good pays
+## nothing for what is shelved off a mission (services ADR 0017, amended), and the crate is on the shelf
+## before the sale is asked -- so the row says it, for the player to read BEFORE they shelve.
 
 ## Shelves named on a row; the rest is counted ("+4").
 const SHELVES_SHOWN := 7
 const CHIP := Color(0.2, 0.22, 0.26)
+const FULL := Color(0.78, 0.16, 0.14)
+## Refreshes between two readings of what the warehouse still buys (a minute): it fills in crates, not
+## in seconds.
+const LIMITS_EVERY := 30
+
+## The goods (inventory names) this warehouse buys no more.
+var _full: Array = []
+var _asking := false
+var _since_limits := LIMITS_EVERY
 
 
 func _title_key() -> String:
@@ -19,8 +32,29 @@ func _empty_key() -> String:
 	return "%%DEPOT_STOCK_NONE"
 
 
+func _refresh() -> void:
+	_since_limits += 1
+	if _since_limits >= LIMITS_EVERY and not _asking:
+		_since_limits = 0
+		_read_limits()
+	super._refresh()
+
+
 func _rows(crates: Array) -> Array:
-	return stock_rows(crates)
+	return mark_full(stock_rows(crates), _full)
+
+
+## Ask the simulator what this warehouse holds against its capacities. Detached: the next refresh shows it.
+func _read_limits() -> void:
+	var warehouse := str(_depot.get("uuid")) if _depot != null else ""
+	if warehouse == "" or not PlayerServices.is_available():
+		return
+	_asking = true
+	var result: Dictionary = await PlayerServices.warehouse_stock(warehouse)
+	_asking = false
+	if not is_inside_tree() or not bool(result.get("ok", false)) or not (result.get("data") is Dictionary):
+		return
+	_full = full_goods(result["data"])
 
 
 ## The header's corner: the weight of everything in stock.
@@ -50,6 +84,8 @@ func _row(row: Dictionary) -> Control:
 		shelves.add_child(AresBrand.screen_label("+%d" % (names.size() - SHELVES_SHOWN), 20, WallScreen.DIM))
 	texts.add_child(shelves)
 	line.add_child(texts)
+	if bool(row.get("full", false)):
+		line.add_child(WallScreen.chip(TranslationServer.translate("%%DEPOT_STOCK_FULL"), 22, FULL, Color.WHITE))
 	var crates := AresBrand.screen_label(TranslationServer.translate("%%DEPOT_STOCK_CRATES")
 			% int(row.get("crates", 0)), 26, WallScreen.DIM)
 	crates.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -88,6 +124,20 @@ static func stock_rows(crates: Array) -> Array:
 	for good: String in order:
 		(goods[good]["shelves"] as Array).sort()
 		rows.append(goods[good])
+	return rows
+
+
+## The goods a warehouse buys no more, from the simulator's view of it ([param data], its `stocks`):
+## those it holds its capacity of, or more. A good without a capacity is always bought. Pure, for the tests.
+static func full_goods(data: Dictionary) -> Array:
+	return WarehouseDelivery.full_goods(data)  # the server refuses the same goods at the shelf
+
+
+## [param rows] (stock_rows) with `full` set on those of the goods in [param full]. Pure, for the tests.
+static func mark_full(rows: Array, full: Array) -> Array:
+	for row: Dictionary in rows:
+		if full.has(str(row.get("good", ""))):
+			row["full"] = true
 	return rows
 
 

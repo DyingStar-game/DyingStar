@@ -43,4 +43,18 @@ func test_a_sale_reads_in_the_players_language() -> void:
 	assert_string_contains(line, "120 kg")
 	assert_string_contains(line, "1500")
 	assert_eq(ServiceTypes.transaction_sale_village({"reference": "sale:M0001:ore.gold"}), "M0001")
+
+
+func test_a_full_warehouse_says_what_it_did_not_buy() -> void:
+	var sale := {"village": "M0001", "name": "Crushed gold ore", "nameFr": "Minerai d'or concassé",
+			"quantity": 15, "refused": 30, "unit": "kg", "amount": 450, "currency": "credits"}
+	var part := ChatNetwork.sale_text(sale)
+	assert_string_contains(part, "15 kg", "what it bought")
+	assert_string_contains(part, "450")
+	assert_string_contains(part, "30 kg", "and what it did not")
+	sale["quantity"] = 0
+	sale["amount"] = 0
+	var none := ChatNetwork.sale_text(sale)
+	assert_string_contains(none, "30 kg")
+	assert_false(none.contains("+0"), "nothing bought: no sale to read")
 	assert_eq(ServiceTypes.transaction_sale_village({"reference": "mission:abc"}), "")

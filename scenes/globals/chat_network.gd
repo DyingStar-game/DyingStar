@@ -98,14 +98,24 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 			return TranslationServer.translate("%%NOTIF_GENERIC") % type
 
 
-## "Sold at M0001: 120 kg of Crushed gold ore, +1500 credits", in the player's language.
+## "Sold at M0001: 120 kg of Crushed gold ore, +1500 credits", in the player's language. A warehouse
+## buys what it had room for (services ADR 0017, amended): what it did not buy (`refused`) is said too,
+## alone when it bought nothing.
 static func sale_text(data: Dictionary) -> String:
 	var name := ServiceTypes.localised_name(data, TranslationServer.get_locale())
 	if name == "":
 		name = str(data.get("goodType", ""))
-	return TranslationServer.translate("%%NOTIF_WAREHOUSE_SALE") % [str(data.get("village", "")),
-			ServiceTypes.quantity_text(int(float(data.get("quantity", 0))), data.get("unit")), name,
+	var village := str(data.get("village", ""))
+	var bought := int(float(data.get("quantity", 0)))
+	var refused := ServiceTypes.quantity_text(int(float(data.get("refused", 0))), data.get("unit"))
+	if int(float(data.get("refused", 0))) > 0 and bought <= 0:
+		return TranslationServer.translate("%%NOTIF_WAREHOUSE_FULL") % [village, refused, name]
+	var sold: String = TranslationServer.translate("%%NOTIF_WAREHOUSE_SALE") % [village,
+			ServiceTypes.quantity_text(bought, data.get("unit")), name,
 			int(float(data.get("amount", 0))), str(data.get("currency", ""))]
+	if int(float(data.get("refused", 0))) > 0:
+		return TranslationServer.translate("%%NOTIF_WAREHOUSE_SALE_REST") % [sold, refused]
+	return sold
 
 
 ## The player [param data] concerns, as a name to print: the one the caller resolved, else the id

@@ -729,6 +729,11 @@ func _process(_delta: float) -> void:
 			# dropping here loads it onto the truck (sticks)
 			player.interact_label.text = _prompt(&"action", tr("%%HUD_CARGO"))
 			player.interact_label.show()
+		elif player._carry_prompt == "shelf_full":
+			# A warehouse that buys no more of what we hold: no key to press, only why -- in red.
+			player.interact_label.text = tr("%%HUD_WAREHOUSE_FULL")
+			player.interact_label.modulate = SettingsStyle.ALERT_COLOR
+			player.interact_label.show()
 		elif player._carry_prompt == "carry":
 			# Name what you are about to pick up when the prop knows its own name. The server
 			# decided WHETHER we can carry it; what it is called is on the object in front of us,
@@ -2409,6 +2414,12 @@ func _notification(what: int) -> void:
 			_screens.queue_free()
 
 ## Put a line said by this avatar into the LOCAL player's chat log, on the SAY channel.
+## A line said as each player reads it: a translation key (a line the game itself has an NPC say) in
+## their language, anything else as it was said. Pure, for the tests.
+static func said_text(line: String) -> String:
+	return TranslationServer.translate(line) if line.begins_with("%%") else line
+
+
 func _log_said_line(text: String) -> void:
 	var me: Node3D = PlayerLocation.local_player()
 	if me == null or not ("direct_chat" in me) or me.direct_chat == null:
@@ -2657,7 +2668,7 @@ func client_channel_data_update(data: Dictionary) -> void:
 				# null = the server's "done talking" marker, sent once the dialog queue drains. Guard it:
 				# str(null) is the literal "<null>", which would hang that text over the NPC's head.
 				var line = data["conversation"]
-				_conversation_text.text = "" if line == null else str(line)
+				_conversation_text.text = "" if line == null else said_text(str(line))
 				# Empty text must not leave an invisible-but-present bubble; _update_name_tag re-shows it
 				# as soon as there is something to read again.
 				if _conversation_text.text.is_empty():

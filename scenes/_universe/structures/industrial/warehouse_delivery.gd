@@ -28,6 +28,12 @@ const DEPOSIT_OK_META := &"deposit_ok"
 ## Meta on a crate: the depot it is being delivered to while the services answer (a second shelving
 ## meanwhile — the storekeeper's — must not deliver it twice).
 const DELIVERING_META := &"delivering_to"
+## How long (ms) what a warehouse buys no more is believed before the simulator is asked again.
+const LIMITS_TTL_MS := 30_000
+
+## SERVER: what each warehouse buys no more, as the simulator last said: {depot uuid: {full: [goods],
+## at: ticks msec, asking: bool}}.
+static var _limits: Dictionary = {}
 
 
 ## SERVER: [param player] just put [param item] down: they are who deposits it, whoever shelves it.
@@ -127,6 +133,70 @@ static func on_stored(crate: Node, shelf: Node, player: Node = null) -> void:
 	update(crate, c)
 
 
+## Whether [param depot_uuid] refuses a crate of [param content]: the player's own goods (is_sellable),
+## of a good the warehouse holds its capacity of. It would pay nothing for them (services ADR 0017,
+## amended), so they are not taken at all. A mission's crate or a transport's load is never refused. Read
+## from the simulator's last answer, asked again (detached) when it is old; not known yet: not refused.
+static func refuses(depot_uuid: String, content: Variant) -> bool:
+	if depot_uuid == "" or not (content is Dictionary) or not is_sellable(content):
+		return false
+	var known: Dictionary = _limits.get(depot_uuid, {})
+	if limits_are_old(known, Time.get_ticks_msec()) and not bool(known.get("asking", false)):
+		read_limits(depot_uuid)
+	return (known.get("full", []) as Array).has(CrateContent.good_type(content))
+
+
+## The same, on an answer that is never old: the simulator is asked first when it has to be. For what
+## cannot be undone by the player -- a storekeeper taking the crate off the counter, the goods changing
+## hands -- where an answer not known yet must not pass for "not refused".
+static func refuses_now(depot_uuid: String, content: Variant) -> bool:
+	if depot_uuid == "" or not (content is Dictionary) or not is_sellable(content):
+		return false
+	if limits_are_old(_limits.get(depot_uuid, {}), Time.get_ticks_msec()):
+		await read_limits(depot_uuid)
+	return refuses(depot_uuid, content)
+
+
+## Whether what is [param known] of a warehouse is to be asked again at [param now] (ticks msec). Pure.
+static func limits_are_old(known: Dictionary, now: int) -> bool:
+	return not known.has("at") or now - int(known["at"]) >= LIMITS_TTL_MS
+
+
+## Ask the simulator what [param depot_uuid] holds against its capacities, and remember what it buys no
+## more. An answer that fails keeps what was known, to be asked again after the same wait.
+static func read_limits(depot_uuid: String) -> void:
+	var known: Dictionary = _limits.get(depot_uuid, {})
+	known["asking"] = true
+	_limits[depot_uuid] = known
+	var result: Dictionary = await MissionHeartbeat.usim_internal(HTTPClient.METHOD_GET,
+			"/warehouses/%s" % depot_uuid.uri_encode(), null)
+	known["asking"] = false
+	known["at"] = Time.get_ticks_msec()
+	if bool(result.get("ok", false)) and result.get("data") is Dictionary:
+		known["full"] = full_goods(result["data"])
+
+
+## What is known of [param depot_uuid]: the goods it buys no more ([param full]), as of now. For the tests.
+static func note_limits(depot_uuid: String, full: Array) -> void:
+	_limits[depot_uuid] = {"full": full, "at": Time.get_ticks_msec(), "asking": false}
+
+
+## The goods a warehouse buys no more, from the simulator's view of it ([param data], its `stocks`):
+## those it holds its capacity of, or more. A good without a capacity is always bought. Pure, for the tests.
+static func full_goods(data: Dictionary) -> Array:
+	var full: Array = []
+	var stocks: Variant = data.get("stocks")
+	if not (stocks is Array):
+		return full
+	for stock: Variant in stocks:
+		if not (stock is Dictionary) or (stock as Dictionary).get("capacity") == null:
+			continue
+		var good := str((stock as Dictionary).get("goodType", (stock as Dictionary).get("code", "")))
+		if good != "" and float((stock as Dictionary).get("quantity", 0)) >= float((stock as Dictionary).get("capacity")):
+			full.append(good)
+	return full
+
+
 ## The goods of [param crate] into [param depot_uuid]'s stock: true when they are there.
 static func _deliver(crate: Node, shelf: Node, depot_uuid: String, depositor: String) -> bool:
 	if not await may_deposit(crate, depositor):
@@ -142,6 +212,15 @@ static func _deliver(crate: Node, shelf: Node, depot_uuid: String, depositor: St
 	var units := int(c.get("units", 0))
 	if holder == "" or good == "" or units <= 0:
 		return true  # nothing anybody holds (the admin fill): shelved, nothing to move
+	# The last word before the goods change hands: the drop was let through on an answer not known yet,
+	# or a storekeeper shelved it. Left on the shelf, still the player's, nothing counted.
+	if is_sellable(c):
+		var refused: bool = await refuses_now(depot_uuid, c)
+		if not is_instance_valid(crate) or crate.get_parent() != shelf:
+			return false
+		if refused:
+			print("[Warehouse] %s refused: %s buys no more %s" % [_crate_id(crate), depot_uuid, good])
+			return false
 	var ok: bool = await MissionHeartbeat.drop_carried(holder, good, units, warehouse(depot_uuid),
 			move_key(c, _crate_id(crate), "drop", depot_uuid), is_sellable(c))
 	print("[Warehouse] %d x %s from %s into %s: %s" % [units, good, holder, depot_uuid, "ok" if ok else "refused"])
