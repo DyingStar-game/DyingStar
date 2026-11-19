@@ -13,7 +13,8 @@ class_name VolcanoFeatures
 ## ground_albedo_at at the summit — blue on a blue corundum plateau), darkened;
 ## the glow shows through its cracks when the volcano is active.
 
-const LAKE_SHADER := "res://assets/_universe/environment/terrain/lava_surface.gdshader"
+const VOLCANO_SOUND := preload("res://scenes/audio/volcano/volcano_sound.gd")
+const LAKE_SHADER :="res://assets/_universe/environment/terrain/lava_surface.gdshader"
 ## Rings and sectors of the lake disc (it follows the sphere's curvature).
 const LAKE_RINGS := 10
 const LAKE_SECTORS := 64
@@ -54,7 +55,12 @@ static func build(data: PlanetData, v: VolcanoRelief.Volcano) -> Node3D:
 	if v.lake and v.rc > 0.0 and not LavaSettings.simulated_craters:
 		root.add_child(_lake(data, v, level, centre, crust))
 	if v.activity != "dormant" or profile.has_events(key_of(v)):
-		root.add_child(VolcanoPlume.create(data, v, centre))
+		var plume := VolcanoPlume.create(data, v, centre)
+		root.add_child(plume)
+		# Not in the editor: this script is a tool, the sounds are not.
+		var sound: Node3D = null if Engine.is_editor_hint() else VOLCANO_SOUND.create(plume)
+		if sound != null:
+			root.add_child(sound)
 		if v.activity == "active" and v.lake and not LavaSettings.simulated_craters:
 			var light := OmniLight3D.new()
 			light.name = "LakeGlow"

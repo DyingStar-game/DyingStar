@@ -217,3 +217,44 @@ ni d'un systeme de degats serveur.
 **N** decale uniquement l'horloge de demonstration. Appliquer un profil la remet
 a l'heure reelle pour tester les dates d'evenement. La scene ne saute plus
 automatiquement a une eruption au demarrage.
+
+## Sons
+
+`scenes/audio/volcano/volcano_sound.gd` (`VolcanoSound`) ajoute les sons de chaque
+volcan, côté client seulement. Rien ne passe par le réseau : comme le panache, les
+sons lisent le calendrier des éruptions sur l'horloge UTC partagée.
+
+- **Délai** : le son voyage à 340 m/s. Le joueur entend ce que le volcan faisait
+  `distance / 340` secondes plus tôt : 3 s à 1 km, 30 s à 10 km, près de 2 min à
+  40 km. Le retard se réduit quand on approche.
+- **Distance** : le volume, l'étouffement (passe-bas) et la réverbération sont
+  calculés par `VolcanoAcoustics`, pas par l'atténuation de Godot. Les trois volcans
+  les plus proches sont entendus, chacun sur son bus `Volcano0` à `Volcano2`,
+  envoyé vers `SFX` (le curseur des paramètres audio agit).
+- **Sans air, pas de son** : en orbite ou sur un corps sans atmosphère, tout se tait.
+
+| Son | Quand | Portée |
+|---|---|---|
+| Vapeur (`geothermal-steam-loop`) | en continu, volcan non dormant | 1,5 km |
+| Craquements (`rock-cracking-rumble-loop`) | montent pendant la minute avant l'explosion, s'éteignent 20 s après | 8 km |
+| Grondement (`volcano-deep-rumble-loop`) | monte avant l'explosion, tient toute l'éruption | 25 km |
+| Explosion (`eruption-explosion-far-1` et `-2`) | quand les rochers partent, puis une toutes les 35 s en moyenne | 80 km |
+
+Les explosions se répètent tant que l'éruption dure, à des instants tirés au sort mais
+identiques pour tous les joueurs ; la première est la plus forte. Une explosion n'est
+jouée qu'au moment où elle « passe » : un joueur qui arrive en pleine éruption entend
+le grondement tout de suite, puis l'explosion suivante. Un panache seul ne fait pas de bruit.
+
+- **Tremblement** : à moins de 8 km du cratère (plein effet sous 2,5 km), la vue d'un
+  joueur au sol tremble par vagues de quelques secondes pendant l'éruption, et chaque
+  explosion donne une secousse, sentie avant d'être entendue : le sol la porte à
+  3 km/s, l'air à 340 m/s (à 3 km, 1 s contre 9 s). Seuls les décalages de la caméra bougent (`h_offset`,
+  `v_offset`), jamais sa position. Une vue zoomée (le DataPad lu au poignet) ne tremble pas.
+
+Les niveaux, les portées et les durées se règlent dans
+`scenes/audio/volcano/volcano_sounds.tres` (chaque champ a son infobulle). Le journal
+du client écrit une ligne `[VolcanoSound] explosion …` avec la distance et le retard.
+Tests : `test/unit/test_volcano_sound.gd`.
+
+Pas encore de son pour les rochers (lancement, passage, impact), le magma ou
+l'explosion entendue de près : ils seront ajoutés quand les fichiers existeront.

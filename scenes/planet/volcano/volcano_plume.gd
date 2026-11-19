@@ -187,6 +187,11 @@ func _relief(x: float, z: float) -> float:
 	return (ground - _origin).dot(_up)
 
 
+## Height (m) over the ground of a point of this node's frame.
+func height_over_ground(local: Vector3) -> float:
+	return local.y - _relief(local.x, local.z)
+
+
 ## Convert the stone field's contact to a body-fixed direction, just as for the relief.
 func _impact_ground_albedo(contact: Vector3) -> Color:
 	return data.ground_albedo_at((_origin + basis * contact).normalized())

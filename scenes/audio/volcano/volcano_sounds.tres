@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="VolcanoSoundSet" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scenes/audio/volcano/volcano_sound_set.gd" id="1_set"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/geothermal-steam-loop.ogg" id="2_steam"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/volcano-deep-rumble-loop.ogg" id="3_rumble"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/rock-cracking-rumble-loop.ogg" id="4_cracks"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-explosion-far-1.ogg" id="5_far1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-explosion-far-2.ogg" id="6_far2"]
+
+[resource]
+script = ExtResource("1_set")
+steam = ExtResource("2_steam")
+rumble = ExtResource("3_rumble")
+cracks = ExtResource("4_cracks")
+explosions = Array[AudioStream]([ExtResource("5_far1"), ExtResource("6_far2")])
