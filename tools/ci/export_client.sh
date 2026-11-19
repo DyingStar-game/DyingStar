@@ -1,19 +1,22 @@
 #!/bin/bash
 #
-# Exports the client with its shaders baked, on the runner host's GPU.
+# Exports the client with its shaders baked, in a container with a Vulkan device and a virtual display.
 #
 # The export compiles every shader the game's resources use (~650, SPIR-V: Vulkan on Linux and on Windows)
-# into the game, but only when the editor runs on a real Vulkan device. A --headless editor has none and
-# skips it without a word: players then compiled them all on their first launch, 7 s frames on a desktop
-# GPU and "not responding" on weak PCs (2026-11-19). Lavapipe (Mesa's CPU Vulkan) crashes the editor
-# right after its file scan, so a GPU is needed.
+# into the game, but only when the editor runs on a Vulkan device. A --headless editor has none and skips
+# it without a word: players then compiled them all on their first launch, 7 s frames on a desktop GPU and
+# "not responding" on weak PCs (2026-11-19).
 #
 # On dyingstar-runners the steps run in the `runner` container, which has no /dev/dri; its Docker daemon
 # (the privileged `dind` sidecar) has the host's Intel UHD 770, and both share /home/runner/_work. So the
-# export runs in a container started through that daemon (tools/ci/bake/Dockerfile), with the GPU, the
-# workspace and copies of the editor and its templates under $RUNNER_TEMP. Without a GPU there (no Docker,
-# no device, only a CPU Vulkan), it exports headless as before, with a warning; with one, a bake that
-# stored nothing fails the build.
+# export runs in a container started through that daemon (tools/ci/bake/Dockerfile: Mesa, Xvfb), with the
+# workspace and copies of the editor and its templates under $RUNNER_TEMP. There the editor ends up on
+# llvmpipe, Mesa's CPU Vulkan, not on the Intel GPU (whose driver cannot present to Xvfb): the baked SPIR-V
+# does not depend on the device, a CI build read 506 shaders from its bake on an NVIDIA GPU (2026-11-20).
+# llvmpipe crashed the editor right after its file scan on a Xeon E5-2670 (no AVX2; Mesa 25.2 and 26.2);
+# it works on the runners' i5-13500. The container must see the render node (the runners' layout): without
+# it (no Docker, no device) the export is headless as before, with a warning; with it, an export that
+# stored no baked shader fails the build.
 #
 # Usage: tools/ci/export_client.sh <preset> <output file>
 #   GODOT_VERSION, GITHUB_WORKSPACE, RUNNER_TEMP, RUNNER_WORKSPACE   from the workflow (the folder above

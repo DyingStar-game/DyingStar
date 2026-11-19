@@ -1,6 +1,7 @@
 # The editor that exports the client with its shaders baked (tools/ci/export_client.sh): Mesa's Vulkan
-# drivers for the host's GPU (passed with --device /dev/dri/renderD128), a virtual X display, and what
-# the Godot editor and .NET (mounted from the runner) need. Ubuntu 24.04, like the runner image.
+# drivers (llvmpipe, which the editor uses under Xvfb, and the host GPU's, which the probe looks for), a
+# virtual X display, and what the Godot editor and .NET (mounted from the runner) need. Ubuntu 24.04,
+# like the runner image.
 FROM ubuntu:24.04
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
