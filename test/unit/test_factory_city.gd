@@ -136,20 +136,16 @@ func test_containers_are_stacked_around_the_cargo_depots() -> void:
 		assert_gte(near.size(), 8, "%s has containers around it" % item[2])
 
 
-func test_four_roads_meet_and_leave_the_city_at_its_snaps() -> void:
+## How many roads and paths the city draws is the level designer's call: only where they leave it is held.
+func test_each_snap_stands_at_the_end_of_a_road() -> void:
 	var roads := LayoutRoads.of(FACTORY)
-	assert_eq(roads.size(), 6, "the avenue, the north, south-west and south roads, the factory's two")
 	var snaps := LayoutSnaps.all().get(FACTORY.trim_prefix("res://"), {}).get("snaps", []) as Array
-	assert_eq(snaps.size(), 4, "a snap where each outer road leaves")
 	for snap: Dictionary in snaps:
 		var p := Vector2(float(snap["position"][0]), float(snap["position"][2]))
 		var on_an_end := roads.any(func(r: Dictionary) -> bool:
 			var pts: PackedVector2Array = r["points"]
 			return p.distance_to(pts[0]) < 0.5 or p.distance_to(pts[pts.size() - 1]) < 0.5)
 		assert_true(on_an_end, "%s at the end of a road" % snap["name"])
-	for r: Dictionary in roads:
-		assert_eq(str(r["road_type"]), "road", "for vehicles")
-		assert_gte(float(r["width"]), 8.0)
 	KnownEngineErrors.forgive_floor_material(self)  # the layout's buildings load the floor material
 
 

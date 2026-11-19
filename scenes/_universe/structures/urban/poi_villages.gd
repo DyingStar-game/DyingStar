@@ -142,12 +142,16 @@ func _spawn_list_items(packed: PackedScene) -> void:
 	var frame: Transform3D = transform if parent_uuid != "" else global_transform
 	var layout: Node = packed.instantiate()
 	_spawn_todo = []
-	for item in layout.get_children():
-		if not is_spawnable(item):
-			continue  # decoration baked into the layout, not a networked prop
+	var keys := {}
+	# What is not spawnable is decoration baked into the layout, not a networked prop.
+	for item in top_items(layout):
+		# Its name alone, whatever folder it is tidied in: moving it into one keeps its uuid.
 		var key := str(item.name)
+		if keys.has(key):
+			push_error("layout %s: two items named %s, the second replaces the first" % [packed.resource_path, key])
+		keys[key] = true
 		# layout root = us -> parent frame
-		_spawn_todo.append(_item_data(item, frame * (item as Node3D).transform, parent_uuid, key, s.uuid))
+		_spawn_todo.append(_item_data(item, frame * LayoutLine.frame_in(item, layout), parent_uuid, key, s.uuid))
 		# What the layout placed UNDER it (the containers of a storage area) is spawned as its children:
 		# their pose stays local to it, so they follow it when the server seats it on its ground.
 		for child in layout_children(item, layout):
@@ -224,6 +228,34 @@ func _hold_stream(hold: bool) -> void:
 ## Whether a layout node is a networked prop poi_villages spawns: a PropSync, from a scene.
 static func is_spawnable(node: Node) -> bool:
 	return PropSync.of(node) != null and node is Node3D and node.scene_file_path != ""
+
+
+## Whether [param node] is a folder of a layout: a bare Node3D (no script, not a scene) a level designer
+## tidies things under. What stands in it is read as if it stood under the layout's root.
+static func is_folder(node: Node) -> bool:
+	return node.get_class() == "Node3D" and node.get_script() == null and node.scene_file_path == ""
+
+
+## The nodes of [param layout] that count as its own: its root's children and, through its folders
+## ([method is_folder], nested or not), theirs. The folders themselves are left out.
+static func top_nodes(layout: Node) -> Array[Node]:
+	var out: Array[Node] = []
+	for n in layout.get_children():
+		if is_folder(n):
+			out.append_array(top_nodes(n))
+		else:
+			out.append(n)
+	return out
+
+
+## The networked props [param layout] spawns under the village itself: those of [method top_nodes].
+## Their pose in the layout is LayoutLine.frame_in(item, layout), a folder's own transform included.
+static func top_items(layout: Node) -> Array[Node]:
+	var out: Array[Node] = []
+	for n in top_nodes(layout):
+		if is_spawnable(n):
+			out.append(n)
+	return out
 
 
 ## The networked props the LAYOUT placed under [param item] (not the ones of item's own scene): what a

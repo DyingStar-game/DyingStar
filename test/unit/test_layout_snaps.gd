@@ -8,7 +8,8 @@ const TOOL := "godot --headless --path . res://tools/planettech/layout_snaps_exp
 
 func test_the_exported_file_is_current() -> void:
 	var on_disk := FileAccess.get_file_as_string(LayoutSnaps.EXPORT_PATH)
-	assert_eq(on_disk, LayoutSnaps.to_json(), "a layout or a snap moved: run  %s  then export_roads.py" % TOOL)
+	assert_eq(on_disk, LayoutSnaps.to_json(), "a layout or a snap moved: the pull request's \"Layout snaps\" "
+			+ "check rewrites the file (by hand: %s); then export_roads.py" % TOOL)
 	KnownEngineErrors.forgive_floor_material(self)  # the layouts' buildings load the floor material
 
 

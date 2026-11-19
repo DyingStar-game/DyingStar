@@ -11,7 +11,7 @@ extends RefCounted
 
 ## Room left around the outermost buildings (m): their aprons, and a little street.
 const MARGIN_M := 10.0
-## The layout reader whose spawn rules decide which items count (is_spawnable, layout_children).
+## The layout reader whose spawn rules decide which items count (top_items, layout_children).
 const PoiVillagesScript := preload("res://scenes/_universe/structures/urban/poi_villages.gd")
 
 
@@ -25,9 +25,7 @@ static func of(scene_path: String) -> Dictionary:
 static func of_layout(layout: Node) -> Dictionary:
 	var lo := Vector2(INF, INF)
 	var hi := Vector2(-INF, -INF)
-	for item in layout.get_children():
-		if not PoiVillagesScript.is_spawnable(item):
-			continue
+	for item: Node in PoiVillagesScript.top_items(layout):
 		var items: Array[Node] = [item]
 		items.append_array(PoiVillagesScript.layout_children(item, layout))
 		for it: Node in items:
