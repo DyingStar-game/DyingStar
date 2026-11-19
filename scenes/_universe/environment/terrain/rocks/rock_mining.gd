@@ -1162,6 +1162,8 @@ func _server_ready() -> void:
 	# comes near and zero them when none is, dropping far rocks out of the physics broadphase.
 	_coll_layer = collision_layer
 	_coll_mask = collision_mask
+	# The below-ground net (see _catch_if_below_surface): the server's only, a replica just follows its pose.
+	_surface_net = true
 
 ## Server: called periodically by Server._refresh_rock_proximity. A settled rock keeps its collider
 ## only while a player is within range (so it stays walkable / hittable by the mining ray); when no
@@ -1189,6 +1191,101 @@ func server_update_proximity(near: bool) -> void:
 		collision_layer = 0
 		collision_mask = 0
 		_coll_disabled = true
+
+## SERVER safety net: put a rock back on the ground when it has clearly gone under the planet. Same net as the
+## player's and the truck's (SurfaceCatch.rescue_dist), for the same reason: the terrain collision is a thin
+## trimesh, and a piece just cut off a rock, or a block a mine face drops, was often found going through it
+## (playtest 2026-11-18), on its way to the fallback shells hundreds of metres down.
+##
+## Runs from _integrate_forces, which Jolt only calls for an AWAKE body: a field of ~1000 rocks asleep or frozen
+## costs nothing, and a rock falling through the world never sleeps, so it is always seen. Even awake, one test every
+## SURFACE_CATCH_EVERY steps: a mine face lets 25 blocks go at once.
+##
+## Measured from the rock's LOWEST point (the corners of the piece as it stands: a cut piece is not centred on its
+## body), with the player's 3 m margin. Released SURFACE_CATCH_DROP_M above the ground, collider entirely out of the
+## trimesh, so the depenetration cannot push it back under (the truck's ping-pong, see Vehicle).
+const SURFACE_CATCH_MARGIN_M := 3.0
+## Height (m) of the rock's underside over the ground when it is put back.
+const SURFACE_CATCH_DROP_M := 0.5
+## One below-ground test every this many physics steps of an awake rock (~10 Hz at 60 Hz).
+const SURFACE_CATCH_EVERY := 6
+## Under the ground this close (m) to a village mine's dug air, a rock that fell through its rock goes back on the
+## mine's floor instead of the ground above it.
+const MINE_RESCUE_MARGIN_M := 40.0
+## Height (m) of the rock's underside over the mine's floor when it is put back there: a gallery has a roof.
+const MINE_RESCUE_DROP_M := 0.3
+var _catch_phase: int = randi() % SURFACE_CATCH_EVERY
+var _catch_logged_ms: int = -100000
+var _surface_net: bool = false
+
+
+func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	if not _surface_net:
+		return
+	_catch_phase += 1
+	if _catch_phase % SURFACE_CATCH_EVERY != 0:
+		return
+	_catch_if_below_surface(state)
+
+
+## Distance from [param centre] of the lowest corner of [param box] placed by [param xform] (world): how deep the
+## underside of a piece reaches. Static and pure.
+static func lowest_dist(box: AABB, xform: Transform3D, centre: Vector3) -> float:
+	var lowest := INF
+	for i in 8:
+		lowest = minf(lowest, (xform * box.get_endpoint(i) - centre).length())
+	return lowest
+
+
+func _catch_if_below_surface(state: PhysicsDirectBodyState3D) -> void:
+	if freeze or get_parent() is Player or get_parent() is Vehicle:
+		return  # held in the wall, culled, carried, bedded: nothing of its own to fall with
+	var planet: Node = get_parent()
+	while planet != null and not (planet is Planet):
+		planet = planet.get_parent()
+	if planet == null:
+		return
+	var pdata: PlanetData = planet.get("planet_data")
+	var mesh_node := _mesh_node()
+	if pdata == null or mesh_node == null:
+		return
+	var planet_pos: Vector3 = (planet as Node3D).global_position
+	var planet_basis: Basis = (planet as Node3D).global_transform.basis
+	var origin: Vector3 = state.transform.origin
+	var local_body: Vector3 = planet_basis.inverse() * (origin - planet_pos)
+	var bottom: float = lowest_dist(_piece_aabb(), state.transform * mesh_node.transform, planet_pos)
+	var ground: float = SurfaceCatch.rescue_dist(state.get_space_state(), planet, pdata, local_body, bottom,
+			origin, SURFACE_CATCH_MARGIN_M, [get_rid()])
+	if ground < 0.0:
+		return
+	# How far the body's origin stands over its underside: kept when it is put back.
+	var lift: float = local_body.length() - bottom
+	var now_ms: int = Time.get_ticks_msec()
+	var log_it: bool = now_ms - _catch_logged_ms >= 1000  # a print per step is a known server-cost trap
+	if log_it:
+		_catch_logged_ms = now_ms
+	var mine := MineSite.mine_near(origin, MINE_RESCUE_MARGIN_M)
+	if mine != null:
+		var floor_at := mine.floor_near_global(origin, lift + MINE_RESCUE_DROP_M)
+		if log_it:
+			print("🪨 Rock %s fell through the rock of mine %s at %s: put back on its floor at %s"
+					% [uuid.substr(0, 8), mine.name, mine.to_local(origin), mine.to_local(floor_at)])
+		state.transform = Transform3D(state.transform.basis, floor_at)
+		state.linear_velocity = Vector3.ZERO
+		state.angular_velocity = Vector3.ZERO
+		return
+	if log_it:
+		print("🪨 Rock %s: %.1f m under the surface — dropped back from %.1f m above it"
+				% [uuid.substr(0, 8), ground - bottom, SURFACE_CATCH_DROP_M])
+	var dir: Vector3 = local_body.normalized()
+	state.transform = Transform3D(state.transform.basis,
+			planet_pos + planet_basis * (dir * (ground + lift + SURFACE_CATCH_DROP_M)))
+	# Cut the speed it built up sinking, so it lands instead of punching back through; the rest is kept.
+	var up_world: Vector3 = (planet_basis * dir).normalized()
+	var radial: float = state.linear_velocity.dot(up_world)
+	if radial < 0.0:
+		state.linear_velocity -= up_world * radial
+
 
 func check_rock() -> void:
 	# Breakable = not carriable, measured on EVERY piece. The test used to run only once `fractures`

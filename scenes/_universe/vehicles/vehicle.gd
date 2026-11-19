@@ -4095,29 +4095,16 @@ func _catch_if_below_surface() -> void:
 	if local_body.length_squared() < 1.0:
 		return
 	var dir: Vector3 = local_body.normalized()
-	var body_dist: float = local_body.length()
 	# Ride height: the chassis origin sits this far above the wheels' contact points, so the
 	# wheels are at body_dist - clearance from the centre.
 	var clearance: float = _ground_clearance()
-	var wheels_dist: float = body_dist - clearance
-	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
-	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
-		return  # at or above the ground — the collision handles it
-	# Under the relief on purpose, as the player's net knows: driving through a cave, or down a village mine
-	# (its lift, a station, a gallery). Only asked once the cheap test says "under".
-	if CavePlanetRegistry.contains(pdata, local_body) or MineSite.contains_point(global_position):
+	var wheels_dist: float = local_body.length() - clearance
+	# Above the ground, in a cave, down a village mine (its lift, a station, a gallery), in a cutting, or on the
+	# collision under a sharp crest (a truck parked there was dropped every tick): nothing fell through.
+	var surface_dist: float = SurfaceCatch.rescue_dist(get_world_3d().direct_space_state, planet, pdata, local_body,
+			wheels_dist, global_position, _SURFACE_CATCH_MARGIN, [get_rid()])
+	if surface_dist < 0.0:
 		return
-	surface_dist = pdata.carved_surface_dist(dir)
-	if wheels_dist >= surface_dist - _SURFACE_CATCH_MARGIN:
-		return
-	# The real ground decides, not the relief sampled at this point: on a sharp crest the collision
-	# triangles run metres under it (SurfaceCatch), and a truck parked there was dropped every tick.
-	var ground: float = SurfaceCatch.ground_dist(get_world_3d().direct_space_state, planet, dir,
-			surface_dist, wheels_dist, _SURFACE_CATCH_MARGIN, [get_rid()])
-	if ground > 0.0:
-		if wheels_dist >= ground - _SURFACE_CATCH_MARGIN:
-			return  # on the collision, under the theoretical crest
-		surface_dist = ground
 	var up_world: Vector3 = (planet_basis * dir).normalized()
 	# Fell through a village mine's rock: back on the mine's floor (back from the faces), not on the ground
 	# hundreds of metres above it.

@@ -3497,33 +3497,15 @@ func _catch_if_below_surface(area: Area3D) -> void:
 	if pdata == null:
 		return
 	var local_world: Vector3 = player.global_position - planet.global_position
-	if local_world.length_squared() < 1.0:
-		return
 	var planet_basis: Basis = planet.global_transform.basis
 	var local_body: Vector3 = planet_basis.inverse() * local_world
-	if CavePlanetRegistry.contains(pdata, local_body):
+	# The feet are the body's origin. Above the ground, in a cave, down a mine, in a cutting, or on the collision
+	# under a sharp crest: nothing fell through (SurfaceCatch.rescue_dist).
+	var surface_dist: float = SurfaceCatch.rescue_dist(player.get_world_3d().direct_space_state, planet, pdata,
+			local_body, local_body.length(), player.global_position, player._SURFACE_CATCH_MARGIN, [player.get_rid()])
+	if surface_dist < 0.0:
 		return
 	var dir: Vector3 = local_body.normalized()
-	var player_dist: float = local_body.length()
-	var surface_dist: float = pdata.crack_aware_surface_dist(dir)
-	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
-		return  # at/near or above the surface — the collision handles it
-	if MineSite.contains_point(player.global_position):
-		return  # down a village mine's shaft or galleries: under the ground on purpose
-	# Under the RAW relief — but a cutting or a tunnel of a profiled line is
-	# ground carved away on purpose, and the body is standing on its floor.
-	# The dearer carved test only runs here, where the raw one has spoken.
-	surface_dist = pdata.carved_surface_dist(dir)
-	if player_dist >= surface_dist - player._SURFACE_CATCH_MARGIN:
-		return
-	# The theoretical surface is the relief at this very point; the collision is a grid of
-	# triangles that runs metres under it on a sharp crest (SurfaceCatch). The real ground decides.
-	var ground: float = SurfaceCatch.ground_dist(player.get_world_3d().direct_space_state, planet, dir,
-			surface_dist, player_dist, player._SURFACE_CATCH_MARGIN, [player.get_rid()])
-	if ground > 0.0:
-		if player_dist >= ground - player._SURFACE_CATCH_MARGIN:
-			return  # standing on the collision, under the theoretical crest: nothing fell through
-		surface_dist = ground
 	# Fell through a village mine's rock (a block of a fallen layer pushed them through its floor): back on the
 	# mine's floor, not on the ground hundreds of metres above it.
 	var mine := MineSite.mine_near(player.global_position, _MINE_RESCUE_MARGIN_M)
