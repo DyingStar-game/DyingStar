@@ -46,6 +46,29 @@ func test_progress_runs_from_nothing_to_all() -> void:
 	assert_eq(Warmup.progress(10, 0, 40, 0), 1.0, "all drawn")
 
 
+func test_the_scenes_are_loaded_one_at_a_time() -> void:
+	# All at once, with sub-threads, the loads deadlocked in exported games: a worker waiting for a mesh's
+	# pipelines ran another scene's load, which waited for the GDScript loading lock held below it.
+	var first := "res://assets/_universe/audio/music/playlists/capital.tres"
+	var second := "res://assets/_universe/audio/music/playlists/combat.tres"
+	var warmup := Warmup.new()  # never in the tree: only its loading runs
+	warmup._loading = [first, second]
+	warmup._request_next()
+	assert_ne(ResourceLoader.load_threaded_get_status(first), ResourceLoader.THREAD_LOAD_INVALID_RESOURCE, "first asked for")
+	assert_eq(ResourceLoader.load_threaded_get_status(second), ResourceLoader.THREAD_LOAD_INVALID_RESOURCE,
+		"the second waits for the first")
+	for path in [first, second]:
+		var started := Time.get_ticks_msec()
+		while ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS \
+				and Time.get_ticks_msec() - started < 10000:
+			OS.delay_msec(5)
+		warmup._take_loaded()  # takes it in, and asks for the next
+	assert_true(warmup._loading.is_empty(), "both taken in")
+	assert_true(Warmup._held.has(first) and Warmup._held.has(second), "and kept")
+	Warmup._held.erase(first)
+	Warmup._held.erase(second)
+	warmup.free()
+
 func test_every_shader_of_a_person_is_drawn_alone_first() -> void:
 	# A person's shaders are warmed one a frame (each costs seconds on a cold cache): one left out of the list
 	# would compile with the person, all in the same frame again.
