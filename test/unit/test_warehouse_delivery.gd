@@ -177,6 +177,20 @@ func test_the_depot_board_says_who_collects_what_where() -> void:
 	assert_eq(int(rows[0]["count"]), 2)
 
 
+func test_the_stock_board_marks_the_goods_the_warehouse_buys_no_more() -> void:
+	var full := StockBoard.full_goods({"stocks": [
+		{"goodType": "ore.gold", "quantity": 8367, "capacity": 5000},
+		{"goodType": "ingot.gold", "quantity": 120, "capacity": 5000},
+		{"goodType": "water", "quantity": 99999, "capacity": null},
+		{"code": "ore.iron", "quantity": 10, "capacity": 10},
+	]})
+	assert_eq(full, ["ore.gold", "ore.iron"], "at its capacity or past it; none without a capacity")
+	assert_eq(StockBoard.full_goods({}), [], "no answer: nothing is said full")
+	var rows := StockBoard.mark_full([{"good": "ore.gold", "kg": 8367}, {"good": "ingot.gold", "kg": 120}], full)
+	assert_true(bool(rows[0].get("full", false)))
+	assert_false(bool(rows[1].get("full", false)))
+
+
 func test_the_stock_board_lists_each_good_its_crates_kg_and_shelves() -> void:
 	var shelf := Node3D.new()
 	shelf.name = "shelf_cargo_row1_1"

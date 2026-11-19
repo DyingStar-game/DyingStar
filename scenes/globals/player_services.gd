@@ -503,6 +503,12 @@ func market_prices() -> Dictionary:
 	return await _http_get(SERVICE_SIMULATOR, "/api/market")
 
 
+## A warehouse (its cargo depot's uuid) as the simulator counts it: {stocks: [{goodType, quantity,
+## capacity}]}. Past its capacity it buys no more of a good shelved off a mission (services ADR 0017).
+func warehouse_stock(warehouse_id: String) -> Dictionary:
+	return await _http_get(SERVICE_SIMULATOR, "/api/warehouses/%s" % warehouse_id.uri_encode())
+
+
 # ---------------------------------------------------------------------------------------------
 # Missions
 # ---------------------------------------------------------------------------------------------
