@@ -232,15 +232,14 @@ func _exit_tree() -> void:
 		_marker = -1
 
 
-## Load the scenes on worker threads, and list the mines' meshes and a person's shaders: once SSS_PRIMER
-## was drawn.
+## Load the scenes, one at a time (_request_next), and list the mines' meshes and a person's shaders: once
+## SSS_PRIMER was drawn.
 func _request_loads() -> void:
 	for path in wanted():
-		if _held.has(path) or not ResourceLoader.exists(path):
-			continue
-		if ResourceLoader.load_threaded_request(path, "", true) == OK:
+		if not _held.has(path) and ResourceLoader.exists(path):
 			_loading.append(path)
 	_wanted = _loading.size()
+	_request_next()
 	_to_draw.append_array(mine_meshes())
 	for shader in person_shaders():
 		_to_draw.append([_stand_in, [shader]])  # its material made when put out (_material)
@@ -320,11 +319,12 @@ static func _material(what: Variant) -> Variant:
 ## One scene loaded since: kept, its meshes listed, its layout's signs read (one a frame: a layout read here
 ## takes a second).
 func _take_loaded() -> void:
-	for path: String in _loading.duplicate():
+	for path: String in _loading.slice(0, 1):
 		var status := ResourceLoader.load_threaded_get_status(path)
 		if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			continue
 		_loading.erase(path)
+		_request_next()
 		if status == ResourceLoader.THREAD_LOAD_LOADED:
 			var loaded: Resource = ResourceLoader.load_threaded_get(path)
 			_held[path] = loaded
@@ -336,6 +336,18 @@ func _take_loaded() -> void:
 					with_rock_shader(meshes)
 				_to_draw.append_array(meshes)
 		return
+
+
+## Load the first scene still wanted, on one worker thread and without sub-threads; the next once it is in.
+## All at once, with sub-threads, they deadlocked in exported games (2026-11-19): a mesh made on a loader
+## thread waits for its pipelines (mesh_generate_pipelines), and a worker that waits runs other tasks
+## meanwhile -- another scene's load, which then waited for the GDScript loading lock held below it. The
+## warm-up never ended, its scenes were never warmed, and their loads hung for good.
+func _request_next() -> void:
+	while not _loading.is_empty():
+		if ResourceLoader.load_threaded_request(_loading[0], "", false) == OK:
+			return
+		_loading.pop_front()  # cannot be loaded: skipped
 
 
 ## A person (hidden): a baked body is built at run time (HumanAppearance), so no scene names its skin, eye and
