@@ -20,21 +20,21 @@ const PEER := "player-bbb"
 
 func test_general_channel_uses_the_grammar_topic() -> void:
 	# Was "chat/general" (one word, tolerated by nothing but the fail-open chat/# allow-list).
-	assert_eq(CHAT_NETWORK._STATIC_TOPICS[DirectChat.ChannelE.GENERAL], "chat/global")
+	assert_eq(CHAT_NETWORK._STATIC_TOPICS[ChatChannel.ChannelE.GENERAL], "chat/global")
 
 
 func test_context_channels_use_their_grammar_topics() -> void:
-	assert_eq(CHAT_NETWORK._TOPIC_TEMPLATES[DirectChat.ChannelE.GROUP], "chat/group/%s")
+	assert_eq(CHAT_NETWORK._TOPIC_TEMPLATES[ChatChannel.ChannelE.GROUP], "chat/group/%s")
 	# Was "chat/alliance/%s" — chatauth has no alliance channel, only corporation.
-	assert_eq(CHAT_NETWORK._TOPIC_TEMPLATES[DirectChat.ChannelE.CORPORATION], "chat/corporation/%s")
-	assert_false(CHAT_NETWORK._TOPIC_TEMPLATES.has(DirectChat.ChannelE.DIRECT_MESSAGE),
+	assert_eq(CHAT_NETWORK._TOPIC_TEMPLATES[ChatChannel.ChannelE.CORPORATION], "chat/corporation/%s")
+	assert_false(CHAT_NETWORK._TOPIC_TEMPLATES.has(ChatChannel.ChannelE.DIRECT_MESSAGE),
 			"DM needs a peer id on BOTH ends of its topic: it is handled by its own helpers")
 
 
 func test_channel_enum_is_corporation_everywhere() -> void:
 	# The rename must reach the enum and its labels — the UI shows the enum NAME.
-	assert_eq(DirectChat.ChannelE.CORPORATION, 3)
-	assert_eq(DirectChat.ChannelE.keys()[3], "CORPORATION")
+	assert_eq(ChatChannel.ChannelE.CORPORATION, 3)
+	assert_eq(ChatChannel.ChannelE.keys()[3], "CORPORATION")
 	assert_eq(DirectChat.CHANNEL_LABELS["CORPORATION"], "%%CHAT_CORPORATION")
 	assert_false(DirectChat.CHANNEL_LABELS.has("ALLIANCE"), "the alliance label is gone")
 

@@ -166,7 +166,7 @@ const _DEFAULT_BROKER_URL := "ws://127.0.0.1:9001"
 
 # Channels reachable with a fixed topic (no context id needed).
 const _STATIC_TOPICS := {
-	DirectChat.ChannelE.GENERAL: "chat/global",
+	ChatChannel.ChannelE.GENERAL: "chat/global",
 }
 
 # Channels whose topic needs a context id supplied by a provider (the "sockets").
@@ -174,9 +174,9 @@ const _STATIC_TOPICS := {
 # while its subscription is the single wildcard filter "chat/dm/+/<me>", so neither this
 # map nor one id alone can describe it — see dm_publish_topic()/dm_subscribe_topic().
 const _TOPIC_TEMPLATES := {
-	DirectChat.ChannelE.REGION: "chat/region/%s",
-	DirectChat.ChannelE.GROUP: "chat/group/%s",
-	DirectChat.ChannelE.CORPORATION: "chat/corporation/%s",
+	ChatChannel.ChannelE.REGION: "chat/region/%s",
+	ChatChannel.ChannelE.GROUP: "chat/group/%s",
+	ChatChannel.ChannelE.CORPORATION: "chat/corporation/%s",
 }
 
 # Prefix of the player notification feed; the full topic is "notify/<my id>".
@@ -309,7 +309,7 @@ func publish_message(message: ChatMessage) -> void:
 	if topic == "":
 		push_warning("[chat] dropping message: channel %d has no topic" % message.channel)
 		return
-	if message.channel == DirectChat.ChannelE.DIRECT_MESSAGE:
+	if message.channel == ChatChannel.ChannelE.DIRECT_MESSAGE:
 		message.peer_id = _resolve_id(message.channel)
 	message.author = Globals.player_name
 	_client.publish(topic, JSON.stringify({
@@ -340,7 +340,7 @@ func start_dm(peer_id: String, display_name: String = "") -> void:
 	if peer_id == "":
 		return
 	remember_peer_name(peer_id, display_name)
-	set_id_provider(DirectChat.ChannelE.DIRECT_MESSAGE, func() -> String: return peer_id)
+	set_id_provider(ChatChannel.ChannelE.DIRECT_MESSAGE, func() -> String: return peer_id)
 	# Opening the thread is what clears "has something new" — reading it is the point.
 	_pending_dm_peers.erase(peer_id)
 	dm_requested.emit(peer_id)
@@ -351,13 +351,13 @@ func start_dm(peer_id: String, display_name: String = "") -> void:
 func close_dm() -> void:
 	if dm_peer() == "":
 		return
-	set_id_provider(DirectChat.ChannelE.DIRECT_MESSAGE, func() -> String: return "")
+	set_id_provider(ChatChannel.ChannelE.DIRECT_MESSAGE, func() -> String: return "")
 	dm_peer_changed.emit("", "")
 
 
 ## The pinned correspondent's social id, or "" when no private thread is open.
 func dm_peer() -> String:
-	return _resolve_id(DirectChat.ChannelE.DIRECT_MESSAGE)
+	return _resolve_id(ChatChannel.ChannelE.DIRECT_MESSAGE)
 
 
 ## The pinned correspondent's display name, or "" while it is still being resolved.
@@ -442,7 +442,7 @@ func publish_dm_to(peer_id: String, content: String) -> bool:
 	var me := _my_id()
 	if me == "":
 		return false
-	var message := ChatMessage.new(content, DirectChat.ChannelE.DIRECT_MESSAGE,
+	var message := ChatMessage.new(content, ChatChannel.ChannelE.DIRECT_MESSAGE,
 			Globals.player_name, 0.0, peer_id)
 	_client.publish(dm_publish_topic(me, peer_id), JSON.stringify({
 		"author": message.author,
@@ -458,19 +458,19 @@ func active_channels() -> Array:
 	for channel in _STATIC_TOPICS:
 		result.append(channel)
 	# SAY needs no broker: it travels over the game connection (see SayMessage).
-	result.append(DirectChat.ChannelE.SAY)
+	result.append(ChatChannel.ChannelE.SAY)
 	for channel in _TOPIC_TEMPLATES:
 		if _resolve_id(channel) != "":
 			result.append(channel)
-	if topic_for_channel(DirectChat.ChannelE.DIRECT_MESSAGE) != "":
-		result.append(DirectChat.ChannelE.DIRECT_MESSAGE)
+	if topic_for_channel(ChatChannel.ChannelE.DIRECT_MESSAGE) != "":
+		result.append(ChatChannel.ChannelE.DIRECT_MESSAGE)
 	return result
 
 ## Resolve a channel to the topic to PUBLISH on, or "" when the channel is inactive.
 func topic_for_channel(channel: int) -> String:
 	if _STATIC_TOPICS.has(channel):
 		return _STATIC_TOPICS[channel]
-	if channel == DirectChat.ChannelE.DIRECT_MESSAGE:
+	if channel == ChatChannel.ChannelE.DIRECT_MESSAGE:
 		var me := _my_id()
 		var peer := _resolve_id(channel)
 		return dm_publish_topic(me, peer) if me != "" and peer != "" else ""
@@ -570,7 +570,7 @@ func _subscribe_active_channels() -> void:
 ## The topic to be SUBSCRIBED to for [param channel] — the publish topic everywhere
 ## except DM, whose one wildcard filter covers every conversation addressed to us.
 func _subscribe_topic_for(channel: int) -> String:
-	if channel == DirectChat.ChannelE.DIRECT_MESSAGE:
+	if channel == ChatChannel.ChannelE.DIRECT_MESSAGE:
 		var me := _my_id()
 		return dm_subscribe_topic(me) if me != "" else ""
 	return topic_for_channel(channel)
@@ -583,11 +583,11 @@ func _wire_context_channels() -> void:
 		return
 	# GROUP: the caller's one group, if any (social answers null when they have none).
 	var group: Dictionary = await PlayerServices.my_group()
-	_set_context_id(DirectChat.ChannelE.GROUP, _id_of(group.get("data")))
+	_set_context_id(ChatChannel.ChannelE.GROUP, _id_of(group.get("data")))
 	# CORPORATION: the first corporation the caller belongs to — with several, the chat
 	# sits in the first rather than asking the player which one to write in.
 	var corporations: Dictionary = await PlayerServices.my_corporations()
-	_set_context_id(DirectChat.ChannelE.CORPORATION, _first_row_id(corporations))
+	_set_context_id(ChatChannel.ChannelE.CORPORATION, _first_row_id(corporations))
 
 ## The provider for a context channel, possibly returning "" — an empty id leaves the
 ## channel inactive (greyed out), which is how losing the membership takes it down.
@@ -674,7 +674,7 @@ func _on_broker_message(topic: String, payload: String) -> void:
 			push_warning("[Notify] unreadable notification: %s" % payload.left(200))
 		return
 	var channel := _channel_for_topic(topic)
-	if channel == DirectChat.ChannelE.UNSPECIFIED:
+	if channel == ChatChannel.ChannelE.UNSPECIFIED:
 		return
 	var data = JSON.parse_string(payload)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -690,7 +690,7 @@ func _on_broker_message(topic: String, payload: String) -> void:
 		str(data.get("author", "")),
 		0.0
 	)
-	if channel == DirectChat.ChannelE.DIRECT_MESSAGE:
+	if channel == ChatChannel.ChannelE.DIRECT_MESSAGE:
 		received.peer_id = dm_sender_of(topic, me)
 		if received.peer_id != "":
 			# The wire only carries the sender's id, so this is where a correspondent met for the
@@ -712,8 +712,8 @@ func _channel_for_topic(topic: String) -> int:
 		if topic_for_channel(channel) == topic:
 			return channel
 	if dm_sender_of(topic, _my_id()) != "":
-		return DirectChat.ChannelE.DIRECT_MESSAGE
-	return DirectChat.ChannelE.UNSPECIFIED
+		return ChatChannel.ChannelE.DIRECT_MESSAGE
+	return ChatChannel.ChannelE.UNSPECIFIED
 
 ## Parse "ws://host[:port][/path]" into {proto, host, port}. Returns {} on a
 ## malformed url. Any path is dropped: the MQTT addon always requests "/" and

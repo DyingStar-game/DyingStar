@@ -77,7 +77,7 @@ func test_a_dm_is_shown_only_for_the_pinned_correspondent() -> void:
 
 
 func test_a_shared_channel_message_is_never_filtered() -> void:
-	var group := make_message(PEER, DirectChat.ChannelE.GROUP)
+	var group := make_message(PEER, ChatChannel.ChannelE.GROUP)
 	assert_true(_visible(group, PEER), "a group message shows whatever thread is pinned")
 	assert_true(_visible(group, ""), "and with none pinned")
 
@@ -88,10 +88,10 @@ func test_a_shared_channel_message_is_never_filtered() -> void:
 ## is not the pinned one is held back (ChatNetwork keeps that correspondent as pending instead),
 ## while a shared channel always shows.
 func _visible(message: ChatMessage, pinned_peer: String) -> bool:
-	if message.channel != DirectChat.ChannelE.DIRECT_MESSAGE:
+	if message.channel != ChatChannel.ChannelE.DIRECT_MESSAGE:
 		return true
 	return message.peer_id == pinned_peer
 
 
-func make_message(peer_id: String, channel: int = DirectChat.ChannelE.DIRECT_MESSAGE) -> ChatMessage:
+func make_message(peer_id: String, channel: int = ChatChannel.ChannelE.DIRECT_MESSAGE) -> ChatMessage:
 	return ChatMessage.new("salut", channel, "Quelqu_un", 0.0, peer_id)

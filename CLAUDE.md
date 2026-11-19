@@ -22,6 +22,10 @@ for every change, not the state of a feature.
   A vehicle's seat and bay names are also the keys of its replicated state, in snake_case through
   `VehicleNetKey` (`SlotFL` -> `slot_fl`). Enforced on the vehicle scenes by
   `test/unit/test_vehicle_node_names.gd`; nodes that come from a Blender model keep their Blender name.
+- **Autoloads never name a gameplay class.** They compile before the first frame, and so does every class,
+  autoload or `preload` their code names, transitively: one `is Player` loaded most of the game at boot.
+  Load a gameplay script with `load()` where it is first needed, untyped. Enforced by
+  `test/unit/test_boot_light_autoloads.gd`, which prints the chain that brought a forbidden script in.
 - Lint with `gdlint` (rules in `gdlintrc`, 140 characters per line).
 - Unit tests are GUT, in `test/unit/`.
 

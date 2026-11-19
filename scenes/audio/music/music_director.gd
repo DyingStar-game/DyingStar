@@ -8,6 +8,10 @@ extends Node
 ## position) announces its changes, and music has no use for an answer faster than half a second.
 
 const TABLE_PATH: String = "res://scenes/audio/music/music_table.tres"
+## Reads where the followed player is (station, planet, point of interest). Loaded with load() when first
+## used, never named here: an autoload that names Player, Planet or OrbitalStation makes the game compile
+## and load most of its scripts and scenes before its first frame (2026-11-19).
+const PLACE_PATH: String = "res://scenes/audio/music/music_place.gd"
 const BUS: StringName = &"Music"
 ## The menu's music plays here instead: it sends into Music, and has a slider of its own (Settings >
 ## Audio > Menu music) — the menu's tracks can be turned down without the game's.
@@ -22,7 +26,8 @@ const FADE_MAX_STEP_S: float = 0.05
 ## Set by start(); tests hand their own.
 var table: MusicTable = null
 
-var _listener: Player = null
+## The followed Player (untyped: see PLACE_PATH).
+var _listener: Node3D = null
 ## The last situation read, kept for the debug panel.
 var _context: MusicContext = null
 ## What is playing (null: silence), and what the last probe asked for instead.
@@ -42,8 +47,7 @@ var _fades: Array[Dictionary] = []
 ## Plays instead of what the table would choose, while set (the Credits page's track): set_override.
 var _override: MusicPlaylist = null
 
-## body name → its points of interest, read once (StarMapPoi.load_for parses a file).
-var _pois_by_body: Dictionary = {}
+var _place_script: GDScript = null
 
 
 func _ready() -> void:
@@ -84,7 +88,7 @@ func override() -> MusicPlaylist:
 
 ## The player whose situation decides the music from now on: ours, once it stands in the world. When it
 ## leaves the tree for good (back to the menu), the music returns to the menu's on its own.
-func follow(player: Player) -> void:
+func follow(player: Node3D) -> void:
 	_listener = player
 	_probe_in_s = 0.0
 
@@ -147,39 +151,15 @@ func _read_context() -> MusicContext:
 	if not _listener.is_inside_tree():
 		return null
 
-	var detector: Area3D = _listener.get_node_or_null("AreaDetector") as Area3D
-	if detector != null and detector.monitoring:
-		var zone: MusicZone = MusicZone.strongest(detector.get_overlapping_areas())
-		if zone != null:
-			context.zone_tag = zone.tag
-			context.zone_playlist = zone.playlist
-
-	context.floating = _listener.floating
-
-	var station: OrbitalStation = OrbitalStation.of(_listener)
-	if station != null:
-		var site: StationSite = station.site()
-		context.station_id = site.id if site != null else String(station.name)
-		return context
-
-	var body: Planet = Planet.of(_listener)
-	var where: Vector3 = _listener.global_position
-	if body == null or body.planet_data == null or not body.within_ground_reach(where):
-		return context
-	# Near the ground of a body, the ground decides and `floating` is not asked: down here it is only
-	# ever true for the dev flight (god mode), and flying over a town is still being in that town.
-	# Seen in game: standing on Tarsis 3 after a dev flight, with the EVA music playing.
-	context.floating = false
-	context.on_ground = true
-	context.poi = MusicPoi.containing(
-		_pois_of(body.planet_data.planet_name), body.local_dir_of(where), body.planet_data.radius)
+	_place().read(context, _listener)
 	return context
 
 
-func _pois_of(body_key: String) -> Array[Dictionary]:
-	if not _pois_by_body.has(body_key):
-		_pois_by_body[body_key] = StarMapPoi.load_for(body_key)
-	return _pois_by_body[body_key]
+## MusicPlace, loaded when first asked (in the world): see PLACE_PATH.
+func _place() -> GDScript:
+	if _place_script == null:
+		_place_script = load(PLACE_PATH)
+	return _place_script
 
 
 func _switch_to(playlist: MusicPlaylist) -> void:

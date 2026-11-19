@@ -34,6 +34,12 @@ extends Node
 ## thing is a clean no-op. It is the server's own service-account traffic ([ServiceAuth], client
 ## credentials), never a player token. Secrets are never logged.
 
+## The server-side helpers this autoload calls, loaded on use and never named by class: an autoload that
+## names a gameplay class compiles and loads most of the game at boot, before its first frame (2026-11-19).
+const MACHINE_BREAKDOWNS_SCRIPT := "res://server/machine_breakdowns.gd"
+const INSPECTION_GROUND_SCRIPT := "res://server/inspection_ground.gd"
+## Planet.GROUP, spelt out for the same reason (test_boot_light_autoloads checks they agree).
+const PLANET_GROUP := &"planet"
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
 
 ## Seconds between two full re-pushes. The service expires a state after 30 s, so one beat of slack
@@ -355,7 +361,7 @@ func usim_internal(method: HTTPClient.Method, path: String, body: Variant) -> Di
 func _sync_breakdowns() -> void:
 	if _usim_url == "" or not _is_active():
 		return
-	var broken: int = await MachineBreakdowns.sync(usim_internal, get_tree())
+	var broken: int = await load(MACHINE_BREAKDOWNS_SCRIPT).sync(usim_internal, get_tree())
 	if broken != _broken_reported:
 		_broken_reported = broken
 		print("[Breakdown] %d machine(s) broken down" % broken)
@@ -365,7 +371,7 @@ func _sync_breakdowns() -> void:
 func _lay_inspection_sites() -> void:
 	if _usim_url == "" or not _is_active():
 		return
-	var laid: int = await InspectionGround.lay(usim_internal, get_tree().get_nodes_in_group(Planet.GROUP))
+	var laid: int = await load(INSPECTION_GROUND_SCRIPT).lay(usim_internal, get_tree().get_nodes_in_group(PLANET_GROUP))
 	if laid > 0:
 		print("[InspectionGround] %d site(s) laid on the ground" % laid)
 
@@ -521,8 +527,8 @@ func _flush(force: bool) -> void:
 ## service considers stale has dropped out of every zone. Without it, only what changed since the
 ## last accepted push — which is what a hook-triggered flush wants.
 func _entries_to_send(force: bool) -> Array:
-	var agent = NetworkOrchestrator.network_agent
-	if not (agent is GameServer):
+	var agent = _game_server()
+	if agent == null:
 		return []
 	var out: Array = []
 	for player_id: Variant in agent.players_list.keys():
@@ -655,8 +661,8 @@ static func build_place(location: Dictionary) -> Dictionary:
 static func place_of(node: Node3D) -> Variant:
 	if node == null or not is_instance_valid(node):
 		return null
-	var agent = NetworkOrchestrator.network_agent
-	if not (agent is GameServer) or not agent.has_method("mission_place_of"):
+	var agent = _game_server()
+	if agent == null:
 		return null
 	return as_mission_place(agent.mission_place_of(node))
 
@@ -773,3 +779,10 @@ func _note_dormant() -> void:
 	if reason != "":
 		push_warning("[MissionHeartbeat] dormant: %s — player-states NOT sent, mission zones and "
 				+ "physical objectives will not match" % reason)
+
+## The server's GameServer (it has mission_place_of), or null on a client and in the tests. Not named
+## by its class: an autoload that names GameServer compiles and loads most of the game at boot
+## (2026-11-19).
+static func _game_server() -> Node:
+	var agent: Node = NetworkOrchestrator.network_agent
+	return agent if agent != null and agent.has_method(&"mission_place_of") else null

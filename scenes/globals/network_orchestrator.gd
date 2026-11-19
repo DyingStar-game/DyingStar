@@ -16,6 +16,10 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 ## Props per Horizon create_object message in spawn_props_authoritative (~250 bytes each).
 const SPAWN_BATCH := 200
 
+## The Player's script, loaded when a player spawns, never named here: an autoload that names a
+## gameplay class compiles and loads most of the game before its first frame (2026-11-19).
+const PLAYER_SCRIPT := "res://scenes/player/player.gd"
+
 var sdo_server_url = ""
 var server_name = ""
 var server_ip = ""
@@ -53,7 +57,6 @@ var small_spawnable_props: Array[PackedScene] = []
 var small_spawnable_props_entry_point: Node = null
 
 var universe_datas_spawner_node: MultiplayerSpawner = null
-var spawnable_planet_scene: PackedScene = preload("res://scenes/planet/base_planet.tscn")
 var spawnable_station_scene: PackedScene = null
 
 var players: Dictionary = {}
@@ -260,7 +263,7 @@ func _spawn_entity(datas: Dictionary) -> Node:
 	return spawned_entity_instance
 
 func _on_entity_spawned(entity: Node) -> void:
-	if entity is Player:
+	if is_instance_of(entity, load(PLAYER_SCRIPT)):
 		var my_unique_id = universe_scene.multiplayer.get_unique_id()
 		if entity.get_multiplayer_authority() == my_unique_id:
 			network_agent.complete_client_initialization(entity)
