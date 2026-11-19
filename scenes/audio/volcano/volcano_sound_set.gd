@@ -53,7 +53,7 @@ extends Resource
 ## The sound is clear up to this distance (m); further, the air starts taking the highs.
 @export_range(1.0, 50000.0, 1.0) var muffle_near_m: float = 2000.0
 ## From this distance (m) the sound is as muffled as it gets.
-@export_range(100.0, 300000.0, 100.0) var muffle_far_m: float = 15000.0
+@export_range(100.0, 300000.0, 100.0) var muffle_far_m: float = 25000.0
 ## Low-pass cut-off (Hz) of a volcano at muffle_far_m: lower = a duller, deeper far rumble.
 @export_range(60.0, 20000.0, 1.0) var muffle_far_hz: float = 180.0
 ## Share (0..1) of reverberation on a volcano close by.
