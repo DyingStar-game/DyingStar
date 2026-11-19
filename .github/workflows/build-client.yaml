@@ -86,6 +86,11 @@ jobs:
           # GitHub-hosted runners ship by default must be installed here.
           sudo apt-get update
           sudo apt-get install -y wget unzip zip jq
+          # The shader baker (below): a virtual X display and Mesa's Vulkan drivers, to give the
+          # exporting editor the host's GPU.
+          sudo apt-get install -y --no-install-recommends xvfb mesa-vulkan-drivers libvulkan1 vulkan-tools \
+            libx11-6 libxcursor1 libxinerama1 libxrandr2 libxi6 libxext6 libxrender1 libxkbcommon0 \
+            libgl1 libegl1 libfontconfig1
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -180,11 +185,42 @@ jobs:
                  ~/.nuget/packages/godotsharpeditor/${{ env.GODOT_VERSION }} \
                  ~/.nuget/packages/godot.net.sdk/${{ env.GODOT_VERSION }} \
                  ~/.nuget/packages/godot.sourcegenerators/${{ env.GODOT_VERSION }}
-          ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64 \
-            --headless \
+          # Shader baking: the export compiles every shader the game's resources use (~650, SPIR-V,
+          # Vulkan on Linux and on Windows) into the game, when the editor runs on a real Vulkan device.
+          # A --headless editor has none and skips it without a word: players then compiled them all on
+          # their first launch, 7 s frames on a desktop GPU and "not responding" on weak PCs (2026-11-19).
+          # Lavapipe (Mesa's CPU Vulkan) crashes the editor right after its file scan, so this needs the
+          # host's GPU (an Intel UHD 770 on dyingstar-runners) through /dev/dri. Without one the export is
+          # headless as before, with a warning; with one, a bake that stored nothing fails the build.
+          GODOT=~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64
+          MODE=(--headless)
+          if vulkaninfo --summary 2>/dev/null | grep -qE "PHYSICAL_DEVICE_TYPE_(INTEGRATED|DISCRETE)_GPU"; then
+            vulkaninfo --summary 2>/dev/null | grep -E "deviceName|driverInfo" || true
+            sudo mkdir -p /tmp/.X11-unix && sudo chmod 1777 /tmp/.X11-unix
+            Xvfb :99 -screen 0 1280x720x24 -nolisten tcp &
+            XVFB_PID=$!
+            for _ in $(seq 50); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.2; done
+            export DISPLAY=:99
+            MODE=(--display-driver x11 --rendering-driver vulkan)
+          else
+            echo "::warning::No Vulkan GPU on this runner (/dev/dri): exporting headless, the shaders are NOT baked"
+          fi
+          set +e
+          "$GODOT" "${MODE[@]}" \
             --path "$GITHUB_WORKSPACE" \
             --verbose \
-            --export-release "${{ matrix.preset }}" "$GITHUB_WORKSPACE/${{ matrix.output_file }}"
+            --export-release "${{ matrix.preset }}" "$GITHUB_WORKSPACE/${{ matrix.output_file }}" \
+            2>&1 | tee export.log
+          status=${PIPESTATUS[0]}
+          set -e
+          [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" || true
+          baked=$(grep -cE "Storing File: res://\.godot/shader_cache/.*\.vulkan\.cache" export.log || true)
+          echo "Baked shader files in the export: $baked"
+          if [ "${MODE[0]}" != "--headless" ] && [ "$baked" -lt 100 ]; then
+            echo "::error::The export ran on a GPU but baked $baked shader files (~200 expected)"
+            exit 1
+          fi
+          exit $status
 
       - name: Copy and configure client.ini
         run: |
