@@ -15,9 +15,12 @@ extends Node
 ## every compilation queued before them -- 12 to 17 s on a cold cache (the first launch, an update, a new
 ## driver), and Windows closes a game "not responding" after 5 (exit code 0xCFFFFFFF, 2026-11-16). So nothing
 ## is ever drawn here but SSS_PRIMER, once its own are ready, and nothing new is put out before what was put
-## out last is compiled (a marker task queued behind it has run). Only meshes and materials are read from the
-## scenes (PackedScene.get_state), and what the terrain reads of a layout (LayoutData), which instances it
-## out of the tree: nothing of the game runs. Read at the first village met, that froze the game ~1 s.
+## out last is compiled (a marker task queued behind it has run). Before that, its materials' shaders are
+## compiled on their own (_compile): a material or an instance met by a render, even hidden, waits on the main
+## thread for its shader -- 2 to 7 s on 4 threads with a cold cache (2026-11-19).
+## Only meshes and materials are read from the scenes (PackedScene.get_state), and what the terrain reads of a
+## layout (LayoutData), which instances it out of the tree: nothing of the game runs. Read at the first village
+## met, that froze the game ~1 s.
 ##
 ## Client only, where something is drawn; one per session (start), under the tree's root so it goes on
 ## once the game is entered. While the menu shows, a line in its corner says how far it is.
@@ -87,6 +90,8 @@ var _loading: Array[String] = []
 var _seen: Dictionary = {}
 ## [mesh, [materials]] still to put out.
 var _to_draw: Array = []
+## [mesh, [materials]] taken from _to_draw, put out once their shaders are compiled (_start_compiling).
+var _next: Array = []
 ## What was put out last (hidden), freed once its pipelines are compiled.
 var _batch: Array[Node] = []
 var _viewport: SubViewport
@@ -97,7 +102,10 @@ var _signs: Array = []
 var _label: Label
 var _primer: MeshInstance3D = null
 var _person: Node = null
-var _person_step: int = 0  # 0 not yet put out, 1 baking, 2 close-up materials out, 3 far ones out, 4 done
+var _person_look: CharacterAppearance = null
+## 0 not yet made, 1 imported body to put out, 2 baking, 3 baked body to put out, 4 far materials to put out,
+## 5 to free, 6 done
+var _person_step: int = 0
 ## Frames run since the warm-up began, and the one in which something was last put out (-1: none waiting).
 var _frames: int = 0
 var _put_out_at: int = -1
@@ -266,21 +274,30 @@ func _process(_delta: float) -> void:
 		_put_out_at = _frames - 1
 		_request_loads()
 		return
-	if _loading.is_empty() and _person_step < 4:
+	if _loading.is_empty() and _person_step < 6:
 		_step_person()
+		return
+	if not _next.is_empty():
+		for entry: Array in _next:  # their shaders are compiled: put out, their pipelines compile
+			for material: Variant in entry[1]:
+				_batch.append(_instance(entry[0], material))
+			_meshes_done += 1
+		_next.clear()
+		_put_out_at = _frames
 		return
 	var started: int = Time.get_ticks_msec()
 	for i in mini(MESHES_PER_BATCH, _to_draw.size()):
 		if i > 0 and Time.get_ticks_msec() - started > FRAME_BUDGET_MS:
 			break
 		var entry: Array = _to_draw.pop_back()
-		var materials: Array = entry[1]
-		for material: Variant in ([null] if materials.is_empty() else materials):
-			_batch.append(_instance(entry[0], _material(material)))
-		_meshes_done += 1
-		_put_out_at = _frames
-	if _loading.is_empty() and _to_draw.is_empty() and _batch.is_empty() and _signs.is_empty() \
-			and _put_out_at == -1:
+		var materials: Array = []
+		for material: Variant in ([null] if (entry[1] as Array).is_empty() else entry[1]):
+			materials.append(_material(material))
+			_start_compiling(entry[0], materials.back())
+		_next.append([entry[0], materials])
+		_put_out_at = _frames  # nothing drawn: the marker queued next frame waits for the shaders
+	if _loading.is_empty() and _to_draw.is_empty() and _next.is_empty() and _batch.is_empty() \
+			and _signs.is_empty() and _put_out_at == -1:
 		print("[Warmup] %d scenes ready, their pipelines compiled" % _held.size())
 		_viewport.queue_free()
 		if _label != null:
@@ -306,6 +323,28 @@ func _compiled() -> bool:
 
 static func _mark() -> void:
 	pass
+
+
+## Start compiling the shaders [param mesh] is drawn with in [param material] (its own surfaces' when null),
+## on the workers, without drawing it.
+static func _start_compiling(mesh: Mesh, material: Variant) -> void:
+	if material != null:
+		_compile(material as Material)
+		return
+	for surface in mesh.get_surface_count():
+		_compile(mesh.surface_get_material(surface))
+
+
+## Start compiling [param material]'s shader and its next passes', without making the material itself: a new
+## material is set up at the next draw, which waits for its shader. A ShaderMaterial's shader started compiling
+## when it was loaded. A StandardMaterial3D makes its shader when first asked for it, and get_rid would make
+## the material too: inspect_native_shader_code is the one call that makes the shader alone (it also asks the
+## editor's shader viewer to show it, a group that does not exist in the game).
+static func _compile(material: Material) -> void:
+	while material != null:
+		if not material is ShaderMaterial:
+			material.inspect_native_shader_code()
+		material = material.next_pass
 
 
 ## A shader put out on its own gets its material here, when put out: making it translates the shader.
@@ -339,35 +378,64 @@ func _take_loaded() -> void:
 
 
 ## A person (hidden): a baked body is built at run time (HumanAppearance), so no scene names its skin, eye and
-## hair materials, and the first avatar seen froze the game to compile them. Put out once baked, in its
-## close-up materials, then its far ones.
+## hair materials, and the first avatar seen froze the game to compile them. Its imported body is put out
+## first (every avatar shows it until its own is baked), then the baked one, in its close-up materials, then
+## its far ones -- each once its shaders are compiled: the baked body swapped in before held the main thread
+## 6.6 s (2026-11-19).
 func _step_person() -> void:
-	var looks: HumanAppearance = null
-	if is_instance_valid(_person):
-		looks = _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
 	match _person_step:
 		0:
-			_person = (load(PERSON_SCENE) as PackedScene).instantiate()
-			(_person as Node3D).visible = false
-			_viewport.add_child(_person)
-			looks = _person.get_node_or_null(^"HumanAppearance") as HumanAppearance
-			if looks == null:
-				_person_step = 4
+			_person = (load(PERSON_SCENE) as PackedScene).instantiate()  # not in the tree yet: nothing runs
+			var skeletons: Array[Node] = _person.find_children("*", "Skeleton3D", true, false)
+			if _person.get_node_or_null(^"HumanAppearance") == null or skeletons.is_empty():
+				_person.free()
+				_person = null
+				_person_step = 6
 				return
-			looks.set_appearance(CharacterAppearance.preset("default_male"))
+			HumanMeshCache.set_template(skeletons[0] as Skeleton3D)  # as its HumanAppearance does in the tree
+			# The materials its CharacterAnimator gives the imported body (CharacterMaterials.apply), made
+			# here without being set: a mesh given one makes it at once, and the next draw waits for its shader.
+			for node in _person.find_children("*", "MeshInstance3D", true, false):
+				var mesh := node as MeshInstance3D
+				if mesh.mesh == null:
+					continue
+				for surface in mesh.mesh.get_surface_count():
+					var source := mesh.mesh.surface_get_material(surface) as BaseMaterial3D
+					_compile(CharacterMaterials.material_for(CharacterMaterials.role_of(String(mesh.name)), source))
+			_person_look = CharacterAppearance.preset("default_male")
+			_put_out_at = _frames
 			_person_step = 1
 		1:
-			if looks.is_applied():  # its body swapped in during the frame before: that render met it
-				_put_out_at = _frames - 1
-				_person_step = 2
+			(_person as Node3D).visible = false
+			_viewport.add_child(_person)  # its imported body, in its materials, met by this frame's render
+			_put_out_at = _frames
+			_person_step = 2
 		2:
-			looks.set_detail(false)
+			if not HumanBuilder.warm():
+				return
+			HumanMeshCache.poll()
+			var baked: HumanBuilder.Baked = HumanMeshCache.request(_person_look)
+			if baked == null:
+				return
+			for near in [true, false]:
+				for what: Variant in baked.surface_assets + baked.head_surface_assets + [baked.hair_asset]:
+					if what != null:
+						_compile(CharacterMaterials.human_material(what, _person_look, near))
 			_put_out_at = _frames
 			_person_step = 3
+		3:
+			# Baked: swapped in at once, in its close-up materials, met by this frame's render.
+			(_person.get_node(^"HumanAppearance") as HumanAppearance).set_appearance(_person_look)
+			_put_out_at = _frames
+			_person_step = 4
+		4:
+			(_person.get_node(^"HumanAppearance") as HumanAppearance).set_detail(false)
+			_put_out_at = _frames
+			_person_step = 5
 		_:
 			_person.queue_free()
 			_person = null
-			_person_step = 4
+			_person_step = 6
 
 
 ## How far it is (0..1): the scenes loaded for one half, the meshes drawn for the other. Pure.
