@@ -284,11 +284,14 @@ func _show_sheet_data(mission: Dictionary, data: Dictionary) -> void:
 	var full: Dictionary = data.get("mission") if data.get("mission") is Dictionary else mission
 	var objectives: Array = data.get("objectives") if data.get("objectives") is Array else []
 	_offer_locate(full, objectives)
-	_fill_sheet(full, objectives, data.get("assignment"))
+	# An assignment given up or lapsed is over: the mission is offered again, with the time it gives.
+	var assignment: Variant = data.get("assignment")
+	if assignment is Dictionary and can_take_again(assignment):
+		assignment = null
+	_fill_sheet(full, objectives, assignment)
 	var participants := ServiceTypes.participants_text(data.get("participants"))
 	if participants != "":
 		_sheet.add_child(_text(TranslationServer.translate("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, DIM))
-	var assignment: Variant = data.get("assignment")
 	if assignment is Dictionary:
 		_accept.visible = false  # already the player's
 		_show_turn_in(full, objectives, assignment)
@@ -372,6 +375,13 @@ static func progress_suffix(objective: Dictionary) -> String:
 	var unit: Variant = objective.get("unit")
 	return "  —  %s / %s" % [ServiceTypes.quantity_text(progress, unit),
 			ServiceTypes.quantity_text(ServiceTypes.num(objective.get("targetQuantity"), 1), unit)]
+
+
+## Whether [param assignment] is one the player gave up or let lapse: the mission service takes them
+## again on it, so the kiosk offers it as any other (bug report 2026-11-15: "you already have this
+## mission" on one abandoned).
+static func can_take_again(assignment: Dictionary) -> bool:
+	return str(assignment.get("status", "")) in ["abandoned", "expired"]
 
 
 ## Whether every required (non-bonus) objective is done: the mission can be turned in.

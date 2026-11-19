@@ -35,6 +35,13 @@ func test_turn_in_waits_for_every_required_objective() -> void:
 	assert_false(MissionKioskUI.ready_to_turn_in([]), "nothing to turn in")
 
 
+func test_a_mission_given_up_or_lapsed_is_offered_again() -> void:
+	assert_true(MissionKioskUI.can_take_again({"status": "abandoned"}))
+	assert_true(MissionKioskUI.can_take_again({"status": "expired"}))
+	assert_false(MissionKioskUI.can_take_again({"status": "active"}), "running: it is the player's")
+	assert_false(MissionKioskUI.can_take_again({"status": "completed"}), "done: not twice")
+
+
 func test_the_sheet_shows_each_objective_progress() -> void:
 	var started := _objective(0, "warehouse", "a", "in_progress")
 	started["currentProgress"] = 20
