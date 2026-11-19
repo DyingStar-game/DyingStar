@@ -2425,7 +2425,7 @@ func _log_said_line(text: String) -> void:
 	if me == null or not ("direct_chat" in me) or me.direct_chat == null:
 		return
 	me.direct_chat.receive_message_from_server(
-			ChatMessage.new(text, DirectChat.ChannelE.SAY, str(player.name)))
+			ChatMessage.new(text, ChatChannel.ChannelE.SAY, str(player.name)))
 
 ## Project the head position to the screen (CPU, double precision) and place the 2D tag there,
 ## centered over the head and hidden when the player is behind the camera.

@@ -3,6 +3,8 @@ extends Node
 # How long a new connection has to complete its WebSocket handshake before we drop it. A port probe
 # opens a TCP connection and never upgrades, so it expires here instead of stealing the link.
 const CANDIDATE_TIMEOUT_S: float = 5.0
+## PropNet's script (see _prop_net).
+const PROP_NET_SCRIPT := "res://scenes/globals/prop_net.gd"
 
 # Websocket port we will listen to (Horizon connects to it).
 var port = 8980
@@ -19,6 +21,7 @@ var _peer_handshake_sent: bool = false
 # A connection that arrived while the current peer still looked alive, waiting to prove itself.
 var _candidate: WebSocketPeer = null
 var _candidate_age: float = 0.0
+var _prop_net_script: GDScript = null
 
 func _enter_tree() -> void:
 	var server_ini = "server.ini"
@@ -87,7 +90,8 @@ func _read_packets() -> void:
 		if peer.was_string_packet():
 			var packet_text = packet.get_string_from_utf8()
 			# print("SERVER - Received packet: %s" % [packet_text])
-			var _th: int = Time.get_ticks_usec() if PropNet.prof_on else 0
+			var prop_net: GDScript = _prop_net()
+			var _th: int = Time.get_ticks_usec() if prop_net.prof_on else 0
 			var message = JSON.parse_string(packet_text)
 			if message != null:
 				# Horizon's own clock, on the packet it just sent. Feeding it here rather than in
@@ -97,7 +101,7 @@ func _read_packets() -> void:
 				if message is Dictionary and message.has("timestamp"):
 					Globals.sync_clock(float(message["timestamp"]))
 				dispatch_horizon_message(message)
-				if PropNet.prof_on:
+				if prop_net.prof_on:
 					_prof_horizon(message, Time.get_ticks_usec() - _th)
 		else:
 			print("< Got binary data from peer: %d ... echoing" % [packet.size()])
@@ -272,8 +276,9 @@ func dispatch_horizon_message(message: Dictionary):
 ## (namespace/event, plus the object type or the player action name), so the proc= column of the
 ## [Perf] line can be attributed. 47 NPC brains chatter a lot; this says what that costs.
 func _prof_horizon(message: Variant, usec: int) -> void:
-	PropNet.prof_horizon_msgs += 1
-	PropNet.prof_horizon_usec += usec
+	var prop_net: GDScript = _prop_net()
+	prop_net.prof_horizon_msgs += 1
+	prop_net.prof_horizon_usec += usec
 	var key: String = "?"
 	if message is Dictionary:
 		key = str(message.get("namespace", "?")) + "/" + str(message.get("event", "?"))
@@ -283,10 +288,19 @@ func _prof_horizon(message: Variant, usec: int) -> void:
 				key += "/" + str(data["object_type"])
 			elif data.has("action"):
 				key += "/" + str(data["action"])
-	var entry: Array = PropNet.prof_horizon_by_type.get(key, [0, 0])
+	var entry: Array = prop_net.prof_horizon_by_type.get(key, [0, 0])
 	entry[0] += 1
 	entry[1] += usec
-	PropNet.prof_horizon_by_type[key] = entry
+	prop_net.prof_horizon_by_type[key] = entry
+
+
+## PropNet, whose profiling counters this feeds: loaded with the first message, never named by class.
+## An autoload that names a gameplay class compiles and loads most of the game at boot, before its
+## first frame (2026-11-19).
+func _prop_net() -> GDScript:
+	if _prop_net_script == null:
+		_prop_net_script = load(PROP_NET_SCRIPT)
+	return _prop_net_script
 
 ## [param _message_type] names the message for the callers' readability (player_position, prop_update...).
 func send_message(message: Dictionary, _message_type: String):

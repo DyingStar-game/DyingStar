@@ -21,10 +21,8 @@ const CARRY_MAX_MASS := 50.0  # kg
 const VOLUME_FILL := 0.5
 # Fallback host-rock density (kg/m3, granite) for a rock whose spawner replicated no inert_density.
 const INERT_DENSITY_DEFAULT := 2700.0
-# Game-design weight reduction: every density (ore and host rock) is DIVIDED by this factor, so 4
-# turns a 2000 kg/m3 rock into 500 kg/m3. Higher = lighter pieces, carried (and no longer breakable)
-# sooner, so fewer cuts before CARRY_MAX_MASS. 1.0 = real densities.
-const WEIGHT_REDUCTION_FACTOR := 25.0
+# Game-design weight reduction (MineralRegistry.WEIGHT_REDUCTION_FACTOR, where it is explained).
+const WEIGHT_REDUCTION_FACTOR := MineralRegistry.WEIGHT_REDUCTION_FACTOR
 
 # Legacy ore look — FALLBACK only, used when no MineralDef is assigned (see `mineral`). The
 # real look now comes from MineralDef (.tres). Purity thresholds below drive ore_threshold:

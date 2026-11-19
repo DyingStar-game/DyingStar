@@ -50,7 +50,7 @@ func test_a_line_shows_the_time_its_message_arrived() -> void:
 
 
 func _message(content: String, at: int = 0) -> ChatMessage:
-	return ChatMessage.new(content, DirectChat.ChannelE.GENERAL, "Quelqu_un", float(at))
+	return ChatMessage.new(content, ChatChannel.ChannelE.GENERAL, "Quelqu_un", float(at))
 
 
 func _log_lines() -> PackedStringArray:

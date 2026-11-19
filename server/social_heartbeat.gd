@@ -157,8 +157,8 @@ func _run_beat() -> void:
 
 
 func _beat() -> void:
-	var agent := NetworkOrchestrator.network_agent
-	if not (agent is GameServer):
+	var agent := _game_server()
+	if agent == null:
 		return
 	var players: Dictionary = agent.players_list
 	var now := _unix_now()
@@ -361,3 +361,11 @@ func _note_dormant() -> void:
 
 func _unix_now() -> int:
 	return int(Time.get_unix_time_from_system())
+
+
+## The server's GameServer (it has mission_place_of), or null on a client and in the tests. Not named
+## by its class: an autoload that names GameServer compiles and loads most of the game at boot
+## (2026-11-19).
+static func _game_server() -> Node:
+	var agent: Node = NetworkOrchestrator.network_agent
+	return agent if agent != null and agent.has_method(&"mission_place_of") else null

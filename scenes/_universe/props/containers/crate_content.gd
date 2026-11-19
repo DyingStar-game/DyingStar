@@ -12,7 +12,7 @@ extends RefCounted
 ##   gangue_m3   barren rock volume (m3), 0 for ingots
 ##   gangue_kg   barren rock PHYSICAL mass (kg) — host rocks differ in density, so it is banked as mass
 ##   purity      ore_m3 / (ore_m3 + gangue_m3), 0..1
-##   mass_kg     GAME mass (kg): physical mass / RockMining.WEIGHT_REDUCTION_FACTOR, like every rock
+##   mass_kg     GAME mass (kg): physical mass / MineralRegistry.WEIGHT_REDUCTION_FACTOR, like every rock
 ##   units       inventory units of the good: the METAL it holds, in whole GAME kilograms (metal_kg) --
 ##               what is sold, what a mission counts, what refining gives. The barren rock of a crushed
 ##               crate weighs on the plate (mass_kg) and is worth nothing: purity pays
@@ -121,7 +121,7 @@ static func game_mass(mineral: String, ore_m3: float, gangue_kg: float) -> float
 	var density := 0.0
 	if mineral != "" and MineralRegistry.ALL.has(StringName(mineral)):
 		density = MineralRegistry.get_mineral(StringName(mineral)).density_kg_m3
-	return (ore_m3 * density + gangue_kg) / RockMining.WEIGHT_REDUCTION_FACTOR
+	return (ore_m3 * density + gangue_kg) / MineralRegistry.WEIGHT_REDUCTION_FACTOR
 
 
 ## The output purity of the Crusher: the input purity [param input_purity] shifted by up to

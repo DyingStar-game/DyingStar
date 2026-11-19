@@ -17,6 +17,14 @@ extends RefCounted
 ## from a bare `<name>.tres`, and the pair silently disagreeing is exactly how corundum ended up
 ## registered as a StandardMaterial3D (see has_mineral below).
 
+## Game-design weight reduction: every density (ore and host rock) is DIVIDED by this factor, so 4
+## turns a 2000 kg/m3 rock into 500 kg/m3. Higher = lighter pieces, carried (and no longer breakable)
+## sooner, so fewer cuts before RockMining.CARRY_MAX_MASS. 1.0 = real densities. Here rather than in
+## RockMining (which names it too) so that a crate's content (CrateContent) weighs its ore without
+## naming the rock: the services' screens read crates, and naming the rock compiled the whole game at
+## boot (2026-11-19).
+const WEIGHT_REDUCTION_FACTOR := 25.0
+
 # ── Ore minerals ──────────────────────────────────────────────────────────────
 const GOLD       := preload("res://assets/_universe/_shared/materials/minerals/gold/gold_mineraldef.tres")
 const IRON       := preload("res://assets/_universe/_shared/materials/minerals/iron/iron_mineraldef.tres")

@@ -58,6 +58,9 @@ extends Node
 ## on to reproduce a problem, so it is tuned for diagnosis, not for background noise: 2 s is short
 ## enough to show a collapse building up over the first seconds of a spawn.
 const REPORT_INTERVAL: float = 2.0
+## Planet.GROUP, spelt out: an autoload that names Planet compiles and loads most of the game at boot,
+## before its first frame (2026-11-19; test_boot_light_autoloads checks they agree).
+const PLANET_GROUP := &"planet"
 
 ## A frame this long is reported on its own line, immediately, with the time it happened. Below the
 ## threshold frames only feed the window's worst-frame figure. 50 ms = under 20 fps for one frame.
@@ -1268,7 +1271,7 @@ func _visit(node: Node, planet: String) -> void:
 				_areas_silenced += 1
 			else:
 				_areas_monitoring += 1
-	if node is Planet:
+	if node.is_in_group(PLANET_GROUP):
 		planet = node.name
 	elif planet != "":
 		_bump("subtree:" + planet)

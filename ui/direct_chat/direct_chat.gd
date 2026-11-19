@@ -3,18 +3,6 @@ extends PanelContainer
 
 signal send_message
 
-# Channel enumeration
-enum ChannelE {
-	GENERAL,
-	DIRECT_MESSAGE,
-	GROUP,
-	CORPORATION,
-	REGION,
-	UNSPECIFIED,
-	## Local chat: shown as a bubble over the speaker, heard by the players near them (GORC).
-	SAY
-}
-
 ## Channel enum name -> its translation key.
 const CHANNEL_LABELS : Dictionary = {
 	"GENERAL": "%%CHAT_GENERAL",
@@ -47,13 +35,13 @@ var messages_waiting: Array[ChatMessage] = []
 
 # Forced colors in hexadecimal according to channel
 var forced_colors := {
-	str(ChannelE.GENERAL): "FFFFFF",
-	str(ChannelE.UNSPECIFIED): "AAAAAA",
-	str(ChannelE.GROUP): "27C8F5",
-	str(ChannelE.CORPORATION): "D327F5",
-	str(ChannelE.REGION): "F7F3B5",
-	str(ChannelE.DIRECT_MESSAGE): "79F25E",
-	str(ChannelE.SAY): "FFD27A"
+	str(ChatChannel.ChannelE.GENERAL): "FFFFFF",
+	str(ChatChannel.ChannelE.UNSPECIFIED): "AAAAAA",
+	str(ChatChannel.ChannelE.GROUP): "27C8F5",
+	str(ChatChannel.ChannelE.CORPORATION): "D327F5",
+	str(ChatChannel.ChannelE.REGION): "F7F3B5",
+	str(ChatChannel.ChannelE.DIRECT_MESSAGE): "79F25E",
+	str(ChatChannel.ChannelE.SAY): "FFD27A"
 }
 
 # Panel backgrounds toggled by write mode: a semi-transparent box while typing
@@ -179,22 +167,22 @@ func _refresh_channels() -> void:
 	var previous: int = channel_selector.get_selected_id()
 	channel_selector.clear()
 	var active: Array = ChatNetwork.active_channels()
-	for channel in ChannelE.values():
-		if channel == ChannelE.UNSPECIFIED or channel == ChannelE.DIRECT_MESSAGE:
+	for channel in ChatChannel.ChannelE.values():
+		if channel == ChatChannel.ChannelE.UNSPECIFIED or channel == ChatChannel.ChannelE.DIRECT_MESSAGE:
 			continue
 		var index: int = channel_selector.item_count
 		# Use the enum value as the item id so get_selected_id() returns the channel.
 		# The enum name is an identifier ("CORPORATION"), not something to show a player. Falls
 		# back to the raw name so a new channel is visible straight away rather than blank.
-		var name : String = str(ChannelE.keys()[channel])
+		var name : String = str(ChatChannel.ChannelE.keys()[channel])
 		channel_selector.add_item(str(CHANNEL_LABELS.get(name, name)), channel)
 		if not (channel in active):
 			channel_selector.set_item_disabled(index, true)
 			channel_selector.set_item_tooltip(index, tr("%%CHAT_SOON"))
-	var wanted: int = previous if previous in active else ChannelE.GENERAL
+	var wanted: int = previous if previous in active else ChatChannel.ChannelE.GENERAL
 	var wanted_index: int = channel_selector.get_item_index(wanted)
 	if wanted_index == -1:
-		wanted_index = channel_selector.get_item_index(ChannelE.GENERAL)
+		wanted_index = channel_selector.get_item_index(ChatChannel.ChannelE.GENERAL)
 	if wanted_index != -1:
 		channel_selector.select(wanted_index)
 	_refresh_dm_header()
@@ -294,7 +282,7 @@ func _on_input_text_text_submitted(message: String) -> void:
 	# Enter inside the input line: send (when not empty), then leave write mode.
 	if message.strip_edges() != "":
 		var chat_message = ChatMessage.new(message, channel_selector.get_selected_id())
-		if chat_message.channel == ChannelE.SAY:
+		if chat_message.channel == ChatChannel.ChannelE.SAY:
 			if not _say(message):
 				return  # refused and explained in the log: the text stays in the field to be fixed
 		else:
@@ -323,7 +311,7 @@ func _say(message: String) -> bool:
 	# The SAME action an NPC's lines use ("dialog"): every game server already understands it, and the
 	# line then follows the NPC path to the end (queue, `conversation`, bubble over the head).
 	me.client_send_action_to_server({"action": "dialog", "text": text})
-	receive_message_from_server(ChatMessage.new(text, ChannelE.SAY, Globals.player_name))
+	receive_message_from_server(ChatMessage.new(text, ChatChannel.ChannelE.SAY, Globals.player_name))
 	return true
 
 ## Tell the player in the log that a line was not said, and why (a [constant SayMessage] ERR_* reason).
@@ -332,7 +320,7 @@ func show_say_rejected(error: String) -> void:
 	if error == SayMessage.ERR_TOO_LONG:
 		reason = reason % SayMessage.MAX_LENGTH  # the only message that names a number
 	receive_message_from_server(ChatMessage.new(
-			"[color=#FF6B6B]%s[/color]" % reason, ChannelE.UNSPECIFIED, tr("%%CHAT_SAY_NOTICE")))
+			"[color=#FF6B6B]%s[/color]" % reason, ChatChannel.ChannelE.UNSPECIFIED, tr("%%CHAT_SAY_NOTICE")))
 
 ## While typing, TAB cycles the channel and Escape closes the input. Both are caught
 ## here (in _input, before the GUI focus system) — otherwise the focused input field
@@ -455,23 +443,23 @@ func receive_message_from_server(receveid_message: ChatMessage) -> void:
 
 ## True for a private message — one that belongs to a thread of its own.
 func _is_dm(message: ChatMessage) -> bool:
-	return message.channel == ChannelE.DIRECT_MESSAGE
+	return message.channel == ChatChannel.ChannelE.DIRECT_MESSAGE
 
 
 ## What the log prints in parentheses for a message: the channel for a shared one, and the
 ## correspondent's name for a private one. The enum name "DIRECT_MESSAGE" is an identifier,
 ## not something a player should read.
 func _channel_tag(message: ChatMessage) -> String:
-	if message.channel == ChannelE.UNSPECIFIED:
+	if message.channel == ChatChannel.ChannelE.UNSPECIFIED:
 		return ""
 	if _is_dm(message):
 		var peer_name: String = ChatNetwork.display_name_of(message.peer_id)
 		if peer_name == "":
 			peer_name = tr("%%CHAT_DM_UNRESOLVED")
 		return tr("%%CHAT_DM_TO") % peer_name
-	if message.channel == ChannelE.SAY:
+	if message.channel == ChatChannel.ChannelE.SAY:
 		return "(" + tr(CHANNEL_LABELS["SAY"]) + ") "
-	return "(" + ChannelE.keys()[message.channel] + ") "
+	return "(" + ChatChannel.ChannelE.keys()[message.channel] + ") "
 
 
 ## Append one message to the log.
