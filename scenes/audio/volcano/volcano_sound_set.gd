@@ -51,7 +51,7 @@ extends Resource
 ## Speed of sound (m/s): a volcano is heard distance / this late. Lower = longer delays.
 @export_range(50.0, 2000.0, 1.0) var sound_speed_m_s: float = 340.0
 ## The sound is clear up to this distance (m); further, the air starts taking the highs.
-@export_range(1.0, 50000.0, 1.0) var muffle_near_m: float = 200.0
+@export_range(1.0, 50000.0, 1.0) var muffle_near_m: float = 2000.0
 ## From this distance (m) the sound is as muffled as it gets.
 @export_range(100.0, 300000.0, 100.0) var muffle_far_m: float = 15000.0
 ## Low-pass cut-off (Hz) of a volcano at muffle_far_m: lower = a duller, deeper far rumble.
