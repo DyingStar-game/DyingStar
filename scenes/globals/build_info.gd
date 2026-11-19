@@ -23,6 +23,17 @@ static func build_id() -> String:
 	return _id
 
 
+## The version a build shows and reports: the project's own, then this export's id when it has one,
+## which tells two builds of one version apart ("0.0.1-dev · 20261117-1250-551351").
+static func version_text() -> String:
+	var version: String = str(ProjectSettings.get_setting("application/config/version", ""))
+	if version == "":
+		version = "?"
+	if build_id() != "":
+		version += " · " + build_id()
+	return version
+
+
 ## A new id: the local date and time of the export, then a random number —
 ## "20261010-1432-048213".
 static func make_build_id() -> String:

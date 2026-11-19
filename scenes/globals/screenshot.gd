@@ -12,12 +12,21 @@ extends Node
 ##   frame even if the player hid them. The chat is there when it is open. Saved in
 ##   <game folder>/screenshots/debug.
 ##
+## A third key, "bug_report" (F9), takes the second capture and opens the report form over it: its own
+## node (bug_reporter), kept here because it has to answer wherever the capture keys do.
+##
 ## Either way the PNG is copied to the clipboard, with the colours of the screen (see ScreenReadback:
 ## the window holds linear colour). Encoding it takes a noticeable fraction of a second at 4K, so it
 ## runs on a worker thread: the game never hitches on the key press.
 
 enum Kind { PHOTO, DEBUG }
 
+## A capture is over: where it was to be written, the picture itself (as saved, no alpha) and whether
+## the file is there. For who needs the picture and not only the file (BugReporter).
+signal saved(path: String, image: Image, ok: bool)
+
+## The bug report key (F9) and its form. Here and not on the player: there is no player in a menu.
+var bug_reporter: BugReporter = null
 var _toast: ScreenToast = null
 var _readback: ScreenReadback = null
 var _busy: bool = false
@@ -28,6 +37,10 @@ func _ready() -> void:
 	add_child(_toast)
 	_readback = ScreenReadback.new()
 	add_child(_readback)
+	bug_reporter = BugReporter.new()
+	bug_reporter.name = "BugReporter"
+	add_child(bug_reporter)
+	bug_reporter.setup(_toast.show_message)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -76,11 +89,12 @@ func _force_debug_panels(on: bool) -> void:
 func _save(image: Image, path: String) -> void:
 	image.convert(Image.FORMAT_RGB8)  # the viewport carries an alpha channel nobody wants in a shot
 	var err: Error = image.save_png(path)
-	_saved.call_deferred(path, err)
+	_saved.call_deferred(path, image, err)
 
 
-func _saved(path: String, err: Error) -> void:
+func _saved(path: String, image: Image, err: Error) -> void:
 	_busy = false
+	saved.emit(path, image, err == OK)
 	if err != OK:
 		push_warning("Screenshot: cannot write %s (%s)" % [path, error_string(err)])
 		_toast.show_message(tr("%%SCREENSHOT_FAILED") % path)

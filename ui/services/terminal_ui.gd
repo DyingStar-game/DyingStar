@@ -525,13 +525,7 @@ static func brand_logo() -> Control:
 
 ## The build the brand block shows under its name (the project's own version string).
 static func _build_version() -> String:
-	var version: String = str(ProjectSettings.get_setting("application/config/version", ""))
-	if version == "":
-		version = "?"
-	# An exported build also shows its own id (BuildInfo), to tell two builds of one version apart.
-	if BuildInfo.build_id() != "":
-		version += " · " + BuildInfo.build_id()
-	return version
+	return BuildInfo.version_text()
 
 
 func _start_clock() -> void:
@@ -637,14 +631,18 @@ func _show_nothing() -> void:
 		(_side_slots[key] as Control).visible = false
 
 
-## Off the NAVIGATION tab, if that is where we were: the slot hidden, the chart told.
+## Off the NAVIGATION tab, if that is where we were: the chart told, then the slot hidden.
+##
+## In that order. The chart is open while its face is on show (StarMap.is_open), and whoever closes it
+## asks first (PlayerClient._close_navigation): told after the slot was hidden, it read as closed
+## already and never closed -- the right click's menu, a window, stayed over the next tab.
 func _leave_navigation() -> void:
 	_opened_for_navigation = false
-	if _navigation != null:
-		_navigation.visible = false
 	if _active_id == NAVIGATION:
 		_active_id = ""
 		navigation_closed.emit()
+	if _navigation != null:
+		_navigation.visible = false
 
 
 func _open_app(id: String) -> void:

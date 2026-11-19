@@ -4,7 +4,7 @@
 [ext_resource type="AudioStream" uid="uid://c4882t4qc0ryu" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-open.ogg" id="2_urxpd"]
 [ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/_universe/vehicles/vehicle_seat.gd" id="3_seat"]
 [ext_resource type="AudioStream" uid="uid://bkuepip360vt2" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-door-close.ogg" id="3_udf22"]
-[ext_resource type="AudioStream" uid="uid://bt0o3a85bifv0" path="res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg" id="4_5dsot"]
+[ext_resource type="AudioStream" uid="uid://d2jm6sn4y286t" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-horn-loop.ogg" id="4_5dsot"]
 [ext_resource type="AudioStream" uid="uid://chree8iuckvgt" path="res://assets/_universe/audio/sfx/vehicles/ground/special-lee-horn.ogg" id="4_grru8"]
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="4_nd433"]
 [ext_resource type="AudioStream" uid="uid://cipdwv6lgccjg" path="res://assets/_universe/audio/sfx/vehicles/ground/truck-elec-engine-power.ogg" id="4_urxpd"]

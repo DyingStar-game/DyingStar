@@ -264,24 +264,6 @@
 			"license": "CC0"
 		},
 		{
-			"asset": "car-horn.ogg",
-			"path": "res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg",
-			"author": "guitarguy1985",
-			"source": "Freesound",
-			"id": "",
-			"url": "https://freesound.org/s/54086/",
-			"license": "CC0"
-		},
-		{
-			"asset": "car-horn.ogg",
-			"path": "res://assets/_universe/audio/sfx/vehicles/ground/car-horn.ogg",
-			"author": "zerolagtime",
-			"source": "Freesound",
-			"id": "",
-			"url": "https://freesound.org/s/66586/",
-			"license": "CC0"
-		},
-		{
 			"asset": "cave-ambience.ogg",
 			"path": "res://assets/_universe/audio/sfx/environment/cave-ambience.ogg",
 			"author": "IanStarGem",
@@ -543,6 +525,15 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "lift-platform-running-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-running-loop.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "lift-platform-start-stop.mp3",
 			"path": "res://assets/_universe/audio/sfx/structures/vehicle_lift/lift-platform-start-stop.mp3",
 			"author": "WarpZone",
@@ -575,6 +566,15 @@
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "machine-start-alarm.ogg",
+			"path": "res://assets/_universe/audio/sfx/machine/machine-start-alarm.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -685,6 +685,24 @@
 			"id": "",
 			"url": "https://freesound.org/s/843296/",
 			"license": "CC0"
+		},
+		{
+			"asset": "screen-button-blip.ogg",
+			"path": "res://assets/_universe/audio/sfx/ui/screen-button-blip.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "screen-confirm.mp3",
+			"path": "res://assets/_universe/audio/sfx/ui/screen-confirm.mp3",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
 		},
 		{
 			"asset": "screen-fan-hum.ogg",
@@ -932,6 +950,15 @@
 		{
 			"asset": "truck-headlight-on.ogg",
 			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-headlight-on.ogg",
+			"author": "Pierro",
+			"source": "Discord",
+			"id": "852633379459039302",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "truck-horn-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/ground/truck-horn-loop.ogg",
 			"author": "Pierro",
 			"source": "Discord",
 			"id": "852633379459039302",

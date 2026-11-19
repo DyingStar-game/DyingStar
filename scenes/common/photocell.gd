@@ -58,6 +58,12 @@ const JUMP_S := 30.0
 
 ## Every photocell of this client, ticked together by ONE of them (the first, _driver): 79 lamps in the
 ## village ran a _process each, every frame, to find nearly always that nothing was due.
+##
+## The driver must be one that RUNS. A prop that leaves the player's zone stays in the tree, hidden and
+## paused, until it is freed a leaf at a time (NetworkAgent._retire): its photocell kept the role and
+## ticked nobody, so every lamp of the client froze as it was and the ones arriving stayed lit as
+## authored -- street lamps on in broad daylight after a trip (preprod, 2026-11-14). A paused cell
+## stands down (_notification) and only a cell that can process drives (_drives).
 static var _cells: Array[Photocell] = []
 static var _driver: Photocell = null
 
@@ -76,24 +82,58 @@ func _ready() -> void:
 
 func _enter_tree() -> void:
 	_planet = null  # reparented under another frame: find the body again
-	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
+	if _sits_out():
 		return
-	_cells.append(self)
-	if not is_instance_valid(_driver):
-		_driver = self
-		set_process(true)
+	_join()
 
 
 func _exit_tree() -> void:
+	_leave()
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_DISABLED:
+			_leave()  # paused with its prop: neither read nor driving, until it is freed or woken
+		NOTIFICATION_ENABLED:
+			if is_inside_tree() and not _sits_out():
+				_join()
+
+
+## Where no photocell takes part: the editor (lights stay as authored) and the game server (no light).
+static func _sits_out() -> bool:
+	return Engine.is_editor_hint() or OS.has_feature("dedicated_server")
+
+
+## Whether [param cell] can tick the others: alive, in the tree and not paused.
+static func _drives(cell: Photocell) -> bool:
+	return is_instance_valid(cell) and cell.is_inside_tree() and cell.can_process()
+
+
+## Take part: read with the others, and drive them when none of them does.
+func _join() -> void:
+	if not _cells.has(self):
+		_cells.append(self)
+	if _drives(_driver) or not can_process():
+		return
+	if is_instance_valid(_driver):
+		_driver.set_process(false)  # a driver found paused: it is driven from now on
+	_driver = self
+	set_process(true)
+
+
+## Stand down, handing the others' clock over to a cell that runs.
+func _leave() -> void:
 	_cells.erase(self)
-	if _driver == self:
-		set_process(false)
-		_driver = null
-		for cell: Photocell in _cells:
-			if cell.is_inside_tree():
-				_driver = cell
-				cell.set_process(true)
-				break
+	if _driver != self:
+		return
+	set_process(false)
+	_driver = null
+	for cell: Photocell in _cells:
+		if _drives(cell):
+			_driver = cell
+			cell.set_process(true)
+			break
 
 
 ## The driver's: every photocell's wait, then its reading on each new tick of the shared clock (a lamp

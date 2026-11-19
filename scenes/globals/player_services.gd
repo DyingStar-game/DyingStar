@@ -345,6 +345,28 @@ func report_create(target_type: String, target_id: String, reason: String, messa
 
 
 # ---------------------------------------------------------------------------------------------
+# Bug reports (BugReporter): relayed by service-social to the QA channel on Discord
+# ---------------------------------------------------------------------------------------------
+
+## Whether this environment relays bug reports: `data.enabled`.
+func bug_report_status() -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/bug-reports/status")
+
+## Send a bug report. [param report]: its texts on the QA template ({title, description, steps, actual,
+## expected}, as BugReportDialog gives them); [param screenshot]: the capture, base64 (JPEG or PNG);
+## [param log]: the end of the game's log. Either of the last two may be left out.
+func bug_report_create(report: Dictionary, context: Dictionary, screenshot: String = "",
+		log: String = "") -> Dictionary:
+	var body: Dictionary = report.duplicate()
+	body["context"] = context
+	if screenshot != "":
+		body["screenshot"] = screenshot
+	if log != "":
+		body["log"] = log
+	return await _http_post(SERVICE_SOCIAL, "/api/bug-reports", body)
+
+
+# ---------------------------------------------------------------------------------------------
 # Corporations
 # ---------------------------------------------------------------------------------------------
 

@@ -67,6 +67,15 @@ static func send(screen_owner: Node, data: Dictionary) -> void:
 	player.client_send_action_to_server(action)
 
 
+## CLIENT: the blip of a screen's button the local player just pressed, heard where their finger is (the
+## tap that pressed it). The others hear it once the screen's server side took the press
+## (Player.server_screen_blip, from its update_screen).
+static func blip() -> void:
+	var player := PlayerLocation.local_player() as Player
+	if player != null:
+		player.play_screen_blip(player.tap_point)
+
+
 ## SERVER: tell every client near [param via] what [param screen_owner] is doing ([param event], its
 ## "state" and the rest): the player property `screen_event` of [param via] — the player who used the
 ## screen — reaches every client around them, which hands it to the screen (receive). It is stamped

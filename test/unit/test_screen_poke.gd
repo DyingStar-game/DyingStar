@@ -49,6 +49,26 @@ func test_the_event_carries_its_point() -> void:
 	assert_null(ScreenPoke.parse_tap("emote:wave:3"), "not a tap")
 
 
+func test_a_button_s_blip_is_told_like_a_tap_and_is_not_one() -> void:
+	var action := ScreenPoke.blip_action(3, Vector3(0.25, 1.5, -0.75))
+	assert_eq(action, "blip:3:0.250:1.500:-0.750")
+	assert_eq(ScreenPoke.parse_blip(action), Vector3(0.25, 1.5, -0.75))
+	assert_ne(ScreenPoke.blip_action(4, Vector3(0.25, 1.5, -0.75)), action, "every blip a new value")
+	assert_null(ScreenPoke.parse_tap(action), "no tap: the arm does not move again")
+	assert_null(ScreenPoke.parse_blip(ScreenPoke.tap_action(3, Vector3.ZERO)))
+
+
+## The blip is the player's (one sound for every screen that answers a press), set on its scene: the
+## inspector's "Screen button blip" group is where it is tuned.
+func test_the_player_carries_the_blip_of_a_screen_s_button() -> void:
+	var state := (load("res://scenes/player/player.tscn") as PackedScene).get_state()
+	var blip: AudioStream = null
+	for i in state.get_node_property_count(0):
+		if state.get_node_property_name(0, i) == &"sfx_screen_blip":
+			blip = state.get_node_property_value(0, i) as AudioStream
+	assert_not_null(blip, "the player's scene sets sfx_screen_blip")
+
+
 func test_the_server_relays_only_a_reachable_tap_at_a_finger_s_pace() -> void:
 	assert_true(PlayerServer.may_relay_tap(Vector3(0.2, 1.6, -0.5), 1000))
 	assert_false(PlayerServer.may_relay_tap(Vector3(0.0, 1.6, -5.0), 1000), "a screen across the room")

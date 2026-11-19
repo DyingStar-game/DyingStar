@@ -206,6 +206,8 @@ func advance(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if phase != Phase.OPEN or _model == null:
 		return
+	if Screenshot.bug_reporter.is_open():
+		return  # the bug report form is over the tablet: the mouse and the keys are the form's
 	if event is InputEventMouse:
 		var mouse := event as InputEventMouse
 		var at: Variant = _model.gui.hit(_camera.project_ray_origin(mouse.position),
@@ -213,9 +215,12 @@ func _input(event: InputEvent) -> void:
 		if at != null:
 			_model.gui.push_at(mouse, at)
 			_over_screen = true
-		elif _over_screen:
-			_model.gui.pointer_left()  # off the screen, on the arm or past it: nothing hovered any more
-			_over_screen = false
+		else:
+			if mouse is InputEventMouseButton and not mouse.is_pressed():
+				_model.gui.push_release(mouse as InputEventMouseButton)  # let go beside the screen: let go all the same
+			if _over_screen:
+				_model.gui.pointer_left()  # off the screen, on the arm or past it: nothing hovered any more
+				_over_screen = false
 		if mouse is InputEventMouseButton and mouse.is_pressed():
 			get_viewport().set_input_as_handled()
 		return

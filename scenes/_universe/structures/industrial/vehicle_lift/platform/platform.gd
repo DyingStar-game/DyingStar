@@ -137,6 +137,8 @@ func update_screen(data: Dictionary):
 	if vehicle_lift == null or not vehicle_lift is VehicleLift:
 		push_error("vehicle_lift non présent ou n'est pas un VehicleLift dans %s" % name)
 		return
+	if is_instance_valid(active_player):
+		active_player.server_screen_blip()  # the button answers: the others hear it too
 
 	if action.has("button"):
 		match action["button"]:
@@ -161,6 +163,7 @@ func set_screen_actor(player: Player) -> void:
 func _on_call_button_triggered(datas: Dictionary) -> void:
 	if GameOrchestrator.is_server():
 		return
+	ScreenTarget.blip()
 	ScreenTarget.send(self, {"elevator_screen_action": datas})
 
 # PropSync applies the replicated transform, then calls this with the full payload so the depot can
