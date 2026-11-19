@@ -4,6 +4,7 @@ extends Node
 
 const JUMP: String = "jump"  # kept in sync with Player.JUMP
 const GOD_MODE := preload("res://scenes/player/god_mode.gd")
+const RENDER_INDEX_REFRESH := preload("res://scenes/player/render_index_refresh.gd")
 ## The dark patch behind the interaction prompt. Preloaded rather than named by its class: a client started
 ## before the editor has registered a new class_name must still compile the player.
 const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
@@ -324,6 +325,11 @@ func setup() -> void:
 	var lamp_budget := LampShadowBudget.new()
 	lamp_budget.name = "LampShadowBudget"
 	player.add_child(lamp_budget)
+	# And the engine's spatial index loses the lamps' shadow casters at every step of the planet:
+	# they are filed in it again after each one (see the script).
+	var index_refresh: Node = RENDER_INDEX_REFRESH.new()
+	index_refresh.name = "RenderIndexRefresh"
+	player.add_child(index_refresh)
 	# Dev: which lamps light the point under the crosshair, and through what (debug_light_probe).
 	_light_probe = LightProbe.new()
 	_light_probe.name = "LightProbe"

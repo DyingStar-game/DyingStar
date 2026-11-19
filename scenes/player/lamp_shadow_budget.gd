@@ -10,7 +10,7 @@ extends Node
 ## so the lamps took turns: whichever lost its place lost its shadow until the next allocation, and the
 ## far lamps blinked. Every shadow is also a whole depth pass of what its light reaches. Measured at the
 ## spawn with the lamps on (RTX 3090, 3440x1400): 52 -> 60 fps with this budget. (The NEAR lamps blinked
-## for another reason, the planet's spin steps: see Planet.rotation_update_hz.)
+## for another reason, the planet's steps: see render_index_refresh.gd.)
 ##
 ## Twice a second, the shadowed lamps within `max_distance` of the camera are ranked by distance and
 ## only the `max_shadows` nearest keep their shadow; every other lamp still LIGHTS, it just casts
