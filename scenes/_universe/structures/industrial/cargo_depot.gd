@@ -562,8 +562,10 @@ func _on_box_counter_body_entered(body: Node3D) -> void:
 	if not await WarehouseDelivery.may_deposit(body, depositor):
 		print("[cargo_depot] %s left on the counter: %s may not deposit it" % [id, depositor])
 		return
-	# Nor one the warehouse buys no more: shelved by a storekeeper, it would be given away.
-	if is_instance_valid(body) and WarehouseDelivery.refuses(uuid, body.get("content")):
+	# Nor one the warehouse buys no more: shelved by a storekeeper, it would be given away. Asked of the
+	# simulator first: on an answer not known yet a storekeeper took the crate, then could shelve it
+	# nowhere (playtest 2026-11-19).
+	if is_instance_valid(body) and await WarehouseDelivery.refuses_now(uuid, body.get("content")):
 		print("[cargo_depot] %s left on the counter: the warehouse buys no more of it" % id)
 		_reception_says(SAY_WAREHOUSE_FULL)
 		return

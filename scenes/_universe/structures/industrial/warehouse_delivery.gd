@@ -146,6 +146,17 @@ static func refuses(depot_uuid: String, content: Variant) -> bool:
 	return (known.get("full", []) as Array).has(CrateContent.good_type(content))
 
 
+## The same, on an answer that is never old: the simulator is asked first when it has to be. For what
+## cannot be undone by the player -- a storekeeper taking the crate off the counter, the goods changing
+## hands -- where an answer not known yet must not pass for "not refused".
+static func refuses_now(depot_uuid: String, content: Variant) -> bool:
+	if depot_uuid == "" or not (content is Dictionary) or not is_sellable(content):
+		return false
+	if limits_are_old(_limits.get(depot_uuid, {}), Time.get_ticks_msec()):
+		await read_limits(depot_uuid)
+	return refuses(depot_uuid, content)
+
+
 ## Whether what is [param known] of a warehouse is to be asked again at [param now] (ticks msec). Pure.
 static func limits_are_old(known: Dictionary, now: int) -> bool:
 	return not known.has("at") or now - int(known["at"]) >= LIMITS_TTL_MS
@@ -204,11 +215,10 @@ static func _deliver(crate: Node, shelf: Node, depot_uuid: String, depositor: St
 	# The last word before the goods change hands: the drop was let through on an answer not known yet,
 	# or a storekeeper shelved it. Left on the shelf, still the player's, nothing counted.
 	if is_sellable(c):
-		if limits_are_old(_limits.get(depot_uuid, {}), Time.get_ticks_msec()):
-			await read_limits(depot_uuid)
+		var refused: bool = await refuses_now(depot_uuid, c)
 		if not is_instance_valid(crate) or crate.get_parent() != shelf:
 			return false
-		if refuses(depot_uuid, c):
+		if refused:
 			print("[Warehouse] %s refused: %s buys no more %s" % [_crate_id(crate), depot_uuid, good])
 			return false
 	var ok: bool = await MissionHeartbeat.drop_carried(holder, good, units, warehouse(depot_uuid),

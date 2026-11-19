@@ -3374,8 +3374,10 @@ func _shelf_of_drop() -> Variant:
 
 
 ## Whether [param shelf] is a warehouse's that refuses what the player holds (WarehouseDelivery.refuses).
+## Never a storekeeper: what they carry was let through at the counter, and a crate they could put on no
+## shelf stayed in their arms (playtest 2026-11-19).
 func _warehouse_refuses(shelf: Variant) -> bool:
-	if not (shelf is Node) or player.hands_item == null:
+	if not (shelf is Node) or player.hands_item == null or player.is_npc:
 		return false
 	return WarehouseDelivery.refuses(WarehouseDelivery.depot_uuid_of(shelf), player.hands_item.get("content"))
 
