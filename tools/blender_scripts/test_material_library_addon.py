@@ -1,7 +1,7 @@
 """The dyingstar_material_library addon end to end, in Blender without a window: enable it from this repository,
 publish materials an artist could have made -- a plain colour with no map at all, an albedo alone, a normal map
-alone, a colour picked in an RGB node, a colour under an occlusion map, a tinted texture -- and read every
-export back; then link one of them, as a model does, and read what the panel says of it.
+alone, a colour picked in an RGB node, a colour under an occlusion map, a tinted texture, a colour made by nodes
+(baked) -- and read every export back; then link one of them, as a model does, and read what the panel says of it.
 
 usage: blender -b --factory-startup --python tools/blender_scripts/test_material_library_addon.py -- \
            [<scratch folder>]
@@ -83,6 +83,37 @@ def _export(name):
         return json.load(handle), sorted(os.listdir(folder))
 
 
+def _srgb_to_linear(values):
+    return np.where(values <= 0.04045, values / 12.92, ((values + 0.055) / 1.055) ** 2.4)
+
+
+def _linear_to_srgb(values):
+    return np.where(values <= 0.0031308, values * 12.92, 1.055 * values ** (1.0 / 2.4) - 0.055)
+
+
+def _pixels(image):
+    """The image's stored values, one row per pixel, RGB."""
+    values = np.empty(image.size[0] * image.size[1] * 4, dtype=np.float32)
+    image.pixels.foreach_get(values)
+    return values.reshape(-1, 4)[:, :3]
+
+
+def _published(name, role):
+    """The pixels of a map as it sits in the library."""
+    image = bpy.data.images.load(os.path.join(_export.materials_dir, name, "tex_%s_%s.png" % (name[4:], role)))
+    values = _pixels(image)
+    bpy.data.images.remove(image)
+    return values
+
+
+def _borrowed_nothing(tree, node_count):
+    """A bake gives back all it took: the nodes, the scene's engine, its own images and square."""
+    assert len(tree.nodes) == node_count, "the bake left nodes in the artist's tree"
+    assert bpy.context.scene.render.engine != "CYCLES", "the bake left the scene on Cycles"
+    assert not [image.name for image in bpy.data.images if image.name.startswith("ds_")], "baked images left"
+    assert not [found.name for found in bpy.data.objects if found.name.startswith("ds_")], "bake square left"
+
+
 def _round_trip(manifest, extractor, builder):
     """The published material, rebuilt as the Asset Browser library builds it, reads back the same."""
     folder = pathlib.Path(_export.materials_dir, manifest["id"])
@@ -120,6 +151,7 @@ def main():
     obj = bpy.data.objects.new("probe", bpy.data.meshes.new("probe"))
     bpy.context.scene.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj
+    bpy.context.scene.render.engine = "BLENDER_WORKBENCH"  # not the one a bake borrows
 
     # 1. A plain colour and nothing else: no map at all.
     name = "mat_metal_plain_grey"
@@ -180,18 +212,19 @@ def main():
     assert manifest["albedo_color"] == [0.0, 0.0, 1.0], manifest["albedo_color"]
     _round_trip(manifest, extractor, builder)
 
-    # 6. A base colour the add-on cannot read is refused, and the refusal names the node.
+    # 6. A base colour made by a node the manifest cannot say (a Color Ramp) is baked; this one gives the same
+    # colour everywhere, so it is published as the plain colour it is, with no map.
     name = "mat_metal_colour_ramp"
     material, tree, principled = _material(obj, name)
     ramp = tree.nodes.new("ShaderNodeValToRGB")
     tree.links.new(ramp.outputs["Color"], principled.inputs["Base Color"])
-    try:
-        bpy.ops.dyingstar.export_material()
-    except RuntimeError as error:  # an operator's ERROR report, as Python sees it
-        assert "ShaderNodeValToRGB" in str(error), str(error)
-    else:
-        raise AssertionError("a base colour behind a ColorRamp was published")
-    assert not os.path.exists(os.path.join(_export.materials_dir, name)), "and nothing was written"
+    assert "albedo" in extractor.extract(material).bake, "the ramp is left to the baker"
+    node_count = len(tree.nodes)
+    manifest, files = _export(name)
+    assert manifest["maps"] == {}, manifest["maps"]
+    assert np.allclose(manifest["albedo_color"], [0.7354] * 3, atol=5e-3), manifest["albedo_color"]
+    _borrowed_nothing(tree, node_count)
+    _round_trip(manifest, extractor, builder)
 
     # 7. A texture multiplied by a flat colour is a tint: the albedo and albedo_color.
     name = "mat_metal_tinted"
@@ -220,7 +253,8 @@ def main():
     assert np.allclose(manifest["albedo_color"], [0.5371, 0.7354, 1.0], atol=2e-3), manifest["albedo_color"]
     _round_trip(manifest, extractor, builder)
 
-    # 9. A colour laid over the texture any other way cannot be carried: it is said, not published.
+    # 9. A colour laid over the texture any other way is not a tint the manifest can say: the result is baked
+    # into the albedo, which then holds what the artist saw.
     name = "mat_metal_half_mixed"
     material, tree, principled = _material(obj, name)
     blend = _multiply(tree)
@@ -228,11 +262,16 @@ def main():
     tree.links.new(_texture(tree, _image("grey_albedo_3", True)).outputs["Color"], blend.inputs["A"])
     blend.inputs["B"].default_value = (1.0, 0.0, 0.0, 1.0)
     tree.links.new(blend.outputs["Result"], principled.inputs["Base Color"])
-    assert any("Multiply" in warning for warning in extractor.extract(material).warnings), "the way out is named"
+    source = _pixels(bpy.data.images["grey_albedo_3"])
     manifest, files = _export(name)
-    assert "albedo_color" not in manifest, manifest
+    assert "albedo_color" not in manifest and sorted(manifest["maps"]) == ["albedo"], manifest
+    # Multiply at Factor 0.5 by pure red: red untouched, green and blue halved, in linear light.
+    expected = _linear_to_srgb(_srgb_to_linear(source) * np.array([1.0, 0.5, 0.5])).mean(axis=0)
+    baked = _published(name, "albedo").mean(axis=0)
+    assert np.allclose(baked, expected, atol=0.02), "baked %s, expected %s" % (baked, expected)
+    _round_trip(manifest, extractor, builder)
 
-    # 9a. Two images blended by a factor are a layered colour, not an albedo and its occlusion.
+    # 9a. Two images blended by a factor are a layered colour, not an albedo and its occlusion: baked into one.
     name = "mat_metal_layered"
     material, tree, principled = _material(obj, name)
     layers = _multiply(tree)
@@ -241,9 +280,51 @@ def main():
     tree.links.new(_texture(tree, _image("paint", True)).outputs["Color"], layers.inputs["A"])
     tree.links.new(_texture(tree, _image("bare_metal", True)).outputs["Color"], layers.inputs["B"])
     tree.links.new(layers.outputs["Result"], principled.inputs["Base Color"])
-    assert any("two images" in warning for warning in extractor.extract(material).warnings), "the blend is named"
+    assert "albedo" in extractor.extract(material).bake, "the blend is left to the baker"
     manifest, files = _export(name)
     assert sorted(manifest["maps"]) == ["albedo"], "the second image is not taken for an occlusion map"
+    expected = (0.5 * (_srgb_to_linear(_pixels(bpy.data.images["paint"]))
+                       + _srgb_to_linear(_pixels(bpy.data.images["bare_metal"])))).mean(axis=0)
+    baked = _srgb_to_linear(_published(name, "albedo")).mean(axis=0)
+    assert np.allclose(baked, expected, atol=0.02), "baked %s, expected %s" % (baked, expected)
+
+    # 9c. Worn paint as an artist wires it: a mask picks between two paints, an occlusion map is multiplied over
+    # the result, the roughness map goes through a contrast node and the metalness comes from a channel. None of
+    # it is an image the tree holds: each is baked, and what is the same everywhere comes out as a number.
+    name = "mat_metal_painted_worn"
+    material, tree, principled = _material(obj, name)
+    mapping = tree.nodes.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (0.5, 0.5, 1.0)  # a 2 m tile: must not end up in the baked image
+    mask = _texture(tree, _image("wear_mask", False))
+    tree.links.new(mapping.outputs["Vector"], mask.inputs["Vector"])
+    paints = _multiply(tree)
+    paints.blend_type = "MIX"
+    paints.inputs["A"].default_value = (0.8, 0.4, 0.0, 1.0)
+    paints.inputs["B"].default_value = (0.2, 0.2, 0.2, 1.0)
+    tree.links.new(mask.outputs["Color"], paints.inputs["Factor"])
+    shade = _multiply(tree)
+    tree.links.new(_texture(tree, _image("occlusion_3", False)).outputs["Color"], shade.inputs["A"])
+    tree.links.new(paints.outputs["Result"], shade.inputs["B"])
+    tree.links.new(shade.outputs["Result"], principled.inputs["Base Color"])
+    contrast = tree.nodes.new("ShaderNodeBrightContrast")
+    contrast.inputs["Bright"].default_value = 0.1
+    tree.links.new(_texture(tree, _image("roughness_2", False)).outputs["Color"], contrast.inputs["Color"])
+    tree.links.new(contrast.outputs["Color"], principled.inputs["Roughness"])
+    ranged = tree.nodes.new("ShaderNodeMapRange")
+    tree.links.new(mask.outputs["Alpha"], ranged.inputs["Value"])  # the mask is opaque: 1 everywhere
+    tree.links.new(ranged.outputs["Result"], principled.inputs["Metallic"])
+    found = extractor.extract(material)
+    assert sorted(found.bake) == ["albedo", "metallic", "roughness"] and not found.images, (found.bake, found.images)
+    node_count = len(tree.nodes)
+    manifest, files = _export(name)
+    assert sorted(manifest["maps"]) == ["albedo", "roughness"], manifest["maps"]
+    assert abs(manifest["metallic"] - 1.0) < 1e-3, "a metalness that is the same everywhere is a number"
+    assert tuple(mapping.inputs["Scale"].default_value) == (0.5, 0.5, 1.0), "the tile size is given back"
+    _borrowed_nothing(tree, node_count)
+    baked = _srgb_to_linear(_published(name, "albedo")).mean(axis=0)
+    assert baked[0] > baked[2] + 0.02, "the orange paint shows in the baked albedo: %s" % baked
+    assert abs(_published(name, "roughness").mean() - (_pixels(bpy.data.images["roughness_2"]).mean() + 0.1)) < 0.05
+    _round_trip(manifest, extractor, builder)
 
     # 9b. The roughness and metallic set by hand travel as numbers; under a map, the map does.
     name = "mat_glass_screen_off"
