@@ -444,6 +444,24 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "eruption-explosion-far-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/eruption-explosion-far-1.ogg",
+			"author": "Hugo Lisoir",
+			"source": "Discord",
+			"id": "278291200514195466",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "eruption-explosion-far-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/eruption-explosion-far-2.ogg",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "eva-thrust-loop.ogg",
 			"path": "res://assets/_universe/audio/sfx/characters/eva-thrust-loop.ogg",
 			"author": "Plx",
@@ -458,6 +476,15 @@
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "geothermal-steam-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/geothermal-steam-loop.ogg",
+			"author": "Hugo Lisoir",
+			"source": "Discord",
+			"id": "278291200514195466",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -638,6 +665,15 @@
 			"author": "WarpZone",
 			"source": "Discord",
 			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "rock-cracking-rumble-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/rock-cracking-rumble-loop.ogg",
+			"author": "Paglop",
+			"source": "Discord",
+			"id": "659872763439480873",
 			"url": "",
 			"license": "CC BY-NC-SA 4.0"
 		},
@@ -919,6 +955,15 @@
 			"id": "",
 			"url": "https://pixabay.com/sound-effects/wave-cape-cloth-in-wind-350430/",
 			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "volcano-deep-rumble-loop.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/volcano-deep-rumble-loop.ogg",
+			"author": "Hugo Lisoir",
+			"source": "Discord",
+			"id": "278291200514195466",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
 		},
 		{
 			"asset": "wardrobe-door-close.ogg",
