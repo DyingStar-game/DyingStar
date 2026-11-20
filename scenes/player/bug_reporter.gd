@@ -30,6 +30,9 @@ const HINT_ALPHA := 0.7
 const HINT_MARGIN_PX := Vector2(16.0, 2.0)
 ## The most characters a value of the report's context may hold (service-social's createBugReportBody).
 const CONTEXT_VALUE_MAX := 200
+## Planet.GROUP, spelt out: the Screenshot autoload builds this node, and naming Planet here would
+## compile and load most of the game with the autoloads (test_boot_light_autoloads checks they agree).
+const PLANET_GROUP := &"planet"
 ## The kind of graphics card, as the report names it: a game drawn by the integrated one is a slow game.
 const GPU_KINDS: Dictionary = {
 	RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU: "integrated",
@@ -201,7 +204,9 @@ static func context_of(body: Node3D) -> Dictionary:
 	}
 	out.merge(machine_of())
 	if is_instance_valid(body):
-		var planet: Planet = Planet.of(body)
+		var planet: Node = body
+		while planet != null and not planet.is_in_group(PLANET_GROUP):
+			planet = planet.get_parent()
 		if planet != null:
 			out["body"] = str(planet.name)
 		var parent: Node = body.get_parent()

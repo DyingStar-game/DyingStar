@@ -134,6 +134,7 @@ func test_the_capture_travels_as_a_jpeg_no_wider_than_full_hd() -> void:
 func test_the_report_says_the_build_and_where_the_body_stands() -> void:
 	var frame := Node3D.new()
 	frame.name = "Tarsis3"
+	frame.add_to_group(Planet.GROUP)
 	add_child_autofree(frame)
 	var body := Node3D.new()
 	frame.add_child(body)
@@ -141,6 +142,7 @@ func test_the_report_says_the_build_and_where_the_body_stands() -> void:
 	var context: Dictionary = BugReporter.context_of(body)
 	assert_eq(context.get("version"), BuildInfo.version_text())
 	assert_eq(context.get("frame"), "Tarsis3")
+	assert_eq(context.get("body"), "Tarsis3", "the planet is found by its group")
 	assert_eq(context.get("position"), "12.3, -5.0, 7.1")
 	for key: String in context:
 		var value: Variant = context[key]
