@@ -115,6 +115,8 @@ Where the creator's sliders must stop: looks made the way a player makes them, j
 4. `fit_limits.py --series DIR:VERDICTS[:clip] ... --target 0.03` -> `creator_limits.json`, read by `CreatorLimits`:
    a face's load (per tab, a weight times the sum of its sliders' squares) and the budget the creator holds it to.
    On the European series (1 200 faces): one slider alone broke 4 faces in 399; together, the mouth's weigh most
-   (1), then the eyes' (0.5), the jaw's (0.28), the nose's, the skull's, the ears' hardly; FLAME's none. Snapshot
+   (1), then the eyes' (0.5), the jaw's (0.28), the nose's, the skull's, the ears' hardly; FLAME's none.
+   `--direction Mouth_Lips_LowerAngle:-` gives one slider, one way, a weight of its own: the counter-survey (series 3's
+   faces and gestures, under the limits: `creator_survey --limits=1`) still had 7 of its 12 rejects there. Snapshot
    the verdicts (ArtifactData `out_dir`) before each fit, and never rewrite a stored look: to relax, refit with a
    higher `--target` or lower `CreatorLimits.strength`.
