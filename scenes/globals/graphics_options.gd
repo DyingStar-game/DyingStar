@@ -132,6 +132,12 @@ const OPTIONS : Array[Dictionary] = [
 		"help": "%%MENU_GFX_HELP_SHADOW_LIGHT_RES", "kind": CHOICE,
 		"choices": _ATLAS, "default": 4096, "viewport": "positional_shadow_atlas_size",
 		"presets": [1024, 2048, 4096, 4096]},
+	# One distance for every lamp of the world, whoever placed it (LampShadowBudget reads it): past
+	# it a lamp lights and casts nothing. 60 m is what the budget was built with; 0 turns them off.
+	{"key": "lamp_shadow_distance", "section": SEC_SHADOWS, "label": "%%MENU_GFX_LAMP_SHADOW_DISTANCE",
+		"help": "%%MENU_GFX_HELP_LAMP_SHADOW_DISTANCE", "kind": SLIDER,
+		"min": 0.0, "max": 100.0, "step": 5.0, "format": FORMAT_METERS,
+		"default": 60.0, "presets": [30.0, 45.0, 60.0, 80.0]},
 	{"key": "shadow_filter", "section": SEC_SHADOWS, "label": "%%MENU_GFX_SHADOW_FILTER",
 		"help": "%%MENU_GFX_HELP_SHADOW_FILTER", "kind": CHOICE,
 		"choices": [[RenderingServer.SHADOW_QUALITY_HARD, "%%MENU_GFX_HARD"],

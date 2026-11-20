@@ -230,19 +230,19 @@ distance_fade_enabled = true
 spot_range = 150.0
 spot_angle = 37.0
 
-[node name="RearSpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=1571705372 groups=["vehicle_light"]]
+[node name="RearSpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=1571705372 groups=["vehicle_light", "no_lamp_shadow"]]
 transform = Transform3D(-1, 4.292465545922857e-17, -1.1469124771714764e-16, 0, 0.9365560045835758, 0.3505179742587379, 1.2246064e-16, 0.3505179742587379, -0.9365560045835758, 0.6999999999970896, -0.28638452229786093, 1.6112571829065885)
 light_color = Color(1, 0.039215688, 0.0627451, 1)
 spot_range = 10.0
 spot_angle = 37.0
 
-[node name="RearSpotLight3DR2" type="SpotLight3D" parent="Light" unique_id=1027222496 groups=["vehicle_light"]]
+[node name="RearSpotLight3DR2" type="SpotLight3D" parent="Light" unique_id=1027222496 groups=["vehicle_light", "no_lamp_shadow"]]
 transform = Transform3D(-1, 3.3754727001257446e-17, -1.177167224920919e-16, 0, 0.9612616959383188, 0.2756373558169992, 1.2246064e-16, 0.2756373558169992, -0.9612616959383188, -0.6999999999970896, -0.28638452229786093, 1.6112571829065885)
 light_color = Color(1, 0.039215688, 0.0627451, 1)
 spot_range = 10.0
 spot_angle = 37.0
 
-[node name="SpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=331479837 groups=["vehicle_light"]]
+[node name="SpotLight3DL2" type="SpotLight3D" parent="Light" unique_id=331479837 groups=["vehicle_light", "no_lamp_shadow"]]
 transform = Transform3D(1, 0, 0, 0, -0.6741734925434366, 0.7385730173461422, 0, -0.7385730173461422, -0.6741734925434367, -0.01612382468180939, 0.9271067390711144, -0.3518031843022533)
 light_energy = 0.5
 spot_range = 4.0
