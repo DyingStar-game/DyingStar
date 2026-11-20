@@ -22,7 +22,7 @@ extends Control
 ## these levels -- every control, both ways, at every level, in a shuffled order (sweep_plan): where each control alone
 ## stops looking human, one control at a time. Ids past the plan are controls.
 ## --limits=S renders through the creator's limits at strength S (CreatorLimits.strength; default 0: none -- a survey
-## shows what was asked for; 1 checks the limits themselves).
+## shows what was asked for; 1 checks the limits themselves): a slider then stops where the creator's would.
 ## --combos=mouth,eyes --levels=0.5,1,1.5,2,3 replaces them too: one id in ten a control, the others 2 to 5 sliders of
 ## ONE tab moved together (combo_gestures), their squares summing to one of the levels -- how much a tab can take
 ## in all, the tabs and levels taking turns along the ids.
@@ -240,6 +240,8 @@ static func apply(look: CharacterAppearance, control: Array, v: float) -> void:
 	match String(control[0]):
 		"slider":
 			var id: int = CharacterAppearance.modifier_id(control[1])
+			if CreatorLimits.strength > 0.0:
+				v = CreatorLimits.max_move(look, id, v)  # where the creator's slider stops
 			if absf(v) < 0.5 / 127.0:
 				look.modifiers.erase(id)
 			else:
