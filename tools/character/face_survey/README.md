@@ -93,3 +93,18 @@ cd ~/datasets/ffhq
     prototype and judge on NoW (19 people with a real profile): the nose 1.445 -> 1.37 mm, the face 1.565 -> 1.56,
     15 of 19 better or alike (the scan's own outline: 1.30); the nine older nose sliders fitted the same way made it
     worse. `ava/ava_profile.py` asked the same of a reader learnt on Ava's profiles: barely better (1.43).
+
+## What a player can make (creator survey)
+
+Where the creator's sliders must stop: looks made the way a player makes them, judged by eye.
+
+1. `creator_survey.tscn -- --subject=face|body --out=DIR --from=1 --count=N` (GPU, not `--headless`): each sample
+   is a `CharacterAppearance.random()` look plus a few gestures on the creator's own controls (face: detail
+   sliders, overall axes, origins; body: gender, age, height, body sliders, origins), drawn over their whole
+   travel, rendered through the creator's preview. One id in ten is an untouched control. Faces are seen front and
+   three-quarter; bodies front and side, without garments (the tool strips them from the bake: the game always
+   dresses a look). `samples.json` holds each sample's gestures and final sliders.
+2. `clip_judge.py DIR --subject face|body` (torch + open_clip, outside the project: `~/datasets/clip/.venv`):
+   a zero-shot guess per sample, its threshold set on the controls, and the age CLIP reads -> `clip.json`.
+3. `random_faces_sheets.py DIR --subject face|body --out SHEETS --prefix face|body`: contact sheets for the
+   rating page, where the guesses are corrected by hand.
