@@ -455,6 +455,20 @@ func _sync_eye_height() -> void:
 func wrist_weight() -> float:
 	return _wrist_weight
 
+## Where the torch worn on the head points. On one's feet it simply rides the head ([param with_view]
+## false): the head bone follows the look, and the beam with it. Lying on a bed that no longer holds:
+## the lay clip turns the head to the ceiling and the look is added on top of THAT pose, while the view
+## turns in the frame of the upright body the bed holds. The beam left the view by the clip's whole
+## turn, and no look brought it down to one's feet (playtest 2026-11-20). There the beam takes the
+## direction of [param view] -- the camera pivot, whose rotation is replicated, so every client aims an
+## avatar's torch alike -- and keeps its place on the head.
+static func aim_torch(torch: Node3D, view: Node3D, with_view: bool) -> void:
+	if with_view:
+		torch.global_basis = view.global_basis.orthonormalized()
+	elif not torch.basis.is_equal_approx(Basis.IDENTITY):
+		torch.basis = Basis.IDENTITY
+
+
 ## A point on the animated body that a prop can hang from. `body_aligned` adds a child that cancels the
 ## bone's rest rotation, so whatever mounts there starts out facing the way the BODY faces instead of
 ## wherever the artist happened to point that bone -- what a headlamp needs. A holster does not: a tool
@@ -543,6 +557,11 @@ func _process(delta: float) -> void:
 				* Quaternion(head_look_axis.normalized(), pitch)
 		_head_written = animated * look_q
 		_skeleton.set_bone_pose_rotation(_head_bone, _head_written)
+	# The torch worn on that head (PlayerClient._mount_torch): see aim_torch for the bed.
+	if _player.camera_pivot != null and is_instance_valid(_player.flashlight) \
+			and _player.flashlight.get_parent() == _player.head_mount:
+		aim_torch(_player.flashlight, _player.camera_pivot,
+				bool(_player.locomotion_sample.get("lying", false)))
 	if _puppet != null and _player.floating and _player.datapad_raised and _float_tilt != 0.0:
 		# The wrist comes up: straight at once, before the arm takes its pose before the eye. Eased, the
 		# screen swung round the camera that was already turning to it, and the view flipped.
