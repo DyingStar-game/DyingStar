@@ -18,7 +18,7 @@ extends StarMapTileLines
 ## What a canyon is drawn in: the shadow it is from above.
 const COLOUR: Color = Color(0.10, 0.08, 0.07)
 ## How opaque the network is when drawn in full: a hint of where the plateau is cut, see-through so the
-## ground, the roads and the markers under it still read. Opaque, the dark ribbons drowned the chart.
+## ground under it still reads. Opaque, the dark ribbons drowned the chart.
 const OPACITY: float = 0.3
 ## How far the canyons float over the ground: two thirds of what the roads do, so a road crossing a
 ## canyon is drawn OVER it, as the bridge it crosses on is. At the same height the two fought for the
@@ -26,7 +26,7 @@ const OPACITY: float = 0.3
 const UNDER_THE_ROADS: float = LIFT * 2.0 / 3.0
 ## Drawn before the roads, which is what settles it where the height cannot: see
 ## [method StarMapTileLines._priority].
-const RENDER_PRIORITY: int = -2
+const RENDER_PRIORITY: int = UNDER_THE_MARKERS - 2
 ## How many points across one block of the network the tracing looks at. Four finds every canyon
 ## between two blocks; fewer steps over the narrow end of a block and leaves gaps.
 const SAMPLES_PER_BLOCK: float = 4.0

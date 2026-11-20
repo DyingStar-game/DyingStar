@@ -8,6 +8,11 @@ extends StarMapTileLines
 ## asking for the tiles the ground is drawing returns exactly the roads in view, already clipped, with
 ## nothing to cull and nothing counted twice.
 ##
+## The streets INSIDE a village are not in the pack: the export cuts every way at the village's edge,
+## and what runs between its buildings is drawn in the village's own layout (VillageRoad). The terrain
+## lays those from PlanetData.village_roads(), and so does this map: a village seen from above was
+## its buildings on bare ground, with no street between them (playtest 2026-11-20).
+##
 ## Lines rather than ribbons. A road is 6 m wide and a trail narrower; at any height where the whole
 ## network reads, a true-to-width ribbon is thinner than a pixel, and one widened until it shows is no
 ## longer telling you the width. A line says "there is a road here", which is what a map is for.
@@ -24,7 +29,12 @@ const COLOURS: Dictionary = {
 	"road": Color(0.98, 0.80, 0.55),
 	"trail": Color(0.80, 0.66, 0.50),
 	"railway": Color(0.72, 0.86, 1.0),
+	# A village's footpath (RoadSnap.KIND_NAMES): the palest of the ways one walks or drives.
+	"path": Color(0.90, 0.86, 0.74),
 }
+## No village road at all: what a body without live data answers. ONE array, so that asking twice
+## does not read as a change (see _village_roads_laid).
+const NO_VILLAGE_ROADS: Array = []
 const UNKNOWN_COLOUR: Color = Color(0.85, 0.85, 0.85)
 ## The kind of way drawn with sleepers across it.
 const RAILWAY: String = "railway"
@@ -83,6 +93,12 @@ var _drawn_spans: Dictionary = {}
 var _drawn_spans_for: float = -1.0
 ## Whether the view is close enough for them to be marked at all: see [constant SPANS_WITHIN].
 var _spans_shown: bool = false
+## The village roads the lines on screen were laid with, as the last view handed them over
+## ([method show_over]): PlanetData replaces its array at each village whose ground is laid, and a
+## village comes in long after the first view of its tiles.
+var _village_roads_laid: Array = NO_VILLAGE_ROADS
+## The body's radius as that view gave it, in metres: what turns a street's width into an angle.
+var _radius_m: float = 0.0
 
 
 
@@ -105,7 +121,8 @@ func _available() -> bool:
 func _laying() -> Array:
 	var data: PlanetData = StarMapTiles.for_body(body_key).data
 	var pack: ModifierPack = _pack
-	var signs: Dictionary = {"step": _sign_step, "spans": _spans_to_draw(data) if _spans_shown else {}}
+	var signs: Dictionary = {"step": _sign_step, "spans": _spans_to_draw(data) if _spans_shown else {},
+			"village": _village_roads_laid, "radius_m": _radius_m}
 	if data == null or data.radius <= 0.0:
 		var key: String = body_key
 		return [func(id: int) -> Array:
@@ -128,6 +145,20 @@ func _release() -> void:
 	_spans_from = Vector2i(-1, -1)
 	_drawn_spans = {}
 	_drawn_spans_for = -1.0
+	_village_roads_laid = NO_VILLAGE_ROADS
+	_radius_m = 0.0
+
+
+## The village roads of [param planet], the body as it stands LOADED in the tree, for
+## [method show_over]; none for a body that is not loaded (null).
+##
+## From the planet itself, and not from the PlanetData the heights are read through (StarMapTiles):
+## that one may be the chart's own copy of the scene's data -- on a client it is -- and no village
+## ever laid a road on a copy. Read from it, the map drew no street at all (playtest 2026-11-20).
+static func village_roads_of(planet: Planet) -> Array:
+	if planet == null or planet.planet_data == null:
+		return NO_VILLAGE_ROADS
+	return planet.planet_data.village_roads()
 
 
 ## Draw the ways crossing [param tiles], with the map's signs — a railway's sleepers, the sides of a
@@ -137,12 +168,19 @@ func _release() -> void:
 ## ONE size for the whole view, which is why it is not each tile's own: a view mixes levels, fine under
 ## the camera and coarser ring by ring, and sleepers sized tile by tile doubled in length and spacing at
 ## every ring. When the size changes, everything laid is laid again.
-func show_over(tiles: Dictionary, metres_per_pixel: float, radius_m: float) -> void:
+##
+## [param village_roads] are the streets inside the body's villages ([method village_roads_of]), which
+## the pack does not hold. Told apart by IDENTITY: a new array is a change, and everything is laid again.
+func show_over(tiles: Dictionary, metres_per_pixel: float, radius_m: float,
+		village_roads: Array = NO_VILLAGE_ROADS) -> void:
 	var step: float = sign_length(metres_per_pixel, radius_m)
 	var spans_shown: bool = marks_spans(metres_per_pixel)
-	if not is_equal_approx(step, _sign_step) or spans_shown != _spans_shown:
+	var same_village: bool = is_same(village_roads, _village_roads_laid)
+	_radius_m = radius_m
+	if not is_equal_approx(step, _sign_step) or spans_shown != _spans_shown or not same_village:
 		_sign_step = step
 		_spans_shown = spans_shown
+		_village_roads_laid = village_roads
 		lay_again()
 	refresh(tiles)
 
@@ -252,7 +290,8 @@ static func _note_span(into: Dictionary, fid: int, span: Vector2) -> void:
 ## [param place]. Static and handed everything, because it may run on a worker.
 ##
 ## [param signs] is what the map's signs need: "step", the length they are sized on (zero leaves it to
-## the tile's own), and "spans", see [method _spans_to_draw].
+## the tile's own), and "spans", see [method _spans_to_draw]; and what the pack does not hold: "village",
+## the village roads, with "radius_m" to give them their width (see [method lay_village_roads]).
 ##
 ## The pack stores lon/lat in DEGREES, which is what [method HEALPix.lonlat2vec] takes — the two agree,
 ## and it is worth saying so here because the neighbouring call in this file's own tests once did not.
@@ -268,7 +307,9 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 		ModifierPack.TILE_PENDING:
 			return []  # streaming in: laid again on a later refresh (StarMapTileLines._laying)
 		ModifierPack.TILE_ABSENT:
-			return [points, colours]
+			# No way of the pack crosses this tile; a village's streets may all the same.
+			return lay_village_roads(signs.get("village", NO_VILLAGE_ROADS), nside, ipix, place,
+					float(signs.get("radius_m", 0.0)))
 	var tile: Dictionary = pack.decode_tile(pack.read_tile(nside, ipix), 0.0, ModifierPack.MASK_ROAD)
 	# One step of the tile's mesh, as an angle: no piece of a way is drawn longer than that.
 	var step: float = mesh_step(nside)
@@ -308,6 +349,51 @@ static func _lay_tile(pack: ModifierPack, nside: int, ipix: int, place: Callable
 				add_ribbon(strips, points[n], points[n + 1], sign_step * SPAN_THICK * 0.5)
 			for n: int in range(beds, strips.size()):
 				strip_colours.append(sort[1])
+	var streets: Array = lay_village_roads(signs.get("village", NO_VILLAGE_ROADS), nside, ipix, place,
+			float(signs.get("radius_m", 0.0)))
+	points.append_array(streets[0])
+	colours.append_array(streets[1])
+	strips.append_array(streets[2])
+	strip_colours.append_array(streets[3])
+	return [points, colours, strips, strip_colours]
+
+
+## The village roads of [param roads] (PlanetData.village_roads) that belong to the tile ([param nside],
+## [param ipix]), as [method _lay_tile] returns its own: lines, their colours, strips, theirs. Static
+## and handed everything, because it may run on a worker.
+##
+## A road belongs to the ONE tile its middle ("_dir") falls in: these are whole lines, not the pack's
+## pieces clipped tile by tile, and a view's tiles do not overlap, so each is drawn once. A village
+## road is a few hundred metres long; past its tile's edge it simply runs on.
+##
+## Both a line and a strip. The line is what shows from high up, a pixel wide like every other way.
+## The strip is the road at its TRUE width, [param radius_m] being the body's: these are only looked
+## at from close, among buildings drawn at their own footprint, and a 6 m street as a hairline between
+## two 30 m halls read as a scratch. No width is given to it without a radius.
+static func lay_village_roads(roads: Array, nside: int, ipix: int, place: Callable,
+		radius_m: float) -> Array:
+	var points := PackedVector3Array()
+	var colours := PackedColorArray()
+	var strips := PackedVector3Array()
+	var strip_colours := PackedColorArray()
+	var step: float = mesh_step(nside)
+	for entry: Variant in roads:
+		var road: Dictionary = entry
+		var line: PackedVector2Array = road["centerline"]
+		if line.size() < 2 or HEALPix.vec2pix_nest(nside, road["_dir"]) != ipix:
+			continue
+		var tint: Color = COLOURS.get(str(road.get("road_type", "")), UNKNOWN_COLOUR)
+		var half_width: float = float(road.get("width", 0.0)) * 0.5 / radius_m if radius_m > 0.0 else 0.0
+		var from: Vector3 = HEALPix.lonlat2vec(line[0].x, line[0].y)
+		for i: int in range(1, line.size()):
+			var to: Vector3 = HEALPix.lonlat2vec(line[i].x, line[i].y)
+			add_line(points, colours, from, to, step, place, tint)
+			if half_width > 0.0:
+				var before: int = strips.size()
+				add_ribbon(strips, place.call(from), place.call(to), half_width)
+				for n: int in range(before, strips.size()):
+					strip_colours.append(tint)
+			from = to
 	return [points, colours, strips, strip_colours]
 
 

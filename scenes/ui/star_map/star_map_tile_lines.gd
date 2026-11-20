@@ -20,6 +20,11 @@ const LIFT: float = 3.0e-5
 ## How many tiles' worth of lines are kept. A little over two views of
 ## [constant StarMapRelief.PATCH_TILES_MAX], so zooming out and back in finds both levels still there.
 const SEGMENTS_KEPT: int = 1024
+## The highest of these lines among what the chart draws: under every marker, the least important
+## rectangle included ([method StarMapMarkers.rect_priority]). A way is part of the ground the
+## buildings and the vehicles stand on. At the default priority the streets of a village, as wide
+## as they are, were drawn across its homes and the trucks parked on them (playtest 2026-11-20).
+const UNDER_THE_MARKERS: int = StarMapMarkers.RECT_PRIORITY - 2
 
 var body_key: String = ""
 
@@ -169,9 +174,9 @@ func _laying() -> Array:
 
 ## Where this kind of line is drawn among the others, higher over lower: its lines at this priority,
 ## its strips just under. Two apart from one kind to the next, so the strips of one never share a
-## priority with the lines of another.
+## priority with the lines of another. None over [constant UNDER_THE_MARKERS].
 func _priority() -> int:
-	return 0
+	return UNDER_THE_MARKERS
 
 
 ## Let go of whatever [method _available] opened.
