@@ -39,6 +39,15 @@ func size() -> int:
 	return _events.size() - _head
 
 
+## Is one of the waiting events one [param predicate] (event -> bool) accepts? Walks the whole queue:
+## for a rare check (the spawn watchdog), not for every frame.
+func any_waiting(predicate: Callable) -> bool:
+	for i in range(_head, _events.size()):
+		if predicate.call(_events[i]):
+			return true
+	return false
+
+
 ## Hand the waiting events to [param route] (event -> bool, false to stop: the connection was closed
 ## on an error), in order, until [param budget_usec] have passed. False when [param route] asked to
 ## stop: what was left is dropped.
