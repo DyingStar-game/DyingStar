@@ -16,13 +16,15 @@ extends Control
 ## - retouch: 1 to 4 gestures;
 ## - tinkerer: 8 to 15 gestures (combinations).
 ## A gesture draws its value over the control's whole travel, half the time near an end (|v| 0.7..1).
+## --origin=N (catalogue "origins" index, 2 = European) keeps to one origin: each base look is the first random()
+## look of that origin alone (seeds offset + id, then + ORIGIN_SEED_STRIDE...), and no gesture moves an origin.
 ##
 ## Writes <out>/<id>_<view>.png and <out>/samples.json: per id its seed, category, sex, age (years), the gestures
 ## ([control, value] each, in order) and the final macros, origins, sliders (by key) and axis positions.
 ##
 ## Needs a GPU (not --headless):
 ##   godot --path . res://tools/character/face_survey/creator_survey.tscn -- --subject=face --out=/tmp/s --from=1
-##   --count=800 [--ids=3,17]
+##   --count=800 [--ids=3,17] [--origin=2]
 ## random_faces_sheets.py --views packs the images into contact sheets; clip_judge.py pre-sorts them.
 
 ## Per subject: views (name -> yaw, rad), image size (px), framing, camera zoom, seed offset of the base look.
@@ -37,6 +39,8 @@ const FACE_TABS: Array = ["head", "eyes", "nose", "mouth", "jaw", "ears"]
 const BODY_TABS: Array = ["shape", "torso", "hips", "arms", "legs"]
 ## The body's macros a player sets (all 0..1 in the creator; the age as years, 18..90).
 const BODY_MACROS: Array = ["gender", "age", "height"]
+## Step between the seeds tried for a sample's base look when it must be of one origin (beyond any id).
+const ORIGIN_SEED_STRIDE: int = 1000003
 ## Frames drawn before a capture, once the look and the camera are set.
 const SETTLE_FRAMES: int = 4
 ## The outfit faces are seen in (an outfit of the first catalogue: the garments it became).
@@ -44,6 +48,7 @@ const FACE_OUTFIT: int = 1
 
 var _out: String = ""
 var _subject: String = "face"
+var _origin: int = -1
 var _preview: CreatorPreview
 
 
@@ -57,7 +62,8 @@ static func category(subject: String, id: int) -> String:
 
 
 ## The controls a gesture can grab, for [param subject]: [kind, key] with kind slider / axis / origin / macro.
-static func controls(subject: String) -> Array:
+## With [param origin] >= 0 the origins stay as the base look has them.
+static func controls(subject: String, origin: int = -1) -> Array:
 	var out: Array = []
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	var tabs: Array = FACE_TABS if subject == "face" else BODY_TABS
@@ -70,21 +76,37 @@ static func controls(subject: String) -> Array:
 	else:
 		for macro: String in BODY_MACROS:
 			out.append(["macro", macro])
-	for i in CharacterAppearance.ORIGINS:
-		out.append(["origin", str(i)])
+	if origin < 0:
+		for i in CharacterAppearance.ORIGINS:
+			out.append(["origin", str(i)])
 	return out
 
 
+## Seed of sample [param id]'s base look: offset + id, or with [param origin] >= 0 the first seed along
+## offset + id + k * ORIGIN_SEED_STRIDE whose random() look is of that origin alone.
+static func base_seed(subject: String, id: int, origin: int = -1) -> int:
+	var s: int = int(SUBJECTS[subject]["seed"]) + id
+	while origin >= 0:
+		var look: CharacterAppearance = CharacterAppearance.random(s)
+		var alone: bool = look.origins[origin] > 0.0
+		for i in CharacterAppearance.ORIGINS:
+			alone = alone and (i == origin or look.origins[i] == 0.0)
+		if alone:
+			break
+		s += ORIGIN_SEED_STRIDE
+	return s
+
+
 ## The look of sample [param id]: its base random() look, then its gestures (recorded in [param gestures]).
-static func sample(subject: String, id: int, gestures: Array) -> CharacterAppearance:
-	var look: CharacterAppearance = CharacterAppearance.random(int(SUBJECTS[subject]["seed"]) + id)
+static func sample(subject: String, id: int, gestures: Array, origin: int = -1) -> CharacterAppearance:
+	var look: CharacterAppearance = CharacterAppearance.random(base_seed(subject, id, origin))
 	var cat: String = category(subject, id)
 	if cat == "control":
 		return look
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([subject, id, "creator_survey"])
 	var count: int = rng.randi_range(1, 4) if cat == "retouch" else rng.randi_range(8, 15)
-	var all: Array = controls(subject)
+	var all: Array = controls(subject, origin)
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for _g in count:
 		var control: Array = all[rng.randi() % all.size()]
@@ -134,6 +156,7 @@ func _ready() -> void:
 	_subject = String(args.get("subject", "face"))
 	var setup: Dictionary = SUBJECTS[_subject]
 	_out = String(args.get("out", "user://creator_survey_" + _subject))
+	_origin = int(args.get("origin", "-1"))
 	var first: int = int(args.get("from", "1"))
 	var count: int = int(args.get("count", "800"))
 	var ids: Array[int] = []
@@ -155,7 +178,7 @@ func _ready() -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for id in ids:
 		var gestures: Array = []
-		var look: CharacterAppearance = sample(_subject, id, gestures)
+		var look: CharacterAppearance = sample(_subject, id, gestures, _origin)
 		if _subject == "face":
 			look.garments = CharacterAppearance.outfit_garments(FACE_OUTFIT).map(func(i: int) -> Array: return [i, 0])
 		_preview._looks.set_appearance_now(look)
@@ -195,7 +218,7 @@ func _ready() -> void:
 		var axes: Dictionary = {}
 		for axis: Array in FaceAxes.axes():
 			axes[String(axis[0])] = snappedf(FaceAxes.value_of(look, axis[2]), 0.001)
-		samples.append({"id": id, "seed": int(setup["seed"]) + id, "category": category(_subject, id),
+		samples.append({"id": id, "seed": base_seed(_subject, id, _origin), "category": category(_subject, id),
 				"female": look.is_female(), "years": look.years(), "gestures": gestures, "macros": look.macros,
 				"origins": Array(look.origins), "sliders": moved, "axes": axes, "look": look.encode()})
 		if samples.size() % 20 == 0:
