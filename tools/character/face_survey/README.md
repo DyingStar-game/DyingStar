@@ -108,3 +108,13 @@ Where the creator's sliders must stop: looks made the way a player makes them, j
    a zero-shot guess per sample, its threshold set on the controls, and the age CLIP reads -> `clip.json`.
 3. `random_faces_sheets.py DIR --subject face|body --out SHEETS --prefix face|body`: contact sheets for the
    rating page, where the guesses are corrected by hand.
+   `--sweep=0.4,0.7,1` moves one control per sample instead (every control, both ways, each level);
+   `--combos=mouth,eyes --levels=0.5,1,1.5,2,3` moves 2 to 5 sliders of one tab together, at a set sum of squares.
+   400 samples is what one rating session gets through. CLIP disagreed with the eye on 75 of 78 corrected faces
+   (2026-11-20): later series start every sample OK and are rated by hand alone.
+4. `fit_limits.py --series DIR:VERDICTS[:clip] ... --target 0.03` -> `creator_limits.json`, read by `CreatorLimits`:
+   a face's load (per tab, a weight times the sum of its sliders' squares) and the budget the creator holds it to.
+   On the European series (1 200 faces): one slider alone broke 4 faces in 399; together, the mouth's weigh most
+   (1), then the eyes' (0.5), the jaw's (0.28), the nose's, the skull's, the ears' hardly; FLAME's none. Snapshot
+   the verdicts (ArtifactData `out_dir`) before each fit, and never rewrite a stored look: to relax, refit with a
+   higher `--target` or lower `CreatorLimits.strength`.
