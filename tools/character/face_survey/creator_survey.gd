@@ -21,6 +21,8 @@ extends Control
 ## --sweep=0.4,0.7,1 replaces the categories: each sample moves ONE control, one way (a 0..1 control: up), to one of
 ## these levels -- every control, both ways, at every level, in a shuffled order (sweep_plan): where each control alone
 ## stops looking human, one control at a time. Ids past the plan are controls.
+## --limits=S renders through the creator's limits at strength S (CreatorLimits.strength; default 0: none -- a survey
+## shows what was asked for; 1 checks the limits themselves).
 ## --combos=mouth,eyes --levels=0.5,1,1.5,2,3 replaces them too: one id in ten a control, the others 2 to 5 sliders of
 ## ONE tab moved together (combo_gestures), their squares summing to one of the levels -- how much a tab can take
 ## in all, the tabs and levels taking turns along the ids.
@@ -261,6 +263,7 @@ func _ready() -> void:
 	var setup: Dictionary = SUBJECTS[_subject]
 	_out = String(args.get("out", "user://creator_survey_" + _subject))
 	_origin = int(args.get("origin", "-1"))
+	CreatorLimits.strength = float(args.get("limits", "0"))
 	var first: int = int(args.get("from", "1"))
 	var count: int = int(args.get("count", "800"))
 	if args.has("sweep"):

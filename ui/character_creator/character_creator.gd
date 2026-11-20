@@ -313,7 +313,8 @@ func _macro_row(label_key: String, macro: String) -> void:
 			func(v: float) -> void: look.macros[macro] = v)
 
 
-## The face or body sliders of one catalogue tab (head, nose, torso...), in catalogue order.
+## The face or body sliders of one catalogue tab (head, nose, torso...), in catalogue order. A face slider stops where
+## the face would stop looking human (CreatorLimits.max_move: how much the face's other sliders already push).
 func _modifier_rows(tab: StringName) -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for id in sliders.size():
@@ -322,11 +323,13 @@ func _modifier_rows(tab: StringName) -> void:
 			continue
 		var lowest: float = 0.0 if entry["unipolar"] else -1.0
 		_slider_row(entry["label"], lowest, 1.0, 1.0 / 127.0, float(look.modifiers.get(id, 0.0)), _percent,
-				func(v: float) -> void:
-					if absf(v) < 0.5 / 127.0:
+				func(v: float) -> float:
+					var allowed: float = CreatorLimits.max_move(look, id, v)
+					if absf(allowed) < 0.5 / 127.0:
 						look.modifiers.erase(id)
 					else:
-						look.modifiers[id] = v)
+						look.modifiers[id] = allowed
+					return allowed)
 
 
 ## The overall shape (FaceAxes): each slider moves several detailed ones; its position is read from them.
@@ -547,6 +550,8 @@ func _choice_row(label_key: String, kind: String, current: int, apply: Callable)
 	_rows.add_child(line)
 
 
+## A labelled slider: [param apply] takes each new value; if it returns a float, that is the value it kept (a limit),
+## and the bar goes back to it.
 func _slider_row(label_key: String, lowest: float, highest: float, step: float, value: float, shown: Callable,
 		apply: Callable) -> void:
 	var line: HBoxContainer = _factory.row(label_key)
@@ -555,7 +560,10 @@ func _slider_row(label_key: String, lowest: float, highest: float, step: float, 
 	var number: Label = _factory.value_label()
 	number.text = shown.call(value)
 	bar.value_changed.connect(func(v: float) -> void:
-		apply.call(v)
+		var kept: Variant = apply.call(v)
+		if kept is float and not is_equal_approx(kept, v):
+			v = kept
+			bar.set_value_no_signal(v)
 		number.text = shown.call(v)
 		_changed())
 	line.add_child(bar)
