@@ -106,6 +106,30 @@ static func where(body: Node3D) -> PackedStringArray:
 	return out
 
 
+## Where [param body] stands, for a bug report (BugReporter.locate): {"world": its place in the system
+## (m), "planet": the body it belongs to with its latitude, longitude and elevation above the reference
+## sphere, "frame": the node carrying it}. A key with nothing to say is left out: no planet in deep
+## space, nothing at all without a body. Plain short texts in English, the QA team's to read; untyped,
+## so a body freed meanwhile is told from a live one instead of being an error.
+static func coordinates(body: Variant) -> Dictionary:
+	if not is_instance_valid(body) or not (body is Node3D):
+		return {}
+	var here : Vector3 = (body as Node3D).global_position
+	var out : Dictionary = {"world": "%.1f, %.1f, %.1f" % [here.x, here.y, here.z]}
+	var planet : Planet = Planet.of(body)
+	if planet != null and planet.planet_data != null:
+		var lonlat : Vector2 = planet.lonlat_of(here)
+		out["planet"] = "%s, %.5f° %s, %.5f° %s, alt %d m" % [planet.name, absf(lonlat.y),
+			"N" if lonlat.y >= 0.0 else "S", absf(lonlat.x), "E" if lonlat.x >= 0.0 else "W",
+			roundi(planet.elevation_of(here))]
+	elif planet != null:
+		out["planet"] = str(planet.name)
+	var parent : Node = (body as Node3D).get_parent()
+	if parent != null:
+		out["frame"] = str(parent.name)
+	return out
+
+
 ## The scene-graph parent carrying the body — the MOVING FRAME — with its uuid, since that is what
 ## travels as parent_id. NO UUID is the one to watch: positions go out declared world-relative then.
 static func frame(body: Node3D) -> String:

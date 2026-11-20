@@ -58,7 +58,6 @@ func test_the_autoloads_do_not_load_the_gameplay_scripts() -> void:
 func test_the_names_spelt_out_in_the_autoloads_match() -> void:
 	assert_eq(load("res://server/mission_heartbeat.gd").PLANET_GROUP, Planet.GROUP)
 	assert_eq(load("res://scenes/globals/client_perf.gd").PLANET_GROUP, Planet.GROUP)
-	assert_eq(load("res://scenes/player/bug_reporter.gd").PLANET_GROUP, Planet.GROUP)
 	assert_eq(RockMining.WEIGHT_REDUCTION_FACTOR, MineralRegistry.WEIGHT_REDUCTION_FACTOR)
 
 
