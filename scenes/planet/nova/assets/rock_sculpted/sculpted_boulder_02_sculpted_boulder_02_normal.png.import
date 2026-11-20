@@ -1,0 +1,44 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://clet3cd2tuul0"
+path.s3tc="res://.godot/imported/sculpted_boulder_02_sculpted_boulder_02_normal.png-e7d6f2664b064b6c8272dce2c2b6fe70.s3tc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
+generator_parameters={
+"md5": "04fc4e7014b0f182de18ff6dc86a0ee4"
+}
+
+[deps]
+
+source_file="res://scenes/planet/nova/assets/rock_sculpted/sculpted_boulder_02_sculpted_boulder_02_normal.png"
+dest_files=["res://.godot/imported/sculpted_boulder_02_sculpted_boulder_02_normal.png-e7d6f2664b064b6c8272dce2c2b6fe70.s3tc.ctex"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
+compress/hdr_compression=1
+compress/normal_map=1
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=1
+roughness/src_normal="res://scenes/planet/nova/assets/rock_sculpted/sculpted_boulder_02_sculpted_boulder_02_normal.png"
+process/channel_remap/red=0
+process/channel_remap/green=1
+process/channel_remap/blue=2
+process/channel_remap/alpha=3
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=0

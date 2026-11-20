@@ -92,6 +92,10 @@ static func create(planet_data: PlanetData, v: VolcanoRelief.Volcano, centre: Ve
 
 ## The shared clock, in real seconds: the smoke does not follow a time-scaled or shifted sky.
 static func clock() -> float:
+	# The editor has no Globals (an autoload that is not @tool is a placeholder there): the call raised in
+	# VolcanoPlume._ready and cut short the assembly of every chunk near a volcano.
+	if Engine.is_editor_hint():
+		return Time.get_ticks_msec() / 1000.0
 	return (Globals.sim_time() - Globals.debug_time_offset) / Globals.time_scale + debug_time_shift
 
 

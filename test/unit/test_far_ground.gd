@@ -96,3 +96,17 @@ func test_far_chunks_are_cut_into_quads_of_50_km_at_most() -> void:
 		assert_lte(quad, PlanetData.FAR_QUAD_MAX_M * 1.05, "n%d: %.0f km quads" % [nside, quad / 1000.0])
 		assert_eq(res % 2, 0, "n%d: an even count, for the LOD-seam stitch" % nside)
 	assert_eq(sandbox.get_resolution_for_lod(0, 64), sandbox.chunk_resolution, "near chunks untouched")
+
+
+## A client's far tiers share the near grid; a far chunk's cut by size can only ask for more.
+func test_far_tier_res_is_a_floor_past_lod_0() -> void:
+	var data := PlanetData.new()
+	data.radius = 6356000.0
+	assert_eq(data.get_resolution_for_lod(2, 64), data.chunk_resolution / 4, "the server's tiers by default")
+	var cut_by_size := data.get_resolution_for_lod(3, 1)
+	data.far_tier_res = data.chunk_resolution
+	for lod: int in [0, 1, 2]:
+		assert_eq(data.get_resolution_for_lod(lod, 64), data.chunk_resolution, "LOD %d" % lod)
+	assert_eq(data.get_resolution_for_lod(3, 64), data.chunk_resolution)
+	assert_eq(data.get_resolution_for_lod(3, 1), cut_by_size, "still cut by size where that asks for more")
+

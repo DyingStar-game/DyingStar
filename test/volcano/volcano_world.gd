@@ -21,6 +21,7 @@ var _saved_universe: Node
 var _saved_time_offset := 0.0
 var _saved_auto_quit := true
 var _saved_plume_time := 0.0
+var _walking_pending := false
 
 
 func _ready() -> void:
@@ -147,6 +148,28 @@ func _update_collision_residency() -> void:
 			if int(neighbor) >= 0:
 				desired.append("hp_n%d_p%d" % [nside, int(neighbor)])
 	collision_terrain.set_resident_chunks(desired)
+
+
+## Land and walk, or take off again. Stays in flight until the real server terrain has collision under the
+## player.
+func toggle_walk() -> void:
+	if _walking_pending:
+		return
+	if player.god_mode:
+		_walking_pending = true
+		_update_collision_residency()
+		var waited := 0.0
+		while waited < 12.0 and not collision_terrain.has_collision_under(player.global_position):
+			waited += 0.2
+			await get_tree().create_timer(0.2).timeout
+		_walking_pending = false
+		if not collision_terrain.has_collision_under(player.global_position):
+			print("[VOLCANO] collision encore en chargement, vol conserve")
+			return
+	player.god_mode = not player.god_mode
+	player.server_teleport_to(body, player.position)
+	if not player.god_mode:
+		player._role._ground_seen = true
 
 
 func _pressed(action: String) -> bool:

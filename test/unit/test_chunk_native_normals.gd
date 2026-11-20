@@ -181,7 +181,7 @@ func _normals_of(frame: PlanetData.TileFrame, dirs: PackedVector3Array, pitch: f
 	var snapped := PackedByteArray()
 	snapped.resize(dirs.size())
 	var eps := HEALPix.pixel_side_length(CHUNK_NSIDE, 1.0) * (0.25 / float(RES))
-	return frame.native.Normals(dirs, edge, snapped, RES, _export_ipix, EXPORT_NSIDE, pitch, eps, 0.0, false)
+	return frame.native.Normals(dirs, edge, snapped, RES, _export_ipix, EXPORT_NSIDE, pitch, eps, 0.0, false, eps, 0.0)
 
 
 func test_the_assembly_is_there() -> void:
