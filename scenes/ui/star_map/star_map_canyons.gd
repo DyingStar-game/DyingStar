@@ -41,7 +41,7 @@ const BLOCK_PIXELS_MIN: float = 6.0
 const BLOCK_PIXELS_FULL: float = 14.0
 ## Rounds of corner cutting on each run of canyon (see [method smooth]): the grid reads a canyon every
 ## quarter block, and joined straight those points drew a broken line where the game carves a curve.
-const SMOOTH_PASSES: int = 2
+const SMOOTH_PASSES: int = 3
 ## The canyons' own drawing: unshaded and see-through like every line here, and painted once a pixel.
 const SHADER: Shader = preload("res://scenes/ui/star_map/star_map_canyons.gdshader")
 
@@ -216,16 +216,24 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 		var placed := PackedVector3Array()
 		for at: Vector3 in round:
 			placed.append(tile.place(at, UNDER_THE_ROADS))
+		# What is kept of the run, as ONE strip from each break to the next: its stretches share their
+		# corners, so a bend is a bend and not a fan of rectangles (StarMapTileLines.add_ribbon_run).
+		var kept := PackedVector3Array()
 		for k: int in range(placed.size() - 1):
 			# The same rule again, on the curve: rounded, a run's last stretches reach past the edge of
 			# a town or a massif, where the game leaves the ground whole.
 			if CrackCarve.depth_factor(data, (round[k] + round[k + 1]).normalized(), tile.frame) < 0.5:
+				add_ribbon_run(corners, kept, half_width)
+				kept = PackedVector3Array()
 				continue
 			points.append(placed[k])
 			points.append(placed[k + 1])
 			colours.append(COLOUR)
 			colours.append(COLOUR)
-			add_ribbon(corners, placed[k], placed[k + 1], half_width)
+			if kept.is_empty():
+				kept.append(placed[k])
+			kept.append(placed[k + 1])
+		add_ribbon_run(corners, kept, half_width)
 	corner_colours.resize(corners.size())
 	corner_colours.fill(COLOUR)
 	return [points, colours, corners, corner_colours]

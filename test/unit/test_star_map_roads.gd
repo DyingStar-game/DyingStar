@@ -487,3 +487,37 @@ func test_no_street_said_twice_is_no_change() -> void:
 	var laid: Array = roads._village_roads_laid
 	roads.show_over({}, 10.0, STREET_RADIUS_M, [])
 	assert_true(is_same(roads._village_roads_laid, laid), "not taken for a new set of streets")
+
+
+## A way a pixel wide was not seen on pale ground (playtest 2026-11-20): it has a least width on
+## screen, by kind, and its own once the view is close enough for that to be wider.
+func test_a_way_is_never_thinner_than_its_kind_asks() -> void:
+	var sign_step: float = 1.0e-5
+	assert_almost_eq(StarMapRoads.way_half_width("highway", 6.0, sign_step, STREET_RADIUS_M),
+			sign_step * 0.625, 1.0e-12, "6 m on this body is under the least: the least it is")
+	assert_almost_eq(StarMapRoads.way_half_width("highway", 600.0, sign_step, STREET_RADIUS_M),
+			600.0 / STREET_RADIUS_M, 1.0e-12, "its own width once that is the wider")
+	assert_gt(StarMapRoads.way_half_width("highway", 0.0, sign_step, 0.0),
+			StarMapRoads.way_half_width("trail", 0.0, sign_step, 0.0), "a highway reads wider than a trail")
+	assert_eq(StarMapRoads.way_half_width("road", 6.0, 0.0, 0.0), 0.0,
+			"with neither a radius nor a sign's length it is a line and nothing else")
+
+
+## Round a bend a strip is ONE: the two stretches share their corners where they meet. Laid as a
+## rectangle each, a bend was a fan -- teeth on its outer side (playtest 2026-11-20, the canyons).
+func test_a_strip_is_one_round_a_bend() -> void:
+	var half: float = 1.0e-5
+	var first := Vector3(1.0, 0.0, 0.0)
+	var corner: Vector3 = (first + Vector3(0.0, 1.0e-3, 0.0)).normalized()
+	var last: Vector3 = (corner + Vector3(0.0, 0.0, 1.0e-3)).normalized()
+	var corners := PackedVector3Array()
+	StarMapTileLines.add_ribbon_run(corners, PackedVector3Array([first, corner, last]), half)
+	assert_eq(corners.size(), 12, "two triangles a stretch")
+	assert_eq(corners[5], corners[6], "the second stretch starts on the first one's left corner")
+	assert_eq(corners[2], corners[7], "and on its right one")
+	# A right angle: the corners stand out by root two, so each stretch keeps its width.
+	assert_almost_eq(corners[5].distance_to(corners[2]), 2.0 * half * sqrt(2.0), half * 0.02,
+			"as wide along both stretches")
+	var none := PackedVector3Array()
+	StarMapTileLines.add_ribbon_run(none, PackedVector3Array([first]), half)
+	assert_eq(none.size(), 0, "one point is no strip")

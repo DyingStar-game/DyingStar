@@ -325,6 +325,73 @@ static func add_line(points: PackedVector3Array, colours: PackedColorArray, from
 ## are its ends ON the drawn ground; [param half_width] half its width as an angle at the body's
 ## centre. Each end runs half a width past its point, so two stretches meeting at an angle overlap
 ## instead of leaving a notch.
+## A way from one direction on the body to the next ([param way]), as [method add_line] lays it --
+## cut into pieces no longer than [param step], each point put on the ground by [param place] -- and,
+## when [param half_width] (an angle at the body's centre) is over zero, as ONE strip that wide either
+## side of it ([method add_ribbon_run]), in the same [param colour].
+static func add_way(points: PackedVector3Array, colours: PackedColorArray, strips: PackedVector3Array,
+		strip_colours: PackedColorArray, way: PackedVector3Array, step: float, place: Callable,
+		colour: Color, half_width: float) -> void:
+	if way.size() < 2:
+		return
+	var placed := PackedVector3Array([place.call(way[0])])
+	for i: int in range(1, way.size()):
+		var pieces: int = maxi(1, ceili(way[i - 1].angle_to(way[i]) / maxf(step, 1.0e-9)))
+		for n: int in range(1, pieces + 1):
+			placed.append(place.call(way[i - 1].slerp(way[i], float(n) / float(pieces))))
+	for i: int in range(1, placed.size()):
+		points.append(placed[i - 1])
+		points.append(placed[i])
+		colours.append(colour)
+		colours.append(colour)
+	if half_width <= 0.0:
+		return
+	var before: int = strips.size()
+	add_ribbon_run(strips, placed, half_width)
+	for n: int in range(before, strips.size()):
+		strip_colours.append(colour)
+
+
+## A run of points ON the drawn ground as ONE strip, [param half_width] (an angle at the body's
+## centre) either side of it: two triangles a stretch, as [method add_ribbon] lays them, but the two
+## stretches meeting at a point SHARE their corners there. Laid stretch by stretch, each a rectangle
+## of its own, a bend came out as a fan: teeth along its outer side, the rectangles piled up along
+## the inner one (playtest 2026-11-20, the canyons' bends). The corners at a bend stand further out
+## than half a width, so that the strip keeps its width along both stretches -- up to twice, past
+## which a hairpin would throw a spike. The two ends run half a width past their point, as
+## add_ribbon's do, so two runs meeting at a fork overlap.
+static func add_ribbon_run(corners: PackedVector3Array, run: PackedVector3Array, half_width: float) -> void:
+	var count: int = run.size()
+	if count < 2 or half_width <= 0.0:
+		return
+	var left := PackedVector3Array()
+	var right := PackedVector3Array()
+	var across := Vector3.ZERO
+	for i: int in count:
+		var height: float = run[i].length()
+		var up: Vector3 = run[i] / height
+		var before: Vector3 = run[i] - run[maxi(i - 1, 0)]
+		var after: Vector3 = run[mini(i + 1, count - 1)] - run[i]
+		before = (before - up * before.dot(up)).normalized()
+		after = (after - up * after.dot(up)).normalized()
+		var ahead: Vector3 = (before + after).normalized()
+		if ahead != Vector3.ZERO:
+			across = up.cross(ahead)
+		var reach: float = half_width
+		if before != Vector3.ZERO and after != Vector3.ZERO:
+			reach = half_width / sqrt(maxf((1.0 + before.dot(after)) * 0.5, 0.25))
+		var at: Vector3 = up
+		if i == 0:
+			at -= ahead * half_width
+		elif i == count - 1:
+			at += ahead * half_width
+		left.append((at - across * reach).normalized() * height)
+		right.append((at + across * reach).normalized() * height)
+	for i: int in range(1, count):
+		corners.append_array(PackedVector3Array([left[i - 1], right[i - 1], right[i],
+				left[i - 1], right[i], left[i]]))
+
+
 static func add_ribbon(corners: PackedVector3Array, from: Vector3, to: Vector3,
 		half_width: float) -> void:
 	var up: Vector3 = (from + to).normalized()
