@@ -21,13 +21,16 @@ extends Control
 ## --sweep=0.4,0.7,1 replaces the categories: each sample moves ONE control, one way (a 0..1 control: up), to one of
 ## these levels -- every control, both ways, at every level, in a shuffled order (sweep_plan): where each control alone
 ## stops looking human, one control at a time. Ids past the plan are controls.
+## --combos=mouth,eyes --levels=0.5,1,1.5,2,3 replaces them too: one id in ten a control, the others 2 to 5 sliders of
+## ONE tab moved together (combo_gestures), their squares summing to one of the levels -- how much a tab can take
+## in all, the tabs and levels taking turns along the ids.
 ##
 ## Writes <out>/<id>_<view>.png and <out>/samples.json: per id its seed, category, sex, age (years), the gestures
 ## ([control, value] each, in order) and the final macros, origins, sliders (by key) and axis positions.
 ##
 ## Needs a GPU (not --headless):
 ##   godot --path . res://tools/character/face_survey/creator_survey.tscn -- --subject=face --out=/tmp/s --from=1
-##   --count=800 [--ids=3,17] [--origin=2] [--sweep=0.4,0.7,1]
+##   --count=800 [--ids=3,17] [--origin=2] [--sweep=0.4,0.7,1] [--combos=mouth,eyes --levels=1,2]
 ## random_faces_sheets.py --views packs the images into contact sheets; clip_judge.py pre-sorts them.
 
 ## Per subject: views (name -> yaw, rad), image size (px), framing, camera zoom, seed offset of the base look.
@@ -53,6 +56,7 @@ var _out: String = ""
 var _subject: String = "face"
 var _origin: int = -1
 var _plan: Array = []
+var _combos: Dictionary = {}
 var _preview: CreatorPreview
 
 
@@ -123,19 +127,79 @@ static func sweep_plan(subject: String, origin: int, levels: Array) -> Array:
 	return plan
 
 
-## Category of sample [param id], with [param plan] the sweep's (empty: the categories by id).
-static func category_in(subject: String, id: int, plan: Array) -> String:
+## Category of sample [param id], with [param plan] the sweep's and [param combos] {tabs, levels} the combinations'
+## (both empty: the categories by id).
+static func category_in(subject: String, id: int, plan: Array, combos: Dictionary = {}) -> String:
+	if not combos.is_empty():
+		if id % 10 == 0:
+			return "control"
+		var j: int = id - 1 - id / 10
+		return "combo_" + String(combos["tabs"][j % combos["tabs"].size()])
 	if plan.is_empty():
 		return category(subject, id)
 	return "sweep" if id >= 1 and id <= plan.size() else "control"
 
 
+## Sample [param id]'s combination (not a control): 2 to 5 sliders of its tab, each one way (a 0..1 slider up), their
+## squares summing to its level (each within +-1): [[control, value]...].
+static func combo_gestures(id: int, combos: Dictionary) -> Array:
+	var tabs: Array = combos["tabs"]
+	var levels: Array = combos["levels"]
+	var j: int = id - 1 - id / 10
+	var tab: String = tabs[j % tabs.size()]
+	var level: float = levels[(j / tabs.size()) % levels.size()]
+	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
+	var pool: Array = []
+	for entry: Dictionary in sliders:
+		if String(entry["tab"]) == tab:
+			pool.append(entry)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(["creator_survey_combo", id])
+	var k: int = clampi(rng.randi_range(mini(maxi(2, ceili(level * 1.5)), 5), 5), 1, pool.size())  # room under +-1
+	var picked: Array = []
+	for _p in k:
+		var e: Dictionary = pool[rng.randi() % pool.size()]
+		while picked.has(e):
+			e = pool[rng.randi() % pool.size()]
+		picked.append(e)
+	var mags: Array = []
+	for _try in 30:
+		mags = []
+		var sum: float = 0.0
+		for _e in picked:
+			var m: float = rng.randf_range(0.3, 1.0)
+			mags.append(m)
+			sum += m * m
+		var scale: float = sqrt(level / sum)
+		var top: float = 0.0
+		for i in mags.size():
+			mags[i] = mags[i] * scale
+			top = maxf(top, mags[i])
+		if top <= 1.0:
+			break
+	var out: Array = []
+	for i in picked.size():
+		var e: Dictionary = picked[i]
+		var v: float = minf(mags[i], 1.0)
+		if not e["unipolar"] and rng.randf() < 0.5:
+			v = -v
+		out.append([["slider", String(e["key"])], v])
+	return out
+
+
 ## The look of sample [param id]: its base random() look, then its gestures (recorded in [param gestures]); with
 ## [param plan] (sweep_plan) the one gesture the plan gives it.
-static func sample(subject: String, id: int, gestures: Array, origin: int = -1, plan: Array = []) -> CharacterAppearance:
+static func sample(subject: String, id: int, gestures: Array, origin: int = -1, plan: Array = [],
+		combos: Dictionary = {}) -> CharacterAppearance:
 	var look: CharacterAppearance = CharacterAppearance.random(base_seed(subject, id, origin))
-	var cat: String = category_in(subject, id, plan)
+	var cat: String = category_in(subject, id, plan, combos)
 	if cat == "control":
+		return look
+	if cat.begins_with("combo_"):
+		for step: Array in combo_gestures(id, combos):
+			apply(look, step[0], step[1])
+			gestures.append([step[0][0] + ":" + step[0][1], snappedf(step[1], 0.001)])
+		look.canonicalise()
 		return look
 	if cat == "sweep":
 		var step: Array = plan[id - 1]
@@ -203,6 +267,9 @@ func _ready() -> void:
 		var levels: Array = Array(String(args["sweep"]).split(",", false)).map(func(v: String) -> float: return float(v))
 		_plan = sweep_plan(_subject, _origin, levels)
 		print("creator survey: sweep of %d samples" % _plan.size())
+	if args.has("combos"):
+		_combos = {"tabs": Array(String(args["combos"]).split(",", false)),
+				"levels": Array(String(args.get("levels", "1,2")).split(",", false)).map(func(v: String) -> float: return float(v))}
 	var ids: Array[int] = []
 	for v in String(args.get("ids", "")).split(",", false):
 		ids.append(int(v))
@@ -222,7 +289,7 @@ func _ready() -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for id in ids:
 		var gestures: Array = []
-		var look: CharacterAppearance = sample(_subject, id, gestures, _origin, _plan)
+		var look: CharacterAppearance = sample(_subject, id, gestures, _origin, _plan, _combos)
 		if _subject == "face":
 			look.garments = CharacterAppearance.outfit_garments(FACE_OUTFIT).map(func(i: int) -> Array: return [i, 0])
 		_preview._looks.set_appearance_now(look)
@@ -262,7 +329,7 @@ func _ready() -> void:
 		var axes: Dictionary = {}
 		for axis: Array in FaceAxes.axes():
 			axes[String(axis[0])] = snappedf(FaceAxes.value_of(look, axis[2]), 0.001)
-		samples.append({"id": id, "seed": base_seed(_subject, id, _origin), "category": category_in(_subject, id, _plan),
+		samples.append({"id": id, "seed": base_seed(_subject, id, _origin), "category": category_in(_subject, id, _plan, _combos),
 				"female": look.is_female(), "years": look.years(), "gestures": gestures, "macros": look.macros,
 				"origins": Array(look.origins), "sliders": moved, "axes": axes, "look": look.encode()})
 		if samples.size() % 20 == 0:
