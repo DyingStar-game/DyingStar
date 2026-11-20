@@ -231,7 +231,9 @@ static func _range_text(mesh: GeometryInstance3D, distance_m: float) -> String:
 
 
 func _lamp_line(light: Light3D, distance_m: float, wall: String) -> String:
-	var authored: bool = light.shadow_enabled or light.has_meta(LampShadowBudget.META_AUTHORED)
+	# A scene lamp the budget GAVE a shadow holds one too: its mark tells the two apart.
+	var given: bool = light.has_meta(LampShadowBudget.META_GIVEN)
+	var authored: bool = light.has_meta(LampShadowBudget.META_AUTHORED) or (light.shadow_enabled and not given)
 	return "  %s (%s)  %s %.1f m, energy %.2f, %.1f m away  shadow %s (authored %s)\n      %s" % [
 		light.name, _where(light), kind_of(light), reach_of(light), light.light_energy, distance_m,
 		"ON" if light.shadow_enabled else "OFF", "ON" if authored else "OFF",

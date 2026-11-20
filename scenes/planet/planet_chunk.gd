@@ -4294,10 +4294,26 @@ static func _quad_of_indices(tris: PackedInt32Array, oi: int, res: int) -> int:
 	return (v00 / (res + 1)) * res + (v00 % (res + 1))
 
 
+## A facet whose normal stands closer to the vertical than this (cos 45°) is
+## ground, not a wall, whatever its corners say: see [method _split_crack_walls].
+const WALL_FLAT_COS := 0.7071
+
+
 ## Every triangle of [param tris] that stands between a carved and an uncarved
 ## grid vertex is a crack wall: it gets vertices of its own, copies of its
 ## corners with the wall's flat normal, so the wall is lit as the vertical face
 ## it is and the rim and foot keep the ground's normal (a hard edge at both).
+##
+## Unless it lies flat ([constant WALL_FLAT_COS]). A canyon comes up to nothing
+## at a massif's foot and beside a town (PlanetData.crack_factor): across the
+## line where its depth reaches zero, a vertex carved by a few millimetres
+## stands next to one that is not carved at all, and the cells between them
+## are ground, as flat as the ground around. Taken for walls, they were given
+## a wall's flat normal and turned by the rule below, which reads a horizontal
+## direction a flat facet does not have: half of them faced DOWN, a black band
+## one cell wide across the top of every slope into a canyon (playtest
+## 2026-11-20, tarsis_3 39.485 W 24.789 N). They keep their own vertices and
+## the ground's normals.
 ## Returns [re-indexed tris, source vertex of each copy, normal of each copy]:
 ## the caller appends the copies to every per-vertex array (as the refinement
 ## patch does), numbered from [param first_new]. Skirt and patch vertices
@@ -4330,6 +4346,8 @@ static func _split_crack_walls(tris: PackedInt32Array, carved: PackedByteArray,
 			continue
 		var n := face.normalized()
 		var mid := (vdirs[a] + vdirs[b] + vdirs[c]).normalized()
+		if absf(n.dot(mid)) > WALL_FLAT_COS:
+			continue  # ground where the carve starts, not a wall
 		var across := n - mid * n.dot(mid)
 		if across.length_squared() > 0.0:
 			var hs := across.normalized() * (2.0 / data.radius)

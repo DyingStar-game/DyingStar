@@ -79,12 +79,13 @@ static func blip() -> void:
 ## SERVER: tell every client near [param via] what [param screen_owner] is doing ([param event], its
 ## "state" and the rest): the player property `screen_event` of [param via] — the player who used the
 ## screen — reaches every client around them, which hands it to the screen (receive). It is stamped
-## with the server's clock ("at"), so it reads as a state, not as an event to replay: a client arriving
-## midway joins at the right moment (time_left), one arriving after it is over ignores it.
+## ("at") with the REFERENCE clock, the one every machine is calibrated on (Globals.reference_time),
+## so it reads as a state, not as an event to replay: a client arriving midway joins at the right
+## moment (time_left), one arriving after it is over ignores it.
 static func announce(screen_owner: Node, via: Node, event: Dictionary) -> void:  # via: a Player
 	var stamped: Dictionary = event.duplicate()
 	stamped.merge(address_of(screen_owner), true)
-	stamped["at"] = Time.get_unix_time_from_system()
+	stamped["at"] = Globals.reference_time()
 	via.server_send_properties_to_client({"screen_event": stamped})
 
 
@@ -121,7 +122,12 @@ static func receive(tree: SceneTree, event: Dictionary) -> void:
 
 
 ## Seconds left of an announced [param event] lasting [param total] s, now (0 once it is over).
-static func time_left(event: Dictionary, total: float, now: float = Time.get_unix_time_from_system()) -> float:
+##
+## Now on the REFERENCE clock, as the stamp is. Read on each machine's own, the answer was off by
+## however far the player's computer and the server disagree: on a PC running 3 s fast, a 5 s delivery
+## started its countdown at 3 (playtest 2026-11-20) -- and on one running slow it would have shown 5
+## for seconds after the item was out.
+static func time_left(event: Dictionary, total: float, now: float = Globals.reference_time()) -> float:
 	var since: float = now - float(event.get("at", now))
 	return clampf(total - since, 0.0, total)
 

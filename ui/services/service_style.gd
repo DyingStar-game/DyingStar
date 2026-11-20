@@ -65,6 +65,9 @@ const DIM: Color = MUTED
 const RADIUS: int = 12
 const RADIUS_SMALL: int = 10
 const RADIUS_PANEL: int = 16
+## The focus ring of a button: its thickness, and how far the primary button's stands off its edge.
+const FOCUS_RING_WIDTH: int = 2
+const FOCUS_RING_GAP: int = 3
 
 ## Text sizes at the tablet's 1920 px (the mock-up's sizes, scaled).
 const SIZE_BODY: int = 16
@@ -191,6 +194,17 @@ static func apply_nav(button: Button, active: bool) -> void:
 	font_of(button, 15, true)
 
 
+## The ring drawn over a button that holds the keyboard or gamepad focus. Amber on every kind but the
+## amber one: there an amber ring on an amber fill showed nothing (playtest 2026-11-20), so the primary
+## button gets a light ring, standing off its edge.
+static func focus_ring(kind: ButtonKind) -> StyleBoxFlat:
+	if kind != ButtonKind.PRIMARY:
+		return flat(Color.TRANSPARENT, RADIUS_SMALL, ACCENT, FOCUS_RING_WIDTH)
+	var ring := flat(Color.TRANSPARENT, RADIUS_SMALL + FOCUS_RING_GAP, TEXT, FOCUS_RING_WIDTH)
+	ring.set_expand_margin_all(float(FOCUS_RING_GAP))
+	return ring
+
+
 ## The common button: secondary (surface, hairline), as every section has always called it.
 static func apply_button(button: Button, primary: bool = false) -> void:
 	apply_button_kind(button, ButtonKind.PRIMARY if primary else ButtonKind.SECONDARY)
@@ -229,7 +243,7 @@ static func apply_button_kind(button: Button, kind: ButtonKind) -> void:
 	button.add_theme_stylebox_override("pressed", flat(pressed_bg, RADIUS_SMALL, hover_edge, 1, 18.0, 10.0))
 	button.add_theme_stylebox_override("disabled",
 			flat(Color(bg, bg.a * 0.45), RADIUS_SMALL, Color(edge, 0.45), 1, 18.0, 10.0))
-	button.add_theme_stylebox_override("focus", flat(Color.TRANSPARENT, RADIUS_SMALL, ACCENT, 2))
+	button.add_theme_stylebox_override("focus", focus_ring(kind))
 	button.add_theme_color_override("font_color", ink)
 	button.add_theme_color_override("font_hover_color", ink)
 	button.add_theme_color_override("font_pressed_color", ink)
