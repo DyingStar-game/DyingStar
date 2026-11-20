@@ -165,10 +165,20 @@ static var net_requests: int = 0
 static var _net_mutex: Mutex = Mutex.new()
 
 
+## _net_mutex, created on first use. This script is not @tool, so in the editor its static
+## initializers never run and _net_mutex stays null: every download then died on .lock() right
+## after reading its answer, the source reported the service down, and the editor fell back to
+## the coarse equirect heights. open_planet calls this on the main thread before any worker.
+static func _net_lock() -> Mutex:
+	if _net_mutex == null:
+		_net_mutex = Mutex.new()
+	return _net_mutex
+
+
 ## Une ligne lisible du volume téléchargé depuis le démarrage, ou "" si rien.
 ## Add to the process-wide counters under _net_mutex.
 static func _net_count(tiles: int, tile_bytes: int, maps: int, map_bytes: int, failed: int) -> void:
-	_net_mutex.lock()
+	_net_lock().lock()
 	net_tiles += tiles
 	net_tile_bytes += tile_bytes
 	net_maps += maps
@@ -275,6 +285,7 @@ static func for_planet(planet_name: String, queue_floor: bool = true) -> RemoteT
 ## Lit le pointeur de version et s'auto-configure. Rend false si le service est injoignable
 ## ou répond autre chose que le pointeur attendu.
 func open_planet(p_base_url: String, p_planet: String) -> bool:
+	_net_lock()
 	base_url = p_base_url.rstrip("/")
 	planet = p_planet
 	# Le canal d'abord : un manifeste unique fixe la version des dix-neuf corps à la fois,
@@ -497,7 +508,7 @@ func fetch_now(nside: int, ipix: int) -> bool:
 		if lru != null:
 			lru.touch(nside, tile_cache_path(nside, ipix))
 		return true
-	if not has_tile(nside, ipix):
+	if _quit or not has_tile(nside, ipix):
 		return false
 	var url := tile_url(nside, ipix)
 	_mutex.lock()
@@ -620,14 +631,23 @@ static var _running: Array[RemoteTileSource] = []
 static var _running_mutex: Mutex = Mutex.new()
 
 
+## _running_mutex, created on first use: as _net_lock, this script is not @tool, so in the editor its
+## static initializers never run: the mutex and the list stay null (start() died on .lock(), 2026-11-20).
+static func _running_lock() -> Mutex:
+	if _running_mutex == null:
+		_running_mutex = Mutex.new()
+		_running = []
+	return _running_mutex
+
+
 ## Arrête les fils de toutes les sources encore démarrées. Appelé à la sortie (GameOrchestrator._exit_tree) :
 ## personne n'arrête le pack de modificateurs partagé (RemoteModifierPack.shared_for), ni la source d'une
 ## PlanetData sans PlanetTerrain (tests, carte stellaire). Leurs fils tournaient encore quand le moteur
 ## démontait ses singletons ("Cannot call method 'get_ticks_msec' on a null value", puis signal 11).
 static func stop_all() -> void:
-	_running_mutex.lock()
+	_running_lock().lock()
 	var running := _running.duplicate()
-	_running_mutex.unlock()
+	_running_lock().unlock()
 	for src: RemoteTileSource in running:
 		src.stop()
 
@@ -637,9 +657,9 @@ func start() -> void:
 	if not _threads.is_empty():
 		return
 	_quit = false
-	_running_mutex.lock()
+	_running_lock().lock()
 	_running.append(self)
-	_running_mutex.unlock()
+	_running_lock().unlock()
 	for _i in maxi(download_threads, 1):
 		var t := Thread.new()
 		t.start(_worker)
@@ -658,14 +678,23 @@ func stop() -> void:
 	for t in _threads:
 		t.wait_to_finish()
 	_threads.clear()
-	_running_mutex.lock()
+	_running_lock().lock()
 	_running.erase(self)
-	_running_mutex.unlock()
+	_running_lock().unlock()
 	_mutex.lock()
 	_links.clear()
 	_mutex.unlock()
 	if lru != null:
 		lru.save()
+
+
+## Give up every download in progress and refuse new ones, without waiting: the requests of other
+## threads (fetch_now from a chunk task) return at once instead of running to their timeout. For a
+## source about to be stopped; start() takes downloads up again.
+func abort() -> void:
+	_mutex.lock()
+	_quit = true
+	_mutex.unlock()
 
 
 ## Met une tuile en file. Ne bloque pas et ne redemande jamais deux fois la même.
@@ -965,7 +994,7 @@ static func _poll(http: HTTPClient) -> void:
 func _await(http: HTTPClient, deadline: int, connecting: bool) -> bool:
 	while http.get_status() == HTTPClient.STATUS_CONNECTING \
 			or http.get_status() == HTTPClient.STATUS_RESOLVING:
-		if Time.get_ticks_msec() > deadline:
+		if _quit or Time.get_ticks_msec() > deadline:
 			return false
 		_poll(http)
 	return http.get_status() == HTTPClient.STATUS_CONNECTED or not connecting
@@ -974,7 +1003,7 @@ func _await(http: HTTPClient, deadline: int, connecting: bool) -> bool:
 ## Envoie la requête au bout et rend [code, corps]. [0, vide] sur échéance ou rupture.
 func _drain(http: HTTPClient, deadline: int) -> Array:
 	while http.get_status() == HTTPClient.STATUS_REQUESTING:
-		if Time.get_ticks_msec() > deadline:
+		if _quit or Time.get_ticks_msec() > deadline:
 			return [0, PackedByteArray()]
 		_poll(http)
 	var code := http.get_response_code()
@@ -982,14 +1011,14 @@ func _drain(http: HTTPClient, deadline: int) -> Array:
 		return [0, PackedByteArray()]
 	var body := PackedByteArray()
 	while http.get_status() == HTTPClient.STATUS_BODY:
-		if Time.get_ticks_msec() > deadline:
+		if _quit or Time.get_ticks_msec() > deadline:
 			return [0, PackedByteArray()]
 		http.poll()
 		var chunk := http.read_response_body_chunk()
 		if chunk.is_empty():
 			OS.delay_usec(POLL_IDLE_USEC)
 		body.append_array(chunk)
-	_net_mutex.lock()
+	_net_lock().lock()
 	net_requests += 1
 	_net_mutex.unlock()
 	return [code, body]

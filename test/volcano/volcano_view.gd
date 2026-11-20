@@ -13,7 +13,6 @@ var _shake := 0.0
 var _vp: RID
 var _capturing := false
 var _gpu_samples: Array[float] = []
-var _walking_pending := false
 var _control_panel: PanelContainer
 
 
@@ -182,26 +181,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
-## Stay in flight until the real server terrain has collision under the player.
 func _toggle_walk() -> void:
-	if _walking_pending:
-		return
-	var player: Player = explorer.player
-	if player.god_mode:
-		_walking_pending = true
-		explorer._update_collision_residency()
-		var waited := 0.0
-		while waited < 12.0 and not explorer.collision_terrain.has_collision_under(player.global_position):
-			waited += 0.2
-			await get_tree().create_timer(0.2).timeout
-		_walking_pending = false
-		if not explorer.collision_terrain.has_collision_under(player.global_position):
-			print("[VOLCANO] collision encore en chargement, vol conserve")
-			return
-	player.god_mode = not player.god_mode
-	player.server_teleport_to(explorer.body, player.position)
-	if not player.god_mode:
-		player._role._ground_seen = true
+	await explorer.toggle_walk()
 
 
 ## Exercise the actual terrain registry and rendered VFX, not a manually attached plume.

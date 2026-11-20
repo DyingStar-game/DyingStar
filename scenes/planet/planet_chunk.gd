@@ -135,10 +135,13 @@ static func _native_verts_setup(data: PlanetData, frame: PlanetData.TileFrame, z
 	var color := PackedColorArray()
 	var detail := PackedVector2Array()
 	var color_from_dir := PackedInt32Array()
+	var nova_ids := PackedInt32Array()  # Nova variant per zone row (see NovaBody)
 	var any := false
 	var any_relief := false
 	for zone: Dictionary in entries:
-		var bd: BiomeDefinition = data.get_biome_by_type(zone.get("biome_type", "")) if not zone.is_empty() else null
+		if data.nova != null:
+			nova_ids.append(data.nova.variant_id_for_zone(zone))
+		var bd: BiomeDefinition = data.biome_of_zone(zone) if not zone.is_empty() else null
 		var row := _native_verts_zone(data, zone, bd, corundum_bd, slugs)
 		serve.append(1 if row["serve"] else 0)
 		any = any or row["serve"]
@@ -148,7 +151,7 @@ static func _native_verts_setup(data: PlanetData, frame: PlanetData.TileFrame, z
 		color_from_dir.append(1 if row["from_dir"] else 0)
 		var k := 0
 		if bd != null and BiomeRelief.visible_at(bd, spacing):
-			k = int(relief_index.get(bd.biome_type, 0))
+			k = int(relief_index.get(bd.get_instance_id(), 0))
 			any_relief = any_relief or k > 0
 		relief.append(k)
 		var override_k := 0
@@ -162,6 +165,8 @@ static func _native_verts_setup(data: PlanetData, frame: PlanetData.TileFrame, z
 		return false
 	var native = frame.native
 	native.SetVertZones(full, starts, outline, serve, crack, slot, relief, over, color, detail, color_from_dir)
+	if data.nova != null:
+		native.SetVertNova(nova_ids)
 	var points := PackedFloat64Array()
 	var road_starts := PackedInt32Array([0])
 	var half_widths := PackedFloat64Array()
@@ -255,6 +260,262 @@ static func _native_verts_zone(data: PlanetData, zone: Dictionary, bd: BiomeDefi
 			slugs.append(rock)
 		index = at + 1
 	return {"serve": serve, "slot": index, "color": col, "from_dir": from_dir}
+
+
+## Rings a frontier vertex is sampled on: [radius as a share of the vertex's reach, samples, angle offset
+## (rad)]. The outer one goes first: a vertex whose outer ring is all its own variant is left whole.
+const NOVA_RINGS := [[1.0, 12, 0.2618], [0.62, 8, 0.3927], [0.31, 4, 0.0]]
+## The least a vertex reaches, in grid pitches: under 1.6 the transition draws the grid's staircase instead
+## of the zone's outline; wider, a frontier seen from afar (where the pitch is kilometres) stays a band
+## and not a line.
+const NOVA_MIN_REACH_PITCHES := 2.5
+## The ground outside zones counts for nothing around a vertex under the first share and in full from the
+## second: two zones drawn side by side in QGIS rarely share their outline to the metre, and the sliver of
+## bare ground left between them drew a grey line along every frontier.
+const NOVA_SLIVER_SHARES := [0.12, 0.45]
+
+
+## Nova: the share of each variant around grid vertices, {vertex index: {variant id: share}},
+## for the vertices that are not wholly in their own variant. A vertex is sampled on NOVA_RINGS around its
+## grid direction, out to its reach — the transition width its own variant sets (NovaBody.transition_m,
+## metres: the same band at every level of detail), never under NOVA_MIN_REACH_PITCHES — every sample
+## through the zones of the tile it falls in, at the chunk's own level of the pack (nova_zone_level): the
+## zones its vertices were read from. Interpolated over the triangles, the shares are the transition, on
+## the zone's real outline instead of the grid's staircase. A vertex's shares depend on nothing but its
+## direction and the level, so neighbouring chunks agree on the vertices they share.
+## Which vertices: all of them when the chunk holds two variants; else its outer rows, as deep as the
+## reach (another variant may lie just outside the chunk).
+static func nova_soft_weights(data: PlanetData, vid: PackedInt32Array, grid_dirs: Array, res: int,
+		pitch: float, hp_nside: int, hp_ipix: int) -> Dictionary:
+	var out := {}
+	var n := res + 1
+	if data.export_nside <= 0:
+		return out
+	var min_reach := NOVA_MIN_REACH_PITCHES * pitch
+	var reach := maxf(data.nova.max_transition_m(), min_reach)
+	if _nova_alone(data, hp_nside, hp_ipix, reach):
+		return out
+	var mixed := false
+	for i in vid.size():
+		if vid[i] != vid[0]:
+			mixed = true
+			break
+	var margin := ceili(reach / pitch) + 1
+	var level := nova_zone_level(data, hp_nside)
+	var cache := {}
+	for yi in n:
+		for xi in n:
+			if not mixed and xi >= margin and yi >= margin and xi <= res - margin and yi <= res - margin:
+				continue
+			var i := yi * n + xi
+			var shares := _nova_shares(data, grid_dirs[yi][xi], vid[i],
+					maxf(data.nova.transition_m(vid[i]), min_reach), level, cache)
+			if not shares.is_empty():
+				out[i] = shares
+	return out
+
+
+## The level of the pack a chunk of [param hp_nside] reads its zones from: its own, the export level at most
+## (finer chunks share their export tile's zones).
+static func nova_zone_level(data: PlanetData, hp_nside: int) -> int:
+	return mini(hp_nside, data.export_nside)
+
+
+## The zones of tile [param tile] of [param level] of the pack, as the chunks of that level read them: its
+## own and those its ancestors' tiles hold for it (PlanetData.populate_zones_at).
+static func nova_zones_of(data: PlanetData, level: int, tile: int) -> Array:
+	return data.populate_zones_at(level, tile)
+
+
+## The zones of a tile made ready for many lookups (nova_variant_in): one entry per zone that can hold a
+## point, in the zones' order — [variant id, outline, lon min, lon max, lat min, lat max], the outline empty
+## for a zone covering the whole tile (nothing after it is ever reached). The variant id of a zone is a
+## string built from its attributes: read once here instead of at every sample — it was most of the time
+## a frontier chunk took.
+static func nova_entries(nova: NovaBody, zones: Array) -> Array:
+	var out: Array = []
+	for z: Dictionary in zones:
+		var coverage := str(z.get("coverage", ""))
+		if coverage == "point":
+			continue
+		if coverage == "full":
+			out.append([nova.variant_id_for_zone(z), []])
+			break
+		var outline: Array = z.get("vertices", [])
+		if outline.size() < 3:
+			continue
+		var lon_min := INF
+		var lon_max := -INF
+		var lat_min := INF
+		var lat_max := -INF
+		for v in outline:
+			lon_min = minf(lon_min, v[0])
+			lon_max = maxf(lon_max, v[0])
+			lat_min = minf(lat_min, v[1])
+			lat_max = maxf(lat_max, v[1])
+		out.append([nova.variant_id_for_zone(z), outline, lon_min - CLIP_EDGE_TOL_DEG, lon_max + CLIP_EDGE_TOL_DEG,
+				lat_min - CLIP_EDGE_TOL_DEG, lat_max + CLIP_EDGE_TOL_DEG])
+	return out
+
+
+## The variant at [param dir] among a tile's [param entries] (nova_entries): the first zone holding it, as
+## _query_zones_at_direction's first answer, 1 (the ground outside zones) when none does.
+static func nova_variant_in(entries: Array, dir: Vector3) -> int:
+	var lonlat := Vector2.INF
+	for e: Array in entries:
+		if (e[1] as Array).is_empty():
+			return e[0]
+		if lonlat == Vector2.INF:
+			lonlat = BiomeQuery._dir_to_lonlat(dir)
+		if lonlat.x < e[2] or lonlat.x > e[3] or lonlat.y < e[4] or lonlat.y > e[5]:
+			continue
+		if _point_in_polygon_lonlat(lonlat.x, lonlat.y, e[1]) or _on_clip_edge(lonlat.x, lonlat.y, e[1]):
+			return e[0]
+	return 1
+
+
+## The variant a tile is wholly made of, 0 when it holds a frontier: 1 (the ground outside zones) for a
+## tile without zones, the first zone's when that zone covers the whole tile (the first zone holding a
+## point is the point's variant).
+static func nova_tile_variant(data: PlanetData, level: int, tile: int) -> int:
+	var zones := nova_zones_of(data, level, tile)
+	if zones.is_empty():
+		return 1
+	var first: Dictionary = zones[0]
+	return data.nova.variant_id_for_zone(first) if str(first.get("coverage", "")) == "full" else 0
+
+
+## The tiles (of nova_zone_level) a sample taken within [param reach] metres of chunk ([param hp_nside],
+## [param hp_ipix]) can fall in: its own, and the eight around it when the chunk lies on its tile's edge
+## or the reach is longer than a chunk.
+static func nova_tiles_within(data: PlanetData, hp_nside: int, hp_ipix: int, reach: float) -> PackedInt64Array:
+	var level := nova_zone_level(data, hp_nside)
+	@warning_ignore("integer_division")
+	var r := hp_nside / level
+	var fxy := HEALPix.pix2face_xy(hp_nside, hp_ipix)
+	@warning_ignore("integer_division")
+	var tile := hp_ipix / (r * r)  # NESTED: a chunk's index starts with its tile's
+	var tiles := PackedInt64Array([tile])
+	var cx: int = int(fxy.ix) % r
+	var cy: int = int(fxy.iy) % r
+	var inside := cx != 0 and cy != 0 and cx != r - 1 and cy != r - 1
+	if not inside or reach > HEALPix.pixel_side_length(hp_nside, data.radius):
+		for around: int in HEALPix.get_neighbors_nest(level, tile).values():
+			if around >= 0:
+				tiles.append(around)
+	return tiles
+
+
+## True when no sample of the chunk can meet another variant: every tile within reach is wholly the same
+## one.
+static func _nova_alone(data: PlanetData, hp_nside: int, hp_ipix: int, reach: float) -> bool:
+	var level := nova_zone_level(data, hp_nside)
+	var tiles := nova_tiles_within(data, hp_nside, hp_ipix, reach)
+	var own := nova_tile_variant(data, level, tiles[0])
+	if own == 0:
+		return false
+	for i in range(1, tiles.size()):
+		if nova_tile_variant(data, level, tiles[i]) != own:
+			return false
+	return true
+
+
+## The shares of each variant within [param reach] metres of [param d], or {} when the outer ring is
+## wholly [param own]. [param level]: the pack level the zones are read at (nova_zone_level).
+static func _nova_shares(data: PlanetData, d: Vector3, own: int, reach: float, level: int,
+		cache: Dictionary) -> Dictionary:
+	var t1 := d.cross(Vector3.UP if absf(d.y) < 0.9 else Vector3.RIGHT).normalized()
+	var t2 := d.cross(t1)
+	var shares := {own: 1.0}
+	var total := 1.0
+	for ri in NOVA_RINGS.size():
+		var ring: Array = NOVA_RINGS[ri]
+		var r: float = float(ring[0]) * reach / data.radius
+		for k in int(ring[1]):
+			var a: float = float(ring[2]) + TAU * k / float(ring[1])
+			var s := (d + (t1 * cos(a) + t2 * sin(a)) * r).normalized()
+			var tile := HEALPix.vec2pix_nest(level, s)
+			if not cache.has(tile):
+				cache[tile] = nova_entries(data.nova, nova_zones_of(data, level, tile))
+			var id := nova_variant_in(cache[tile], s)
+			shares[id] = float(shares.get(id, 0.0)) + 1.0
+			total += 1.0
+		if ri == 0 and shares.size() == 1:
+			return {}
+	if shares.size() > 1 and shares.has(1):
+		var bare: float = shares[1] / total
+		var kept: float = shares[1] * smoothstep(NOVA_SLIVER_SHARES[0], NOVA_SLIVER_SHARES[1], bare)
+		total += kept - float(shares[1])
+		shares[1] = kept
+	for id in shares:
+		shares[id] = shares[id] / total
+	return shares
+
+
+## Nova: the rock tint of a frontier vertex blended like its textures. The vertex keeps its own
+## baked colour for its own variant (impurities and all); each other variant around it brings the tint of
+## its rock (rocks.json) at the vertex's direction. Without this the tint, one rock a vertex, would draw
+## the grid's staircase that the texture weights avoid. Variants without a known rock keep the vertex colour.
+static func nova_blend_colors(data: PlanetData, colors: PackedColorArray, soft: Dictionary,
+		vid: PackedInt32Array, grid_dirs: Array, res: int) -> void:
+	var n := res + 1
+	for i: int in soft:
+		var shares: Dictionary = soft[i]
+		@warning_ignore("integer_division")
+		var d: Vector3 = grid_dirs[i / n][i % n]
+		var c := Color(0, 0, 0, 0)
+		for id: int in shares:
+			var tint := colors[i]
+			if id != vid[i]:
+				var slug := nova_rock_of(data, id)
+				if slug != "":
+					tint = RockCatalogue.tint(d, data.radius, slug, colors[i])
+			c += tint * float(shares[id])
+		c.a = colors[i].a
+		colors[i] = c
+
+
+## The rock (rocks.json slug) a Nova variant's ground is tinted with, "" when none is known.
+static func nova_rock_of(data: PlanetData, id: int) -> String:
+	var slug := data.nova.rock_of(id, data.default_rock())
+	return slug if RockCatalogue.has(slug) else ""
+
+
+## Nova's data for a chunk from the variant id of each vertex: [weights (RGBA8, 4 bytes a vertex), palette
+## (4 bytes for the chunk)]. The palette holds the chunk's 4 most frequent variants (their ids); a variant
+## beyond those counts as the most frequent one. A vertex's weights are one-hot on its slot, or its shares
+## from [param soft] (nova_soft_weights) on a frontier — the GPU interpolates them across the triangles
+## into the transition.
+static func nova_palette(vid: PackedInt32Array, soft: Dictionary = {}) -> Array:
+	var counts := {}
+	for id in vid:
+		counts[id] = int(counts.get(id, 0)) + 1
+	for shares: Dictionary in soft.values():
+		for id in shares:
+			counts[id] = int(counts.get(id, 0))
+	var ids := counts.keys()
+	ids.sort_custom(func(a, b): return counts[a] > counts[b] or (counts[a] == counts[b] and a < b))
+	ids = ids.slice(0, 4)
+	var slot_of := {}
+	for i in ids.size():
+		slot_of[ids[i]] = i
+	var palette := PackedByteArray([0, 0, 0, 0])
+	for i in ids.size():
+		palette[i] = clampi(int(ids[i]), 0, 255)
+	var weights := PackedByteArray()
+	weights.resize(vid.size() * 4)
+	for v in vid.size():
+		if soft.has(v):
+			var acc := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+			var shares: Dictionary = soft[v]
+			for id in shares:
+				acc[int(slot_of.get(id, 0))] += float(shares[id])
+			for c in 4:
+				weights[v * 4 + c] = clampi(roundi(acc[c] * 255.0), 0, 255)
+		else:
+			var s: int = slot_of.get(vid[v], 0)
+			weights[v * 4 + s] = 255
+	return [weights, palette]
 
 
 static func generate_mesh(
@@ -452,7 +713,7 @@ static func generate_mesh(
 	# Biomes with a relief noise (BiomeDefinition.relief_*): k = _relief_bds[k - 1].
 	var has_relief_overlap := false
 	var _relief_bds: Array = []
-	var _relief_index: Dictionary = {}        # biome_type → k
+	var _relief_index: Dictionary = {}        # the definition's instance id → k (Nova: one per variant)
 
 	# Road overlay. The tile from the modifier pack holds this chunk's own
 	# disjoint stretch, so the test is just "is it empty".
@@ -470,7 +731,7 @@ static func generate_mesh(
 	# Populate zones (polygon/point biomes).
 	for _pz in _pz_zones:
 		var _bt: String = _pz.get("biome_type", "")
-		var _bd = data.get_biome_by_type(_bt)
+		var _bd = data.biome_of_zone(_pz)
 		if _bd == null:
 			continue
 		if _bd.is_liquid and data.has_ocean:
@@ -491,7 +752,8 @@ static func generate_mesh(
 			has_cliff_overlap = true
 		if SpatialCraterTerrain.is_crater_biome(_bd):
 			has_crater_overlap = true
-		if _bd.terrain_material_override and not _bd.is_liquid:
+		# Nova paints every zone's ground itself, in the base surface (smooth transitions).
+		if _bd.terrain_material_override and not _bd.is_liquid and data.nova == null:
 			has_surface_override_overlap = true
 			var _om_path: String = _bd.terrain_material_override.resource_path
 			if not _surface_mat_index.has(_om_path):
@@ -499,9 +761,9 @@ static func generate_mesh(
 				_surface_mat_index[_om_path] = _surface_mats.size()
 		if _bd.has_relief():
 			has_relief_overlap = true
-			if not _relief_index.has(_bd.biome_type):
+			if not _relief_index.has(_bd.get_instance_id()):
 				_relief_bds.append(_bd)
-				_relief_index[_bd.biome_type] = _relief_bds.size()
+				_relief_index[_bd.get_instance_id()] = _relief_bds.size()
 
 	# Linear features (rivers, canyons, crevasses, lava rivers, etc.).
 	for _lf in _lf_arr:
@@ -563,6 +825,12 @@ static func generate_mesh(
 	var surface_override_vertex: PackedInt32Array = PackedInt32Array()
 	if has_surface_override_overlap:
 		surface_override_vertex.resize(vert_count)
+
+	# Per-vertex: Nova variant id (1 = ground outside zones), extended with every vertex copy below.
+	var nova_vid := PackedInt32Array()
+	if data.nova != null:
+		nova_vid.resize(vert_count)
+		nova_vid.fill(1)
 
 	# Per-vertex: relief biome index (0 = none) and its road weight, so the
 	# normal probes re-evaluate the same relief at their own directions.
@@ -800,6 +1068,8 @@ static func generate_mesh(
 				relief_road_w = _v[11]
 			if has_surface_override_overlap:
 				surface_override_vertex = _v[17]
+			if data.nova != null:
+				nova_vid = _v[20]
 			if not _rw_native.is_empty():
 				_rw_band = _v[14]
 			if not _rw_ctx.is_empty():
@@ -841,8 +1111,10 @@ static func generate_mesh(
 				var _vz := _query_zones_at_direction(dir, _pz_zones)
 				if not _vz.is_empty():
 					first_zone = _vz[0]
-					bd = data.get_biome_by_type(first_zone.get("biome_type", ""))
+					bd = data.biome_of_zone(first_zone)
 					zone_color_hex = first_zone.get("color_hex", "")
+			if not nova_vid.is_empty():
+				nova_vid[idx] = data.nova.variant_id_for_zone(first_zone)
 			# The corundum default yields to a zone that names a known biome —
 			# and only to that (a first_zone with no biome is a rock_type /
 			# colour-only zone, which sits ON the corundum, not instead of it).
@@ -1148,7 +1420,7 @@ static func generate_mesh(
 						_relief_roads, _relief_mpd, _crack_vtx_spacing)
 				if _rl_w > 0.0:
 					height += _rl_w * BiomeRelief.offset(dir, data.radius, bd, _crack_vtx_spacing)
-					relief_vertex[idx] = int(_relief_index.get(bd.biome_type, 0))
+					relief_vertex[idx] = int(_relief_index.get(bd.get_instance_id(), 0))
 					relief_road_w[idx] = _rl_w
 
 			# ── Corundum crack network ─────────────────────────────
@@ -1334,6 +1606,12 @@ static func generate_mesh(
 		# Invariants de boucle : pixel_side_length ne dépend que de hp_nside, et l'était
 		# recalculé à chaque sommet.
 		var _eps_rad := HEALPix.pixel_side_length(hp_nside, 1.0) * _eps_frac
+		# Wider probes (data.normal_probe_m) where no crack is near: they light the ground of the 198 m height
+		# grid smoothly instead of facet by facet. Near a crack they would reach over the rim and bend the
+		# plateau's edge down like a slope (test_crack_walls), so a vertex within a crack's half width plus
+		# three probe lengths keeps the narrow ones.
+		var _eps_wide := maxf(_eps_rad, data.normal_probe_m / data.radius)
+		var _wide_from_m: float = data.crack_width_m * 0.5 + 3.0 * data.normal_probe_m
 		# Un sommet dont le bord de crack le plus proche est au-delà de cette distance a
 		# ses quatre points de gradient hors crack : ils ne sont qu'à _eps_rad de lui, et la
 		# distance au bord varie d'au plus ~1,8 m par mètre (Voronoï 1-lipschitzien, plus
@@ -1371,7 +1649,7 @@ static func generate_mesh(
 				_frame.native.SetNormalGrade(_rw_band, _rw_args[0], float(_rw_native_ctx["m_per_deg"]), _rw_args[1],
 						_rw_args[2], _rw_args[3])
 			normals = _frame.native.Normals(_vdirs, _crack_edge, _snapped, res, _export_ipix, _sample_nside,
-					_crack_vtx_spacing, _eps_rad, _crack_skip_m, data.corundum_default_biome)
+					_crack_vtx_spacing, _eps_rad, _crack_skip_m, data.corundum_default_biome, _eps_wide, _wide_from_m)
 			_n_served = _frame.native.NormalsServed()
 		for yi in res + 1:
 			for xi in res + 1:
@@ -1384,10 +1662,11 @@ static func generate_mesh(
 				var arbitrary := Vector3.UP if absf(up.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
 				var tan_u := up.cross(arbitrary).normalized()
 				var tan_v := up.cross(tan_u).normalized()
-				var dir_l := (dir_c - tan_u * _eps_rad).normalized()
-				var dir_r := (dir_c + tan_u * _eps_rad).normalized()
-				var dir_b := (dir_c - tan_v * _eps_rad).normalized()
-				var dir_t := (dir_c + tan_v * _eps_rad).normalized()
+				var _eps := _eps_rad if data.corundum_default_biome and _crack_edge[idx] < _wide_from_m else _eps_wide
+				var dir_l := (dir_c - tan_u * _eps).normalized()
+				var dir_r := (dir_c + tan_u * _eps).normalized()
+				var dir_b := (dir_c - tan_v * _eps).normalized()
+				var dir_t := (dir_c + tan_v * _eps).normalized()
 				# Edge vertices: use sample_height_boundary so both sides of
 				# a chunk seam resolve to the same canonical export tile →
 				# identical normals.  Interior vertices can use the fast path.
@@ -1652,6 +1931,8 @@ static func generate_mesh(
 			normals.append(normals[ei])
 			uvs.append(uvs[ei])
 			uv2s.append(uv2s[ei])
+			if not nova_vid.is_empty():
+				nova_vid.append(nova_vid[ei])
 			# Debug: paint skirt curtains bright magenta so they can be told apart
 			# from real terrain / crack interiors in-game.
 			colors.append(Color.MAGENTA if data.debug_color_skirts else colors[ei])
@@ -1932,6 +2213,8 @@ static func generate_mesh(
 			normals.append(_rf_norms[_ri])
 			uvs.append(PlanetData.direction_to_uv(_rf_dirs[_ri]))
 			uv2s.append(uv2s[_near])
+			if not nova_vid.is_empty():
+				nova_vid.append(nova_vid[_near])
 			colors.append(colors[_c00].lerp(colors[_c10], _f.x).lerp(
 					colors[_c01].lerp(colors[_c11], _f.x), _f.y))
 			skirt_offsets.append(0.0)
@@ -1991,6 +2274,8 @@ static func generate_mesh(
 				normals.append(_wn[_j])
 				uvs.append(uvs[_v])
 				uv2s.append(uv2s[_v])
+				if not nova_vid.is_empty():
+					nova_vid.append(nova_vid[_v])
 				colors.append(colors[_v])
 				skirt_offsets.append(skirt_offsets[_v * 3])
 				skirt_offsets.append(skirt_offsets[_v * 3 + 1])
@@ -2038,6 +2323,11 @@ static func generate_mesh(
 		if not _rock_any:
 			rock_custom = PackedFloat32Array()
 
+	# --- LOD morph: where each vertex stands on the next coarser grid --------
+	var lod_morph_offsets := PackedByteArray()
+	if data.lod_morph and hp_mode:
+		lod_morph_offsets = pack_half4(lod_morph_offsets_for(vertices, res))
+
 	# --- build mesh ---------------------------------------------------------
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -2052,6 +2342,9 @@ static func generate_mesh(
 
 	var mesh := ArrayMesh.new()
 	var _c0_fmt := Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+	if not lod_morph_offsets.is_empty():
+		arrays[Mesh.ARRAY_CUSTOM2] = lod_morph_offsets
+		_c0_fmt |= Mesh.ARRAY_CUSTOM_RGBA_HALF << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT
 	if not rock_custom.is_empty():
 		arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
 		_c0_fmt |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
@@ -2061,6 +2354,27 @@ static func generate_mesh(
 				<= RockFieldScree.MAX_PITCH_M:
 			mesh.set_meta("rock_scree", RockFieldScree.pack(RockFieldScree.place(vertices, normals,
 					colors, rock_custom, res, hp_ipix + hp_nside, cc_f32.normalized())))
+	# Nova: a palette of up to 4 variants for the chunk (the mesh's "nova_palette", handed to the shader
+	# per chunk) and each vertex's weight on them (CUSTOM3; CUSTOM2 is the LOD morph's): interpolated
+	# over the triangles, the weights ARE the smooth transition.
+	# The grid and its ids ride along on the mesh for the scatter (NovaScatter.lay_chunk).
+	if not nova_vid.is_empty() and nova_vid.size() == vertices.size():
+		var _soft := {}
+		if hp_mode:
+			_soft = nova_soft_weights(data, nova_vid, grid_dirs, res,
+					HEALPix.pixel_side_length(hp_nside, data.radius) / float(res), hp_nside, hp_ipix)
+			nova_blend_colors(data, colors, _soft, nova_vid, grid_dirs, res)
+		var _sp := nova_palette(nova_vid, _soft)
+		arrays[Mesh.ARRAY_CUSTOM3] = _sp[0]
+		_c0_fmt |= Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT
+		var _pal: PackedByteArray = _sp[1]
+		mesh.set_meta("nova_palette", Vector4(_pal[0], _pal[1], _pal[2], _pal[3]))
+		mesh.set_meta("nova", true)
+		if hp_mode:
+			var _grid_n := (res + 1) * (res + 1)
+			mesh.set_meta("nova_res", res)
+			mesh.set_meta("nova_grid", vertices.slice(0, _grid_n))
+			mesh.set_meta("nova_vid", nova_vid.slice(0, _grid_n))
 	# A chunk whose every quad belongs to an overlay surface (an outcrop zone
 	# covering it whole) and that bakes without skirts has NO base triangle:
 	# an empty index array is refused by the renderer (five errors per
@@ -2095,6 +2409,8 @@ static func generate_mesh(
 		_so_arrays[Mesh.ARRAY_CUSTOM0] = skirt_offsets
 		if not rock_custom.is_empty():
 			_so_arrays[Mesh.ARRAY_CUSTOM1] = rock_custom
+		if not lod_morph_offsets.is_empty():
+			_so_arrays[Mesh.ARRAY_CUSTOM2] = lod_morph_offsets
 		_so_arrays[Mesh.ARRAY_INDEX]   = _so_idx
 		var _so_surface := mesh.get_surface_count()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _so_arrays,
@@ -3139,7 +3455,7 @@ static func generate_collision_shape(
 	# Populate zones (polygon/point biomes).
 	for _pz in _col_pz_zones:
 		var _bt: String = _pz.get("biome_type", "")
-		var _bd = data.get_biome_by_type(_bt)
+		var _bd = data.biome_of_zone(_pz)
 		if _bd == null:
 			continue
 		if _bd.has_relief():
@@ -3437,7 +3753,7 @@ static func generate_collision_shape(
 			if has_relief_overlap:
 				var _rl_zones := _query_zones_at_direction(_zone_dir, _col_pz_zones)
 				if not _rl_zones.is_empty():
-					var _rl_bd := data.get_biome_by_type(_rl_zones[0].get("biome_type", ""))
+					var _rl_bd := data.biome_of_zone(_rl_zones[0])
 					if BiomeRelief.visible_at(_rl_bd, _col_crack_spacing):
 						var _rl_w := BiomeRelief.road_weight(HEALPix.vec2lonlat(dir),
 								_col_relief_roads, _col_relief_mpd, _col_crack_spacing)
@@ -4029,6 +4345,60 @@ static func road_ground_tint(data: PlanetData, d: Vector3, zone: Dictionary,
 ## Use this to ensure mi.position matches the cc_f32 used internally
 ## by generate_mesh, eliminating the float64↔float32 chunk-center
 ## mismatch that causes sub-metre vertex seams between adjacent chunks.
+## For each vertex of a (res + 1)² grid: xyz the step from where it stands to where the next coarser grid
+## draws that point, w the STITCH_* bits of the edges it lies on; empty if the grid is not one. The coarser chunk
+## keeps every second row and column, so the even vertices are already on it: an odd one lies on the coarse edge
+## between its two even neighbours, and a cell centre on the coarse quad's diagonal, from the corner at +x -y to
+## the one at -x +y (the split of the index loop above; a carved quad's other split is not followed). A border
+## vertex moves only when the terrain lets that edge move (its neighbour is not settled there, see
+## PlanetTerrain._lod_morph_edges): w says which. Vertices past the grid (the skirts) stay. The parent may also
+## read another tile level: that part of the jump is not covered.
+static func lod_morph_offsets_for(vertices: PackedVector3Array, res: int) -> PackedFloat32Array:
+	var stride := res + 1
+	if res < 2 or res % 2 != 0 or vertices.size() < stride * stride:
+		return PackedFloat32Array()
+	var out := PackedFloat32Array()
+	out.resize(vertices.size() * 4)
+	for y in stride:
+		for x in stride:
+			var edges := 0
+			if x == 0:
+				edges |= STITCH_LEFT
+			elif x == res:
+				edges |= STITCH_RIGHT
+			if y == 0:
+				edges |= STITCH_BOTTOM
+			elif y == res:
+				edges |= STITCH_TOP
+			var i := (y * stride + x) * 4
+			out[i + 3] = edges
+			if x % 2 == 0 and y % 2 == 0:
+				continue
+			var coarse: Vector3
+			if y % 2 == 0:
+				coarse = (vertices[y * stride + x - 1] + vertices[y * stride + x + 1]) * 0.5
+			elif x % 2 == 0:
+				coarse = (vertices[(y - 1) * stride + x] + vertices[(y + 1) * stride + x]) * 0.5
+			else:
+				coarse = (vertices[(y - 1) * stride + x + 1] + vertices[(y + 1) * stride + x - 1]) * 0.5
+			var step := coarse - vertices[y * stride + x]
+			out[i] = step.x
+			out[i + 1] = step.y
+			out[i + 2] = step.z
+	return out
+
+
+## [param values] as half floats, the layout of a CUSTOM*_RGBA_HALF mesh array. Enough for the morph offsets: a
+## step of a few hundred metres keeps ~0.25 m, far below a pixel where such steps are drawn, and the edge bits
+## are small integers, exact.
+static func pack_half4(values: PackedFloat32Array) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(values.size() * 2)
+	for i in values.size():
+		out.encode_half(i * 2, values[i])
+	return out
+
+
 static func snap_to_f32(v: Vector3) -> Vector3:
 	var buf := PackedFloat32Array([v.x, v.y, v.z])
 	return Vector3(buf[0], buf[1], buf[2])

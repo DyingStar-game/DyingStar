@@ -1,0 +1,13 @@
+Scanned rock models used by Nova (Dying Star). All from Poly Haven, licence CC0 1.0.
+
+Namaqualand Boulder 03 - Jenelle van Heerden, Dario Barresi - Poly Haven, CC0 - https://polyhaven.com/a/namaqualand_boulder_03
+Namaqualand Boulder 04 - Jenelle van Heerden - Poly Haven, CC0 - https://polyhaven.com/a/namaqualand_boulder_04
+Namaqualand Boulder 02 - Greg Zaal, Rico Cilliers - Poly Haven, CC0 - https://polyhaven.com/a/namaqualand_boulder_02
+Boulder 01 - Rico Cilliers - Poly Haven, CC0 - https://polyhaven.com/a/boulder_01
+Namaqualand Boulder 05 - Jenelle van Heerden, Dario Barresi - Poly Haven, CC0 - https://polyhaven.com/a/namaqualand_boulder_05
+Namaqualand Boulder 06 - Greg Zaal, Jenelle van Heerden - Poly Haven, CC0 - https://polyhaven.com/a/namaqualand_boulder_06
+Namaqualand Boulders 01 - Greg Zaal, Jenelle van Heerden - Poly Haven, CC0 - https://polyhaven.com/a/namaqualand_boulders_01
+Moon Rock 02 - Rico Cilliers, Greg Zaal, Jenelle van Heerden - Poly Haven, CC0 - https://polyhaven.com/a/moon_rock_02
+Rock 07 - Jenelle van Heerden - Poly Haven, CC0 - https://polyhaven.com/a/rock_07
+
+Changes: base colour converted to grey and contrast-stretched to a light mid-grey (tinted in game), meshes decimated (collapse) and re-origined at ground level, textures resized to 1024 px, ambient occlusion / roughness packed into one ORM texture (metallic 0), all embedded in one GLB per model.

@@ -119,10 +119,20 @@ static func is_stargrot_explorer() -> bool:
 	return "--stargrot-explorer" in OS.get_cmdline_user_args()
 
 
+## Scenes that are offline planet tools by themselves, started from the editor or by path.
+const OFFLINE_TOOL_SCENES: Array[String] = [
+	"res://test/volcano/volcano_view.tscn",
+	"res://addons/nova/nova_world.tscn",  # Nova's game view (docs/NOVA.md)
+]
+
 ## Offline planet tools share the player controller, without starting game services.
 static func is_offline_planet_tool() -> bool:
-	return is_stargrot_explorer() or "--volcano-view" in OS.get_cmdline_user_args() \
-			or "res://test/volcano/volcano_view.tscn" in OS.get_cmdline_args()
+	if is_stargrot_explorer() or "--volcano-view" in OS.get_cmdline_user_args():
+		return true
+	for scene in OFFLINE_TOOL_SCENES:
+		if scene in OS.get_cmdline_args():
+			return true
+	return false
 
 ## Seconds to add to the local clock to land on the reference one. See sync_clock().
 var _clock_offset: float = 0.0

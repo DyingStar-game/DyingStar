@@ -31,6 +31,8 @@ public partial class TileFrameNative
     private int[] _vzColorFromDir = Array.Empty<int>();
     private Color[] _vzColor = Array.Empty<Color>();
     private Vector2[] _vzDetail = Array.Empty<Vector2>();
+    /// <summary>Nova variant id per zone row (SetVertNova); empty when the body has no Nova data.</summary>
+    private int[] _vzNova = Array.Empty<int>();
 
     private double[] _vRoadPts = Array.Empty<double>();
     private int[] _vRoadStart = Array.Empty<int>();
@@ -63,7 +65,7 @@ public partial class TileFrameNative
     private Color[] _vColors;
     private float[] _vHeights, _vEdge, _vCore, _vCarve, _vWall, _vRoadW;
     private byte[] _vCarved, _vSnapped, _vBand, _vSlot, _vColorDir;
-    private int[] _vReliefOut, _vOverrideOut;
+    private int[] _vReliefOut, _vOverrideOut, _vNovaOut;
     private double[] _vGradeH;
 
     /// <summary>
@@ -106,6 +108,9 @@ public partial class TileFrameNative
             _vzBox[4 * i + 3] = maxLat + 2.0 * ClipEdgeTolDeg;
         }
     }
+
+    /// <summary>Nova: the variant id of each zone row of SetVertZones (NovaBody.variant_id_for_zone).</summary>
+    public void SetVertNova(int[] variantPerZone) => _vzNova = variantPerZone ?? Array.Empty<int>();
 
     /// <summary>What BiomeRelief.road_weight walks: lon/lat pairs per road and each road's half width (m).</summary>
     public void SetVertRoads(double[] points, int[] starts, double[] halfWidth, double mPerDeg)
@@ -172,6 +177,7 @@ public partial class TileFrameNative
         _vColorDir = new byte[n];
         _vReliefOut = new int[n];
         _vOverrideOut = new int[n];
+        _vNovaOut = new int[n];
         _vGradeH = new double[n];
     }
 
@@ -209,7 +215,7 @@ public partial class TileFrameNative
         return new Godot.Collections.Array
         {
             _vState, _vVertices, _vDirs, _vUvs, _vUv2s, _vColors, _vHeights, _vEdge, _vCore, _vCarve, _vWall, _vRoadW,
-            _vCarved, _vSnapped, _vBand, _vSlot, _vReliefOut, _vOverrideOut, _vGradeH, _vColorDir,
+            _vCarved, _vSnapped, _vBand, _vSlot, _vReliefOut, _vOverrideOut, _vGradeH, _vColorDir, _vNovaOut,
         };
     }
 
@@ -359,6 +365,8 @@ public partial class TileFrameNative
         _vColorDir[idx] = (byte)_vzColorFromDir[zone];
         _vUv2s[idx] = _vzDetail[zone];
         _vOverrideOut[idx] = _vzOverride[zone];
+        if (zone < _vzNova.Length)
+            _vNovaOut[idx] = _vzNova[zone];
 
         // The rock's provenance, for the impurity pass.
         int slot = _vzSlot[zone];
