@@ -18,13 +18,16 @@ extends Control
 ## A gesture draws its value over the control's whole travel, half the time near an end (|v| 0.7..1).
 ## --origin=N (catalogue "origins" index, 2 = European) keeps to one origin: each base look is the first random()
 ## look of that origin alone (seeds offset + id, then + ORIGIN_SEED_STRIDE...), and no gesture moves an origin.
+## --sweep=0.4,0.7,1 replaces the categories: each sample moves ONE control, one way (a 0..1 control: up), to one of
+## these levels -- every control, both ways, at every level, in a shuffled order (sweep_plan): where each control alone
+## stops looking human, one control at a time. Ids past the plan are controls.
 ##
 ## Writes <out>/<id>_<view>.png and <out>/samples.json: per id its seed, category, sex, age (years), the gestures
 ## ([control, value] each, in order) and the final macros, origins, sliders (by key) and axis positions.
 ##
 ## Needs a GPU (not --headless):
 ##   godot --path . res://tools/character/face_survey/creator_survey.tscn -- --subject=face --out=/tmp/s --from=1
-##   --count=800 [--ids=3,17] [--origin=2]
+##   --count=800 [--ids=3,17] [--origin=2] [--sweep=0.4,0.7,1]
 ## random_faces_sheets.py --views packs the images into contact sheets; clip_judge.py pre-sorts them.
 
 ## Per subject: views (name -> yaw, rad), image size (px), framing, camera zoom, seed offset of the base look.
@@ -49,6 +52,7 @@ const FACE_OUTFIT: int = 1
 var _out: String = ""
 var _subject: String = "face"
 var _origin: int = -1
+var _plan: Array = []
 var _preview: CreatorPreview
 
 
@@ -97,11 +101,47 @@ static func base_seed(subject: String, id: int, origin: int = -1) -> int:
 	return s
 
 
-## The look of sample [param id]: its base random() look, then its gestures (recorded in [param gestures]).
-static func sample(subject: String, id: int, gestures: Array, origin: int = -1) -> CharacterAppearance:
+## Every control of [param subject] one way at each of [param levels] (0..1): [[control, value]...], shuffled the
+## same way every run. A -1..1 control both ways; a 0..1 one up only.
+static func sweep_plan(subject: String, origin: int, levels: Array) -> Array:
+	var plan: Array = []
+	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
+	for control: Array in controls(subject, origin):
+		var both: bool = control[0] == "axis" \
+				or (control[0] == "slider" and not sliders[CharacterAppearance.modifier_id(control[1])]["unipolar"])
+		for level: float in levels:
+			plan.append([control, level])
+			if both:
+				plan.append([control, -level])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([subject, "creator_survey_sweep"])
+	for i in range(plan.size() - 1, 0, -1):
+		var j: int = rng.randi_range(0, i)
+		var t: Variant = plan[i]
+		plan[i] = plan[j]
+		plan[j] = t
+	return plan
+
+
+## Category of sample [param id], with [param plan] the sweep's (empty: the categories by id).
+static func category_in(subject: String, id: int, plan: Array) -> String:
+	if plan.is_empty():
+		return category(subject, id)
+	return "sweep" if id >= 1 and id <= plan.size() else "control"
+
+
+## The look of sample [param id]: its base random() look, then its gestures (recorded in [param gestures]); with
+## [param plan] (sweep_plan) the one gesture the plan gives it.
+static func sample(subject: String, id: int, gestures: Array, origin: int = -1, plan: Array = []) -> CharacterAppearance:
 	var look: CharacterAppearance = CharacterAppearance.random(base_seed(subject, id, origin))
-	var cat: String = category(subject, id)
+	var cat: String = category_in(subject, id, plan)
 	if cat == "control":
+		return look
+	if cat == "sweep":
+		var step: Array = plan[id - 1]
+		apply(look, step[0], step[1])
+		gestures.append([step[0][0] + ":" + step[0][1], snappedf(step[1], 0.001)])
+		look.canonicalise()
 		return look
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([subject, id, "creator_survey"])
@@ -159,6 +199,10 @@ func _ready() -> void:
 	_origin = int(args.get("origin", "-1"))
 	var first: int = int(args.get("from", "1"))
 	var count: int = int(args.get("count", "800"))
+	if args.has("sweep"):
+		var levels: Array = Array(String(args["sweep"]).split(",", false)).map(func(v: String) -> float: return float(v))
+		_plan = sweep_plan(_subject, _origin, levels)
+		print("creator survey: sweep of %d samples" % _plan.size())
 	var ids: Array[int] = []
 	for v in String(args.get("ids", "")).split(",", false):
 		ids.append(int(v))
@@ -178,7 +222,7 @@ func _ready() -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for id in ids:
 		var gestures: Array = []
-		var look: CharacterAppearance = sample(_subject, id, gestures, _origin)
+		var look: CharacterAppearance = sample(_subject, id, gestures, _origin, _plan)
 		if _subject == "face":
 			look.garments = CharacterAppearance.outfit_garments(FACE_OUTFIT).map(func(i: int) -> Array: return [i, 0])
 		_preview._looks.set_appearance_now(look)
@@ -218,7 +262,7 @@ func _ready() -> void:
 		var axes: Dictionary = {}
 		for axis: Array in FaceAxes.axes():
 			axes[String(axis[0])] = snappedf(FaceAxes.value_of(look, axis[2]), 0.001)
-		samples.append({"id": id, "seed": base_seed(_subject, id, _origin), "category": category(_subject, id),
+		samples.append({"id": id, "seed": base_seed(_subject, id, _origin), "category": category_in(_subject, id, _plan),
 				"female": look.is_female(), "years": look.years(), "gestures": gestures, "macros": look.macros,
 				"origins": Array(look.origins), "sliders": moved, "axes": axes, "look": look.encode()})
 		if samples.size() % 20 == 0:
