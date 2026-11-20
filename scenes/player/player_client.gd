@@ -608,7 +608,11 @@ func _process(_delta: float) -> void:
 	# on foot -- the lamp, the switch by the bed; aimed at nothing else, the action key gets up, said
 	# without a line, as dropping a load is (_prompt_target).
 	if is_instance_valid(player.lying_on):
-		if not _ui_focus():
+		# This path returns early like the seated one, and it too skipped the cursor: a form opened from
+		# the bed (the bug report, on waking up) had no pointer to click it with (playtest 2026-11-20).
+		var lying_focus: bool = _ui_focus()
+		_apply_cursor_mode(lying_focus)
+		if not lying_focus:
 			player.mouse_motion += _stick_look(_delta)
 		player._ride_bed(player.lying_on)
 		_replicate_look()
@@ -636,6 +640,10 @@ func _process(_delta: float) -> void:
 			print(line)
 	if !player.active:
 		player.interact_label.hide()
+		# Not in control yet (the arrival's splash), and still a form can be up: the bug report is offered
+		# over the loading screen. It gets the pointer; nothing is captured here otherwise.
+		if _modal_open():
+			_apply_cursor_mode(true)
 		return
 
 	# Free the mouse + freeze the camera whenever the player isn't in direct control: focused on a
