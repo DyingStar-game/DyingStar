@@ -19,6 +19,11 @@ extends RefCounted
 ## Godot's glTF importer does when it fixes a rest pose): a vertex v skinned to a bone at rest shows at
 ## T + Q (v - J), with J the joint on the mesh, Q that turn, and T the joint once every parent has turned.
 ## The rest rotations are untouched, so the library, the IKs and the bone attachments keep working.
+##
+## The trunk (TRUNK_BONES) does not turn: the template's spine is a straight vertical line, the body's an S,
+## and its joints wander with the shape (a belly or buttocks pull the affine joints forward or back by up to
+## 20 degrees). Turning each segment upright rotated it as a block about its joint: a back broken at the
+## lumbar and under the neck. The trunk keeps the curve it was modelled (and morphed) with.
 
 ## One baked body, shared by every avatar with the same shape (HumanMeshCache).
 class Baked:
@@ -98,6 +103,8 @@ const HAIR_COLLIDERS: Array = [["Neck", "Neck", "Head"], ["UpperChest", "LeftUpp
 		["LeftUpperArm", "LeftUpperArm", "LeftLowerArm"], ["RightUpperArm", "RightUpperArm", "RightLowerArm"]]
 ## Material zones of the body mesh; every other zone (face, eyes, mouth...) is the head's.
 const BODY_ZONES: Array[String] = ["Torso", "Arms", "Legs"]
+## Bones that keep the body's own direction (no turn to the template's): the spine and the head.
+const TRUNK_BONES: Array[StringName] = [&"Hips", &"Spine", &"Chest", &"UpperChest", &"Neck", &"Head"]
 ## The blend shapes of a live head, in order: [name, {bank target: weight}]. Sides are the CHARACTER's
 ## (its left is +X). Each is a sum of the base model's face units, so that one shape does one job: a
 ## glance to the left moves both eyes. Kept few -- a shape costs ~0.6 MB of video memory per live head.
@@ -133,6 +140,7 @@ static var _body_bones := PackedInt32Array()  # 4 per render vertex
 static var _body_weights := PackedFloat32Array()
 static var _asset_topology: Dictionary = {}  # HumanAssetData instance id -> [index cw, bones int32]
 static var _hips: int = -1
+static var _trunk := PackedByteArray()  # per bank bone: 1 for a TRUNK_BONES bone (never turned)
 static var _is_head := PackedByteArray()  # per zone: 1 when it is the head's
 static var _head_first := PackedInt32Array()  # per zone: its first vertex among the head's (-1: a body zone)
 static var _head_map := PackedInt32Array()  # the head's render vertices' compact vertices, zone after zone
@@ -201,6 +209,9 @@ static func _prepare_now(native: Object) -> void:
 	for asset: HumanAssetData in bank.assets:
 		_asset_topology[asset.get_instance_id()] = _topology_of(asset)
 	_hips = bank.bone_names.find("Hips")
+	_trunk.resize(bank.bone_names.size())
+	for b in bank.bone_names.size():
+		_trunk[b] = 1 if TRUNK_BONES.has(StringName(bank.bone_names[b])) else 0
 	_split_head(bank)
 	CharacterMaterials.warm_textures()
 	HumanMorph.set_shared(morph)
@@ -535,7 +546,8 @@ static func _pose_skeleton(baked: Baked, bank: HumanBank, points: PackedVector3A
 		var p: int = parent_of[b]
 		var aim: int = bank.bone_aim[b] if b < bank.bone_aim.size() else -1
 		turns[b] = turns[p] if p != -1 else Basis.IDENTITY
-		if aim != -1 and b < template.size() and aim < template.size():
+		var trunk: bool = b < _trunk.size() and _trunk[b] == 1
+		if aim != -1 and not trunk and b < template.size() and aim < template.size():
 			var from: Vector3 = joints[aim] - joints[b]
 			var to: Vector3 = template[aim].origin - template[b].origin
 			if from.length_squared() > 1e-12 and to.length_squared() > 1e-12:
