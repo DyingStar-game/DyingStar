@@ -17,7 +17,7 @@ size = Vector3(1, 0.22, 0.52)
 size = Vector3(0.27, 0.22, 0.28)
 
 [node name="FoodDispenser" unique_id=768588184 instance=ExtResource("1_base")]
-brand = 7
+brand = 5
 catalogue_dir = "res://scenes/_universe/props/food/dispenser_items/"
 title_key = "%%DISPENSER_FOOD_TITLE"
 batch_spacing_m = 0.11
