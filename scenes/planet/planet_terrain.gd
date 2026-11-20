@@ -832,7 +832,9 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			# collision to re-bake; "_rail1" = the rail modules built with the mesh and saved on it
 			# (RailwayTrack.RAILS_META); "_roadmat2" = the plain road materials are
 			# StandardMaterial3D (RoadTerrain.is_lit_material) -- a road's material is saved with its mesh.
-			_cache_version += "_far50km_rail1_roadmat2"
+			# "_wallflat1" = flat ground where a canyon's carve starts keeps the ground's normals
+			# (PlanetChunk.WALL_FLAT_COS): a cached mesh still has them pointing down.
+			_cache_version += "_far50km_rail1_roadmat2_wallflat1"
 		# An exported build starts from an empty cache: a change no field above captures (a road
 		# re-export, a forgotten vNN bump) cannot reach players through a mesh baked by the build
 		# before. Not in relief_signature: the persisted pad altitudes survive a deploy. Empty in

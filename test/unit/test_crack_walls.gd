@@ -274,3 +274,32 @@ func test_the_noise_is_clamped() -> void:
 	var zero := CrackNoise.make(1, -5.0, 0.0, -5.0, 0.0, 250.0, 25.0)
 	assert_eq(zero.rim_amp_m, 0.0)
 	assert_eq(zero.meander_amp_m, 0.0)
+
+
+## A facet between a carved and an uncarved vertex is a wall only if it STANDS. Where a canyon comes up
+## to nothing -- at a massif's foot, beside a town -- its depth starts at a few millimetres: the cells
+## across that line are flat ground. Taken for walls, they got a wall's flat normal, turned by a rule
+## that reads a horizontal direction they do not have: half faced down, a black band across the top of
+## every slope into a canyon (playtest 2026-11-20).
+func test_flat_ground_where_the_carve_starts_is_no_wall() -> void:
+	var data := PlanetData.new()
+	data.radius = 6.0e6
+	data.crack_spacing_m = 4000.0
+	data.crack_width_m = 250.0
+	data.crack_depth_m = 180.0
+	var up := Vector3(0.0, 1.0, 0.0)
+	# One cell of a 25 m grid, its third corner carved.
+	var verts := PackedVector3Array([Vector3.ZERO, Vector3(25.0, 0.0, 0.0), Vector3(0.0, -1.0, 25.0)])
+	var vdirs := PackedVector3Array([up, (up + Vector3(25.0, 0.0, 0.0) / data.radius).normalized(),
+			(up + Vector3(0.0, 0.0, 25.0) / data.radius).normalized()])
+	var carved := PackedByteArray([0, 0, 1])
+	var tris := PackedInt32Array([0, 1, 2])
+	var split: Array = PlanetChunk._split_crack_walls(tris, carved, verts, 3, vdirs, data, 25.0)
+	assert_eq((split[1] as PackedInt32Array).size(), 0, "a metre down over 25: ground, with the ground's normals")
+	assert_eq(split[0], tris, "and its own vertices")
+	# The same cell with that corner at the bottom of the canyon.
+	verts[2] = Vector3(0.0, -180.0, 25.0)
+	split = PlanetChunk._split_crack_walls(tris, carved, verts, 3, vdirs, data, 25.0)
+	assert_eq((split[1] as PackedInt32Array).size(), 3, "180 m down over 25: a wall, with corners of its own")
+	for normal: Vector3 in (split[2] as PackedVector3Array):
+		assert_lt(absf(normal.dot(up)), PlanetChunk.WALL_FLAT_COS, "and a wall's normal")
