@@ -6,7 +6,8 @@ extends RefCounted
 ##
 ## One slider alone, even at the end of its travel, hardly ever broke a face; several of one feature moved together
 ## did -- the mouth's first, then the eyes'. So a face carries a LOAD: over the catalogue's face tabs, the tab's
-## weight times the sum of its sliders' squares; and the load stays within a BUDGET. FLAME's sliders (the creator's
+## weight times the sum of its sliders' squares; and the load stays within a BUDGET. A slider that breaks faces sooner
+## one way has a weight of its own that way (the lower lip's corners pulled down). FLAME's sliders (the creator's
 ## overall shape axes) are real faces' directions: they carry none, nor do the body's.
 ##
 ## Reversible: a stored look is never rewritten. limit() applies where a look is SHOWN (HumanAppearance) and the
@@ -23,7 +24,9 @@ const EPSILON: float = 1e-4
 ## 1 = the budget fitted on the verdicts; lower = looser (the budget is divided by it); 0 = no limit at all.
 static var strength: float = 1.0
 static var _budget: float = -1.0
-static var _weights := PackedFloat32Array()
+## Per catalogue slider id, the load per squared unit below 0 and above it.
+static var _down := PackedFloat32Array()
+static var _up := PackedFloat32Array()
 
 
 static func _ensure() -> void:
@@ -32,10 +35,15 @@ static func _ensure() -> void:
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(LIMITS_PATH))
 	var tabs: Dictionary = parsed.get("tabs", {}) if parsed is Dictionary else {}
 	_budget = float(parsed.get("budget", INF)) if parsed is Dictionary else INF
+	var directions: Dictionary = parsed.get("directions", {}) if parsed is Dictionary else {}
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
-	_weights.resize(sliders.size())
+	_down.resize(sliders.size())
+	_up.resize(sliders.size())
 	for id in sliders.size():
-		_weights[id] = float(tabs.get(String(sliders[id]["tab"]), 0.0))
+		var tab_weight: float = float(tabs.get(String(sliders[id]["tab"]), 0.0))
+		var own: Dictionary = directions.get(String(sliders[id]["key"]), {})
+		_down[id] = float(own.get("-", tab_weight))
+		_up[id] = float(own.get("+", tab_weight))
 
 
 ## The load a face may carry at the current strength (INF: no limit).
@@ -44,10 +52,12 @@ static func budget() -> float:
 	return INF if strength <= 0.0 else _budget / strength
 
 
-## The load slider [param id] carries per squared unit (0: none).
-static func weight(id: int) -> float:
+## The load slider [param id] carries per squared unit, set to [param v] (0: none).
+static func weight(id: int, v: float) -> float:
 	_ensure()
-	return _weights[id] if id >= 0 and id < _weights.size() else 0.0
+	if id < 0 or id >= _up.size():
+		return 0.0
+	return _down[id] if v < 0.0 else _up[id]
 
 
 ## The load of [param look]'s face.
@@ -55,7 +65,7 @@ static func load_of(look: CharacterAppearance) -> float:
 	var total: float = 0.0
 	for id: int in look.modifiers:
 		var v: float = float(look.modifiers[id])
-		total += weight(id) * v * v
+		total += weight(id, v) * v * v
 	return total
 
 
@@ -69,7 +79,7 @@ static func limit(look: CharacterAppearance) -> CharacterAppearance:
 		return out
 	var shrink: float = sqrt(allowed / total)
 	for id: int in out.modifiers.keys():
-		if weight(id) > 0.0:
+		if weight(id, float(out.modifiers[id])) > 0.0:
 			var v: float = float(out.modifiers[id]) * shrink
 			v = signf(v) * floorf(absf(v) * STEPS) / STEPS
 			if v == 0.0:
@@ -83,11 +93,11 @@ static func limit(look: CharacterAppearance) -> CharacterAppearance:
 ## budget allows it, else the furthest value on the way, on the stored grid. Back towards 0 is always allowed (a look
 ## made before the limits, or under a looser strength, may already be past them).
 static func max_move(look: CharacterAppearance, id: int, wanted: float) -> float:
-	var w: float = weight(id)
+	var w: float = weight(id, wanted)
 	if w <= 0.0:
 		return wanted
 	var current: float = float(look.modifiers.get(id, 0.0))
-	var room: float = budget() - (load_of(look) - w * current * current)
+	var room: float = budget() - (load_of(look) - weight(id, current) * current * current)
 	var reach: float = floorf(sqrt(maxf(room, 0.0) / w) * STEPS) / STEPS
 	if absf(wanted) <= reach:
 		return wanted

@@ -34,9 +34,12 @@ func _pushed() -> CharacterAppearance:
 
 
 func test_the_mouth_weighs_most_and_flame_nothing() -> void:
-	assert_almost_eq(CreatorLimits.weight(_id("Mouth_Lips_UpperAngle")), 1.0, 1e-6, "the mouth: the heaviest tab")
-	assert_gt(CreatorLimits.weight(_id("Eye_Size")), CreatorLimits.weight(_id("Nose_NoseHeight")))
-	assert_eq(CreatorLimits.weight(_id("FLAME_Identity_00")), 0.0, "FLAME's directions are real faces'")
+	assert_almost_eq(CreatorLimits.weight(_id("Mouth_Lips_UpperAngle"), 1.0), 1.0, 1e-6, "the mouth: the heaviest tab")
+	assert_gt(CreatorLimits.weight(_id("Eye_Size"), 1.0), CreatorLimits.weight(_id("Nose_NoseHeight"), 1.0))
+	assert_eq(CreatorLimits.weight(_id("FLAME_Identity_00"), 1.0), 0.0, "FLAME's directions are real faces'")
+	var corners: int = _id("Mouth_Lips_LowerAngle")
+	assert_gt(CreatorLimits.weight(corners, -1.0), 2.0 * CreatorLimits.weight(corners, 1.0),
+			"the lower lip's corners pulled down: a weight of their own")
 	assert_lt(CreatorLimits.budget(), 1.0)
 
 
@@ -85,6 +88,16 @@ func test_a_slider_stops_where_the_budget_ends() -> void:
 	var other: int = _id("Mouth_Lips_LowerAngle")
 	assert_lt(absf(CreatorLimits.max_move(look, other, -1.0)), 0.1, "the mouth's budget spent: the next one barely moves")
 	assert_eq(CreatorLimits.max_move(look, _id("FLAME_Identity_01"), 1.0), 1.0, "a FLAME slider is free")
+
+
+func test_the_lower_lips_corners_stop_sooner_downwards() -> void:
+	var look: CharacterAppearance = CharacterAppearance.random(9)
+	var corners: int = _id("Mouth_Lips_LowerAngle")
+	var down: float = CreatorLimits.max_move(look, corners, -1.0)
+	var up: float = CreatorLimits.max_move(look, corners, 1.0)
+	assert_lt(-down, 0.5 * up, "down they stop far sooner than up")
+	look.modifiers[corners] = down
+	assert_lte(CreatorLimits.load_of(look), CreatorLimits.budget() + CreatorLimits.EPSILON)
 
 
 func test_a_look_past_the_limits_may_always_come_back() -> void:
