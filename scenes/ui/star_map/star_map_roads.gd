@@ -32,8 +32,9 @@ const COLOURS: Dictionary = {
 	# A village's footpath (RoadSnap.KIND_NAMES): the palest of the ways one walks or drives.
 	"path": Color(0.90, 0.86, 0.74),
 }
-## No village road at all: what a body without live data answers. ONE array, so that asking twice
-## does not read as a change (see _village_roads_laid).
+## No village road at all: what a body without live data answers. NOT to be told by identity: read
+## through a function or from another script, the constant is not the same array twice (is_same
+## says no), which is why [method show_over] takes two empty answers for the same one.
 const NO_VILLAGE_ROADS: Array = []
 const UNKNOWN_COLOUR: Color = Color(0.85, 0.85, 0.85)
 ## The kind of way drawn with sleepers across it.
@@ -170,12 +171,16 @@ static func village_roads_of(planet: Planet) -> Array:
 ## every ring. When the size changes, everything laid is laid again.
 ##
 ## [param village_roads] are the streets inside the body's villages ([method village_roads_of]), which
-## the pack does not hold. Told apart by IDENTITY: a new array is a change, and everything is laid again.
+## the pack does not hold. Told apart by IDENTITY: a new array is a change, and everything is laid
+## again -- but for two empty ones, which are no streets both times.
 func show_over(tiles: Dictionary, metres_per_pixel: float, radius_m: float,
 		village_roads: Array = NO_VILLAGE_ROADS) -> void:
 	var step: float = sign_length(metres_per_pixel, radius_m)
 	var spans_shown: bool = marks_spans(metres_per_pixel)
-	var same_village: bool = is_same(village_roads, _village_roads_laid)
+	# Empty twice is no change: is_same alone took a body that is not loaded for a new set of streets
+	# at every frame, and laid its whole view again each time.
+	var same_village: bool = is_same(village_roads, _village_roads_laid) \
+			or (village_roads.is_empty() and _village_roads_laid.is_empty())
 	_radius_m = radius_m
 	if not is_equal_approx(step, _sign_step) or spans_shown != _spans_shown or not same_village:
 		_sign_step = step

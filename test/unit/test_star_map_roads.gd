@@ -422,11 +422,9 @@ func test_a_new_village_road_is_a_new_array() -> void:
 ## the heights are read through is, on a client, the chart's own copy of the scene's: it knows no
 ## village, and the map read from it drew no street at all (playtest 2026-11-20).
 func test_the_streets_are_those_of_the_loaded_planet() -> void:
-	assert_true(is_same(StarMapRoads.village_roads_of(null), StarMapRoads.NO_VILLAGE_ROADS),
-			"a body that is not loaded has none, and says so with the one same array")
+	assert_true(StarMapRoads.village_roads_of(null).is_empty(), "a body that is not loaded has none")
 	var planet: Planet = autofree(Planet.new())
-	assert_true(is_same(StarMapRoads.village_roads_of(planet), StarMapRoads.NO_VILLAGE_ROADS),
-			"nor has a body without data")
+	assert_true(StarMapRoads.village_roads_of(planet).is_empty(), "nor has a body without data")
 	var data := PlanetData.new()
 	data.radius = STREET_RADIUS_M
 	data.max_quadtree_depth = 14
@@ -479,3 +477,13 @@ func test_the_ways_are_drawn_under_every_marker() -> void:
 	add_child_autofree(canyons)
 	assert_lt(canyons._material.render_priority, roads._strip_material.render_priority,
 			"and the canyons still under the roads, strips included")
+
+
+## No street, said twice, is no change -- whichever array says it. Told by identity alone, a body that
+## is not loaded was handed a "new" empty set at every frame and its whole view was laid again each time.
+func test_no_street_said_twice_is_no_change() -> void:
+	var roads: StarMapRoads = _roads()
+	roads.show_over({}, 10.0, STREET_RADIUS_M, [])
+	var laid: Array = roads._village_roads_laid
+	roads.show_over({}, 10.0, STREET_RADIUS_M, [])
+	assert_true(is_same(roads._village_roads_laid, laid), "not taken for a new set of streets")
