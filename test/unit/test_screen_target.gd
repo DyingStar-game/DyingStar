@@ -10,7 +10,7 @@ var _field: LineEdit
 
 func before_each() -> void:
 	_building = Node3D.new()
-	var sync: Node = load("res://scenes/globals/prop_sync.gd").new()
+	var sync: Node = PropSync.new()
 	sync.name = "PropSync"
 	sync.uuid = "building-uuid"
 	_building.add_child(sync)
@@ -43,7 +43,7 @@ func test_a_screen_is_named_by_its_networked_node_and_path() -> void:
 
 
 func test_a_machine_networked_on_its_own_is_named_by_itself_and_inside_a_building_by_the_building() -> void:
-	var own: Node = load("res://scenes/globals/prop_sync.gd").new()
+	var own: Node = PropSync.new()
 	own.name = "PropSync"
 	_screen.add_child(own)
 	assert_eq(ScreenTarget.address_of(_screen), {"target_uuid": "building-uuid", "screen": "Console"},
@@ -84,3 +84,42 @@ func test_an_announced_delivery_is_joined_at_the_right_second() -> void:
 	assert_eq(ScreenTarget.time_left(event, 5.0, 102.0), 3.0, "2 s in: 3 s left")
 	assert_eq(ScreenTarget.time_left(event, 5.0, 200.0), 0.0, "long over: nothing to show (a re-broadcast)")
 	assert_eq(ScreenTarget.time_left(event, 5.0, 99.0), 5.0, "a clock a little behind: never more than it lasts")
+
+
+## What announce() sends, kept: stands for the player the event travels through.
+class Via:
+	extends Node
+	var sent: Dictionary = {}
+
+	func server_send_properties_to_client(properties: Dictionary) -> void:
+		sent = properties
+
+
+## The stamp and its reading are on the REFERENCE clock, not on each machine's own. A computer 3 s ahead
+## of the server showed a 5 s delivery starting at 3 (playtest 2026-11-20).
+func test_a_delivery_is_timed_on_the_reference_clock() -> void:
+	var own_offset: float = Globals._clock_offset
+	# The server: its clock is the reference, near enough.
+	Globals._clock_offset = 0.0
+	var via: Via = autofree(Via.new())
+	ScreenTarget.announce(_screen, via, {"state": "delivering", "seconds": 5.0})
+	var event: Dictionary = via.sent.get("screen_event", {})
+	assert_almost_eq(float(event.get("at", 0.0)), Time.get_unix_time_from_system(), 0.5,
+			"stamped with the reference clock")
+	# A client whose computer runs 3 s fast: calibrated, it knows the reference is 3 s behind its own.
+	var fast_now: float = Time.get_unix_time_from_system() + 3.0
+	Globals._clock_offset = -3.0
+	assert_almost_eq(ScreenTarget.time_left(event, 5.0, fast_now + Globals._clock_offset), 5.0, 0.5,
+			"just announced: all of it is left, whatever the computer's own clock says")
+	assert_almost_eq(ScreenTarget.time_left(event, 5.0, fast_now), 2.0, 0.5,
+			"on the computer's own clock, three of the five seconds were already gone")
+	Globals._clock_offset = own_offset
+
+
+## Left to itself, the reading takes the reference clock: the same answer as the stamp's own machine.
+func test_the_time_left_is_read_on_the_reference_clock() -> void:
+	var own_offset: float = Globals._clock_offset
+	Globals._clock_offset = -3.0
+	var event: Dictionary = {"at": Globals.reference_time()}
+	assert_almost_eq(ScreenTarget.time_left(event, 5.0), 5.0, 0.5, "the offset is on both sides: nothing lost")
+	Globals._clock_offset = own_offset
