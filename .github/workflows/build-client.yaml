@@ -180,11 +180,8 @@ jobs:
                  ~/.nuget/packages/godotsharpeditor/${{ env.GODOT_VERSION }} \
                  ~/.nuget/packages/godot.net.sdk/${{ env.GODOT_VERSION }} \
                  ~/.nuget/packages/godot.sourcegenerators/${{ env.GODOT_VERSION }}
-          ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64 \
-            --headless \
-            --path "$GITHUB_WORKSPACE" \
-            --verbose \
-            --export-release "${{ matrix.preset }}" "$GITHUB_WORKSPACE/${{ matrix.output_file }}"
+          # On the runner host's GPU, so that the shaders are baked into the game: see the script.
+          tools/ci/export_client.sh "${{ matrix.preset }}" "$GITHUB_WORKSPACE/${{ matrix.output_file }}"
 
       - name: Copy and configure client.ini
         run: |
