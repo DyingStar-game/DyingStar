@@ -95,8 +95,7 @@ func _without_garments(a: CharacterAppearance) -> PackedByteArray:
 func test_wire_size_is_small() -> void:
 	for seed_value in 50:
 		var text: String = CharacterAppearance.random(seed_value).encode()
-		# FLAME's first 20 directions, and every face slider moves a little (those that would not show are
-		# dropped): ~60 of them, up to ~65; plus the six skin details.
+		# FLAME's 50 directions and 6 to 9 body sliders; plus the six skin details.
 		assert_lt(text.length(), 256, "a random look stays a short string (%d chars)" % text.length())
 
 
@@ -229,9 +228,8 @@ func test_random_garments_suit_the_body() -> void:
 		assert_true(covered.has("3") and covered.has("8"), "seed %d: torso and legs covered" % seed_value)
 
 
-# Version 7: the face, body and hair of version 6 to the byte (its hair drawn from hair_stats.json as re-measured with
-# the level hairline and the low one, its flyaways from the late fields' own numbers, the nose's bridge from the late
-# face sliders'), its garments drawn from their own numbers (the outfit it wore in version 6: the same suit and shoes).
-const PINNED_NPC_0001 := "B95UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8AAFBbUWBRFHCNhZ4ZdV0AAAAT_wAAADeZAAAzAy0GKQjgCzQQGBEcEhcUGx8v" \
-		+ "JNQm2SjNLOgtOC_pMBsxIjKvN9c5Czv5PAJA9UPVRORMek0dTy1Q51EhXx1g-2H9YhxjLGT2ZfFm4Ge3aP1pYWrjaxlsAW37bhlvB3DtcfZy3ZHQ" \
-		+ "AgQAAAUAAA"
+# 2026-11-20: a face of FLAME's 50 directions alone, no catalogue face slider (rated by eye: the drawn sliders made
+# pouts and doll's eyes); its hair and outfit as before, its body sliders from the draws the face no longer takes.
+const PINNED_NPC_0001 := "B95UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8AAG1rZ2BBFHCNhZ4ZdV0AAAAT_wAAADeZAAA3FSkWIBoBHQ85El8qYNVhEGK7YwNkB2X6" \
+		+ "Zh1nvmgiaT9qBWu9bNlt7m6gbwFwAXHjcupz_3RLdQN2_3cueCJ59Xr_e6R86n3Cfgx_KYAXgf2C2IMOhAqFBIY8h_qI-YnKik-LB4wPjQuO" \
+		+ "3487kMMCBAAABQAA"

@@ -75,23 +75,16 @@ const MAX_MODIFIERS: int = 96
 const ORIGIN_AFRICAN: int = 0
 const ORIGIN_EAST_ASIAN: int = 1
 const ORIGIN_WHITE: int = 2
-## A random face moves every face slider within +- this (a bell: most stay small).
-const RANDOM_FACE_SPREAD: float = 0.5
-## Under this a drawn slider is left at rest: it would not show, and a look is replicated to everyone near.
-const RANDOM_SMALLEST: float = 0.15
-## ... and pushes this many of them far (0.6 .. 1 either way): what makes a face that person's.
-const RANDOM_STRONG_FEATURES: int = 2
-## Share of the measured real spread (face_stats.json) a random face is drawn with: what the survey measured
-## on photos carries its own noise on top of the faces' variety.
-const RANDOM_REAL_SPREAD: float = 0.75
 ## Sliders carried over from FLAME 2023 Open (tools/character/flame): each shape key is one standard deviation of
 ## real faces along one of FLAME's identity directions; a slider's full travel reaches FLAME_RANGE of them.
 const FLAME_PREFIX: String = "FLAME_Identity_"
 const FLAME_RANGE: float = 3.0
-## FLAME directions a random face draws from their law (the first 20 hold 91 % of real faces' variation), at this
-## share of their spread.
-const RANDOM_FLAME_DIRECTIONS: int = 20
-const RANDOM_FLAME_SPREAD: float = 0.9
+## A random face is FLAME's alone: every one of its directions drawn as real faces spread along them (1 sd each),
+## no catalogue face slider. Drawn at random, those sliders pouted the lips, rounded the eyes into a doll's and
+## puffed the cheeks -- where faces fitted to photos, FLAME's alone, looked real (rated by eye against random
+## European faces, 2026-11-20). Directions past the first 20 add little, but what they add is real.
+const RANDOM_FLAME_DIRECTIONS: int = 50
+const RANDOM_FLAME_SPREAD: float = 1.0
 ## Expression lines with age: none before WRINKLES_FROM_YEARS, full at WRINKLES_FULL_AT_YEARS, straight between.
 ## Measured on 4 073 adult faces of FFHQ without make-up (forehead lines and crow's feet, face_survey
 ## skin_measure.py): their median rises nearly linearly from the mid-twenties and keeps rising past 60.
@@ -101,10 +94,6 @@ const WRINKLES_FULL_AT_YEARS: float = 70.0
 ## bumps, which a head of hair -- one rigid mesh carried by an affine fit (HairStrands.fit) -- cannot follow.
 const RANDOM_LEFT_ALONE: Array[String] = ["Generic_Assymetry", "Chin_ChinCleft", "Mouth_NoTeeth", "Head_TopScalpPotrusion",
 		"Head_SideScalpPotrusion", "Head_BackScalpPotrusion"]
-## Face sliders added to the catalogue after random looks were pinned (the nose's bridge, 2026-11): drawn apart from
-## their own numbers (seeded by the look's seed), so that adding them left every NPC's face as it was -- as real faces
-## spread along them: [mean, sd] of the sliders fitted to Ava-256's 3D faces (tools/character/face_survey/ava).
-const RANDOM_LATE_FACE: Dictionary = {"Nose_Dorsum_Hump": [-0.18, 0.48], "Nose_Dorsum_Curve": [-0.3, 0.23]}
 const MAX_BYTES: int = HEADER_BYTES + 2 * MAX_MODIFIERS + 1 + 3 * MAX_GARMENTS
 const CATALOGUE_PATH: String = "res://assets/_universe/characters/human/human_catalogue.json"
 ## What real faces do with some sliders (tools/character/face_survey/stats.py, from FFHQ's adults): how far
@@ -650,52 +639,19 @@ static func random(seed_value: int) -> CharacterAppearance:
 	if not worn.is_empty() and not female:
 		_draw_beard(a, worn["beard"].values()[band], u, bell)
 	random_choice(rng, "outfit", "female" if female else "male", 0.0)  # drawn still: every draw after it stays put
-	# A face of their own: EVERY face slider moves (a face is the sum of many small differences -- a dozen
-	# sliders moved a little gave everyone the same face), and a few are pushed far: the nose, the jaw or
-	# the brow one remembers a person by. Then a few body sliders.
-	var sliders: Array = catalogue()["modifiers"]
-	var face_tabs: Array = ["head", "eyes", "nose", "mouth", "jaw", "ears"]
-	var face_ids: Array[int] = []
-	var body_ids: Array[int] = []
-	for id in sliders.size():
-		if String(sliders[id]["key"]) in RANDOM_LEFT_ALONE or sliders[id]["tab"] == "flame" \
-				or RANDOM_LATE_FACE.has(String(sliders[id]["key"])):
-			continue  # FLAME's directions and the late sliders are drawn apart, from their own spread
-		if face_tabs.has(sliders[id]["tab"]):
-			face_ids.append(id)
-		else:
-			body_ids.append(id)
-	# Where real faces were measured (face_stats.json), as they spread, men and women apart; elsewhere a bell.
-	# A normal draw from four uniforms: plain arithmetic, the same on every machine.
+	# A face of their own: FLAME's, a real face -- its origin's features (HumanMacros) on top. Then a few body
+	# sliders. A normal draw from four uniforms: plain arithmetic, the same on every machine.
 	var normal := func() -> float: return (u.call() + u.call() + u.call() + u.call() - 2.0) * 1.7320508
-	var stats: Dictionary = face_stats()
-	for id in face_ids:
-		var v: float = bell.call(-RANDOM_FACE_SPREAD, RANDOM_FACE_SPREAD)
-		var known: Dictionary = stats.get(String(sliders[id]["key"]), {})
-		if not known.is_empty():
-			var real: float = float(known["female" if female else "male"]) + float(known["sd"]) * RANDOM_REAL_SPREAD * normal.call()
-			v = clampf(real / float(known["range"]), -1.0, 1.0)
-		if absf(v) >= RANDOM_SMALLEST:  # a slider barely moved is not worth its two bytes on the wire
-			a.modifiers[id] = absf(v) if sliders[id]["unipolar"] else v
-	# Above all, a real face: FLAME's first directions, drawn as real faces spread along them.
 	for k in RANDOM_FLAME_DIRECTIONS:
 		var flame_id: int = modifier_id("%s%02d" % [FLAME_PREFIX, k])
 		if flame_id != -1:
 			a.modifiers[flame_id] = clampf(normal.call() * RANDOM_FLAME_SPREAD / FLAME_RANGE, -1.0, 1.0)
-	var late := RandomNumberGenerator.new()
-	late.seed = hash([seed_value, "late_face_sliders"])
-	for key: String in RANDOM_LATE_FACE:
-		var late_id: int = modifier_id(key)
-		var spread: Array = RANDOM_LATE_FACE[key]
-		var roll: float = (late.randf() + late.randf() + late.randf() + late.randf() - 2.0) * 1.7320508
-		var late_v: float = clampf(float(spread[0]) + float(spread[1]) * roll, -1.0, 1.0)
-		if late_id != -1 and absf(late_v) >= RANDOM_SMALLEST:
-			a.modifiers[late_id] = late_v
-	for _strong in mini(RANDOM_STRONG_FEATURES, face_ids.size()):
-		var id: int = face_ids[rng.randi() % face_ids.size()]
-		var v: float = (0.6 + 0.4 * u.call()) * (1.0 if u.call() < 0.5 else -1.0)
-		if not stats.has(String(sliders[id]["key"])):  # those already spread as real faces do
-			a.modifiers[id] = absf(v) if sliders[id]["unipolar"] else v
+	var sliders: Array = catalogue()["modifiers"]
+	var face_tabs: Array = ["head", "eyes", "nose", "mouth", "jaw", "ears", "flame"]
+	var body_ids: Array[int] = []
+	for id in sliders.size():
+		if not String(sliders[id]["key"]) in RANDOM_LEFT_ALONE and not face_tabs.has(sliders[id]["tab"]):
+			body_ids.append(id)
 	for _body in mini(6 + rng.randi() % 4, body_ids.size()):
 		var id: int = body_ids[rng.randi() % body_ids.size()]
 		var v: float = bell.call(-0.7, 0.7)
