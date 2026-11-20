@@ -2934,9 +2934,23 @@ func set_poi_zone(uuid: String, poi_name: String, local_pos: Vector3, radius_m: 
 	if not old.is_empty() and float(old["radius"]) == radius_m \
 			and (old["local_pos"] as Vector3).normalized().distance_to(dir) * _poi_radius_m() < 0.5:
 		old["name"] = poi_name
+		old["basis"] = basis
+		old["layout"] = layout
 		return  # the same ground: a village re-seated radially, or a mere update
-	_poi_zones[uuid] = {"name": poi_name, "local_pos": local_pos, "radius": radius_m, "ground": null}
+	_poi_zones[uuid] = {"name": poi_name, "local_pos": local_pos, "radius": radius_m, "ground": null,
+			"basis": basis, "layout": layout}
 	_poi_zones_changed([old, _poi_zones[uuid]])
+
+
+## The villages among the POI zones, those registered with a layout: {local_pos, basis, layout} each,
+## in the planet's frame -- where a village stands, how it is turned and what it is made of, for what
+## must reach a place INSIDE one rather than its centre (VillageArrival).
+func village_zones() -> Array:
+	var out: Array = []
+	for zone: Dictionary in _poi_zones.values():
+		if str(zone.get("layout", "")) != "":
+			out.append({"local_pos": zone["local_pos"], "basis": zone["basis"], "layout": zone["layout"]})
+	return out
 
 
 ## The common ground of the village [param uuid] (VillageBed): its [param layout]'s footprint
