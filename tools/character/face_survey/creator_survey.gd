@@ -24,6 +24,7 @@ extends Control
 ## --limits=S renders through the creator's limits at strength S (CreatorLimits.strength; default 0: none -- a survey
 ## shows what was asked for; 1 checks the limits themselves): a slider then stops where the creator's would.
 ## --controls replaces them too: every sample is a control, random()'s look as it is (to judge random() alone).
+## --no-types draws every look as if no origin had face types (FaceTypes): random() as before them, to compare.
 ## --combos=mouth,eyes --levels=0.5,1,1.5,2,3 replaces them too: one id in ten a control, the others 2 to 5 sliders of
 ## ONE tab moved together (combo_gestures), their squares summing to one of the levels -- how much a tab can take
 ## in all, the tabs and levels taking turns along the ids.
@@ -269,6 +270,9 @@ func _ready() -> void:
 	_origin = int(args.get("origin", "-1"))
 	CreatorLimits.strength = float(args.get("limits", "0"))
 	_controls = args.has("controls")
+	if args.has("no-types"):
+		for typed_origin: int in FaceTypes.FILES:
+			FaceTypes._data[typed_origin] = {}  # read as "no file": FLAME alone
 	var first: int = int(args.get("from", "1"))
 	var count: int = int(args.get("count", "800"))
 	if args.has("sweep"):
