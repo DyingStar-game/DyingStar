@@ -541,9 +541,30 @@ rebasé : son modèle est re-porté sur la prise de develop, `WeatherSource`, sa
   d'aperçu (`GlobeView.show_overlay`, 2 à 3 s de calcul sur un fil de travail) ; relâché, les biomes
   reviennent. Dans l'éditeur l'instant est l'horloge de l'ordinateur et la saison une sinusoïde de
   l'inclinaison : proche du jeu, pas identique. Exemple : `docs/nova_captures/carte_meteo.png`.
-- **Météo locale** (18/11) : `scenes/planet/weather/weather_local.gd` (`WeatherLocal`), les phénomènes locaux
+- **Ce qui vient du prototype, ce qui n'en vient pas** (21/11) : le service Rust (`services/weather`), Horizon et
+  la charte Kubernetes ne sont pas dans ce dépôt ; le jeu calcule le même modèle de son côté.
+  - Repris tels quels de `wip/weather` : `climate_profile.gd`, les profils des 20 corps
+    (`scenes/planet/climates/`), `weather_sampler.gd`, `weather_local.gd` (`WeatherLocal` : le vent là où l'on
+    se tient — canalisé le long d'un canyon et abrité en travers, rafales, vent qui forcit avec la hauteur) et
+    leurs tests.
+  - Réécrit d'après le service : `weather_synoptic.gd` (jumeau de `synoptic.rs` et `hash.rs`).
+  - Adapté : `weather_canyon.gd` (`WeatherCanyon`) remplace `Planet.canyon_at` du prototype, sans toucher à
+    `Planet`. La direction de la tranchée y est trouvée par les deux blocs de part et d'autre
+    (`crack_cell`), le prototype la lisait dans une fonction que develop n'a pas (`crack_axis`).
+  - Pas du prototype : `weather_relief.gd` (`WeatherRelief`, ci-dessous), `weather_phenomena.gd`,
+    `weather_map.gd`. `WeatherRelief` s'appelait `WeatherLocal` jusqu'au 21/11 : c'était le nom d'un fichier
+    du prototype, pris par erreur.
+  - Pas porté : `weather_forces.gd` (la poussée du vent sur les véhicules, côté serveur), les nuages, la carte
+    en jeu du prototype (F2/M), l'objet réseau `weather_system`.
+  - La prise `WeatherSource.sample` ne donne pas de hauteur : le vent y est pris au sol.
+    `ClimateWeather.sample_local(planète, position)` donne le vent à la hauteur voulue.
+  - Vérifié : ses 5 tests de `WeatherLocal` passent sans modification ; en vue jeu les rafales respirent
+    (facteur de 0,76 à 1,02 en 6 s) et le vent forcit avec la hauteur (×1,73 à 500 m). Le canyon n'est
+    vérifié que par un test sur des données de synthèse : aucune tranchée trouvée près du point d'essai en
+    vue jeu.
+- **Météo locale** (18/11) : `scenes/planet/weather/weather_relief.gd` (`WeatherRelief`), les phénomènes locaux
   du rapport, posés par-dessus le climat. Fonctions pures comme le reste : même lieu, même instant, même
-  météo pour tous les joueurs. Tests : `test/unit/test_weather_local.gd`.
+  météo pour tous les joueurs. Tests : `test/unit/test_weather_relief.gd`.
   - *Brise de plateau* : l'air monte les pentes le jour (maximum à 15 h, 6 m/s sur une pente pleine) et les
     redescend la nuit, à 60 %. Au-delà de 60° de latitude la pente draine toute la journée (15 m/s).
   - *Rafales sous le vent* : dans les vents d'ouest, derrière un massif (sol 10 km en amont plus haut), le
@@ -585,7 +606,7 @@ rebasé : son modèle est re-porté sur la prise de develop, `WeatherSource`, sa
     Mesure après correction, mur poussé à 60 m/s sur 4,8 km de relief, caméra fixe : le sol sous le milieu
     varie de 800 m, le haut de la boîte reste à 9 125 m (± 35 m) et la crête à l'écran bouge de 2 à 8
     pixels entre deux captures, sans saut. Pas de mesure équivalente avant correction.
-  - *Vie* (`WeatherLocal` : `grown`, `spent`) : le mur naît bas et court (20 % de sa hauteur, 45 % de sa
+  - *Vie* (`WeatherRelief` : `grown`, `spent`) : le mur naît bas et court (20 % de sa hauteur, 45 % de sa
     longueur) et grandit en 3 minutes ; à partir de 55 % de sa vie il s'affaisse (jusqu'à 45 % de sa hauteur),
     ses bords s'adoucissent, les volutes le rongent et sa poussière s'éclaircit jusqu'à rien.
   - *Éclairs* (`dust_sparks.gd`, `DustSparks`, `dust_bolt.gdshader`) : dans un mur fort, jusqu'à 5 petits

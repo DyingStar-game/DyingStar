@@ -4,9 +4,9 @@ extends CanvasLayer
 ## the player's place on it.
 
 const DIRECTIONS := ["nord", "nord-est", "est", "sud-est", "sud", "sud-ouest", "ouest", "nord-ouest"]
-const PHENOMENA := {WeatherLocal.NAME_BREEZE: "brise de plateau", WeatherLocal.NAME_KATABATIC: "vent de pente",
-		WeatherLocal.NAME_LEE: "rafales sous le vent", WeatherLocal.NAME_HAZE: "voile de poussière",
-		WeatherLocal.NAME_DEVIL: "tourbillon", WeatherLocal.NAME_WALL: "mur de poussière"}
+const PHENOMENA := {WeatherRelief.NAME_BREEZE: "brise de plateau", WeatherRelief.NAME_KATABATIC: "vent de pente",
+		WeatherRelief.NAME_LEE: "rafales sous le vent", WeatherRelief.NAME_HAZE: "voile de poussière",
+		WeatherRelief.NAME_DEVIL: "tourbillon", WeatherRelief.NAME_WALL: "mur de poussière"}
 const REFRESH_S := 0.5
 ## How long a note stays on screen, seconds.
 const NOTE_S := 12.0

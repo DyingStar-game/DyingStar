@@ -1,108 +1,95 @@
 extends GutTest
-## WeatherLocal: the weather the relief and the day make (plateau breeze, lee gusts, haze, dust devils,
-## dust walls), over Tarsis 3's climate.
-
-const NOON_LON := 0.0  # the star stands over longitude 0: noon there, 18 h at longitude 90
-
-var profile: ClimateProfile
+## WeatherLocal, the wind where you stand: in a canyon the part along the trench is channelled and the
+## part across is sheltered, faded with how deep you are; the gusts breathe around the mean, bounded,
+## continuous over the ground, the same for the same seed, clock and place; apply() keeps the regional
+## wind beside the local one.
 
 
-func before_all() -> void:
-	profile = ClimateWeather.for_body("tarsis_3").profile
+func test_a_trench_channels_the_wind_along_it_and_shelters_across() -> void:
+	var axis := Vector2(1.0, 0.0)  # a trench running east-west
+	var along : Vector2 = WeatherLocal.canyon_wind(10.0, 0.0, axis, 1.0)
+	assert_almost_eq(along.x, 10.0 * WeatherLocal.CANYON_ALONG_GAIN, 1e-9, "along: channelled")
+	assert_almost_eq(along.y, 0.0, 1e-9)
+	var across : Vector2 = WeatherLocal.canyon_wind(0.0, 10.0, axis, 1.0)
+	assert_almost_eq(across.y, 10.0 * WeatherLocal.CANYON_ACROSS_FACTOR, 1e-9, "across: sheltered")
+	var slant : Vector2 = WeatherLocal.canyon_wind(10.0, 10.0, axis, 1.0)
+	assert_almost_eq(slant.x, 18.0, 1e-9)
+	assert_almost_eq(slant.y, 4.0, 1e-9, "each part on its own")
+	var half : Vector2 = WeatherLocal.canyon_wind(10.0, 10.0, axis, 0.5)
+	assert_almost_eq(half.x, 14.0, 1e-9, "halfway down: half the gain")
+	assert_almost_eq(half.y, 7.0, 1e-9)
+	assert_eq(WeatherLocal.canyon_wind(10.0, 10.0, axis, 0.0), Vector2(10.0, 10.0), "on the plateau: untouched")
+	assert_eq(WeatherLocal.canyon_wind(10.0, 10.0, Vector2.ZERO, 1.0), Vector2(10.0, 10.0), "no axis known: untouched")
+	var tilted : Vector2 = WeatherLocal.canyon_wind(10.0, 0.0, Vector2(2.0, 0.0), 1.0)
+	assert_almost_eq(tilted.x, 18.0, 1e-9, "the axis is normalised")
 
 
-func test_the_breeze_climbs_by_day_and_drains_weaker_at_night() -> void:
-	var east_slope := Vector2(WeatherLocal.SLOPE_FULL, 0.0)  # the ground rises toward the east
-	var day := WeatherLocal.breeze(east_slope, WeatherSampler.BAND_TRADES, WeatherLocal.BREEZE_PEAK_H)
-	assert_almost_eq(day.x, WeatherLocal.BREEZE_M_S, 1e-6, "whole up the slope at the afternoon peak")
-	var night := WeatherLocal.breeze(east_slope, WeatherSampler.BAND_TRADES, WeatherLocal.BREEZE_PEAK_H + 12.0)
-	assert_almost_eq(night.x, -WeatherLocal.BREEZE_M_S * WeatherLocal.BREEZE_NIGHT_SHARE, 1e-6, "down it, weaker, at night")
-	assert_eq(WeatherLocal.breeze(Vector2.ZERO, WeatherSampler.BAND_TRADES, 15.0), Vector2.ZERO, "none on flat ground")
-	var polar := WeatherLocal.breeze(east_slope, WeatherSampler.BAND_POLAR, WeatherLocal.BREEZE_PEAK_H)
-	assert_almost_eq(polar.x, -WeatherLocal.KATABATIC_M_S, 1e-6, "past the polar edge the slope drains even by day")
+func test_gusts_breathe_around_the_mean_and_never_step() -> void:
+	var lo : float = INF
+	var hi : float = -INF
+	var sum : float = 0.0
+	var n : int = 0
+	for i in 600:  # ten minutes, every second
+		var g : float = WeatherLocal.gust_factor(20261006, 12.345, -8.7, 1.0e9 + float(i))
+		lo = minf(lo, g)
+		hi = maxf(hi, g)
+		sum += g
+		n += 1
+	assert_gte(lo, 1.0 - WeatherLocal.GUST_SWING - 1e-9, "never under the trough")
+	assert_lte(hi, 1.0 + WeatherLocal.GUST_SWING + 1e-9, "never over the peak")
+	assert_gt(hi - lo, 0.3, "it does breathe")
+	assert_almost_eq(sum / float(n), 1.0, 0.05, "around the mean")
+	# Continuity in time and in space: a tenth of a second, or ten metres, change little.
+	var a : float = WeatherLocal.gust_factor(20261006, 12.345, -8.7, 1.0e9)
+	var b : float = WeatherLocal.gust_factor(20261006, 12.345, -8.7, 1.0e9 + 0.1)
+	assert_lt(absf(a - b), 0.12, "a tenth of a second")
+	var c : float = WeatherLocal.gust_factor(20261006, 12.345 + 0.0001, -8.7, 1.0e9)
+	assert_lt(absf(a - c), 0.02, "ten metres over")
+	# Across a cell border too: the blend makes the field continuous.
+	var edge : float = 12.0 * WeatherLocal.GUST_CELL_DEG
+	var before : float = WeatherLocal.gust_factor(20261006, edge - 1e-6, -8.7, 1.0e9)
+	var after : float = WeatherLocal.gust_factor(20261006, edge + 1e-6, -8.7, 1.0e9)
+	assert_lt(absf(before - after), 1e-3, "no step at a cell border")
 
 
-func test_the_haze_lies_between_its_two_altitudes() -> void:
-	var trades := WeatherSampler.BAND_TRADES
-	assert_almost_eq(WeatherLocal.haze(trades, 2000.0, 500.0, 3500.0, 0.6), 0.6, 1e-6, "whole inside the layer")
-	assert_almost_eq(WeatherLocal.haze(trades, 0.0, 500.0, 3500.0, 0.6), 0.6 * WeatherLocal.HAZE_UNDER_SHARE, 1e-6, "thin under it")
-	assert_eq(WeatherLocal.haze(trades, 4000.0, 500.0, 3500.0, 0.6), 0.0, "none over it: the plateaus stand clear")
-	assert_lt(WeatherLocal.haze(WeatherSampler.BAND_WESTERLIES, 2000.0, 500.0, 3500.0, 0.6), 0.6, "thinner outside the trades")
+func test_gusts_are_the_same_for_the_same_inputs_and_differ_by_seed() -> void:
+	assert_eq(WeatherLocal.gust_factor(1, 0.0, 0.0, 123.0), WeatherLocal.gust_factor(1, 0.0, 0.0, 123.0))
+	var differ : bool = false
+	for i in 20:
+		if absf(WeatherLocal.gust_factor(1, 0.0, 0.0, float(i)) - WeatherLocal.gust_factor(2, 0.0, 0.0, float(i))) > 1e-6:
+			differ = true
+	assert_true(differ, "another seed, other gusts")
 
 
-func test_the_wind_gusts_behind_a_massif_in_the_westerlies_only() -> void:
-	assert_eq(WeatherLocal.lee_gain(WeatherSampler.BAND_TRADES, 2000.0, 100.0, 1), 1.0)
-	assert_eq(WeatherLocal.lee_gain(WeatherSampler.BAND_WESTERLIES, -500.0, 100.0, 1), 1.0, "none before a rise")
-	var gain := WeatherLocal.lee_gain(WeatherSampler.BAND_WESTERLIES, 2000.0, 100.0, 1)
-	assert_between(gain, 1.0 + WeatherLocal.LEE_GAIN * 0.6, 1.0 + WeatherLocal.LEE_GAIN, "behind a full drop")
+func test_apply_keeps_the_regional_wind_beside_the_local_one() -> void:
+	var sample := {"wind_east_m_s": 10.0, "wind_north_m_s": 0.0, "wind_speed_m_s": 10.0, "wind_from_deg": 270.0,
+			"dust_tau": 0.2}
+	var out : Dictionary = WeatherLocal.apply(sample, {"depth": 1.0, "axis": Vector2(1.0, 0.0)}, 1.2, 45.0)
+	assert_almost_eq(out["wind_east_m_s"], 10.0 * WeatherLocal.CANYON_ALONG_GAIN * 1.2, 1e-9, "channelled, then the gust")
+	assert_almost_eq(out["wind_speed_m_s"], 21.6, 1e-9)
+	assert_eq(out["wind_mean_east_m_s"], 10.0, "the regional wind kept")
+	assert_eq(out["wind_mean_speed_m_s"], 10.0)
+	assert_eq(out["gust_factor"], 1.2)
+	assert_eq(out["canyon_depth"], 1.0)
+	assert_eq(out["dust_tau"], 0.2, "the rest of the sample untouched")
+	assert_eq(sample["wind_east_m_s"], 10.0, "the input not written to")
+	var capped : Dictionary = WeatherLocal.apply(sample, {"depth": 1.0, "axis": Vector2(1.0, 0.0)}, 1.35, 20.0)
+	assert_almost_eq(capped["wind_speed_m_s"], 20.0, 1e-9, "the body's ceiling holds")
+	var plain : Dictionary = WeatherLocal.apply(sample, {}, 1.0, 45.0)
+	assert_almost_eq(plain["wind_east_m_s"], 10.0, 1e-9, "no canyon, no gust: the regional wind")
 
 
-func test_dust_devils_whirl_by_day_at_low_latitudes_and_the_same_for_everyone() -> void:
-	var at := Vector2(0.0, 3.0)
-	var day := WeatherLocal.devils_near(profile, at, 20000.0, 1000.0, 0.0, NOON_LON)
-	assert_gt(day.size(), 5, "devils near the equator at noon")
-	assert_eq(day, WeatherLocal.devils_near(profile, at, 20000.0, 1000.0, 0.0, NOON_LON), "a pure function")
-	assert_eq(WeatherLocal.devils_near(profile, at, 20000.0, 1000.0, 0.0, NOON_LON + 180.0).size(), 0, "none at night")
-	assert_eq(WeatherLocal.devils_near(profile, Vector2(0.0, 45.0), 20000.0, 1000.0, 0.0, NOON_LON).size(), 0, "none in the westerlies")
-	for devil: Dictionary in day:
-		assert_between(float(devil.radius_m), 5.0, 150.0)
-		assert_between(float(devil.wind_m_s), 10.0, 30.0)
-	if day.is_empty():
-		return
-	# The wind turns round the centre, strongest at the devil's radius, and the dust is in the core.
-	var one: Dictionary = day[0]
-	var centre := Vector2(one.lon, one.lat)
-	var r := profile.radius_m
-	var rim: Array = WeatherLocal.devil_effect(one, WeatherLocal.moved(centre, Vector2(float(one.radius_m), 0.0), r), r)
-	assert_almost_eq((rim[0] as Vector2).length(), float(one.wind_m_s) * float(one.strength), 0.01)
-	assert_almost_eq(absf((rim[0] as Vector2).y), (rim[0] as Vector2).length(), 0.01, "east of the centre the wind blows north or south")
-	var far: Array = WeatherLocal.devil_effect(one, WeatherLocal.moved(centre, Vector2(float(one.radius_m) * 5.0, 0.0), r), r)
-	assert_eq(far[0], Vector2.ZERO)
-	assert_eq(far[1], 0.0)
-
-
-func test_a_dust_wall_falls_from_a_cliff_in_the_evening_and_runs_downhill() -> void:
-	# A world whose ground rises toward the east everywhere, steeply: every wall runs west.
-	var cliff := func(_lon: float, _lat: float) -> Dictionary: return {"height_m": 0.0, "upslope": Vector2(0.3, 0.0)}
-	var flat := func(_lon: float, _lat: float) -> Dictionary: return {"height_m": 0.0, "upslope": Vector2.ZERO}
-	var at := Vector2(90.0, 10.0)
-	var walls := []
-	var sun := 0.0
-	# Somewhere in the hours the walls fall in, at longitude 90, a wall of these cells is running.
-	for step in 40:
-		sun = at.x - (WeatherLocal.WALL_FROM_H + step * 0.07 - 12.0) * 15.0
-		walls = WeatherLocal.walls_near(profile, at, 0.0, sun, cliff, {})
-		if not walls.is_empty():
-			break
-	assert_false(walls.is_empty(), "a wall runs in the evening")
-	if walls.is_empty():
-		return
-	var wall: Dictionary = walls[0]
-	assert_almost_eq(float(wall.east), -1.0, 1e-6, "down the slope")
-	assert_between(float(wall.speed_m_s), 10.0, 18.0)
-	assert_eq(WeatherLocal.walls_near(profile, at, 0.0, sun, flat, {}).size(), 0, "none without a cliff")
-	assert_eq(WeatherLocal.walls_near(profile, at, 0.0, at.x, cliff, {}).size(), 0, "none at noon")
-	# Behind the front: its wind and its dust. Ahead of it: nothing yet.
-	var front := Vector2(wall.lon, wall.lat)
-	var behind: Array = WeatherLocal.wall_effect(wall, WeatherLocal.moved(front, Vector2(200.0, 0.0), profile.radius_m), profile.radius_m)
-	assert_lt((behind[0] as Vector2).x, 0.0, "the wall's wind blows the way it runs")
-	assert_gt(float(behind[1]), 0.0, "and carries dust")
-	var ahead: Array = WeatherLocal.wall_effect(wall, WeatherLocal.moved(front, Vector2(-200.0, 0.0), profile.radius_m), profile.radius_m)
-	assert_eq(ahead[1], 0.0)
-
-
-func test_the_local_weather_is_laid_over_a_sample() -> void:
-	var weather := ClimateWeather.for_body("tarsis_3").duplicate() as ClimateWeather
-	weather.weather_enabled = false
-	var base := weather.sample_at(-39.5, 20.0, 0.0, 0.0, 0.0, -39.5 - 45.0)  # 15 h there
-	var slope := {"height_m": 2000.0, "upslope": Vector2(0.0, WeatherLocal.SLOPE_FULL)}
-	var got := WeatherLocal.apply(base, weather.profile, slope, [], [], Vector3(500.0, 3500.0, 0.6), 0.0)
-	assert_almost_eq(float(got.wind_north_m_s), float(base.wind_north_m_s) + WeatherLocal.BREEZE_M_S, 1e-4, "the breeze is added")
-	assert_almost_eq(float(got.dust_tau), 0.6, 1e-6, "the haze too")
-	assert_almost_eq(float(got.visibility_m), 3.912 / (0.6 / 1000.0), 1.0)
-	assert_true((got.phenomena as PackedStringArray).has(WeatherLocal.NAME_BREEZE))
-	assert_true((got.phenomena as PackedStringArray).has(WeatherLocal.NAME_HAZE))
-	assert_eq(float(base.dust_tau), 0.0, "the sample given is left as it was")
-	var top := WeatherLocal.apply(base, weather.profile, {"height_m": 4200.0}, [], [], Vector3(500.0, 3500.0, 0.6), 0.0)
-	assert_gt(float(top.updraft_m_s), 0.0, "the air climbs over a sunlit plateau")
-	assert_eq(float(top.dust_tau), 0.0, "which stands clear of the haze")
+func test_the_wind_grows_with_height_over_ten_metres_then_holds() -> void:
+	assert_eq(WeatherLocal.height_factor(0.0), 1.0, "on the ground: the 10 m wind, nothing changes there")
+	assert_eq(WeatherLocal.height_factor(10.0), 1.0, "at the reference height")
+	assert_almost_eq(WeatherLocal.height_factor(100.0), pow(10.0, WeatherLocal.WIND_SHEAR_EXP), 1e-9,
+			"100 m: the power law, ~1.38")
+	assert_almost_eq(WeatherLocal.height_factor(1000.0), pow(100.0, WeatherLocal.WIND_SHEAR_EXP), 1e-9,
+			"the top of the boundary layer: ~1.9")
+	assert_eq(WeatherLocal.height_factor(4000.0), WeatherLocal.height_factor(1000.0), "above it: the gradient wind holds")
+	var sample := {"wind_east_m_s": 3.0, "wind_north_m_s": 4.0, "wind_speed_m_s": 5.0}
+	var high: Dictionary = WeatherLocal.apply(sample, {}, 1.0, 60.0, 1000.0)
+	assert_almost_eq(float(high["wind_speed_m_s"]), 5.0 * WeatherLocal.height_factor(1000.0), 1e-9, "the local wind sheared")
+	assert_almost_eq(float(high["wind_mean_speed_m_s"]), 5.0, 1e-9, "the regional wind kept as read")
+	var capped: Dictionary = WeatherLocal.apply(sample, {}, 1.0, 6.0, 1000.0)
+	assert_almost_eq(float(capped["wind_speed_m_s"]), 6.0, 1e-9, "the body's ceiling still holds")

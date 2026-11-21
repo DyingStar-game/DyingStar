@@ -11,8 +11,12 @@ extends WeatherSource
 ## Beside WeatherSource's keys, a sample carries "temperature_k", "pressure_pa", "pressure_anomaly_pa",
 ## "visibility_m" and "band" (WeatherSampler's names).
 ##
-## On a planet with its relief ([method sample]), the local weather is laid over that (WeatherLocal): the
-## plateaus' breeze, the gusts behind the massifs, the permanent haze, dust devils and dust walls.
+## On a planet with its relief ([method sample]), two layers are laid over that:
+## - WeatherRelief (not from the prototype): the plateaus' breeze, the gusts behind the massifs, the permanent
+##   haze, dust devils and dust walls, from the report « De l'atmosphère de Sandbox »;
+## - WeatherLocal (the prototype's, as it is): the wind where you stand — channelled along a canyon and
+##   sheltered across it (WeatherCanyon), breathing in gusts, stronger with height. The hook gives no
+##   height, so [method sample] takes the place on the ground; [method sample_local] takes a world position.
 
 ## Where a body's weather is kept, by its name ("tarsis_3_weather.tres").
 const DIR := "res://scenes/planet/climates"
@@ -61,7 +65,7 @@ const SAMPLE_KEPT_S := 0.25
 ## 0 = no haze.
 @export var haze_tau := 0.6
 
-var _relief := {}  # [cell x, cell y] → WeatherLocal's terrain
+var _relief := {}  # [cell x, cell y] → WeatherRelief's terrain
 var _wall_sources := {}
 var _last_key := []  # [planet id, relief cell, time step] of _last
 var _last := {}
@@ -96,12 +100,34 @@ func systems(t: float, decl_deg: float) -> Array:
 func sample_at(lon_deg: float, lat_deg: float, altitude_m: float, t: float, decl_deg: float,
 		substellar_lon_deg: float) -> Dictionary:
 	var out := WeatherSampler.sample(profile, systems(t, decl_deg), lon_deg, lat_deg, altitude_m,
-			WeatherLocal.solar_hours(lon_deg, substellar_lon_deg), decl_deg)
+			WeatherRelief.solar_hours(lon_deg, substellar_lon_deg), decl_deg)
 	out["lift_threshold_m_s"] = profile.v10_threshold_m_s
 	return out
 
 
 func sample(planet: Planet, local_dir: Vector3) -> Dictionary:
+	return _where_you_stand(_regional(planet, local_dir), planet, local_dir, 0.0)
+
+
+## The weather at a world position with the wind where you stand at your height: as [method sample], the
+## canyon's wind fading out above the trench and the wind growing with the height over the ground
+## (the prototype's Planet.weather_local_at).
+func sample_local(planet: Planet, world_pos: Vector3) -> Dictionary:
+	var dir := planet.local_dir_of(world_pos)
+	return _where_you_stand(_regional(planet, dir), planet, dir, maxf(planet.surface_altitude_of(world_pos), 0.0))
+
+
+## [param regional] with WeatherLocal's wind in place of its own, for a place [param above_m] over the ground.
+func _where_you_stand(regional: Dictionary, planet: Planet, local_dir: Vector3, above_m: float) -> Dictionary:
+	if regional.is_empty() or not local_enabled or planet == null or planet.planet_data == null:
+		return regional
+	var gust := WeatherLocal.gust_factor(profile.weather_seed, float(regional["lon_deg"]), float(regional["lat_deg"]), now())
+	return WeatherLocal.apply(regional, WeatherCanyon.at(planet.planet_data, local_dir, above_m), gust,
+			profile.wind_scale_max_ms, above_m)
+
+
+## The climate's weather at a place, with the relief's (WeatherRelief) on a planet that has one.
+func _regional(planet: Planet, local_dir: Vector3) -> Dictionary:
 	if profile == null:
 		return {}
 	var lonlat := HEALPix.vec2lonlat(local_dir)
@@ -111,7 +137,7 @@ func sample(planet: Planet, local_dir: Vector3) -> Dictionary:
 	if not local_enabled or planet == null or planet.planet_data == null:
 		return out
 	var data: PlanetData = planet.planet_data
-	var cell := WeatherLocal.cell_of(lonlat.x, lonlat.y, RELIEF_CELL_M, profile.radius_m)
+	var cell := WeatherRelief.cell_of(lonlat.x, lonlat.y, RELIEF_CELL_M, profile.radius_m)
 	var key := [planet.get_instance_id(), cell.x, cell.y, floori(t / SAMPLE_KEPT_S)]
 	_mutex.lock()
 	var kept := _last.duplicate() if key == _last_key else {}
@@ -122,10 +148,10 @@ func sample(planet: Planet, local_dir: Vector3) -> Dictionary:
 	if out["band"] == WeatherSampler.BAND_WESTERLIES:
 		var wind := Vector2(out["wind_east_m_s"], out["wind_north_m_s"])
 		if wind.length() > 0.1:
-			var upwind := WeatherLocal.moved(lonlat, -wind.normalized() * LEE_REACH_M, profile.radius_m)
+			var upwind := WeatherRelief.moved(lonlat, -wind.normalized() * LEE_REACH_M, profile.radius_m)
 			terrain["upwind_drop_m"] = float(relief_at(data, upwind.x, upwind.y)["height_m"]) - float(terrain["height_m"])
-	out = WeatherLocal.apply(out, profile, terrain, WeatherLocal.devils_near(profile, lonlat,
-			WeatherLocal.DEVIL_CELL_M, t, sun.y, sun.x), walls_near(planet, lonlat), Vector3(haze_base_m, haze_top_m, haze_tau), t)
+	out = WeatherRelief.apply(out, profile, terrain, WeatherRelief.devils_near(profile, lonlat,
+			WeatherRelief.DEVIL_CELL_M, t, sun.y, sun.x), walls_near(planet, lonlat), Vector3(haze_base_m, haze_top_m, haze_tau), t)
 	_mutex.lock()
 	_last_key = key
 	_last = out
@@ -133,10 +159,10 @@ func sample(planet: Planet, local_dir: Vector3) -> Dictionary:
 	return out.duplicate()
 
 
-## The relief the local weather reads at a place of [param data]'s body (WeatherLocal's terrain: height_m,
+## The relief the local weather reads at a place of [param data]'s body (WeatherRelief's terrain: height_m,
 ## upslope), kept by cell of RELIEF_CELL_M. Thread-safe.
 func relief_at(data: PlanetData, lon_deg: float, lat_deg: float) -> Dictionary:
-	var cell := WeatherLocal.cell_of(lon_deg, lat_deg, RELIEF_CELL_M, profile.radius_m)
+	var cell := WeatherRelief.cell_of(lon_deg, lat_deg, RELIEF_CELL_M, profile.radius_m)
 	var key := Vector2i(cell.x, cell.y)
 	_mutex.lock()
 	var known: Variant = _relief.get(key)
@@ -146,7 +172,7 @@ func relief_at(data: PlanetData, lon_deg: float, lat_deg: float) -> Dictionary:
 	var at := Vector2(lon_deg, lat_deg)
 	var heights := PackedFloat64Array()
 	for arm: Vector2 in [Vector2.ZERO, Vector2.RIGHT, Vector2.LEFT, Vector2.DOWN, Vector2.UP]:
-		var place := WeatherLocal.moved(at, arm * SLOPE_ARM_M, profile.radius_m)
+		var place := WeatherRelief.moved(at, arm * SLOPE_ARM_M, profile.radius_m)
 		heights.append(data.sample_height_for_direction(HEALPix.lonlat2vec(place.x, place.y), -1, -1, Vector2i(-1, -1),
 				null, data.sample_nside_for(RELIEF_NSIDE)))
 	# Vector2.DOWN is +y: north here.
@@ -160,19 +186,19 @@ func relief_at(data: PlanetData, lon_deg: float, lat_deg: float) -> Dictionary:
 	return out
 
 
-## The dust devils alive now within [param range_m] of a place of [param planet] (WeatherLocal.devils_near).
+## The dust devils alive now within [param range_m] of a place of [param planet] (WeatherRelief.devils_near).
 func devils_near(planet: Planet, lonlat: Vector2, range_m: float) -> Array:
 	var sun := sun_over(planet)
-	return WeatherLocal.devils_near(profile, lonlat, range_m, now(), sun.y, sun.x)
+	return WeatherRelief.devils_near(profile, lonlat, range_m, now(), sun.y, sun.x)
 
 
-## The dust walls running now that may reach a place of [param planet] (WeatherLocal.walls_near).
+## The dust walls running now that may reach a place of [param planet] (WeatherRelief.walls_near).
 func walls_near(planet: Planet, lonlat: Vector2) -> Array:
 	var data: PlanetData = planet.planet_data
 	_mutex.lock()
 	if _wall_sources.size() >= KEPT_MAX:
 		_wall_sources.clear()
-	var out := WeatherLocal.walls_near(profile, lonlat, now(), sun_over(planet).x,
+	var out := WeatherRelief.walls_near(profile, lonlat, now(), sun_over(planet).x,
 			func(lon: float, lat: float) -> Dictionary: return relief_at(data, lon, lat), _wall_sources)
 	_mutex.unlock()
 	return out

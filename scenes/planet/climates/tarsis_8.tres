@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_hx84d"]
+
+[resource]
+script = ExtResource("1_hx84d")
+body_name = "Tarsis 8"
+has_atmosphere = true
+weather_seed = 9032151120043985920
+radius_m = 3467495.48953844
+surface_gravity = 3.483420748514102
+rotation_period_s = 276830.9366850943
+tilt_deg = 9.90259686733704
+orbit_period_s = 2375356857.23584
+pressure_pa = 1754.99818430613
+rho0_kg_m3 = 0.12213234524359531
+scale_height_m = 4125.152805162325
+irradiance_w_m2 = 1.704815059139397
+bond_albedo = 0.20211765856656
+t_eq_k = 49.48642716432998
+t_surface_k = 49.67846028080999
+diurnal_amplitude_k = 0.12322570663040013
+radiative_time_s = 18785767.574364334
+thermal_inertia_tiu = 150.0
+delta_t_equator_pole_k = 1.6640784997100209
+coriolis_45_s = 3.209816786634e-05
+hadley_edge_deg = 79.59633786308964
+cells = 2
+v10_scale_m_s = 1.9422332197245684
+v10_threshold_m_s = 12.850208879367791
+sound_speed_m_s = 141.17039090013162

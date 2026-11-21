@@ -1,10 +1,10 @@
 class_name WeatherPhenomena
 extends Node3D
 ## The local weather that is seen as things standing on the ground: the dust devils and dust walls of the
-## planet's ClimateWeather (WeatherLocal), drawn round the eye. A child of the Planet: its own frame is the
+## planet's ClimateWeather (WeatherRelief), drawn round the eye. A child of the Planet: its own frame is the
 ## body's, so what it draws turns with the ground.
 ##
-## It draws what the weather says and nothing else: the same devils and walls WeatherLocal adds to the wind
+## It draws what the weather says and nothing else: the same devils and walls WeatherRelief adds to the wind
 ## and the dust of a sample, at the same places. Their dust in the air round the eye (a wall passing over
 ## the player) is the sample's affair, drawn by the dust layer.
 

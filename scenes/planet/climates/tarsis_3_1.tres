@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_dadyd"]
+
+[resource]
+script = ExtResource("1_dadyd")
+body_name = "P3_M1"
+weather_seed = 7747352531071700992
+radius_m = 1500000.0
+surface_gravity = 1.258124653329778
+rotation_period_s = 409032.0
+tidal_locked = true
+orbit_period_s = 407187.7572783047
+scale_height_m = 0.0
+irradiance_w_m2 = 1490.1032924728984
+bond_albedo = 0.18
+t_eq_k = 270.9191003039038
+t_surface_k = 272.5
+diurnal_amplitude_k = 15.0
+radiative_time_s = 0.0
+delta_t_equator_pole_k = 115.44848024314086
+coriolis_45_s = 2.172388927105e-05
+hadley_edge_deg = 90.0
+cells = 1
+v10_scale_m_s = 0.0
+v10_threshold_m_s = 0.0
+sound_speed_m_s = 0.0

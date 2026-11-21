@@ -302,7 +302,7 @@ func _lonlat() -> Vector2:
 ## Turn the player toward a place (longitude, latitude), the camera raised by [param pitch].
 func _face(target: Vector2, pitch: float) -> void:
 	var dir := player_direction()
-	var to := WeatherLocal.offset_m(_lonlat(), target, world.body.planet_data.radius)
+	var to := WeatherRelief.offset_m(_lonlat(), target, world.body.planet_data.radius)
 	var axes: Array = Planet.local_axes(dir)
 	var forward: Vector3 = ((axes[0] as Vector3) * to.x + (axes[1] as Vector3) * to.y).normalized()
 	world.player.transform.basis = Basis(forward.cross(dir).normalized(), dir, -forward)
@@ -332,8 +332,8 @@ func goto_wall() -> void:
 	var best := {}
 	var best_hour := 0.0
 	var best_clock := 0.0
-	var last := WeatherLocal.WALL_FROM_H + WeatherLocal.WALL_SPREAD_H + WeatherLocal.WALL_LIFE_S / 3600.0
-	var at := WeatherLocal.WALL_FROM_H
+	var last := WeatherRelief.WALL_FROM_H + WeatherRelief.WALL_SPREAD_H + WeatherRelief.WALL_LIFE_S / 3600.0
+	var at := WeatherRelief.WALL_FROM_H
 	while at < last:
 		nova_set_hour(at)
 		var wall := _wall_near(weather)
@@ -352,7 +352,7 @@ func goto_wall() -> void:
 	world._update_system_frame()
 	var radius: float = world.body.planet_data.radius
 	var front := Vector2(best["lon"], best["lat"])
-	var ahead := WeatherLocal.moved(front, Vector2(best["east"], best["north"]) * WALL_AHEAD_M, radius)
+	var ahead := WeatherRelief.moved(front, Vector2(best["east"], best["north"]) * WALL_AHEAD_M, radius)
 	_place(HEALPix.lonlat2vec(ahead.x, ahead.y), WALL_ABOVE_M, true)
 	_face(front, 0.15)
 	_weather_hud.note("Mur de poussière droit devant, à %.0f km : %.0f m de haut, %.0f km de front. Il vient vers toi à %.0f m/s." % [
@@ -365,7 +365,7 @@ func goto_devil() -> void:
 	var weather := _climate()
 	if weather == null:
 		return
-	if _sun_height() < WeatherLocal.DEVIL_SUN[1]:
+	if _sun_height() < WeatherRelief.DEVIL_SUN[1]:
 		nova_set_hour(DEVIL_HOUR)
 	var best := {}
 	for devil: Dictionary in weather.devils_near(world.body, _lonlat(), DEVIL_RANGE_M):
@@ -377,7 +377,7 @@ func goto_devil() -> void:
 	var radius: float = world.body.planet_data.radius
 	var at := Vector2(best["lon"], best["lat"])
 	var back := maxf(float(best["height_m"]) * DEVIL_BACK, DEVIL_BACK_MIN_M)
-	var from := WeatherLocal.moved(at, Vector2(0.0, -back), radius)
+	var from := WeatherRelief.moved(at, Vector2(0.0, -back), radius)
 	_place(HEALPix.lonlat2vec(from.x, from.y), DEVIL_ABOVE_M, true)
 	_face(at, 0.3)
 	_weather_hud.note("Tourbillon droit devant, à %.0f m : %.0f m de rayon, %.0f m de haut. Ils vivent 5 minutes." % [

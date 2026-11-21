@@ -29,3 +29,36 @@ func test_a_sample_carries_the_hook_s_keys_and_the_temperature() -> void:
 	for key: String in ["wind_east_m_s", "wind_north_m_s", "wind_speed_m_s", "wind_from_deg", "dust_tau",
 			"lift_threshold_m_s", "air_density_kg_m3", "temperature_k", "pressure_pa"]:
 		assert_true(got.has(key), "a sample has %s" % key)
+
+
+func test_the_trench_is_read_as_the_prototype_asks() -> void:
+	# No corundum network: no canyon at all. With one, a place on the open plateau has depth 0.
+	var bare := PlanetData.new()
+	assert_eq(WeatherCanyon.at(bare, Vector3.UP), {}, "no crack network, no canyon")
+	# The trench fades out above its floor over its own depth.
+	var data := PlanetData.new()
+	data.radius = 6356000.0
+	data.corundum_default_biome = true
+	var found := {}
+	var where := Vector3.ZERO
+	for k in 4000:
+		var dir := HEALPix.lonlat2vec(-41.3 + k * 0.00002, 20.0)
+		var got := WeatherCanyon.at(data, dir)
+		if float(got.get("depth", 0.0)) > 0.0 and (got["axis"] as Vector2) != Vector2.ZERO:
+			found = got
+			where = dir
+			break
+	assert_false(found.is_empty(), "a trench is met along 9 km of plateau")
+	if found.is_empty():
+		return
+	assert_almost_eq((found["axis"] as Vector2).length(), 1.0, 1e-6, "its direction is a unit (east, north)")
+	assert_eq(float(WeatherCanyon.at(data, where, data.crack_depth_m * 2.0)["depth"]), 0.0, "nothing of it above the plateau")
+	# Walking along the trench's direction stays in the trench; across it, leaves it.
+	var axes: Array = Planet.local_axes(where)
+	var axis: Vector2 = found["axis"]
+	var along: Vector3 = (axes[0] as Vector3) * axis.x + (axes[1] as Vector3) * axis.y
+	var across: Vector3 = along.cross(where)
+	var step := data.crack_width_m * 1.5 / data.radius
+	assert_gt(float(WeatherCanyon.at(data, (where + along * step * 0.3).normalized())["depth"]), 0.0, "still in it a few metres along")
+	assert_eq(float(WeatherCanyon.at(data, (where + across * step).normalized())["depth"])
+			* float(WeatherCanyon.at(data, (where - across * step).normalized())["depth"]), 0.0, "out of it across, on one side at least")

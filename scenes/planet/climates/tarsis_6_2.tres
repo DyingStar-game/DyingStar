@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_ubw0b"]
+
+[resource]
+script = ExtResource("1_ubw0b")
+body_name = "P6_M2"
+has_atmosphere = true
+weather_seed = 1284628840823567872
+radius_m = 3568000.0
+surface_gravity = 3.475352092403326
+rotation_period_s = 261720.0
+orbit_period_s = 47347121.97937515
+pressure_pa = 45700.0
+rho0_kg_m3 = 1.316813007810389
+scale_height_m = 9986.039556037893
+irradiance_w_m2 = 10.777787578335689
+bond_albedo = 0.0
+t_eq_k = 83.02606840623385
+t_surface_k = 92.04805063223982
+diurnal_amplitude_k = 1.8499999999999943
+radiative_time_s = 109089056.89838754
+delta_t_equator_pole_k = 0.4024970241522153
+coriolis_45_s = 3.395142089376e-05
+hadley_edge_deg = 90.0
+cells = 1
+v10_scale_m_s = 0.9087490536076848
+v10_threshold_m_s = 3.4126493650518492
+sound_speed_m_s = 216.1117134865259
