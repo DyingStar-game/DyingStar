@@ -23,6 +23,8 @@ than the fitted faces do.
 `mean` is the sex's mean face over our base. `noise`, per FLAME direction, what a random face still draws around
 them: FLAME's own spread (1 deviation, measured on 3D scans -- the photos' fits are shrunk by their prior, 0.3 of it)
 less what the types already spread along that direction, so that a face's whole spread stays FLAME's.
+--fit-bias takes off every photo what the fit itself adds to any face (fit_bias.py: renders of known random faces
+fitted the same way): their outline wider than they are, mostly.
 `shrink` per trait compares, on our head's landmarks, the spread of the photos' fitted shapes to that of FLAME's
 random faces: under 1, the fits flatten real faces (their types are told too timidly).
 
@@ -166,6 +168,8 @@ def main():
     ap.add_argument("--cover", type=float, default=COVER, help="the share of a band's photos its kept types cover")
     ap.add_argument("--origin", default="European", help="the photos' origin, as the file's doc names it")
     ap.add_argument("--min-photos", type=int, default=MIN_PHOTOS, help="a sex's fewest fitted photos to learn its types")
+    ap.add_argument("--fit-bias", help="fit_bias.py's JSON: what the fit adds to a face, per sex (stored values), "
+                                       "taken off every photo's weights")
     a = ap.parse_args()
     photos = {p["path"]: p for p in json.load(open(os.path.expanduser(a.photos)))}
     rows = []
@@ -186,6 +190,14 @@ def main():
     w = stored * reach  # shape-key weights
     female = np.array([photos[r["path"]]["female"] for r in rows])
     years = np.array([photos[r["path"]]["years"] for r in rows])
+    if a.fit_bias:
+        # The fit's own lean, measured on renders of known faces: off every photo, so the mean face is the photos'
+        # (the types, made of differences between photos, are left as they were).
+        bias = json.load(open(os.path.expanduser(a.fit_bias)))
+        for sex, mask in (("female", female), ("male", ~female)):
+            off = np.array([float(bias.get(sex, {}).get(k, 0.0)) for k in keys]) * reach
+            w[mask] -= off
+        print("fit bias taken off:", {sx: round(float(np.sqrt(sum(v * v for v in b.values()))), 3) for sx, b in bias.items()})
     neutral = np.array([photos[r["path"]].get("smile", 0.0) < MAX_SMILE
                         and r.get("expression", {}).get("FACS_Mouth_Large_Opened", 0.0) < MAX_MOUTH_OPEN for r in rows])
     bank = Bank(os.path.expanduser(a.bank))
