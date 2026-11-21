@@ -4,6 +4,9 @@
 > roches (`assets_blender/nova/…`, 217 Mo) sont restées en local chez l'auteur ; les roches livrées sont dans
 > `scenes/planet/nova/assets/` et se reconstruisent avec `tools/nova/`. Les crédits des textures de sol sont
 > dans le fichier `tex_<nom>.txt` de chaque dossier de matière (l'ancien `source.txt`).
+>
+> La météo ne fait pas partie de Nova : elle est sur sa propre branche (`feat/weather`), branchée sur le
+> service météo.
 
 
 Outil de l'éditeur Godot pour habiller les biomes d'une planète : le sol et ce qui est posé dessus.
@@ -464,7 +467,7 @@ cache disque. Les packs locaux et `grade_profiles.pack` sont supprimés du dép�
   pendant 60 s et remet le joueur à sa hauteur (sinon il se retrouvait sous le terrain).
 - `RemoteTileSource` : la liste des sources en marche et son verrou sont créés au premier usage (script non
   `@tool` : dans l'éditeur ses statiques ne sont pas initialisées, `start()` plantait).
-- Vérifié après fusion : tests Nova (13), météo (18), `test_remote_modifier_pack` (6) ; vue jeu à 114 images
+- Vérifié après fusion : tests Nova (13), `test_remote_modifier_pack` (6) ; vue jeu à 114 images
   par seconde, sol de biome, tourbillons, mur de poussière.
 - Pas vérifié : le panneau dans l'éditeur ; les frontières douces quand une tuile voisine n'est pas encore
   arrivée (le poids lu serait provisoire, et pourrait être mis en cache) ; la vue jeu sans réseau ; le
@@ -507,168 +510,6 @@ cache disque. Les packs locaux et `grade_profiles.pack` sont supprimés du dép�
   est bornée en temps (2 ms par image) et non plus en nombre. À l'arrêt Nova ne coûtait déjà rien.
 - Pas vérifié : la mémoire ; les machines plus modestes ; le scatter près d'une ville (sphères de 25 à 40 km).
 
-### Météo : le climat sur la prise existante
-
-Le prototype d'octobre (branche `wip/weather`, service Rust `services/weather`) n'est ni fusionné ni
-rebasé : son modèle est re-porté sur la prise de develop, `WeatherSource`, sans toucher à l'existant.
-
-- Repris tels quels de la branche (fichiers nouveaux) : `scenes/planet/climate_profile.gd`,
-  `scenes/planet/climates/tarsis_3.tres` (le climat dérivé par le service : inclinaison 15°, année de 171 j,
-  albédo 0,32), `scenes/planet/weather/weather_sampler.gd` et son test de référence
-  (`test/unit/test_weather_sampler.gd`, `test/data/weather/sandbox_samples.json`).
-- Nouveau : `scenes/planet/weather/climate_weather.gd` (`ClimateWeather`, une `WeatherSource`). Vent moyen
-  par bande de latitude : alizés d'est jusqu'à 31,9° (environ 5 m/s, sous le seuil de soulèvement de
-  5,96 m/s), vents d'ouest jusqu'à 60° (environ 10 m/s, au-dessus du seuil), vents d'est polaires. Pas
-  d'horloge ni de service : le même vent pour tous au même endroit.
-- Branché dans la vue jeu de Nova seulement (`nova_world.gd`) ; le jeu garde la source de sa scène (vent
-  uniforme) tant que l'équipe n'a pas décidé.
-- Rapport « De l'atmosphère de Sandbox » : ses bandes de vent concordent avec le modèle. Ses données de
-  planète non (inclinaison 1,5°, année de 220 j, albédo 0,66) : `tarsis.json` fait foi.
-- **Systèmes météo** (19/11) : `scenes/planet/weather/weather_synoptic.gd`, jumeau GDScript de
-  `synoptic.rs` et `hash.rs` du service. Dépressions, anticyclones et tempêtes de poussière naissent,
-  dérivent et meurent comme fonction pure de (climat, temps) : rien n'est envoyé, chaque client calcule le
-  même ciel depuis l'horloge partagée. Vérifié contre le service : les vecteurs de référence du hachage,
-  les 24 systèmes qu'il calcule pour Sandbox à un instant donné, et ses relevés (vent, pression,
-  poussière, température) — `test/unit/test_weather_synoptic.gd`.
-- Ce que le profil climatique ne porte pas (vitesse du jet, tropopause, facilité à lever la poussière,
-  humidité) est dans `scenes/planet/climates/tarsis_3_weather.tres`, repris des données dérivées du service.
-- Un relevé porte aussi `temperature_k`, `pressure_pa`, `pressure_anomaly_pa`, `visibility_m` et `band`.
-  L'heure solaire et la saison viennent de la position de l'étoile du corps (`ClimateWeather.star_lonlat`).
-- **Carte météo** : `scenes/planet/weather/weather_map.gd` (`WeatherMap.render`) dessine la planète à un
-  instant : température de l'air en couleurs, voile ocre de poussière, isobares, flèches de vent (blanches
-  là où le vent dépasse le seuil de soulèvement), anneaux des systèmes. Dans le panneau Nova, le bouton
-  à bascule « Carte météo sur le globe » (`addons/nova/nova_weather_view.gd`) la pose sur le globe
-  d'aperçu (`GlobeView.show_overlay`, 2 à 3 s de calcul sur un fil de travail) ; relâché, les biomes
-  reviennent. Dans l'éditeur l'instant est l'horloge de l'ordinateur et la saison une sinusoïde de
-  l'inclinaison : proche du jeu, pas identique. Exemple : `docs/nova_captures/carte_meteo.png`.
-- **Ce qui vient du prototype, ce qui n'en vient pas** (21/11) : le service Rust (`services/weather`), Horizon et
-  la charte Kubernetes ne sont pas dans ce dépôt ; le jeu calcule le même modèle de son côté.
-  - Repris tels quels de `wip/weather` : `climate_profile.gd`, les profils des 20 corps
-    (`scenes/planet/climates/`), `weather_sampler.gd`, `weather_local.gd` (`WeatherLocal` : le vent là où l'on
-    se tient — canalisé le long d'un canyon et abrité en travers, rafales, vent qui forcit avec la hauteur) et
-    leurs tests.
-  - Réécrit d'après le service : `weather_synoptic.gd` (jumeau de `synoptic.rs` et `hash.rs`).
-  - Adapté : `weather_canyon.gd` (`WeatherCanyon`) remplace `Planet.canyon_at` du prototype, sans toucher à
-    `Planet`. La direction de la tranchée y est trouvée par les deux blocs de part et d'autre
-    (`crack_cell`), le prototype la lisait dans une fonction que develop n'a pas (`crack_axis`).
-  - Pas du prototype : `weather_relief.gd` (`WeatherRelief`, ci-dessous), `weather_phenomena.gd`,
-    `weather_map.gd`. `WeatherRelief` s'appelait `WeatherLocal` jusqu'au 21/11 : c'était le nom d'un fichier
-    du prototype, pris par erreur.
-  - Pas porté : `weather_forces.gd` (la poussée du vent sur les véhicules, côté serveur), les nuages, la carte
-    en jeu du prototype (F2/M), l'objet réseau `weather_system`.
-  - La prise `WeatherSource.sample` ne donne pas de hauteur : le vent y est pris au sol.
-    `ClimateWeather.sample_local(planète, position)` donne le vent à la hauteur voulue.
-  - Vérifié : ses 5 tests de `WeatherLocal` passent sans modification ; en vue jeu les rafales respirent
-    (facteur de 0,76 à 1,02 en 6 s) et le vent forcit avec la hauteur (×1,73 à 500 m). Le canyon n'est
-    vérifié que par un test sur des données de synthèse : aucune tranchée trouvée près du point d'essai en
-    vue jeu.
-- **Météo locale** (18/11) : `scenes/planet/weather/weather_relief.gd` (`WeatherRelief`), les phénomènes locaux
-  du rapport, posés par-dessus le climat. Fonctions pures comme le reste : même lieu, même instant, même
-  météo pour tous les joueurs. Tests : `test/unit/test_weather_relief.gd`.
-  - *Brise de plateau* : l'air monte les pentes le jour (maximum à 15 h, 6 m/s sur une pente pleine) et les
-    redescend la nuit, à 60 %. Au-delà de 60° de latitude la pente draine toute la journée (15 m/s).
-  - *Rafales sous le vent* : dans les vents d'ouest, derrière un massif (sol 10 km en amont plus haut), le
-    vent gagne jusqu'à ×2,5, par rafales de 20 s.
-  - *Voile permanent* : poussière entre 500 et 3500 m d'altitude (épaisseur optique 0,6, soit 6,5 km de
-    visibilité), 35 % sous la couche, rien au-dessus : les plateaux hauts restent dégagés.
-  - *Tourbillons* : basses latitudes, soleil haut, vent faible ; 5 à 150 m de rayon, 100 à 2500 m de haut,
-    5 minutes de vie, vent tournant de 10 à 30 m/s.
-  - *Murs de poussière* : entre 16 h 30 et 18 h, l'air froid tombe de la pente la plus raide d'une cellule de
-    30 km et court 40 minutes (10 à 18 m/s, 15 à 50 km de front, 0,5 à 3 km de haut) en s'amincissant.
-  - Un relevé porte en plus `haze_tau`, `updraft_m_s` (ascendance au-dessus d'un plateau ensoleillé) et
-    `phenomena` (noms de ce qui est ressenti sur place).
-- Le relief vient de la carte des hauteurs au niveau 256 (une hauteur tous les 700 m : plateaux et vallées,
-  pas les rochers), lu par `ClimateWeather.relief_at` et gardé par cellule de 250 m. Réglages dans
-  `tarsis_3_weather.tres` : `local_enabled`, `haze_base_m`, `haze_top_m`, `haze_tau`.
-- **Dessin** : `scenes/planet/weather/weather_phenomena.gd` (`WeatherPhenomena`, enfant de la planète) dessine
-  les tourbillons (12 km autour de l'œil) et les murs que la météo annonce, aux mêmes endroits que leur vent
-  et leur poussière (`dust_devil.gdshader`, `dust_wall_volume.gdshader`). Le voile et la poussière d'un mur qui passe
-  sur le joueur sont rendus par la couche de poussière existante, qui lit `dust_tau`.
-- **Vue jeu de Nova** : une ligne « Météo ici » (vent, température, visibilité, phénomènes) et la carte météo
-  de la planète sur la touche M, avec la position du joueur (`addons/nova/nova_weather_hud.gd`).
-- **Mur en volume** (18/11) : le mur est une boîte de poussière (`dust_wall_volume.gdshader`). Le rayon de
-  chaque pixel traverse la boîte (48 pas au plus, de 90 m, plus longs de loin et dans l'air clair) ; à chaque
-  pas la densité est lue (une forme rongée par des volutes de bruit 3D) et 3 pas vers le soleil disent
-  combien de poussière fait de l'ombre. Vu de l'intérieur, c'est le même volume.
-  - *Forme* : front en arc (les deux bouts traînent de 12 % de la demi-longueur) qui serpente (trois ondes
-    de longueurs qui ne retombent jamais en phase), crête qui monte et descend sans se répéter, poussière
-    qui s'éclaircit derrière le front (divisée par e tous les 0,9 profondeur de mur) jusqu'à une traîne
-    basse en lambeaux (la boîte fait 6 fois la profondeur du mur). Le bruit est lu en biais : le long du
-    front les mêmes volutes ne reviennent jamais.
-  - *Relief* (`wall_ground.gd`, `WallGround`) : une petite carte des hauteurs du sol sous la boîte (64 × 24
-    points, niveau 256 de la carte des hauteurs, relue toutes les 8 s sur un fil de travail). La poussière
-    se tient sur le terrain, en bas dans les plaines et en haut sur les plateaux. Les hauteurs sont
-    absolues (au-dessus de la sphère de référence) et la carte reste posée sur le sol où elle a été lue :
-    le mur glisse dessus jusqu'à la suivante. La boîte va de 250 m sous le sol le plus bas à la hauteur du
-    mur au-dessus du sol le plus haut. Avant la première carte (une seconde), le sol est pris plat.
-  - *Défaut corrigé le 19/11* : la hauteur du mur était calée sur le sol sous son milieu, relu deux fois
-    par seconde ; quand ce point passait sur une crête, tout le front montait d'un coup puis redescendait.
-    Mesure après correction, mur poussé à 60 m/s sur 4,8 km de relief, caméra fixe : le sol sous le milieu
-    varie de 800 m, le haut de la boîte reste à 9 125 m (± 35 m) et la crête à l'écran bouge de 2 à 8
-    pixels entre deux captures, sans saut. Pas de mesure équivalente avant correction.
-  - *Vie* (`WeatherRelief` : `grown`, `spent`) : le mur naît bas et court (20 % de sa hauteur, 45 % de sa
-    longueur) et grandit en 3 minutes ; à partir de 55 % de sa vie il s'affaisse (jusqu'à 45 % de sa hauteur),
-    ses bords s'adoucissent, les volutes le rongent et sa poussière s'éclaircit jusqu'à rien.
-  - *Éclairs* (`dust_sparks.gd`, `DustSparks`, `dust_bolt.gdshader`) : dans un mur fort, jusqu'à 5 petits
-    arcs à la fois. Chacun est un tracé fin et tordu avec 3 ramifications, haut de 180 à 520 m, posé 15 à
-    110 m derrière le front, près de l'œil, allumé 0,1 à 0,3 s en scintillant, puis muet 0,6 à 3,2 s. La
-    poussière autour s'éclaire faiblement (140 m). Purement visuels : pas de son, pas d'effet sur le joueur,
-    et pas les mêmes pour deux joueurs.
-  - *Coût* (RTX 4080, 1600×900, mur de 40 km posé devant la caméra) : 111 images par seconde à 6 km, 104 à
-    9 km d'altitude, 109 à 60 km, 93 de nuit à 2,2 km ; 120 sans mur.
-  - *Limites* : le mur est dessiné après la brume du jeu, donc il n'est pas voilé par elle alors que le
-    terrain à la même distance l'est ; de très haut la traîne se voit peu ; les tourbillons restent en
-    coquilles ; la carte du sol est au niveau 256 (un point tous les 700 m environ), le pied du mur ne suit
-    pas les petits reliefs.
-  - Captures : `meteo_mur_jour.png`, `_devant`, `_proche`, `_dedans`, `_eclair`, `_naissance`, `_fin`,
-    `_altitude`, `_orbite`.
-- **Aller voir** (vue jeu) : touche **P**, aller devant un mur de poussière (les heures où ils tombent sont
-  parcourues, le plus imposant à moins de 60 km est gardé, le joueur est posé 2,5 km devant, face à lui ;
-  il arrive en 2 à 4 minutes) ; touche **T**, aller voir le plus gros tourbillon à moins de 12 km (l'heure
-  passe à 13 h s'il fait nuit). Un message dit ce qu'on regarde. Captures d'un mur réel qui arrive puis
-  passe sur le joueur : `meteo_mur_devant.png`, `meteo_mur_proche.png`, `meteo_mur_dedans.png`.
-- Les murs tombent entre 16 h 30 et 18 h (40 minutes de vie) : plus tard il fait nuit noire et ils ne se
-  voient pas. Le rapport dit « début de soirée ».
-- L'horloge de la vue jeu ne retrouve midi qu'au quart d'heure près : remettre la même heure donne un autre
-  instant, donc une autre météo. « Aller voir » garde l'instant exact et ne remet pas l'heure en déplaçant
-  le joueur (`_place(..., keep_clock)`).
-- Mesuré en vue jeu (18/11) : 114 images par seconde, 0,08 ms par relevé. Un mur réel est passé sur le
-  joueur : vent de 5 à 16,6 m/s, visibilité de 999 à 2 km. Captures : `docs/nova_captures/meteo_*.png`.
-- La saison : `ClimateWeather.sun_over` borne la déclinaison de l'étoile à l'inclinaison du climat. La vue jeu
-  de Nova place l'étoile à 39° nord pour une planète inclinée de 15° ; sans cette borne tout l'hémisphère
-  nord était en été extrême.
-- Écarts connus au rapport : le seuil de vent des tourbillons est adouci (entier sous 4 m/s, nul à 7, le
-  rapport dit 5) parce que les alizés du modèle sont à 5,2 m/s ; le phénomène inverse du matin (renverse
-  montante) n'est pas fait ; les murs ne suivent pas les vallées, ils courent droit dans le sens de la pente.
-- Aspect repris le 18/11 : un tourbillon est fait de 3 coquilles tournant chacune à sa vitesse (bord
-  déchiqueté, colonne qui ploie, jupe de poussière au pied, côté soleil plus clair) ; un mur de 7 nappes
-  (front bombé en son milieu, crête irrégulière qui s'abaisse aux deux bouts, volutes). La poussière prend
-  la couleur du sol où le phénomène se tient, pâlie de moitié (`WeatherPhenomena.DUST_PALE`), et s'efface
-  au contact du terrain. Les captures du mur et des tourbillons sont faites avec des phénomènes posés devant
-  la caméra par la sonde. Reste visible : quelques arêtes de nappes sur les bords du mur. Le voile, lui,
-  prend la couleur du sol sous le joueur (règle de la couche de poussière existante) : vert sur le sol par
-  défaut de l'équateur.
-- Pas porté, du prototype : nuages d'eau (humidité 0 sur Tarsis 3 : le rapport les exclut), forces du vent
-  sur le joueur et les véhicules (côté serveur, touche à l'existant).
-- **Plantage à la fermeture (exit 139)**, vu de temps en temps après des tests ou une vue jeu réussis : il
-  vient de l'extension de chat vocal `addons/godot-livekit`, pas de Nova ni de la météo. Windows l'a
-  enregistré dans `livekit_ffi.dll_unloaded` (la bibliothèque est déchargée alors qu'un de ses fils tourne
-  encore). Mesuré le 18/11 sur `test_nova` : 1 plantage sur 12 lancements avec l'extension, 0 sur 36 sans
-  (liste `.godot/extension_list.cfg` vidée le temps de l'essai, puis remise). Le travail est fini quand il
-  survient : les résultats sont bons, seul le code de sortie est faux. À signaler à qui maintient l'extension.
-- **Atmosphère changée le 20/10/2026** (wiki ↔ JSON) : CO2 0,5 %, N2 78,7 %, O2 19,5 % (au lieu de CO2 2 %).
-  `scenes/planet/climates/tarsis_3.tres` est généré par le service météo depuis l'ancien `tarsis.json` : à
-  régénérer par le service, pas à la main (effet de serre, masse molaire, donc température de surface et
-  hauteur d'échelle). Rien dans le dépôt du jeu ne porte la composition.
-- **Grottes** : ce que `WeatherPhenomena` dessine (murs, éclairs, tourbillons) s'efface quand l'œil passe sous
-  la surface du terrain, entier jusqu'à 10 m dessous et nul à 25 m (`CAVE_FULL_M`, `CAVE_GONE_M`). La couche
-  de poussière existante n'est déjà pas dessinée sous le sol (`WeatherSky`) et le son du vent est coupé par
-  la roche (`PlaceWatcher.buried`). Reste : le relevé météo lui-même (vent, `dust_tau`) ne sait pas qu'on est
-  dans une grotte, donc un consommateur qui le lit directement, comme la ligne « Météo ici », annonce encore
-  le mur ; et dans les dix premiers mètres d'une entrée le mur reste dessiné à travers la roche.
-- La direction du vent saute aux limites de bande (31,9° et 60°), comme dans le prototype.
-- Le temps du jeu (`Globals.sim_time`) n'est celui du service que si les deux partent de la même époque.
-
 ### Le panneau
 
 Depuis le 19/11/2026 le panneau n'est plus une seule colonne à faire défiler (les boutons du bas étaient
@@ -678,7 +519,7 @@ hors d'atteinte). Captures : `docs/nova_captures/panneau_planete.png`, `panneau_
 - **Toujours visibles** : en haut le corps et la liste des types de zone ; en bas « Appliquer à » et
   « Enregistrer ».
 - **Trois onglets** entre les deux, chacun avec son propre défilement : **Planète** (vue jeu, heure, globe
-  qui prend la place libre, carte météo, aller à une zone / une frontière / un POI, mode vol), **Sol** et
+  qui prend la place libre, aller à une zone / une frontière / un POI, mode vol), **Sol** et
   **Scatter**.
 - **Sections repliables** dans Sol (matière principale, répétition et détail, deuxième et troisième
   matières, relief, frontières ; `GROUND_SECTIONS`) et dans Scatter (une par couche, « active » dans le

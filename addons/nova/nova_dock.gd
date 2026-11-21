@@ -32,7 +32,6 @@ const TEXTURE_FILTERS := ["*.png, *.jpg, *.jpeg, *.webp, *.exr, *.tga ; Textures
 const MESH_FILTERS := ["*.tres, *.res, *.mesh, *.glb, *.gltf, *.tscn ; Modèles"]
 const GlobeView := preload("res://addons/nova/nova_globe_view.gd")
 const FarView := preload("res://addons/nova/nova_far_view.gd")
-const WeatherView := preload("res://addons/nova/nova_weather_view.gd")
 const Fly := preload("res://addons/nova/nova_fly.gd")
 const GAME_SCENE := "res://addons/nova/nova_world.tscn"
 ## Lowest height a game view opens at, metres: the player must not start inside the relief.
@@ -87,7 +86,6 @@ var _edge_btn: Button
 var _height_pick: OptionButton
 var _where: Label
 var _globe: Control
-var _weather: WeatherView
 var _message := ""  # what _where says when the mouse is not over the globe
 var _under_cam: Label
 var _cam_timer: Timer
@@ -195,8 +193,6 @@ func _build_ui() -> void:
 			+ "\nJuge les couleurs vers midi : au lever et au coucher, la lumière rasante teinte tout le sol."
 	_hour.value_changed.connect(func(value: float) -> void:
 		_show_hour()
-		if _weather != null:
-			_weather.hour = value
 		game.send("hour", [value]))
 	hrow.add_child(_hour)
 	_into.add_child(hrow)
@@ -347,7 +343,6 @@ func _select_body() -> void:
 	_fly_btn.disabled = _live_terrain == null
 	_walk_btn.disabled = _live_terrain == null
 	_list_pois(str(b.body))
-	_weather.show_body(str(b.body))
 	_apply_bare()
 	var on := NovaBody.is_enabled_for(b.body)
 	if _live_terrain != null and _live_terrain.planet_data.nova != null:
@@ -789,10 +784,6 @@ func _build_navigation() -> void:
 	_into.add_child(_globe)
 	_where = _small_label()
 	_into.add_child(_where)
-	_weather = WeatherView.new()
-	_weather.hour = _hour.value
-	_weather.drawn.connect(_globe.show_overlay)
-	_into.add_child(_weather)
 	_under_cam = Label.new()
 	_under_cam.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_into.add_child(_under_cam)
