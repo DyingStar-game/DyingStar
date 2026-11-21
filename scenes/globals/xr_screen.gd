@@ -116,6 +116,13 @@ func _process(delta: float) -> void:
 		return
 	if origin.get_instance_id() != _origin_id or not is_instance_valid(_layer):
 		_hang_on(origin)
+	# Shown only while the runtime shows the game (session visible or focused). Headset off the head, the
+	# frames are not rendered but the layer still took an image every frame and never gave it back:
+	# 898 "image_acquired" errors in 900 frames (2026-11-22).
+	var state: int = (XRMode.interface() as OpenXRInterface).get_session_state()
+	_layer.visible = state == OpenXRInterface.SESSION_STATE_VISIBLE or state == OpenXRInterface.SESSION_STATE_FOCUSED
+	if not _layer.visible:
+		return
 	_follow_head(cam.transform, delta)
 	_point(delta)
 

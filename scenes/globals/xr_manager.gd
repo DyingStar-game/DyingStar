@@ -46,6 +46,9 @@ func _ready() -> void:
 	get_viewport().vrs_mode = Viewport.VRS_XR
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	XRMode.pace_by_runtime()
+	# A late frame catches up at most MAX_PHYSICS_STEPS steps: at 8 (the default) a 80 ms frame made the
+	# next one run 5 steps and come later still -- the spiral the headset's runtime timed out on.
+	Engine.max_physics_steps_per_frame = XRMode.MAX_PHYSICS_STEPS
 	_build_follow_origin.call_deferred()
 	var screen := XRScreen.new()  # the 2D (menus, HUD) on a panel in the headset
 	screen.name = "XRScreen"
@@ -78,7 +81,6 @@ func follow_flat_camera(flat: Camera3D) -> void:
 	if flat != null:
 		_follow_origin.global_transform = flat.global_transform
 		_follow_camera.near = flat.near
-		_follow_camera.far = flat.far
 		_follow_camera.cull_mask = flat.cull_mask
 		_follow_camera.environment = flat.environment
 		_follow_camera.attributes = flat.attributes
@@ -94,6 +96,7 @@ func _build_follow_origin() -> void:
 	add_child(_follow_origin)
 	_follow_camera = XRCamera3D.new()
 	_follow_camera.name = "XRCamera"
+	_follow_camera.far = XRMode.FAR_M
 	_follow_origin.add_child(_follow_camera)
 
 

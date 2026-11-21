@@ -43,7 +43,7 @@ func test_the_headset_camera_takes_the_flat_ones_place() -> void:
 	assert_true(rig.current)
 	assert_eq(_ray.get_parent(), rig.camera, "the interaction ray now leaves from the head")
 	assert_eq(_ray.target_position, Vector3(0.0, 0.0, -3.0), "local transforms kept")
-	assert_eq(rig.camera.far, 1e13)
+	assert_eq(rig.camera.far, XRMode.FAR_M, "not the flat 1e13: stereo culling breaks out of 1e10..1e12")
 	assert_eq(rig.camera.cull_mask, 0b1011)
 	assert_true(flat.is_queued_for_deletion())
 	assert_null(rig.get_parent().get_node_or_null("Camera3D"))

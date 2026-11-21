@@ -75,7 +75,7 @@ static func _camera_like(flat: Camera3D) -> XRCamera3D:
 	var cam := XRCamera3D.new()
 	cam.name = "XRCamera"
 	cam.near = flat.near
-	cam.far = flat.far
+	cam.far = XRMode.FAR_M  # not the flat camera's 1e13: see XRMode.FAR_M
 	cam.cull_mask = flat.cull_mask
 	cam.environment = flat.environment
 	cam.attributes = flat.attributes

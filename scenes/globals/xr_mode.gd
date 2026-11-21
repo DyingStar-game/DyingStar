@@ -13,6 +13,16 @@ extends RefCounted
 
 ## Godot's name for its OpenXR interface (XRServer.find_interface).
 const INTERFACE_NAME := "OpenXR"
+## Far plane (m) of every headset camera, whatever the flat camera's (1e13). In stereo Godot 4.7 culls with
+## one frustum combined from the two eyes (CameraData.set_multiview_camera), built from float projections
+## and from world-space planes whose "centre" is the point nearest the world's origin -- some 4e10 m away
+## here. Out of a window the combination fails ("p_far <= p_near") and the frame is culled with an identity
+## frustum, nearly empty: measured at 4.4e10 m and 1.2e11 m from the origin, a far of 1e6 failed every
+## frame, 1e8 and 1e13 now and then, 1e10 to 1e12 never (2026-11-22). 1e11 m still spans the star system.
+const FAR_M := 1.0e11
+## Physics steps one frame may run to catch up (the engine's default is 8). A headset frame that came late
+## must not be followed by an even later one: past this the game's clock slows down instead.
+const MAX_PHYSICS_STEPS := 2
 
 
 ## The OpenXR interface, initialised or not; null in a build without the OpenXR module.
