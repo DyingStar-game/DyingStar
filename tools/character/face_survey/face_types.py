@@ -9,10 +9,11 @@ nose is compared as a nose, not as FLAME's directions, which each move the whole
 
 Per sex and trait: the shapes' principal components, then k-means (TYPES groups, best of RESTARTS, groups under
 MIN_GROUP merged away): the TYPES are the same at every age, their shares change with it. Per age band (BANDS,
-merged with the next older one while under MIN_BAND photos): the three most frequent types and their shares,
-summing to 1 (a type judged wrong by eye, --reject, is left out: the next most frequent takes its place). The mouth
-and the eyes are read on photos without a marked smile only (FFHQ smiles a lot: FaceFit takes the expression apart,
-but a wide smile still bends the lips and closes the eyes).
+merged with the next older one while under MIN_BAND photos): its most frequent types until they cover COVER of its
+photos (3 or 4: the shares are flat; the rarest types, the farthest from the mean, stay out), their shares summing to
+1 (a type judged wrong by eye, --reject, is left out: the next most frequent takes its place). The mouth and the eyes
+are read on photos without a marked smile only (FFHQ smiles a lot: FaceFit takes the expression apart, but a wide
+smile still bends the lips and closes the eyes).
 
 Each type becomes a weight offset (`delta`): the likeliest face with the type's mean shape on its trait -- Gaussian
 conditioning on the fitted faces' own covariance of weights, so the rest of the face moves as it moves with that
@@ -75,7 +76,7 @@ COMPONENTS = 0.95  # the shapes' variance the principal components keep (at most
 MAX_COMPONENTS = 12
 BANDS = [(18, 20), (21, 25), (26, 30), (31, 35), (36, 40), (41, 45), (46, 50), (51, 55), (56, 60), (61, 65), (66, 90)]
 MIN_BAND = 150
-KEPT = 3
+COVER = 0.70  # a band keeps its most frequent types until they cover this share of its photos
 LANDMARK_NOISE = 0.05  # mm^2 per landmark coordinate: how loosely a type's offset must make its mean shape
 COVARIANCE_FLOOR = 1e-3  # added to the weights' covariance's diagonal (shape-key units squared)
 SMALLEST = 0.01  # stored values under this are left out of the file (and off the wire)
@@ -155,6 +156,7 @@ def main():
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--reject", action="append", default=[], metavar="SEX:TRAIT:TYPE",
                     help="a type judged wrong by eye (e.g. female:nose:E): kept in the file, flagged, never drawn")
+    ap.add_argument("--cover", type=float, default=COVER, help="the share of a band's photos its kept types cover")
     a = ap.parse_args()
     photos = {p["path"]: p for p in json.load(open(os.path.expanduser(a.photos)))}
     rows = []
@@ -250,10 +252,13 @@ def main():
             for b, (lo, hi) in enumerate(bands):
                 inside = np.array([band_of(y, bands) == b for y in years[subset]])
                 share = np.bincount(label[inside], minlength=k) / max(inside.sum(), 1)
-                share[rejected] = -1.0  # never kept: the next most frequent type takes its place
-                top = np.argsort(-share)[:KEPT]
+                share[rejected] = 0.0  # never kept: the next most frequent type takes its place
+                share /= max(share.sum(), 1e-12)
+                order = np.argsort(-share, kind="stable")
+                count = int(np.searchsorted(np.cumsum(share[order]), a.cover - 1e-9)) + 1
+                top = order[:min(count, int((share > 0).sum()))]
                 total = share[top].sum()
-                band_out.append({"from": lo, "to": hi, "photos": int(inside.sum()),
+                band_out.append({"from": lo, "to": hi, "photos": int(inside.sum()), "cover": round(float(total), 3),
                                  "types": [[int(t), round(float(share[t] / total), 3)] for t in top]})
             for i_local, i in enumerate(np.where(mask)[0]):
                 offsets[i_local] += types[every[i]]["_delta"]
@@ -266,7 +271,7 @@ def main():
                   f"stable {agreement(label, again, k) if len(set(again)) == k else 0:.0%}, made "
                   f"{[ty['made'] for ty in types]}, spill {[ty['spill_mm'] for ty in types]} mm")
             for bo in band_out:
-                print(f"         {bo['from']:2d}-{bo['to']:2d} ({bo['photos']:4d}): " + ", ".join(
+                print(f"         {bo['from']:2d}-{bo['to']:2d} ({bo['photos']:4d}, cover {bo['cover']:.0%}): " + ", ".join(
                     f"{types[t]['id']} {s:.0%}" for t, s in bo["types"]))
             for ty in types:
                 del ty["_delta"]
