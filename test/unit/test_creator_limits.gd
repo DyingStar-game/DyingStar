@@ -46,8 +46,7 @@ func test_the_mouth_weighs_most_and_flame_nothing() -> void:
 func test_random_looks_and_presets_are_untouched() -> void:
 	for seed_value in 300:
 		var look: CharacterAppearance = CharacterAppearance.random(seed_value)
-		assert_eq(CreatorLimits.load_of(look), 0.0, "seed %d: a random face is FLAME's, it carries no load" % seed_value)
-		assert_eq(CreatorLimits.limit(look).encode(), look.encode())
+		assert_eq(CreatorLimits.limit(look).encode(), look.encode(), "seed %d: a random face is within the limits" % seed_value)
 	for name: String in ["default_male", "default_female"]:
 		var preset: CharacterAppearance = CharacterAppearance.preset(name)
 		assert_eq(CreatorLimits.limit(preset).encode(), preset.encode(), name)

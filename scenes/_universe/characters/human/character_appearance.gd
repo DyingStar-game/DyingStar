@@ -646,6 +646,18 @@ static func random(seed_value: int) -> CharacterAppearance:
 		var flame_id: int = modifier_id("%s%02d" % [FLAME_PREFIX, k])
 		if flame_id != -1:
 			a.modifiers[flame_id] = clampf(normal.call() * RANDOM_FLAME_SPREAD / FLAME_RANGE, -1.0, 1.0)
+	# A European face is drawn as FFHQ's European faces of that sex and age are (FaceTypes): the mean face, one type
+	# per trait by its share, FLAME around them -- from numbers of its own, so the draws above and after stay put.
+	if main == ORIGIN_WHITE and FaceTypes.available():
+		var own := RandomNumberGenerator.new()
+		own.seed = hash([seed_value, "face_types"])
+		var ou := func() -> float: return float(own.randi() & 0xFFFFFF) / 16777216.0
+		var on := func() -> float: return (ou.call() + ou.call() + ou.call() + ou.call() - 2.0) * 1.7320508
+		var typed: Dictionary = FaceTypes.face(female, a.years(), ou, on)
+		for key: String in typed["values"]:
+			var typed_id: int = modifier_id(key)
+			if typed_id != -1:
+				a.modifiers[typed_id] = clampf(float(typed["values"][key]), -1.0, 1.0)
 	var sliders: Array = catalogue()["modifiers"]
 	var face_tabs: Array = ["head", "eyes", "nose", "mouth", "jaw", "ears", "flame"]
 	var body_ids: Array[int] = []

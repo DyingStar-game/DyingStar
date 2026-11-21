@@ -95,8 +95,9 @@ func _without_garments(a: CharacterAppearance) -> PackedByteArray:
 func test_wire_size_is_small() -> void:
 	for seed_value in 50:
 		var text: String = CharacterAppearance.random(seed_value).encode()
-		# FLAME's 50 directions and 6 to 9 body sliders; plus the six skin details.
-		assert_lt(text.length(), 256, "a random look stays a short string (%d chars)" % text.length())
+		# FLAME's 50 directions and 6 to 9 body sliders; plus the six skin details. A European face also carries the
+		# nose's and jaw's sliders its types are made of (FaceTypes): 13 more.
+		assert_lt(text.length(), 300, "a random look stays a short string (%d chars)" % text.length())
 
 
 func test_random_is_deterministic_and_pinned() -> void:
