@@ -15,6 +15,9 @@ extends Node
 ##
 ## Names no gameplay class (built by an autoload).
 
+## Share (each side) of the main viewport's size the panel is drawn at: 0.5 = a quarter of the video memory
+## for text still sharp at arm's length.
+const PIXEL_SHARE := 0.5
 ## Distance (m) from the eyes to the panel.
 const DISTANCE_M := 1.4
 ## Width (m) of the panel; its height follows the main viewport's shape (in VR, the headset's square render size).
@@ -183,8 +186,7 @@ func _point(delta: float) -> void:
 	var uv := _layer.intersects_ray(from, along)
 	var reach := LASER_REACH_M
 	if uv.x >= 0.0:
-		var size := Vector2(_viewport.size)
-		var at := uv * size
+		var at := uv * Vector2(_viewport.size_2d_override)  # the 2D's own coordinates, not the texture's
 		reach = from.distance_to(_layer.global_transform * Vector3(
 				(uv.x - 0.5) * _layer.quad_size.x, (0.5 - uv.y) * _layer.quad_size.y, 0.0))
 		_move_mouse(at)
@@ -311,7 +313,12 @@ func _adopt(layer: CanvasLayer) -> void:
 
 ## The panel draws the 2D at the size the main viewport lays it out (its stretched size).
 func _fit_to_window() -> void:
-	_viewport.size = Vector2i(get_tree().root.get_visible_rect().size)
+	# Laid out at the main viewport's size, drawn at a share of it: in VR the main viewport is the
+	# headset's (2048 px square on SteamVR), and the runtime keeps three images of the panel in video memory.
+	var layout := Vector2i(get_tree().root.get_visible_rect().size)
+	_viewport.size_2d_override = layout
+	_viewport.size_2d_override_stretch = true
+	_viewport.size = Vector2i((Vector2(layout) * PIXEL_SHARE).round())
 	if is_instance_valid(_layer):
 		_layer.quad_size = _quad_size()
 

@@ -14,7 +14,13 @@ signal focus_changed(focused: bool)
 ## The user recentred the view in the runtime (long press of the system button): the rig re-aligns.
 signal recentered
 
+## Seconds between two [XR/perf] lines in the log: frame rate, CPU and GPU time, video memory.
+const PERF_LOG_S := 5.0
+
 var _xr: OpenXRInterface = null
+var _perf_wait: float = PERF_LOG_S
+var _frames: int = 0
+var _slowest_ms: float = 0.0
 var _focused: bool = false
 ## The headset's view where the game looks through a flat Camera3D (the menu's stations, any other
 ## scene camera) or through none: an XROrigin3D placed on that camera, with its own XRCamera3D. The
@@ -34,6 +40,11 @@ func _ready() -> void:
 	set_process(true)
 	_xr = XRMode.interface() as OpenXRInterface
 	get_viewport().use_xr = true
+	# Foveated rendering: each eye's periphery is shaded coarser (Vulkan variable rate shading, from the
+	# runtime's eye centres -- or the gaze, where the headset tracks it). Where the GPU has no VRS, the
+	# engine renders as before.
+	get_viewport().vrs_mode = Viewport.VRS_XR
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	XRMode.pace_by_runtime()
 	_build_follow_origin.call_deferred()
 	var screen := XRScreen.new()  # the 2D (menus, HUD) on a panel in the headset
@@ -48,7 +59,8 @@ func _ready() -> void:
 
 
 ## Each frame, VR only: whatever flat Camera3D the game made current, the headset looks from it.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_measure(delta)
 	var flat: Camera3D = get_viewport().get_camera_3d()
 	if flat is XRCamera3D:
 		return
@@ -83,6 +95,26 @@ func _build_follow_origin() -> void:
 	_follow_camera = XRCamera3D.new()
 	_follow_camera.name = "XRCamera"
 	_follow_origin.add_child(_follow_camera)
+
+
+## One [XR/perf] line every PERF_LOG_S: what a headset going black or juddering needs first. The runtime
+## wants a frame every 1/rate s; under it, it reprojects, then drops the app.
+func _measure(delta: float) -> void:
+	_frames += 1
+	_slowest_ms = maxf(_slowest_ms, delta * 1000.0)
+	_perf_wait -= delta
+	if _perf_wait > 0.0:
+		return
+	var rid := get_viewport().get_viewport_rid()
+	print(("[XR/perf] fps=%.0f (headset %.0f Hz) slowest=%.1fms | cpu=%.1fms gpu=%.1fms | process=%.1fms "
+			+ "physics=%.1fms | vram=%.0f MiB | scale=%.2f") % [
+		_frames / (PERF_LOG_S - _perf_wait), refresh_rate(), _slowest_ms,
+		RenderingServer.viewport_get_measured_render_time_cpu(rid), RenderingServer.viewport_get_measured_render_time_gpu(rid),
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, get_viewport().scaling_3d_scale])
+	_perf_wait = PERF_LOG_S
+	_frames = 0
+	_slowest_ms = 0.0
 
 
 ## True while the user is in the game (the session has the focus).
