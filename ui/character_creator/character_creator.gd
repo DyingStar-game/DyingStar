@@ -314,7 +314,8 @@ func _macro_row(label_key: String, macro: String) -> void:
 
 
 ## The face or body sliders of one catalogue tab (head, nose, torso...), in catalogue order. A face slider stops where
-## the face would stop looking human (CreatorLimits.max_move: how much the face's other sliders already push).
+## the face would stop looking human (CreatorLimits.max_move: how much the face's other sliders already push); a
+## capped body slider (Emaciated) at its cap.
 func _modifier_rows(tab: StringName) -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for id in sliders.size():

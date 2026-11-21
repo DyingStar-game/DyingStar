@@ -1,6 +1,7 @@
 extends GutTest
-## CreatorLimits: a face's load (the catalogue face sliders, weighted per tab) kept within the fitted budget -- where a
-## look is shown and where the creator's sliders stop; never in what is stored.
+## CreatorLimits: a face's load (the catalogue face sliders, weighted per tab) kept within the fitted budget, and a few
+## sliders' caps (the body's Emaciated) -- where a look is shown and where the creator's sliders stop; never in what is
+## stored.
 ##
 ## Run with:
 ##     godot --headless -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_creator_limits.gd -gexit
@@ -105,3 +106,21 @@ func test_a_look_past_the_limits_may_always_come_back() -> void:
 	assert_eq(CreatorLimits.max_move(look, mouth, 0.4), 0.4, "towards 0: allowed")
 	assert_eq(CreatorLimits.max_move(look, mouth, 1.0), 1.0, "staying where it was: allowed")
 	assert_eq(CreatorLimits.max_move(look, mouth, -0.5), 0.0, "past 0 the other way: no room left")
+
+
+func test_an_emaciated_body_stops_at_its_cap() -> void:
+	var look: CharacterAppearance = CharacterAppearance.random(9)
+	var emaciated: int = _id("BodyType_Emaciated")
+	var most: float = CreatorLimits.cap(emaciated, 1.0)
+	assert_between(most, 0.75, 0.8, "capped at 0.8, on the stored grid")
+	assert_eq(CreatorLimits.max_move(look, emaciated, 1.0), most, "the slider stops at its cap")
+	assert_eq(CreatorLimits.max_move(look, emaciated, 0.5), 0.5, "below it: as asked")
+	assert_eq(CreatorLimits.max_move(look, _id("BodyType_Fat"), 1.0), 1.0, "an uncapped body slider is free")
+	look.modifiers[emaciated] = 1.0
+	var shown: CharacterAppearance = CreatorLimits.limit(look)
+	assert_eq(float(shown.modifiers[emaciated]), most, "shown at its cap")
+	assert_eq(float(look.modifiers[emaciated]), 1.0, "the stored look is left as it was")
+	assert_eq(CreatorLimits.limit(shown).encode(), shown.encode(), "idempotent")
+	assert_eq(CreatorLimits.max_move(look, emaciated, 0.9), 0.9, "a look past its cap may come back")
+	CreatorLimits.strength = 0.0
+	assert_eq(CreatorLimits.limit(look).encode(), look.encode(), "strength 0: no cap")
