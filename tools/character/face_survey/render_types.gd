@@ -3,8 +3,8 @@ extends Control
 ## European face types (FaceTypes, european_face_types.json) rendered one by one, to judge by eye: per sex, the mean
 ## face, then each trait's types alone on it (the same base: age, hair, light), front and three-quarter, framed as the
 ## creator frames a face. --boost=2 tells every type twice as strongly (FaceTypes.STRENGTH), to see what tells them
-## apart. Needs a GPU (not --headless):
-##   godot --path . res://tools/character/face_survey/render_types.tscn -- --out=<dir> [--years=30] [--boost=1]
+## apart; --scale=2 renders twice as many pixels each way (same framing). Needs a GPU (not --headless):
+##   godot --path . res://tools/character/face_survey/render_types.tscn -- --out=<dir> [--years=30] [--boost=1] [--scale=1]
 ## Writes <sex>_mean_<view>.png and <sex>_<trait>_<type>_<view>.png, and types.json (per image its sex, trait, type).
 
 const VIEWS: Dictionary = {"front": 0.0, "three_quarter": 0.6}
@@ -24,6 +24,7 @@ func _ready() -> void:
 	var out: String = String(args.get("out", "user://face_types"))
 	var years: float = float(args.get("years", "30"))
 	var boost: float = float(args.get("boost", "1"))
+	var scale: int = int(args.get("scale", "1"))
 	if not FaceTypes.available():
 		push_error("no european_face_types.json")
 		get_tree().quit(1)
@@ -35,7 +36,7 @@ func _ready() -> void:
 	add_child(_preview)
 	_preview.set_process(false)
 	_preview.stretch = false
-	_preview._viewport.size = SIZE
+	_preview._viewport.size = SIZE * scale
 	_preview._viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	await get_tree().process_frame
 	var index: Array = []

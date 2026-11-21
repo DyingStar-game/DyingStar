@@ -10,8 +10,9 @@ nose is compared as a nose, not as FLAME's directions, which each move the whole
 Per sex and trait: the shapes' principal components, then k-means (TYPES groups, best of RESTARTS, groups under
 MIN_GROUP merged away): the TYPES are the same at every age, their shares change with it. Per age band (BANDS,
 merged with the next older one while under MIN_BAND photos): the three most frequent types and their shares,
-summing to 1. The mouth and the eyes are read on photos without a marked smile only (FFHQ smiles a lot: FaceFit
-takes the expression apart, but a wide smile still bends the lips and closes the eyes).
+summing to 1 (a type judged wrong by eye, --reject, is left out: the next most frequent takes its place). The mouth
+and the eyes are read on photos without a marked smile only (FFHQ smiles a lot: FaceFit takes the expression apart,
+but a wide smile still bends the lips and closes the eyes).
 
 Each type becomes a weight offset (`delta`): the likeliest face with the type's mean shape on its trait -- Gaussian
 conditioning on the fitted faces' own covariance of weights, so the rest of the face moves as it moves with that
@@ -28,7 +29,8 @@ Only aggregates leave ~/datasets: every type is the mean of at least MIN_GROUP f
 
     python3 face_types.py --fits '~/datasets/ffhq/survey/eu_fit/fit_*.jsonl' \\
         --photos ~/datasets/ffhq/survey/european.json \\
-        --bank build/character/human_bank.npz --corr ~/datasets/ffhq/survey/corr.npz [--out <json>]
+        --bank build/character/human_bank.npz --corr ~/datasets/ffhq/survey/corr.npz [--out <json>] \\
+        [--reject female:nose:E ...]
 """
 import argparse
 import glob
@@ -151,6 +153,8 @@ def main():
     ap.add_argument("--corr", required=True)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--out", default=OUT)
+    ap.add_argument("--reject", action="append", default=[], metavar="SEX:TRAIT:TYPE",
+                    help="a type judged wrong by eye (e.g. female:nose:E): kept in the file, flagged, never drawn")
     a = ap.parse_args()
     photos = {p["path"]: p for p in json.load(open(os.path.expanduser(a.photos)))}
     rows = []
@@ -224,7 +228,10 @@ def main():
             order = np.argsort(-sizes)
             centres, sizes = centres[order], sizes[order]
             label = np.argsort(order)[label]
-            every = ((proj[:, None, :] - centres[None]) ** 2).sum(-1).argmin(1)  # every photo's nearest type
+            rejected = [t for t in range(k) if f"{sex}:{trait}:{chr(ord('A') + t)}" in a.reject]
+            far = ((proj[:, None, :] - centres[None]) ** 2).sum(-1)
+            far[:, rejected] = np.inf
+            every = far.argmin(1)  # every photo's nearest type (a rejected one's photos: the nearest kept)
             normal = Ar[:, own].T @ Ar[:, own] / LANDMARK_NOISE + cov_inv
             types = []
             for t in range(k):
@@ -232,7 +239,7 @@ def main():
                 delta = np.zeros(len(keys))
                 delta[own] = np.linalg.solve(normal, Ar[:, own].T @ d / LANDMARK_NOISE)
                 made = Ar @ delta
-                types.append({"id": chr(ord("A") + t), "size": int(sizes[t]),
+                types.append({"id": chr(ord("A") + t), "size": int(sizes[t]), **({"rejected": True} if t in rejected else {}),
                               "made": round(float(np.linalg.norm(made - d) / max(np.linalg.norm(d), 1e-9)), 3),
                               "spill_mm": round(float(np.sqrt(((Ao @ delta) ** 2).mean())), 3),
                               "delta": {kk: round(float(v / r), 4) for kk, v, r in zip(keys, delta, reach)
@@ -243,6 +250,7 @@ def main():
             for b, (lo, hi) in enumerate(bands):
                 inside = np.array([band_of(y, bands) == b for y in years[subset]])
                 share = np.bincount(label[inside], minlength=k) / max(inside.sum(), 1)
+                share[rejected] = -1.0  # never kept: the next most frequent type takes its place
                 top = np.argsort(-share)[:KEPT]
                 total = share[top].sum()
                 band_out.append({"from": lo, "to": hi, "photos": int(inside.sum()),
