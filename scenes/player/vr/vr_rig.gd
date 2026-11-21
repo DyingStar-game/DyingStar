@@ -83,5 +83,5 @@ static func _hand(tracker: StringName, node_name: String) -> XRController3D:
 	var hand := XRController3D.new()
 	hand.name = node_name
 	hand.tracker = tracker
-	hand.pose = &"grip_pose"
+	hand.pose = &"grip"  # the grip_pose action: Godot drops the "_pose" on the tracker
 	return hand

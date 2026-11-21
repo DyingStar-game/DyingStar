@@ -53,7 +53,7 @@ func test_both_hands_follow_their_grip_pose() -> void:
 	var rig := VrRig.install(_player)
 	assert_eq(rig.left_hand.tracker, &"left_hand")
 	assert_eq(rig.right_hand.tracker, &"right_hand")
-	assert_eq(rig.right_hand.pose, &"grip_pose", "a pose action of xr/openxr_action_map.tres")
+	assert_eq(rig.right_hand.pose, &"grip", "grip_pose of xr/openxr_action_map.tres, as Godot names it")
 
 
 func test_the_head_is_read_relative_to_the_body() -> void:

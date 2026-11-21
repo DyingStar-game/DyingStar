@@ -17,8 +17,8 @@ signal recentered
 var _xr: OpenXRInterface = null
 var _focused: bool = false
 ## The headset's view where the game looks through a flat Camera3D (the menu's stations, any other
-## scene camera): an XROrigin3D hung under that camera, with its own XRCamera3D. The player's view does
-## not need it: its camera IS an XRCamera3D (VrRig).
+## scene camera) or through none: an XROrigin3D placed on that camera, with its own XRCamera3D. The
+## player's view does not need it: its camera IS an XRCamera3D (VrRig).
 var _follow_origin: XROrigin3D = null
 var _follow_camera: XRCamera3D = null
 
@@ -35,6 +35,10 @@ func _ready() -> void:
 	_xr = XRMode.interface() as OpenXRInterface
 	get_viewport().use_xr = true
 	XRMode.pace_by_runtime()
+	_build_follow_origin.call_deferred()
+	var screen := XRScreen.new()  # the 2D (menus, HUD) on a panel in the headset
+	screen.name = "XRScreen"
+	add_child(screen)
 	_xr.session_begun.connect(_on_session_begun)
 	_xr.session_focussed.connect(_on_focus.bind(true))
 	_xr.session_visible.connect(_on_focus.bind(false))
@@ -46,32 +50,39 @@ func _ready() -> void:
 ## Each frame, VR only: whatever flat Camera3D the game made current, the headset looks from it.
 func _process(_delta: float) -> void:
 	var flat: Camera3D = get_viewport().get_camera_3d()
-	if flat == null or flat is XRCamera3D:
+	if flat is XRCamera3D:
 		return
 	follow_flat_camera(flat)
 
 
-## Hang the headset's view under [param flat]: its origin follows that camera wherever the game moves
-## it, the head turns on top. The view goes back to [param flat] when it is made current again, and
-## the next frame takes it over once more.
+## The headset looks from [param flat]: an origin of our own (never a child of the game's camera, which
+## may be freed with whatever hangs under it) placed on that camera every frame, last, the head turning
+## on top. The view goes back to [param flat] when the game makes it current again, and the next frame
+## takes it over once more. With no camera at all (a 2D-only menu: the menu stage switched off), the
+## view stands at the world's origin, the 2D panel in front of it.
 func follow_flat_camera(flat: Camera3D) -> void:
-	if not is_instance_valid(_follow_origin):
-		_follow_origin = XROrigin3D.new()
-		_follow_origin.name = "XRFollowOrigin"
-		_follow_camera = XRCamera3D.new()
-		_follow_camera.name = "XRCamera"
-		_follow_origin.add_child(_follow_camera)
-	if _follow_origin.get_parent() != flat:
-		if _follow_origin.get_parent() != null:
-			_follow_origin.get_parent().remove_child(_follow_origin)
-		flat.add_child(_follow_origin)
-	_follow_camera.near = flat.near
-	_follow_camera.far = flat.far
-	_follow_camera.cull_mask = flat.cull_mask
-	_follow_camera.environment = flat.environment
-	_follow_camera.attributes = flat.attributes
+	if not is_instance_valid(_follow_origin) or not _follow_origin.is_inside_tree():
+		return  # built once the tree is up (_build_follow_origin)
+	if flat != null:
+		_follow_origin.global_transform = flat.global_transform
+		_follow_camera.near = flat.near
+		_follow_camera.far = flat.far
+		_follow_camera.cull_mask = flat.cull_mask
+		_follow_camera.environment = flat.environment
+		_follow_camera.attributes = flat.attributes
 	_follow_origin.current = true
 	_follow_camera.make_current()
+
+
+## Our own origin and camera for follow_flat_camera, added once the tree is up (deferred from _ready:
+## added during the first frame, an XROrigin3D asked for its transform before it was in).
+func _build_follow_origin() -> void:
+	_follow_origin = XROrigin3D.new()
+	_follow_origin.name = "XRFollowOrigin"
+	add_child(_follow_origin)
+	_follow_camera = XRCamera3D.new()
+	_follow_camera.name = "XRCamera"
+	_follow_origin.add_child(_follow_camera)
 
 
 ## True while the user is in the game (the session has the focus).

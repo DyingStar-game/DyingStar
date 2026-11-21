@@ -1,5 +1,5 @@
 ## Writes res://xr/openxr_action_map.tres, the OpenXR action map: one action set, "dyingstar", whose actions
-## are the controls of a hand (trigger, grip, stick, face buttons, poses), bound on EVERY controller profile
+## are the controls of a hand (trigger, squeeze, stick, face buttons, poses), bound on EVERY controller profile
 ## Godot 4.7 knows (Steam Frame, Index, Vive, Touch, Pico, Windows MR, Cosmos, Focus 3, generic...). The
 ## runtime picks the profile of the controllers in the user's hands and the game reads the same actions
 ## whatever the headset: that is how VR stays headset-agnostic. Godot's own default map binds 4 profiles.
@@ -32,9 +32,11 @@ const RULES: Array = [
 	["trigger_click", OpenXRAction.OPENXR_ACTION_BOOL,
 			["/input/trigger/click", "/input/trigger/value", "/input/pinch_ext/value", "/input/select/click"]],
 	["trigger_touch", OpenXRAction.OPENXR_ACTION_BOOL, ["/input/trigger/touch"]],
-	["grip", OpenXRAction.OPENXR_ACTION_FLOAT,
+	# "squeeze", not "grip": Godot names the grip_pose action "grip" on the tracker, and a second "grip"
+	# in the set is dropped (OpenXRInterface.create_action), with every binding of it.
+	["squeeze", OpenXRAction.OPENXR_ACTION_FLOAT,
 			["/input/squeeze/value", "/input/squeeze/click", "/input/grasp_ext/value"]],
-	["grip_click", OpenXRAction.OPENXR_ACTION_BOOL,
+	["squeeze_click", OpenXRAction.OPENXR_ACTION_BOOL,
 			["/input/squeeze/click", "/input/squeeze/value", "/input/grasp_ext/value"]],
 	["primary", OpenXRAction.OPENXR_ACTION_VECTOR2, ["/input/thumbstick", "/input/trackpad"]],
 	["primary_click", OpenXRAction.OPENXR_ACTION_BOOL, ["/input/thumbstick/click", "/input/trackpad/click"]],

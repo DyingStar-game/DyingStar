@@ -69,6 +69,8 @@ func _apply(option: Dictionary) -> void:
 		return
 	var value : Variant = _settings.effective(key)
 	if option.has("viewport"):
+		if key == "aa_screen" and value == Viewport.SCREEN_SPACE_AA_SMAA and XRMode.is_active():
+			value = Viewport.SCREEN_SPACE_AA_FXAA  # SMAA breaks stereo rendering (4.7: every frame errors)
 		_viewport.set(option["viewport"], value)
 		if key == "mesh_lod":  # a head of hair's shader keeps its coverage across the LODs with it
 			RenderingServer.global_shader_parameter_set("mesh_lod_threshold", float(value))

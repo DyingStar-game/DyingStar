@@ -29,6 +29,16 @@ func test_flat_screen_by_default() -> void:
 	assert_eq(ProjectSettings.get_setting("xr/openxr/default_action_map"), ACTION_MAP_PATH)
 
 
+func test_no_action_is_named_like_a_pose() -> void:
+	# Godot calls the pose actions default_pose / aim_pose / grip_pose "default" / "aim" / "grip" on the
+	# trackers; an action of that name beside them is dropped, bindings and all (SteamVR log 2026-11-21).
+	var map: OpenXRActionMap = load(ACTION_MAP_PATH)
+	for i in map.get_action_set_count():
+		var action_set: OpenXRActionSet = map.get_action_set(i)
+		for action: OpenXRAction in action_set.actions:
+			assert_false(action.resource_name in ["default", "aim", "grip"], action.resource_name)
+
+
 func test_the_action_map_binds_every_main_headset() -> void:
 	var map: OpenXRActionMap = load(ACTION_MAP_PATH)
 	assert_not_null(map)

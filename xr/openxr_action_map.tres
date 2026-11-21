@@ -42,13 +42,13 @@ action_type = 0
 toplevel_paths = PackedStringArray("/user/hand/left", "/user/hand/right")
 
 [sub_resource type="OpenXRAction" id="OpenXRAction_lt8nv"]
-resource_name = "grip"
-localized_name = "Grip"
+resource_name = "squeeze"
+localized_name = "Squeeze"
 toplevel_paths = PackedStringArray("/user/hand/left", "/user/hand/right")
 
 [sub_resource type="OpenXRAction" id="OpenXRAction_4dypq"]
-resource_name = "grip_click"
-localized_name = "Grip Click"
+resource_name = "squeeze_click"
+localized_name = "Squeeze Click"
 action_type = 0
 toplevel_paths = PackedStringArray("/user/hand/left", "/user/hand/right")
 

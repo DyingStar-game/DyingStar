@@ -1,0 +1,274 @@
+class_name XRScreen
+extends Node
+## The game's 2D, in VR: a headset shows only the 3D world, and the menus, the HUD, the pause menu, every
+## overlay are 2D. Built by XRManager in VR only.
+##
+## - What the main window would draw in 2D is drawn into a SubViewport instead: every CanvasLayer of the
+##   main viewport renders there (custom_viewport), and the SubViewport shares the main viewport's World2D,
+##   so the Controls that sit on its default canvas (the player's HUD) come along. No screen is touched.
+## - The SubViewport is shown by an OpenXR quad composition layer: the headset's compositor draws it, sharp
+##   and over the world, on any OpenXR runtime (quad layers are core OpenXR). It floats in front of the
+##   head and catches up when the head turns away (a panel stuck to the eyes is tiring).
+## - A laser from the hand points at it while the game frees the mouse (a menu is open): it moves the
+##   mouse and the trigger clicks. The events go into the main viewport, where the Controls still live
+##   and take their input: the desktop mouse keeps working the same way.
+##
+## Names no gameplay class (built by an autoload).
+
+## Distance (m) from the eyes to the panel.
+const DISTANCE_M := 1.4
+## Width (m) of the panel; its height follows the main viewport's shape (in VR, the headset's square render size).
+const WIDTH_M := 1.2
+## How far (m) below the eyes the panel's centre sits: reading slightly down is restful.
+const BELOW_EYES_M := 0.1
+## The panel catches up once the head looks this far (rad) away from it.
+const FOLLOW_ANGLE := deg_to_rad(30.0)
+## How fast (1/s) the panel glides to its new place.
+const FOLLOW_RATE := 5.0
+## Laser length (m) when it hits nothing.
+const LASER_REACH_M := 3.0
+## Seconds between two wheel notches while the stick is pushed (menus scroll).
+const SCROLL_REPEAT_S := 0.12
+## The stick must go this far (0..1) to scroll.
+const SCROLL_DEADZONE := 0.5
+
+var _viewport: SubViewport = null
+var _layer: OpenXRCompositionLayerQuad = null
+var _origin_id: int = 0  # instance id of the origin the panel hangs on (it may be freed under us)
+var _target: Vector3 = Vector3.ZERO
+var _placed: bool = false
+var _pointers: Array[XRController3D] = []
+var _lasers: Array[MeshInstance3D] = []
+var _trigger_was: Array[bool] = [false, false]
+var _hand: int = 1  # the pointing hand: 0 left, 1 right; the last trigger pulled takes it
+var _button_down: bool = false
+var _mouse_at: Vector2 = Vector2(-1.0, -1.0)
+var _scroll_wait: float = 0.0
+var _adopted: Array[int] = []  # instance ids of the CanvasLayers drawing into the panel
+
+
+func _ready() -> void:
+	var main := get_tree().root
+	_viewport = SubViewport.new()
+	_viewport.name = "XRScreenViewport"
+	_viewport.transparent_bg = true
+	_viewport.disable_3d = true
+	_viewport.gui_disable_input = true  # the Controls take their input in the main viewport
+	_viewport.world_2d = main.world_2d
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(_viewport)
+	_fit_to_window()
+	main.size_changed.connect(_fit_to_window)
+	for layer: Node in main.find_children("*", "CanvasLayer", true, false):
+		_adopt(layer)
+	get_tree().node_added.connect(_on_node_added)
+
+	_build_nodes()
+
+
+## The CanvasLayers go back to the main window before the panel's viewport is freed (quitting): left
+## pointing at a freed viewport, each one errors as it leaves the tree.
+func _exit_tree() -> void:
+	for id: int in _adopted:
+		var layer := instance_from_id(id) as CanvasLayer
+		if layer != null and layer.custom_viewport == _viewport:
+			layer.custom_viewport = get_tree().root  # 4.7 refuses null: name the main viewport itself
+	_adopted.clear()
+
+
+func _process(delta: float) -> void:
+	var cam := get_viewport().get_camera_3d() as XRCamera3D
+	var origin: XROrigin3D = cam.get_parent() as XROrigin3D if cam != null else null
+	if origin == null:
+		return
+	if origin.get_instance_id() != _origin_id or not is_instance_valid(_layer):
+		_hang_on(origin)
+	_follow_head(cam.transform, delta)
+	_point(delta)
+
+
+## The SubViewport the 2D is drawn into (tests, and whoever must know where the UI is drawn).
+func viewport() -> SubViewport:
+	return _viewport
+
+
+## The panel and the pointers live under the XROrigin3D the headset looks from: the menu's, then the
+## player's (a composition layer must be a child of the origin).
+func _hang_on(origin: XROrigin3D) -> void:
+	_origin_id = origin.get_instance_id()
+	if not is_instance_valid(_layer) or not is_instance_valid(_pointers[0]) or not is_instance_valid(_pointers[1]):
+		_build_nodes()  # freed with the origin they hung on (the player left, its rig with it)
+	for node: Node3D in [_layer, _pointers[0], _pointers[1]]:
+		if node.get_parent() != null:
+			node.get_parent().remove_child(node)
+		origin.add_child(node)
+	_placed = false
+	print("[XR] 2D panel on %s (%dx%d px, %.2f x %.2f m, composited by the runtime: %s)" % [origin.get_path(),
+			_viewport.size.x, _viewport.size.y, _layer.quad_size.x, _layer.quad_size.y, _layer.is_natively_supported()])
+
+
+## Keep the panel in front of [param head] (the camera, in the origin's space): it moves only when the
+## head has turned FOLLOW_ANGLE away from it, then glides there. Upright in the origin's frame.
+func _follow_head(head: Transform3D, delta: float) -> void:
+	var forward := -head.basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 1e-4:
+		forward = -_layer.transform.basis.z if _placed else Vector3.FORWARD
+	forward = forward.normalized()
+	var wanted := head.origin + forward * DISTANCE_M + Vector3.DOWN * BELOW_EYES_M
+	if not _placed:
+		_target = wanted
+		_layer.position = wanted
+		_placed = true
+	else:
+		var now := _layer.position - head.origin
+		now.y = 0.0
+		if now.length_squared() < 1e-4 or now.normalized().angle_to(forward) > FOLLOW_ANGLE:
+			_target = wanted
+		_layer.position = _layer.position.lerp(_target, 1.0 - exp(-FOLLOW_RATE * delta))
+	var away := _layer.position - head.origin
+	away.y = 0.0
+	if away.length_squared() > 1e-6:
+		# The quad shows its +Z side: -Z points away from the eyes.
+		_layer.basis = Basis.looking_at(away.normalized(), Vector3.UP)
+
+
+## The laser and the mouse it drives, while the game lets the mouse free (a menu, a screen in use).
+func _point(delta: float) -> void:
+	var free := Input.mouse_mode == Input.MOUSE_MODE_VISIBLE or Input.mouse_mode == Input.MOUSE_MODE_CONFINED
+	for i in 2:
+		var pulled := _pointers[i].is_button_pressed(&"trigger_click")
+		if pulled and not _trigger_was[i]:
+			_hand = i
+		_trigger_was[i] = pulled
+		_lasers[i].visible = free and i == _hand and _pointers[i].get_has_tracking_data()
+	if not free:
+		_release()
+		return
+	var hand := _pointers[_hand]
+	var from := hand.global_position
+	var along := -hand.global_basis.z.normalized()
+	var uv := _layer.intersects_ray(from, along)
+	var reach := LASER_REACH_M
+	if uv.x >= 0.0:
+		var size := Vector2(_viewport.size)
+		var at := uv * size
+		reach = from.distance_to(_layer.global_transform * Vector3(
+				(uv.x - 0.5) * _layer.quad_size.x, (0.5 - uv.y) * _layer.quad_size.y, 0.0))
+		_move_mouse(at)
+		_click(_trigger_was[_hand], at)
+		_scroll(hand.get_vector2(&"primary").y, at, delta)
+	else:
+		_release()
+	_aim_laser(_lasers[_hand], reach)
+
+
+func _move_mouse(at: Vector2) -> void:
+	if at == _mouse_at:
+		return
+	var motion := InputEventMouseMotion.new()
+	motion.position = at
+	motion.global_position = at
+	motion.relative = at - _mouse_at if _mouse_at.x >= 0.0 else Vector2.ZERO
+	motion.button_mask = MOUSE_BUTTON_MASK_LEFT if _button_down else 0
+	_mouse_at = at
+	get_viewport().push_input(motion, true)
+
+
+func _click(pulled: bool, at: Vector2) -> void:
+	if pulled == _button_down:
+		return
+	_button_down = pulled
+	var button := InputEventMouseButton.new()
+	button.button_index = MOUSE_BUTTON_LEFT
+	button.pressed = pulled
+	button.position = at
+	button.global_position = at
+	button.button_mask = MOUSE_BUTTON_MASK_LEFT if pulled else 0
+	get_viewport().push_input(button, true)
+
+
+func _scroll(stick_y: float, at: Vector2, delta: float) -> void:
+	_scroll_wait -= delta
+	if absf(stick_y) < SCROLL_DEADZONE or _scroll_wait > 0.0:
+		return
+	_scroll_wait = SCROLL_REPEAT_S
+	for pressed: bool in [true, false]:
+		var wheel := InputEventMouseButton.new()
+		wheel.button_index = MOUSE_BUTTON_WHEEL_UP if stick_y > 0.0 else MOUSE_BUTTON_WHEEL_DOWN
+		wheel.pressed = pressed
+		wheel.position = at
+		wheel.global_position = at
+		get_viewport().push_input(wheel, true)
+
+
+## The laser left the panel or the mouse went back to the game: a held click is let go where it was.
+func _release() -> void:
+	if _button_down:
+		_click(false, _mouse_at)
+	_mouse_at = Vector2(-1.0, -1.0)
+
+
+func _aim_laser(laser: MeshInstance3D, reach: float) -> void:
+	laser.position = Vector3(0.0, 0.0, -reach * 0.5)
+	laser.scale = Vector3(1.0, 1.0, reach)
+
+
+## The panel and the two pointing hands with their lasers, not yet in the tree (see _hang_on).
+func _build_nodes() -> void:
+	_layer = OpenXRCompositionLayerQuad.new()
+	_layer.name = "XRScreenLayer"
+	_layer.layer_viewport = _viewport
+	_layer.alpha_blend = true
+	_layer.quad_size = _quad_size()
+	_pointers.clear()
+	_lasers.clear()
+	for tracker: StringName in [&"left_hand", &"right_hand"]:
+		var hand := XRController3D.new()
+		hand.name = "XRScreenPointer_" + tracker
+		hand.tracker = tracker
+		hand.pose = &"aim"  # the aim_pose action: Godot drops the "_pose" on the tracker
+		var laser := _laser()
+		hand.add_child(laser)
+		_pointers.append(hand)
+		_lasers.append(laser)
+
+
+static func _laser() -> MeshInstance3D:
+	var beam := BoxMesh.new()
+	beam.size = Vector3(0.003, 0.003, 1.0)
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.albedo_color = Color(0.4, 0.85, 1.0)
+	beam.material = glow
+	var laser := MeshInstance3D.new()
+	laser.name = "Laser"
+	laser.mesh = beam
+	laser.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	laser.visible = false
+	return laser
+
+
+func _on_node_added(node: Node) -> void:
+	if node is CanvasLayer:
+		_adopt(node as CanvasLayer)
+
+
+## A CanvasLayer of the main viewport draws into the panel. One inside another viewport (a 3D screen's)
+## stays where it is.
+func _adopt(layer: CanvasLayer) -> void:
+	if layer.custom_viewport == null and layer.get_viewport() == get_tree().root:
+		layer.custom_viewport = _viewport
+		_adopted.append(layer.get_instance_id())
+
+
+## The panel draws the 2D at the size the main viewport lays it out (its stretched size).
+func _fit_to_window() -> void:
+	_viewport.size = Vector2i(get_tree().root.get_visible_rect().size)
+	if is_instance_valid(_layer):
+		_layer.quad_size = _quad_size()
+
+
+func _quad_size() -> Vector2:
+	var size := Vector2(_viewport.size)
+	return Vector2(WIDTH_M, WIDTH_M * size.y / maxf(size.x, 1.0))
