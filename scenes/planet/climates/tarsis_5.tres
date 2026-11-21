@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_wnklc"]
+
+[resource]
+script = ExtResource("1_wnklc")
+body_name = "Tarsis 5"
+has_atmosphere = true
+weather_seed = 366180354846568256
+radius_m = 69291708.0302848
+surface_gravity = 11.10607644316304
+rotation_period_s = 42254.13862700208
+tilt_deg = 22.4017797741002
+orbit_period_s = 42314894.00405642
+pressure_pa = 9672393.49660605
+rho0_kg_m3 = 19.988755569653364
+scale_height_m = 43569.99806807457
+irradiance_w_m2 = 366.3614757159391
+bond_albedo = 0.598847082346242
+t_eq_k = 159.54639908765608
+t_surface_k = 160.404601184985
+diurnal_amplitude_k = 4.517977649243e-05
+radiative_time_s = 9380278666.895182
+delta_t_equator_pole_k = 0.00954091464957628
+coriolis_45_s = 0.00021029338580903
+hadley_edge_deg = 1.080894512089148
+v10_scale_m_s = 0.0008334203129483
+v10_threshold_m_s = 1.5624405234373784
+sound_speed_m_s = 830.9562387258865
