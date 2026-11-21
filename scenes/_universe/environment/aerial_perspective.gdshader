@@ -24,6 +24,12 @@ uniform sampler2D aerial_lut : filter_linear, repeat_disable;
 uniform float aerial_lut_distance = 0.0;
 uniform ivec2 lut_tiles = ivec2(32, 18);
 uniform int lut_slices = 32;
+// VR (AtmosphereRenderer in XRMode): the table is laid on the HEAD's frustum, wide enough for both eyes,
+// and each eye reads it by its pixel's direction, not by its screen position, which is the eye's own.
+// lut_tan and lut_view_basis are the table's (aerial_perspective_lut.gdshader). Off on a flat screen.
+uniform bool lut_by_direction = false;
+uniform vec2 lut_tan = vec2(1.0);
+uniform mat3 lut_view_basis = mat3(1.0);
 // Share of the sky over the camera (AtmosphereRenderer.set_underground): 1 in the open, 0 down a mine. The light
 // the air scatters in (and the wind's dust) is the sun's and the sky's: none reaches the bottom of a shaft, where it
 // would light the far end of the shaft like daylight. The air still dims what lies behind it.
@@ -91,7 +97,13 @@ void fragment() {
 		vec3 transmittance;
 		vec3 air;
 		if (distance_to_surface < aerial_lut_distance) {
-			aerial_lut_at(SCREEN_UV, distance_to_surface, air, transmittance);
+			vec2 lut_uv = SCREEN_UV;
+			if (lut_by_direction) {
+				vec3 head = transpose(lut_view_basis) * world_dir;
+				vec2 slope = head.xy / max(-head.z, 1e-4);
+				lut_uv = vec2(slope.x / lut_tan.x * 0.5 + 0.5, 0.5 - slope.y / lut_tan.y * 0.5);
+			}
+			aerial_lut_at(lut_uv, distance_to_surface, air, transmittance);
 		} else {
 			air = scatter(vec3(0.0), world_dir, distance_to_surface, view_steps, light_steps, transmittance);
 		}

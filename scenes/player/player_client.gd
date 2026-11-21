@@ -1063,8 +1063,11 @@ func _handle_camera_motion() -> void:
 		player.gravity = player._compute_gravity(parent_gravity_area)
 		player.orient_player()
 		player.global_basis = player.global_basis.rotated(player.global_basis.y, look.x * player.camera_sensitivity)
-		player.camera_pivot.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
-		player.camera_pivot.rotation_degrees.x = clamp(player.camera_pivot.rotation_degrees.x, -80, 80)
+		if player.vr_rig != null:
+			player.camera_pivot.rotation.x = 0.0  # in VR the head gives the pitch
+		else:
+			player.camera_pivot.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
+			player.camera_pivot.rotation_degrees.x = clamp(player.camera_pivot.rotation_degrees.x, -80, 80)
 	else:
 		# No gravity area. Ignore a brief gap (e.g. a reparent leaving a spawn apartment) — only treat
 		# it as real 0g after ZERO_G_GRACE, so the camera pitch survives the transition.
@@ -1094,18 +1097,27 @@ func _handle_camera_motion() -> void:
 ## pivot turns instead). Called both on foot (_handle_camera_motion) AND seated (_ride_seat path), so a
 ## seated avatar's head-look reaches remotes — the seated branch returns before the on-foot camera code.
 func _replicate_look() -> void:
-	var head_q := snappedf(player.camera_pivot.rotation.x, 0.02)
+	var pitch: float = player.camera_pivot.rotation.x
+	var yaw: float = player.camera_pivot.rotation.y
+	var eye: Vector3 = player.camera_pivot.position
+	if player.vr_rig != null:
+		# In VR the head turns on its own, standing too: the server's look ray and the others' view of
+		# our head follow the headset, not the (straight) pivot.
+		pitch = player.vr_rig.head_pitch()
+		yaw = player.vr_rig.head_yaw()
+		eye = player.camera_pivot.transform * player.vr_rig.head_offset()
+	var head_q := snappedf(pitch, 0.02)
 	if head_q != player._last_head_sent:
 		player._last_head_sent = head_q
 		player.client_send_action_to_server({"action": "update_property", "head": head_q})
-	var head_yaw_q := snappedf(player.camera_pivot.rotation.y, 0.02)
+	var head_yaw_q := snappedf(yaw, 0.02)
 	if head_yaw_q != player._last_head_yaw_sent:
 		player._last_head_yaw_sent = head_yaw_q
 		player.client_send_action_to_server({"action": "update_property", "head_yaw": head_yaw_q})
 	# Where the eye IS: the head camera moves the pivot (crouched it drops ~0.6 m, it leans forward
 	# walking), and the server, which casts the look ray that decides the carry prompt, kept it at its
 	# rest. Crouched over a rock, both rays aimed at different things (playtest 2026-11-11).
-	var eye_q: Vector3 = player.camera_pivot.position.snapped(Vector3(EYE_STEP_M, EYE_STEP_M, EYE_STEP_M))
+	var eye_q: Vector3 = eye.snapped(Vector3(EYE_STEP_M, EYE_STEP_M, EYE_STEP_M))
 	var now_ms := Time.get_ticks_msec()
 	if eye_q != player._last_eye_sent and now_ms - _eye_sent_ms >= EYE_SEND_MIN_MS:
 		player._last_eye_sent = eye_q
