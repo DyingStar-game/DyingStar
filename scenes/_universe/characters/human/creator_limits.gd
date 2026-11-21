@@ -46,10 +46,11 @@ static func _ensure() -> void:
 		_up[id] = float(own.get("+", tab_weight))
 
 
-## The load a face may carry at the current strength (INF: no limit).
-static func budget() -> float:
+## The load a face may carry at [param at_strength] (negative: the current strength; INF: no limit).
+static func budget(at_strength: float = -1.0) -> float:
 	_ensure()
-	return INF if strength <= 0.0 else _budget / strength
+	var s: float = strength if at_strength < 0.0 else at_strength
+	return INF if s <= 0.0 else _budget / s
 
 
 ## The load slider [param id] carries per squared unit, set to [param v] (0: none).
@@ -70,11 +71,11 @@ static func load_of(look: CharacterAppearance) -> float:
 
 
 ## [param look] as it may be shown: a copy, within the budget. Over it, every slider that carries a load shrinks by
-## the same factor -- the face keeps its character, only less of it. Idempotent.
-static func limit(look: CharacterAppearance) -> CharacterAppearance:
+## the same factor -- the face keeps its character, only less of it. Idempotent. [param at_strength]: as budget().
+static func limit(look: CharacterAppearance, at_strength: float = -1.0) -> CharacterAppearance:
 	var out: CharacterAppearance = look.duplicate_appearance()
 	var total: float = load_of(out)
-	var allowed: float = budget()
+	var allowed: float = budget(at_strength)
 	if total <= allowed + EPSILON:
 		return out
 	var shrink: float = sqrt(allowed / total)

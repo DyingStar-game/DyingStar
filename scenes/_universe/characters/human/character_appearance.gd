@@ -682,6 +682,10 @@ static func random(seed_value: int) -> CharacterAppearance:
 	# Garments from their own numbers: the catalogue's garments grow, and a draw among them must leave the face be.
 	a.garments = random_garments(hash([seed_value, "garments"]), "female" if female else "male")
 	a.canonicalise()
+	if main == ORIGIN_WHITE and FaceTypes.available():
+		# Types drawn together may, rarely, sum past the creator's budget (as fitted: strength 1, whatever it is set to
+		# now, so that a seed always gives the same look): shown as it would be, and stored so.
+		a = CreatorLimits.limit(a, 1.0)
 	return a
 
 

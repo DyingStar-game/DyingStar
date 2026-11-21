@@ -4,7 +4,8 @@ extends RefCounted
 ## European faces as FFHQ's photos show them, per sex and age band (european_face_types.json, written by
 ## tools/character/face_survey/face_types.py from ~20 000 European adults' photos fitted as the creator's "From photos"
 ## fits them): per trait (nose, mouth, eyes, brows, jaw, the face's outline) a few TYPES, each the likeliest face with
-## that trait's mean shape among the photos of its group, and per age band the three most frequent with their shares.
+## that trait's mean shape among the photos of its group, and per age band its most frequent types, until they cover
+## 70 % of the band's photos (3 or 4: the rarest, the farthest from the mean, stay out), with their shares.
 ## A random European face draws one type per trait by those shares, adds them to the sex's mean face, then draws
 ## FLAME's directions around them with what spread remains (the types already take some of it).
 ##

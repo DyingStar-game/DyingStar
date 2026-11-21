@@ -6,7 +6,7 @@ extends GutTest
 ##     godot --headless -s addons/gut/gut_cmdln.gd -gtest=res://test/unit/test_face_types.gd -gexit
 
 
-func test_every_age_has_at_most_three_types_whose_shares_sum_to_one() -> void:
+func test_every_age_keeps_the_types_covering_most_of_its_photos_and_their_shares_sum_to_one() -> void:
 	assert_true(FaceTypes.available(), "european_face_types.json is there")
 	for sex: String in ["female", "male"]:
 		var traits: Dictionary = FaceTypes.data()[sex]["traits"]
@@ -19,7 +19,8 @@ func test_every_age_has_at_most_three_types_whose_shares_sum_to_one() -> void:
 				if b > 0:
 					assert_eq(int(bands[b]["from"]), int(bands[b - 1]["to"]) + 1, "%s %s: no gap between bands" % [sex, feature])
 				var shares: Array = bands[b]["types"]
-				assert_between(shares.size(), 1, 3)
+				assert_between(shares.size(), 1, types.size())
+				assert_gte(float(bands[b]["cover"]), 0.7, "%s %s: the kept types cover 70 %% of the band" % [sex, feature])
 				var total: float = 0.0
 				for entry: Array in shares:
 					assert_between(int(entry[0]), 0, types.size() - 1)
