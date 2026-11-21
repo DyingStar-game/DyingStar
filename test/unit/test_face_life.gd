@@ -171,3 +171,53 @@ func test_voice_meter_gives_a_speaker_its_own_bus_and_takes_it_back() -> void:
 	VoiceMeter.sweep()
 	assert_eq(AudioServer.bus_count, buses)
 	assert_eq(VoiceMeter.metered_count(), 0)
+
+
+func test_every_expression_is_made_of_life_shapes() -> void:
+	var names: Array = HumanBuilder.LIFE_SHAPES.map(func(shape: Array) -> StringName: return shape[0])
+	assert_true(FaceLife.EXPRESSIONS.has(&"neutral"))
+	assert_true((FaceLife.EXPRESSIONS[&"neutral"] as Dictionary).is_empty(), "neutral holds nothing")
+	for key: StringName in FaceLife.EXPRESSIONS:
+		for shape: StringName in FaceLife.EXPRESSIONS[key]:
+			assert_has(names, shape, "%s: %s is a life shape" % [key, shape])
+			assert_between(float(FaceLife.EXPRESSIONS[key][shape]), 0.01, FaceLife.MAX_SHAPE_WEIGHT)
+
+
+func test_a_held_expression_eases_in_and_out_over_the_idle_life() -> void:
+	var puppet: Node3D = _puppet(CharacterAppearance.random(53), true)
+	var looks: HumanAppearance = puppet.get_node("HumanAppearance")
+	var face: FaceLife = puppet.get_node("FaceLife")
+	var shape := func(name: StringName) -> float:
+		return looks.head_mesh().get_blend_shape_value(looks.face_shape_index(name))
+	face.expression = &"surprise"
+	face._process(1.0 / 60.0)
+	assert_lt(shape.call(&"eyes_wide"), 0.5, "an expression eases in, it does not snap")
+	for _i in 60:
+		face._process(1.0 / 60.0)
+	assert_almost_eq(shape.call(&"eyes_wide"), 1.0, 1e-4)
+	assert_almost_eq(shape.call(&"brows_up"), 1.0, 1e-4)
+	assert_almost_eq(shape.call(&"sad"), 0.0, 1e-4, "the idle temper steps aside")
+	face.expression = &"sad"
+	for _i in 60:
+		face._process(1.0 / 60.0)
+	assert_almost_eq(shape.call(&"sad"), 2.0, 1e-4, "a faint shape is held past its full weight")
+	assert_almost_eq(shape.call(&"eyes_wide"), 0.0, 1e-4, "the previous expression is gone")
+	face.expression = &"wink"
+	var shut: float = 1.0
+	for _i in 300:
+		face._process(1.0 / 60.0)
+		if _i > 30:
+			shut = minf(shut, shape.call(&"blink_left"))
+	assert_almost_eq(shut, 1.0, 1e-4, "a wink's eye stays shut through the blinks")
+	face.expression = &"laugh"
+	var jaw := Vector2(INF, -INF)
+	for _i in 120:
+		face._process(1.0 / 60.0)
+		if _i > 30:
+			jaw = Vector2(minf(jaw.x, shape.call(&"jaw_open")), maxf(jaw.y, shape.call(&"jaw_open")))
+	assert_gt(jaw.y - jaw.x, 0.1, "a laugh shakes the jaw")
+	face.expression = &"neutral"
+	for _i in 60:
+		face._process(1.0 / 60.0)
+	for name: StringName in [&"eyes_wide", &"cheeks_raised", &"lips_apart", &"disgusted", &"scared"]:
+		assert_almost_eq(shape.call(name), 0.0, 1e-4, "%s gone with the expression" % name)

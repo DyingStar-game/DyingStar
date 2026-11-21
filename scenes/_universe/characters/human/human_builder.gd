@@ -107,7 +107,8 @@ const BODY_ZONES: Array[String] = ["Torso", "Arms", "Legs"]
 const TRUNK_BONES: Array[StringName] = [&"Hips", &"Spine", &"Chest", &"UpperChest", &"Neck", &"Head"]
 ## The blend shapes of a live head, in order: [name, {bank target: weight}]. Sides are the CHARACTER's
 ## (its left is +X). Each is a sum of the base model's face units, so that one shape does one job: a
-## glance to the left moves both eyes. Kept few -- a shape costs ~0.6 MB of video memory per live head.
+## glance to the left moves both eyes. Kept few -- a shape costs ~0.6 MB of video memory per live head. The
+## last six serve the expressions a face is asked to hold (FaceLife.EXPRESSIONS) rather than its idle life.
 const LIFE_SHAPES: Array = [
 	[&"blink_left", {"FACS_Eyes_Closed_Right": 1.0}],
 	[&"blink_right", {"FACS_Eyes_Closed_Left": 1.0}],
@@ -126,6 +127,12 @@ const LIFE_SHAPES: Array = [
 	[&"happy", {"FACS_Happy": 1.0}],
 	[&"sad", {"FACS_Sad": 1.0}],
 	[&"angry", {"FACS_Angry": 1.0}],
+	[&"cheeks_raised", {"FACS_Cheeks_Raised_Left": 1.0, "FACS_Cheeks_Raised_Right": 1.0}],
+	[&"eyes_wide", {"FACS_Eyes_Opened_Max_Left": 1.0, "FACS_Eyes_Opened_Max_Right": 1.0}],
+	[&"disgusted", {"FACS_Disgusted": 1.0}],
+	[&"scared", {"FACS_Scared": 1.0}],
+	[&"mouth_corners_down", {"FACS_Frown_Left": 1.0, "FACS_Frown_Right": 1.0}],
+	[&"lips_apart", {"FACS_Opened_GLOBAL_Left": 1.0, "FACS_Opened_GLOBAL_Right": 1.0}],
 ]
 
 ## Make levels of detail when an order asks for them (tests turn it off: it is most of a bake's time).
