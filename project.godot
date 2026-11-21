@@ -43,6 +43,7 @@ Obs="*res://tools/observability/obs.gd"
 GameRecorder="*res://scenes/globals/game_recorder.gd"
 Screenshot="*res://scenes/globals/screenshot.gd"
 ClientPerf="*res://scenes/globals/client_perf.gd"
+XRManager="*res://scenes/globals/xr_manager.gd"
 
 [debug]
 
@@ -660,3 +661,13 @@ planet_hex_quality={
 
 worker_pool/low_priority_thread_ratio=0.8
 worker_pool/max_threads.dedicated_server=8
+
+[xr]
+
+openxr/default_action_map="res://xr/openxr_action_map.tres"
+openxr/reference_space=0
+openxr/extensions/hand_tracking=true
+openxr/extensions/hand_tracking_unobstructed_data_source=true
+openxr/extensions/hand_tracking_controller_data_source=true
+openxr/extensions/hand_interaction_profile=true
+openxr/extensions/render_model=true
