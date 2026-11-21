@@ -54,8 +54,9 @@ func test_the_csharp_twin_grows_the_same_hair() -> void:
 	HumanBuilder.prepare()  # makes the C# twin on this (main) thread
 	assert_true(HairGroom.native_instance() != null, "HairGroomNative.cs must load, or this tests nothing (rebuild the C#)")
 	var head: HairHead = HairHead.shared()
-	for id in ["short_crop", "medium_wavy", "afro", "ponytail", "bun", "crest", "quiff", "top_bun", "flyaways"]:
-		var cut := HairCut.preset({"quiff": "short_crop", "top_bun": "bun", "flyaways": "medium_wavy"}.get(id, id))
+	for id in ["short_crop", "medium_wavy", "afro", "ponytail", "bun", "crest", "quiff", "top_bun", "flyaways", "side_parted"]:
+		var cut := HairCut.preset({"quiff": "short_crop", "top_bun": "bun", "flyaways": "medium_wavy"}.get(id, id)) \
+				if id != "side_parted" else _side_parted(HairCut.Part.LEFT)
 		if id == "quiff":
 			cut.part = HairCut.Part.UP
 			cut.volume = 0.8
@@ -112,3 +113,33 @@ func test_a_beard_round_trips_through_its_bytes() -> void:
 	var cut := BeardCut.preset("goatee")
 	cut.shape = BeardCut.Shape.POINTED
 	assert_eq(BeardCut.from_bytes(cut.to_bytes()).to_bytes(), cut.to_bytes())
+
+
+## A shoulder-length cut parted on one side, a short fringe, straight: its hairs combed over the parting fall by the face.
+func _side_parted(part: int) -> HairCut:
+	var cut := HairCut.preset("long_straight")
+	cut.part = part
+	cut.length = 0.57
+	cut.sides = 0.4
+	cut.fringe = 0.08
+	cut.curl = 0.0
+	return cut
+
+
+func test_hair_combed_over_a_side_parting_never_crosses_the_face() -> void:
+	HumanBuilder.prepare()
+	var head: HairHead = HairHead.shared()
+	for part: int in [HairCut.Part.LEFT, HairCut.Part.RIGHT]:
+		for native: bool in [true, false]:
+			var strands: HumanAssetData = HairGroom.new(head).grow(_side_parted(part), native)[1]
+			var n: int = strands.strand_size
+			var points: PackedVector3Array = strands.strand_points
+			var across: int = 0
+			for s in points.size() / n:
+				for k in range(1, n):
+					var a: Vector3 = points[s * n + k - 1] - head.centre
+					var b: Vector3 = points[s * n + k] - head.centre
+					# from one side of the face to the other, in front of it
+					if a.x * b.x < 0.0 and absf(a.x - b.x) > HairGroom.FACE_HALF_WIDTH and maxf(a.z, b.z) > 0.04:
+						across += 1
+			assert_eq(across, 0, "part %d, %s: no hair segment goes from one cheek to the other" % [part, "C#" if native else "GDScript"])
