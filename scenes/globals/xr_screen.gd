@@ -27,6 +27,13 @@ const FOLLOW_ANGLE := deg_to_rad(30.0)
 const FOLLOW_RATE := 5.0
 ## Laser length (m) when it hits nothing.
 const LASER_REACH_M := 3.0
+## The trigger clicks past this pull (0..1) and lets go under TRIGGER_RELEASE. Read from its analog
+## value, not its "click": some triggers click only at the end of their travel, some have no click at all.
+const TRIGGER_PRESS := 0.6
+## The pull (0..1) under which a held click is let go (below TRIGGER_PRESS: no chatter in between).
+const TRIGGER_RELEASE := 0.4
+## Radius (px of the panel) of the cursor drawn where the laser meets the panel.
+const CURSOR_RADIUS_PX := 9.0
 ## Seconds between two wheel notches while the stick is pushed (menus scroll).
 const SCROLL_REPEAT_S := 0.12
 ## The stick must go this far (0..1) to scroll.
@@ -45,6 +52,18 @@ var _button_down: bool = false
 var _mouse_at: Vector2 = Vector2(-1.0, -1.0)
 var _scroll_wait: float = 0.0
 var _adopted: Array[int] = []  # instance ids of the CanvasLayers drawing into the panel
+var _cursor: XRScreenCursor = null
+var _profiles: Array[String] = ["", ""]  # the interaction profile each hand last reported (logged on change)
+
+
+## The dot where the laser meets the panel. The panel is drawn by the headset's compositor OVER the
+## whole 3D view, the laser included: without a dot drawn in the 2D, nothing shows what is aimed at.
+class XRScreenCursor:
+	extends Control
+
+	func _draw() -> void:
+		draw_circle(Vector2.ZERO, CURSOR_RADIUS_PX + 3.0, Color(0.0, 0.0, 0.0, 0.6))
+		draw_circle(Vector2.ZERO, CURSOR_RADIUS_PX, Color(0.4, 0.85, 1.0))
 
 
 func _ready() -> void:
@@ -62,6 +81,17 @@ func _ready() -> void:
 	for layer: Node in main.find_children("*", "CanvasLayer", true, false):
 		_adopt(layer)
 	get_tree().node_added.connect(_on_node_added)
+	var top := CanvasLayer.new()
+	top.name = "XRScreenCursorLayer"
+	top.layer = 128  # over every screen of the game
+	add_child(top)
+	top.custom_viewport = _viewport
+	# Our child leaves the tree before our _exit_tree runs: it lets go of the panel on its own way out.
+	top.tree_exiting.connect(func() -> void: top.custom_viewport = get_tree().root)
+	_cursor = XRScreenCursor.new()
+	_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cursor.visible = false
+	top.add_child(_cursor)
 
 	_build_nodes()
 
@@ -137,7 +167,9 @@ func _follow_head(head: Transform3D, delta: float) -> void:
 func _point(delta: float) -> void:
 	var free := Input.mouse_mode == Input.MOUSE_MODE_VISIBLE or Input.mouse_mode == Input.MOUSE_MODE_CONFINED
 	for i in 2:
-		var pulled := _pointers[i].is_button_pressed(&"trigger_click")
+		_log_profile(i)
+		var pull := maxf(_pointers[i].get_float(&"trigger"), 1.0 if _pointers[i].is_button_pressed(&"trigger_click") else 0.0)
+		var pulled := pull > TRIGGER_PRESS or (_trigger_was[i] and pull > TRIGGER_RELEASE)
 		if pulled and not _trigger_was[i]:
 			_hand = i
 		_trigger_was[i] = pulled
@@ -156,11 +188,23 @@ func _point(delta: float) -> void:
 		reach = from.distance_to(_layer.global_transform * Vector3(
 				(uv.x - 0.5) * _layer.quad_size.x, (0.5 - uv.y) * _layer.quad_size.y, 0.0))
 		_move_mouse(at)
+		_cursor.position = at
+		_cursor.visible = true
 		_click(_trigger_was[_hand], at)
 		_scroll(hand.get_vector2(&"primary").y, at, delta)
 	else:
 		_release()
 	_aim_laser(_lasers[_hand], reach)
+
+
+## Which controller the runtime says a hand holds, logged when it changes: the bindings that apply are
+## that profile's (xr/openxr_action_map.tres).
+func _log_profile(i: int) -> void:
+	var tracker := XRServer.get_tracker(_pointers[i].tracker) as XRControllerTracker
+	var profile: String = tracker.profile if tracker != null else ""
+	if profile != _profiles[i]:
+		_profiles[i] = profile
+		print("[XR] %s: %s" % [_pointers[i].tracker, profile if profile != "" else "(none)"])
 
 
 func _move_mouse(at: Vector2) -> void:
@@ -186,6 +230,8 @@ func _click(pulled: bool, at: Vector2) -> void:
 	button.global_position = at
 	button.button_mask = MOUSE_BUTTON_MASK_LEFT if pulled else 0
 	get_viewport().push_input(button, true)
+	if pulled:
+		print("[XR] laser click at (%.0f, %.0f)" % [at.x, at.y])  # one line per click: rare
 
 
 func _scroll(stick_y: float, at: Vector2, delta: float) -> void:
@@ -207,6 +253,7 @@ func _release() -> void:
 	if _button_down:
 		_click(false, _mouse_at)
 	_mouse_at = Vector2(-1.0, -1.0)
+	_cursor.visible = false
 
 
 func _aim_laser(laser: MeshInstance3D, reach: float) -> void:
