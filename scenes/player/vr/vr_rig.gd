@@ -41,6 +41,11 @@ static func install(player: Node3D) -> VrRig:
 	rig.add_child(rig.left_hand)
 	rig.right_hand = _hand(&"right_hand", "RightHand")
 	rig.add_child(rig.right_hand)
+	# The controllers played as a gamepad: every gamepad binding of the game works from them.
+	var controls := VrInput.new()
+	controls.name = "VrInput"
+	controls.setup(player, rig.left_hand, rig.right_hand)
+	rig.add_child(controls)
 	# The controllers as the runtime draws them (OpenXR render models): any headset's, none to model.
 	# Only with a live OpenXR session: without one the manager finds no extension and errors each frame
 	# (with one, a runtime lacking render models leaves it idle).
