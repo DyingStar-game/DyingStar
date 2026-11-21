@@ -646,14 +646,16 @@ static func random(seed_value: int) -> CharacterAppearance:
 		var flame_id: int = modifier_id("%s%02d" % [FLAME_PREFIX, k])
 		if flame_id != -1:
 			a.modifiers[flame_id] = clampf(normal.call() * RANDOM_FLAME_SPREAD / FLAME_RANGE, -1.0, 1.0)
-	# A European face is drawn as FFHQ's European faces of that sex and age are (FaceTypes): the mean face, one type
-	# per trait by its share, FLAME around them -- from numbers of its own, so the draws above and after stay put.
-	if main == ORIGIN_WHITE and FaceTypes.available():
+	# A face of an origin FFHQ shows enough of (FaceTypes: European, African, East Asian) is drawn as its faces of
+	# that sex and age are: the mean face, one type per trait by its share, FLAME around them -- from numbers of its
+	# own, so the draws above and after stay put.
+	var typed_face: bool = FaceTypes.available(main, female)
+	if typed_face:
 		var own := RandomNumberGenerator.new()
 		own.seed = hash([seed_value, "face_types"])
 		var ou := func() -> float: return float(own.randi() & 0xFFFFFF) / 16777216.0
 		var on := func() -> float: return (ou.call() + ou.call() + ou.call() + ou.call() - 2.0) * 1.7320508
-		var typed: Dictionary = FaceTypes.face(female, a.years(), ou, on)
+		var typed: Dictionary = FaceTypes.face(main, female, a.years(), ou, on)
 		for key: String in typed["values"]:
 			var typed_id: int = modifier_id(key)
 			if typed_id != -1:
@@ -682,7 +684,7 @@ static func random(seed_value: int) -> CharacterAppearance:
 	# Garments from their own numbers: the catalogue's garments grow, and a draw among them must leave the face be.
 	a.garments = random_garments(hash([seed_value, "garments"]), "female" if female else "male")
 	a.canonicalise()
-	if main == ORIGIN_WHITE and FaceTypes.available():
+	if typed_face:
 		# Types drawn together may, rarely, sum past the creator's budget (as fitted: strength 1, whatever it is set to
 		# now, so that a seed always gives the same look): shown as it would be, and stored so.
 		a = CreatorLimits.limit(a, 1.0)

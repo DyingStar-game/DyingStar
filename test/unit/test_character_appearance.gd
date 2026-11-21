@@ -231,6 +231,8 @@ func test_random_garments_suit_the_body() -> void:
 
 # 2026-11-20: a face of FLAME's 50 directions alone, no catalogue face slider (rated by eye: the drawn sliders made
 # pouts and doll's eyes); its hair and outfit as before, its body sliders from the draws the face no longer takes.
-const PINNED_NPC_0001 := "B95UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8AAG1rZ2BBFHCNhZ4ZdV0AAAAT_wAAADeZAAA3FSkWIBoBHQ85El8qYNVhEGK7YwNkB2X6" \
-		+ "Zh1nvmgiaT9qBWu9bNlt7m6gbwFwAXHjcupz_3RLdQN2_3cueCJ59Xr_e6R86n3Cfgx_KYAXgf2C2IMOhAqFBIY8h_qI-YnKik-LB4wPjQuO" \
-		+ "3487kMMCBAAABQAA"
+# 2026-11-21: npc-0001 is an East Asian man: his face is now drawn from FFHQ's East Asian types (FaceTypes), the
+# rest of the look as before.
+const PINNED_NPC_0001 := "B95UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8AAG1rZ2BBFHCNhZ4ZdV0AAAAT_wAAADeZAABECMwTEhQEFSkWIBoBHQ85" \
+		+ "EkLEQ_lEHEasRyRIvFAOXPhdDV7fXxpgBWEsYiNj2WTlZQVmG2dYaCVp6GrZazxsLW0IbrFvKnD2cdly33OzdOV1ynYHd-54Dnkleul7D3zDfUZ-" \
+		+ "_X8-gOSB64L5g86ELoX-htKHNYjgiRGKQ4tYjIKNmo4vjwmQ_gIEAAAFAAA"
