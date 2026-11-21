@@ -120,3 +120,9 @@ Where the creator's sliders must stop: looks made the way a player makes them, j
    faces and gestures, under the limits: `creator_survey --limits=1`) still had 7 of its 12 rejects there. Snapshot
    the verdicts (ArtifactData `out_dir`) before each fit, and never rewrite a stored look: to relax, refit with a
    higher `--target` or lower `CreatorLimits.strength`.
+   Bodies carry no load: 4 European bodies in 400 player-made were judged not human, then 1 in 400 when each body
+   slider was swept alone (`--sweep=0.4,0.6,0.8,1`) and each tab's moved together (`--combos=shape,torso,hips,arms,legs
+   --levels=0.5,1,2,3`), 2026-11-21. Only `BodyType_Emaciated` broke a body alone (passed at 0.8, broke at 1):
+   `--cap BodyType_Emaciated:+:0.8` stops it there, outside the load.
+   Current file: `fit_limits.py` on series eu2 (`:clip`), eu3, eu4, eu5 (verdicts 2026-11-20c..f) `--target 0.03
+   --direction Mouth_Lips_LowerAngle:- --cap BodyType_Emaciated:+:0.8`.

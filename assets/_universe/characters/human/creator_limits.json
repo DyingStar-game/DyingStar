@@ -13,6 +13,11 @@
    "-": 5.354
   }
  },
+ "caps": {
+  "BodyType_Emaciated": {
+   "+": 0.8
+  }
+ },
  "budget": 0.381,
  "fit": {
   "slope": 2.0772,
