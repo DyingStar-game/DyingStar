@@ -221,3 +221,27 @@ func test_a_held_expression_eases_in_and_out_over_the_idle_life() -> void:
 		face._process(1.0 / 60.0)
 	for name: StringName in [&"eyes_wide", &"cheeks_raised", &"lips_apart", &"disgusted", &"scared"]:
 		assert_almost_eq(shape.call(name), 0.0, 1e-4, "%s gone with the expression" % name)
+
+
+func test_a_new_look_keeps_the_face_alive_and_its_expression() -> void:
+	var puppet: Node3D = _puppet(CharacterAppearance.random(53), true)
+	var looks: HumanAppearance = puppet.get_node("HumanAppearance")
+	var face: FaceLife = puppet.get_node("FaceLife")
+	face.expression = &"surprise"
+	for _i in 30:
+		face._process(1.0 / 60.0)
+	var first: Mesh = looks.head_mesh().mesh
+	looks.use_lods = false  # as the creator's figure (and LODs are off in these tests: a LOD body would never come)
+	var next: CharacterAppearance = CharacterAppearance.random(53)
+	next.modifiers[CharacterAppearance.modifier_id("Chin_Width")] = 0.3
+	looks.set_appearance(next)
+	var frames: int = 0
+	var until: int = Time.get_ticks_msec() + 20000  # two bakes on workers
+	while looks.head_mesh().mesh == first and Time.get_ticks_msec() < until:
+		await get_tree().process_frame
+		frames += 1
+		assert_true(looks.is_live(), "frame %d: the face never goes plain" % frames)
+		assert_almost_eq(looks.head_mesh().get_blend_shape_value(looks.face_shape_index(&"eyes_wide")), 1.0, 1e-3,
+				"frame %d: nor drops its expression" % frames)
+	assert_ne(looks.head_mesh().mesh, first, "the new head is shown")
+	assert_true(looks.is_live())
