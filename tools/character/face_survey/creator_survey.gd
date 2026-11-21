@@ -23,6 +23,7 @@ extends Control
 ## stops looking human, one control at a time. Ids past the plan are controls.
 ## --limits=S renders through the creator's limits at strength S (CreatorLimits.strength; default 0: none -- a survey
 ## shows what was asked for; 1 checks the limits themselves): a slider then stops where the creator's would.
+## --controls replaces them too: every sample is a control, random()'s look as it is (to judge random() alone).
 ## --combos=mouth,eyes --levels=0.5,1,1.5,2,3 replaces them too: one id in ten a control, the others 2 to 5 sliders of
 ## ONE tab moved together (combo_gestures), their squares summing to one of the levels -- how much a tab can take
 ## in all, the tabs and levels taking turns along the ids.
@@ -32,7 +33,7 @@ extends Control
 ##
 ## Needs a GPU (not --headless):
 ##   godot --path . res://tools/character/face_survey/creator_survey.tscn -- --subject=face --out=/tmp/s --from=1
-##   --count=800 [--ids=3,17] [--origin=2] [--sweep=0.4,0.7,1] [--combos=mouth,eyes --levels=1,2]
+##   --count=800 [--ids=3,17] [--origin=2] [--sweep=0.4,0.7,1] [--combos=mouth,eyes --levels=1,2] [--controls]
 ## random_faces_sheets.py --views packs the images into contact sheets; clip_judge.py pre-sorts them.
 
 ## Per subject: views (name -> yaw, rad), image size (px), framing, camera zoom, seed offset of the base look.
@@ -59,6 +60,7 @@ var _subject: String = "face"
 var _origin: int = -1
 var _plan: Array = []
 var _combos: Dictionary = {}
+var _controls: bool = false
 var _preview: CreatorPreview
 
 
@@ -266,6 +268,7 @@ func _ready() -> void:
 	_out = String(args.get("out", "user://creator_survey_" + _subject))
 	_origin = int(args.get("origin", "-1"))
 	CreatorLimits.strength = float(args.get("limits", "0"))
+	_controls = args.has("controls")
 	var first: int = int(args.get("from", "1"))
 	var count: int = int(args.get("count", "800"))
 	if args.has("sweep"):
@@ -294,7 +297,8 @@ func _ready() -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for id in ids:
 		var gestures: Array = []
-		var look: CharacterAppearance = sample(_subject, id, gestures, _origin, _plan, _combos)
+		var look: CharacterAppearance = CharacterAppearance.random(base_seed(_subject, id, _origin)) if _controls \
+				else sample(_subject, id, gestures, _origin, _plan, _combos)
 		if _subject == "face":
 			look.garments = CharacterAppearance.outfit_garments(FACE_OUTFIT).map(func(i: int) -> Array: return [i, 0])
 		_preview._looks.set_appearance_now(look)
@@ -334,7 +338,8 @@ func _ready() -> void:
 		var axes: Dictionary = {}
 		for axis: Array in FaceAxes.axes():
 			axes[String(axis[0])] = snappedf(FaceAxes.value_of(look, axis[2]), 0.001)
-		samples.append({"id": id, "seed": base_seed(_subject, id, _origin), "category": category_in(_subject, id, _plan, _combos),
+		samples.append({"id": id, "seed": base_seed(_subject, id, _origin),
+				"category": "control" if _controls else category_in(_subject, id, _plan, _combos),
 				"female": look.is_female(), "years": look.years(), "gestures": gestures, "macros": look.macros,
 				"origins": Array(look.origins), "sliders": moved, "axes": axes, "look": look.encode()})
 		if samples.size() % 20 == 0:
