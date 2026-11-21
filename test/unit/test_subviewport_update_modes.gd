@@ -29,6 +29,8 @@ const ALLOWED : Dictionary = {
 	# Authoring benches run by hand, never in the game: each renders its own preview every frame.
 	"res://tools/character/face_survey/random_faces.gd": "offline bench: renders faces to files",
 	"res://tools/character/face_survey/render_heads.gd": "offline bench: renders heads to files",
+	"res://tools/character/face_survey/creator_survey.gd": "offline bench: renders the creator survey to files",
+	"res://tools/character/face_survey/render_types.gd": "offline bench: renders face types to files",
 	"res://tools/character/hair_groom/hair_bench.gd": "offline bench: hair preview",
 	"res://tools/character/hair_groom/hair_motion_bench.gd": "offline bench: hair motion preview",
 	"res://tools/stargrot/cave_workbench.gd": "offline workbench, only while its preview is visible",
