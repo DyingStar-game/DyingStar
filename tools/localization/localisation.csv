@@ -1688,6 +1688,11 @@ Cette machine est hors service.",
 %%CHAR_RANDOM_TAB,Random,Aléatoire,
 %%CHAR_RANDOM_ALL,All random,Tout aléatoire,
 %%CHAR_RESET,Reset,Réinitialiser,
+%%CHAR_VARY,Vary,Varier,Variar
+%%CHAR_UNLOCK_ALL,Unlock all,Tout déverrouiller,Desbloquear todo
+%%CHAR_LOCK_MENU,Lock this menu,Verrouiller ce menu,Bloquear este menú
+%%CHAR_DICE_ROW,Draw this line at random (R / X),Tirer cette ligne au hasard (R / X),Sortear esta línea (R / X)
+"%%CHAR_LOCK_ROW","Lock this line: random draws keep it (L / Y)","Verrouiller cette ligne : les tirages la gardent (L / Y)","Bloquear esta línea: los sorteos la conservan (L / Y)"
 %%CHAR_UNDO,Undo,Annuler,
 %%CHAR_REDO,Redo,Rétablir,
 %%CHAR_PRESET,Presets…,Préréglages…,
