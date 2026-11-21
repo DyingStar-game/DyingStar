@@ -1,7 +1,11 @@
 class_name WeatherRelief
 extends RefCounted
-## The weather the relief and the day make, laid over the climate's (WeatherSampler, WeatherSynoptic): the
-## local phenomena of the report « De l'atmosphère de Sandbox ».
+## The weather the relief and the day make, laid over the weather service's (WeatherSampler fed with the
+## service's systems): the local phenomena of the report « De l'atmosphère de Sandbox ».
+##
+## The service decides the weather; these are deduced from it. A devil stands where the wind the service
+## gives is weak and its sky clear of a storm's dust; a wall runs with the wind the service gives where it
+## falls, and does not when that wind holds it under the speed that lifts dust (`air_of`).
 ##
 ## - Plateau breeze: the air climbs the slopes toward the warm plateaus by day (most at BREEZE_PEAK_H) and
 ##   drains down them at night, weaker. Past the polar edge it drains all day (polar slope winds).
@@ -11,8 +15,8 @@ extends RefCounted
 ## - Dust walls: in the late afternoon and early evening the cold air of a plateau falls down its cliffs and runs out over the
 ##   basin as a front loaded with dust, thinning as it goes.
 ##
-## Pure functions, as the rest of the weather: the same place and instant give the same weather to every
-## player. The relief comes in as plain numbers ([method apply]'s terrain) or a Callable, never a scene.
+## Pure functions, as the rest of the weather: the same place, instant and systems give the same weather to
+## every player. The relief comes in as plain numbers ([method apply]'s terrain) or a Callable, never a scene.
 ## Places are (longitude, latitude) in degrees; winds are Vector2(east, north) in m/s.
 
 ## Breeze: speed up a full slope at its afternoon peak (m/s), the hour of that peak, the share of it the
@@ -47,6 +51,9 @@ const DEVIL_LIFE_S := 300.0
 const DEVIL_SHARE := 0.05
 const DEVIL_SUN := [0.35, 0.7]
 const DEVIL_CALM_M_S := [4.0, 7.0]
+## Under a storm's dust the ground is not heated: whole under DEVIL_VEIL_TAU[0] of the service's dust, none
+## past [1].
+const DEVIL_VEIL_TAU := [1.0, 2.5]
 const DEVIL_RADIUS_M := [5.0, 150.0]
 const DEVIL_HEIGHT_M := [100.0, 2500.0]
 const DEVIL_WIND_M_S := [10.0, 30.0]
@@ -70,6 +77,11 @@ const WALL_SPENT_FROM := 0.55
 const WALL_TRIES := 6
 const WALL_MIN_SLOPE := 0.08
 const WALL_SPEED_M_S := [10.0, 18.0]
+## The fastest a wall runs once the service's wind carries it, m/s.
+const WALL_SPEED_MAX_M_S := 30.0
+## The air of a storm is already mixed: a wall falls whole under WALL_VEIL_TAU[0] of the service's dust, not
+## at all past [1].
+const WALL_VEIL_TAU := [1.5, 4.0]
 const WALL_LENGTH_M := [15000.0, 50000.0]
 const WALL_HEIGHT_M := [500.0, 3000.0]
 const WALL_DEPTH_M := 1500.0
@@ -120,8 +132,8 @@ static func lee_gain(band: StringName, upwind_drop_m: float, t: float, seed: int
 	if band != WeatherSampler.BAND_WESTERLIES or upwind_drop_m <= 0.0:
 		return 1.0
 	var slot := floori(t / GUST_S)
-	var a := WeatherSynoptic.unit(WeatherSynoptic.mix(seed + _SEED_GUST, slot, 0, 0))
-	var b := WeatherSynoptic.unit(WeatherSynoptic.mix(seed + _SEED_GUST, slot + 1, 0, 0))
+	var a := WeatherHash.unit(WeatherHash.mix(seed + _SEED_GUST, slot, 0, 0))
+	var b := WeatherHash.unit(WeatherHash.mix(seed + _SEED_GUST, slot + 1, 0, 0))
 	var gust := lerpf(a, b, smoothstep(0.0, 1.0, t / GUST_S - slot))
 	return 1.0 + LEE_GAIN * clampf(upwind_drop_m / LEE_FULL_M, 0.0, 1.0) * (0.6 + 0.4 * gust)
 
@@ -179,29 +191,31 @@ static func _cells_near(at: Vector2, reach_m: float, cell_m: float, radius_m: fl
 
 
 ## The dust devils alive at [param t] within [param range_m] of a place, each as {id, lon, lat, radius_m,
-## height_m, wind_m_s, spin (+1 / -1), strength (0–1)}.
+## height_m, wind_m_s, spin (+1 / -1), strength (0–1)}. [param air_of]: Callable(lon_deg, lat_deg) ->
+## the service's weather there (WeatherSampler's keys).
 static func devils_near(profile: ClimateProfile, at: Vector2, range_m: float, t: float, decl_deg: float,
-		substellar_lon_deg: float) -> Array:
+		substellar_lon_deg: float, air_of: Callable) -> Array:
 	var out := []
 	var r := profile.radius_m
 	for cell: Array in _cells_near(at, range_m, DEVIL_CELL_M, r):
-		var phase := WeatherSynoptic.unit(WeatherSynoptic.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], -1)) * DEVIL_LIFE_S
+		var phase := WeatherHash.unit(WeatherHash.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], -1)) * DEVIL_LIFE_S
 		var slot := floori((t + phase) / DEVIL_LIFE_S)
-		var h := WeatherSynoptic.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], slot)
-		if WeatherSynoptic.unit(h) >= DEVIL_SHARE:
+		var h := WeatherHash.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], slot)
+		if WeatherHash.unit(h) >= DEVIL_SHARE:
 			continue
 		var draws := _draws(h, 4)
 		var place := _cell_place(cell[0], cell[1], cell[2], draws[0], draws[1], DEVIL_CELL_M, r)
-		var wind := WeatherSampler.band_wind(profile, place.y)
-		if not is_low_band(wind["band"]):
+		var there: Dictionary = air_of.call(place.x, place.y)
+		if not is_low_band(there["band"]):
 			continue
-		var air := Vector2(wind["east"], wind["north"])
+		var air := Vector2(there["wind_east_m_s"], there["wind_north_m_s"])
 		var age := t + phase - slot * DEVIL_LIFE_S
 		place = moved(place, air * (age - DEVIL_LIFE_S * 0.5), r)
 		var sun := WeatherSampler.insolation_factor(place.y,
 				WeatherSampler.hour_angle_rad(solar_hours(place.x, substellar_lon_deg)), decl_deg)
 		var strength := sin(PI * age / DEVIL_LIFE_S) * smoothstep(DEVIL_SUN[0], DEVIL_SUN[1], sun) \
-				* (1.0 - smoothstep(DEVIL_CALM_M_S[0], DEVIL_CALM_M_S[1], air.length()))
+				* (1.0 - smoothstep(DEVIL_CALM_M_S[0], DEVIL_CALM_M_S[1], air.length())) \
+				* (1.0 - smoothstep(DEVIL_VEIL_TAU[0], DEVIL_VEIL_TAU[1], float(there["dust_tau"])))
 		if strength < 0.05 or offset_m(at, place, r).length() > range_m:
 			continue
 		var size: float = draws[2]
@@ -230,9 +244,10 @@ static func devil_effect(devil: Dictionary, at: Vector2, radius_m: float) -> Arr
 ## front now), east, north (the way it runs, unit), speed_m_s, length_m, height_m, depth_m, strength,
 ## grown (0 at its birth, 1 once risen), spent (0 until it starts thinning out, 1 at its end)}.
 ## [param terrain_of]: Callable(lon_deg, lat_deg) -> {height_m, upslope: Vector2}. [param known] keeps
-## where each cell's wall falls from, by [i, row, day]: pass the same Dictionary again.
+## where each cell's wall falls from, by [i, row, day]: pass the same Dictionary again. [param air_of]:
+## Callable(lon_deg, lat_deg) -> the service's weather there (WeatherSampler's keys).
 static func walls_near(profile: ClimateProfile, at: Vector2, t: float, substellar_lon_deg: float,
-		terrain_of: Callable, known: Dictionary) -> Array:
+		terrain_of: Callable, known: Dictionary, air_of: Callable) -> Array:
 	var out := []
 	var r := profile.radius_m
 	var day_s := maxf(profile.rotation_period_s, 1.0)
@@ -242,8 +257,8 @@ static func walls_near(profile: ClimateProfile, at: Vector2, t: float, substella
 			continue  # past the polar edge the slopes drain all day (breeze)
 		var hours := solar_hours(mid.x, substellar_lon_deg)
 		var day := roundi((t - hours / 24.0 * day_s) / day_s)
-		var h := WeatherSynoptic.mix(profile.weather_seed + _SEED_WALL, cell[0], cell[1], day)
-		if WeatherSynoptic.unit(h) >= WALL_SHARE:
+		var h := WeatherHash.mix(profile.weather_seed + _SEED_WALL, cell[0], cell[1], day)
+		if WeatherHash.unit(h) >= WALL_SHARE:
 			continue
 		var draws := _draws(h, 2 + WALL_TRIES * 2)
 		var age := (hours - WALL_FROM_H - draws[0] * WALL_SPREAD_H) / 24.0 * day_s
@@ -257,13 +272,20 @@ static func walls_near(profile: ClimateProfile, at: Vector2, t: float, substella
 			continue
 		var size: float = draws[1]
 		var way: Vector2 = source[1]
-		var speed := lerpf(WALL_SPEED_M_S[0], WALL_SPEED_M_S[1], size)
+		# The wind the service gives where the wall falls carries it or holds it back; held under the speed that
+		# lifts dust, it raises none.
+		var there: Dictionary = air_of.call(source[0].x, source[0].y)
+		var speed := minf(lerpf(WALL_SPEED_M_S[0], WALL_SPEED_M_S[1], size)
+				+ Vector2(there["wind_east_m_s"], there["wind_north_m_s"]).dot(way), WALL_SPEED_MAX_M_S)
+		var clear := 1.0 - smoothstep(WALL_VEIL_TAU[0], WALL_VEIL_TAU[1], float(there["dust_tau"]))
+		if speed < profile.v10_threshold_m_s or clear <= 0.0:
+			continue
 		var front := moved(source[0], way * speed * age, r)
 		out.append({"id": h, "lon": front.x, "lat": front.y, "east": way.x, "north": way.y, "speed_m_s": speed,
 				"length_m": lerpf(WALL_LENGTH_M[0], WALL_LENGTH_M[1], size),
 				"height_m": lerpf(WALL_HEIGHT_M[0], WALL_HEIGHT_M[1], size),
 				"depth_m": WALL_DEPTH_M + WALL_SPREAD * speed * age,
-				"strength": smoothstep(0.0, WALL_RISE_S, age) * (1.0 - age / WALL_LIFE_S),
+				"strength": smoothstep(0.0, WALL_RISE_S, age) * (1.0 - age / WALL_LIFE_S) * clear,
 				"grown": smoothstep(0.0, WALL_RISE_S, age), "spent": smoothstep(WALL_SPENT_FROM, 1.0, age / WALL_LIFE_S)})
 	return out
 
@@ -302,8 +324,8 @@ static func _draws(h: int, count: int) -> PackedFloat64Array:
 	var out := PackedFloat64Array()
 	out.resize(count)
 	for k in count:
-		h = WeatherSynoptic.splitmix(h)
-		out[k] = WeatherSynoptic.unit(h)
+		h = WeatherHash.splitmix(h)
+		out[k] = WeatherHash.unit(h)
 	return out
 
 

@@ -5,7 +5,7 @@ extends RefCounted
 ## the wind as arrows, the systems as rings. What the weather is checked on by eye: the circulation cells
 ## (trades converging on the equator, westerlies, polar easterlies), the day and night sides, the storms.
 ##
-## Pure: a ClimateWeather and an instant in, an Image out. Seconds of script: call it from a worker.
+## Pure: a ClimateWeather and its systems in, an Image out. Seconds of script: call it from a worker.
 
 ## The grid the weather is sampled on (the picture is this grid, smoothed).
 const GRID := Vector2i(240, 120)
@@ -43,10 +43,11 @@ static func temperature_color(kelvin: float) -> Color:
 	return TEMPERATURES[0][1]
 
 
-## The weather of [param weather]'s body at [param t], as {image (RGB8, [param width] wide, half as high),
+## The weather of [param weather]'s body under [param live] systems (ClimateWeather.systems), as {image (RGB8,
+## [param width] wide, half as high),
 ## t_min_k, t_max_k, wind_max_m_s, systems: {kind: count}}. [param decl_deg] and
 ## [param substellar_lon_deg]: where the star stands overhead.
-static func render(weather: ClimateWeather, t: float, decl_deg: float, substellar_lon_deg: float,
+static func render(weather: ClimateWeather, live: Array, decl_deg: float, substellar_lon_deg: float,
 		width := 1440) -> Dictionary:
 	var size := Vector2i(width, width / 2)
 	var colors := Image.create(GRID.x, GRID.y, false, Image.FORMAT_RGB8)
@@ -62,7 +63,7 @@ static func render(weather: ClimateWeather, t: float, decl_deg: float, substella
 		var lat := 90.0 - (y + 0.5) * 180.0 / GRID.y
 		for x in GRID.x:
 			var lon := -180.0 + (x + 0.5) * 360.0 / GRID.x
-			var s := weather.sample_at(lon, lat, 0.0, t, decl_deg, substellar_lon_deg)
+			var s := weather.sample_at(lon, lat, 0.0, decl_deg, substellar_lon_deg, live)
 			var kelvin := float(s["temperature_k"])
 			t_min = minf(t_min, kelvin)
 			t_max = maxf(t_max, kelvin)
@@ -76,7 +77,7 @@ static func render(weather: ClimateWeather, t: float, decl_deg: float, substella
 	pressure.resize(size.x, size.y, Image.INTERPOLATE_CUBIC)
 	_draw_isobars(colors, pressure.get_data().to_float32_array())
 	var counts := {}
-	for system: Dictionary in weather.systems(t, decl_deg):
+	for system: Dictionary in live:
 		counts[system["kind"]] = int(counts.get(system["kind"], 0)) + 1
 		_draw_system(colors, system, weather.profile.radius_m)
 	var threshold := weather.profile.v10_threshold_m_s

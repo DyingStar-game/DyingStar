@@ -17,6 +17,8 @@ const MARKER_PX := 7
 ## The planet and the player whose weather is told.
 var planet: Planet
 var player: Node3D
+## What reads the weather service for this view (no Horizon here), null when the body has no climate.
+var service: WeatherService
 
 var _line := Label.new()
 var _note := Label.new()
@@ -59,7 +61,17 @@ func _process(delta: float) -> void:
 	if _since < REFRESH_S or planet == null or player == null:
 		return
 	_since = 0.0
-	_line.text = describe(planet.weather_at(player.global_position))
+	_line.text = describe(planet.weather_at(player.global_position)) + said_of(service)
+
+
+## Where the weather shown comes from, to end the weather line with.
+static func said_of(from: WeatherService) -> String:
+	if from == null:
+		return ""
+	if from.reached:
+		return " — service météo : %d système(s)" % from.count
+	return " — service météo non joint (%s) : climat de fond seul" % \
+			("aucune adresse dans client.ini, [weather] service_url" if WeatherService.address().is_empty() else WeatherService.address())
 
 
 ## A weather sample in a line of words.
@@ -88,10 +100,10 @@ func toggle_map() -> void:
 	if weather == null or _task >= 0:
 		return
 	var sun := weather.sun_over(planet)
-	var t := ClimateWeather.now()
+	var live := weather.systems(planet)
 	var here := HEALPix.vec2lonlat(planet.to_local(player.global_position).normalized())
 	_task = WorkerThreadPool.add_task(func() -> void:
-		_show_map.call_deferred(WeatherMap.render(weather, t, sun.y, sun.x)["image"], here))
+		_show_map.call_deferred(WeatherMap.render(weather, live, sun.y, sun.x)["image"], here))
 
 
 func _show_map(picture: Image, here: Vector2) -> void:

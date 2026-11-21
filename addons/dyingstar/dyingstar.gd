@@ -66,7 +66,7 @@ const DEFS_HEADERS := ["User-Agent: dyingstar-godot-plugin", "Accept: applicatio
 const DEFS_KNOWN := ["box", "building", "cargo_depot", "cave", "city", "crate_container", "discovery", "food", "mining_depot",
 	"miningrock", "miningzone", "planet", "player", "poi_village", "shelf", "spawnbuilding", "star",
 	"storagewarehouse", "tool", "vehicle", "vehicle_component", "vehicle_lift", "vehicle_lift_platform",
-	"vehicle_lift_platformsystem"]
+	"vehicle_lift_platformsystem", "weather_system"]
 
 var main_panel_instance
 var _menu_button: MenuButton = null

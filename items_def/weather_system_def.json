@@ -1,0 +1,42 @@
+{
+    "channels": [
+        {
+            "zone": 0,
+            "distance": 20000000.0,
+            "frequency": 1.0,
+            "properties": [
+                "name",
+                "parent_id",
+                "kind",
+                "position",
+                "rotation",
+                "radius_m",
+                "intensity",
+                "pressure_anomaly_pa",
+                "velocity",
+                "params",
+                "born_at",
+                "dies_at"
+            ]
+        },
+        {
+            "zone": 1,
+            "distance": 20000000.0,
+            "frequency": 0.2,
+            "properties": [
+                "from_timestamp",
+                "keyframe_dt_s",
+                "track",
+                "intensity_track"
+            ]
+        },
+        {
+            "zone": 6,
+            "distance": 20000001.0,
+            "frequency": 1.0,
+            "properties": [
+                "scenename"
+            ]
+        }
+    ]
+}

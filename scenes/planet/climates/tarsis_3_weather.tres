@@ -6,7 +6,3 @@
 [resource]
 script = ExtResource("1_cw")
 profile = ExtResource("2_cp")
-u_jet_m_s = 23.905134551501423
-tropopause_m = 12815.333663998068
-dust_lift_bias = 0.9
-humidity_inventory = 0.0

@@ -13,6 +13,8 @@ const WALL_SHADER := preload("res://scenes/planet/weather/dust_wall_volume.gdsha
 ## How often the weather is asked what stands round the eye (s), and how far devils are drawn (m).
 const REFRESH_S := 0.5
 const DEVIL_RANGE_M := 12000.0
+## Nothing is drawn for an eye farther from the body's centre than this many radii (another body, deep space).
+const EYE_RADII_MAX := 2.0
 ## A wall is a box of dust (a volume, see dust_wall_volume.gdshader) standing on the relief under it
 ## (WallGround: under a front tens of kilometres long the ground rises and falls by kilometres): the box
 ## goes from WALL_UNDER_M under the lowest ground to the wall's height over the highest. It is WALL_DEEPER
@@ -51,7 +53,7 @@ const CAVE_GONE_M := -25.0
 ## ground to the pale ochre of fine dust (WeatherSky.BLOW_FALLBACK_COLOUR).
 const DUST_PALE := 0.5
 
-## The eye the phenomena are drawn round: a Callable returning a Node3D (the camera).
+## The eye the phenomena are drawn round: a Callable returning a Node3D. Not set: the viewport's camera.
 var eye: Callable
 
 var _planet: Planet
@@ -67,6 +69,9 @@ var _open_air := 1.0  # 1 in the open, 0 with the eye in a cave (CAVE_*)
 
 func _ready() -> void:
 	_planet = get_parent() as Planet
+	if OS.has_feature("dedicated_server") or DisplayServer.get_name() == "headless":
+		set_process(false)  # nothing to draw, and no one to draw it for
+		return
 	var grain := FastNoiseLite.new()
 	grain.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	grain.frequency = 0.012
@@ -98,8 +103,13 @@ func _ready() -> void:
 	_wall_mesh = BoxMesh.new()
 
 
+## The eye now, null when there is none.
+func _eye() -> Node3D:
+	return eye.call() if eye.is_valid() else get_viewport().get_camera_3d()
+
+
 func _process(delta: float) -> void:
-	var camera_now: Node3D = eye.call() if eye.is_valid() else null
+	var camera_now := _eye()
 	for entry: Array in _shown.values():
 		(entry[0] as Node3D).position += (entry[1] as Vector3) * delta
 		if entry[2] != null and camera_now != null:
@@ -110,9 +120,10 @@ func _process(delta: float) -> void:
 		return
 	_since = 0.0
 	var weather := _planet.current_weather_source() as ClimateWeather if _planet != null else null
-	var camera: Node3D = eye.call() if eye.is_valid() else null
+	var camera := camera_now
 	var seen := {}
-	if weather != null and weather.local_enabled and camera != null and _planet.planet_data != null:
+	if weather != null and weather.local_enabled and camera != null and _planet.planet_data != null \
+			and _planet.to_local(camera.global_position).length() < _planet.planet_data.radius * EYE_RADII_MAX:
 		_open_air = smoothstep(CAVE_GONE_M, CAVE_FULL_M, _planet.surface_altitude_of(camera.global_position))
 		var at := HEALPix.vec2lonlat(_planet.to_local(camera.global_position).normalized())
 		for devil: Dictionary in weather.devils_near(_planet, at, DEVIL_RANGE_M):

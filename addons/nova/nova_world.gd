@@ -109,15 +109,20 @@ func _build() -> void:
 	get_window().title = "Nova — vue jeu"
 	_camera_rest = world.player.camera.position
 	_built = true
-	# The planet's climate for its weather when it has one (ClimateWeather): here only, the game keeps the
-	# weather source its scene sets.
-	var climate := ClimateWeather.for_body(world.body.planet_data.planet_name)
+	# No Horizon in this view: the systems of the body's weather (ClimateWeather, set by its scene) are read
+	# from the weather service itself.
+	var climate := world.body.current_weather_source() as ClimateWeather
 	if climate != null:
-		world.body.weather_source = climate
-		# What the local weather stands on the ground: dust devils, dust walls.
-		var phenomena := WeatherPhenomena.new()
-		phenomena.eye = func() -> Node3D: return world.player.camera if world != null and world.player != null else null
-		world.body.add_child(phenomena)
+		# The offline world keeps a body's terrain only: what its scene draws of the weather is put back.
+		if world.body.get_node_or_null(^"WeatherPhenomena") == null:
+			var phenomena := WeatherPhenomena.new()
+			phenomena.name = "WeatherPhenomena"
+			world.body.add_child(phenomena)
+		var service := WeatherService.new()
+		service.name = "WeatherService"
+		world.body.add_child(service)
+		service.climate = climate
+		_weather_hud.service = service
 	_weather_hud.planet = world.body
 	_weather_hud.player = world.player
 	_place(_start[0], _start[1])
