@@ -670,4 +670,3 @@ openxr/extensions/hand_tracking=true
 openxr/extensions/hand_tracking_unobstructed_data_source=true
 openxr/extensions/hand_tracking_controller_data_source=true
 openxr/extensions/hand_interaction_profile=true
-openxr/extensions/render_model=true
