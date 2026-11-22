@@ -85,6 +85,45 @@ uniform float cliff_tiling_scale : hint_range(0.0001, 0.01, 0.0001) = 0.001;
 uniform vec4  cliff_tint : source_color = vec4(0.38, 0.36, 0.34, 1.0);
 uniform float cliff_tint_strength : hint_range(0.0, 1.0, 0.01) = 0.3;
 
+// ── Nova (NovaBody sets these on the body's own copy of this material) ──
+// A chunk baked for Nova carries a palette of 4 variant ids (nova_palette, one per chunk) and each vertex's
+// weight on them (CUSTOM3): the weights, interpolated over the triangles, are the transition between
+// variants. A mesh without them reads zero weights and keeps the look above, untouched.
+group_uniforms nova;
+// How much of the occlusion map darkens the ground, and the roughness setting at which the roughness map
+// is taken as it is (the setting scales it from there).
+const float NOVA_AO = 0.85;
+const float NOVA_ROUGH_REF = 0.9;
+// The fine tile of a ground (its close-up grain) shows whole up to this many of its own lengths from the
+// camera, and is gone by that many: 10 m and 36 m for a 2 m tile.
+const float NOVA_DETAIL_NEAR = 5.0;
+const float NOVA_DETAIL_FAR = 18.0;
+const float NOVA_TRIPLANAR_SHARPNESS = 32.0;
+// Steep parallax: full strength up to NEAR metres from the camera, none past FAR; height steps a ray;
+// how many depths the texture may slide at grazing angles.
+const float NOVA_POM_NEAR = 12.0;
+const float NOVA_POM_FAR = 30.0;
+const int NOVA_POM_STEPS = 12;
+const float NOVA_POM_MAX_SLIDE = 3.0;
+// In a transition, each ground's weight is shifted by a noise of its own, in patches of this size (metres):
+// two grounds meet in tongues and islands instead of along the zone's outline. Its two octaves, the least
+// and most it multiplies a weight by, and where it fades out seen from afar (finer than a pixel there).
+const float NOVA_EDGE_PATCH_M = 40.0;
+const float NOVA_EDGE_LOW = 0.2;
+const float NOVA_EDGE_HIGH = 1.8;
+const float NOVA_EDGE_NEAR = 800.0;
+const float NOVA_EDGE_FAR = 2500.0;
+uniform bool nova_on = false;
+// One row per variant id, NovaBody.PARAM_COLUMNS RGBA float texels (see NovaBody.refresh_ground):
+// 0 = albedo layer, normal layer, tile (m), texture strength; 1 = gain, normal strength, roughness,
+// blend sharpness; 2 = macro strength, macro size (m), anti-tiling, occlusion / roughness / height layer;
+// 3-4 and 5-6 = the second and third materials (4.w = close-up tile, 6.w = hex tiling); 7 = parallax depth.
+uniform sampler2D nova_params : filter_nearest, repeat_disable;
+uniform sampler2DArray nova_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2DArray nova_normal : filter_linear_mipmap_anisotropic, repeat_enable;
+// Occlusion (R), roughness (G) and height (B) of the same grounds.
+uniform sampler2DArray nova_orh : filter_linear_mipmap_anisotropic, repeat_enable;
+
 // Far lighting — the star's own light, the smooth radial normal, the far air — and the per-chunk
 // instance uniforms, shared with every other ground material (see the include). Past radial_blend_far
 // the shading normal is also bent fully onto the smooth planet radial: coarse far chunks light on
@@ -94,6 +133,10 @@ uniform float cliff_tint_strength : hint_range(0.0, 1.0, 0.01) = 0.3;
 // integer multiples of 1/WRAP so the pattern is seamless across the wrap
 // (UV differs by scale×WRAP×integer between chunks → integer = no seam).
 const float WRAP = 8192.0;
+// Hex tiling: how fast one of the three reads takes over from the others (1 = a wide cross-fade).
+const float NOVA_HEX_SHARPNESS = 7.0;
+// Hex tiling: how much a read's height adds to its weight along a seam.
+const float NOVA_HEX_HEIGHT = 1.0;
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -108,6 +151,11 @@ varying float detail_scale;
 varying float cam_dist;  // camera -> fragment distance (m), for the far-distance radial normal blend
 varying vec3 planet_radial_world;  // true smooth sphere normal (world space): terminator + star NdotL
 varying vec4 rock;  // CUSTOM1: rocky terrain intensity × envelope, small-block size (m), level + 8 × type, altitude (m)
+varying vec4 nova_w;  // CUSTOM3: Nova weight of each palette slot
+// The chunk's palette of variant ids (0 = empty slot), one for the whole chunk (PlanetTerrain sets it from
+// the mesh). After the indices terrain_far_light fixes for every ground shader.
+instance uniform vec4 nova_palette : instance_index(7);
+varying vec3 nova_view;  // fragment -> camera, model space (steep parallax)
 
 // Rocky terrain blocks below the mesh pitch (CUSTOM1) — rock_blocks().
 #include "res://scenes/planet/rock_blocks.gdshaderinc"
@@ -170,7 +218,243 @@ vec4 detail_octave_sample(vec3 wp, float s, float layer, vec3 w, vec3 sgn, float
 	            bx * w.x + by * w.y + bz * w.z);
 }
 
+// ── Nova helpers ───────────────────────────────────────────────────
+vec4 nova_param(int id, int col) {
+	return texelFetch(nova_params, ivec2(col, id), 0);
+}
+
+float nova_hash(vec3 p) {
+	p = fract(p * 0.1031);
+	p += dot(p, p.zyx + 31.32);
+	return fract((p.x + p.y) * p.z);
+}
+
+// Value noise of period `period` cells: tri_pos wraps every WRAP metres, so the lattice must too.
+float nova_noise(vec3 x, float period) {
+	vec3 i = floor(x);
+	vec3 f = fract(x);
+	f = f * f * (3.0 - 2.0 * f);
+	float n000 = nova_hash(mod(i, period));
+	float n100 = nova_hash(mod(i + vec3(1, 0, 0), period));
+	float n010 = nova_hash(mod(i + vec3(0, 1, 0), period));
+	float n110 = nova_hash(mod(i + vec3(1, 1, 0), period));
+	float n001 = nova_hash(mod(i + vec3(0, 0, 1), period));
+	float n101 = nova_hash(mod(i + vec3(1, 0, 1), period));
+	float n011 = nova_hash(mod(i + vec3(0, 1, 1), period));
+	float n111 = nova_hash(mod(i + vec3(1, 1, 1), period));
+	return mix(mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+	           mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);
+}
+
+// Triplanar albedo of `layer` at tiling s (planes: X → zy, Y → xz, Z → xy), each projection at its own
+// position (the columns of pm: steep parallax).
+vec3 nova_tri_albedo(float layer, mat3 pm, float s, vec3 w) {
+	return texture(nova_albedo, vec3(pm[0].zy * s, layer)).rgb * w.x
+	     + texture(nova_albedo, vec3(pm[1].xz * s, layer)).rgb * w.y
+	     + texture(nova_albedo, vec3(pm[2].xy * s, layer)).rgb * w.z;
+}
+
+// The same at one position for the three projections.
+vec3 nova_tri_albedo(float layer, vec3 p, float s, vec3 w) {
+	return nova_tri_albedo(layer, mat3(p, p, p), s, w);
+}
+
+vec3 nova_tri_orh(float layer, mat3 pm, float s, vec3 w) {
+	return texture(nova_orh, vec3(pm[0].zy * s, layer)).rgb * w.x
+	     + texture(nova_orh, vec3(pm[1].xz * s, layer)).rgb * w.y
+	     + texture(nova_orh, vec3(pm[2].xy * s, layer)).rgb * w.z;
+}
+
+// A random texture offset for corner c of the tiling lattice. The lattice is a sheared square grid; in
+// the coordinates (2x + y, y) it wraps where the texture does (period cells), so chunks agree.
+vec2 nova_hex_offset(vec2 c, float period) {
+	vec2 q = vec2(mod(2.0 * c.x + c.y, 4.0 * period), mod(c.y, 2.0 * period));
+	vec3 p3 = fract(vec3(q.xyx) * vec3(0.1031, 0.1030, 0.0973));
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+// One projection of a ground's three images (layers: albedo, normal, orh; -1 = none) with hex tiling: the
+// plane is paved with triangles, each corner shifts the texture by its own random offset, and the three
+// reads are blended by their distance to the corners and by the texture's height, so one of them wins
+// almost everywhere and the seams follow the grain. gx, gy: screen derivatives of uv (the offsets would
+// break the automatic ones along the triangles' edges).
+void nova_hex_plane(vec2 uv, vec2 gx, vec2 gy, float period, vec3 layers,
+		out vec3 alb, out vec2 nrm, out vec3 orh) {
+	vec2 sk = vec2(uv.x - 0.5 * uv.y, uv.y) * 2.0;
+	vec2 base = floor(sk);
+	vec2 f = sk - base;
+	vec2 c1 = base + vec2(1.0, 0.0);
+	vec2 c2 = base + vec2(0.0, 1.0);
+	vec2 c0 = base;
+	vec3 w = vec3(1.0 - f.x - f.y, f.x, f.y);
+	if (f.x + f.y > 1.0) {
+		c0 = base + vec2(1.0, 1.0);
+		w = vec3(f.x + f.y - 1.0, 1.0 - f.y, 1.0 - f.x);
+	}
+	vec2 u0 = uv + nova_hex_offset(c0, period);
+	vec2 u1 = uv + nova_hex_offset(c1, period);
+	vec2 u2 = uv + nova_hex_offset(c2, period);
+	vec3 o0 = vec3(1.0, 1.0, 0.5);
+	vec3 o1 = o0;
+	vec3 o2 = o0;
+	if (layers.z >= 0.0) {
+		o0 = textureGrad(nova_orh, vec3(u0, layers.z), gx, gy).rgb;
+		o1 = textureGrad(nova_orh, vec3(u1, layers.z), gx, gy).rgb;
+		o2 = textureGrad(nova_orh, vec3(u2, layers.z), gx, gy).rgb;
+	}
+	// The height only settles the seam between two reads: weighted more, the highest of the three would
+	// win everywhere and the texture's hollows (its dark cracks) would vanish.
+	vec3 ws = pow(w, vec3(NOVA_HEX_SHARPNESS)) * (vec3(o0.b, o1.b, o2.b) * NOVA_HEX_HEIGHT + 1.0);
+	ws /= ws.x + ws.y + ws.z;
+	orh = o0 * ws.x + o1 * ws.y + o2 * ws.z;
+	alb = textureGrad(nova_albedo, vec3(u0, layers.x), gx, gy).rgb * ws.x
+			+ textureGrad(nova_albedo, vec3(u1, layers.x), gx, gy).rgb * ws.y
+			+ textureGrad(nova_albedo, vec3(u2, layers.x), gx, gy).rgb * ws.z;
+	nrm = vec2(0.0);
+	if (layers.y >= 0.0) {
+		nrm = (textureGrad(nova_normal, vec3(u0, layers.y), gx, gy).rg * ws.x
+				+ textureGrad(nova_normal, vec3(u1, layers.y), gx, gy).rg * ws.y
+				+ textureGrad(nova_normal, vec3(u2, layers.y), gx, gy).rg * ws.z) * 2.0 - 1.0;
+	}
+}
+
+// The texture offset of the hex-tiling corner that weighs most at uv (see nova_hex_plane).
+vec2 nova_hex_top_offset(vec2 uv, float period) {
+	vec2 sk = vec2(uv.x - 0.5 * uv.y, uv.y) * 2.0;
+	vec2 base = floor(sk);
+	vec2 f = sk - base;
+	vec2 c0 = base;
+	vec3 w = vec3(1.0 - f.x - f.y, f.x, f.y);
+	if (f.x + f.y > 1.0) {
+		c0 = base + vec2(1.0, 1.0);
+		w = vec3(f.x + f.y - 1.0, 1.0 - f.y, 1.0 - f.x);
+	}
+	vec2 c = c0;
+	if (w.y >= w.x && w.y >= w.z) {
+		c = base + vec2(1.0, 0.0);
+	} else if (w.z >= w.x && w.z >= w.y) {
+		c = base + vec2(0.0, 1.0);
+	}
+	return nova_hex_offset(c, period);
+}
+
+// q on the projection plane of `axis` (a unit axis), as the triplanar reads take it.
+vec2 nova_plane(vec3 q, vec3 axis) {
+	return axis.x > 0.5 ? q.zy : (axis.y > 0.5 ? q.xz : q.xy);
+}
+
+// Steep parallax occlusion mapping on the projection of `axis`: p slid along the view ray (v: towards the
+// camera, model space, unit) down to the height field of image `layer` (blue of nova_orh, 1 = top) at
+// tiling s, depth_m metres deep along the axis. With hex tiling the heights are those of the read that
+// weighs most at p.
+vec3 nova_parallax_axis(vec3 p, vec3 dx, vec3 dy, vec3 v, vec3 axis, float layer, float s, bool hex,
+		float depth_m) {
+	float vn = dot(v, axis);
+	// At grazing angles the slide is held to NOVA_POM_MAX_SLIDE depths: beyond, the steps show.
+	vec3 slide = -(v - axis * vn) / max(abs(vn), 1.0 / NOVA_POM_MAX_SLIDE) * depth_m;
+	vec2 gx = nova_plane(dx, axis) * s;
+	vec2 gy = nova_plane(dy, axis) * s;
+	vec2 off = hex ? nova_hex_top_offset(nova_plane(p, axis) * s, WRAP * s) : vec2(0.0);
+	float step_t = 1.0 / float(NOVA_POM_STEPS);
+	float t = 0.0;
+	float ray = 1.0;
+	float h = textureGrad(nova_orh, vec3(nova_plane(p, axis) * s + off, layer), gx, gy).b;
+	float last_ray = ray;
+	float last_h = h;
+	for (int i = 0; i < NOVA_POM_STEPS; i++) {
+		if (ray <= h) {
+			break;
+		}
+		last_ray = ray;
+		last_h = h;
+		ray -= step_t;
+		t += step_t;
+		h = textureGrad(nova_orh, vec3(nova_plane(p + slide * t, axis) * s + off, layer), gx, gy).b;
+	}
+	// Between the last step above the surface and the first below it.
+	float above = last_ray - last_h;
+	float below = h - ray;
+	t -= step_t * clamp(below / max(above + below, 0.0001), 0.0, 1.0);
+	return p + slide * max(t, 0.0);
+}
+
+// The position each of the three projections is read at (columns: the X, Y and Z planes), each slid in
+// its own plane. The planet's ground faces no axis over most of its surface, so the projections that
+// share it each get their parallax; one that does not count (w) keeps p.
+mat3 nova_parallax(vec3 p, vec3 dx, vec3 dy, vec3 view_m, vec3 w, float layer, float s, bool hex,
+		float depth_m) {
+	vec3 v = normalize(view_m);
+	mat3 pm = mat3(p, p, p);
+	if (w.x > 0.01) {
+		pm[0] = nova_parallax_axis(p, dx, dy, v, vec3(1.0, 0.0, 0.0), layer, s, hex, depth_m);
+	}
+	if (w.y > 0.01) {
+		pm[1] = nova_parallax_axis(p, dx, dy, v, vec3(0.0, 1.0, 0.0), layer, s, hex, depth_m);
+	}
+	if (w.z > 0.01) {
+		pm[2] = nova_parallax_axis(p, dx, dy, v, vec3(0.0, 0.0, 1.0), layer, s, hex, depth_m);
+	}
+	return pm;
+}
+
+// The whiteout blend of three projected normal-map reads (tx, ty, tz) around the geometric normal n.
+vec3 nova_whiteout(vec2 tx, vec2 ty, vec2 tz, vec3 w, vec3 n) {
+	vec3 nx = vec3(tx + n.zy, abs(n.x));
+	vec3 ny = vec3(ty + n.xz, abs(n.y));
+	vec3 nz = vec3(tz + n.xy, abs(n.z));
+	nx.z *= sign(n.x);
+	ny.z *= sign(n.y);
+	nz.z *= sign(n.z);
+	return normalize(nx.zyx * w.x + ny.xzy * w.y + nz.xyz * w.z);
+}
+
+// A ground material's three images at p (derivatives dx, dy), tiling s, with hex tiling on the projections
+// that count (w: the triplanar weights): its colour, its occlusion / roughness / height and its normal
+// around n (strength k).
+void nova_hex_tri(mat3 pm, vec3 dx, vec3 dy, float s, vec3 w, vec3 layers, float k, vec3 n,
+		out vec3 alb, out vec3 orh, out vec3 nrm) {
+	float period = WRAP * s;
+	alb = vec3(0.0);
+	orh = vec3(0.0);
+	vec3 a;
+	vec3 o;
+	vec2 nx2 = vec2(0.0);
+	vec2 ny2 = vec2(0.0);
+	vec2 nz2 = vec2(0.0);
+	float seen = 0.0;
+	if (w.x > 0.01) {
+		nova_hex_plane(pm[0].zy * s, dx.zy * s, dy.zy * s, period, layers, a, nx2, o);
+		alb += a * w.x;
+		orh += o * w.x;
+		seen += w.x;
+	}
+	if (w.y > 0.01) {
+		nova_hex_plane(pm[1].xz * s, dx.xz * s, dy.xz * s, period, layers, a, ny2, o);
+		alb += a * w.y;
+		orh += o * w.y;
+		seen += w.y;
+	}
+	if (w.z > 0.01) {
+		nova_hex_plane(pm[2].xy * s, dx.xy * s, dy.xy * s, period, layers, a, nz2, o);
+		alb += a * w.z;
+		orh += o * w.z;
+		seen += w.z;
+	}
+	alb /= max(seen, 0.001);
+	orh /= max(seen, 0.001);
+	nrm = nova_whiteout(nx2 * k, ny2 * k, nz2 * k, w, n);
+}
+
+// Triplanar normal map (whiteout blend around the geometric normal n), model space.
+vec3 nova_tri_normal(float layer, mat3 pm, float s, vec3 w, vec3 n, float k) {
+	return nova_whiteout((texture(nova_normal, vec3(pm[0].zy * s, layer)).rg * 2.0 - 1.0) * k,
+			(texture(nova_normal, vec3(pm[1].xz * s, layer)).rg * 2.0 - 1.0) * k,
+			(texture(nova_normal, vec3(pm[2].xy * s, layer)).rg * 2.0 - 1.0) * k, w, n);
+}
+
 void vertex() {
+	VERTEX += lod_morph_step(CUSTOM2);  // LOD morph, see terrain_far_light
 	// Recover the surface position for triplanar UV.
 	// For terrain vertices CUSTOM0 is zero so VERTEX + CUSTOM0 == VERTEX.
 	// For skirt vertices VERTEX is at the dropped position and CUSTOM0
@@ -187,12 +471,14 @@ void vertex() {
 	// Camera->fragment distance for the far-distance radial normal blend (view space is camera-relative,
 	// so this stays float32-precise regardless of the astronomic world position).
 	cam_dist     = far_light_cam_dist(MODELVIEW_MATRIX, VERTEX + CUSTOM0.xyz);
+	nova_view    = (inverse(MODELVIEW_MATRIX) * vec4(0.0, 0.0, 0.0, 1.0)).xyz - VERTEX;
 	// TRUE radial 'up' as a world-space direction: the planet-local vertex (chunk_center_local + VERTEX,
 	// precise) rotated by the model's linear part (the planet's world rotation; w=0 drops the ~3e10
 	// translation, so no float32 blow-up). Smooth sphere normal for the far terminator + star lighting.
 	planet_radial_world = far_light_radial(MODEL_MATRIX, VERTEX + CUSTOM0.xyz);
 	detail_layer = UV2.x;    // integer layer index (0 = blank)
 	detail_scale = UV2.y;    // per-biome tiling scale (world-space)
+	nova_w     = CUSTOM3;
 	// VERTEX already stores the final geometry position (dropped for
 	// skirt vertices, surface for terrain) — no displacement needed.
 }
@@ -331,15 +617,246 @@ void fragment() {
 	// Blend: detail 0.5 = no change, <0.5 darkens, >0.5 brightens.
 	// Using overlay-style blending for natural look.
 	float mod = mix(1.0, detail * 2.0, detail_strength);
+	vec3 sn_m = w2m * shaded_normal;
+
+	// ── Nova: each palette variant's texture, relief and roughness, blended by the vertex
+	// weights sharpened against the texture's own brightness (a height blend: the transition follows
+	// the grain of the ground instead of the triangles).
+	// A variant with no texture keeps this shader's own detail (mod, sn_m) under its other settings.
+	float st_sum = nova_on ? dot(nova_w, vec4(1.0)) : 0.0;
+	vec3 st_col = vec3(1.0);
+	float st_rough = roughness;
+	float mod_detail = mod;
+	vec3 sn_detail = sn_m;
+	if (st_sum > 0.004) {
+		// A sharp choice between the three projections: the planet's ground faces no axis over most of its
+		// surface, and a wide blend lays two stretched copies of every stone over each other.
+		vec3 tw = pow(abs(nrm_m), vec3(max(triplanar_sharpness, NOVA_TRIPLANAR_SHARPNESS)));
+		tw /= (tw.x + tw.y + tw.z);
+		vec3 cols[4];
+		vec3 nrms[4];
+		float wts[4];
+		float rgh[4];
+		float wsum = 0.0;
+		// Plain arrays: indexing a vector with a loop variable is not portable to every backend.
+		// Screen derivatives of the texture position, taken before any branch (hex tiling reads with them).
+		vec3 tri_dx = dFdx(tri_pos);
+		vec3 tri_dy = dFdy(tri_pos);
+		float w_in[4] = float[](nova_w.x, nova_w.y, nova_w.z, nova_w.w);
+		float id_in[4] = float[](nova_palette.x, nova_palette.y, nova_palette.z, nova_palette.w);
+		for (int i = 0; i < 4; i++) {
+			cols[i] = vec3(1.0);
+			nrms[i] = sn_detail;
+			rgh[i] = roughness;
+			wts[i] = 0.0;
+			float wi = w_in[i];
+			int id = int(id_in[i]);
+			if (wi < 0.004 || id <= 0) {
+				continue;
+			}
+			vec4 p0 = nova_param(id, 0);
+			vec4 p1 = nova_param(id, 1);
+			vec4 p2 = nova_param(id, 2);
+			float s = snap_scale(1.0 / max(p0.z, 0.01));
+			// Close to the camera the same textures are read again at a finer tile: the large tile, which
+			// does not repeat seen from afar, is a few dozen texels a metre underfoot.
+			float fine_tile = nova_param(id, 4).w;
+			float sd = snap_scale(1.0 / max(fine_tile, 0.05));
+			float fine = fine_tile > 0.0
+					? 1.0 - smoothstep(fine_tile * NOVA_DETAIL_NEAR, fine_tile * NOVA_DETAIL_FAR, cam_dist) : 0.0;
+			// Steep parallax, close to the camera: the position every texture is read at slides along the
+			// view ray to where it meets the height of the material lying there (its own image's blue),
+			// so stones and cracks hide and uncover each other as the camera moves.
+			vec3 pp = tri_pos;
+			mat3 pm = mat3(tri_pos, tri_pos, tri_pos);
+			float pom_m = nova_param(id, 7).x;
+			float pom_k = pom_m > 0.0 ? 1.0 - smoothstep(NOVA_POM_NEAR, NOVA_POM_FAR, cam_dist) : 0.0;
+			if (pom_k > 0.0) {
+				float pom_layer = p2.w;
+				float pom_s = fine > 0.5 ? sd : s;
+				for (int k = 0; k < 2; k++) {
+					vec4 pa = nova_param(id, 3 + k * 2);
+					if (pa.w <= 0.0 || pa.x < 0.0) {
+						continue;
+					}
+					vec4 pb = nova_param(id, 4 + k * 2);
+					float sp = snap_scale(1.0 / max(pb.x, 1.0));
+					vec3 off = vec3(17.0, 31.0, 5.0) * float(k);
+					float where = nova_noise(tri_pos * sp + off, WRAP * sp) * 0.65
+							+ nova_noise(tri_pos * sp * 2.0 + off, WRAP * sp * 2.0) * 0.35;
+					if (clamp((where - 0.5) * 1.8 + 0.5, 0.0, 1.0) > 1.0 - pa.w) {
+						pom_layer = pb.z;
+						pom_s = snap_scale(1.0 / max(pa.z, 0.01));
+					}
+				}
+				if (pom_layer >= 0.0) {
+					pm = nova_parallax(tri_pos, tri_dx, tri_dy, nova_view, tw, pom_layer, pom_s,
+							nova_param(id, 6).w > 0.5, pom_m * pom_k);
+				}
+			}
+			vec3 tex = vec3(0.5);
+			// Hex tiling of the ground's materials: no repetition, so no anti-tiling read. The first
+			// material keeps its close-up tile, hex-tiled too.
+			bool hex = p0.x >= 0.0 && nova_param(id, 6).w > 0.5;
+			vec3 hex_orh = vec3(1.0, 1.0, 0.5);
+			vec3 hex_nrm = nrm_m;
+			if (hex) {
+				nova_hex_tri(pm, tri_dx, tri_dy, s, tw, vec3(p0.x, p0.y, p2.w), p1.y, nrm_m,
+						tex, hex_orh, hex_nrm);
+				if (fine > 0.0) {
+					vec3 tex_f;
+					vec3 orh_f;
+					vec3 nrm_f;
+					nova_hex_tri(pm, tri_dx, tri_dy, sd, tw, vec3(p0.x, p0.y, p2.w), p1.y, nrm_m,
+							tex_f, orh_f, nrm_f);
+					tex = mix(tex, tex_f, fine);
+					hex_orh = mix(hex_orh, orh_f, fine);
+					hex_nrm = normalize(mix(hex_nrm, nrm_f, fine));
+				}
+			} else if (p0.x >= 0.0) {
+				tex = nova_tri_albedo(p0.x, pm, s, tw);
+				if (p2.z > 0.0) {
+					// Anti-tiling: a second, coarser read with swapped axes, mixed by a slow noise.
+					float s2 = snap_scale(s * 0.43);
+					vec3 tex2 = nova_tri_albedo(p0.x, pp.yzx, s2, tw.yzx);
+					float sa = snap_scale(s * 0.11);
+					float k = nova_noise(pp * sa, WRAP * sa);
+					tex = mix(tex, tex2, smoothstep(0.3, 0.7, k) * p2.z);
+				}
+				if (fine > 0.0) {
+					vec3 tex_f = nova_tri_albedo(p0.x, pm, sd, tw);
+					if (p2.z > 0.0) {
+						// The same anti-tiling as the large tile: a small tile repeats within sight.
+						float sf2 = snap_scale(sd * 0.57);
+						float sfa = snap_scale(sd * 0.17);
+						float kf = nova_noise(pp * sfa, WRAP * sfa);
+						tex_f = mix(tex_f, nova_tri_albedo(p0.x, pp.yzx, sf2, tw.yzx),
+								smoothstep(0.35, 0.65, kf) * p2.z);
+					}
+					tex = mix(tex, tex_f, fine);
+				}
+			}
+			cols[i] = p0.x >= 0.0 ? mix(vec3(1.0), tex * p1.x, p0.w) : vec3(mod_detail);
+			// Occlusion, roughness and height of the ground, when it has the image for them: the hollows
+			// darken, the surface shines or not point by point, and "low" is a real height instead of a
+			// dark texel. Without the image: no occlusion, the one roughness, the texel's brightness.
+			vec3 orh = vec3(1.0, 1.0, dot(tex, vec3(0.333)));
+			float rough_i = p1.z;
+			if (p2.w >= 0.0) {
+				orh = hex ? hex_orh : nova_tri_orh(p2.w, pm, s, tw);
+				if (fine > 0.0 && !hex) {
+					orh = mix(orh, nova_tri_orh(p2.w, pm, sd, tw), fine);
+				}
+				cols[i] *= mix(1.0, orh.r, NOVA_AO);
+				rough_i = clamp(orh.g * p1.z / NOVA_ROUGH_REF, 0.04, 1.0);
+			}
+			// The second and third materials (sand, gravel, dust…), in patches, one over the other: a slow
+			// noise of its own says where each lies, and it takes the hollows of the first material first
+			// — its dark texels — so the rim of a patch follows the rock's own grain instead of a flat
+			// cross-fade. Columns 3-4 of the parameters hold the second, 5-6 the third, laid out alike.
+			float over[2] = float[](0.0, 0.0);
+			vec4 over_a[2];
+			vec3 over_n[2];
+			for (int k = 0; k < 2; k++) {
+				vec4 pa = nova_param(id, 3 + k * 2);
+				over_a[k] = pa;
+				if (pa.w <= 0.0 || pa.x < 0.0) {
+					continue;
+				}
+				vec4 pb = nova_param(id, 4 + k * 2);
+				float sp = snap_scale(1.0 / max(pb.x, 1.0));
+				// A whole number of lattice cells apart, so each material has its own patches and the
+				// noise still wraps.
+				vec3 off = vec3(17.0, 31.0, 5.0) * float(k);
+				float where = nova_noise(pp * sp + off, WRAP * sp) * 0.65
+						+ nova_noise(pp * sp * 2.0 + off, WRAP * sp * 2.0) * 0.35;
+				// A blend of noises gathers around 0.5: stretched so pa.w is about the share it covers.
+				where = clamp((where - 0.5) * 1.8 + 0.5, 0.0, 1.0) + (0.5 - orh.b) * 0.35;
+				over[k] = smoothstep(1.0 - pa.w - 0.07, 1.0 - pa.w + 0.07, where);
+				if (over[k] > 0.0) {
+					float sb = snap_scale(1.0 / max(pa.z, 0.01));
+					vec3 tex_b;
+					vec3 orh_b = vec3(1.0, 1.0, 0.5);
+					if (hex) {
+						nova_hex_tri(pm, tri_dx, tri_dy, sb, tw, vec3(pa.x, pa.y, pb.z), p1.y, nrm_m,
+								tex_b, orh_b, over_n[k]);
+					} else {
+						tex_b = nova_tri_albedo(pa.x, pm, sb, tw);
+						if (pb.z >= 0.0) {
+							orh_b = nova_tri_orh(pb.z, pm, sb, tw);
+						}
+					}
+					vec3 col_b = mix(vec3(1.0), tex_b * pb.y, p0.w);
+					if (pb.z >= 0.0) {
+						col_b *= mix(1.0, orh_b.r, NOVA_AO);
+						rough_i = mix(rough_i, clamp(orh_b.g * p1.z / NOVA_ROUGH_REF, 0.04, 1.0), over[k]);
+					}
+					cols[i] = mix(cols[i], col_b, over[k]);
+				}
+			}
+			if (p2.x > 0.0) {
+				float sm = snap_scale(1.0 / max(p2.y, 1.0));
+				float m = nova_noise(pp * sm, WRAP * sm) * 0.65
+						+ nova_noise(pp * sm * 2.0, WRAP * sm * 2.0) * 0.35;
+				cols[i] *= 1.0 + (m - 0.5) * 2.0 * p2.x;
+			}
+			if (p0.y >= 0.0 && p1.y > 0.0) {
+				nrms[i] = hex ? hex_nrm : nova_tri_normal(p0.y, pm, s, tw, nrm_m, p1.y);
+				if (fine > 0.0 && !hex) {
+					nrms[i] = normalize(mix(nrms[i], nova_tri_normal(p0.y, pm, sd, tw, nrm_m, p1.y), fine));
+				}
+			}
+			for (int k = 0; k < 2; k++) {
+				if (over[k] > 0.0 && over_a[k].y >= 0.0 && p1.y > 0.0) {
+					float sb = snap_scale(1.0 / max(over_a[k].z, 0.01));
+					nrms[i] = normalize(mix(nrms[i], hex ? over_n[k]
+							: nova_tri_normal(over_a[k].y, pm, sb, tw, nrm_m, p1.y), over[k]));
+				}
+			}
+			rgh[i] = rough_i;
+			float h = orh.b;
+			float edge = 1.0;
+			if (wi < 0.996 && cam_dist < NOVA_EDGE_FAR) {
+				float se = snap_scale(1.0 / NOVA_EDGE_PATCH_M);
+				vec3 oe = vec3(41.0, 13.0, 29.0) * float(id);
+				float ne = nova_noise(tri_pos * se + oe, WRAP * se) * 0.65
+						+ nova_noise(tri_pos * se * 3.0 + oe, WRAP * se * 3.0) * 0.35;
+				edge = mix(mix(NOVA_EDGE_LOW, NOVA_EDGE_HIGH, ne), 1.0,
+						smoothstep(NOVA_EDGE_NEAR, NOVA_EDGE_FAR, cam_dist));
+			}
+			wts[i] = pow(max(wi * edge * (0.5 + h), 1e-4), p1.w);
+			wsum += wts[i];
+		}
+		if (wsum > 0.0) {
+			vec3 c = vec3(0.0);
+			vec3 nn = vec3(0.0);
+			float r = 0.0;
+			for (int i = 0; i < 4; i++) {
+				float k = wts[i] / wsum;
+				c += cols[i] * k;
+				nn += nrms[i] * k;
+				r += rgh[i] * k;
+			}
+			st_sum = clamp(st_sum, 0.0, 1.0);
+			st_col = mix(vec3(1.0), c, st_sum);
+			st_rough = r;
+			mod = mix(mod_detail, 1.0, st_sum);
+			sn_m = normalize(mix(sn_detail, normalize(nn), st_sum));
+		} else {
+			st_sum = 0.0;
+		}
+	} else {
+		st_sum = 0.0;
+	}
+
 	// Rock blocks of a rocky_terrain field (CUSTOM1), faded with the distance.
 	// In tri_pos's frame, like the planes; its shading normal comes back to world space.
-	vec3 sn_m = w2m * shaded_normal;
 	mod *= rock_blocks(rock, tri_pos, nrm_m, w2m * planet_up, cam_dist, sn_m);
 	shaded_normal = normalize(m2w * sn_m);
-	ALBEDO = clamp(biome_color * mod * albedo_multiplier, vec3(0.0), vec3(1.0));
+	ALBEDO = clamp(biome_color * st_col * mod * albedo_multiplier, vec3(0.0), vec3(1.0));
 
 	// Increase roughness on steep cliff faces for a more matte rock look.
-	ROUGHNESS = mix(roughness, min(roughness + 0.1, 1.0), cliff_factor);
+	ROUGHNESS = mix(mix(roughness, st_rough, st_sum), min(roughness + 0.1, 1.0), cliff_factor);
 	METALLIC  = metallic;
 
 	// Far terrain: shade on the TRUE smooth planet radial (world space) so distant coarse chunks light on

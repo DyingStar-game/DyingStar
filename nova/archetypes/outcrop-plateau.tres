@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="NovaProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/nova/nova_profile.gd" id="1_profile"]
+
+[resource]
+script = ExtResource("1_profile")
+values = {
+"ground/albedo_texture": "res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/tex_mineral_corundum_pure_albedo.png",
+"ground/anti_tiling": 0.6,
+"ground/normal_strength": 1.0,
+"ground/normal_texture": "res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop_marble_01/tex_mineral_corundum_outcrop_marble_01_normal.png",
+"ground/roughness": 0.95,
+"ground/texture_gain": 2.5,
+"ground/texture_strength": 1.0,
+"ground/tile_m": 10.0
+}
+note = "Plateau de roche mère : les textures de corindon de corundum_outcrop_surface.tres. Gain 2.5 = 1 / albedo_multiplier (0.4) de terrain_biome, pour garder la luminosité de l'ancienne surface."

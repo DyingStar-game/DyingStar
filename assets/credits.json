@@ -2615,6 +2615,33 @@
 			"license": "CC BY-NC-SA 4.0"
 		},
 		{
+			"asset": "tex_gravel_slate_040_*",
+			"path": "res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_albedo.png",
+			"author": "ambientCG",
+			"source": "ambientCG",
+			"id": "",
+			"url": "https://ambientcg.com/a/Gravel040",
+			"license": "CC0 1.0"
+		},
+		{
+			"asset": "tex_ground_mars_rocky_*",
+			"path": "res://assets/_universe/_shared/materials/mat_ground_mars_rocky/tex_ground_mars_rocky_albedo.png",
+			"author": "pixelpoops",
+			"source": "Material Maker",
+			"id": "",
+			"url": "https://www.materialmaker.org/material?id=474",
+			"license": "CC0 1.0"
+		},
+		{
+			"asset": "tex_rock_cracked_062_*",
+			"path": "res://assets/_universe/_shared/materials/mat_rock_cracked_062/tex_rock_cracked_062_albedo.png",
+			"author": "ambientCG",
+			"source": "ambientCG",
+			"id": "",
+			"url": "https://ambientcg.com/a/Rock062",
+			"license": "CC0 1.0"
+		},
+		{
 			"asset": "tool_dispenser.png",
 			"path": "res://assets/textures/map_markers/tool_dispenser.png",
 			"author": "WarpZone",

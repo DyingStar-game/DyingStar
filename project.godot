@@ -69,7 +69,7 @@ import/use_multiple_threads=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/dyingstar/plugin.cfg", "res://addons/godot-livekit/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/open-world-database/plugin.cfg", "res://addons/planet_tools/plugin.cfg", "res://addons/uuid/plugin.cfg")
+enabled=PackedStringArray("res://addons/dyingstar/plugin.cfg", "res://addons/godot-livekit/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/nova/plugin.cfg", "res://addons/open-world-database/plugin.cfg", "res://addons/planet_tools/plugin.cfg", "res://addons/uuid/plugin.cfg")
 
 [file_customization]
 
@@ -649,9 +649,9 @@ jolt_physics_3d/limits/max_body_pairs=131072
 renderer/rendering_method.mobile="gl_compatibility"
 textures/default_filters/anisotropic_filtering_level=4
 viewport/hdr_2d=true
+limits/global_shader_variables/buffer_size=262144
 environment/defaults/default_clear_color=Color(0.310617, 0.310617, 0.310617, 1)
 occlusion_culling/use_occlusion_culling=true
-limits/global_shader_variables/buffer_size=262144
 
 [shader_globals]
 
@@ -666,6 +666,14 @@ mesh_lod_threshold={
 planet_hex_quality={
 "type": "int",
 "value": 2
+}
+nova_cam_cell={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+nova_cam_rest={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
 }
 
 [threading]

@@ -1,0 +1,1 @@
+Rock models made for Nova (Dying Star) by the project: sculpted and textured procedurally in Blender by tools/nova/build_sculpted_rocks.py. No third-party source. Project asset licence (assets/LICENSE).

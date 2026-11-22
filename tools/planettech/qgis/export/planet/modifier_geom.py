@@ -30,6 +30,8 @@ import math
 import os
 import sys
 
+import numpy as np
+
 try:
     import healpix_utils as hpx
 except ImportError:  # pragma: no cover - depends on how the caller set sys.path
@@ -280,28 +282,205 @@ def tiles_for_polyline(nside, points, influence_m, radius_m):
     return dilate(nside, seeds, _rings_for(nside, radius_m, influence_m))
 
 
-def tiles_for_polygon(nside, ring, influence_m, radius_m):
-    """Tiles a polygon (its boundary AND interior) can affect."""
-    step = 0.5 * pixel_side_deg(nside)
+#: Samples per tile side used to decide whether a tile next to the boundary
+#: overlaps the polygon (POLY_SAMPLES² points at the cell centres of an
+#: s x s grid in face coordinates, the middle one being the tile centre).
+POLY_SAMPLES = 3
+
+
+def _boundary_pixels(nside, ring, step_frac):
+    """Pixels hit by the ring's edges, densified every step_frac pixel sides.
+
+    Edges are straight in lon/lat, exactly like point_in_ring sees them.
+    """
     closed = list(ring) + [ring[0]]
-    seeds = {pix_of(nside, p[0], p[1]) for p in _densify(closed, step)}
-    lons = [p[0] for p in ring]
-    lats = [p[1] for p in ring]
-    lon0, lon1 = min(lons), max(lons)
-    lat0, lat1 = min(lats), max(lats)
-    ny = max(int(math.ceil((lat1 - lat0) / step)), 1)
-    nx = max(int(math.ceil((lon1 - lon0) / step)), 1)
-    # Cap the interior sampling grid: a whole-planet biome would otherwise
-    # sample forever. Above the cap the boundary seeds plus dilation still give
-    # a superset, and clipping drops anything that does not really overlap.
-    if nx * ny <= 4_000_000:
-        for iy in range(ny + 1):
-            lat = lat0 + (lat1 - lat0) * iy / ny
-            for ix in range(nx + 1):
-                lon = lon0 + (lon1 - lon0) * ix / nx
-                if point_in_ring(lon, lat, ring):
-                    seeds.add(pix_of(nside, lon, lat))
-    return dilate(nside, seeds, _rings_for(nside, radius_m, influence_m))
+    step = step_frac * pixel_side_deg(nside)
+    return {pix_of(nside, p[0], p[1]) for p in _densify(closed, step)}
+
+
+def _boundary_pixels_refined(nside, ring, step_frac=0.25, depth=8):
+    """_boundary_pixels, plus the pixels an edge only clips between two samples.
+
+    Wherever two consecutive samples fall in different pixels the gap is
+    bisected (down to step / 2^depth, ~1/1000 pixel by default) and every
+    pixel met on the way is kept: that is where an edge cuts a tile's corner,
+    leaving a sliver no fixed sampling sees.
+    """
+    closed = list(ring) + [ring[0]]
+    step = step_frac * pixel_side_deg(nside)
+    pts = _densify(closed, step)
+    pix = [pix_of(nside, p[0], p[1]) for p in pts]
+    out = set(pix)
+
+    def walk(a, pa, b, pb, d):
+        if pa == pb or d == 0:
+            return
+        m = (0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]))
+        pm = pix_of(nside, m[0], m[1])
+        out.add(pm)
+        walk(a, pa, m, pm, d - 1)
+        walk(m, pm, b, pb, d - 1)
+
+    for i in range(1, len(pts)):
+        walk(pts[i - 1], pix[i - 1], pts[i], pix[i], depth)
+    return out
+
+
+def _tile_samples(nside, pixels, s):
+    """(lon, lat) numpy arrays of s x s samples per pixel, pixel-major.
+
+    Sample (k, l) of pixel (face, ix, iy) is at face coordinates
+    (ix + (k + 0.5) / s, iy + (l + 0.5) / s); s = 1 is the pixel centre.
+    """
+    pixels = list(pixels)
+    m = len(pixels)
+    if m == 0:
+        return np.zeros(0), np.zeros(0)
+    npface = nside * nside
+    faces = np.empty(m, dtype=np.int64)
+    ixs = np.empty(m, dtype=np.float64)
+    iys = np.empty(m, dtype=np.float64)
+    for i, p in enumerate(pixels):
+        faces[i] = p // npface
+        x, y = hpx.nest2xy(p % npface)
+        ixs[i] = x
+        iys[i] = y
+    t = (np.arange(s, dtype=np.float64) + 0.5) / s
+    ox = np.tile(t, s)        # k varies fastest
+    oy = np.repeat(t, s)
+    fx = (ixs[:, None] + ox[None, :]).ravel()
+    fy = (iys[:, None] + oy[None, :]).ravel()
+    fface = np.repeat(faces, s * s)
+    lon = np.empty(fx.shape[0])
+    lat = np.empty(fx.shape[0])
+    for face in np.unique(fface):
+        sel = fface == face
+        lo, la = hpx.face_xy_to_lonlat_vectorized(int(face), fx[sel], fy[sel], nside)
+        lon[sel] = lo
+        lat[sel] = la
+    return lon, lat
+
+
+def points_in_ring(lons, lats, ring):
+    """Vectorised point_in_ring: bool numpy array, bit-identical to the scalar.
+
+    Same float expression in the same order as point_in_ring, so a point on
+    which the two could disagree does not exist.
+    """
+    lons = np.asarray(lons, dtype=np.float64)
+    lats = np.asarray(lats, dtype=np.float64)
+    out = np.zeros(lons.shape[0], dtype=bool)
+    n = len(ring)
+    if n < 3 or lons.shape[0] == 0:
+        return out
+    xi = np.array([p[0] for p in ring], dtype=np.float64)
+    yi = np.array([p[1] for p in ring], dtype=np.float64)
+    xj = np.roll(xi, 1)       # j = i - 1, wrapping to n - 1 for i = 0
+    yj = np.roll(yi, 1)
+    chunk = max(1, 2_000_000 // n)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        for a in range(0, lons.shape[0], chunk):
+            lo = lons[a:a + chunk, None]
+            la = lats[a:a + chunk, None]
+            straddle = (yi[None, :] > la) != (yj[None, :] > la)
+            x = (xj - xi)[None, :] * (la - yi[None, :]) / (yj - yi)[None, :] + xi[None, :]
+            cross = straddle & (lo < x)
+            out[a:a + chunk] = (np.count_nonzero(cross, axis=1) & 1).astype(bool)
+    return out
+
+
+def _any_sample_inside(nside, pixels, ring, s):
+    """Subset of [pixels] having at least one of their s x s samples inside."""
+    pixels = list(pixels)
+    if not pixels:
+        return set()
+    lon, lat = _tile_samples(nside, pixels, s)
+    inside = points_in_ring(lon, lat, ring).reshape(len(pixels), s * s).any(axis=1)
+    return {p for p, ok in zip(pixels, inside) if ok}
+
+
+def polygon_interior_tiles(nside, ring):
+    """Tiles of [nside] overlapping the polygon, BEFORE influence dilation.
+
+    Returns (tiles, frontier). tiles is
+
+        boundary seeds (edges densified every half pixel as before, plus
+                        _boundary_pixels_refined's corner clips)
+      U every tile with at least one of its POLY_SAMPLES² samples inside
+
+    and frontier is the part of it that may have a neighbour outside it (the
+    only tiles the influence dilation has to grow from).
+
+    It is computed by a hierarchical descent instead of testing every tile:
+    from the 12 base pixels down to [nside], a tile that no boundary sample of
+    its own level touches, even after one ring of dilation, cannot be crossed
+    by the ring, so point_in_ring is constant over it — its centre decides
+    for all its descendants, which in the NESTED scheme are one contiguous
+    ipix range. Only tiles near the boundary are subdivided, so the cost
+    follows the perimeter, not the area: a planet-wide zone at n1024
+    (12.6 million tiles) costs a few seconds plus building the set itself.
+
+    Coarse levels sample the edges every quarter pixel and dilate by two rings
+    so a corner clipped between two samples cannot escape: a tile wrongly
+    flagged as crossing only costs a subdivision, never a missing tile.
+
+    Polygon semantics are point_in_ring's: a PLANAR polygon in lon/lat. A
+    ring crossing the ±180° meridian the short way (lon 179 -> -179) is read
+    as spanning the whole globe the long way, and a pole is "inside" only if
+    the ring has an edge along lat ±90; both as before this function existed.
+    """
+    nside = int(nside)
+    s = POLY_SAMPLES
+    # Half-pixel samples are the seeds the old code used; the refined walk
+    # adds the tiles an edge only clips at a corner (a sliver no interior
+    # sample sees), so nothing the old lon/lat grid found is lost.
+    seeds = _boundary_pixels(nside, ring, 0.5) | _boundary_pixels_refined(nside, ring)
+    tiles = set(seeds)
+    frontier = set(seeds)
+    todo = list(range(12))
+    level = 1
+    while level < nside:
+        # Two rings: one so a tile the edge clips between two samples counts
+        # as crossing, one more so a clean tile's NEIGHBOURS are boundary-free
+        # too, which is what lets tiles_for_polygon dilate the frontier only.
+        crossing = dilate(level, _boundary_pixels(level, ring, 0.25), 2)
+        clean = [t for t in todo if t not in crossing]
+        if clean:
+            lon, lat = _tile_samples(level, clean, 1)
+            inside = points_in_ring(lon, lat, ring)
+            k = (nside // level) ** 2
+            for t, ok in zip(clean, inside):
+                if ok:
+                    tiles.update(range(t * k, (t + 1) * k))
+        todo = [4 * t + c for t in todo if t in crossing for c in range(4)]
+        level *= 2
+    # Finest level: every tile still in play is near the boundary (or a
+    # sibling of such a tile). Sample each one; seeds are already in.
+    rest = [t for t in todo if t not in seeds]
+    hit = _any_sample_inside(nside, rest, ring, s)
+    tiles.update(hit)
+    frontier.update(hit)
+    return tiles, frontier
+
+
+def tiles_for_polygon(nside, ring, influence_m, radius_m):
+    """Tiles a polygon (its boundary AND interior) can affect.
+
+    Superset of the tiles the polygon overlaps, grown by [influence_m]. There
+    is no size cap any more: until 2026-11 the interior was sampled on a lon/lat
+    grid only when it had <= 4 million points, and above that only the boundary
+    tiles came back — a planet-wide biome vanished from its interior at n256
+    and finer (see polygon_interior_tiles for the replacement).
+    """
+    if len(ring) < 3:
+        return set()
+    tiles, frontier = polygon_interior_tiles(nside, ring)
+    rings = _rings_for(nside, radius_m, influence_m)
+    if rings > 0:
+        # An interior tile's neighbours are all in [tiles] already, so growing
+        # the frontier alone gives the same set as dilating everything.
+        tiles.update(dilate(nside, frontier, rings))
+    return tiles
 
 
 def point_in_ring(lon, lat, ring):

@@ -31,6 +31,8 @@ signal pads_caught_up(uuids: Array)
 const BASE_PIXEL_COUNT := 12
 ## Seconds between full LOD-tree updates.
 const UPDATE_INTERVAL := 0.25
+## Disk cache of the client meshes of a body painted by Nova (see _nova_setup).
+const NOVA_CACHE_BASE_DIR := "user://chunk_cache_nova/"
 ## _prefetch_look_ahead re-traverses only once its prediction has moved this far.
 const PREFETCH_MIN_MOVE_M := 200.0
 var _last_prefetch_cam := Vector3.INF
@@ -45,9 +47,10 @@ const HORIZON_MARGIN_RAD := 0.02
 ## Seconds between editor camera tracking updates.
 ## Maximum concurrent recipe worker tasks (avoid flooding the thread pool).
 const MAX_CONCURRENT_RECIPES := 8
-## Maximum chunks assembled (MeshInstance3D + vegetation) per physics frame.
-## 4 matches the number of HEALPix children so a full split assembles in one frame.
-const MAX_ASSEMBLE_PER_FRAME := 8
+## Maximum chunks assembled (MeshInstance3D + vegetation) per frame; ASSEMBLE_BUDGET_MS stops it first. A chunk
+## read back assembles in ~0.1 ms, and 8 left 88 of them waiting all along a return to known ground (300 chunks/s
+## at the ~37 fps of that moment, 2026-11-05).
+const MAX_ASSEMBLE_PER_FRAME := 24
 ## Wall-clock budget of one assembly batch. A count alone let a warm-cache
 ## world entry sit at 5-20 fps for 25 s: eight chunks a frame at 5-20 ms each
 ## (`terrain_assemble=35-170ms` on every hitch line of the 2026-09-16 log), a
@@ -64,24 +67,42 @@ var _server_assemble_end_us: int = 0
 var _server_assemble_spent: bool = false
 ## Ring-buffer size for camera history (look-ahead prefetch).
 const CAM_HISTORY_SIZE := 10
+## Least distance (m) of a normal's height probes on a client (PlanetData.normal_probe_m).
+const NORMAL_PROBE_M := 40.0
+## How long a finer chunk takes to ease from its parent's shape into its own (ms).
+const LOD_MORPH_MS := 600
+## A chunk's four sides as HEALPix.get_neighbors_nest names them, and the PlanetChunk.STITCH_* bit of each.
+const EDGE_SIDES := ["W", "E", "S", "N"]
+const EDGE_BITS := [PlanetChunk.STITCH_LEFT, PlanetChunk.STITCH_RIGHT, PlanetChunk.STITCH_BOTTOM,
+		PlanetChunk.STITCH_TOP]
+## Closer than this (m), a chunk appears on its own shape at once: around the player, trees, rocks and roads are
+## laid on that shape and would float while it eases. Past it the largest jumps were LOD 0 chunks too (83 of the
+## 95 over 3.9 px, about 11 km away on a fast approach, 2026-11-08), so the tier is not the test.
+const LOD_MORPH_NEAR_M := 1500.0
 ## Fast flight: [speed m/s, terrain mult]. From each speed on, the LOD distances beyond
 ## VIEW_DISTANCE_NEAR_M are scaled by that mult, as Graphics > Terrain distance does: 0.5 is
 ## one quadtree level coarser, 0.25 two. A fine ring the camera crosses in a few seconds
-## is not worth building: at full detail the mesh tasks fell behind and the ground came in
-## late, then all at once. Trucks (~30 m/s) never reach the first step.
-const SPEED_LOD_STEPS := [[150.0, 0.5], [500.0, 0.25]]
+## is not worth building: at full detail the mesh tasks fall behind. They hold up to about 1 000 m/s
+## (2026-11-05, i7-13700, unbuilt ground); from 150 m/s as before, the ground was half as fine in ordinary
+## flight and took 8 s to come back after stopping. Trucks (~30 m/s) never reach the first step.
+const SPEED_LOD_STEPS := [[1000.0, 0.5], [3000.0, 0.25]]
 ## A step already taken is left only below this share of its speed...
 const SPEED_LOD_EXIT := 0.8
 ## ...and only once the speed has stayed there this long (ms): a ship easing off for a moment
 ## does not rebuild the fine ring just to drop it again.
 const SPEED_LOD_HOLD_MS := 2000
-## The LOD update's steps under a time budget each (ms), so a leaf set that changes wholesale — the
+## The LOD update's steps run under a time budget each (ms), so a leaf set that changes wholesale — the
 ## fast-flight scale switching, coming back to full detail after it — spreads over a few updates
-## instead of one long frame: 30-60 ms frames for ~3 s on take-off, 105-135 ms on stopping
-## (2026-10-02). What a step leaves is still there at the next update (4 Hz) and taken then.
-## Steps 1 and 3 together: handing chunks to the pipeline, best first (~860 disk-cache reads queued
-## in one update on stopping).
-const HANDOVER_BUDGET_MS := 6.0
+## instead of one long frame: 30-60 ms frames for ~3 s on take-off, 105-135 ms on stopping (2026-10-02).
+## Handing the chunks to the pipeline (_admit_pending): most time (ms) a frame spends on it. Done at each
+## 4 Hz update under 6 ms, it admitted ~175 chunks/s (~115 us each), so ground already in the disk cache
+## took 5-6 s to come back after a move, each read then taking only ~60 ms (2026-11-05).
+const ADMIT_BUDGET_MS := 1.5
+## Chunks read or read and waiting for assembly at once, beyond which admission waits: what it admits
+## faster than the assembly takes would only pile up, and go stale there if the camera moves on.
+const ADMIT_MAX_UNASSEMBLED := 96
+## Most time (ms) a frame spends taking chunks off screen once what replaces them is there (_drain_retired).
+const RETIRE_BUDGET_MS := 1.5
 ## Step 2, each phase: examining the chunks no longer desired, then taking them off screen. One not yet
 ## removed only stays on screen one update longer.
 const STALE_BUDGET_MS := 4.0
@@ -192,6 +213,9 @@ var _terrain_mult: float = 1.0
 ## The fast-flight share of the terrain mult (SPEED_LOD_STEPS; 1.0 below the first step and
 ## on the server), and since when a finer one has been due (-1: none).
 var _speed_lod_scale: float = 1.0
+## Where a client keeps its meshes. Read by initialize, before the cache opens: opening it under another key
+## clears the folder.
+var mesh_cache_base: String = ChunkDiskCache.BASE_DIR
 var _speed_lod_finer_since: int = -1
 ## client.ini debug_no_speed_lod, read once: -1 not read yet, 0 on, 1 off.
 var _speed_lod_off: int = -1
@@ -365,6 +389,12 @@ var _assemble_rank_at: Array = [Vector3.INF, Vector3.ZERO]
 ## chunk_key → { info: Dictionary, path: String }. A synchronous read cost
 ## 5-15 ms of main thread a chunk (~140 ms a second in a rebuild wave).
 var _cache_loads: Dictionary = {}
+## Chunk keys the last LOD update found to hand to the pipeline, the best LAST (_admit_pending). Rebuilt
+## by each update, so it never holds more than one update's view of what is wanted.
+var _admit_queue: Array[String] = []
+## Keys of chunks found replaced by an assembly, to take off screen under RETIRE_BUDGET_MS. Waiting for
+## step 2 of the next update (4 Hz, under STALE_BUDGET_MS) kept old and new ground stacked ~2 s longer.
+var _retired: Array[String] = []
 
 ## ── Initial-load tracking ─────────────────────────────────────────
 var _initial_ready_emitted: bool = false
@@ -373,6 +403,37 @@ var _initial_ready_emitted: bool = false
 ## body) rather than the LOCAL layer (near = lit by the per-player sun). Tracked so the switch only
 ## re-tags chunks on a transition.
 var _chunks_on_celestial: bool = false
+## Editor: build the ground alone — no vegetation, rails, point-biome props, fumaroles, scree or bridges.
+## Set by the Nova dock ("Aperçu léger"); applies to the chunks assembled from then on. Those spawns run on
+## the main thread and were the editor's last long frames while the camera travels (up to 284 ms).
+var editor_bare := false
+## Editor: ground radius under the camera as last measured, and the worker task measuring it
+## (_editor_measure_ground).
+var _editor_ground_r := 0.0
+var _editor_ground_task := -1
+## The LOD morph for every terrain built from now on. Off only to compare with and without (a checking run).
+static var lod_morph_enabled := true
+## Nova scatter tasks still running (task id → true), joined before the terrain goes (_exit_tree).
+var _nova_scatter_tasks := {}
+## Camera position (planet frame) the scatter was last laid around, and how far it moves before the chunks'
+## layers are looked at again; a laid layer is kept out to NOVA_KEEP times its view distance.
+var _nova_laid_from := Vector3.INF
+const NOVA_RELAY_STEP_M := 30.0
+const NOVA_KEEP := 1.25
+## Time given to making scatter nodes in one frame, milliseconds (and NOVA_NODES_MIN nodes whatever they
+## take, so the queue always moves). A fine chunk has hundreds of nodes; a node takes about half a
+## millisecond to make. Made at once they took 24 to 37 ms; 100 a frame, then 30, still left frames of
+## 20 ms in flight (2026-11-20). The objects fade in from afar, so the frames a node waits are not seen.
+const NOVA_NODES_MS := 2.0
+const NOVA_NODES_MIN := 3
+## Time given in one frame to looking at the chunks again after the camera moved a step, milliseconds.
+const NOVA_RELAY_MS := 1.5
+## Chunk meshes (instance ids) whose blocks near the camera still wait for their nodes.
+var _nova_show_queue: Array[int] = []
+var _nova_node_budget := 0
+var _nova_node_deadline := 0  # ticks (usec) the frame's nodes are made until
+## The chunks still to look at since the camera last moved a step (their info dictionaries).
+var _nova_relay: Array = []
 
 ## World-space direction from THIS planet to the system star, computed in double precision (exact at
 ## ~3e10, unlike a float32 world_pos). Fed per-chunk to the terrain shader so distant chunks — which get
@@ -386,6 +447,11 @@ var _atmosphere_lod: AtmosphereLod = null
 ## ── Look-ahead prefetch ───────────────────────────────────────────
 ## Ring-buffer of recent camera positions (planet-local) for velocity estimation.
 var _cam_history: PackedVector3Array = PackedVector3Array()
+## When each of _cam_history was taken (ms). An update comes at least UPDATE_INTERVAL after the last, later on a
+## slow frame: at 15 images/s a steady 800 m/s read as 1 000, enough to coarsen the ground in mid-approach.
+var _cam_history_ms: PackedInt64Array = PackedInt64Array()
+## Chunks easing from their parent's shape: key -> when they appeared (ms).
+var _morphing: Dictionary = {}
 ## Last known camera position in planet-local space (for distance priority).
 var _last_local_cam: Vector3 = Vector3.ZERO
 ## The leaf set the last traversal + balance produced, and what it was computed for. Both depend only
@@ -550,8 +616,23 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		data.remote_source = RemoteTileSource.for_planet(data.planet_name)
 		_warn_version_mismatch(data)
 		data.attach_remote_modifiers()
+	# The visual mesh only: the server's collision keeps the tiers, probes and shape it always had.
+	data.far_tier_res = 0 if server_mode else data.chunk_resolution
+	data.normal_probe_m = 0.0 if server_mode else NORMAL_PROBE_M
+	data.lod_morph = not server_mode and lod_morph_enabled
 	if not _pending_village_beds.is_empty():
 		_replay_pending_village_beds.call_deferred()
+	# Nova: before any chunk is built or keyed, the body's variants and its ground material.
+	_nova_setup(data, server_mode)
+	# The POIs the crack network keeps whole. Those listed in the planet's <planet>_poi.json are given to
+	# the sampler here, before the key (they are baked geometry), before the bridge spans walk the chasms
+	# and before any chunk carves — in the editor too: without them the editor's ground differed from the
+	# game's, and the baked chasm crossings (grade_profiles.pack, keyed on them) were rejected and planned
+	# again on the main thread, freezing the editor for minutes on opening tarsis_3.tscn. The networked
+	# POIs (POI villages, set_poi_zone) arrive later and are in no key: a chunk one reaches stays out of
+	# the disk cache.
+	_static_pois = StarMapPoi.load_for(data.planet_name)
+	data.set_crack_exclusions(poi_crack_exclusions(data.planet_name))
 
 	# Initialize chunk disk cache (skipped in editor mode)
 	if not Engine.is_editor_hint():
@@ -576,13 +657,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		#      the visual crack floor matches the full-depth physics floor.
 		# corundum_default_rock is baked colour: a planet switched from the
 		# milky rock to a red one must not serve milky meshes.
-		# The POIs the crack network keeps whole. Those listed in the planet's
-		# <planet>_poi.json are given to the sampler here, before the key (they are
-		# baked geometry), before the bridge spans walk the chasms and before any
-		# chunk carves. The networked ones (POI villages, set_poi_zone) arrive
-		# later and are in no key: a chunk one reaches stays out of the disk cache.
-		_static_pois = StarMapPoi.load_for(data.planet_name)
-		data.set_crack_exclusions(poi_crack_exclusions(data.planet_name))
+		# The static POIs the crack network keeps whole were set above (crack_exclusion_fingerprint).
 		var _cor := "_cor%d_%.0f_%.0f_%.0f_dbg%d_%s_poi%s_cn%s" % [
 			int(data.corundum_default_biome), data.crack_spacing_m,
 			data.crack_width_m, data.crack_depth_m,
@@ -822,10 +897,13 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# "_skirt1": a bed's skirts and the road slabs read the plateau again, not
 		# the canyon floor — 180 m invisible walls under a bridge (tarsis_3,
 		# 39.561 W 24.842 N), since v67.
-		var _cache_base := ChunkDiskCache.BASE_DIR
+		var _cache_base := mesh_cache_base
 		if server_mode:
 			_cache_base = ChunkDiskCache.SERVER_COLLISION_BASE_DIR
 			_cache_version += "_colrel1_colbf2_grid8k_skirt1"
+			# The relief Nova sets for the body's zone types is in the collision too.
+			if data.nova_relief != null:
+				_cache_version += "_nr" + data.nova_relief.fingerprint()
 		else:
 			# Client-only suffix, for what only the visual meshes carry: "_far50km" = the far tiers
 			# cut into quads of 50 km at most (PlanetData.get_resolution_for_lod) — no server
@@ -835,6 +913,17 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 			# "_wallflat1" = flat ground where a canyon's carve starts keeps the ground's normals
 			# (PlanetChunk.WALL_FLAT_COS): a cached mesh still has them pointing down.
 			_cache_version += "_far50km_rail1_roadmat2_wallflat1"
+			if data.far_tier_res > 0:
+				_cache_version += "_dense%d" % data.far_tier_res
+			if data.normal_probe_m > 0.0:
+				_cache_version += "_np%d" % int(data.normal_probe_m)
+			if data.lod_morph:
+				_cache_version += "_gm3_rim1"
+			# Nova meshes carry other vertex channels and no outcrop surface: their own folder,
+			# so turning Nova on or off never clears the regular cache.
+			if data.nova != null:
+				_cache_base = NOVA_CACHE_BASE_DIR
+				_cache_version += "_nv" + data.nova.fingerprint()
 		# An exported build starts from an empty cache: a change no field above captures (a road
 		# re-export, a forgotten vNN bump) cannot reach players through a mesh baked by the build
 		# before. Not in relief_signature: the persisted pad altitudes survive a deploy. Empty in
@@ -1987,7 +2076,7 @@ func refresh_stargrot_sites(placements: Array[CavePlacement]) -> void:
 	planet_data.stargrot_cut_sites = []
 	if _chunk_cache != null:
 		var version := _chunk_cache.version.trim_suffix(previous_signature) + planet_data.stargrot_signature()
-		var base := ChunkDiskCache.SERVER_COLLISION_BASE_DIR if is_server else ChunkDiskCache.BASE_DIR
+		var base := ChunkDiskCache.SERVER_COLLISION_BASE_DIR if is_server else mesh_cache_base
 		_chunk_cache = ChunkDiskCache.new(planet_data.planet_name, version, base)
 	if not placements.is_empty():
 		stargrot_registry = CavePlanetRegistry.attach(self)
@@ -2026,7 +2115,35 @@ func quiesce_offline() -> void:
 		await get_tree().process_frame
 
 
+## Editor: measure the ground under the camera on a worker, into _editor_ground_r.
+##
+## On the main thread this sample froze the editor: after a "go to" the camera sits over tiles that are
+## not loaded yet and the sample waits for them, behind the locks the chunk and bridge workers hold —
+## measured 2.9 s for one call, 8.5 s out of 20 s of camera travel. Only the LOD reads the altitude, and
+## one update late is harmless: until the answer comes the last ground radius stands.
+func _editor_measure_ground(dir: Vector3) -> void:
+	if _editor_ground_task >= 0:
+		if not WorkerThreadPool.is_task_completed(_editor_ground_task):
+			return
+		WorkerThreadPool.wait_for_task_completion(_editor_ground_task)
+	if _editor_ground_r <= 0.0:
+		_editor_ground_r = planet_data.radius
+	var data := planet_data
+	_editor_ground_task = WorkerThreadPool.add_task(func() -> void:
+		set_deferred("_editor_ground_r", data.crack_aware_surface_dist(dir)), false, "editor_ground")
+
+
 func _exit_tree() -> void:
+	# Stop waiting on the network first: a chunk task in the middle of a tile download would otherwise hold
+	# the joins below for its whole timeout, tile after tile (the editor "not responding" on close).
+	if planet_data != null and planet_data.remote_source != null:
+		planet_data.remote_source.abort()
+	if _editor_ground_task >= 0:
+		join_task(_editor_ground_task)
+		_editor_ground_task = -1
+	for task_id: int in _nova_scatter_tasks:
+		join_task(task_id)
+	_nova_scatter_tasks.clear()
 	if stargrot_registry != null:
 		stargrot_registry.retire()
 	_join_lod_task()
@@ -2143,14 +2260,22 @@ func _physics_process(_delta: float) -> void:
 	_process_assemble_queue()
 	_perf_end("terrain_assemble", _tk)
 	_tk = _perf_begin()
+	_drain_retired()
+	_advance_morphs()
+	_admit_pending()
+	_perf_end("terrain_admit", _tk)
+	_tk = _perf_begin()
 	_drain_bridge_spawn_queue()
 	_perf_end("bridge_queue", _tk)
 
 	# ── Emit initial_chunks_ready once the pipeline drains ───────────
+	# Every wanted chunk must be on screen too: the queues run dry between two handovers, which said
+	# "ready" with 181 chunks of 1550 on screen (cache_probe, 2026-11-05).
 	if not _initial_ready_emitted and not _active_chunks.is_empty() \
 			and _recipe_waiters.is_empty() and _mesh_tasks.is_empty() and _cache_loads.is_empty() \
 			and _assemble_queue.is_empty() and _mesh_task_backlog.is_empty() \
-			and _pending_recipes.is_empty():
+			and _pending_recipes.is_empty() and _admit_queue.is_empty() \
+			and _desired_all_active():
 		_initial_ready_emitted = true
 		initial_chunks_ready.emit()
 		print("[PlanetTerrain] initial_chunks_ready emitted (active=%d)" % _active_chunks.size())
@@ -2266,7 +2391,9 @@ func _update_terrain() -> void:
 	# (RemoteTileSource._take_next).
 	if not is_server and planet_data.remote_source != null and local_cam != Vector3.ZERO:
 		planet_data.remote_source.set_focus(local_cam.normalized(), _view_dir_local)
-		if ClientPerf.enabled:
+		# ClientPerf is an autoload, not @tool: its members are out of reach in the editor, and
+		# reading .enabled there raised a script error with its backtrace every physics frame.
+		if not Engine.is_editor_hint() and ClientPerf.enabled:
 			var q: Dictionary = planet_data.remote_source.queue_stats()
 			var who: String = str(get_parent().name)
 			ClientPerf.gauge("tiles_queued:" + who, q["queued"])
@@ -2294,7 +2421,10 @@ func _update_terrain() -> void:
 
 	# Altitude above the real terrain surface (crack-aware), NOT sea level —
 	# see _cam_alt_above_surface. One heightmap sample per update (0.25 s).
-	if cam_dist > 0.0:
+	if cam_dist > 0.0 and Engine.is_editor_hint():
+		_editor_measure_ground(local_cam / cam_dist)
+		_cam_alt_above_surface = maxf(cam_dist - _editor_ground_r, 0.0)
+	elif cam_dist > 0.0:
 		var _cam_surf_r: float = planet_data.crack_aware_surface_dist(local_cam / cam_dist)
 		_cam_alt_above_surface = maxf(cam_dist - _cam_surf_r, 0.0)
 	else:
@@ -2341,8 +2471,10 @@ func _update_terrain() -> void:
 
 	# Update camera history ring-buffer for look-ahead prefetch.
 	_cam_history.append(local_cam)
+	_cam_history_ms.append(Time.get_ticks_msec())
 	if _cam_history.size() > CAM_HISTORY_SIZE:
 		_cam_history.remove_at(0)
+		_cam_history_ms.remove_at(0)
 	if not is_server:
 		_update_speed_lod()
 
@@ -2416,13 +2548,18 @@ func _update_terrain() -> void:
 	# linearly — 570 keys × a 500-entry backlog at world entry, four times
 	# per second, inside the physics step. Keys this pass queues are added
 	# as it goes, so the snapshot stays exact.
+	_prune_backlog(desired)
 	var pipeline := _pipeline_keys()
+	# Handed over a little every frame (_admit_pending), new chunks and other qualities ranked together.
+	_admit_queue.clear()
 	# Only what is neither on screen nor in flight gets sorted: in steady
 	# state that is a handful of keys, where sorting all ~480 with a distance
 	# lambda cost 4 ms of every update.
 	var _new_keys: Array = []
 	for key in desired:
-		if not _active_chunks.has(key) and not pipeline.has(key):
+		if pipeline.has(key):
+			continue
+		if not _active_chunks.has(key) or _quality_differs(_active_chunks[key], desired[key]):
 			_new_keys.append(key)
 	if _new_keys.size() > 1:
 		# Nearest first, those in view before those behind (build_priority). Worked out once per key:
@@ -2433,14 +2570,8 @@ func _update_terrain() -> void:
 		_new_keys.sort_custom(func(a: String, b: String) -> bool:
 			return prio[a] < prio[b])
 	var _tks := _perf_begin()
-	# Steps 1 and 3 share HANDOVER_BUDGET_MS.
-	var t_handover := Time.get_ticks_usec()
-	for key in _new_keys:
-		# Best first, so what the budget leaves for the next update is the least urgent.
-		if Time.get_ticks_usec() - t_handover >= HANDOVER_BUDGET_MS * 1000.0:
-			break
-		_try_create_or_defer(desired[key].duplicate())  # the pipeline writes into it (_swap)
-		pipeline[key] = true
+	for i in range(_new_keys.size() - 1, -1, -1):
+		_admit_queue.append(_new_keys[i])
 	_perf_end("steps:new", _tks)
 	_tks = _perf_begin()
 
@@ -2502,24 +2633,8 @@ func _update_terrain() -> void:
 			_log_cave_chunks(desired, local_cam)
 	_tks = _perf_begin()
 
-	# Step 3 — Re-queue chunks whose LOD quality changed (same key, different lod).
-	for key in desired:
-		if not _active_chunks.has(key) or pipeline.has(key):
-			continue
-		var _act: Dictionary = _active_chunks[key]
-		var _want: Dictionary = desired[key]  # shared with the cache: copied before any write
-		# Swapped, not removed: the old mesh stays on screen until the new quality is assembled.
-		# Removed here, every chunk crossing a quality threshold left a hole for as long as its
-		# rebuild took — ground blinking ahead of anyone moving (2026-10-01). A stitch change
-		# only moves the seam edges: the old mesh's skirt still covers the seam meanwhile.
-		if _act.lod != _want.lod or int(_act.get("stitch", 0)) != int(_want.get("stitch", 0)):
-			if Time.get_ticks_usec() - t_handover >= HANDOVER_BUDGET_MS * 1000.0:
-				break  # the rest next update: still on screen meanwhile, at their old quality
-			var _swap: Dictionary = _want.duplicate()
-			_swap["_swap"] = true
-			_try_create_or_defer(_swap)
-			pipeline[key] = true
-	_perf_end("steps:requeue", _tks)
+	# Step 3 — a chunk at another quality (same key, other lod or stitch) is in _admit_queue with the new
+	# ones, ranked with them, and swapped: the old mesh stays on screen until the new quality is assembled.
 
 	_perf_end("terrain_steps", _tk)
 
@@ -2530,6 +2645,8 @@ func _update_terrain() -> void:
 
 	# Look-ahead: prefetch chunks along the predicted camera trajectory so
 	# they're ready before the player reaches them.
+	if not is_server:
+		_nova_follow_camera()
 	_tk = _perf_begin()
 	_prefetch_look_ahead(local_cam, horizon_dot)
 	TileResidency.prefetch(planet_data, local_cam, _cam_history)
@@ -2736,10 +2853,10 @@ func _goto_coordinates() -> void:
 ## A focus marker is still dropped as a child, for whoever wants to find the
 ## point again in the scene tree — it is NOT selected, so the inspector stays
 ## on this node.
-func _editor_goto_surface_point(dir: Vector3, label: String) -> void:
+func _editor_goto_surface_point(dir: Vector3, label: String, above_ground: float = GOTO_ALTITUDE) -> void:
 	if planet_data == null:
 		return
-	var altitude: float = planet_data.sample_height_for_direction(dir) + GOTO_ALTITUDE
+	var altitude: float = planet_data.sample_height_for_direction(dir) + above_ground
 	# Above the GROUND, not above sea level — planet-local.
 	var local_pos: Vector3 = dir * (planet_data.radius + altitude)
 
@@ -2755,6 +2872,72 @@ func _editor_goto_surface_point(dir: Vector3, label: String) -> void:
 	print("[PlanetTerrain] Go to %s — local=(%d, %d, %d)%s" % [
 		label, int(local_pos.x), int(local_pos.y), int(local_pos.z),
 		"" if placed else " — no editor camera: select BiomeFocus and press F"])
+
+
+## Editor: put the viewport [param above_ground] metres above the ground at unit [param dir] (this body's
+## frame), upright — the "Go to" buttons' move, for tools (the Nova dock's map and its "Voir" buttons).
+func editor_goto_direction(dir: Vector3, above_ground: float, label: String) -> void:
+	if Engine.is_editor_hint() and _initialized:
+		_editor_goto_surface_point(dir.normalized(), label, above_ground)
+
+
+## Editor: the ground point under the viewport camera, as a unit direction in this body's frame;
+## Vector3.ZERO without an editor camera.
+func editor_camera_direction() -> Vector3:
+	var cam := _editor_camera_world()
+	if cam == Vector3.INF:
+		return Vector3.ZERO
+	var local := global_transform.basis.inverse() * (cam - global_position)
+	return local.normalized() if local.length_squared() > 1.0 else Vector3.ZERO
+
+
+## Editor: move the viewport over the body like a game camera (Nova's flight mode). [param move] is a
+## displacement in world space, of which only the part level with the ground counts; [param climb] is
+## metres upwards. The view stays upright and never comes closer than [param clearance] metres to the
+## ground, nor further than FLY_MAX_RADII radii from the centre. Like the "go to" moves, the body is
+## rolled under the camera and nothing reaches the scene file (Planet.editor_set_flight_transform).
+## With [param stick] the view stands exactly [param clearance] above the ground and follows the relief (on
+## foot): the ground is then measured again at every call instead of four times a second.
+func editor_fly(move: Vector3, climb: float, clearance: float, stick: bool = false) -> void:
+	var planet := get_parent() as Planet
+	var cam := _editor_camera_world()
+	if not Engine.is_editor_hint() or not _initialized or planet == null or cam == Vector3.INF:
+		return
+	var to_cam := cam - planet.global_position
+	var dist := to_cam.length()
+	if dist < 1.0:
+		return
+	var up := to_cam / dist
+	var flat := move - up * move.dot(up)
+	var span := flat.length()
+	var over := up  # the ground point to stand over, world space
+	if span > 0.0:
+		over = Basis(up.cross(flat / span).normalized(), span / dist) * up
+	# The ground as last measured under the camera (_editor_measure_ground, on a worker): a moment late
+	# while travelling, exact once the view rests.
+	var ground := (_editor_ground_r if _editor_ground_r > 0.0 else planet_data.radius) - planet_data.radius
+	var altitude := clampf(dist - planet_data.radius + climb, ground + clearance,
+			planet_data.radius * (FLY_MAX_RADII - 1.0))
+	var dir := (planet.global_transform.basis.inverse() * over).normalized()
+	if stick:
+		# Eased, so a step in the measured ground is a short ramp and not a jolt.
+		altitude = lerpf(dist - planet_data.radius, ground + clearance, 0.3)
+		_editor_measure_ground(dir)
+	_editor_bring_under_camera(dir, altitude)
+
+
+## Editor: height of the viewport above the ground, metres (as the LOD reads it).
+func editor_camera_height() -> float:
+	return _cam_alt_above_surface
+
+
+## Editor: the upward direction where the viewport stands, world space; UP without a camera.
+func editor_camera_up() -> Vector3:
+	var cam := _editor_camera_world()
+	var planet := get_parent() as Node3D
+	if cam == Vector3.INF or planet == null:
+		return Vector3.UP
+	return (cam - planet.global_position).normalized()
 
 
 ## Place the body so that ground point [param dir] (unit, body frame) sits
@@ -3758,7 +3941,8 @@ func _update_speed_lod() -> void:
 		_speed_lod_scale = 1.0
 		return
 	var back := mini(n - 1, 4)
-	var speed := _cam_history[n - 1].distance_to(_cam_history[n - 1 - back]) / (back * UPDATE_INTERVAL)
+	var seconds := maxf((_cam_history_ms[n - 1] - _cam_history_ms[n - 1 - back]) / 1000.0, UPDATE_INTERVAL)
+	var speed := _cam_history[n - 1].distance_to(_cam_history[n - 1 - back]) / seconds
 	var want := speed_lod_scale(speed, _speed_lod_scale)
 	if want <= _speed_lod_scale:
 		_speed_lod_scale = want
@@ -3768,7 +3952,7 @@ func _update_speed_lod() -> void:
 	elif Time.get_ticks_msec() - _speed_lod_finer_since >= SPEED_LOD_HOLD_MS:
 		_speed_lod_scale = want
 		_speed_lod_finer_since = -1
-	if ClientPerf.enabled and get_parent() != null:
+	if not Engine.is_editor_hint() and ClientPerf.enabled and get_parent() != null:
 		ClientPerf.gauge("terrain_speed_ms:" + str(get_parent().name), speed)
 		ClientPerf.gauge("terrain_speed_scale:" + str(get_parent().name), _speed_lod_scale)
 
@@ -3865,7 +4049,8 @@ func _adopt_lod_result() -> void:
 	_desired_cache_mult = _lod_result_mult
 	_desired_cache_slack = _lod_result_slack
 	_lod_result = {}
-	if not is_server:
+	# Not in the editor: ClientPerf is a placeholder there, every call on it is a script error.
+	if not is_server and not Engine.is_editor_hint():
 		ClientPerf.gauge("terrain_slack_m:" + str(get_parent().name), _desired_cache_slack)
 		ClientPerf.gauge("terrain_lod_ms:" + str(get_parent().name), _lod_result_usec / 1000.0)
 		ClientPerf.gauge("terrain_known_splits:" + str(get_parent().name), _lod_result_known_splits)
@@ -3937,7 +4122,7 @@ func _balance_and_stitch(desired: Dictionary, p: LodPass) -> void:
 		var d: Dictionary = desired[key]
 		leaves[(int(d.nside) << 32) | int(d.ipix)] = key
 	var nbs_of: Dictionary = {}
-	var edge_dirs := ["W", "E", "S", "N"]
+	var edge_dirs := EDGE_SIDES
 
 	# ── 2:1 balance ─────────────────────────────────────────────
 	var changed := true
@@ -3979,8 +4164,7 @@ func _balance_and_stitch(desired: Dictionary, p: LodPass) -> void:
 
 	# ── Stitch mask ─────────────────────────────────────────────
 	if not is_server:
-		var edge_bits := [PlanetChunk.STITCH_LEFT, PlanetChunk.STITCH_RIGHT,
-				PlanetChunk.STITCH_BOTTOM, PlanetChunk.STITCH_TOP]
+		var edge_bits := EDGE_BITS
 		for id in leaves:
 			var nside: int = id >> 32
 			if not PlanetChunk.edge_stitch_applies(planet_data, nside):
@@ -4000,10 +4184,7 @@ func _balance_and_stitch(desired: Dictionary, p: LodPass) -> void:
 				var pid := ((nside >> 1) << 32) | (nip >> 2)
 				if not leaves.has(pid):
 					continue
-				# The stitch bakes the parent grid at THIS chunk's resolution: it
-				# only meets a neighbour drawn at that same resolution. A coarser-
-				# quality neighbour (distance LOD) keeps the skirt, as before.
-				if int(desired[leaves[pid]].lod) == int(mine.lod):
+				if _stitch_meets(desired[leaves[pid]], mine):
 					mask |= edge_bits[i]
 			if mask != 0:
 				mine["stitch"] = mask
@@ -4081,6 +4262,13 @@ func _pipeline_tree_index() -> Array:
 	for ek: String in _recipe_waiters:
 		for ck: String in _recipe_waiters[ek]:
 			var ci: Dictionary = _recipe_waiters[ek][ck]
+			_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
+	# Waiting for admission is not "no replacement coming": without these, the chunks that admission
+	# had not reached yet lost the ground they were to replace, and the hole lasted until they had
+	# been read and assembled.
+	for key: String in _admit_queue:
+		var ci: Dictionary = _desired_cache.get(key, {})
+		if not ci.is_empty():
 			_flight_add(anc, selves, int(ci.nside), int(ci.ipix))
 	return [anc, selves]
 
@@ -4311,6 +4499,182 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		_recipe_waiters[export_key] = {}
 	_recipe_waiters[export_key][info.key] = info
 	_submit_recipe_if_needed(export_key, export_ipix, cam_dist_sq)
+
+
+## Does [param active], on screen, differ from [param wanted] in what its mesh is built with?
+static func _quality_differs(active: Dictionary, wanted: Dictionary) -> bool:
+	return int(active.lod) != int(wanted.lod) or int(active.get("stitch", 0)) != int(wanted.get("stitch", 0))
+
+
+## Is every chunk of the last leaf set on screen, at any quality?
+func _desired_all_active() -> bool:
+	if _desired_cache.is_empty():
+		return false
+	for key: String in _desired_cache:
+		if not _active_chunks.has(key):
+			return false
+	return true
+
+
+## Hand the chunks the last LOD update asked for to the pipeline, best first, for at most [param budget_ms]:
+## a frame always hands over at least one, so a long queue does drain, and none while ADMIT_MAX_UNASSEMBLED are
+## between read and assembly. An entry is looked at again here: what it was queued for may have been served
+## since, or no longer be wanted.
+func _admit_pending(budget_ms: float = ADMIT_BUDGET_MS) -> void:
+	if _admit_queue.is_empty():
+		return
+	var budget_us := budget_ms * 1000.0
+	var t0 := Time.get_ticks_usec()
+	var done := 0
+	while not _admit_queue.is_empty():
+		if done > 0 and Time.get_ticks_usec() - t0 >= budget_us:
+			return
+		if _cache_loads.size() + _assemble_queue.size() >= ADMIT_MAX_UNASSEMBLED:
+			return
+		var key: String = _admit_queue.pop_back()
+		var wanted: Dictionary = _desired_cache.get(key, {})
+		if wanted.is_empty() or _cache_loads.has(key) or _mesh_tasks.has(key) or _backlog_keys.has(key):
+			continue
+		var active: Dictionary = _active_chunks.get(key, {})
+		if not active.is_empty() and not _quality_differs(active, wanted):
+			continue
+		var info: Dictionary = wanted.duplicate()  # the pipeline writes into it (_swap)
+		if not active.is_empty():
+			info["_swap"] = true  # the old mesh stays on screen until the new quality is assembled
+		_try_create_or_defer(info)
+		done += 1
+
+
+## [param info] has just been assembled: note what it replaces, for _drain_retired. Below it, every
+## chunk drawn there (it covers their area on its own). Above it, its ancestors: _drain_retired takes one
+## only once finer chunks cover the whole of it. _active_desc_count says at once when there is nothing
+## below, which is every chunk that did not replace finer ones.
+func _note_replaced(info: Dictionary) -> void:
+	if not _desired_cache.has(info.key):
+		return
+	var nside := int(info.nside)
+	var ipix := int(info.ipix)
+	if _active_desc_count.has((nside << 32) | ipix):
+		_note_drawn_below(nside, ipix)
+	while nside > 1:
+		nside >>= 1
+		ipix >>= 2
+		var key := _chunk_key_hp(nside, ipix)
+		if _active_chunks.has(key):
+			_retired.append(key)
+
+
+func _note_drawn_below(nside: int, ipix: int) -> void:
+	var child_nside := nside * 2
+	for child: int in HEALPix.child_pixels(ipix):
+		var key := _chunk_key_hp(child_nside, child)
+		if _active_chunks.has(key):
+			_retired.append(key)
+		if _active_desc_count.has((child_nside << 32) | child):
+			_note_drawn_below(child_nside, child)
+
+
+## Can a chunk noted by _note_replaced go? Not if the last LOD update still wants it; if it is what stands
+## over the area, it must not leave a part of it uncovered: finer chunks all over it, or a wanted coarser
+## one on screen above it.
+func _replaced_now(key: String) -> bool:
+	if not _active_chunks.has(key) or _desired_cache.has(key):
+		return false
+	var nside := _parse_nside_from_key(key)
+	var ipix := _parse_ipix_from_key(key)
+	if nside <= 0 or ipix < 0:
+		return false
+	if _covered_by_active_descendants(nside, ipix):
+		return true
+	while nside > 1:
+		nside >>= 1
+		ipix >>= 2
+		var above := _chunk_key_hp(nside, ipix)
+		if _active_chunks.has(above) and _desired_cache.has(above):
+			return true
+	return false
+
+
+## Take the chunks found replaced off screen, for at most RETIRE_BUDGET_MS and at least one. Looked at
+## again here: an ancestor is noted by each of its children, and goes only with the last.
+## Does this chunk appear where a coarser one of its ancestors is on screen? Then it starts on that shape.
+## Not a chunk that only changes quality (the same key on screen), nor one appearing over nothing.
+func _lod_morph_starts(info: Dictionary) -> bool:
+	if not planet_data.lod_morph or _active_chunks.has(info.key):
+		return false
+	if (info.center as Vector3).distance_to(_last_local_cam) < LOD_MORPH_NEAR_M:
+		return false
+	var nside := int(info.nside) >> 1
+	var ipix := int(info.ipix) >> 2
+	while nside >= 1:
+		if _active_chunks.has(_chunk_key_hp(nside, ipix)):
+			return true
+		nside >>= 1
+		ipix >>= 2
+	return false
+
+
+## [edges, start]: the STITCH_* edges of this chunk that may move while it eases, and when its ease starts (ms).
+## An edge moves unless the same-level neighbour across it is on screen and settled: that one keeps its border,
+## and a border moving against it would open the seam. A neighbour easing too gives its start, so the two
+## borders move together; siblings of one split come in on consecutive frames. An edge against a coarser chunk
+## is stitched (PlanetChunk) and its odd vertices already sit on the coarse chord.
+func _lod_morph_edges(info: Dictionary) -> Array:
+	var nside := int(info.nside)
+	var neighbours: Dictionary = HEALPix.get_neighbors_nest(nside, int(info.ipix))
+	var mask := 0
+	var start := Time.get_ticks_msec()
+	for i in EDGE_SIDES.size():
+		var nip: int = neighbours[EDGE_SIDES[i]]
+		if nip < 0:
+			continue
+		var other := _chunk_key_hp(nside, nip)
+		if _morphing.has(other):
+			start = mini(start, int(_morphing[other]))
+			mask |= EDGE_BITS[i]
+		elif not _active_chunks.has(other):
+			mask |= EDGE_BITS[i]
+	return [mask, start]
+
+
+## Every easing chunk one step on: smoothstep from 1 to 0 over LOD_MORPH_MS.
+func _advance_morphs() -> void:
+	if _morphing.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	for key: String in _morphing.keys():
+		var info: Dictionary = _active_chunks.get(key, {})
+		var mi: MeshInstance3D = info.get("mesh_instance")
+		if mi == null:
+			_morphing.erase(key)
+			continue
+		var t := clampf(float(now - int(_morphing[key])) / LOD_MORPH_MS, 0.0, 1.0)
+		mi.set_instance_shader_parameter("lod_morph", 1.0 - t * t * (3.0 - 2.0 * t))
+		if t >= 1.0:
+			_morphing.erase(key)
+
+
+func _drain_retired() -> void:
+	if _retired.is_empty():
+		return
+	var t0 := Time.get_ticks_usec()
+	var removed := 0
+	while not _retired.is_empty():
+		if removed > 0 and Time.get_ticks_usec() - t0 >= RETIRE_BUDGET_MS * 1000.0:
+			return
+		var key: String = _retired.pop_back()
+		if _replaced_now(key):
+			_remove_chunk(key)
+			removed += 1
+
+
+## Is this disk-cache read for a chunk or a quality the last LOD update no longer wants? Dropping it
+## costs nothing, the file is still there: only built meshes are worth assembling whatever happens.
+func _read_went_stale(info: Dictionary) -> bool:
+	if not info.get("_from_disk_cache", false):
+		return false
+	var wanted: Dictionary = _desired_cache.get(info.key, {})
+	return wanted.is_empty() or _quality_differs(info, wanted)
 
 
 ## Sanity-check cached chunk geometry against the live analytic surface.
@@ -4736,6 +5100,30 @@ func _local_view_dir() -> Vector3:
 	return (global_transform.basis.inverse() * -cam.global_transform.basis.z).normalized()
 
 
+## The stitch bakes the parent grid at THIS chunk's resolution: it only meets a parent drawn at that same
+## resolution, whatever their LOD tiers. Across another resolution, the edge keeps its skirt.
+func _stitch_meets(parent: Dictionary, mine: Dictionary) -> bool:
+	return planet_data.get_resolution_for_lod(int(parent.lod), int(parent.nside)) \
+			== planet_data.get_resolution_for_lod(int(mine.lod), int(mine.nside))
+
+
+## Forget what waits for a mesh task and the last LOD update no longer wants as it is: nothing took it out
+## before. At 3 000 m/s the backlog reached 3 000 chunks of ground already left behind, all built one by
+## one, and the ground under a stopped camera took 54 s to settle. One wanted at another quality is admitted
+## again by this same update. Keeps the order: the backlog stays sorted.
+func _prune_backlog(desired: Dictionary) -> void:
+	if _mesh_task_backlog.is_empty():
+		return
+	var kept: Array[Dictionary] = []
+	for info: Dictionary in _mesh_task_backlog:
+		var wanted: Variant = desired.get(info.key)
+		if wanted != null and not _quality_differs(info, wanted):
+			kept.append(info)
+		else:
+			_backlog_keys.erase(info.key)
+	_mesh_task_backlog = kept
+
+
 ## Put a chunk in the backlog unless it already waits there.
 func _backlog_push(info: Dictionary) -> void:
 	if _backlog_keys.has(info.key):
@@ -4784,8 +5172,7 @@ func _poll_mesh_tasks() -> void:
 		_drain_backlog()
 		return
 
-	var completed_keys: Array[String] = []
-	for key: String in _mesh_tasks:
+	for key: String in _mesh_tasks.keys():
 		var entry: Dictionary = _mesh_tasks[key]
 		var task_id: int = entry.task_id
 		if task_id < 0:
@@ -4793,7 +5180,10 @@ func _poll_mesh_tasks() -> void:
 		if not WorkerThreadPool.is_task_completed(task_id):
 			continue
 		WorkerThreadPool.wait_for_task_completion(task_id)
-		completed_keys.append(key)
+		# Out of the table at once: a task id can be waited for only once. Left in until the end of this loop,
+		# an error below kept a spent id there for good — its slot never freed, and _exit_tree's join_task
+		# waited for it forever (is_task_completed never says true for an id the pool no longer knows).
+		_mesh_tasks.erase(key)
 		_stat_mesh_done += 1
 		_stat_mesh_usec += Time.get_ticks_usec() - int(entry.get("t0", 0))
 		if PropNet.prof_on:
@@ -4805,9 +5195,6 @@ func _poll_mesh_tasks() -> void:
 			_queue_insert(_assemble_queue, {"info": entry.info, "mesh": mesh}, entry.info.center)
 		else:
 			push_warning("[PlanetTerrain] mesh task for '%s' returned null" % key)
-
-	for k in completed_keys:
-		_mesh_tasks.erase(k)
 
 	# Drain backlog into the freed slots.
 	_drain_backlog()
@@ -4832,6 +5219,8 @@ func _process_assemble_queue() -> void:
 		var item: Dictionary = _assemble_queue.pop_back()
 		var info: Dictionary = item.info
 		var mesh: ArrayMesh = item.mesh
+		if _read_went_stale(info):
+			continue
 		if stargrot_registry != null and not stargrot_registry.ready_for_chunk(info.key):
 			# Keep the old ground visible until the cavity is ready. Reinsert after the drain so
 			# a nearby pending cave cannot keep us popping the same item or starve other chunks.
@@ -4867,6 +5256,7 @@ func _process_assemble_queue() -> void:
 			_remove_chunk(info.key)
 			info.erase("_swap")
 		_assemble_visual_chunk(info, mesh)
+		_note_replaced(info)
 		# An assembly that returned before its cache section.
 		_drop_cache_write(info)
 		assembled += 1
@@ -4990,6 +5380,270 @@ func _prefetch_register_one(info: Dictionary, pipeline: Dictionary) -> void:
 # Chunk lifecycle
 # ------------------------------------------------------------------
 
+# ------------------------------------------------------------------
+# Nova (scenes/planet/nova, docs/NOVA.md)
+# ------------------------------------------------------------------
+
+## What every chunk lays (NovaScatter.layer_descs), rebuilt when the scatter settings change.
+var _nova_descs: Array = []
+## Bumped on every scatter rebuild: a worker result of an older generation is dropped.
+var _nova_scatter_gen := 0
+
+
+## Opens the body's Nova data when it has some (client and editor only).
+func _nova_setup(data: PlanetData, server_mode: bool) -> void:
+	data.nova = null
+	data.nova_relief = null
+	_nova_descs = []
+	if not NovaBody.is_enabled_for(data.planet_name) or data.chunk_heightmaps_dir == "":
+		return
+	var body := NovaBody.open_body(data.planet_name)
+	data.nova_relief = body
+	if server_mode:
+		return  # the shape of the ground only: no material, no scatter, no link to the dock
+	body.build_material(data.terrain_material)
+	data.nova = body
+	_nova_read_descs(data)
+	# A game the editor runs listens to the Nova dock (NovaLink). One body at a time: the first on the line.
+	if EngineDebugger.is_active() and not Engine.is_editor_hint() \
+			and not EngineDebugger.has_capture(NovaLink.CHANNEL):
+		var link := NovaLink.new()
+		link.body_name = data.planet_name
+		add_child(link)
+	print("[Nova] %s: %d variants" % [data.planet_name, body.variants.size()])
+
+
+## Reads what every chunk lays (NovaScatter.layer_descs) on a worker, then lays it on the chunks shown.
+## Loading the rocks' models is a second of work on tarsis_3: on the main thread it froze the editor when
+## the body opened and at every scatter setting changed in the dock. Until the answer comes the chunks keep
+## what they have; a newer request drops an older answer.
+func _nova_read_descs(data: PlanetData) -> void:
+	_nova_scatter_gen += 1
+	var gen := _nova_scatter_gen
+	var body := data.nova
+	var radius := data.radius
+	var rock := data.default_rock()
+	var slot := [-1]  # the task's id, known only once it is added
+	slot[0] = WorkerThreadPool.add_task(func() -> void:
+		_nova_descs_read.call_deferred(slot, gen, NovaScatter.layer_descs(body, radius, rock)))
+	_nova_scatter_tasks[slot[0]] = true
+
+
+func _nova_descs_read(slot: Array, gen: int, descs: Array) -> void:
+	WorkerThreadPool.wait_for_task_completion(slot[0])
+	_nova_scatter_tasks.erase(slot[0])
+	if gen != _nova_scatter_gen:
+		return
+	_nova_descs = descs
+	for info: Dictionary in _active_chunks.values():
+		info.erase("nova_layers")  # other layers now: nothing is "already laid"
+		var mi = info.get("mesh_instance")
+		if mi is MeshInstance3D and is_instance_valid(mi):
+			_nova_clear_scatter(mi)
+			if mi.mesh != null and mi.mesh.has_meta("nova"):
+				_nova_scatter_chunk(info, mi.mesh, mi)
+
+
+## Nova's material on a Nova chunk, and its scatter (computed on a worker).
+func _nova_dress_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> void:
+	var nova := planet_data.nova
+	if nova == null or not mesh.has_meta("nova"):
+		return
+	if mesh.get_surface_count() > 0 and mesh.surface_get_material(0) == planet_data.terrain_material:
+		mi.set_surface_override_material(0, nova.material)
+	_nova_scatter_chunk(info, mesh, mi)
+
+
+## Which scatter layers a chunk carries now, as a byte (0 / 1) per layer of _nova_descs: those whose objects can be
+## seen from the camera — the chunk's nearest point within the layer's view distance. A layer already laid
+## (the chunk's "nova_layers") stays a little further out (NOVA_KEEP), so standing on the limit does not lay
+## and clear it over and over.
+func _nova_layers_near(info: Dictionary) -> PackedByteArray:
+	var had: PackedByteArray = info.get("nova_layers", PackedByteArray())
+	var reach := HEALPix.pixel_side_length(int(info.nside), planet_data.radius) * 0.75
+	# Along the ground, then up to the camera: a chunk's centre is on the reference sphere, kilometres
+	# under a high plateau, so the straight line to it says nothing of how near the chunk is.
+	var along := _last_local_cam.length() * (info.center as Vector3).normalized().angle_to(_last_local_cam.normalized())
+	var away := maxf(Vector2(along, _cam_alt_above_surface).length() - reach, 0.0)
+	# One byte a layer, not one bit of an integer: a body has as many layers as zone types × slots (78 on
+	# tarsis_3), and a mask of 64 bits wrapped — chunks kilometres away were laid with every small layer,
+	# 35 000 objects each (2026-11-20).
+	var near := PackedByteArray()
+	near.resize(_nova_descs.size())
+	for i in _nova_descs.size():
+		var view := float(_nova_descs[i].view_m)
+		# Laid one look ahead (the layers are looked at every NOVA_RELAY_STEP_M): laid right at its view
+		# distance, a layer came in up to a step late, its rocks already part grown (their fade in).
+		if away <= (maxf(view * NOVA_KEEP, view + NOVA_RELAY_STEP_M * 2.0) if i < had.size() and had[i] == 1
+				else view + NOVA_RELAY_STEP_M):
+			near[i] = 1
+	return near
+
+
+## Lay or clear the layers of the chunks the camera has come near to or gone away from. The scatter is laid
+## around the camera only: laid on every loaded chunk it was 1.2 million objects in 125 000 nodes on
+## tarsis_3, 9 to 20 frames a second and stalls of seconds.
+func _nova_follow_camera() -> void:
+	if _nova_descs.is_empty():
+		return
+	# Every frame: where the camera is, for the rocks' fade in (nova_rock.gdshader) — one camera, and one
+	# body near enough to lay a scatter, so the value is the whole game's.
+	var cam_parts := NovaScatter.fade_parts(_last_local_cam)
+	RenderingServer.global_shader_parameter_set("nova_cam_cell", cam_parts[0])
+	RenderingServer.global_shader_parameter_set("nova_cam_rest", cam_parts[1])
+	# And the nodes still owed, within the frame's budget.
+	_nova_node_budget = NOVA_NODES_MIN
+	_nova_node_deadline = Time.get_ticks_usec() + int(NOVA_NODES_MS * 1000.0)
+	if not _nova_show_queue.is_empty():
+		var owed: Array[int] = []
+		for id in _nova_show_queue:
+			var waiting := instance_from_id(id) as MeshInstance3D
+			if waiting != null and is_instance_valid(waiting) and waiting.is_inside_tree() \
+					and not _nova_show_blocks(waiting):
+				owed.append(id)
+		_nova_show_queue = owed
+	# The chunks are looked at again each time the camera has moved a step — a few a frame, within
+	# NOVA_RELAY_MS: all at once was a frame of 20 ms every 30 m of flight (2026-11-20).
+	# A new look starts once the last one is through: started over at every step, a fast flight would
+	# never reach the chunks at the end of the list.
+	if _nova_relay.is_empty() and _last_local_cam.distance_to(_nova_laid_from) >= NOVA_RELAY_STEP_M:
+		_nova_laid_from = _last_local_cam
+		_nova_relay = _active_chunks.values()
+	var until := Time.get_ticks_usec() + int(NOVA_RELAY_MS * 1000.0)
+	while not _nova_relay.is_empty() and Time.get_ticks_usec() < until:
+		var info: Dictionary = _nova_relay.pop_back()
+		var mi = info.get("mesh_instance")
+		# A chunk can have gone since the list was made, frames ago: is it still there, before what it is.
+		if not (is_instance_valid(mi) and mi is MeshInstance3D and mi.is_inside_tree() and mi.mesh != null
+				and mi.mesh.has_meta("nova_grid")):
+			continue
+		if _nova_layers_near(info) != (info.get("nova_layers", PackedByteArray()) as PackedByteArray):
+			_nova_scatter_chunk(info, mi.mesh, mi)
+		elif mi.has_meta("nova_laid"):
+			_nova_queue_blocks(mi)
+
+
+## Shows the blocks of [param mi]'s scatter that are near the camera now, and queues what the frame's
+## budget left out.
+func _nova_queue_blocks(mi: MeshInstance3D) -> void:
+	if not _nova_show_blocks(mi) and not _nova_show_queue.has(mi.get_instance_id()):
+		_nova_show_queue.append(mi.get_instance_id())
+
+
+## Makes the nodes of the scatter blocks of chunk [param mi] the camera can see, and frees those it left
+## behind. A layer seen from 60 m covers a 800 m chunk with blocks of each of its models: only the few
+## around the camera are worth a node (and a draw call). The laid objects stay on the chunk (its
+## "nova_laid"); a layer with no limit of its own (large rocks, seen from afar) has all its blocks.
+## The blocks are looked at layer by layer ("nova_by_limit"): a layer whose view distance does not reach
+## the chunk at all is skipped whole — looking at every block of every chunk each time the camera moved
+## 30 m was thousands of tests, and frames lost in flight (2026-11-20).
+## False when the frame's budget ran out before the end.
+func _nova_show_blocks(mi: MeshInstance3D) -> bool:
+	var laid: Dictionary = mi.get_meta("nova_laid", {})
+	var by_limit: Dictionary = mi.get_meta("nova_by_limit", {})
+	var nodes: Dictionary = mi.get_meta("nova_nodes", {})
+	var cam := Vector3(_last_local_cam - Vector3(mi.position))
+	# How far the camera is from the chunk's box: no object of the chunk is nearer.
+	var box: AABB = mi.get_meta("nova_box", AABB())
+	var gap := cam.distance_to(cam.clamp(box.position, box.end))
+	var done := true
+	for limit: float in by_limit:
+		var keys: Array = by_limit[limit]
+		if limit > 0.0 and gap > limit * NOVA_KEEP + NovaScatter.BLOCK_M:
+			if not nodes.is_empty():
+				for key: Array in keys:
+					var gone: Node = nodes.get(key)
+					if gone != null:
+						gone.queue_free()
+						nodes.erase(key)
+			continue
+		for key: Array in keys:
+			var near := NovaScatter.block_near(key, laid[key], cam, NOVA_KEEP)
+			var node: Node = nodes.get(key)
+			if near and node == null:
+				if _nova_node_budget <= 0 and Time.get_ticks_usec() > _nova_node_deadline:
+					done = false
+					continue
+				_nova_node_budget -= 1
+				node = NovaScatter.build_node(key, laid[key], mi.layers, mi.position)
+				mi.add_child(node)
+				nodes[key] = node
+			elif not near and node != null:
+				node.queue_free()
+				nodes.erase(key)
+	mi.set_meta("nova_nodes", nodes)
+	return done
+
+
+func _nova_scatter_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> void:
+	if _nova_descs.is_empty() or not mesh.has_meta("nova_grid"):
+		return
+	var layers := _nova_layers_near(info)
+	info["nova_layers"] = layers
+	# The latest request for this chunk wins: an older answer still on its way is dropped.
+	var turn := int(mi.get_meta("nova_turn", 0)) + 1
+	mi.set_meta("nova_turn", turn)
+	if not layers.has(1):
+		_nova_clear_scatter(mi)
+		return
+	var descs: Array = []
+	for i in _nova_descs.size():
+		if layers[i] == 1:
+			descs.append(_nova_descs[i])
+	var gen := _nova_scatter_gen
+	var nside := int(info.nside)
+	var ipix := int(info.ipix)
+	var res := int(mesh.get_meta("nova_res"))
+	var grid: PackedVector3Array = mesh.get_meta("nova_grid")
+	var vid: PackedInt32Array = mesh.get_meta("nova_vid")
+	var center: Vector3 = info.center
+	var zones := NovaScatter.zone_context(planet_data, nside, ipix)
+	var mi_id := mi.get_instance_id()
+	var slot := [-1]  # the task's id, known only once it is added
+	slot[0] = WorkerThreadPool.add_task(func() -> void:
+		var laid := NovaScatter.lay_chunk(descs, nside, ipix, res, grid, vid, center, zones)
+		_nova_scatter_done.call_deferred(slot, mi_id, gen, turn, laid))
+	_nova_scatter_tasks[slot[0]] = true
+
+
+func _nova_scatter_done(slot: Array, mi_id: int, gen: int, turn: int, laid: Dictionary) -> void:
+	WorkerThreadPool.wait_for_task_completion(slot[0])
+	_nova_scatter_tasks.erase(slot[0])
+	if gen != _nova_scatter_gen:
+		return
+	var mi := instance_from_id(mi_id) as MeshInstance3D
+	if mi == null or not is_instance_valid(mi) or not mi.is_inside_tree() or int(mi.get_meta("nova_turn", 0)) != turn:
+		return
+	_nova_clear_scatter(mi)
+	mi.set_meta("nova_laid", laid)
+	# The blocks by their layer's view limit (0: no limit), and the chunk's box: see _nova_show_blocks.
+	var by_limit := {}
+	for key: Array in laid:
+		var limit := float(key[2])
+		if not by_limit.has(limit):
+			by_limit[limit] = []
+		(by_limit[limit] as Array).append(key)
+	mi.set_meta("nova_by_limit", by_limit)
+	mi.set_meta("nova_box", mi.mesh.get_aabb())
+	_nova_queue_blocks(mi)
+
+
+func _nova_clear_scatter(mi: MeshInstance3D) -> void:
+	for node: Node in (mi.get_meta("nova_nodes", {}) as Dictionary).values():
+		node.queue_free()
+	mi.remove_meta("nova_laid")
+	mi.remove_meta("nova_by_limit")
+	mi.remove_meta("nova_nodes")
+
+
+## Re-lays the scatter of every shown chunk from the current settings (Nova dock). The ground
+## needs nothing of the kind: its settings live in the material.
+func nova_refresh_scatter() -> void:
+	if planet_data == null or planet_data.nova == null:
+		return
+	_nova_read_descs(planet_data)
+
+
 ## Assemble a client-side visual chunk from a pre-computed [param mesh].
 ## Called on the main thread from _process_assemble_queue() after the mesh
 ## was generated on a WorkerThreadPool task.
@@ -5021,6 +5675,14 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		fposmod(chunk_center.z, _wrap)))
 	# Full planet-local chunk centre for the terrain shader's true-radial normal (far terminator fix).
 	mi.set_instance_shader_parameter("chunk_center_local", chunk_center)
+	# Nova: the chunk's palette of variant ids (PlanetChunk.nova_palette), one for the whole chunk.
+	if mesh.has_meta("nova_palette"):
+		mi.set_instance_shader_parameter("nova_palette", mesh.get_meta("nova_palette"))
+	if _lod_morph_starts(info):
+		var edges := _lod_morph_edges(info)
+		mi.set_instance_shader_parameter("lod_morph", 1.0)
+		mi.set_instance_shader_parameter("lod_morph_edges", edges[0])
+		_morphing[key] = edges[1]
 	# Star direction for the shader's celestial-layer star lighting (see _star_dir_world).
 	mi.set_instance_shader_parameter("star_dir_world", _star_dir_world)
 	# Born on the celestial layer when this planet is currently a distant body (star-lit), else local.
@@ -5032,14 +5694,17 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		_set_far_air(mi, AtmosphereLod.chunk_params(planet_data.atmosphere_profile, _atmosphere_lod.level))
 	_chunks_node.add_child(mi)
 	info["mesh_instance"] = mi
+	_nova_dress_chunk(info, mesh, mi)
 	if is_instance_valid(lava_runtime):
 		lava_runtime.register_terrain_mesh(mi)
 	_perf_end("asm:mesh", _tk)
 	_tk = _perf_begin()
 
+	# Editor, bare preview (editor_bare): the ground alone, none of the decor below.
+	var decor := not (editor_bare and Engine.is_editor_hint())
 	# ---------- Vegetation MultiMesh ----------
 	var res := planet_data.get_resolution_for_lod(lod, info.get("nside", 0))
-	if not planet_data.vegetation_rules.is_empty():
+	if decor and not planet_data.vegetation_rules.is_empty():
 		var dominated_lods: Array[int] = []
 		for rule: VegetationRule in planet_data.vegetation_rules:
 			print("[VEG] rule '%s' spawn_lod_levels=%s (size=%d)" % [
@@ -5088,7 +5753,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				# --- END DEBUG ---
 
 	# ---------- Meadow grass scatter ----------
-	if lod <= MeadowSteppeMeadowTerrain.GRASS_MAX_LOD:
+	if decor and lod <= MeadowSteppeMeadowTerrain.GRASS_MAX_LOD:
 		var _pz_grass := _get_chunk_populate_zones(info)
 		var _has_meadow := _zones_have_biome(_pz_grass, MeadowSteppeMeadowTerrain.BIOME_TYPE)
 		if _has_meadow:
@@ -5112,7 +5777,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				info["meadow"] = grass_mmi
 
 	# ---------- Forest tree scatter ----------
-	if lod <= ForestTemperateForestSpawner.get_max_lod():
+	if decor and lod <= ForestTemperateForestSpawner.get_max_lod():
 		var _pz_forest := _get_chunk_populate_zones(info)
 		var _has_forest := _zones_have_biome(_pz_forest, ForestTemperateForestTerrain.BIOME_TYPE)
 		if _has_forest:
@@ -5141,7 +5806,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# here, one MultiMesh per stretch of track (see RailwayTrack), and stand on
 	# box colliders in their own body. The transforms are computed once and
 	# shared by both.
-	if lod <= RailwaySettings.RAIL_MAX_LOD and planet_data.has_railways():
+	if decor and lod <= RailwaySettings.RAIL_MAX_LOD and planet_data.has_railways():
 		var rail_groups: Array = RailwayTrack.rail_groups(mesh, planet_data, info.nside, info.ipix,
 				chunk_center, lod)
 		if not rail_groups.is_empty():
@@ -5180,7 +5845,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	_perf_end("asm:rails", _tk)
 	_tk = _perf_begin()
 	# ---------- Point-biome 3D instances at close LODs ----------
-	if lod <= 2:
+	if decor and lod <= 2:
 		var _pz_point := _get_chunk_populate_zones(info)
 		var _spawned_from_pz := false
 		if not _pz_point.is_empty():
@@ -5209,7 +5874,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 
 	_acquire_volcano_nodes(info)
 	# Fumarole vents: decoration of the finest LOD (FumaroleSpawner).
-	if lod == 0 and not is_server and planet_data.has_fumaroles():
+	if decor and lod == 0 and not is_server and planet_data.has_fumaroles():
 		var fum := FumaroleSpawner.build(planet_data, int(info.nside), int(info.ipix),
 				chunk_center, true)
 		if fum:
@@ -5217,7 +5882,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 			info["fumaroles"] = fum
 	# Rocky terrain scree: decoration of the finest LOD (RockFieldScree), placed
 	# by the chunk worker into the mesh's "rock_scree" meta.
-	if lod == 0 and not is_server and info.has("mesh_instance") and info.mesh_instance:
+	if decor and lod == 0 and not is_server and info.has("mesh_instance") and info.mesh_instance:
 		var _scree := RockFieldScree.build(info.mesh_instance.mesh, chunk_center)
 		if _scree:
 			_chunks_node.add_child(_scree)
@@ -5227,7 +5892,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 	# main thread, and asm:zones alone could not tell them from the point-biome
 	# spawners above (2026-09-24: 100-130 ms per chunk while travelling).
 	_tk = _perf_begin()
-	_spawn_bridges(info)
+	if decor:
+		_spawn_bridges(info)
 	_perf_end("asm:bridges", _tk)
 	_tk = _perf_begin()
 	# Save terrain mesh to disk cache for future restarts — but ONLY if the
@@ -6131,6 +6797,7 @@ func _refresh_road_visibility_around(nside: int, ipix: int) -> void:
 
 
 func _remove_chunk(key: String) -> void:
+	_morphing.erase(key)
 	if not _active_chunks.has(key):
 		return
 	var info: Dictionary = _active_chunks[key]
@@ -6216,8 +6883,11 @@ func _release_volcano_nodes(key: String, info: Dictionary) -> void:
 
 
 func _clear_all_chunks() -> void:
+	_morphing.clear()
 	_join_lod_task()  # it writes _node_geom, cleared below
 	_desired_cache_cam = Vector3.INF  # the next pass recomputes from scratch
+	_admit_queue.clear()
+	_retired.clear()
 	for key in _active_chunks.keys():
 		_remove_chunk(key)
 	_node_geom.clear()
@@ -6394,6 +7064,9 @@ var _flight_was_on: bool = false
 ## F to frame a node, or typing coordinates. Rolling the surface by it would fling you across the
 ## globe, so the tracked point is re-seeded from where the camera actually is instead.
 const FLIGHT_JUMP_FRACTION: float = 0.05
+
+## Furthest editor_fly lets the viewport go, in radii from the body's centre: the whole body in view.
+const FLY_MAX_RADII: float = 5.0
 
 ## Height above the GROUND at which the "Go to" buttons put the camera, in metres.
 const GOTO_ALTITUDE: float = 200.0
