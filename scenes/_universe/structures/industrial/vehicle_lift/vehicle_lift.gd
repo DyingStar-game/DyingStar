@@ -169,7 +169,11 @@ const REST_SPEED_M_S: float = 0.02
 
 ## This lift's model: model, or the first lift's when it has none.
 func lift_model() -> VehicleLiftModel:
-	return model if model != null else DEFAULT_MODEL
+	if model != null:
+		return model
+	if _default_model == null:
+		_default_model = load(DEFAULT_MODEL_PATH)
+	return _default_model
 
 
 func reset_platform() -> void:
@@ -184,8 +188,10 @@ func reset_platform() -> void:
 
 
 
-## The first lift's model, for a lift with none (model).
-const DEFAULT_MODEL := preload("res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift_model_a.tres")
+## The first lift's model, for a lift with none (model). Loaded when first asked (lift_model), never preloaded:
+## that model holds the landing and platform scenes, whose scripts name VehicleLift -- a preload here closes the
+## loop, and an exported game then fails to load lift_landing.gd ("Can't load dependency").
+const DEFAULT_MODEL_PATH := "res://scenes/_universe/structures/industrial/vehicle_lift/vehicle_lift_model_a.tres"
 ## Width of the notch under a lift when its data does not say (see notch_width_m).
 const NOTCH_DEFAULT_WIDTH_M := 24.0
 ## How far under the lower landing's floor the notch's floor is: the lift's origin stands this high
@@ -208,6 +214,8 @@ const LIFT_DIR: String = "res://scenes/_universe/structures/industrial/vehicle_l
 const RAILING_LIBRARY_SCENE: PackedScene = preload(LIFT_DIR + "railing/railing_segments.tscn")
 
 
+## The first lift's model once loaded (lift_model), shared by every lift with none.
+static var _default_model: VehicleLiftModel = null
 var _target_ratio: float = 0.0
 var _current_speed: float = 0.0
 var _is_moving: bool = false
