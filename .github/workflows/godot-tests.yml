@@ -20,7 +20,9 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
-  GODOT_VERSION: 4.7
+  GODOT_VERSION: 4.7.2
+  # The engine release (DyingStar-game/godotandaddons): Godot + our patches. Its name keys the caches.
+  GODOT_RELEASE: 4.7.2-stable-ds1
   # The C# twins against their GDScript reference, bit for bit. Data-free: what needs tarsis_3's tile
   # cache goes pending, and test_the_whole_sphere_samples_identically_without_data covers every face.
   NATIVE_TESTS: res://test/unit/test_tile_frame_native.gd,res://test/unit/test_crack_voronoi_native.gd,res://test/unit/test_native_script.gd,res://test/unit/test_rock_impurity_native.gd,res://test/unit/test_chunk_native_normals.gd,res://test/unit/test_chunk_native_verts.gd
@@ -63,14 +65,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/godot
-          key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
+          key: godot-${{ env.GODOT_RELEASE }}-mono-linux
 
       - name: Install Godot
         if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/godot
           wget -q -O "$RUNNER_TEMP/godot.zip" \
-            "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
           unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
           rm "$RUNNER_TEMP/godot.zip"
           chmod +x "$GODOT"
@@ -140,7 +142,8 @@ jobs:
       run:
         shell: pwsh
     env:
-      GODOT: ${{ github.workspace }}\..\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe
+      # The version as GODOT_VERSION: the env context cannot be read here.
+      GODOT: ${{ github.workspace }}\..\godot\Godot_v4.7.2-stable_mono_win64\Godot_v4.7.2-stable_mono_win64_console.exe
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -155,7 +158,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}\..\godot
-          key: godot-${{ env.GODOT_VERSION }}-stable-mono-win64
+          key: godot-${{ env.GODOT_RELEASE }}-mono-win64
 
       - name: Install Godot
         if: steps.cache-godot.outputs.cache-hit != 'true'
@@ -163,7 +166,7 @@ jobs:
           $dest = Join-Path $env:GITHUB_WORKSPACE "..\godot"
           New-Item -ItemType Directory -Force $dest | Out-Null
           $zip = Join-Path $env:RUNNER_TEMP "godot.zip"
-          Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/$($env:GODOT_VERSION)-stable/Godot_v$($env:GODOT_VERSION)-stable_mono_win64.zip" -OutFile $zip
+          Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/$($env:GODOT_RELEASE)/Godot_v$($env:GODOT_VERSION)-stable_mono_win64.zip" -OutFile $zip
           Expand-Archive $zip -DestinationPath $dest
           Remove-Item $zip
 
@@ -201,15 +204,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # executable: the version as GODOT_VERSION (the env context cannot be read in a matrix).
         include:
           - os: ubuntu-latest
             platform: linux
             archive: linux_x86_64
-            executable: Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64
+            executable: Godot_v4.7.2-stable_mono_linux_x86_64/Godot_v4.7.2-stable_mono_linux.x86_64
           - os: windows-latest
             platform: win64
             archive: win64
-            executable: Godot_v4.7-stable_mono_win64/Godot_v4.7-stable_mono_win64_console.exe
+            executable: Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe
     defaults:
       run:
         shell: pwsh
@@ -223,14 +227,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/../godot
-          key: godot-${{ env.GODOT_VERSION }}-stable-mono-${{ matrix.platform }}
+          key: godot-${{ env.GODOT_RELEASE }}-mono-${{ matrix.platform }}
       - name: Download game engine when absent
         if: steps.lava-engine.outputs.cache-hit != 'true'
         run: |
           $lavaEngineRoot = Join-Path $env:GITHUB_WORKSPACE '..' 'godot'
           New-Item -ItemType Directory -Force -Path $lavaEngineRoot | Out-Null
           $lavaArchive = Join-Path $env:RUNNER_TEMP 'lava-godot.zip'
-          Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/$($env:GODOT_VERSION)-stable/Godot_v$($env:GODOT_VERSION)-stable_mono_${{ matrix.archive }}.zip" -OutFile $lavaArchive
+          Invoke-WebRequest -Uri "https://github.com/DyingStar-game/godotandaddons/releases/download/$($env:GODOT_RELEASE)/Godot_v$($env:GODOT_VERSION)-stable_mono_${{ matrix.archive }}.zip" -OutFile $lavaArchive
           Expand-Archive -LiteralPath $lavaArchive -DestinationPath $lavaEngineRoot -Force
       - name: Integer physics and concurrent client/server golden replay
         run: |
