@@ -48,8 +48,9 @@ var bar : TopBar = null
 ## Bottom right of the home screen, over a stage: "Graphics quality: High" — the preset in use (the
 ## one detected for this GPU on a first launch), and a way straight to Settings > Graphics.
 var _quality : Button = null
-## Bottom left of the home screen: the game is in development, much is a placeholder, nothing is final.
-var _notice : PanelContainer = null
+## Bottom left of the home screen: the graphics driver is too old (when it is, see DriverAge), over the
+## development notice — the game is in development, much is a placeholder, nothing is final.
+var _notice : VBoxContainer = null
 
 func _ready() -> void:
 	# The background fills the screen; the menu itself (logo, buttons) keeps to a centred 16:9 area.
@@ -70,7 +71,7 @@ func _ready() -> void:
 		if is_instance_valid(_settings_overlay):
 			_close_settings())
 	add_child(bar)
-	_notice = _dev_notice()
+	_notice = _notices()
 	$Control.add_child(_notice)
 	# A gamepad plugged in: say it can drive the menus — at once, and when one is plugged in later.
 	_offer_pad.call_deferred()
@@ -226,30 +227,88 @@ func set_stage_mode(on: bool) -> void:
 		_quality.visible = on
 
 
-## The development notice: the game is being built, many sounds and models are placeholders there to
-## try the gameplay, nothing is final. On a dark, see-through card so it reads over the 3D stage as over
-## the still background.
-func _dev_notice() -> PanelContainer:
+## The notices of the home screen, bottom left, stacked upwards: the driver warning (only when the
+## driver is too old) over the development notice.
+func _notices() -> VBoxContainer:
+	var column := VBoxContainer.new()
+	column.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	column.anchor_right = _NOTICE_WIDTH_SHARE
+	column.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	column.offset_left = _QUALITY_MARGIN_PX
+	column.offset_right = 0.0
+	column.offset_bottom = -_QUALITY_MARGIN_PX
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_theme_constant_override("separation", 10)
+	var driver : Dictionary = DriverAge.detect()
+	if not driver.is_empty():
+		print("[MainPage] graphics driver too old: %s Vulkan %s, %s or newer wanted — warning shown, download page %s"
+				% [driver["vendor"], driver["found"], driver["needed"], driver["url"]])
+		column.add_child(_driver_notice(driver))
+	column.add_child(_dev_notice())
+	return column
+
+
+## A dark, see-through card, so it reads over the 3D stage as over the still background.
+func _notice_card(border: Color = Color.TRANSPARENT) -> PanelContainer:
 	var card := PanelContainer.new()
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.0, 0.0, 0.0, 0.55)
 	style.set_corner_radius_all(6)
 	style.set_content_margin_all(14)
+	if border.a > 0.0:
+		style.border_color = border
+		style.set_border_width_all(2)
 	card.add_theme_stylebox_override("panel", style)
-	card.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	card.anchor_right = _NOTICE_WIDTH_SHARE
-	card.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	card.offset_left = _QUALITY_MARGIN_PX
-	card.offset_right = 0.0
-	card.offset_bottom = -_QUALITY_MARGIN_PX
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var text := Label.new()
-	text.text = "%%MENU_DEV_NOTICE"
-	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	text.add_theme_font_override("font", SettingsRowFactory.FONT)
-	text.add_theme_font_size_override("font_size", _NOTICE_FONT_SIZE)
-	text.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.85))
-	card.add_child(text)
+	return card
+
+
+func _notice_label(text: String, color: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_override("font", SettingsRowFactory.FONT)
+	label.add_theme_font_size_override("font_size", _NOTICE_FONT_SIZE)
+	label.add_theme_color_override("font_color", color)
+	return label
+
+
+## The development notice: the game is being built, many sounds and models are placeholders there to
+## try the gameplay, nothing is final.
+func _dev_notice() -> PanelContainer:
+	var card : PanelContainer = _notice_card()
+	card.add_child(_notice_label("%%MENU_DEV_NOTICE", Color(1.0, 1.0, 1.0, 0.85)))
+	return card
+
+
+## The graphics driver is too old (DriverAge): it can crash the game, here is where to get the right
+## one. Players believe Windows Update keeps it current, so the text says it does not.
+func _driver_notice(driver: Dictionary) -> PanelContainer:
+	var card : PanelContainer = _notice_card(SettingsStyle.FAIR_COLOR)
+	var lines := VBoxContainer.new()
+	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(lines)
+	var title : Label = _notice_label("%%MENU_DRIVER_OLD_TITLE", SettingsStyle.FAIR_COLOR)
+	lines.add_child(title)
+	var body : Label = _notice_label("", Color(1.0, 1.0, 1.0, 0.9))
+	body.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	lines.add_child(body)
+	var link := Button.new()
+	link.flat = true
+	link.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	link.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	link.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	link.add_theme_font_override("font", SettingsRowFactory.FONT)
+	link.add_theme_font_size_override("font_size", _NOTICE_FONT_SIZE)
+	link.add_theme_color_override("font_color", SettingsStyle.ACTIVE_COLOR)
+	link.tooltip_text = driver["url"]
+	link.pressed.connect(func() -> void: OS.shell_open(driver["url"]))
+	lines.add_child(link)
+	var fill := func(_lang: String = "") -> void:
+		body.text = tr("%%MENU_DRIVER_OLD_TEXT") % [driver["vendor"], driver["found"], driver["needed"]]
+		link.text = tr("%%MENU_DRIVER_OLD_LINK") % driver["vendor"] + "  ›"
+	fill.call()
+	SettingsManager.language.changed.connect(fill)
 	return card
 
 
