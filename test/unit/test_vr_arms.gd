@@ -118,3 +118,46 @@ func test_hands_holding_upright_controllers_face_each_other() -> void:
 	assert_almost_eq(right["dorsal"], Vector3.RIGHT, Vector3.ONE * 1e-6, "the right hand's back faces out")
 	assert_almost_eq(left["dorsal"], Vector3.LEFT, Vector3.ONE * 1e-6, "the left hand's back faces out")
 	assert_almost_eq(right["wrist"], Vector3.BACK * VrArms.GRIP_TO_WRIST_M, Vector3.ONE * 1e-6, "behind the palm")
+
+
+func test_a_finger_never_bends_back_nor_past_a_hand_s_reach() -> void:
+	assert_eq(VrArms.within_limits([-20.0, 200.0, 40.0]), [0.0, VrArms.FINGER_MAX_DEG[1], 40.0])
+
+
+func test_the_hand_bends_no_further_than_a_wrist_does() -> void:
+	var limited: Array[Vector3] = VrArms.wrist_within(Vector3.FORWARD, Vector3.UP, Vector3.BACK)
+	assert_almost_eq(rad_to_deg(limited[0].angle_to(Vector3.FORWARD)), VrArms.WRIST_MAX_DEG, 1e-3,
+			"bent 90 deg up: kept at the limit")
+	assert_almost_eq(limited[0].dot(limited[1]), 0.0, 1e-5, "the back of the hand turned along")
+	var free: Array[Vector3] = VrArms.wrist_within(Vector3.FORWARD, Vector3(0.0, 0.5, -1.0).normalized(), Vector3.UP)
+	assert_almost_eq(free[0], Vector3(0.0, 0.5, -1.0).normalized(), Vector3.ONE * 1e-6, "within: as it is")
+
+
+func test_the_roll_about_the_forearm_is_signed() -> void:
+	var have := Basis(Vector3.RIGHT, 0.3)
+	var want := Basis(Vector3.FORWARD, 0.8) * have
+	assert_almost_eq(VrArms.roll_about(want, have, Vector3.FORWARD), 0.8, 1e-5)
+	assert_almost_eq(VrArms.roll_about(have, want, Vector3.FORWARD), -0.8, 1e-5)
+
+
+func test_a_splayed_little_finger_closes_towards_the_palm_not_sideways() -> void:
+	var skeleton: Skeleton3D = _rig()
+	var arms: Array[Dictionary] = VrArms.attach(skeleton)
+	var right: Dictionary = arms[1]
+	var little: int = skeleton.find_bone("RightLittleProximal")
+	# Splay the little finger 30 deg from the hand's line at rest, with a joint beyond it.
+	var tip: int = skeleton.add_bone("RightLittleIntermediate")
+	skeleton.set_bone_parent(tip, little)
+	skeleton.set_bone_rest(tip, Transform3D(Basis.IDENTITY, Vector3(-0.04 * cos(PI / 6.0), 0.0, -0.04 * sin(PI / 6.0))))
+	skeleton.reset_bone_poses()
+	right["hand"].setup(skeleton, "Right", skeleton.find_bone("RightHand"), skeleton.find_bone("RightLowerArm"))
+	right["hand"].forward = Vector3.LEFT  # as at rest: fingers along -X, back up
+	right["hand"].dorsal = Vector3.UP
+	right["hand"].curls = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [90.0, 0.0, 0.0]]
+	right["hand"].active = true
+	right["hand"].influence = 1.0
+	await skeleton.skeleton_updated
+	var knuckle: Vector3 = skeleton.get_bone_global_pose(little).origin
+	var bent: Vector3 = skeleton.get_bone_global_pose(tip).origin - knuckle
+	await get_tree().process_frame
+	assert_almost_eq(bent.normalized().y, -1.0, 1e-3, "straight down into the palm")

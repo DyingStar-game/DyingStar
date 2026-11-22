@@ -44,6 +44,13 @@ const PULL_CURL_DEG: Array[float] = [60.0, 75.0, 45.0]
 ## The first joint of each finger in XRHandTracker's order (metacarpal, proximal, intermediate, distal,
 ## tip follow): index, middle, ring, little -- HumanoidHand.FINGERS' order.
 const FINGER_FIRST_JOINT: Array[int] = [6, 11, 16, 21]
+## How far (deg) each finger joint may close, knuckle out: never back, never past a real hand's reach.
+const FINGER_MAX_DEG: Array[float] = [90.0, 110.0, 80.0]
+## How far (deg) the hand may bend from the forearm's line: past it, the hand stops at the limit.
+const WRIST_MAX_DEG := 70.0
+## The share of the hand's roll (about the forearm) the forearm takes: a forearm turns along with the
+## hand, a wrist alone does not (left at the clip's, the wrist twisted like a wrung towel).
+const FOREARM_TWIST := 0.6
 
 var _rig: VrRig = null
 var _player: Node3D = null
@@ -206,7 +213,7 @@ static func attach(skeleton: Skeleton3D) -> Array[Dictionary]:
 		skeleton.add_child(ik)
 		var hand := VrHand.new()
 		hand.name = "Vr%sHand" % side
-		hand.setup(skeleton, side, hand_bone)
+		hand.setup(skeleton, side, hand_bone, lower)
 		hand.active = false
 		skeleton.add_child(hand)
 		arms.append({"ik": ik, "hand": hand, "upper": upper, "weight": 0.0})
@@ -216,6 +223,12 @@ static func attach(skeleton: Skeleton3D) -> Array[Dictionary]:
 ## A hand turned like the player's ([member forward] to the fingers, [member dorsal] out of its back, in
 ## the skeleton's space) and its fingers closed by [member curls] (deg, per finger, per joint). Its own
 ## axes are read from the rest positions of the wrist and the knuckles, never from the bone's axes.
+##
+## Within a body's limits: the hand bends at most WRIST_MAX_DEG from the forearm, which takes
+## FOREARM_TWIST of its roll; each finger closes about its OWN hinge (square to the finger and the palm)
+## by no more than FINGER_MAX_DEG, never backwards. On one hinge for the whole hand (HandsOnWheel's), the
+## ring and the little fingers, splayed from the hand's line, swung out sideways as they closed
+## (playtest 2026-11-22).
 class VrHand:
 	extends SkeletonModifier3D
 	var forward: Vector3 = Vector3.FORWARD
@@ -223,14 +236,16 @@ class VrHand:
 	var curls: Array = []
 	var _side: String = "Right"
 	var _hand: int = -1
+	var _lower: int = -1
 	var _middle: int = -1
 	var _index: int = -1
 	var _little: int = -1
 	var _chains: Array = []
 
-	func setup(skeleton: Skeleton3D, side: String, hand: int) -> void:
+	func setup(skeleton: Skeleton3D, side: String, hand: int, lower_arm: int) -> void:
 		_side = side
 		_hand = hand
+		_lower = lower_arm
 		_middle = skeleton.find_bone(side + "MiddleProximal")
 		_index = skeleton.find_bone(side + "IndexProximal")
 		_little = skeleton.find_bone(side + "LittleProximal")
@@ -245,10 +260,66 @@ class VrHand:
 		var across: Vector3 = skeleton.get_bone_global_rest(_index).origin - skeleton.get_bone_global_rest(_little).origin
 		var rest_dorsal: Vector3 = VrArms.back_of_hand(rest_forward, across, _side == "Left")
 		var pose: Transform3D = skeleton.get_bone_global_pose(_hand)
-		pose.basis = VrArms.turned_hand(rest.basis, rest_forward, rest_dorsal, forward, dorsal)
+		var fingers: Vector3 = forward
+		var back: Vector3 = dorsal
+		if _lower != -1:
+			var lower: Transform3D = skeleton.get_bone_global_pose(_lower)
+			var axis: Vector3 = (pose.origin - lower.origin).normalized()
+			var limited: Array[Vector3] = VrArms.wrist_within(axis, fingers, back)
+			fingers = limited[0]
+			back = limited[1]
+			var want: Basis = VrArms.turned_hand(rest.basis, rest_forward, rest_dorsal, fingers, back)
+			var roll: float = VrArms.roll_about(want, pose.basis, axis)
+			lower.basis = Basis(axis, roll * VrArms.FOREARM_TWIST) * lower.basis
+			skeleton.set_bone_global_pose(_lower, lower)
+		pose.basis = VrArms.turned_hand(rest.basis, rest_forward, rest_dorsal, fingers, back)
 		skeleton.set_bone_global_pose(_hand, pose)
-		if curls.size() == _chains.size():
-			HumanoidHand.curl(skeleton, pose, _chains, curls, forward.cross(-dorsal).normalized())
+		if curls.size() != _chains.size():
+			return
+		var palm: Vector3 = -back
+		for f in _chains.size():
+			var chain: Array = _chains[f]
+			if chain.is_empty() or chain[0] == -1:
+				continue
+			var knuckle: Transform3D = pose * skeleton.get_bone_rest(chain[0])
+			var along: Vector3 = knuckle.origin - pose.origin
+			if chain.size() > 1 and chain[1] != -1:
+				along = (knuckle * skeleton.get_bone_rest(chain[1])).origin - knuckle.origin
+			var hinge: Vector3 = along.cross(palm)
+			if hinge.length_squared() < 1e-12:
+				continue
+			HumanoidHand.curl(skeleton, pose, [chain], [VrArms.within_limits(curls[f])], hinge.normalized())
+
+
+## A finger's bends [param bends] (deg, knuckle out) kept to FINGER_MAX_DEG, and never backwards.
+static func within_limits(bends: Array) -> Array:
+	var kept: Array = []
+	for j in bends.size():
+		kept.append(clampf(float(bends[j]), 0.0, FINGER_MAX_DEG[mini(j, FINGER_MAX_DEG.size() - 1)]))
+	return kept
+
+
+## The hand's [param fingers] and [param back] directions turned back within WRIST_MAX_DEG of the forearm's
+## line [param axis] (elbow to wrist): [fingers, back].
+static func wrist_within(axis: Vector3, fingers: Vector3, back: Vector3) -> Array[Vector3]:
+	var bend: float = fingers.angle_to(axis)
+	var limit: float = deg_to_rad(WRIST_MAX_DEG)
+	var hinge: Vector3 = fingers.cross(axis)
+	if bend <= limit or hinge.length_squared() < 1e-12:
+		return [fingers, back]
+	var turn := Basis(hinge.normalized(), bend - limit)
+	return [turn * fingers, turn * back]
+
+
+## How far (rad, signed about [param axis]) the basis [param want] is turned from [param have] about that
+## axis: the roll part of the turn between them.
+static func roll_about(want: Basis, have: Basis, axis: Vector3) -> float:
+	var turn: Quaternion = want.get_rotation_quaternion() * have.get_rotation_quaternion().inverse()
+	var twist: Quaternion = HandsOnWheel.twist_about(turn, axis)
+	if twist.w < 0.0:
+		twist = -twist  # the short way round: an angle of 0..PI
+	var angle: float = twist.get_angle()
+	return -angle if Vector3(twist.x, twist.y, twist.z).dot(axis) < 0.0 else angle
 
 
 ## The direction out of the back of a hand whose fingers go [param forward] and whose knuckles run
