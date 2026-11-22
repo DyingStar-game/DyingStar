@@ -21,7 +21,9 @@ on:
         type: string
 
 env:
-  GODOT_VERSION: 4.7
+  GODOT_VERSION: 4.7.2
+  # The engine release (DyingStar-game/godotandaddons): Godot + our patches. Its name keys the caches.
+  GODOT_RELEASE: 4.7.2-stable-ds1
 
 jobs:
   version:
@@ -104,14 +106,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/godot
-          key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
+          key: godot-${{ env.GODOT_RELEASE }}-mono-linux
 
       - name: Install Godot
         if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/godot
           wget -q -O /tmp/godot.zip \
-            "https://github.com/DyingStar-game/godotandaddons/releases/download/${{ env.GODOT_VERSION }}-stable/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64.zip"
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${{ env.GODOT_RELEASE }}/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64.zip"
           unzip /tmp/godot.zip -d ~/godot
           rm /tmp/godot.zip
           chmod +x ~/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux.x86_64
@@ -121,13 +123,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/godot/export_templates
-          key: godot-templates-${{ env.GODOT_VERSION }}-stable-mono-double
+          key: godot-templates-${{ env.GODOT_RELEASE }}-mono-double
 
       - name: Install export templates
         if: steps.cache-templates.outputs.cache-hit != 'true'
         run: |
           wget -q -O /tmp/templates.tpz \
-            "https://github.com/DyingStar-game/godotandaddons/releases/download/${{ env.GODOT_VERSION }}-stable/Godot_v${{ env.GODOT_VERSION }}-stable_mono_export_templates.tpz"
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${{ env.GODOT_RELEASE }}/Godot_v${{ env.GODOT_VERSION }}-stable_mono_export_templates.tpz"
           unzip /tmp/templates.tpz -d /tmp/godot-templates
           rm /tmp/templates.tpz
           TEMPLATES_DIR="$HOME/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable.mono.double"

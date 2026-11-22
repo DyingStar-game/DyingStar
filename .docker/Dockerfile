@@ -3,7 +3,9 @@
 ############################################
 FROM debian:trixie-slim AS builder
 
-ENV GODOT_VERSION=4.7
+ENV GODOT_VERSION=4.7.2
+# The engine release (DyingStar-game/godotandaddons): Godot + our patches.
+ENV GODOT_RELEASE=4.7.2-stable-ds1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
@@ -27,13 +29,13 @@ RUN wget https://packages.microsoft.com/config/debian/13/packages-microsoft-prod
 
 # Godot
 WORKDIR /godot
-RUN wget https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip && \
+RUN wget https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip && \
     unzip Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip && \
     rm Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip && \
     chmod +x Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64/Godot_v${GODOT_VERSION}-stable_mono_linux.x86_64
 
 # Export templates
-RUN wget https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_export_templates.tpz && \
+RUN wget https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_mono_export_templates.tpz && \
     unzip Godot_v${GODOT_VERSION}-stable_mono_export_templates.tpz && \
     rm Godot_v${GODOT_VERSION}-stable_mono_export_templates.tpz && \
     rm templates/windows* && \

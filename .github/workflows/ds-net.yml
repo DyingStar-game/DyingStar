@@ -32,7 +32,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GODOT_VERSION: 4.7
+  GODOT_VERSION: 4.7.2
+  # The engine release (DyingStar-game/godotandaddons): Godot + our patches. Its name keys the caches.
+  GODOT_RELEASE: 4.7.2-stable-ds1
 
 jobs:
   build:
@@ -80,14 +82,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/godot
-          key: godot-${{ env.GODOT_VERSION }}-stable-mono-linux
+          key: godot-${{ env.GODOT_RELEASE }}-mono-linux
 
       - name: Install Godot
         if: steps.pin.outputs.stale == 'true' && steps.cache-godot.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/godot
           wget -q -O "$RUNNER_TEMP/godot.zip" \
-            "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
+            "https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
           unzip -q "$RUNNER_TEMP/godot.zip" -d ~/godot
           rm "$RUNNER_TEMP/godot.zip"
 
