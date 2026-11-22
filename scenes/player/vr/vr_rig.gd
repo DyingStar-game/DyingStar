@@ -89,13 +89,8 @@ static func install(player: Node3D) -> VrRig:
 	vignette.name = "VrVignette"
 	vignette.setup(rig.camera, controls, rig.body)
 	rig.add_child(vignette)
-	# The controllers as the runtime draws them (OpenXR render models): any headset's, none to model.
-	# Only with a live OpenXR session: without one the manager finds no extension and errors each frame
-	# (with one, a runtime lacking render models leaves it idle).
-	if XRMode.is_active():
-		var models := OpenXRRenderModelManager.new()
-		models.name = "ControllerModels"
-		rig.add_child(models)
+	# No controllers drawn (OpenXR render models): the avatar's hands hold where they are (VrArms), and the
+	# runtime's controllers floated in them (playtest 2026-11-22).
 	return rig
 
 
