@@ -56,6 +56,14 @@ static func install(player: Node3D) -> VrRig:
 	return rig
 
 
+## Back in the tree, the headset looks from here again. The server reparents the player (building ->
+## planet -> vehicle), which takes it out of the tree and back; Godot drops `current` from an origin
+## leaving the tree and hands it to another one -- XRManager's, at the world's origin, 4e10 m from the
+## planet -- and never gives it back: the headset went black as the player stepped outside (2026-11-22).
+func _enter_tree() -> void:
+	current = true
+
+
 ## The head's pitch (rad) relative to the body: up is positive, like the camera pivot's.
 func head_pitch() -> float:
 	return camera.transform.basis.get_euler().x

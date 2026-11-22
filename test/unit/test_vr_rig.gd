@@ -62,3 +62,16 @@ func test_the_head_is_read_relative_to_the_body() -> void:
 	assert_almost_eq(rig.head_pitch(), 0.3, 1e-5, "looking up is positive, like the pivot's pitch")
 	assert_almost_eq(rig.head_yaw(), -0.5, 1e-5)
 	assert_almost_eq(rig.head_offset(), Vector3(0.05, -0.1, 0.02), Vector3.ONE * 1e-6)
+
+
+func test_the_headset_still_looks_from_the_player_after_a_reparent() -> void:
+	var elsewhere := XROrigin3D.new()  # XRManager's own origin, for the menu
+	add_child_autofree(elsewhere)
+	var rig := VrRig.install(_player)
+	assert_true(rig.is_current())
+	var parent := _player.get_parent()
+	parent.remove_child(_player)  # the server reparents the player: out of the tree...
+	assert_true(elsewhere.is_current(), "Godot hands the view to another origin meanwhile")
+	parent.add_child(_player)  # ...and back in
+	assert_true(rig.is_current(), "the player's origin takes the view back")
+	assert_false(elsewhere.is_current())
