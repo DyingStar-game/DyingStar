@@ -4,8 +4,9 @@ The outfits (CC0, MakeHuman / MPFB) are modelled on MakeHuman's basemesh; the ga
 Vitruvian one -- another mesh, in another rest pose. Per outfit piece:
 
   1. the MakeHuman body it suits (a man's or a woman's) wears it, by MakeHuman's own rule (MHCLO);
-  2. the Vitruvian body of the same gender is put in MakeHuman's pose (the T pose of the game skeleton),
-     exactly as the game does it: each bone turned from its direction to the template's;
+  2. the Vitruvian body of the same gender is put in MakeHuman's pose (the T pose of the game skeleton):
+     each bone turned from its direction to the template's, as the game turns the limbs (the game leaves
+     the trunk as modelled; here turning it too lines the two bodies' spines up, and step 5 undoes it);
   3. the garment follows the bones from one body to the other: each bone stretches it along itself by
      the two bodies' bone lengths and across by their girths, about the centre of its flesh, blended by the
      garment's skin weights; the move is smoothed across the garment's pieces (a top over a waistband), and the

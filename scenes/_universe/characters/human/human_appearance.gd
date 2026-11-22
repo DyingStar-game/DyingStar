@@ -71,12 +71,13 @@ func _ready() -> void:
 		set_appearance(CharacterAppearance.preset(preset_name))
 
 
-## Wear [param look] (kept as given; null is ignored). The body follows when baked, the colours at once
-## if the shape is already shown.
+## Wear [param look] (null is ignored), within the creator's limits (CreatorLimits.limit: a face pushed past what
+## looks human is shown less pushed; [param look] itself is left as it is). The body follows when baked, the colours
+## at once if the shape is already shown.
 func set_appearance(look: CharacterAppearance) -> void:
 	if look == null or OS.has_feature("dedicated_server"):
 		return
-	appearance = look.duplicate_appearance()
+	appearance = CreatorLimits.limit(look)
 	if _skeleton == null:
 		_skeleton = _find_skeleton()
 	if _skeleton == null:
@@ -97,11 +98,11 @@ func set_appearance(look: CharacterAppearance) -> void:
 		set_process(true)  # the bank is loading or the body baking: _process takes it from there
 
 
-## Wear [param look] now, baking on this thread if needed (previews, tests).
+## Wear [param look] now, baking on this thread if needed (previews, tests); within the limits, as set_appearance.
 func set_appearance_now(look: CharacterAppearance) -> void:
 	if look == null or OS.has_feature("dedicated_server"):
 		return
-	appearance = look.duplicate_appearance()
+	appearance = CreatorLimits.limit(look)
 	if _skeleton == null:
 		_skeleton = _find_skeleton()
 	if _skeleton == null:

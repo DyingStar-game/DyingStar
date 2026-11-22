@@ -54,12 +54,24 @@ func test_the_skeleton_rests_in_the_templates_pose() -> void:
 	var template: Skeleton3D = _skeleton(_puppet())
 	var skeleton: Skeleton3D = _dressed(23)[1]
 	for pair: Array in [["LeftUpperArm", "LeftLowerArm"], ["RightLowerArm", "RightHand"], ["LeftUpperLeg", "LeftLowerLeg"],
-			["Spine", "Chest"], ["RightIndexProximal", "RightIndexIntermediate"]]:
+			["RightIndexProximal", "RightIndexIntermediate"]]:
 		var a: int = skeleton.find_bone(pair[0])
 		var b: int = skeleton.find_bone(pair[1])
 		var mine: Vector3 = (skeleton.get_bone_global_rest(b).origin - skeleton.get_bone_global_rest(a).origin).normalized()
 		var theirs: Vector3 = (template.get_bone_global_rest(b).origin - template.get_bone_global_rest(a).origin).normalized()
 		assert_gt(mine.dot(theirs), 0.9999, "%s points where the template's does" % pair[0])
+
+
+func test_the_trunk_keeps_its_own_curve() -> void:
+	# A straightened spine broke the back: each segment turned as a block. Trunk binds never turn the mesh.
+	var looks: HumanAppearance = _dressed(23)[0]
+	var skeleton: Skeleton3D = looks.body_mesh().get_parent()
+	var skin: Skin = looks.body_mesh().skin
+	for i in skin.get_bind_count():
+		var bone: StringName = skin.get_bind_name(i)
+		if HumanBuilder.TRUNK_BONES.has(bone):
+			var at_rest: Basis = (skeleton.get_bone_global_rest(skeleton.find_bone(bone)) * skin.get_bind_pose(i)).basis
+			assert_true(at_rest.is_equal_approx(Basis.IDENTITY), "%s leaves the mesh as modelled" % bone)
 
 
 func test_binds_carry_the_mesh_and_the_body_stands_on_the_ground() -> void:
