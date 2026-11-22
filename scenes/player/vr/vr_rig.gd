@@ -79,6 +79,11 @@ static func install(player: Node3D) -> VrRig:
 	controls.name = "VrInput"
 	controls.setup(player, rig.left_hand, rig.right_hand, rig.body)
 	rig.add_child(controls)
+	# The avatar's arms and fingers follow the player's hands.
+	var arms := VrArms.new()
+	arms.name = "VrArms"
+	arms.setup(rig, player)
+	rig.add_child(arms)
 	# Comfort: the edges of the view darken while the stick moves or turns the player.
 	var vignette := VrVignette.new()
 	vignette.name = "VrVignette"
