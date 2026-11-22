@@ -41,6 +41,22 @@ const MAX_ZOOM: float = 1.6
 
 ## The breeze over the stage when the whole body is shown (m/s, world frame: from the side, a little from the front).
 const CREATOR_BREEZE := Vector3(1.2, 0.0, 0.6)
+## The expression buttons, bottom right over the figure: FaceLife.EXPRESSIONS key, icon, tooltip.
+const EXPRESSION_BUTTONS: Array = [
+	[&"neutral", preload("res://ui/character_creator/icons/face-meh-blank-regular-full.svg"), "%%CHAR_EXPR_NEUTRAL"],
+	[&"smile", preload("res://ui/character_creator/icons/face-smile-regular-full.svg"), "%%CHAR_EXPR_SMILE"],
+	[&"laugh", preload("res://ui/character_creator/icons/face-laugh-squint-regular-full.svg"), "%%CHAR_EXPR_LAUGH"],
+	[&"wink", preload("res://ui/character_creator/icons/face-smile-wink-regular-full.svg"), "%%CHAR_EXPR_WINK"],
+	[&"surprise", preload("res://ui/character_creator/icons/face-surprise-regular-full.svg"), "%%CHAR_EXPR_SURPRISE"],
+	[&"sad", preload("res://ui/character_creator/icons/face-frown-regular-full.svg"), "%%CHAR_EXPR_SAD"],
+	[&"angry", preload("res://ui/character_creator/icons/face-angry-regular-full.svg"), "%%CHAR_EXPR_ANGRY"],
+	[&"disgust", preload("res://ui/character_creator/icons/face-grimace-regular-full.svg"), "%%CHAR_EXPR_DISGUST"],
+	[&"fear", preload("res://ui/character_creator/icons/face-frown-open-regular-full.svg"), "%%CHAR_EXPR_FEAR"],
+]
+## An expression button's side and the gap to the view's corner (px); an idle button's tint.
+const EXPRESSION_BUTTON_PX: float = 30.0
+const EXPRESSION_MARGIN_PX: float = 12.0
+const EXPRESSION_IDLE_TINT := Color(1.0, 1.0, 1.0, 0.6)
 var _viewport: SubViewport
 var _puppet: Node3D
 var _looks: HumanAppearance
@@ -52,6 +68,7 @@ var _framing: StringName = &"body"
 var _aim := Vector3(0.0, BODY_AIM, 0.0)
 var _distance: float = BODY_DISTANCE
 var _rise: float = 0.08
+var _expressions: Dictionary = {}  # FaceLife.EXPRESSIONS key -> its button
 
 
 func _ready() -> void:
@@ -99,11 +116,74 @@ func _ready() -> void:
 	stage.add_child(_camera)
 	_camera.make_current()
 	_place_camera(1.0)
+	_expression_bar()
 
 
 ## Wear [param look] on the figure (baked in the background; the previous body stays meanwhile).
 func set_appearance(look: CharacterAppearance) -> void:
 	_looks.set_appearance(look)
+
+
+## Hold [param key] (a FaceLife.EXPRESSIONS key) on the figure's face: presentation only, the look is not changed.
+func set_expression(key: StringName) -> void:
+	if not FaceLife.EXPRESSIONS.has(key):
+		return
+	var face := _puppet.get_node_or_null(^"FaceLife") as FaceLife
+	if face != null:
+		face.expression = key
+	for k: StringName in _expressions:
+		var button: Button = _expressions[k]
+		button.set_pressed_no_signal(k == key)
+		_paint_expression(button, k == key)
+
+
+## The expression held on the figure's face.
+func expression() -> StringName:
+	var face := _puppet.get_node_or_null(^"FaceLife") as FaceLife
+	return face.expression if face != null else &"neutral"
+
+
+## One button per expression in a row at the view's bottom right, over a dim strip so the icons read on any backdrop.
+func _expression_bar() -> void:
+	var strip := PanelContainer.new()
+	var back := StyleBoxFlat.new()
+	back.bg_color = Color(0.0, 0.0, 0.0, 0.35)
+	back.set_corner_radius_all(6)
+	back.set_content_margin_all(4)
+	strip.add_theme_stylebox_override(&"panel", back)
+	strip.mouse_filter = Control.MOUSE_FILTER_STOP  # a click between two buttons does not turn the figure
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override(&"separation", 2)
+	strip.add_child(row)
+	var group := ButtonGroup.new()
+	for entry: Array in EXPRESSION_BUTTONS:
+		var key: StringName = entry[0]
+		var button := Button.new()
+		button.name = "Expression_%s" % key
+		button.icon = entry[1]
+		button.expand_icon = true
+		button.flat = true
+		button.toggle_mode = true
+		button.button_group = group
+		button.focus_mode = Control.FOCUS_NONE  # the gamepad's focus stays in the creator's lists
+		button.tooltip_text = entry[2]
+		button.custom_minimum_size = Vector2(EXPRESSION_BUTTON_PX, EXPRESSION_BUTTON_PX)
+		button.pressed.connect(set_expression.bind(key))
+		row.add_child(button)
+		_expressions[key] = button
+	add_child(strip)  # not a SubViewport: this container leaves it where its anchors put it
+	strip.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, int(EXPRESSION_MARGIN_PX))
+	strip.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	strip.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	set_expression(&"neutral")
+
+
+func _paint_expression(button: Button, held: bool) -> void:
+	var tint: Color = SettingsStyle.ACTIVE_COLOR if held else EXPRESSION_IDLE_TINT
+	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color", "icon_hover_pressed_color"]:
+		button.add_theme_color_override(state, tint)
+	if not held:
+		button.add_theme_color_override(&"icon_hover_color", Color.WHITE)
 
 
 ## Frame the whole body (&"body"), the face (&"face") or the head and its hair (&"hair").

@@ -28,6 +28,8 @@ extends Node
 ## This face is our own player's: its mouth follows our microphone (VoiceMeter.own_level) instead of a
 ## speaker. Set by PlayerClient.
 @export var own_voice: bool = false
+## Time a held expression (a creator button) takes to come or go (s): lower = snappier.
+@export var expression_ease_s: float = 0.25
 
 ## Gaze angle (deg) each look shape gives at full weight, measured on the base model's eyes.
 const LOOK_LEFT_DEG: float = 18.0
@@ -49,6 +51,30 @@ const EYES_FROM_HEAD := Vector3(0.0, 0.09, 0.08)
 const SPEAKER_SEARCH_S: float = 1.0
 ## Name prefix of the voice chat's speakers (livekit.gd).
 const SPEAKER_PREFIX: String = "LKAudio_"
+## The expressions a face can be asked to hold (the creator's buttons): life shape -> weight. A weight may
+## pass 1: the base model's sadness and anger are faint at full weight. Blinks, glances and the voice go on
+## over them; the idle temper steps aside.
+const EXPRESSIONS: Dictionary = {
+	&"neutral": {},
+	&"smile": {&"smile": 0.7, &"happy": 0.5, &"squint": 0.35, &"cheeks_raised": 1.0},
+	&"laugh": {&"happy": 1.0, &"lips_apart": 0.5, &"jaw_open": 0.2, &"squint": 0.5, &"cheeks_raised": 1.0},
+	&"wink": {&"smile": 0.9, &"blink_left": 1.0, &"squint": 0.2},
+	&"surprise": {&"brows_up": 1.0, &"eyes_wide": 1.0, &"jaw_open": 0.55, &"mouth_round": 0.4},
+	&"sad": {&"sad": 2.0, &"mouth_corners_down": 0.8, &"brows_up": 0.3},
+	&"angry": {&"angry": 2.0, &"brows_frown": 1.0, &"squint": 0.4, &"mouth_closed": 0.5},
+	&"disgust": {&"disgusted": 0.8, &"brows_frown": 0.6, &"squint": 0.3},
+	&"fear": {&"scared": 0.8, &"brows_up": 0.5, &"brows_frown": 0.35, &"eyes_wide": 1.0},
+}
+## The idle shapes the temper and the drift move (_express): an expression held quiets them.
+const IDLE_SHAPES: Array[StringName] = [&"brows_up", &"brows_frown", &"squint", &"smile", &"happy", &"sad", &"angry"]
+## A laugh shakes: the jaw drops and closes a little, in "ha"s (per second), by up to this weight.
+const LAUGH_HA_PER_S: float = 4.5
+const LAUGH_HA_WEIGHT: float = 0.18
+## How deep a held expression folds the cheeks (face_motion, 0..1): fully, the fold caught the key light in a
+## white streak on a dark cheek.
+const EXPRESSION_FOLDS: float = 0.5
+## Highest weight a life shape is given (an expression's may pass 1, see EXPRESSIONS).
+const MAX_SHAPE_WEIGHT: float = 2.0
 
 ## Voice level 0..1 fed from outside (a test, a scripted line); the larger of this and the metered voice
 ## moves the mouth.
@@ -56,6 +82,8 @@ var voice_level: float = 0.0
 ## Where to look instead of the camera, in world space (a scripted scene); used while has_gaze_point.
 var gaze_point := Vector3.ZERO
 var has_gaze_point: bool = false
+## The expression held (an EXPRESSIONS key): the face eases into it and keeps it until told otherwise.
+var expression: StringName = &"neutral"
 
 var _looks: HumanAppearance
 var _rng := RandomNumberGenerator.new()
@@ -76,6 +104,8 @@ var _voice: float = 0.0
 var _speaker: Node = null
 var _speaker_in: float = 0.0
 var _mood := Vector3.ZERO  # happy, sad, angry: the face's resting temper
+var _held: Dictionary = {}  # life shape -> weight of the held expression, eased
+var _holding: float = 0.0  # 0..1: how far into a held expression (not neutral) the face is
 
 
 func _ready() -> void:
@@ -133,11 +163,14 @@ func _process(delta: float) -> void:
 	_gaze(delta, head)
 	_speak(delta)
 	_express()
+	var folds: float = maxf(_values.get(&"smile", 0.0), _values.get(&"happy", 0.0))
+	_hold_expression(delta)
+	folds = maxf(folds, EXPRESSION_FOLDS * maxf(_held.get(&"smile", 0.0), _held.get(&"happy", 0.0)))
 	for shape: StringName in _indices:
 		var index: int = _indices[shape]
 		if index != -1:
-			head.set_blend_shape_value(index, clampf(_values.get(shape, 0.0), 0.0, 1.0))
-	_looks.set_smile(clampf(maxf(_values.get(&"smile", 0.0), _values.get(&"happy", 0.0)), 0.0, 1.0))
+			head.set_blend_shape_value(index, clampf(_values.get(shape, 0.0), 0.0, MAX_SHAPE_WEIGHT))
+	_looks.set_smile(clampf(folds, 0.0, 1.0))
 
 
 ## The weights this frame gave each shape (tests, the creator's debug view).
@@ -315,3 +348,29 @@ func _express() -> void:
 	_values[&"happy"] = k * _mood.x
 	_values[&"sad"] = k * _mood.y
 	_values[&"angry"] = k * _mood.z
+
+
+## Ease towards the expression held and lay it over this frame's weights: each shape takes the larger of
+## the two, so a blink still closes the eyes of a smile, and a wink's eye stays shut through a blink.
+func _hold_expression(delta: float) -> void:
+	var wanted: Dictionary = EXPRESSIONS.get(expression, {})
+	var step: float = delta / maxf(expression_ease_s, 0.001)
+	_holding = move_toward(_holding, 0.0 if wanted.is_empty() else 1.0, step)
+	for shape: StringName in wanted:
+		if not _held.has(shape):
+			_held[shape] = 0.0
+	for shape: StringName in _held.keys():
+		var target: float = wanted.get(shape, 0.0)
+		_held[shape] = move_toward(_held[shape], target, step * maxf(1.0, target))
+		if _held[shape] == 0.0 and target == 0.0:
+			_held.erase(shape)
+	var quiet: float = 1.0 - _holding
+	for shape: StringName in IDLE_SHAPES:
+		if _values.has(shape):
+			_values[shape] *= quiet
+	for shape: StringName in _held:
+		_values[shape] = maxf(_values.get(shape, 0.0), _held[shape])
+	if expression == &"laugh":
+		var ha: float = LAUGH_HA_WEIGHT * _holding * absf(sin(_time * PI * LAUGH_HA_PER_S))
+		_values[&"jaw_open"] = _values.get(&"jaw_open", 0.0) + ha
+		_values[&"lips_apart"] = _values.get(&"lips_apart", 0.0) + ha

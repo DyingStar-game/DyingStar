@@ -90,11 +90,7 @@ func set_appearance(look: CharacterAppearance) -> void:
 	if _wanted_shape == _shown_shape:
 		_apply_look()
 		return
-	var baked: HumanBuilder.Baked = HumanMeshCache.request(appearance, use_lods) if HumanBuilder.warm() \
-			else null
-	if baked != null:
-		_apply(baked)
-	else:
+	if not (HumanBuilder.warm() and _take_bakes()):
 		set_process(true)  # the bank is loading or the body baking: _process takes it from there
 
 
@@ -218,9 +214,7 @@ func _process(_delta: float) -> void:
 		return
 	HumanMeshCache.poll()
 	if _shown_shape != _wanted_shape:
-		var baked: HumanBuilder.Baked = HumanMeshCache.request(appearance, use_lods)  # queued once, or ready
-		if baked != null:
-			_apply(baked)
+		_take_bakes()
 		return
 	if face_life and _live == null:
 		var live: HumanBuilder.Baked = HumanMeshCache.request(appearance, false, true)
@@ -230,8 +224,41 @@ func _process(_delta: float) -> void:
 	set_process(false)
 
 
-## Swap the plain head for its live twin: same vertices at rest, plus the blend shapes.
-func _show_live(live: HumanBuilder.Baked) -> void:
+## Show the wanted shape if its bakes are ready (queued once, else); true when shown. A face alive now stays
+## alive: its new body waits for the new live head, baked alongside, and both show together with the
+## weights the face had -- else every slider drag dropped an expression (and a blink, a glance) for the
+## ~100 ms between the two bakes.
+func _take_bakes() -> bool:
+	var baked: HumanBuilder.Baked = HumanMeshCache.request(appearance, use_lods)
+	var live: HumanBuilder.Baked = null
+	if face_life and _live != null:
+		live = HumanMeshCache.request(appearance, false, true)
+		if live == null:
+			return false
+	if baked == null:
+		return false
+	var weights: Dictionary = _face_weights()
+	var folds: Variant = _head.get_instance_shader_parameter(&"face_motion") if _head != null else null
+	_apply(baked)
+	if live != null:
+		_show_live(live, weights)
+		if folds != null:
+			_head.set_instance_shader_parameter(&"face_motion", folds)
+	return true
+
+
+## The live head's blend shape weights by name ({} when the head is plain).
+func _face_weights() -> Dictionary:
+	var weights: Dictionary = {}
+	if _live != null and _head != null:
+		for shape: StringName in _shape_index:
+			weights[shape] = _head.get_blend_shape_value(_shape_index[shape])
+	return weights
+
+
+## Swap the plain head for its live twin: same vertices at rest, plus the blend shapes, set to [param weights]
+## (by name) until FaceLife drives them.
+func _show_live(live: HumanBuilder.Baked, weights: Dictionary = {}) -> void:
 	if live == null or live.shape_hash != _shown_shape or _head == null:
 		return
 	_live = live
@@ -239,6 +266,7 @@ func _show_live(live: HumanBuilder.Baked) -> void:
 	_shape_index.clear()
 	for k in live.head_mesh.get_blend_shape_count():
 		_shape_index[live.head_mesh.get_blend_shape_name(k)] = k
+		_head.set_blend_shape_value(k, weights.get(live.head_mesh.get_blend_shape_name(k), 0.0))
 	_apply_look()
 
 

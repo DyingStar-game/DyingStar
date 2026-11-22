@@ -195,3 +195,19 @@ func test_a_menu_lock_locks_its_lines_and_unlock_all_clears() -> void:
 	assert_true(creator._unlock_all.disabled)
 	creator._step_back()
 	assert_eq(creator.look.encode(), before.encode(), "a draw is an undo step")
+
+
+func test_an_expression_button_holds_a_face_not_a_look() -> void:
+	var creator: CharacterCreator = _creator()
+	var before: String = creator.look.encode()
+	var could_undo: bool = creator._history.can_undo()
+	var laugh: Button = creator._preview._expressions[&"laugh"]
+	laugh.pressed.emit()
+	assert_eq(creator._preview.expression(), &"laugh")
+	var face: FaceLife = creator._preview._puppet.get_node("FaceLife")
+	assert_eq(face.expression, &"laugh")
+	for key: StringName in creator._preview._expressions:
+		assert_eq((creator._preview._expressions[key] as Button).button_pressed, key == &"laugh", "%s pressed" % key)
+	assert_eq(creator.look.encode(), before, "an expression is presentation: the look is the same")
+	assert_eq(creator._history.can_undo(), could_undo, "and no undo step")
+	assert_eq(CreatorPreview.EXPRESSION_BUTTONS.size(), FaceLife.EXPRESSIONS.size(), "a button per expression")

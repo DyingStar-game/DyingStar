@@ -1717,6 +1717,15 @@ Cette machine est hors service.",
 %%CHAR_LOCK_MENU,Lock this menu,Verrouiller ce menu,Bloquear este menú
 %%CHAR_DICE_ROW,Draw this line at random (R / X),Tirer cette ligne au hasard (R / X),Sortear esta línea (R / X)
 "%%CHAR_LOCK_ROW","Lock this line: random draws keep it (L / Y)","Verrouiller cette ligne : les tirages la gardent (L / Y)","Bloquear esta línea: los sorteos la conservan (L / Y)"
+%%CHAR_EXPR_NEUTRAL,Neutral,Neutre,Neutral
+%%CHAR_EXPR_SMILE,Smile,Sourire,Sonrisa
+%%CHAR_EXPR_LAUGH,Laugh,Rire,Risa
+%%CHAR_EXPR_WINK,Wink,Clin d'œil,Guiño
+%%CHAR_EXPR_SURPRISE,Surprise,Surprise,Sorpresa
+%%CHAR_EXPR_SAD,Sadness,Tristesse,Tristeza
+%%CHAR_EXPR_ANGRY,Anger,Colère,Enfado
+%%CHAR_EXPR_DISGUST,Disgust,Dégoût,Asco
+%%CHAR_EXPR_FEAR,Fear,Peur,Miedo
 %%CHAR_UNDO,Undo,Annuler,
 %%CHAR_REDO,Redo,Rétablir,
 %%CHAR_PRESET,Presets…,Préréglages…,
