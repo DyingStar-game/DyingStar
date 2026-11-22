@@ -394,7 +394,7 @@ func setup() -> void:
 	_wrist.name = "WristDatapad"
 	player.add_child(_wrist)
 	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
-	# In VR no crosshair: the middle of the HUD's panel is not where anything aims, the hand's laser is
+	# In VR no crosshair: the middle of the HUD's panel is not where anything aims, the right hand is
 	# (VrPointer).
 	var crosshair_wanted: bool = player.vr_rig == null
 	player.get_node("UserInterface").set_crosshair_shown(crosshair_wanted)

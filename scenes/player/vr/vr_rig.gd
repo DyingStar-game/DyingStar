@@ -46,7 +46,7 @@ static func install(player: Node3D) -> VrRig:
 	rig.right_aim = _hand(&"right_hand", "RightAim")
 	rig.right_aim.pose = &"aim"
 	rig.add_child(rig.right_aim)
-	# The right hand aims: the interaction ray leaves from it, along a laser.
+	# The right hand aims: the interaction ray leaves from it, a dot where it meets something.
 	var ray := rig.camera.get_node_or_null("InteractRay") as RayCast3D
 	if ray != null:
 		var pointer := VrPointer.new()
