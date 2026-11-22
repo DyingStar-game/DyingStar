@@ -270,7 +270,8 @@ public partial class HairGroomNative : RefCounted
             Vector3[] strand = GrowOne(root, normal, length, layer, growStyle, growFlow, tie, reach);
             if (style[Curl] > 0.0)
                 strand = CurlStrand(strand, style, 0.0015 + style[Volume] * layer);
-            double aside = (root.X >= 0.0 ? 1.0 : -1.0) * FaceHalfWidth * (1.0 + 0.12 * layer);
+            // Aside on the side the hair came from, not its root's (a hair combed over a side parting crossed the face).
+            double aside = FaceHalfWidth * (1.0 + 0.12 * layer);
             bool ended = false;
             for (int k = 0; k < strand.Length; k++)
             {
@@ -285,7 +286,10 @@ public partial class HairGroomNative : RefCounted
                         strand[k] = strand[k - 1];
                     }
                     else
-                        strand[k] = new Vector3(aside, q.Y, q.Z);
+                    {
+                        double from = k > 0 ? (double)strand[k - 1].X : (double)root.X;
+                        strand[k] = new Vector3(from >= 0.0 ? aside : -aside, q.Y, q.Z);
+                    }
                 }
             }
             points.AddRange(strand);

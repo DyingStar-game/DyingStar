@@ -505,8 +505,10 @@ func _strands(cut: HairCut, style: Dictionary, density: PackedFloat32Array) -> H
 		if style["curl"] > 0.0:
 			strand = _curl(strand, style, 0.0015 + float(style["volume"]) * layer)
 		# Hair frames a face, it does not hang across it: what falls in front of it is drawn aside -- or, coming
-		# from its middle (a fringe), ends there: drawn aside, it would cross the eyes.
-		var aside: float = (1.0 if root.x >= 0.0 else -1.0) * FACE_HALF_WIDTH * (1.0 + 0.12 * layer)
+		# from its middle (a fringe), ends there: drawn aside, it would cross the eyes. Aside on the side the hair
+		# came from: by its root's side, a hair combed over the parting (a side part) was thrown from one cheek to
+		# the other in one segment -- lines across the face.
+		var aside: float = FACE_HALF_WIDTH * (1.0 + 0.12 * layer)
 		var ended: bool = false
 		for k in strand.size():
 			var q: Vector3 = strand[k]
@@ -517,7 +519,8 @@ func _strands(cut: HairCut, style: Dictionary, density: PackedFloat32Array) -> H
 					ended = true
 					strand[k] = strand[k - 1]
 				else:
-					strand[k] = Vector3(aside, q.y, q.z)
+					var from: float = strand[k - 1].x if k > 0 else root.x
+					strand[k] = Vector3(aside if from >= 0.0 else -aside, q.y, q.z)
 		points.append_array(strand)
 		colours.append(Color(1.0 if loose or cut.tie == HairCut.Tie.LOOSE else 0.0, _uniform(), layer, root_density))
 		refs.append_array([_head.scalp_vertex[i0], _head.scalp_vertex[i1], _head.scalp_vertex[i2]])
