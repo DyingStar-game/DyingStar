@@ -192,24 +192,50 @@ static func _cells_near(at: Vector2, reach_m: float, cell_m: float, radius_m: fl
 
 ## The dust devils alive at [param t] within [param range_m] of a place, each as {id, lon, lat, radius_m,
 ## height_m, wind_m_s, spin (+1 / -1), strength (0–1)}. [param air_of]: Callable(lon_deg, lat_deg) ->
-## the service's weather there (WeatherSampler's keys).
+## the service's weather there (WeatherSampler's keys). [param known] keeps the cells' hashes (the same
+## numbers, drawn once: a cell's phase forever, its draw for a life): pass the same Dictionary again.
 static func devils_near(profile: ClimateProfile, at: Vector2, range_m: float, t: float, decl_deg: float,
-		substellar_lon_deg: float, air_of: Callable) -> Array:
+		substellar_lon_deg: float, air_of: Callable, known: Dictionary = {}) -> Array:
 	var out := []
 	var r := profile.radius_m
+	# How far the air may carry a devil that still stands (it needs a wind under DEVIL_CALM_M_S[1]), as an
+	# angle at the centre (rad), doubled: the sun's height (the cosine of its zenith angle) changes by less
+	# than that between where it was born and where it stands.
+	var drift: float = 2.0 * DEVIL_CALM_M_S[1] * DEVIL_LIFE_S * 0.5 / maxf(r, 1.0)
 	for cell: Array in _cells_near(at, range_m, DEVIL_CELL_M, r):
-		var phase := WeatherHash.unit(WeatherHash.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], -1)) * DEVIL_LIFE_S
+		# A cell's phase (-1: not drawn yet; a phase is never negative).
+		var phase_key := Vector2i(cell[0], cell[1])
+		var phase: float = known.get(phase_key, -1.0)
+		if phase < 0.0:
+			phase = WeatherHash.unit(WeatherHash.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], -1)) * DEVIL_LIFE_S
+			known[phase_key] = phase
 		var slot := floori((t + phase) / DEVIL_LIFE_S)
-		var h := WeatherHash.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], slot)
-		if WeatherHash.unit(h) >= DEVIL_SHARE:
+		# A cell's draw for this life, kept as its hash, or -1 when no devil is born there then (-1 never draws
+		# one: all its bits set, its unit is next to 1). 0: not drawn yet (a hash of 0 is only drawn again).
+		var slot_key := Vector3i(cell[0], cell[1], slot)
+		var h: int = known.get(slot_key, 0)
+		if h == -1:
+			continue
+		if h == 0:
+			h = WeatherHash.mix(profile.weather_seed + _SEED_DEVIL, cell[0], cell[1], slot)
+			if WeatherHash.unit(h) >= DEVIL_SHARE:
+				known[slot_key] = -1
+				continue
+			known[slot_key] = h
+		# What can be told before asking the air (the costly part): a devil too young or too old to reach the
+		# strength drawn (its other factors are at most 1), or born under a sun too low.
+		var age := t + phase - slot * DEVIL_LIFE_S
+		if sin(PI * age / DEVIL_LIFE_S) < 0.05:
 			continue
 		var draws := _draws(h, 4)
 		var place := _cell_place(cell[0], cell[1], cell[2], draws[0], draws[1], DEVIL_CELL_M, r)
+		if WeatherSampler.insolation_factor(place.y, WeatherSampler.hour_angle_rad(solar_hours(place.x,
+				substellar_lon_deg)), decl_deg) + drift <= DEVIL_SUN[0]:
+			continue
 		var there: Dictionary = air_of.call(place.x, place.y)
 		if not is_low_band(there["band"]):
 			continue
 		var air := Vector2(there["wind_east_m_s"], there["wind_north_m_s"])
-		var age := t + phase - slot * DEVIL_LIFE_S
 		place = moved(place, air * (age - DEVIL_LIFE_S * 0.5), r)
 		var sun := WeatherSampler.insolation_factor(place.y,
 				WeatherSampler.hour_angle_rad(solar_hours(place.x, substellar_lon_deg)), decl_deg)
@@ -244,7 +270,7 @@ static func devil_effect(devil: Dictionary, at: Vector2, radius_m: float) -> Arr
 ## front now), east, north (the way it runs, unit), speed_m_s, length_m, height_m, depth_m, strength,
 ## grown (0 at its birth, 1 once risen), spent (0 until it starts thinning out, 1 at its end)}.
 ## [param terrain_of]: Callable(lon_deg, lat_deg) -> {height_m, upslope: Vector2}. [param known] keeps
-## where each cell's wall falls from, by [i, row, day]: pass the same Dictionary again. [param air_of]:
+## each cell's draw and where its wall falls from, by cell and day: pass the same Dictionary again. [param air_of]:
 ## Callable(lon_deg, lat_deg) -> the service's weather there (WeatherSampler's keys).
 static func walls_near(profile: ClimateProfile, at: Vector2, t: float, substellar_lon_deg: float,
 		terrain_of: Callable, known: Dictionary, air_of: Callable) -> Array:
@@ -257,10 +283,19 @@ static func walls_near(profile: ClimateProfile, at: Vector2, t: float, substella
 			continue  # past the polar edge the slopes drain all day (breeze)
 		var hours := solar_hours(mid.x, substellar_lon_deg)
 		var day := roundi((t - hours / 24.0 * day_s) / day_s)
-		var h := WeatherHash.mix(profile.weather_seed + _SEED_WALL, cell[0], cell[1], day)
-		if WeatherHash.unit(h) >= WALL_SHARE:
+		# The cell's draw for that day, kept: [hash, draws], or [] when no wall falls there that day.
+		var draw_key := Vector3i(cell[0], cell[1], day)
+		var drawn: Array
+		if known.has(draw_key):
+			drawn = known[draw_key]
+		else:
+			var drawn_hash := WeatherHash.mix(profile.weather_seed + _SEED_WALL, cell[0], cell[1], day)
+			drawn = [drawn_hash, _draws(drawn_hash, 2 + WALL_TRIES * 2)] if WeatherHash.unit(drawn_hash) < WALL_SHARE else []
+			known[draw_key] = drawn
+		if drawn.is_empty():
 			continue
-		var draws := _draws(h, 2 + WALL_TRIES * 2)
+		var h: int = drawn[0]
+		var draws: PackedFloat64Array = drawn[1]
 		var age := (hours - WALL_FROM_H - draws[0] * WALL_SPREAD_H) / 24.0 * day_s
 		if age <= 0.0 or age >= WALL_LIFE_S:
 			continue

@@ -111,3 +111,23 @@ func test_the_systems_horizon_parents_to_the_planet_are_read() -> void:
 	assert_almost_eq(float(live[0]["lon"]), -39.5, 1e-6)
 	assert_gt(float(weather.sample_at(-39.5, 20.0, 0.0, 0.0, 0.0, live)["dust_tau"]), 1.0, "its dust is in the sample")
 	assert_eq(float(weather.sample_at(-39.5, 20.0, 0.0, 0.0, 0.0, [])["dust_tau"]), 0.0)
+
+
+func test_the_air_alone_is_the_sample_s_air() -> void:
+	# What the devils and the walls ask (WeatherSampler.air, kept by ClimateWeather.air_at) is the sample's band,
+	# wind and dust to the bit, on and off the service's systems, near them and far from them.
+	var recorded: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/data/weather/sandbox_service_answers.json"))
+	var weather := ClimateWeather.for_body("tarsis_3").duplicate() as ClimateWeather
+	weather.feed(WeatherService.states_of(str(recorded["systems_answer"])))
+	var live := weather.systems(null)
+	var counted := 0
+	for k in 400:
+		var lon := -180.0 + fposmod(k * 47.3, 360.0)
+		var lat := -80.0 + fposmod(k * 13.7, 160.0)
+		var whole := weather.sample_at(lon, lat, 0.0, 5.0, 30.0, live)
+		counted += (whole["systems"] as Array).size()
+		for air: Dictionary in [WeatherSampler.air(weather.profile, live, lon, lat), weather.air_at(lon, lat, live),
+				weather.air_at(lon, lat, live)]:
+			for key: String in ["band", "wind_east_m_s", "wind_north_m_s", "wind_speed_m_s", "dust_tau"]:
+				assert_eq(air[key], whole[key], "%s at lon %.1f lat %.1f" % [key, lon, lat])
+	assert_gt(counted, 50, "systems weigh at many of the places")

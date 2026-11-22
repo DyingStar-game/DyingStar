@@ -37,6 +37,10 @@ const KEPT_MAX := 4096
 ## A sample with the local weather is kept this long for the place it was asked at (s): the dust, the
 ## sound and every emitter round the player ask for the same one many times a frame.
 const SAMPLE_KEPT_S := 0.25
+## Samples kept at most within one SAMPLE_KEPT_S, one per place (relief cell): the player, the avatars
+## round them, each volcano's plume and each dust emitter ask at their own place, and one kept sample
+## alone was thrown away by each of them in turn.
+const SAMPLES_KEPT_MAX := 64
 
 ## The body's climate, as the weather service derived it (generated: never hand-edit).
 @export var profile: ClimateProfile
@@ -53,8 +57,14 @@ const SAMPLE_KEPT_S := 0.25
 
 var _relief := {}  # [cell x, cell y] → WeatherRelief's terrain
 var _wall_sources := {}
-var _last_key := []  # [planet id, relief cell, time step] of _last
-var _last := {}
+var _kept := {}  # [planet id, relief cell x, y] → the sample, for the time step _kept_slot
+var _kept_slot := -1
+var _kept_epoch := 0  # one more at each feed: a sample computed before it is not kept
+var _air_kept := {}  # [lon, lat] → WeatherSampler.air there, under the systems _air_live
+var _air_live: Array = []
+var _air_mutex := Mutex.new()
+var _devil_cells := {}  # WeatherRelief.devils_near's known: the cells' hashes
+var _devil_mutex := Mutex.new()
 var _fed: Array = []
 var _systems: Array = []
 var _systems_at_ms := -1
@@ -74,7 +84,9 @@ func feed(states: Array) -> void:
 	_mutex.lock()
 	_fed = states
 	_systems_at_ms = -1
-	_last_key = []
+	_kept.clear()
+	_kept_slot = -1
+	_kept_epoch += 1
 	_mutex.unlock()
 
 
@@ -145,12 +157,17 @@ func _regional(planet: Planet, local_dir: Vector3) -> Dictionary:
 	var t := now()
 	# Asked again for the same place within SAMPLE_KEPT_S: the answer kept, before anything is computed.
 	var cell := WeatherRelief.cell_of(lonlat.x, lonlat.y, RELIEF_CELL_M, profile.radius_m)
-	var key := [planet.get_instance_id() if planet != null else 0, cell.x, cell.y, floori(t / SAMPLE_KEPT_S)]
+	var key := [planet.get_instance_id() if planet != null else 0, cell.x, cell.y]
+	var slot := floori(t / SAMPLE_KEPT_S)
 	_mutex.lock()
-	var kept := _last.duplicate() if key == _last_key else {}
+	if slot != _kept_slot:
+		_kept.clear()
+		_kept_slot = slot
+	var kept: Dictionary = _kept.get(key, {})
+	var epoch := _kept_epoch
 	_mutex.unlock()
 	if not kept.is_empty():
-		return kept
+		return kept.duplicate()
 	var sun := sun_over(planet)
 	var live := systems(planet)
 	var out := sample_at(lonlat.x, lonlat.y, 0.0, sun.y, sun.x, live)
@@ -163,12 +180,12 @@ func _regional(planet: Planet, local_dir: Vector3) -> Dictionary:
 		if wind.length() > 0.1:
 			var upwind := WeatherRelief.moved(lonlat, -wind.normalized() * LEE_REACH_M, profile.radius_m)
 			terrain["upwind_drop_m"] = float(relief_at(data, upwind.x, upwind.y)["height_m"]) - float(terrain["height_m"])
-	out = WeatherRelief.apply(out, profile, terrain, WeatherRelief.devils_near(profile, lonlat,
-			WeatherRelief.DEVIL_CELL_M, t, sun.y, sun.x, _air_of(sun, live)), walls_near(planet, lonlat),
+	out = WeatherRelief.apply(out, profile, terrain, _devils(lonlat, WeatherRelief.DEVIL_CELL_M, t, sun, live),
+			walls_near(planet, lonlat),
 			Vector3(haze_base_m, haze_top_m, haze_tau), t)
 	_mutex.lock()
-	_last_key = key
-	_last = out
+	if slot == _kept_slot and epoch == _kept_epoch and _kept.size() < SAMPLES_KEPT_MAX:
+		_kept[key] = out
 	_mutex.unlock()
 	return out.duplicate()
 
@@ -200,22 +217,54 @@ func relief_at(data: PlanetData, lon_deg: float, lat_deg: float) -> Dictionary:
 	return out
 
 
-## The service's weather on the ground at a place, as the Callable WeatherRelief asks its air through.
-func _air_of(sun: Vector2, live: Array) -> Callable:
-	return func(lon: float, lat: float) -> Dictionary: return sample_at(lon, lat, 0.0, sun.y, sun.x, live)
+## The air of the service's weather on the ground at a place under [param live] systems
+## (WeatherSampler.air: band, wind, dust), as the Callable WeatherRelief asks it through.
+func _air_of(live: Array) -> Callable:
+	return func(lon: float, lat: float) -> Dictionary: return air_at(lon, lat, live)
+
+
+## WeatherSampler.air at (lon, lat) under [param live] systems ([method systems]), kept for that place
+## while the systems are that same list: the devils' and walls' places stay put for minutes and are asked
+## again at every refresh. The Dictionary is shared: read it, never write to it. Thread-safe.
+func air_at(lon_deg: float, lat_deg: float, live: Array) -> Dictionary:
+	var key := [lon_deg, lat_deg]
+	_air_mutex.lock()
+	if not is_same(live, _air_live) or _air_kept.size() >= KEPT_MAX:
+		_air_kept.clear()
+		_air_live = live
+	var known: Variant = _air_kept.get(key)
+	_air_mutex.unlock()
+	if known != null:
+		return known
+	var out := WeatherSampler.air(profile, live, lon_deg, lat_deg)
+	_air_mutex.lock()
+	if is_same(live, _air_live):
+		_air_kept[key] = out
+	_air_mutex.unlock()
+	return out
 
 
 ## The dust devils alive now within [param range_m] of a place of [param planet] (WeatherRelief.devils_near).
 func devils_near(planet: Planet, lonlat: Vector2, range_m: float) -> Array:
-	var sun := sun_over(planet)
-	return WeatherRelief.devils_near(profile, lonlat, range_m, now(), sun.y, sun.x, _air_of(sun, systems(planet)))
+	return _devils(lonlat, range_m, now(), sun_over(planet), systems(planet))
+
+
+## WeatherRelief.devils_near at [param t] under [param live] systems, the sun at [param sun] (sun_over),
+## the cells' hashes kept from one call to the next. Thread-safe.
+func _devils(lonlat: Vector2, range_m: float, t: float, sun: Vector2, live: Array) -> Array:
+	_devil_mutex.lock()
+	if _devil_cells.size() >= KEPT_MAX * 4:
+		_devil_cells.clear()
+	var out := WeatherRelief.devils_near(profile, lonlat, range_m, t, sun.y, sun.x, _air_of(live), _devil_cells)
+	_devil_mutex.unlock()
+	return out
 
 
 ## The dust walls running now that may reach a place of [param planet] (WeatherRelief.walls_near).
 func walls_near(planet: Planet, lonlat: Vector2) -> Array:
 	var data: PlanetData = planet.planet_data
 	var sun := sun_over(planet)
-	var air := _air_of(sun, systems(planet))
+	var air := _air_of(systems(planet))
 	_mutex.lock()
 	if _wall_sources.size() >= KEPT_MAX:
 		_wall_sources.clear()

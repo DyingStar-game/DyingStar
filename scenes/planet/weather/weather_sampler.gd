@@ -26,6 +26,9 @@ const KIND_RAIN_FRONT := &"rain_front"
 ## Koschmieder: visibility = 3.912 / β, with the storm dust spread over ~1 km of air.
 const DUST_LAYER_M := 1000.0
 const NO_DUST_VISIBILITY_M := 1.0e6
+## A system weighs under 0.01 past 3.035 of its σ (exp(-r²/2σ²) = 0.01): past REACH_SIGMAS, with a margin
+## for the rounding, it is out of reach for sure (sample passes it by before computing its contribution).
+const REACH_SIGMAS := 3.1
 
 
 ## Mean surface wind of the latitude band, as {band, east, north} (m/s). Hadley cell: back to the
@@ -157,24 +160,14 @@ static func air_density(profile: ClimateProfile, altitude_m: float) -> float:
 static func sample(profile: ClimateProfile, systems: Array, lon_deg: float, lat_deg: float,
 		altitude_m: float, local_solar_hours: float, declination_deg: float) -> Dictionary:
 	var background: Dictionary = band_wind(profile, lat_deg)
-	var we: float = background["east"]
-	var wn: float = background["north"]
-	var dp: float = 0.0
-	var dust: float = 0.0
-	var humidity: float = 0.0
-	var rain: float = 0.0
 	var weighed: Array = []
-	for s: Dictionary in systems:
-		var k: Dictionary = contribution(profile, s, lon_deg, lat_deg)
-		if k["weight"] < 0.01:
-			continue
-		we += k["east"]
-		wn += k["north"]
-		dp += k["pressure"]
-		dust += k["dust_tau"]
-		humidity += k["humidity"]
-		rain += k["precipitation"]
-		weighed.append([k["weight"], s["id"], s["kind"]])
+	var sums := _summed(profile, systems, lon_deg, lat_deg, background, weighed)
+	var we: float = sums[0]
+	var wn: float = sums[1]
+	var dp: float = sums[2]
+	var dust: float = sums[3]
+	var humidity: float = sums[4]
+	var rain: float = sums[5]
 	weighed.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
 	var raw: float = sqrt(we * we + wn * wn)
 	var speed: float = minf(raw, profile.wind_scale_max_ms)
@@ -208,6 +201,59 @@ static func sample(profile: ClimateProfile, systems: Array, lon_deg: float, lat_
 		"band": background["band"],
 		"systems": weighed,
 	}
+
+
+## The air alone at a point: the keys of [method sample] its band, wind and dust are read from ("band",
+## "wind_east_m_s", "wind_north_m_s", "wind_speed_m_s", "dust_tau"), the same numbers, without the
+## temperature, the pressure and the systems' list. What the local phenomena ask of the air where they
+## stand (WeatherRelief's air_of), many times a refresh.
+static func air(profile: ClimateProfile, systems: Array, lon_deg: float, lat_deg: float) -> Dictionary:
+	var background: Dictionary = band_wind(profile, lat_deg)
+	var sums := _summed(profile, systems, lon_deg, lat_deg, background, null)
+	var we: float = sums[0]
+	var wn: float = sums[1]
+	var raw: float = sqrt(we * we + wn * wn)
+	var speed: float = minf(raw, profile.wind_scale_max_ms)
+	var scale: float = speed / raw if raw > 0.0 else 1.0
+	return {"band": background["band"], "wind_east_m_s": we * scale, "wind_north_m_s": wn * scale,
+		"wind_speed_m_s": speed, "dust_tau": sums[3]}
+
+
+## The systems' sums at a point over the [param background] wind: [east, north, pressure anomaly, dust
+## optical depth, humidity, precipitation]; [param weighed] (when not null) gets [weight, id, kind] of each
+## system counted. A system counts from a weight of 0.01; one plainly out of that reach is passed by before
+## its contribution is computed: the same sums, without a Dictionary per system of the body.
+static func _summed(profile: ClimateProfile, systems: Array, lon_deg: float, lat_deg: float, background: Dictionary,
+		weighed: Variant) -> PackedFloat64Array:
+	var sums := PackedFloat64Array([background["east"], background["north"], 0.0, 0.0, 0.0, 0.0])
+	var cos_lat := cos(deg_to_rad(lat_deg))
+	var radius: float = profile.radius_m
+	# Metres of the great circle per degree of latitude, over the reach's σ count.
+	var lat_m := deg_to_rad(1.0) * radius / REACH_SIGMAS
+	for s: Dictionary in systems:
+		# Out of reach for sure (its weight there is under 0.01): the latitudes alone first (the distance is
+		# at least theirs), then the great-circle distance (haversine), inline: this runs for every system.
+		var sigma: float = s["sigma_m"]
+		var s_lat: float = s["lat"]
+		if absf(lat_deg - s_lat) * lat_m > sigma:
+			continue
+		var half_lat := sin(deg_to_rad(lat_deg - s_lat) * 0.5)
+		var half_lon := sin(deg_to_rad(lon_deg - float(s["lon"])) * 0.5)
+		var hav := half_lat * half_lat + cos(deg_to_rad(s_lat)) * cos_lat * half_lon * half_lon
+		if 2.0 * radius * asin(minf(sqrt(hav), 1.0)) > REACH_SIGMAS * sigma:
+			continue
+		var k: Dictionary = contribution(profile, s, lon_deg, lat_deg)
+		if k["weight"] < 0.01:
+			continue
+		sums[0] += k["east"]
+		sums[1] += k["north"]
+		sums[2] += k["pressure"]
+		sums[3] += k["dust_tau"]
+		sums[4] += k["humidity"]
+		sums[5] += k["precipitation"]
+		if weighed != null:
+			(weighed as Array).append([k["weight"], s["id"], s["kind"]])
+	return sums
 
 
 ## Instantaneous insolation factor: cos of the star's zenith angle, 0 at night.
