@@ -122,3 +122,15 @@ func test_the_prompt_hangs_over_what_the_hand_aims_at() -> void:
 	hud_prompt.hide()
 	prompt._process(0.016)
 	assert_false(sprite.visible, "the game hides its prompt: gone")
+
+
+func test_the_prompt_faces_the_eye_and_keeps_its_size_far_from_the_worlds_origin() -> void:
+	# Set on the CPU in double precision: the sprite's own billboard drew it km away out here (4e10 m).
+	var eye := Transform3D(Basis(), Vector3(4.0e10, 1.0e9, -2.0e10))
+	var at := eye.origin + Vector3(0.6, -0.2, -2.0)
+	var placed := VrPrompt.facing(at, eye)
+	assert_eq(placed.origin, at)
+	var to_eye: Vector3 = (eye.origin - at).normalized()
+	assert_almost_eq(placed.basis.z.normalized().dot(to_eye), 1.0, 1e-6, "its face (+Z) to the eye")
+	assert_almost_eq(placed.basis.get_scale().x, (eye.origin - at).length(), 1e-6,
+			"twice as far, twice as big: the same size to the eye")

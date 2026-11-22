@@ -5,6 +5,10 @@ extends Node
 ## and the prompt in it was away from what it was about. Here it hangs over the dot the hand's ray puts on
 ## the target (VrPointer), facing the eyes, the same size whatever the distance, drawn over the world.
 ##
+## Turned to the eyes and sized here, in double precision, not by the sprite's billboard and fixed-size
+## modes: those rebuild the sprite's place in the shader from its world position in float, 4e10 m out,
+## and drew it kilometres away -- nothing showed in the headset (2026-11-22).
+##
 ## The game goes on writing the HUD's prompt (Player.interact_label: its text, its colour, shown or not):
 ## this one copies it every frame, and the HUD's is drawn clear. A prompt about nothing under the ray
 ## (putting a load down, getting up from a bed) hangs a little ahead along the ray.
@@ -67,9 +71,7 @@ func setup(source: RichTextLabel, ray: RayCast3D, holder: Node3D) -> void:
 	_sprite = Sprite3D.new()
 	_sprite.name = "VrPrompt"
 	_sprite.texture = _viewport.get_texture()
-	_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_sprite.no_depth_test = true  # over the world: the target's own edges must not cut it
-	_sprite.fixed_size = true
 	_sprite.render_priority = 10
 	_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
@@ -93,7 +95,21 @@ func _process(_delta: float) -> void:
 	if _refit > 0:
 		_refit -= 1
 		_fit()
-	_sprite.global_position = anchor_point(_ray, AHEAD_M)
+	var eye := get_viewport().get_camera_3d()
+	if eye != null:
+		_sprite.global_transform = facing(anchor_point(_ray, AHEAD_M), eye.global_transform)
+
+
+## The sprite at [param at], turned to the eye at [param eye] (upright like it) and scaled with the
+## distance: its pixel_size is metres per pixel seen from 1 m, at any distance.
+static func facing(at: Vector3, eye: Transform3D) -> Transform3D:
+	var toward := eye.origin - at
+	var distance: float = toward.length()
+	if distance < 1e-3:
+		return Transform3D(eye.basis, at)
+	# A sprite shows its +Z side: +Z to the eye, -Z away from it.
+	var basis := Basis.looking_at(-toward / distance, eye.basis.y)
+	return Transform3D(basis.scaled(Vector3.ONE * distance), at)
 
 
 ## Where a prompt about what [param ray] aims at hangs: on what it meets, or [param ahead] m along it.
@@ -111,7 +127,7 @@ func _fit() -> void:
 	_viewport.size_2d_override = Vector2i(size)
 	_viewport.size = Vector2i((size * OVERSAMPLE).ceil())
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-	# fixed_size: pixel_size is metres per texture pixel seen from 1 m.
+	# Metres per texture pixel seen from 1 m (facing() scales the sprite with the distance).
 	var text_px: float = maxf(_label.get_content_height(), 1.0) * OVERSAMPLE
 	_sprite.pixel_size = TEXT_AT_1M / text_px
 	_sprite.offset = Vector2(0.0, size.y * OVERSAMPLE * 0.5 + GAP_PX * OVERSAMPLE)
