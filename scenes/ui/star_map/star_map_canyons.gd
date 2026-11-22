@@ -18,7 +18,7 @@ extends StarMapTileLines
 ## What a canyon is drawn in: the shadow it is from above.
 const COLOUR: Color = Color(0.10, 0.08, 0.07)
 ## How opaque the network is when drawn in full: a hint of where the plateau is cut, see-through so the
-## ground, the roads and the markers under it still read. Opaque, the dark ribbons drowned the chart.
+## ground under it still reads. Opaque, the dark ribbons drowned the chart.
 const OPACITY: float = 0.3
 ## How far the canyons float over the ground: two thirds of what the roads do, so a road crossing a
 ## canyon is drawn OVER it, as the bridge it crosses on is. At the same height the two fought for the
@@ -26,7 +26,7 @@ const OPACITY: float = 0.3
 const UNDER_THE_ROADS: float = LIFT * 2.0 / 3.0
 ## Drawn before the roads, which is what settles it where the height cannot: see
 ## [method StarMapTileLines._priority].
-const RENDER_PRIORITY: int = -2
+const RENDER_PRIORITY: int = UNDER_THE_MARKERS - 2
 ## How many points across one block of the network the tracing looks at. Four finds every canyon
 ## between two blocks; fewer steps over the narrow end of a block and leaves gaps.
 const SAMPLES_PER_BLOCK: float = 4.0
@@ -39,9 +39,17 @@ const GRID_MAX: int = 64
 ## a grey wash; between the two they fade in.
 const BLOCK_PIXELS_MIN: float = 6.0
 const BLOCK_PIXELS_FULL: float = 14.0
+## A canyon is drawn from where the game keeps this share of its depth: 3 % of 180 m is the height
+## of a step. It was half, and the map showed none of a canyon's upper slope -- where it comes up to
+## the plateau at a massif's foot or beside a town (PlanetData.crack_factor), which is the one
+## place a truck can drive down into it (playtest 2026-11-20).
+const DESCENT_FROM: float = 0.03
+## How much of its colour a canyon keeps where it is only a step deep; all of it at full depth, and
+## evenly between the two. A slope reads as a canyon fading out, which is what it is.
+const DESCENT_ALPHA: float = 0.3
 ## Rounds of corner cutting on each run of canyon (see [method smooth]): the grid reads a canyon every
 ## quarter block, and joined straight those points drew a broken line where the game carves a curve.
-const SMOOTH_PASSES: int = 2
+const SMOOTH_PASSES: int = 3
 ## The canyons' own drawing: unshaded and see-through like every line here, and painted once a pixel.
 const SHADER: Shader = preload("res://scenes/ui/star_map/star_map_canyons.gdshader")
 
@@ -144,9 +152,10 @@ func _release() -> void:
 ## between the two blocks' feature points. A square crossed twice holds one stretch of canyon; one
 ## crossed three or four times holds a fork, drawn from its middle.
 ##
-## Only where the game carves: a stretch whose middle the sampler leaves whole — a town's sphere, a
-## massif, ground that is not corundum — is not drawn. Asked of the sampler's own carve, so the chart
-## has no rule of its own to fall out of step with.
+## Only where the game carves: where the sampler leaves the ground whole — a town's sphere, a massif,
+## ground that is not corundum — nothing is drawn, and where it keeps only part of the depth (the
+## slope up to one of those) the canyon is drawn paler ([method shade]). Asked of the sampler's own
+## carve, so the chart has no rule of its own to fall out of step with.
 static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 	var points := PackedVector3Array()
 	var colours := PackedColorArray()
@@ -205,7 +214,9 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 				# only. Whether a canyon runs here is already known; testing the carve itself at the
 				# middle of a stretch dropped the ones that cut a corner near a fork, and the network
 				# came out in pieces that did not meet.
-				if CrackCarve.depth_factor(data, (ends[n] + ends[n + 1]).normalized(), tile.frame) < 0.5:
+				# Kept as soon as ANY of it is carved: a stretch is a quarter of a block long, and the
+				# slope up to a massif a few hundred metres. What of it is drawn is settled on the curve.
+				if _depth_kept(data, tile, ends[n], ends[n + 1]) <= 0.0:
 					continue
 				stretches.append(ends[n])
 				stretches.append(ends[n + 1])
@@ -216,19 +227,62 @@ static func trace_tile(data: PlanetData, nside: int, ipix: int) -> Array:
 		var placed := PackedVector3Array()
 		for at: Vector3 in round:
 			placed.append(tile.place(at, UNDER_THE_ROADS))
+		# What is kept of the run, as ONE strip from each break to the next: its stretches share their
+		# corners, so a bend is a bend and not a fan of rectangles (StarMapTileLines.add_ribbon_run).
+		# How much of its depth the game keeps at each point of the curve: what it is drawn in.
+		var depths := PackedFloat32Array()
+		for at: Vector3 in round:
+			depths.append(CrackCarve.depth_factor(data, at, tile.frame))
+		var kept := PackedVector3Array()
+		var kept_depths := PackedFloat32Array()
 		for k: int in range(placed.size() - 1):
 			# The same rule again, on the curve: rounded, a run's last stretches reach past the edge of
 			# a town or a massif, where the game leaves the ground whole.
-			if CrackCarve.depth_factor(data, (round[k] + round[k + 1]).normalized(), tile.frame) < 0.5:
+			if (depths[k] + depths[k + 1]) * 0.5 < DESCENT_FROM:
+				_lay_run(corners, corner_colours, kept, kept_depths, half_width)
+				kept = PackedVector3Array()
+				kept_depths = PackedFloat32Array()
 				continue
 			points.append(placed[k])
 			points.append(placed[k + 1])
-			colours.append(COLOUR)
-			colours.append(COLOUR)
-			add_ribbon(corners, placed[k], placed[k + 1], half_width)
-	corner_colours.resize(corners.size())
-	corner_colours.fill(COLOUR)
+			colours.append(shade(depths[k]))
+			colours.append(shade(depths[k + 1]))
+			if kept.is_empty():
+				kept.append(placed[k])
+				kept_depths.append(depths[k])
+			kept.append(placed[k + 1])
+			kept_depths.append(depths[k + 1])
+		_lay_run(corners, corner_colours, kept, kept_depths, half_width)
 	return [points, colours, corners, corner_colours]
+
+
+## What a canyon is drawn in where the game keeps [param depth_kept] of its depth (0 to 1): its
+## colour, the paler the shallower ([constant DESCENT_ALPHA]).
+static func shade(depth_kept: float) -> Color:
+	return Color(COLOUR, lerpf(DESCENT_ALPHA, 1.0, clampf(depth_kept, 0.0, 1.0)))
+
+
+## The most of its depth the game keeps along the stretch from [param from] to [param to]: at its
+## two ends and at its middle.
+static func _depth_kept(data: PlanetData, tile: StarMapDrawnTile, from: Vector3, to: Vector3) -> float:
+	var most: float = 0.0
+	for at: Vector3 in [from, (from + to).normalized(), to]:
+		most = maxf(most, CrackCarve.depth_factor(data, at, tile.frame))
+	return most
+
+
+## One kept piece of a run as a strip ([method StarMapTileLines.add_ribbon_run]), each corner in the
+## shade of its point's depth ([param depths], one a point of [param run]).
+static func _lay_run(corners: PackedVector3Array, corner_colours: PackedColorArray,
+		run: PackedVector3Array, depths: PackedFloat32Array, half_width: float) -> void:
+	var before: int = corners.size()
+	add_ribbon_run(corners, run, half_width)
+	if corners.size() == before:
+		return
+	for i: int in range(1, run.size()):
+		var from: Color = shade(depths[i - 1])
+		var to: Color = shade(depths[i])
+		corner_colours.append_array(PackedColorArray([from, from, to, from, to, to]))
 
 
 ## [param stretches] (two ends each) joined into runs: a crossing two squares of the grid share is one

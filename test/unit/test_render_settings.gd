@@ -109,6 +109,7 @@ func test_shadows_off_greys_the_sun_options_but_not_the_lamps() -> void:
 	assert_eq(s.availability("shadow_distance"), "%%MENU_GFX_WHY_SHADOWS_OFF", "distance greyed")
 	assert_eq(s.availability("shadow_sun_res"), "%%MENU_GFX_WHY_SHADOWS_OFF", "sun resolution greyed")
 	assert_eq(s.availability("shadow_light_res"), "", "lamps and torch keep their shadows")
+	assert_eq(s.availability("lamp_shadow_distance"), "", "and the lamps their distance")
 
 
 func test_the_renderer_decides_what_is_offered() -> void:

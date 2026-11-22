@@ -4480,6 +4480,13 @@ func _pixels_along(cl: PackedVector2Array, reach_m: float, nside: int) -> Dictio
 
 
 ## The road zones registered for the village bed [param bed_uuid].
+## Every village road registered so far, as register_village_roads keeps them (each with its "_dir",
+## the middle of its line). The array is replaced whole at each change, never written in place: a
+## reader may keep it, hand it to a worker, and tell a change by its identity (the chart's roads do).
+func village_roads() -> Array:
+	return _village_roads
+
+
 func village_roads_of(bed_uuid: String) -> Array:
 	return _village_roads.filter(func(z: Dictionary) -> bool: return str(z["bed"]) == bed_uuid)
 

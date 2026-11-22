@@ -159,3 +159,55 @@ func test_the_outfit_tab_never_leaves_the_body_naked() -> void:
 func _outfit_pickers(creator: CharacterCreator) -> Array:
 	return creator._rows.find_children("*", "OptionButton", true, false).filter(
 			func(p: OptionButton) -> bool: return not p.is_queued_for_deletion())
+
+
+func test_a_line_die_draws_that_line_only() -> void:
+	var creator: CharacterCreator = _creator()
+	creator._open_tab(&"face")
+	creator._open_subtab(&"jaw")
+	var key: String = "mod:Chin_Width"
+	assert_true(creator._row_buttons.has(key), "the chin's width has its die")
+	var before: CharacterAppearance = creator.look.duplicate_appearance()
+	var changed: bool = false
+	for i in 6:
+		(creator._row_buttons[key][0] as Button).pressed.emit()
+		changed = changed or not is_equal_approx(LookFields.value(creator.look, key), LookFields.value(before, key))
+	assert_true(changed, "the die draws the line")
+	for other: String in LookFields.menu_keys(&"face", &"jaw"):
+		if other != key:
+			assert_eq(LookFields.value(creator.look, other), LookFields.value(before, other), other)
+
+
+func test_a_menu_lock_locks_its_lines_and_unlock_all_clears() -> void:
+	var creator: CharacterCreator = _creator()
+	creator._open_tab(&"skin")
+	creator._menu_lock.pressed.emit()
+	for key: String in LookFields.menu_keys(&"skin", &""):
+		assert_true(creator._locks.get(key, false), key)
+	var before: CharacterAppearance = creator.look.duplicate_appearance()
+	creator._randomise_all()
+	for key: String in LookFields.menu_keys(&"skin", &""):
+		assert_eq(LookFields.value(creator.look, key), LookFields.value(before, key), "%s kept by all random" % key)
+	assert_true((creator._row_buttons["prop:skin_tone"][0] as Button).disabled, "a locked line's die is off")
+	assert_false(creator._unlock_all.disabled)
+	creator._unlock_all.pressed.emit()
+	assert_true(creator._locks.is_empty())
+	assert_true(creator._unlock_all.disabled)
+	creator._step_back()
+	assert_eq(creator.look.encode(), before.encode(), "a draw is an undo step")
+
+
+func test_an_expression_button_holds_a_face_not_a_look() -> void:
+	var creator: CharacterCreator = _creator()
+	var before: String = creator.look.encode()
+	var could_undo: bool = creator._history.can_undo()
+	var laugh: Button = creator._preview._expressions[&"laugh"]
+	laugh.pressed.emit()
+	assert_eq(creator._preview.expression(), &"laugh")
+	var face: FaceLife = creator._preview._puppet.get_node("FaceLife")
+	assert_eq(face.expression, &"laugh")
+	for key: StringName in creator._preview._expressions:
+		assert_eq((creator._preview._expressions[key] as Button).button_pressed, key == &"laugh", "%s pressed" % key)
+	assert_eq(creator.look.encode(), before, "an expression is presentation: the look is the same")
+	assert_eq(creator._history.can_undo(), could_undo, "and no undo step")
+	assert_eq(CreatorPreview.EXPRESSION_BUTTONS.size(), FaceLife.EXPRESSIONS.size(), "a button per expression")

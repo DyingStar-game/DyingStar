@@ -35,24 +35,33 @@ const MAX_STATURE: float = 1.1
 ## 2026-11-16), pushed past it the bridge sank into a groove between the eyes (African, East Asian: 37-47 % of those
 ## faces rejected for it) or ran out of the forehead like a beak (Middle Eastern: 42 %), the East Asian lids folded
 ## shut -- where European and Hispanic faces, within it, had none.
+## The European mouth and nose are measured (MediaPipe, 80 random European faces against 2 236 frontal neutral adults
+## of FFHQ, 2026-11-20): a narrow pinched nose (-2 sd), a narrow mouth (-1.1 sd women, -1.8 men) with a thin
+## lower lip, pursed (lips rolled in on a quarter of the faces, 5 % of photos) -- no other origin was. Hence an
+## open aperture, fuller lips and a wider mouth.
+## The African mouth and the East Asian eyes, measured the same way (2026-11-21: 200 random faces of each against
+## FFHQ's frontal neutral photos of that origin, 47-165 per sex, beside the European faces' own gap): the African
+## mouth was 1.2-2.2 sd too wide and its lips 1.6-2.1 sd too thick (the lengthened mouth, lips at 1.8), the East Asian
+## eyes 1.4 sd too narrow and 2 sd too closed (Eye_Size at -0.6). Hence a mouth of its own length, lips at 0.8, and
+## eyes of their own size -- the width made up, half the opening: no shape key opens the lids alone.
 const ORIGIN_FEATURES: Dictionary = {
 	"Race_African": {
 		"Nose_NasalBone_AnteriorNasalAperature": 2.4, "Nose_BridgeProminence": -0.8, "Nose_NasalBone": -0.6,
-		"Nose_Potrusion": -1.0, "Nose_Tip_Potrusion": -0.6, "Mouth_Lips_Height": 1.8, "Mouth_Lips_UpperLipDepth": 1.2,
-		"Mouth_Lips_BottomLipDepth": 1.3, "Mouth_Lips_Length": 0.9, "Face_Maxilla": 1.1, "Face_Zygomatic_Bone": 0.5,
+		"Nose_Potrusion": -1.0, "Nose_Tip_Potrusion": -0.6, "Mouth_Lips_Height": 0.8, "Mouth_Lips_UpperLipDepth": 1.2,
+		"Mouth_Lips_BottomLipDepth": 1.3, "Face_Maxilla": 1.1, "Face_Zygomatic_Bone": 0.5,
 		"Face_FrontalBone_BrowRidge": -0.4, "Head_BackScalpPotrusion": 0.5, "Head_SideScalpPotrusion": -0.3,
 		"Chin_Portrusion": -0.5,
 	},
 	"Race_EastAsian": {
 		"Nose_BridgeProminence": -0.9, "Nose_NasalBone": -0.7, "Nose_Potrusion": -1.2, "Nose_Tip_Potrusion": -0.6,
 		"Nose_NasalBone_AnteriorNasalAperature": 0.7, "Face_Zygomatic_Bone": 1.8, "Cheeks_UpperCheek_Bone": 1.3,
-		"Face_EyeSocket_Potrusion": 1.2, "Eyes_EyelidsAngle": 0.8, "Eyes_EyelidsCrease": -1.0, "Eye_Size": -0.6,
+		"Face_EyeSocket_Potrusion": 1.2, "Eyes_EyelidsAngle": 0.8, "Eyes_EyelidsCrease": -1.0,
 		"Face_FrontalBone_BrowRidge": -1.2, "Head_SideScalpPotrusion": 0.6, "Head_BackScalpPotrusion": -0.6,
 		"Face_Maxilla": -0.3, "Mouth_Lips_Height": 0.4, "Jaw_Mandible_GonialAngle": 0.4,
 	},
 	"Race_White": {
 		"Nose_BridgeProminence": 1.2, "Nose_NasalBone": 0.9, "Nose_Potrusion": 1.2, "Nose_Tip_Potrusion": 0.5,
-		"Nose_NasalBone_AnteriorNasalAperature": -1.2, "Mouth_Lips_Height": -0.4, "Face_FrontalBone_BrowRidge": 0.6,
+		"Mouth_Lips_Height": 0.4, "Mouth_Lips_Length": 0.8, "Face_FrontalBone_BrowRidge": 0.6,
 		"Face_Zygomatic_Bone": -0.5, "Face_Maxilla": -0.6, "Chin_Portrusion": 0.6, "Face_EyeSocket_Potrusion": -0.5,
 	},
 	"Race_Hispanic": {

@@ -352,18 +352,35 @@ func report_create(target_type: String, target_id: String, reason: String, messa
 func bug_report_status() -> Dictionary:
 	return await _http_get(SERVICE_SOCIAL, "/api/bug-reports/status")
 
-## Send a bug report. [param report]: its texts on the QA template ({title, description, steps, actual,
-## expected}, as BugReportDialog gives them); [param screenshot]: the capture, base64 (JPEG or PNG);
-## [param log]: the end of the game's log. Either of the last two may be left out.
-func bug_report_create(report: Dictionary, context: Dictionary, screenshot: String = "",
+## The bugs already posted in the QA forum that are not closed: {enabled, bugs: [{id, title, status}]},
+## newest first. A report names one ("thread_id") to be added to its post.
+func bug_report_open() -> Dictionary:
+	return await _http_get(SERVICE_SOCIAL, "/api/bug-reports/open")
+
+
+## Send a bug report. [param report]: its texts on the QA template ({title, severity, description, steps,
+## actual, expected}, as BugReportDialog gives them); [param screenshots]: its captures, base64 (JPEG or
+## PNG), the first being the one the bug shows on; [param log]: the end of the game's log. Either of
+## the last two may be left out.
+func bug_report_create(report: Dictionary, context: Dictionary, screenshots: Array = [],
 		log: String = "") -> Dictionary:
+	return await _http_post(SERVICE_SOCIAL, "/api/bug-reports", bug_report_body(report, context, screenshots, log))
+
+
+## What bug_report_create posts. The first capture goes under the name every version of the service
+## knows (`screenshot`), the others beside it (`extra_screenshots`): a service that does not know them
+## yet still relays the report with its first capture. Pure.
+func bug_report_body(report: Dictionary, context: Dictionary, screenshots: Array = [], log: String = "") -> Dictionary:
 	var body: Dictionary = report.duplicate()
 	body["context"] = context
-	if screenshot != "":
-		body["screenshot"] = screenshot
+	var pictures: Array = screenshots.filter(func(picture: Variant) -> bool: return str(picture) != "")
+	if not pictures.is_empty():
+		body["screenshot"] = pictures[0]
+	if pictures.size() > 1:
+		body["extra_screenshots"] = pictures.slice(1)
 	if log != "":
 		body["log"] = log
-	return await _http_post(SERVICE_SOCIAL, "/api/bug-reports", body)
+	return body
 
 
 # ---------------------------------------------------------------------------------------------

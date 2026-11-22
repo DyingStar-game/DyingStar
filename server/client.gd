@@ -20,7 +20,15 @@ const STUCK_PROP_MS: int = 8000
 ## the inbound drain, and a planet alone (biomes, bridge plans, railway profiles, moons) can hold
 ## that drain well past 45 s. Counting from init_ack turned that slow entry into a fake "parent
 ## never arrived" while the parent was still queued a few packets further.
+##
+## Nor does it fire while a zone entry is still WAITING in the backlog: on a slow client (a cold first
+## launch, a modest PC) the drain can spend more than this between two entries, the parent a few events
+## further down (preprod 2026-11-20: failed at the first try, spawned on a reconnect one second later).
 const SPAWN_TIMEOUT_MS: int = 45000
+## How long the zone entries still waiting in the backlog may hold the watchdog back, counted from the
+## first time they did. Past it the client is told it cannot keep up, rather than wait on the splash
+## forever.
+const SPAWN_BACKLOG_GRACE_MS: int = 120000
 ## Below this distance (m) a DEFERRED zone exit is treated as stale and dropped — see
 ## _flush_pending_parent_delete. Deliberately generous: the two cases it separates are metres
 ## apart and millions of kilometres apart, so there is nothing to tune between them.
@@ -105,6 +113,11 @@ var _net_beat: int = 0
 ## entry finished since (see SPAWN_TIMEOUT_MS). -1 until init_ack, and reset to -1 once the body
 ## exists so the watchdog stops looking.
 var my_player_spawn_due_since: int = -1
+## Ticks (ms) of init_ack: how long the spawn has been awaited, for the error screen.
+var _spawn_awaited_since: int = -1
+## Ticks (ms) of the first time zone entries still in the backlog held the watchdog back (see
+## SPAWN_BACKLOG_GRACE_MS). -1 while they never did.
+var _spawn_backlog_since: int = -1
 ## The "moves for a player we never built" warning is worth exactly one line, not one per frame.
 var _own_player_missing_reported: bool = false
 # UUIDs of all my player's ancestors (closest parent first, up to the universe
@@ -494,6 +507,8 @@ func _route(event: Dictionary) -> bool:
 				# store my player uuid
 				my_player_uuid = event["player_id"]
 				my_player_spawn_due_since = Time.get_ticks_msec()
+				_spawn_awaited_since = my_player_spawn_due_since
+				_spawn_backlog_since = -1
 			"gorc_zone_enter":
 				# When an object enter in my zone (GorcPlayer, planet, miningrock...)
 				create_object(event)
@@ -1484,8 +1499,19 @@ func _report_stuck_pre_creations() -> void:
 func _watch_own_player_spawn() -> void:
 	if my_player_created or my_player_spawn_due_since < 0:
 		return
-	if Time.get_ticks_msec() - my_player_spawn_due_since < SPAWN_TIMEOUT_MS:
+	var now: int = Time.get_ticks_msec()
+	if now - my_player_spawn_due_since < SPAWN_TIMEOUT_MS:
 		return
+	# The zone is still being built, only slowly: what we wait for may be a few events further down.
+	var zone_still_coming: bool = _backlog.any_waiting(is_zone_build_event)
+	if zone_still_coming:
+		if _spawn_backlog_since < 0:
+			_spawn_backlog_since = now
+			print("[client] spawn watchdog: %d s without a zone entry built, %d events still waiting — waiting for them"
+					% [SPAWN_TIMEOUT_MS / 1000, _backlog.size()])
+		if now - _spawn_backlog_since < SPAWN_BACKLOG_GRACE_MS:
+			my_player_spawn_due_since = now
+			return
 	my_player_spawn_due_since = -1  # report once, then stop
 	var waiting_on: String = ""
 	for pending_message in pending_messages_player_parenting:
@@ -1494,18 +1520,83 @@ func _watch_own_player_spawn() -> void:
 		var pending_player_data: Dictionary = pending_message.get("zone_data", pending_message.get("data", {}))
 		waiting_on = str(pending_player_data.get("parent_id", ""))
 		break
+	var where: Dictionary = {}
 	if waiting_on != "":
-		GameOrchestrator.connexion_error_message = (
-			tr("%%ERR_NO_PARENT") % waiting_on
-		)
+		where = object_whereabouts(waiting_on, _backlog, props_pre_creations,
+				pending_messages_generic_objects_parenting)
+	var waited_s: int = int((now - _spawn_awaited_since) / 1000.0) if _spawn_awaited_since >= 0 else 0
+	if zone_still_coming:
+		GameOrchestrator.connexion_error_message = spawn_too_slow_message(waited_s, _backlog.size())
 	else:
-		GameOrchestrator.connexion_error_message = (
-			tr("%%ERR_NO_PLAYER")
-			% my_player_uuid
-		)
-	push_error("Fatal error, my player never spawned on client side: 7002 (%s)"
-			% GameOrchestrator.connexion_error_message)
+		GameOrchestrator.connexion_error_message = spawn_failure_message(my_player_uuid, waiting_on, where)
+	push_error(("Fatal error, my player never spawned on client side: 7002 (%s) — parent %s: %s, %d events waiting, "
+			+ "%d props half-received, %d props waiting for a parent, %d s since init_ack")
+			% [GameOrchestrator.connexion_error_message, waiting_on if waiting_on != "" else "-", where,
+			_backlog.size(), props_pre_creations.size(), pending_messages_generic_objects_parenting.size(), waited_s])
 	GameOrchestrator.change_game_state(GameOrchestrator.GameStates.CONNEXION_ERROR)
+
+
+## Does [param event], still in the backlog, build part of the zone: a zone entry, or an object or a
+## player that was waiting for its parent?
+static func is_zone_build_event(event: Dictionary) -> bool:
+	return str(event.get("type", "")) in ["gorc_zone_enter", PENDING_OBJECT, PENDING_PLAYER]
+
+
+## Where the object [param uuid], not in the tree, is on its way, from the client's own queues:
+## {"state": "backlog"} its zone entry is still waiting in [param backlog]; {"state": "incomplete",
+## "missing": [...]} received on part of its channels only ([param pre_creations]); {"state": "orphan",
+## "parent_id": ..., "parent": <the same for that parent>} built-ready but waiting for its own parent
+## ([param pending_objects]); {"state": "never"} nothing of it ever reached us.
+static func object_whereabouts(uuid: String, backlog: NetBacklog, pre_creations: Dictionary,
+		pending_objects: Array, depth: int = 0) -> Dictionary:
+	if backlog.any_waiting(func(e: Dictionary) -> bool:
+			return str(e.get("object_id", "")) == uuid and str(e.get("type", "")) == "gorc_zone_enter"):
+		return {"state": "backlog"}
+	for pending in pending_objects:
+		if str(pending.get("object_id", "")) != uuid:
+			continue
+		var parent_id: String = str((pending.get("object_data", {}) as Dictionary).get("parent_id", ""))
+		var parent: Dictionary = {"state": "?"}
+		if depth < 8 and parent_id != "":  # a chain of frames is a few deep; a cycle must not hang us
+			parent = object_whereabouts(parent_id, backlog, pre_creations, pending_objects, depth + 1)
+		return {"state": "orphan", "parent_id": parent_id, "parent": parent}
+	if pre_creations.has(uuid):
+		var merged: Dictionary = {}
+		var channels: Dictionary = pre_creations[uuid].get("channels", {})
+		for channel in channels:
+			merged.merge(channels[channel])
+		var missing: Array[String] = []
+		for key in ["scenename", "parent_id"]:
+			if not merged.has(key):
+				missing.append(key)
+		return {"state": "incomplete", "missing": missing}
+	return {"state": "never"}
+
+
+## The error screen's words when our body never spawned: our own creation never came ([param
+## waiting_on] empty), or it waits for a parent that is [param where] (see object_whereabouts).
+static func spawn_failure_message(player_uuid: String, waiting_on: String, where: Dictionary) -> String:
+	if waiting_on == "":
+		return TranslationServer.translate("%%ERR_NO_PLAYER") % player_uuid
+	match str(where.get("state", "never")):
+		"incomplete":
+			return TranslationServer.translate("%%ERR_PARENT_INCOMPLETE") % [
+				waiting_on, ", ".join(where.get("missing", []))]
+		"orphan":
+			# Name the ancestor that is really missing, at the end of the chain.
+			var missing: String = str(where.get("parent_id", ""))
+			var link: Dictionary = where.get("parent", {})
+			while str(link.get("state", "")) == "orphan":
+				missing = str(link.get("parent_id", ""))
+				link = link.get("parent", {})
+			return TranslationServer.translate("%%ERR_PARENT_ORPHAN") % [waiting_on, missing]
+	return TranslationServer.translate("%%ERR_NO_PARENT") % waiting_on
+
+
+## The error screen's words when the zone was still being built after the grace: the client receives
+## faster than it builds.
+static func spawn_too_slow_message(waited_s: int, events_waiting: int) -> String:
+	return TranslationServer.translate("%%ERR_SPAWN_TOO_SLOW") % [waited_s, events_waiting]
 
 
 ## What the connection-error screen says for Horizon's `error` [param event]: our own wording for the

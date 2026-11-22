@@ -93,3 +93,56 @@ cd ~/datasets/ffhq
     prototype and judge on NoW (19 people with a real profile): the nose 1.445 -> 1.37 mm, the face 1.565 -> 1.56,
     15 of 19 better or alike (the scan's own outline: 1.30); the nine older nose sliders fitted the same way made it
     worse. `ava/ava_profile.py` asked the same of a reader learnt on Ava's profiles: barely better (1.43).
+
+## What a player can make (creator survey)
+
+Where the creator's sliders must stop: looks made the way a player makes them, judged by eye.
+
+1. `creator_survey.tscn -- --subject=face|body --out=DIR --from=1 --count=N` (GPU, not `--headless`): each sample
+   is a `CharacterAppearance.random()` look plus a few gestures on the creator's own controls (face: detail
+   sliders, overall axes, origins; body: gender, age, height, body sliders, origins), drawn over their whole
+   travel, rendered through the creator's preview. One id in ten is an untouched control. Faces are seen front and
+   three-quarter; bodies front and side, without garments (the tool strips them from the bake: the game always
+   dresses a look). `samples.json` holds each sample's gestures and final sliders.
+2. `clip_judge.py DIR --subject face|body` (torch + open_clip, outside the project: `~/datasets/clip/.venv`):
+   a zero-shot guess per sample, its threshold set on the controls, and the age CLIP reads -> `clip.json`.
+3. `random_faces_sheets.py DIR --subject face|body --out SHEETS --prefix face|body`: contact sheets for the
+   rating page, where the guesses are corrected by hand.
+   `--sweep=0.4,0.7,1` moves one control per sample instead (every control, both ways, each level);
+   `--combos=mouth,eyes --levels=0.5,1,1.5,2,3` moves 2 to 5 sliders of one tab together, at a set sum of squares.
+   400 samples is what one rating session gets through. CLIP disagreed with the eye on 75 of 78 corrected faces
+   (2026-11-20): later series start every sample OK and are rated by hand alone.
+4. `fit_limits.py --series DIR:VERDICTS[:clip] ... --target 0.03` -> `creator_limits.json`, read by `CreatorLimits`:
+   a face's load (per tab, a weight times the sum of its sliders' squares) and the budget the creator holds it to.
+   On the European series (1 200 faces): one slider alone broke 4 faces in 399; together, the mouth's weigh most
+   (1), then the eyes' (0.5), the jaw's (0.28), the nose's, the skull's, the ears' hardly; FLAME's none.
+   `--direction Mouth_Lips_LowerAngle:-` gives one slider, one way, a weight of its own: the counter-survey (series 3's
+   faces and gestures, under the limits: `creator_survey --limits=1`) still had 7 of its 12 rejects there. Snapshot
+   the verdicts (ArtifactData `out_dir`) before each fit, and never rewrite a stored look: to relax, refit with a
+   higher `--target` or lower `CreatorLimits.strength`.
+   Bodies carry no load: 4 European bodies in 400 player-made were judged not human, then 1 in 400 when each body
+   slider was swept alone (`--sweep=0.4,0.6,0.8,1`) and each tab's moved together (`--combos=shape,torso,hips,arms,legs
+   --levels=0.5,1,2,3`), 2026-11-21. Only `BodyType_Emaciated` broke a body alone (passed at 0.8, broke at 1):
+   `--cap BodyType_Emaciated:+:0.8` stops it there, outside the load.
+   Current file: `fit_limits.py` on series eu2 (`:clip`), eu3, eu4, eu5 (verdicts 2026-11-20c..f) `--target 0.03
+   --direction Mouth_Lips_LowerAngle:- --cap BodyType_Emaciated:+:0.8`.
+
+## Face types per origin (random faces)
+
+What `CharacterAppearance.random()` draws for an origin FFHQ shows enough of (`FaceTypes`, one
+`<origin>_face_types.json` per origin: European, African, East Asian).
+
+1. `ethnicity.py` (FairFace, `~/datasets/ffhq/.torch`): the origin FFHQ's adults read as -> `ethnicity.npz`; the photos
+   of a group with p >= 0.7, no glasses, head turned < 25 deg -> `<origin>.json` / `.tsv` (sex, age, smile).
+2. `fit_photos.tscn --origin=<i>` (headless, the creator's "From photos" fit over a base of that origin): per photo its
+   FLAME, jaw and nose weights.
+3. `fit_bias.py`: renders of known random faces (`creator_survey.tscn --controls --no-types`) fitted the same way ->
+   what the fit adds to any face (the nose's bridge sunk, the jaw moved...), taken off every photo.
+4. `face_types.py --origin <name> --fit-bias <json> [--reject SEX:TRAIT:TYPE] [--min-photos N]`: per sex, trait and age
+   band the types (k-means of the trait's landmark shapes), kept until they cover 70 % of the band. A sex under 600
+   photos is left out (East Asian men: 300); Indian, Latino and Middle Eastern adults are too few in FFHQ: no file.
+5. `render_types.tscn --origin=<i> --scale=2` renders each type for the review page.
+
+Measured 2026-11-21 (MediaPipe, frontal neutral FFHQ photos of the same origin, the same seeds with and without
+types): the types keep the variety (two thirds of the photos' in 2D, as FLAME alone) and widen the face by 0.2-0.9
+sd, the women's most -- less once the fit bias is off; the rest is the photos' own (perspective, silhouette).

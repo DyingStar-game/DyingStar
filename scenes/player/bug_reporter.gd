@@ -5,8 +5,13 @@ extends Node
 ## autoload, with the other capture keys. It takes the bug-report capture (Screenshot, the F8 one: the
 ## screen as it is, debug panels shown), then asks for the report on the QA team's template
 ## (BugReportDialog: title, severity, description, steps, actual and expected result) and sends it with
-## the capture, the build, the machine, where the player stands when there is one, and the end of the
+## the captures, the build, the machine, where the player stood when there is one, and the end of the
 ## game's log to service-social, which posts the report in the QA channel on Discord.
+##
+## A report can be put aside (Stage): to be finished later -- the key then brings the form back as it
+## was -- or for one more capture, taken by the same key wherever the player went to show it. What was
+## typed stays in the form; the captures and the place of the first one stay here. Kept for the
+## session only: nothing is written to disk but the captures' own PNGs.
 ##
 ## The game never talks to Discord itself: posting there takes a webhook URL, a secret this open-source
 ## client cannot hold. Where the service relays none (local dev, a server without the webhook) the form
@@ -30,9 +35,19 @@ const HINT_ALPHA := 0.7
 const HINT_MARGIN_PX := Vector2(16.0, 2.0)
 ## The most characters a value of the report's context may hold (service-social's createBugReportBody).
 const CONTEXT_VALUE_MAX := 200
-## Planet.GROUP, spelt out: the Screenshot autoload builds this node, and naming Planet here would
-## compile and load most of the game with the autoloads (test_boot_light_autoloads checks they agree).
-const PLANET_GROUP := &"planet"
+## The reminder's look while a report waits for its next capture: plain, so it is not missed.
+const HINT_WAITING_ALPHA := 1.0
+## Where a report stands. IDLE: none. CAPTURING: the key was pressed, the capture is being taken.
+## FORM: the form is up. AWAITING_CAPTURE: put aside for one more capture, the key takes it.
+## POSTPONED: put aside to be finished later, the key brings the form back.
+enum Stage { IDLE, CAPTURING, FORM, AWAITING_CAPTURE, POSTPONED }
+## What the reminder says after the key, by where the report stands (IDLE and the rest: report a bug).
+const HINT_WORDS: Dictionary = {
+	Stage.AWAITING_CAPTURE: "%%BUG_REPORT_ADD_CAPTURE_HINT",
+	Stage.POSTPONED: "%%BUG_REPORT_RESUME",
+}
+## What a report says of where the player stood, in the order it is listed (locate).
+const PLACE_KEYS: Array[String] = ["world", "planet", "frame"]
 ## The kind of graphics card, as the report names it: a game drawn by the integrated one is a slow game.
 const GPU_KINDS: Dictionary = {
 	RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU: "integrated",
@@ -49,18 +64,26 @@ const WINDOW_MODES: Dictionary = {
 	DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN: "exclusive fullscreen",
 }
 
-## The local player's body, for the report to say where it stood; null in the menus, before the world.
-## PlayerClient sets it. Checked when read: the body goes with the world, the reporter stays.
-var body: Node3D = null
+## Says where the local player stands: {"world", "planet", "frame"}, short texts, any of them missing
+## (DevReadouts.coordinates). PlayerClient sets it; invalid in the menus and once the world is gone.
+## A Callable and not the body: reading a planet here would name Planet, and this node is built by
+## an autoload, which must not load the gameplay scripts (test_boot_light_autoloads).
+var locate: Callable = Callable()
 var _notify: Callable
 var _dialog: BugReportDialog = null
 ## The reminder of the key in the corner of the screen (_refresh_hint).
 var _hint: Label = null
-## A report is under way, from the key press to the form closed: one at a time.
-var _busy: bool = false
-## The capture as it will be sent (base64 JPEG), and where its PNG was saved.
-var _capture: String = ""
-var _capture_path: String = ""
+var _stage: Stage = Stage.IDLE
+## The captures of the report under way, in the order they were taken: {"jpeg": as it will be sent
+## (base64), "small": the picture the form shows, "path": where its PNG was saved}.
+var _captures: Array[Dictionary] = []
+## Where the player stood at the first capture (locate): where the bug showed.
+var _place: Dictionary = {}
+## Why the report cannot be sent from here, "" when it can: asked once a report, at its first capture.
+var _off_text: String = ""
+## The bugs already posted that are not closed ({id, title, status}), for the form to offer adding
+## to one: asked once a report too, and empty where the service cannot list them.
+var _known_bugs: Array = []
 
 
 ## [param notify] shows a line to the player (the report left).
@@ -101,7 +124,8 @@ func _refresh_hint() -> void:
 		_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
 		_hint.offset_right = -HINT_MARGIN_PX.x
 		_hint.offset_bottom = -HINT_MARGIN_PX.y
-	_hint.text = hint_text(InputLabel.for_action(&"bug_report"), tr("%%BUG_REPORT_TITLE"))
+	_hint.text = hint_text(InputLabel.for_action(&"bug_report"), tr(HINT_WORDS.get(_stage, "%%BUG_REPORT_TITLE")))
+	_hint.modulate.a = HINT_WAITING_ALPHA if _stage == Stage.AWAITING_CAPTURE else HINT_ALPHA
 	_hint.visible = _hint.text != "" and not is_open()
 
 
@@ -120,9 +144,19 @@ func is_open() -> bool:
 ## No lock: the key answers under a menu, the DataPad or the chart as it does in the world -- that is
 ## where half the bugs are. A key being bound in Settings > Controls never comes this far (handled there).
 func _unhandled_input(event: InputEvent) -> void:
-	if _busy or GameOrchestrator.is_server() or not InputCombo.pressed(event, &"bug_report"):
+	if GameOrchestrator.is_server() or not InputCombo.pressed(event, &"bug_report"):
 		return
-	start()
+	press()
+
+
+## The key, by where the report stands: a new report, one more capture for the one put aside, or the
+## form back on the one to finish. Nothing while a capture is being taken or the form is up.
+func press() -> void:
+	match _stage:
+		Stage.IDLE, Stage.AWAITING_CAPTURE:
+			start()
+		Stage.POSTPONED:
+			_show_form(false)
 
 
 ## The form, made at the first report. Under the tree's root and not under whoever is on screen: it
@@ -131,41 +165,108 @@ func _form() -> BugReportDialog:
 	if _dialog == null:
 		_dialog = BugReportDialog.new()
 		_dialog.submitted.connect(_on_submitted)
-		_dialog.dismissed.connect(func() -> void: _busy = false)
+		_dialog.dismissed.connect(_forget)
+		_dialog.postponed.connect(func() -> void: _stage = Stage.POSTPONED)
+		_dialog.capture_asked.connect(func() -> void: _stage = Stage.AWAITING_CAPTURE)
+		_dialog.capture_removed.connect(_on_capture_removed)
 		get_tree().root.add_child(_dialog)
 	return _dialog
 
 
-## Take the capture, then open the form over it.
+## Take a capture, then open the form over it: a new report's first one, or one more for the report
+## put aside, whose form comes back as it was typed.
 func start() -> void:
-	_busy = true
+	var first: bool = _stage == Stage.IDLE
+	var back_to: Stage = _stage
+	_stage = Stage.CAPTURING
 	if await Screenshot.take(Screenshot.Kind.DEBUG) == "":
-		_busy = false  # a capture was already under way
+		_stage = back_to  # a capture was already under way
 		return
 	var saved: Array = await Screenshot.saved  # once its PNG is written
-	_capture_path = str(saved[0])
 	var image := saved[1] as Image
-	_capture = encode_capture(image)
-	var status: Dictionary = await PlayerServices.bug_report_status()
-	var relayed: bool = bool(status.get("ok", false)) and status.get("data") is Dictionary \
-			and bool((status["data"] as Dictionary).get("enabled", false))
-	var off_text: String = "" if relayed else tr("%%BUG_REPORT_OFF") % _capture_path.get_base_dir()
-	_form().open_with(preview_of(image), off_text, ProjectSettings.globalize_path(log_path()))
+	if first:
+		_captures.clear()
+		_place = locate.call() if locate.is_valid() else {}
+	_captures.append({"jpeg": encode_capture(image), "small": preview_of(image), "path": str(saved[0])})
+	if first:
+		var status: Dictionary = await PlayerServices.bug_report_status()
+		var relayed: bool = bool(status.get("ok", false)) and status.get("data") is Dictionary \
+				and bool((status["data"] as Dictionary).get("enabled", false))
+		_off_text = "" if relayed else tr("%%BUG_REPORT_OFF") % _captures_dir()
+		_known_bugs = []
+		if relayed:
+			_load_known_bugs()  # not waited for: the form opens now, the list joins it when it comes
+	_show_form(first)
+
+
+## The form, on the report under way. [param fresh]: a new report, on empty fields.
+func _show_form(fresh: bool) -> void:
+	_stage = Stage.FORM
+	_form().open_with(_small_captures(), _off_text, ProjectSettings.globalize_path(log_path()), _place, fresh)
+	_dialog.set_known_bugs(_known_bugs)
+
+
+## Ask service-social for the open bugs and hand them to the form, if the report is still there.
+func _load_known_bugs() -> void:
+	var bugs: Array = known_bugs_of(await PlayerServices.bug_report_open())
+	if _stage == Stage.IDLE:
+		return
+	_known_bugs = bugs
+	if _dialog != null:
+		_dialog.set_known_bugs(_known_bugs)
+
+
+## The bugs of [param answer] (PlayerServices.bug_report_open) a report can be added to: those with
+## an id and a title. None when the service did not answer or lists none. Static and pure.
+static func known_bugs_of(answer: Dictionary) -> Array:
+	var data: Variant = answer.get("data")
+	if not bool(answer.get("ok", false)) or not data is Dictionary or not (data as Dictionary).get("bugs") is Array:
+		return []
+	return ((data as Dictionary)["bugs"] as Array).filter(func(bug: Variant) -> bool:
+		return bug is Dictionary and str((bug as Dictionary).get("id", "")) != "" \
+				and str((bug as Dictionary).get("title", "")) != "")
+
+
+func _small_captures() -> Array:
+	return _captures.map(func(capture: Dictionary) -> Texture2D: return capture["small"])
+
+
+## The folder the captures' PNGs are in, to tell the player where to find them.
+func _captures_dir() -> String:
+	return "" if _captures.is_empty() else str(_captures[0]["path"]).get_base_dir()
+
+
+## The report is over, sent or dropped: nothing of it is kept.
+func _forget() -> void:
+	_stage = Stage.IDLE
+	_captures.clear()
+	_place = {}
+	_off_text = ""
+	_known_bugs = []
+
+
+## A capture taken off the report in the form. Its PNG stays in the screenshots folder.
+func _on_capture_removed(index: int) -> void:
+	if index >= 0 and index < _captures.size():
+		_captures.remove_at(index)
+		_dialog.show_captures(_small_captures())
 
 
 ## [param report]: the form's texts, on the QA template ({title, description, steps, actual, expected}).
 func _on_submitted(report: Dictionary, with_log: bool) -> void:
 	_dialog.set_sending(true)
-	var result: Dictionary = await PlayerServices.bug_report_create(report, context_of(body), _capture,
+	var pictures: Array = _captures.map(func(capture: Dictionary) -> String: return capture["jpeg"])
+	var folder: String = _captures_dir()
+	var result: Dictionary = await PlayerServices.bug_report_create(report, context_of(_place), pictures,
 			log_tail() if with_log else "")
 	if bool(result.get("ok", false)):
 		_dialog.close()
-		_busy = false
+		_forget()
 		if _notify.is_valid():
 			_notify.call(tr("%%BUG_REPORT_SENT"))
 		return
 	_dialog.set_sending(false)
-	_dialog.show_status(tr("%%BUG_REPORT_FAILED") % [HttpClient.describe_error(result), _capture_path.get_base_dir()])
+	_dialog.show_status(tr("%%BUG_REPORT_FAILED") % [HttpClient.describe_error(result), folder])
 
 
 ## [param image] as the report carries it: a JPEG no wider than CAPTURE_MAX_WIDTH, in base64. "" for none.
@@ -192,10 +293,11 @@ static func _no_wider_than(image: Image, width: int) -> Image:
 	return copy
 
 
-## What the report says of where and on what it happened: the build, the machine (machine_of), and the
-## body's place. The capture carries the rest (the debug panels are on it). Values are short texts or
-## numbers, as the service takes them (20 keys at most, 200 characters each).
-static func context_of(body: Node3D) -> Dictionary:
+## What the report says of where and on what it happened: the build, the machine (machine_of), and
+## [param place], where the player stood ({"world", "planet", "frame"}, see locate). The captures carry
+## the rest (the debug panels are on them). Values are short texts or numbers, as the service takes
+## them (20 keys at most, 200 characters each).
+static func context_of(place: Dictionary) -> Dictionary:
 	var out: Dictionary = {
 		"version": BuildInfo.version_text(),
 		"build": build_of(),
@@ -203,16 +305,9 @@ static func context_of(body: Node3D) -> Dictionary:
 		"language": TranslationServer.get_locale(),
 	}
 	out.merge(machine_of())
-	if is_instance_valid(body):
-		var planet: Node = body
-		while planet != null and not planet.is_in_group(PLANET_GROUP):
-			planet = planet.get_parent()
-		if planet != null:
-			out["body"] = str(planet.name)
-		var parent: Node = body.get_parent()
-		if parent != null:
-			out["frame"] = str(parent.name)
-		out["position"] = "%.1f, %.1f, %.1f" % [body.position.x, body.position.y, body.position.z]
+	for key: String in PLACE_KEYS:
+		if str(place.get(key, "")) != "":
+			out[key] = str(place[key]).left(CONTEXT_VALUE_MAX)
 	return out
 
 

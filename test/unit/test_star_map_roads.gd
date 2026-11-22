@@ -333,3 +333,191 @@ func test_tunnels_and_bridges_are_marked_only_from_close_enough() -> void:
 	assert_true(StarMapRoads.marks_spans(StarMapRoads.SPANS_WITHIN), "and at the limit")
 	assert_false(StarMapRoads.marks_spans(200.0), "two hundred: the ways alone")
 	assert_false(StarMapRoads.marks_spans(0.0), "no scale yet: nothing marked")
+
+# ---------------------------------------------------------------------------
+# The streets inside a village
+# ---------------------------------------------------------------------------
+
+## A body's radius for the widths below, and the level the streets are laid at.
+const STREET_RADIUS_M: float = 6.0e6
+const STREET_NSIDE: int = 64
+
+
+## A village road as PlanetData keeps it (register_village_roads): a hundred metres or so along a
+## meridian, with the middle of its line.
+func _village_road(kind: String, width_m: float) -> Dictionary:
+	var line := PackedVector2Array([Vector2(10.0, 20.0), Vector2(10.0, 20.001)])
+	var middle: Vector3 = (HEALPix.lonlat2vec(line[0].x, line[0].y)
+			+ HEALPix.lonlat2vec(line[1].x, line[1].y)).normalized()
+	return {"road_type": kind, "width": width_m, "centerline": line, "_dir": middle}
+
+
+func _tile_of(road: Dictionary) -> int:
+	return HEALPix.vec2pix_nest(STREET_NSIDE, road["_dir"])
+
+
+## The pack holds no way inside a village: the map showed its buildings and not one street between
+## them. The streets come from the village's own roads, and each is drawn ONCE, in the tile it stands in.
+func test_a_village_road_is_drawn_in_the_tile_it_stands_in() -> void:
+	var road: Dictionary = _village_road("road", 6.0)
+	var here: int = _tile_of(road)
+	var laid: Array = StarMapRoads.lay_village_roads([road], STREET_NSIDE, here, _flat, STREET_RADIUS_M)
+	var points: PackedVector3Array = laid[0]
+	var colours: PackedColorArray = laid[1]
+	assert_gt(points.size(), 0, "a line, like every other way")
+	assert_eq(points.size(), colours.size())
+	assert_eq(colours[0], StarMapRoads.COLOURS["road"], "in a road's colour")
+	var next_door: int = (here + 1) % (12 * STREET_NSIDE * STREET_NSIDE)
+	var elsewhere: Array = StarMapRoads.lay_village_roads([road], STREET_NSIDE, next_door, _flat,
+			STREET_RADIUS_M)
+	assert_eq((elsewhere[0] as PackedVector3Array).size(), 0, "and not again in the tile next door")
+
+
+## Among buildings drawn at their footprint, a street is drawn at its own width.
+func test_a_village_road_is_as_wide_as_it_is() -> void:
+	var road: Dictionary = _village_road("road", 6.0)
+	var laid: Array = StarMapRoads.lay_village_roads([road], STREET_NSIDE, _tile_of(road), _flat,
+			STREET_RADIUS_M)
+	var strips: PackedVector3Array = laid[2]
+	assert_eq(strips.size(), 6, "one stretch: two triangles")
+	assert_eq((laid[3] as PackedColorArray).size(), strips.size(), "a colour for each corner")
+	assert_almost_eq(strips[0].distance_to(strips[1]) * STREET_RADIUS_M, 6.0, 0.01, "six metres across")
+
+
+## With no radius there is no telling an angle from a width: the line alone, rather than a wrong strip.
+func test_without_a_radius_a_village_road_is_only_a_line() -> void:
+	var road: Dictionary = _village_road("road", 6.0)
+	var laid: Array = StarMapRoads.lay_village_roads([road], STREET_NSIDE, _tile_of(road), _flat, 0.0)
+	assert_gt((laid[0] as PackedVector3Array).size(), 0)
+	assert_eq((laid[2] as PackedVector3Array).size(), 0)
+
+
+## A footpath is the other kind of way a village layout draws: its own colour, not the unknown one.
+func test_a_village_path_is_told_from_a_road() -> void:
+	var path: Dictionary = _village_road("path", 3.0)
+	var laid: Array = StarMapRoads.lay_village_roads([path], STREET_NSIDE, _tile_of(path), _flat,
+			STREET_RADIUS_M)
+	assert_true(StarMapRoads.COLOURS.has("path"), "RoadSnap.KIND_NAMES names it")
+	assert_eq((laid[1] as PackedColorArray)[0], StarMapRoads.COLOURS["path"])
+
+
+## The map lays its lines again when the village roads change, and tells a change by the identity of
+## PlanetData's array: that only holds while the array is replaced, never written in place.
+func test_a_new_village_road_is_a_new_array() -> void:
+	var data := PlanetData.new()
+	data.radius = STREET_RADIUS_M
+	data.max_quadtree_depth = 14
+	data.relief_signature = "relief-test"
+	var before: Array = data.village_roads()
+	var line := PackedVector2Array([Vector2(10.0, 20.0), Vector2(10.0, 20.001)])
+	data.register_village_roads("village:streets", [{"road_type": "road", "width": 6.0,
+			"centerline": line, "_cum_lengths": PackedFloat64Array([0.0, 104.7]), "village": true,
+			"bed": "village:streets", "feature_id": LayoutRoads.FEATURE_ID_BASE - 1, "_sink_m": 0.0}])
+	assert_eq(data.village_roads().size(), 1)
+	assert_false(is_same(before, data.village_roads()), "replaced whole: the chart sees the change")
+	assert_true(data.village_roads()[0].has("_dir"), "each with the middle of its line")
+
+
+## The streets are those of the planet as it stands LOADED, which the chart hands over. The PlanetData
+## the heights are read through is, on a client, the chart's own copy of the scene's: it knows no
+## village, and the map read from it drew no street at all (playtest 2026-11-20).
+func test_the_streets_are_those_of_the_loaded_planet() -> void:
+	assert_true(StarMapRoads.village_roads_of(null).is_empty(), "a body that is not loaded has none")
+	var planet: Planet = autofree(Planet.new())
+	assert_true(StarMapRoads.village_roads_of(planet).is_empty(), "nor has a body without data")
+	var data := PlanetData.new()
+	data.radius = STREET_RADIUS_M
+	data.max_quadtree_depth = 14
+	data.relief_signature = "relief-test"
+	planet.planet_data = data
+	var line := PackedVector2Array([Vector2(10.0, 20.0), Vector2(10.0, 20.001)])
+	data.register_village_roads("village:streets", [{"road_type": "road", "width": 6.0,
+			"centerline": line, "_cum_lengths": PackedFloat64Array([0.0, 104.7]), "village": true,
+			"bed": "village:streets", "feature_id": LayoutRoads.FEATURE_ID_BASE - 1, "_sink_m": 0.0}])
+	assert_true(is_same(StarMapRoads.village_roads_of(planet), data.village_roads()),
+			"the very array the planet keeps: a change of it is a change here")
+
+
+## And what the view is handed reaches the ground: a street is laid with the tile it stands in, at its
+## width. From too high for the tunnels to be marked, so the only strip there can be is the street's.
+func test_a_street_handed_to_the_view_is_drawn() -> void:
+	var road: Dictionary = _village_road("road", 6.0)
+	var tiles: Dictionary = {StarMapGround.tile_id(STREET_NSIDE, _tile_of(road)): true}
+	var roads: StarMapRoads = _roads()
+	roads.show_over(tiles, StarMapRoads.SPANS_WITHIN * 2.0, STREET_RADIUS_M, [road])
+	roads.finish()
+	if roads.mesh == null:
+		pending("aucun pack de modificateurs pour %s sur cette machine" % BODY)
+		return
+	var strips: int = 0
+	for surface: int in roads.mesh.get_surface_count():
+		if (roads.mesh as ArrayMesh).surface_get_primitive_type(surface) == Mesh.PRIMITIVE_TRIANGLES:
+			strips += 1
+	assert_eq(strips, 1, "the street, as a strip of its own width")
+	var without: StarMapRoads = _roads()
+	without.show_over(tiles, StarMapRoads.SPANS_WITHIN * 2.0, STREET_RADIUS_M)
+	without.finish()
+	var bare: int = 0
+	if without.mesh != null:
+		for surface: int in without.mesh.get_surface_count():
+			if (without.mesh as ArrayMesh).surface_get_primitive_type(surface) == Mesh.PRIMITIVE_TRIANGLES:
+				bare += 1
+	assert_eq(bare, 0, "and none when the view is handed no street")
+
+
+## A way is ground: whatever stands on the chart is drawn over it. At the default priority the streets
+## of a village crossed its homes and the trucks parked on them (playtest 2026-11-20).
+func test_the_ways_are_drawn_under_every_marker() -> void:
+	var least: MapMarker = autofree(MapMarker.new())
+	least.importance = 9
+	var roads: StarMapRoads = _roads()
+	assert_lt(roads._material.render_priority, StarMapMarkers.rect_priority(least),
+			"the lines under the least important rectangle, so under every pictogram too")
+	var canyons := StarMapCanyons.new()
+	add_child_autofree(canyons)
+	assert_lt(canyons._material.render_priority, roads._strip_material.render_priority,
+			"and the canyons still under the roads, strips included")
+
+
+## No street, said twice, is no change -- whichever array says it. Told by identity alone, a body that
+## is not loaded was handed a "new" empty set at every frame and its whole view was laid again each time.
+func test_no_street_said_twice_is_no_change() -> void:
+	var roads: StarMapRoads = _roads()
+	roads.show_over({}, 10.0, STREET_RADIUS_M, [])
+	var laid: Array = roads._village_roads_laid
+	roads.show_over({}, 10.0, STREET_RADIUS_M, [])
+	assert_true(is_same(roads._village_roads_laid, laid), "not taken for a new set of streets")
+
+
+## A way a pixel wide was not seen on pale ground (playtest 2026-11-20): it has a least width on
+## screen, by kind, and its own once the view is close enough for that to be wider.
+func test_a_way_is_never_thinner_than_its_kind_asks() -> void:
+	var sign_step: float = 1.0e-5
+	assert_almost_eq(StarMapRoads.way_half_width("highway", 6.0, sign_step, STREET_RADIUS_M),
+			sign_step * 0.625, 1.0e-12, "6 m on this body is under the least: the least it is")
+	assert_almost_eq(StarMapRoads.way_half_width("highway", 600.0, sign_step, STREET_RADIUS_M),
+			600.0 / STREET_RADIUS_M, 1.0e-12, "its own width once that is the wider")
+	assert_gt(StarMapRoads.way_half_width("highway", 0.0, sign_step, 0.0),
+			StarMapRoads.way_half_width("trail", 0.0, sign_step, 0.0), "a highway reads wider than a trail")
+	assert_eq(StarMapRoads.way_half_width("road", 6.0, 0.0, 0.0), 0.0,
+			"with neither a radius nor a sign's length it is a line and nothing else")
+
+
+## Round a bend a strip is ONE: the two stretches share their corners where they meet. Laid as a
+## rectangle each, a bend was a fan -- teeth on its outer side (playtest 2026-11-20, the canyons).
+func test_a_strip_is_one_round_a_bend() -> void:
+	var half: float = 1.0e-5
+	var first := Vector3(1.0, 0.0, 0.0)
+	var corner: Vector3 = (first + Vector3(0.0, 1.0e-3, 0.0)).normalized()
+	var last: Vector3 = (corner + Vector3(0.0, 0.0, 1.0e-3)).normalized()
+	var corners := PackedVector3Array()
+	StarMapTileLines.add_ribbon_run(corners, PackedVector3Array([first, corner, last]), half)
+	assert_eq(corners.size(), 12, "two triangles a stretch")
+	assert_eq(corners[5], corners[6], "the second stretch starts on the first one's left corner")
+	assert_eq(corners[2], corners[7], "and on its right one")
+	# A right angle: the corners stand out by root two, so each stretch keeps its width.
+	assert_almost_eq(corners[5].distance_to(corners[2]), 2.0 * half * sqrt(2.0), half * 0.02,
+			"as wide along both stretches")
+	var none := PackedVector3Array()
+	StarMapTileLines.add_ribbon_run(none, PackedVector3Array([first]), half)
+	assert_eq(none.size(), 0, "one point is no strip")

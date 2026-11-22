@@ -418,8 +418,9 @@ func setup() -> void:
 	add_child(_places)
 	_places.setup(player, _screens_root(), func(text: String) -> void: _notifications.push(text), _input_locked)
 	# The bug report (F9) is the Screenshot autoload's, so that it answers in the menus too: from here it
-	# only learns whose body says where the player stands.
-	Screenshot.bug_reporter.body = player
+	# only learns how to ask where the player stands. A method of ours: gone with us, the reporter finds
+	# the Callable invalid and says nothing of a place.
+	Screenshot.bug_reporter.locate = _bug_report_place
 	_repairs = MachineRepair.new()
 	_repairs.name = "MachineRepair"
 	add_child(_repairs)
@@ -608,7 +609,11 @@ func _process(_delta: float) -> void:
 	# on foot -- the lamp, the switch by the bed; aimed at nothing else, the action key gets up, said
 	# without a line, as dropping a load is (_prompt_target).
 	if is_instance_valid(player.lying_on):
-		if not _ui_focus():
+		# This path returns early like the seated one, and it too skipped the cursor: a form opened from
+		# the bed (the bug report, on waking up) had no pointer to click it with (playtest 2026-11-20).
+		var lying_focus: bool = _ui_focus()
+		_apply_cursor_mode(lying_focus)
+		if not lying_focus:
 			player.mouse_motion += _stick_look(_delta)
 		player._ride_bed(player.lying_on)
 		_replicate_look()
@@ -636,6 +641,10 @@ func _process(_delta: float) -> void:
 			print(line)
 	if !player.active:
 		player.interact_label.hide()
+		# Not in control yet (the arrival's splash), and still a form can be up: the bug report is offered
+		# over the loading screen. It gets the pointer; nothing is captured here otherwise.
+		if _modal_open():
+			_apply_cursor_mode(true)
 		return
 
 	# Free the mouse + freeze the camera whenever the player isn't in direct control: focused on a
@@ -2025,6 +2034,11 @@ func _open_controls_help(kind: InputDevice.Kind) -> void:
 ## The controls help is open: it owns the input like the chart does.
 func _help_open() -> bool:
 	return _help != null and _help.visible
+
+
+## Where the player stands, for a bug report (BugReporter.locate): world and planet coordinates, frame.
+func _bug_report_place() -> Dictionary:
+	return DevReadouts.coordinates(player)
 
 
 ## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart, the

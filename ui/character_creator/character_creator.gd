@@ -11,11 +11,22 @@ extends CanvasLayer
 ##
 ## Built in code from the slider catalogue (CharacterAppearance.catalogue): a slider added to the bank
 ## appears here with its translated name, nothing to lay out by hand.
+##
+## Every line has a die (draws that line alone again) and a lock; a menu locks whole from its first line. The
+## random draws ("Random": the open menu, "All random") and "Vary" (small moves in the open menu) leave the locked
+## lines as they are, and keep the character's sex and origin unless they draw them (LookFields). The locks last as
+## long as the creator is open; "Unlock all" clears them. Keys: ui_creator_dice and ui_creator_lock on the focused line.
 
 ## The player asked to enter the universe with this look (first_enter only; already saved).
 signal enter_requested
 
 const _SOUNDS: PackedScene = preload("res://ui/InstallSounds.tscn")
+const _ICON_DICE: Texture2D = preload("res://ui/character_creator/icons/dice-solid-full.svg")
+const _ICON_LOCKED: Texture2D = preload("res://ui/character_creator/icons/lock-solid-full.svg")
+const _ICON_OPEN: Texture2D = preload("res://ui/character_creator/icons/lock-open-solid-full.svg")
+## A line's die and lock buttons (px, before the interface scale); an open lock's tint (a closed one: ACTIVE_COLOR).
+const _ROW_TOOL_PX: float = 26.0
+const _OPEN_LOCK_TINT := Color(1.0, 1.0, 1.0, 0.45)
 ## Categories: key -> caption. Body and face hold sub-tabs (the catalogue's `tab` of each slider).
 const TABS: Dictionary = {
 	&"body": "%%CHAR_TAB_BODY", &"face": "%%CHAR_TAB_FACE", &"skin": "%%CHAR_TAB_SKIN",
@@ -97,6 +108,12 @@ var _redo: Button
 var _save: Button
 var _presets: OptionButton
 var _settle: Timer
+## The fields the random draws and "Vary" keep as they are (LookFields keys), for as long as the creator is open.
+var _locks: Dictionary = {}
+var _unlock_all: Button
+## The lines on show: LookFields key -> [die, lock]; and the open menu's own lock.
+var _row_buttons: Dictionary = {}
+var _menu_lock: Button
 
 
 ## The look the creator starts from: the one kept here, else the one the server would give this player
@@ -178,14 +195,16 @@ func _build_layout() -> void:
 	MenuFocus.follow(_rows)
 	column.add_child(HSeparator.new())
 
-	var tools := HBoxContainer.new()
+	var tools := HFlowContainer.new()  # wraps when the translated captions do not fit one line
 	tools.name = "Tools"
 	column.add_child(tools)
 	_tool_button(tools, "%%CHAR_RANDOM_TAB", _randomise_tab)
 	_tool_button(tools, "%%CHAR_RANDOM_ALL", _randomise_all)
+	_tool_button(tools, "%%CHAR_VARY", _vary)
 	_tool_button(tools, "%%CHAR_RESET", _reset)
 	_undo = _tool_button(tools, "%%CHAR_UNDO", _step_back)
 	_redo = _tool_button(tools, "%%CHAR_REDO", _step_forward)
+	_unlock_all = _tool_button(tools, "%%CHAR_UNLOCK_ALL", _unlock_everything)
 	var actions := HBoxContainer.new()
 	actions.name = "Actions"
 	column.add_child(actions)
@@ -264,10 +283,14 @@ func _open_subtab(sub: StringName) -> void:
 
 # --- rows ------------------------------------------------------------------------------------------------
 
-func _build_rows() -> void:
+func _build_rows(keep_place: bool = false) -> void:
+	var scrolled: int = _scroll.scroll_vertical
+	var focused: String = _focused_key()
 	for child in _rows.get_children():
 		_rows.remove_child(child)
 		child.queue_free()
+	_row_buttons.clear()
+	_menu_lock_row()
 	match _tab:
 		&"body":
 			if _subtab[&"body"] == &"shape":
@@ -288,6 +311,12 @@ func _build_rows() -> void:
 		&"outfit":
 			_garment_rows()
 	SettingsRow.wrap_rows(_rows)
+	_paint_locks()
+	if keep_place:  # a draw in the same menu: the same place, the same line in focus
+		_scroll.set_deferred("scroll_vertical", scrolled)
+		if not InputDevice.pointer and _row_buttons.has(focused):
+			(_row_buttons[focused][0] as Button).grab_focus.call_deferred()
+		return
 	_scroll.scroll_vertical = 0
 	if not InputDevice.pointer:
 		MenuFocus.take.call_deferred(_rows)
@@ -298,22 +327,24 @@ func _shape_rows() -> void:
 	_macro_row("%%CHAR_GENDER", "gender")
 	_slider_row("%%CHAR_AGE", HumanMacros.MIN_YEARS, HumanMacros.MAX_YEARS, 1.0, roundf(look.years()),
 			func(v: float) -> String: return "%d" % int(v),
-			func(v: float) -> void: look.macros["age"] = HumanMacros.age_of(v))
+			func(v: float) -> void: look.macros["age"] = HumanMacros.age_of(v), "macro:age")
 	_macro_row("%%CHAR_HEIGHT", "height")
 	_modifier_rows(&"shape")
 	_rows.add_child(_factory.header("%%CHAR_ORIGIN"))
 	var origins: Array = CharacterAppearance.catalogue().get("origin_labels", [])
 	for i in mini(origins.size(), CharacterAppearance.ORIGINS):
 		_slider_row(String(origins[i]), 0.0, 1.0, 1.0 / 255.0, look.origins[i], _percent,
-				func(v: float) -> void: look.origins[i] = v)
+				func(v: float) -> void: look.origins[i] = v, "origin:%d" % i)
 
 
 func _macro_row(label_key: String, macro: String) -> void:
 	_slider_row(label_key, 0.0, 1.0, 1.0 / 255.0, look.macros[macro], _percent,
-			func(v: float) -> void: look.macros[macro] = v)
+			func(v: float) -> void: look.macros[macro] = v, "macro:" + macro)
 
 
-## The face or body sliders of one catalogue tab (head, nose, torso...), in catalogue order.
+## The face or body sliders of one catalogue tab (head, nose, torso...), in catalogue order. A face slider stops where
+## the face would stop looking human (CreatorLimits.max_move: how much the face's other sliders already push); a
+## capped body slider (Emaciated) at its cap.
 func _modifier_rows(tab: StringName) -> void:
 	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
 	for id in sliders.size():
@@ -322,11 +353,13 @@ func _modifier_rows(tab: StringName) -> void:
 			continue
 		var lowest: float = 0.0 if entry["unipolar"] else -1.0
 		_slider_row(entry["label"], lowest, 1.0, 1.0 / 127.0, float(look.modifiers.get(id, 0.0)), _percent,
-				func(v: float) -> void:
-					if absf(v) < 0.5 / 127.0:
+				func(v: float) -> float:
+					var allowed: float = CreatorLimits.max_move(look, id, v)
+					if absf(allowed) < 0.5 / 127.0:
 						look.modifiers.erase(id)
 					else:
-						look.modifiers[id] = v)
+						look.modifiers[id] = allowed
+					return allowed, "mod:" + String(entry["key"]))
 
 
 ## The overall shape (FaceAxes): each slider moves several detailed ones; its position is read from them.
@@ -337,21 +370,21 @@ func _axis_rows() -> void:
 		_slider_row(axis[1], -1.0, 1.0, 1.0 / 127.0, at[0], _percent,
 				func(v: float) -> void:
 					FaceAxes.move(look, shares, v - at[0])
-					at[0] = v)
+					at[0] = v, "axis:%s" % axis[0])
 
 
 func _skin_rows() -> void:
 	_rows.add_child(_factory.header("%%CHAR_TAB_SKIN"))
 	_slider_row("%%CHAR_SKIN_TONE", 0.0, 1.0, 1.0 / 255.0, look.skin_tone, _percent,
-			func(v: float) -> void: look.skin_tone = v)
+			func(v: float) -> void: look.skin_tone = v, "prop:skin_tone")
 	_slider_row("%%CHAR_SKIN_WARMTH", 0.0, 1.0, 1.0 / 255.0, look.skin_warmth, _centred,
-			func(v: float) -> void: look.skin_warmth = v)
+			func(v: float) -> void: look.skin_warmth = v, "prop:skin_warmth")
 	_rows.add_child(_factory.header("%%CHAR_SKIN_DETAILS"))
 	for detail: StringName in CharacterAppearance.SKIN_DETAILS:
 		_slider_row(SKIN_DETAIL_LABELS[detail], 0.0, 1.0, 1.0 / 255.0, look.get(detail), _percent,
-				func(v: float) -> void: look.set(detail, v))
+				func(v: float) -> void: look.set(detail, v), "prop:" + String(detail))
 	_slider_row("%%CHAR_SKIN_DIMPLES", 0.0, 1.0, 1.0 / 255.0, look.dimples, _percent,
-			func(v: float) -> void: look.dimples = v)
+			func(v: float) -> void: look.dimples = v, "prop:dimples")
 
 
 func _hair_rows() -> void:
@@ -362,32 +395,34 @@ func _hair_rows() -> void:
 		# canonicalising makes it anew.
 		_slider_row("%%CHAR_HAIR_LENGTH", 0.0, 1.0, 1.0 / 255.0, look.cut.length,
 				func(v: float) -> String: return "%d cm" % roundi((0.004 + 0.55 * pow(v, 1.7)) * 100.0),
-				func(v: float) -> void: look.cut.length = v)
+				func(v: float) -> void: look.cut.length = v, "cut:length")
 		for row: Array in HAIR_SLIDERS:
 			_slider_row(row[1], 0.0, 1.0, 1.0 / 255.0, float(look.cut.get(row[0])), _percent,
-					func(v: float) -> void: look.cut.set(row[0], v))
-		_pick_row("%%CHAR_HAIR_PART", HAIR_PARTS, look.cut.part, func(i: int) -> void: look.cut.part = i)
-		_pick_row("%%CHAR_HAIR_TIE", HAIR_TIES, look.cut.tie, func(i: int) -> void: look.cut.tie = i)
+					func(v: float) -> void: look.cut.set(row[0], v), "cut:" + String(row[0]))
+		_pick_row("%%CHAR_HAIR_PART", HAIR_PARTS, look.cut.part, func(i: int) -> void: look.cut.part = i, "cut:part")
+		_pick_row("%%CHAR_HAIR_TIE", HAIR_TIES, look.cut.tie, func(i: int) -> void: look.cut.tie = i, "cut:tie")
 	_slider_row("%%CHAR_HAIR_DARKNESS", 0.0, 1.0, 1.0 / 255.0, look.hair_eumelanin, _percent,
-			func(v: float) -> void: look.hair_eumelanin = v)
+			func(v: float) -> void: look.hair_eumelanin = v, "prop:hair_eumelanin")
 	_slider_row("%%CHAR_HAIR_RED", 0.0, 1.0, 1.0 / 255.0, look.hair_pheomelanin, _percent,
-			func(v: float) -> void: look.hair_pheomelanin = v)
+			func(v: float) -> void: look.hair_pheomelanin = v, "prop:hair_pheomelanin")
 	_slider_row("%%CHAR_HAIR_GREY", 0.0, 1.0, 1.0 / 255.0, look.hair_grey, _percent,
-			func(v: float) -> void: look.hair_grey = v)
+			func(v: float) -> void: look.hair_grey = v, "prop:hair_grey")
 	_beard_row()
 	if look.beard > 0:  # the beard's settings (BeardCut), through look.beard_cut each time
 		_slider_row("%%CHAR_BEARD_LENGTH", 0.0, 1.0, 1.0 / 255.0, look.beard_cut.length,
 				func(v: float) -> String: return "%d mm" % roundi((0.0015 + 0.12 * pow(v, 1.6)) * 1000.0),
-				func(v: float) -> void: look.beard_cut.length = v)
+				func(v: float) -> void: look.beard_cut.length = v, "beard_cut:length")
 		for row: Array in BEARD_SLIDERS:
 			_slider_row(row[1], 0.0, 1.0, 1.0 / 255.0, float(look.beard_cut.get(row[0])), _percent,
-					func(v: float) -> void: look.beard_cut.set(row[0], v))
-		_pick_row("%%CHAR_BEARD_SHAPE", BEARD_SHAPES, look.beard_cut.shape, func(i: int) -> void: look.beard_cut.shape = i)
+					func(v: float) -> void: look.beard_cut.set(row[0], v), "beard_cut:" + String(row[0]))
+		_pick_row("%%CHAR_BEARD_SHAPE", BEARD_SHAPES, look.beard_cut.shape,
+				func(i: int) -> void: look.beard_cut.shape = i, "beard_cut:shape")
 	if CharacterAppearance.choice_count("eyebrows") > 0:
 		_rows.add_child(_factory.header("%%CHAR_EYEBROWS"))
-		_choice_row("%%CHAR_EYEBROWS", "eyebrows", look.eyebrows, func(i: int) -> void: look.eyebrows = i)
+		_choice_row("%%CHAR_EYEBROWS", "eyebrows", look.eyebrows, func(i: int) -> void: look.eyebrows = i, "prop:eyebrows")
 	if CharacterAppearance.choice_count("eyelashes") > 0:
-		_choice_row("%%CHAR_EYELASHES", "eyelashes", look.eyelashes, func(i: int) -> void: look.eyelashes = i)
+		_choice_row("%%CHAR_EYELASHES", "eyelashes", look.eyelashes, func(i: int) -> void: look.eyelashes = i,
+				"prop:eyelashes")
 
 
 ## The style a head of hair starts from (HairCut.PRESETS, by catalogue id), or none: picking one sets
@@ -403,13 +438,14 @@ func _hair_style_row() -> void:
 		look.hair = i
 		look.cut = look.style_cut(i)
 		_changed()
-		_build_rows.call_deferred())
+		_build_rows.call_deferred(true))
 	line.add_child(picker)
+	_row_tools(line, "hair_style")
 	_rows.add_child(line)
 
 
-## A line choosing one of [param keys] (labels), the [param current] one selected.
-func _pick_row(label_key: String, keys: Array, current: int, apply: Callable) -> void:
+## A line choosing one of [param keys] (labels), the [param current] one selected; [param field]: its LookFields key.
+func _pick_row(label_key: String, keys: Array, current: int, apply: Callable, field: String = "") -> void:
 	var line: HBoxContainer = _factory.row(label_key)
 	var picker: OptionButton = _factory.option_button()
 	for key: String in keys:
@@ -420,6 +456,7 @@ func _pick_row(label_key: String, keys: Array, current: int, apply: Callable) ->
 		apply.call(i)
 		_changed())
 	line.add_child(picker)
+	_row_tools(line, field)
 	_rows.add_child(line)
 
 
@@ -435,13 +472,17 @@ func _beard_row() -> void:
 		look.beard = i
 		look.beard_cut = look.beard_style_cut(i)
 		_changed()
-		_build_rows.call_deferred())
+		_build_rows.call_deferred(true))
 	line.add_child(picker)
+	_row_tools(line, "beard_style")
 	_rows.add_child(line)
 
 
 func _eye_rows() -> void:
 	_rows.add_child(_factory.header("%%CHAR_EYE_COLOUR"))
+	var tools_line: HBoxContainer = _factory.row("%%CHAR_EYE_COLOUR")
+	_row_tools(tools_line, "prop:eye_colour")
+	_rows.add_child(tools_line)
 	var grid := GridContainer.new()
 	grid.columns = 5
 	grid.add_theme_constant_override("h_separation", 10)
@@ -464,37 +505,29 @@ func _eye_rows() -> void:
 		button.pressed.connect(func() -> void:
 			look.eye_colour = i
 			_changed()
-			_build_rows())
+			_build_rows(true))
 		grid.add_child(button)
 	_rows.add_child(grid)
 
 
 ## The garments, zone by zone (GARMENT_ZONES), a picker per layer that has garments there.
 func _garment_rows() -> void:
-	var entries: Array = CharacterAppearance.garment_entries()
 	for zone: Array in GARMENT_ZONES:
 		var titled: bool = false
 		for layer in GARMENT_LAYERS.size():
-			var choices: Array[int] = []
-			for i in entries.size():
-				var e: Dictionary = entries[i]
-				var zones: Array = e.get("zones", [])
-				if String(e["id"]) == "none" or zones.is_empty() or int(e.get("layer", 1)) != layer:
-					continue
-				if String(zones[0]).left(1) == zone[0]:
-					choices.append(i)
+			var choices: Array[int] = LookFields.garment_choices(String(zone[0]), layer)
 			if choices.is_empty():
 				continue
 			if not titled:
 				_rows.add_child(_factory.header(zone[1]))
 				titled = true
-			_garment_row(GARMENT_LAYERS[layer], choices)
+			_garment_row(GARMENT_LAYERS[layer], choices, "garment:%s:%d" % [zone[0], layer])
 
 
 ## A picker among [param choices] (garment positions in the catalogue): "None" then their names (marked for the
 ## body they suit). Picking one takes off what it cannot be worn with (GarmentRules): the last choice wins. No
 ## "None" when taking off this row's garment would leave the body naked (CharacterAppearance.COVERED_ZONES).
-func _garment_row(label_key: String, choices: Array[int]) -> void:
+func _garment_row(label_key: String, choices: Array[int], key: String) -> void:
 	var entries: Array = CharacterAppearance.garment_entries()
 	var line: HBoxContainer = _factory.row(label_key)
 	var picker: OptionButton = _factory.option_button()
@@ -519,15 +552,14 @@ func _garment_row(label_key: String, choices: Array[int]) -> void:
 			kept.push_front([choices[i + first - 1], 0])
 		look.garments = CharacterAppearance.dressed(kept, "female" if look.is_female() else "male")
 		_changed()
-		var scrolled: int = _scroll.scroll_vertical
-		_build_rows()  # what the choice took off shows as "None"
-		_scroll.set_deferred("scroll_vertical", scrolled))
+		_build_rows(true))  # what the choice took off shows as "None"
 	line.add_child(picker)
+	_row_tools(line, key)
 	_rows.add_child(line)
 
 
 ## A line choosing one asset of [param kind] (eyebrows, eyelashes...): "None", then "Style 1", "Style 2"...
-func _choice_row(label_key: String, kind: String, current: int, apply: Callable) -> void:
+func _choice_row(label_key: String, kind: String, current: int, apply: Callable, key: String = "") -> void:
 	var line: HBoxContainer = _factory.row(label_key)
 	var picker: OptionButton = _factory.option_button()
 	var entries: Array = CharacterAppearance.catalogue()["assets"].get(kind, [])
@@ -544,22 +576,29 @@ func _choice_row(label_key: String, kind: String, current: int, apply: Callable)
 		apply.call(i)
 		_changed())
 	line.add_child(picker)
+	_row_tools(line, key)
 	_rows.add_child(line)
 
 
+## A labelled slider: [param apply] takes each new value; if it returns a float, that is the value it kept (a limit),
+## and the bar goes back to it.
 func _slider_row(label_key: String, lowest: float, highest: float, step: float, value: float, shown: Callable,
-		apply: Callable) -> void:
+		apply: Callable, key: String = "") -> void:
 	var line: HBoxContainer = _factory.row(label_key)
 	var bar: HSlider = _factory.slider(lowest, highest, step)
 	bar.value = value
 	var number: Label = _factory.value_label()
 	number.text = shown.call(value)
 	bar.value_changed.connect(func(v: float) -> void:
-		apply.call(v)
+		var kept: Variant = apply.call(v)
+		if kept is float and not is_equal_approx(kept, v):
+			v = kept
+			bar.set_value_no_signal(v)
 		number.text = shown.call(v)
 		_changed())
 	line.add_child(bar)
 	line.add_child(number)
+	_row_tools(line, key)
 	_rows.add_child(line)
 
 
@@ -587,13 +626,13 @@ func _commit_step() -> void:
 
 
 ## Replace the whole look (undo, reset, a preset, random): the rows show it, the figure wears it.
-func _show(new_look: CharacterAppearance, record: bool = true) -> void:
+func _show(new_look: CharacterAppearance, record: bool = true, keep_place: bool = false) -> void:
 	look = new_look.duplicate_appearance()
 	_preview.set_appearance(look)
 	if record:
 		_settle.stop()
 		_history.push(look.encode())
-	_build_rows()
+	_build_rows(keep_place)
 	_refresh_buttons()
 
 
@@ -630,69 +669,132 @@ func _pick_preset(index: int) -> void:
 	_show(CharacterAppearance.preset("default_male" if index == 1 else "default_female"))
 
 
-## Draw the open category again at random, the rest of the look kept.
+## The open menu's fields (LookFields keys), as its lines show them.
+func _menu_keys() -> Array:
+	return LookFields.menu_keys(_tab, _subtab.get(_tab, &""))
+
+
+## Draw the open menu again at random, its locked lines and the rest of the look kept.
 func _randomise_tab() -> void:
 	_commit_pending()
-	var drawn: CharacterAppearance = CharacterAppearance.random(randi())
-	var out: CharacterAppearance = look.duplicate_appearance()
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	var gender: String = "female" if out.is_female() else "male"
-	match _tab:
-		&"body":
-			if _subtab[&"body"] == &"shape":
-				out.macros = drawn.macros
-				out.origins = drawn.origins
-				_take_modifiers(out, drawn, &"shape")
-			else:
-				_take_modifiers(out, drawn, _subtab[&"body"])
-		&"face":
-			if _subtab[&"face"] == &"overall":  # the overall shape is every face slider
-				for tab: StringName in SUBTABS[&"face"]:
-					_take_modifiers(out, drawn, tab)
-			else:
-				_take_modifiers(out, drawn, _subtab[&"face"])
-		&"skin":
-			out.skin_tone = drawn.skin_tone
-			out.skin_warmth = drawn.skin_warmth
-			for detail: StringName in CharacterAppearance.SKIN_DETAILS:
-				out.set(detail, drawn.get(detail))
-			out.dimples = drawn.dimples
-		&"hair":
-			out.hair = CharacterAppearance.random_choice(rng, "hair", gender, 0.1)
-			out.hair_eumelanin = drawn.hair_eumelanin
-			out.hair_pheomelanin = drawn.hair_pheomelanin
-			out.hair_grey = drawn.hair_grey
-			out.cut = out.style_cut(out.hair, rng.randf_range(0.55, 1.0))
-			out.hair_length = 1.0
-			out.eyebrows = drawn.eyebrows
-			out.eyelashes = drawn.eyelashes
-			out.beard = 0 if out.is_female() else rng.randi_range(0, CharacterAppearance.choice_count("beard") - 1)
-			out.beard_cut = out.beard_style_cut(out.beard, rng.randf_range(0.2, 1.0))
-			out.beard_length = 1.0
-		&"eyes":
-			out.eye_colour = drawn.eye_colour
-		&"outfit":
-			out.garments = CharacterAppearance.random_garments(rng.randi(), gender)
-	out.canonicalise()
-	_show(out)
+	_show(LookFields.draw(look, _menu_keys(), _locks, randi()), true, true)
 
 
-## The sliders of one catalogue tab taken from [param drawn], those of the other tabs kept.
-func _take_modifiers(out: CharacterAppearance, drawn: CharacterAppearance, tab: StringName) -> void:
-	var sliders: Array = CharacterAppearance.catalogue()["modifiers"]
-	for id in sliders.size():
-		if StringName(sliders[id]["tab"]) != tab:
-			continue
-		if drawn.modifiers.has(id):
-			out.modifiers[id] = drawn.modifiers[id]
-		else:
-			out.modifiers.erase(id)
-
-
+## Draw every field again at random but the locked ones (none locked: a whole new random look).
 func _randomise_all() -> void:
 	_commit_pending()
-	_show(CharacterAppearance.random(randi()))
+	_show(LookFields.draw(look, LookFields.all_keys(), _locks, randi()), true, true)
+
+
+## Small moves of the open menu's unlocked sliders and colours, the choices kept: to refine a face nearly done.
+func _vary() -> void:
+	_commit_pending()
+	_show(LookFields.vary(look, _menu_keys(), _locks, randi()), true, true)
+
+
+## One line drawn again at random (its die).
+func _dice(key: String) -> void:
+	if _locks.get(key, false):
+		return
+	_commit_pending()
+	_show(LookFields.draw(look, [key], _locks, randi()), true, true)
+
+
+# --- locks -----------------------------------------------------------------------------------------------
+
+## A line's die and lock, after its control. A line without a key (none) gets neither.
+func _row_tools(line: HBoxContainer, key: String) -> void:
+	if key == "":
+		return
+	line.set_meta(&"look_key", key)
+	var dice: Button = _icon_button(_ICON_DICE, "%%CHAR_DICE_ROW")
+	dice.pressed.connect(func() -> void: _dice(key))
+	var lock: Button = _icon_button(_ICON_OPEN, "%%CHAR_LOCK_ROW")
+	lock.pressed.connect(func() -> void: _set_locked([key], not _locks.get(key, false)))
+	line.add_child(dice)
+	line.add_child(lock)
+	_row_buttons[key] = [dice, lock]
+
+
+func _icon_button(icon: Texture2D, tooltip_key: String) -> Button:
+	var button := Button.new()
+	button.icon = icon
+	button.expand_icon = true
+	button.flat = true
+	button.tooltip_text = tooltip_key
+	button.custom_minimum_size = Vector2(_ROW_TOOL_PX, _ROW_TOOL_PX)
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return button
+
+
+## The first line of a menu: locks or unlocks all its lines at once.
+func _menu_lock_row() -> void:
+	var line: HBoxContainer = _factory.row("%%CHAR_LOCK_MENU")
+	_menu_lock = _icon_button(_ICON_OPEN, "%%CHAR_LOCK_MENU")
+	_menu_lock.pressed.connect(func() -> void:
+		var keys: Array = _menu_keys()
+		_set_locked(keys, not keys.all(func(k: String) -> bool: return _locks.get(k, false))))
+	line.add_child(_menu_lock)
+	_rows.add_child(line)
+
+
+func _set_locked(keys: Array, locked: bool) -> void:
+	for k: String in keys:
+		if locked:
+			_locks[k] = true
+		else:
+			_locks.erase(k)
+	_paint_locks()
+
+
+func _unlock_everything() -> void:
+	_locks.clear()
+	_paint_locks()
+
+
+## The lines' locks and dice, the menu's lock and "Unlock all" as the locks now are.
+func _paint_locks() -> void:
+	for key: String in _row_buttons:
+		var locked: bool = _locks.get(key, false)
+		(_row_buttons[key][0] as Button).disabled = locked
+		_paint_lock(_row_buttons[key][1], locked)
+	if is_instance_valid(_menu_lock):
+		_paint_lock(_menu_lock, _menu_keys().all(func(k: String) -> bool: return _locks.get(k, false)))
+	if _unlock_all != null:
+		_unlock_all.disabled = _locks.is_empty()
+		_unlock_all.text = tr("%%CHAR_UNLOCK_ALL") + ("" if _locks.is_empty() else " (%d)" % _locks.size())
+
+
+func _paint_lock(button: Button, locked: bool) -> void:
+	button.icon = _ICON_LOCKED if locked else _ICON_OPEN
+	var tint: Color = SettingsStyle.ACTIVE_COLOR if locked else _OPEN_LOCK_TINT
+	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color", "icon_hover_pressed_color"]:
+		button.add_theme_color_override(state, tint)
+
+
+## The key of the line holding the focused control ("" when none).
+func _focused_key() -> String:
+	var node: Node = get_viewport().gui_get_focus_owner() if is_inside_tree() else null
+	while node != null and node != _rows:
+		if node.has_meta(&"look_key"):
+			return String(node.get_meta(&"look_key"))
+		node = node.get_parent()
+	return ""
+
+
+## The focused line's die and lock from the keyboard or a pad (ui_creator_dice, ui_creator_lock).
+func _unhandled_input(event: InputEvent) -> void:
+	for action: StringName in [&"ui_creator_dice", &"ui_creator_lock"]:
+		if InputMap.has_action(action) and event.is_action_pressed(action):
+			var key: String = _focused_key()
+			if key == "":
+				return
+			if action == &"ui_creator_dice":
+				_dice(key)
+			else:
+				_set_locked([key], not _locks.get(key, false))
+			get_viewport().set_input_as_handled()
+			return
 
 
 ## The look made from the player's photos (PhotoDialog), over the body chosen so far: undoable like any change.

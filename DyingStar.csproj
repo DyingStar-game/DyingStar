@@ -1,4 +1,4 @@
-<Project Sdk="Godot.NET.Sdk/4.7.0">
+<Project Sdk="Godot.NET.Sdk/4.7.2">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <!-- Copy the NuGet dependencies next to DyingStar.dll on every build, not only on export: without

@@ -331,7 +331,7 @@ func _build(nova: NovaBody) -> void:
 							e.count = int(e.count) + 1
 	_close_gaps()
 	_build_spots(nova, sums, pts, pids, pgroups, puniform)
-	_build_edges(nova, edge_acc)
+	_build_edges(edge_acc)
 	map = Image.create_from_data(MAP_SIZE.x, MAP_SIZE.y, false, Image.FORMAT_R8, _map_bytes)
 	_map_bytes = PackedByteArray()
 
@@ -426,7 +426,7 @@ func _build_spots(nova: NovaBody, sums: Dictionary, pts: PackedVector3Array, pid
 		(spots[id] as Array).sort_custom(func(p, q): return int(p.count) > int(q.count))
 
 
-func _build_edges(nova: NovaBody, edge_acc: Dictionary) -> void:
+func _build_edges(edge_acc: Dictionary) -> void:
 	edges.clear()
 	for e: Dictionary in edge_acc.values():
 		var a: Vector3 = e.a
