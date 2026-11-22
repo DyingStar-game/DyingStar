@@ -28,12 +28,12 @@ static var _mutex := Mutex.new()
 static func at(data: PlanetData, dir: Vector3, above_m: float = 0.0) -> Dictionary:
 	if data == null or not data.corundum_default_biome or data.crack_width_m <= 0.0 or data.crack_spacing_m <= 0.0:
 		return {}
-	var floor_ := _floor_at(data, dir)
-	if float(floor_["depth"]) <= 0.0:
-		return floor_
+	var at_floor := _floor_at(data, dir)
+	if float(at_floor["depth"]) <= 0.0:
+		return at_floor
 	# Above the floor the trench's wind fades out over the trench's own depth: a flyer feels the plateau's.
-	var out := floor_.duplicate()
-	out["depth"] = float(floor_["depth"]) * clampf(1.0 - above_m / maxf(data.crack_depth_m, 1.0), 0.0, 1.0)
+	var out := at_floor.duplicate()
+	out["depth"] = float(at_floor["depth"]) * clampf(1.0 - above_m / maxf(data.crack_depth_m, 1.0), 0.0, 1.0)
 	return out
 
 

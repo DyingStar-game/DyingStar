@@ -312,12 +312,12 @@ func relief_biome(zone: Dictionary, bd: BiomeDefinition) -> BiomeDefinition:
 	_relief_mutex.lock()
 	var custom: BiomeDefinition = _relief_biomes.get(id)
 	if custom == null:
-		var set: Array = _relief[id]
+		var rel: Array = _relief[id]
 		custom = bd.duplicate()
-		custom.relief_min_m = set[0]
-		custom.relief_max_m = set[1]
-		if float(set[2]) > 0.0:
-			custom.relief_wavelength_m = set[2]
+		custom.relief_min_m = rel[0]
+		custom.relief_max_m = rel[1]
+		if float(rel[2]) > 0.0:
+			custom.relief_wavelength_m = rel[2]
 		_relief_biomes[id] = custom
 	_relief_mutex.unlock()
 	return custom
