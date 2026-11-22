@@ -60,6 +60,11 @@ const STITCH_MAX_SLOPE := 0.05
 ## A zone edge along a meridian or a parallel is inclusive within this
 ## (_on_clip_edge): two pack coordinate quanta (dsmp.COORD_SCALE = 1e-7 deg, ~1.1 cm).
 const CLIP_EDGE_TOL_DEG := 2.0e-7
+## A populate zone's outline index (index_populate_zone), under this key of the zone (a leading "_": not
+## one of the zone's attributes, NovaBody.attrs_of passes it by).
+const ZONE_INDEX_KEY := "_outline_index"
+## An outline is indexed by bands of latitude holding this many of its points each.
+const OUTLINE_BAND_POINTS := 4
 
 # One-shot guard for the corundum-default-biome debug print (temporary).
 static var _corundum_logged := false
@@ -4585,12 +4590,99 @@ static func _dir_in_populate_zone(dir: Vector3, zone: Dictionary) -> bool:
 		return true
 	if coverage == "point":
 		return false
+	var index: Variant = zone.get(ZONE_INDEX_KEY)
+	if index != null:
+		var at := BiomeQuery._dir_to_lonlat(dir)
+		return _outline_holds(index, at.x, at.y)
 	var vertices: Array = zone.get("vertices", [])
 	if vertices.size() < 3:
 		return false
 	var lonlat := BiomeQuery._dir_to_lonlat(dir)
 	return _point_in_polygon_lonlat(lonlat.x, lonlat.y, vertices) \
 			or _on_clip_edge(lonlat.x, lonlat.y, vertices)
+
+
+## Indexes a populate zone's outline for _dir_in_populate_zone (under ZONE_INDEX_KEY): asked once a vertex
+## by the chunk builders, many times a vertex by the collision, through the whole outline twice
+## (_point_in_polygon_lonlat, then _on_clip_edge) — 150 µs a vertex on an outline of 200 points.
+## Called where a zone is made, BEFORE it is shared (PlanetData.get_chunk_modifiers, store_chunk_image,
+## inject_biome_feature): it inserts a key, and two threads inserting into one Dictionary corrupt it (see
+## prepare_linear_zone). A zone made elsewhere is answered from its whole outline, the same answer.
+static func index_populate_zone(zone: Dictionary) -> void:
+	var vertices: Array = zone.get("vertices", [])
+	if vertices.size() >= 3 and not zone.has(ZONE_INDEX_KEY):
+		zone[ZONE_INDEX_KEY] = _outline_index(vertices)
+
+
+## An outline ([lon, lat] points) indexed for _outline_holds: [lons, lats (PackedFloat64Array), the bands'
+## bounds (latitudes, sorted), the edges by band (Array of PackedInt32Array: edge k runs from point k - 1 to
+## point k), the edges along a meridian or a parallel (PackedFloat64Array, ax ay bx by each: the only ones
+## _on_clip_edge can match)]. The bounds are every OUTLINE_BAND_POINTS-th latitude of the points, sorted: as
+## many points in each band wherever the outline winds.
+static func _outline_index(outline: Array) -> Array:
+	var n := outline.size()
+	var lons := PackedFloat64Array()
+	var lats := PackedFloat64Array()
+	lons.resize(n)
+	lats.resize(n)
+	for i in n:
+		lons[i] = float(outline[i][0])
+		lats[i] = float(outline[i][1])
+	var sorted := lats.duplicate()
+	sorted.sort()
+	var bounds := PackedFloat64Array()
+	for k in range(OUTLINE_BAND_POINTS, n, OUTLINE_BAND_POINTS):
+		if bounds.is_empty() or sorted[k] > bounds[bounds.size() - 1]:
+			bounds.append(sorted[k])
+	var bands: Array[PackedInt32Array] = []
+	bands.resize(bounds.size() + 1)
+	for b in bands.size():
+		bands[b] = PackedInt32Array()
+	var clips := PackedFloat64Array()
+	var j := n - 1
+	for i in n:
+		for b in range(bounds.bsearch(minf(lats[i], lats[j])), bounds.bsearch(maxf(lats[i], lats[j])) + 1):
+			bands[b].append(i)
+		if absf(lons[j] - lons[i]) <= CLIP_EDGE_TOL_DEG or absf(lats[j] - lats[i]) <= CLIP_EDGE_TOL_DEG:
+			clips.append_array(PackedFloat64Array([lons[j], lats[j], lons[i], lats[i]]))
+		j = i
+	return [lons, lats, bounds, bands, clips]
+
+
+## True when (lon, lat) is in an indexed outline (_outline_index), as _point_in_polygon_lonlat or
+## _on_clip_edge say on the whole outline, bit for bit: the even-odd crossings of the edges in the
+## latitude's band (bsearch is monotonic: an edge is listed in every band from its lowest point's to its
+## highest's, so every edge crossing that latitude is in its band; the others leave the parity as it is),
+## then the edges along a meridian or a parallel alone.
+static func _outline_holds(index: Array, lon: float, lat: float) -> bool:
+	var lons: PackedFloat64Array = index[0]
+	var lats: PackedFloat64Array = index[1]
+	var n := lons.size()
+	var inside := false
+	var band: PackedInt32Array = index[3][(index[2] as PackedFloat64Array).bsearch(lat)]
+	for i in band:
+		var j := i - 1 if i > 0 else n - 1
+		var viy := lats[i]
+		var vjy := lats[j]
+		if ((viy > lat) != (vjy > lat)) and (lon < (lons[j] - lons[i]) * (lat - viy) / (vjy - viy) + lons[i]):
+			inside = not inside
+	if inside:
+		return true
+	var clips: PackedFloat64Array = index[4]
+	for k in range(0, clips.size(), 4):
+		var ax := clips[k]
+		var ay := clips[k + 1]
+		var bx := clips[k + 2]
+		var by := clips[k + 3]
+		if absf(ax - bx) <= CLIP_EDGE_TOL_DEG:
+			if absf(lon - ax) <= CLIP_EDGE_TOL_DEG \
+					and lat >= minf(ay, by) - CLIP_EDGE_TOL_DEG and lat <= maxf(ay, by) + CLIP_EDGE_TOL_DEG:
+				return true
+		elif absf(ay - by) <= CLIP_EDGE_TOL_DEG:
+			if absf(lat - ay) <= CLIP_EDGE_TOL_DEG \
+					and lon >= minf(ax, bx) - CLIP_EDGE_TOL_DEG and lon <= maxf(ax, bx) + CLIP_EDGE_TOL_DEG:
+				return true
+	return false
 
 
 ## Does ([param lon], [param lat]) lie on an edge of [param vertices] that runs
