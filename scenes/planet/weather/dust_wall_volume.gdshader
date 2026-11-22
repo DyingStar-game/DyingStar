@@ -60,6 +60,10 @@ uniform vec3 roll = vec3(0.0, 5.0, -8.0);
 // long), and how much brighter the dust is looking toward the sun (forward scattering).
 uniform float ambient = 0.35;
 uniform float sun_step_m = 70.0;
+// The light (the steps toward the sun and the sky's) is read at one dense step in light_every and kept for
+// the next ones: it changes slowly along the view ray, and it is most of the cost (RTX 2060, 1600x900, the
+// eye inside a wall: 4.4 ms at 1, 3.2 ms at 2). 1: read at every step.
+uniform int light_every = 2;
 uniform float forward = 1.6;
 // The sparks alight now (DustSparks): where (metres in the box's frame) and how bright; their colour, how
 // much they light the dust and how far round them (m).
@@ -205,6 +209,9 @@ void fragment() {
 	float lit = 0.0;
 	float sparked = 0.0;
 	float t = t_in + jitter * span;
+	int dense = 0;
+	float sunlit = 1.0;
+	float sky = 1.0;
 	for (int i = 0; i < steps; i++) {
 		if (t >= t_out) {
 			break;
@@ -216,16 +223,19 @@ void fragment() {
 		t += span * stride;
 		if (d > 0.002) {
 			vec3 m = u * size;
-			// How much dust stands between this place and the sun.
-			float shade = 0.0;
-			float reach = sun_step_m;
-			for (int k = 0; k < sun_steps; k++) {
-				shade += density_coarse((m + sun * reach * 1.5) / size) * reach;
-				reach *= 2.0;
+			if (dense % max(light_every, 1) == 0) {
+				// How much dust stands between this place and the sun.
+				float shade = 0.0;
+				float reach = sun_step_m;
+				for (int k = 0; k < sun_steps; k++) {
+					shade += density_coarse((m + sun * reach * 1.5) / size) * reach;
+					reach *= 2.0;
+				}
+				sunlit = exp(-shade * thick * 0.6);
+				// The sky lights a place less under a billow than on top of one: the folds read even in the shade.
+				sky = mix(0.25, 1.0, exp(-density_coarse((m + vec3(0.0, sun_step_m * 2.5, 0.0)) / size) * 1.5));
 			}
-			float sunlit = exp(-shade * thick * 0.6);
-			// The sky lights a place less under a billow than on top of one: the folds read even in the shade.
-			float sky = mix(0.25, 1.0, exp(-density_coarse((m + vec3(0.0, sun_step_m * 2.5, 0.0)) / size) * 1.5));
+			dense++;
 			float flash = 0.0;
 			for (int k = 0; k < SPARKS; k++) {
 				vec3 away = (m - sparks[k].xyz) / spark_reach_m;

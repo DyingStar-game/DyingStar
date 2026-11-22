@@ -22,6 +22,8 @@ const NOT_AXES := ["name", "color_hex", "biome_type", "biome_index", "coverage",
 const BAKE_VERSION := 5
 ## Columns of the parameter texture, one RGBA float texel each (see terrain_biome.gdshader, nova_*).
 const PARAM_COLUMNS := 8
+## The ground shader with Nova's code compiled in (terrain_biome.gdshader leaves it out, for every other body).
+const NOVA_SHADER := "res://assets/_universe/environment/terrain/terrain_biome_nova.gdshader"
 ## The settings that name an albedo texture, and those that name a normal map: one array of each for all.
 const ALBEDO_KEYS: Array[String] = ["ground/albedo_texture", "ground/layer2_albedo", "ground/layer3_albedo"]
 const NORMAL_KEYS: Array[String] = ["ground/normal_texture", "ground/layer2_normal", "ground/layer3_normal"]
@@ -382,13 +384,14 @@ func origin_of(id: int, key: String) -> String:
 # GPU data
 # ---------------------------------------------------------------------------
 
-## Nova's material built on the body's terrain material [param base] (a terrain_biome ShaderMaterial).
+## Nova's material built on the body's terrain material [param base] (a terrain_biome ShaderMaterial): its
+## settings, drawn by terrain_biome_nova.gdshader (the same shader with Nova's palette compiled in).
 func build_material(base: Material) -> ShaderMaterial:
 	if base is ShaderMaterial:
 		material = (base as ShaderMaterial).duplicate() as ShaderMaterial
 	else:
 		material = ShaderMaterial.new()
-		material.shader = load("res://assets/_universe/environment/terrain/terrain_biome.gdshader")
+	material.shader = load(NOVA_SHADER)
 	material.set_shader_parameter("nova_on", true)
 	refresh_textures()
 	refresh_ground()
