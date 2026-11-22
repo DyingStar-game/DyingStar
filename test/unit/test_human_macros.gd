@@ -58,7 +58,8 @@ func test_an_origin_brings_its_features() -> void:
 		stack[pair[0]] = pair[1]
 	assert_eq(names[CharacterAppearance.ORIGIN_AFRICAN], "Race_African")
 	assert_almost_eq(float(stack["Race_African"]), 1.0, 1e-6, "the base model's own key")
-	assert_gt(float(stack["Mouth_Lips_Height"]), 1.0, "and feature sliders, past their own range")
+	assert_gt(float(stack["Nose_NasalBone_AnteriorNasalAperature"]), 1.0, "and feature sliders, past their own range")
+	assert_gt(float(stack["Mouth_Lips_Height"]), 0.0)
 	assert_lt(float(stack["Nose_BridgeProminence"]), 0.0)
 	# Half an origin, half its features; and every feature is a target the bank holds.
 	origins[CharacterAppearance.ORIGIN_AFRICAN] = 0.5

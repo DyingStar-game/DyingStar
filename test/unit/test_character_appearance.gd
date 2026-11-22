@@ -233,6 +233,7 @@ func test_random_garments_suit_the_body() -> void:
 # pouts and doll's eyes); its hair and outfit as before, its body sliders from the draws the face no longer takes.
 # 2026-11-21: npc-0001 is an East Asian man: his face is now drawn from FFHQ's East Asian types (FaceTypes), the
 # rest of the look as before.
-const PINNED_NPC_0001 := "B95UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8AAG1rZ2BBFHCNhZ4ZdV0AAAAT_wAAADeZAABECMwTEhQEFSkWIBoBHQ85" \
-		+ "EkLEQ_lEHEasRyRIvFAOXPhdDV7fXxpgBWEsYiNj2WTlZQVmG2dYaCVp6GrZazxsLW0IbrFvKnD2cdly33OzdOV1ynYHd-54Dnkleul7D3zDfUZ-" \
-		+ "_X8-gOSB64L5g86ELoX-htKHNYjgiRGKQ4tYjIKNmo4vjwmQ_gIEAAAFAAA"
+# Then: East Asian types learnt again over the corrected origin features, the photo fit's own lean taken off.
+const PINNED_NPC_0001 := "B95UegDdAAAAAAAAAAAAAE2CAAAK9SY7_wgAAP8AAG1rZ2BBFHCNhZ4ZdV0AAAAT_wAAADeZAABECN8TFhQBFSkWIBoBHQ85" \
+		+ "EkL_Q_lEM0aiRyVI6VASXPZd-l7cXxRgBWEnYixj22TRZQNmMWdQaBZp72rRay1sMm0Lbt5vNnATccdy3XOvdNx12nYcd_d4LHkdevB7BHzTfTt-" \
+		+ "6n84gOaB5ILvg8-EKoX-hqqHHIj3iQqKM4sxjJeNjo4mj_iQ-AIEAAAFAAA"

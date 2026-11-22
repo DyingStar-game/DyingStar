@@ -126,3 +126,23 @@ Where the creator's sliders must stop: looks made the way a player makes them, j
    `--cap BodyType_Emaciated:+:0.8` stops it there, outside the load.
    Current file: `fit_limits.py` on series eu2 (`:clip`), eu3, eu4, eu5 (verdicts 2026-11-20c..f) `--target 0.03
    --direction Mouth_Lips_LowerAngle:- --cap BodyType_Emaciated:+:0.8`.
+
+## Face types per origin (random faces)
+
+What `CharacterAppearance.random()` draws for an origin FFHQ shows enough of (`FaceTypes`, one
+`<origin>_face_types.json` per origin: European, African, East Asian).
+
+1. `ethnicity.py` (FairFace, `~/datasets/ffhq/.torch`): the origin FFHQ's adults read as -> `ethnicity.npz`; the photos
+   of a group with p >= 0.7, no glasses, head turned < 25 deg -> `<origin>.json` / `.tsv` (sex, age, smile).
+2. `fit_photos.tscn --origin=<i>` (headless, the creator's "From photos" fit over a base of that origin): per photo its
+   FLAME, jaw and nose weights.
+3. `fit_bias.py`: renders of known random faces (`creator_survey.tscn --controls --no-types`) fitted the same way ->
+   what the fit adds to any face (the nose's bridge sunk, the jaw moved...), taken off every photo.
+4. `face_types.py --origin <name> --fit-bias <json> [--reject SEX:TRAIT:TYPE] [--min-photos N]`: per sex, trait and age
+   band the types (k-means of the trait's landmark shapes), kept until they cover 70 % of the band. A sex under 600
+   photos is left out (East Asian men: 300); Indian, Latino and Middle Eastern adults are too few in FFHQ: no file.
+5. `render_types.tscn --origin=<i> --scale=2` renders each type for the review page.
+
+Measured 2026-11-21 (MediaPipe, frontal neutral FFHQ photos of the same origin, the same seeds with and without
+types): the types keep the variety (two thirds of the photos' in 2D, as FLAME alone) and widen the face by 0.2-0.9
+sd, the women's most -- less once the fit bias is off; the rest is the photos' own (perspective, silhouette).
