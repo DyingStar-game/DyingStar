@@ -5,11 +5,13 @@ extends Node
 ## when told. This keeps the two together, on foot, with nothing the server has to learn:
 ##
 ## - The body turns to where the head looks: at once while the stick walks (the stick's "forward" is
-##   then the gaze), and standing still only past HEAD_FREE_YAW (look around freely, the body comes
-##   along when the head goes further). The rig turns back by as much: the view does not move.
+##   then the gaze -- or where the walking hand points, VR comfort's choice), and standing still only past
+##   HEAD_FREE_YAW (look around freely, the body comes along when the head goes further). The rig turns
+##   back by as much: the view does not move.
 ## - Room-scale: when the head has left the body by CHASE_START_M (the player stepped), the body walks
 ##   under it like with the stick (CHASE_* -- the server's walls hold it), and the rig slides back by
-##   what the body moved: the view stays where the head is, only the body catches up.
+##   what the body moved: the view stays where the head is, only the body catches up. Not for a player
+##   playing seated (VR comfort): leaning is not a step.
 ## - recenter(): the head over the body, facing its forward (at the first tracked frame in game, on the
 ##   runtime's own recenter, and on a long press of the right stick: VrInput).
 ##
@@ -38,6 +40,8 @@ var chase: Vector2 = Vector2.ZERO
 var on_foot: Callable
 ## Is the player seated (in a vehicle)? A Callable for the tests.
 var seated: Callable
+## The comfort settings played (SettingsManager.vr unless a test hands its own).
+var comfort: VrComfortSettings = null
 
 var _rig: VrRig = null
 var _player: Node3D = null
@@ -60,6 +64,8 @@ func _init() -> void:
 func setup(rig: VrRig, player: Node3D) -> void:
 	_rig = rig
 	_player = player
+	if comfort == null:
+		comfort = SettingsManager.vr
 
 
 func _ready() -> void:
@@ -86,7 +92,7 @@ func _process(delta: float) -> void:
 	var stick_walks: bool = stick.length() > STICK_WALKS
 	var yaw: float = _rig.head_yaw()
 	if stick_walks:
-		turn_body(yaw)
+		turn_body(_walk_yaw(yaw))
 	elif absf(yaw) > HEAD_FREE_YAW:
 		turn_body(yaw - signf(yaw) * HEAD_FREE_YAW)
 	# Room-scale: the body comes under the head; what it moves, the rig gives back.
@@ -95,7 +101,7 @@ func _process(delta: float) -> void:
 	_tail = maxf(_tail - delta, 0.0)
 	var head := _rig.head_offset()
 	var gap := Vector2(head.x, head.z)
-	if stick_walks:
+	if stick_walks or (comfort != null and comfort.seated()):
 		_chasing = false
 	elif gap.length() > CHASE_START_M:
 		_chasing = true
@@ -104,6 +110,23 @@ func _process(delta: float) -> void:
 	if _chasing:
 		_tail = CHASE_TAIL_S
 	chase = catch_up(gap) if _chasing else Vector2.ZERO
+
+
+## Where the stick walks, as a yaw (rad) from the body's forward: the head's ([param head_yaw]), or the
+## walking hand's when VR comfort says so and the runtime sees that hand.
+func _walk_yaw(head_yaw: float) -> float:
+	if comfort == null or not comfort.walk_by_hand():
+		return head_yaw
+	var hand: XRController3D = _rig.right_aim if comfort.left_handed() else _rig.left_aim
+	if hand == null or not hand.get_has_tracking_data():
+		return head_yaw
+	return pointing_yaw(_rig.basis * hand.basis)
+
+
+## The yaw (rad, left positive) of the direction [param along] points (its -Z), in its parent's frame.
+static func pointing_yaw(along: Basis) -> float:
+	var forward: Vector3 = along * Vector3.FORWARD
+	return atan2(-forward.x, -forward.z)
 
 
 ## The stick push (OpenXR convention: +x right, +y forward) that walks the body towards a head [param gap]

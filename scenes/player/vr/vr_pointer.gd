@@ -1,6 +1,7 @@
 class_name VrPointer
 extends Node
-## In VR the right hand aims, not the head: the player's interaction ray (InteractRay -- door handles,
+## In VR the hand aims, not the head -- the right one, or the left for a left-handed player
+## (Settings > General > VR comfort): the player's interaction ray (InteractRay -- door handles,
 ## seats, crates, consoles, 3D screens) leaves from the right controller's aim pose; a dot shows where it
 ## meets something to use, and the controller ticks as it comes onto it. No beam: the dot and the tick
 ## were enough, the beam only cluttered the view (playtest 2026-11-22). On the flat screen the
@@ -25,19 +26,26 @@ const TICK_S := 0.02
 var mouse_captured: Callable = func() -> bool:
 	return Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 
+## The comfort settings played (SettingsManager.vr unless a test hands its own).
+var comfort: VrComfortSettings = null
+
 var _ray: RayCast3D = null
+var _aims: Array[XRController3D] = []
 var _aim: XRController3D = null
 var _head: Node3D = null
 var _dot: MeshInstance3D = null
 var _was_hit: bool = false
 
 
-## Aim [param ray] from [param aim] (the right hand's aim pose), or from [param head] when the hand is
-## not tracked.
-func setup(ray: RayCast3D, aim: XRController3D, head: Node3D) -> void:
+## Aim [param ray] from the aim pose of the hand that aims, [param left] or [param right], or from
+## [param head] when that hand is not tracked.
+func setup(ray: RayCast3D, left: XRController3D, right: XRController3D, head: Node3D) -> void:
 	_ray = ray
-	_aim = aim
+	_aims = [left, right]
+	_aim = right
 	_head = head
+	if comfort == null:
+		comfort = SettingsManager.vr
 	var ball := SphereMesh.new()
 	ball.radius = DOT_M
 	ball.height = DOT_M * 2.0
@@ -45,12 +53,16 @@ func setup(ray: RayCast3D, aim: XRController3D, head: Node3D) -> void:
 	ball.rings = 6
 	ball.material = _paint(HIT_COLOUR)
 	_dot = _shape("AimDot", ball)
-	aim.add_child(_dot)
+	_aim.add_child(_dot)
 
 
 func _process(_delta: float) -> void:
 	if not is_instance_valid(_ray) or not is_instance_valid(_aim):
 		return
+	var wanted: XRController3D = _aims[0 if comfort != null and comfort.left_handed() else 1]
+	if wanted != _aim:
+		_aim = wanted
+		_dot.reparent(_aim, false)
 	var on_hand: bool = _aim.get_has_tracking_data()
 	var from: Node3D = _aim if on_hand else _head
 	if _ray.get_parent() != from:

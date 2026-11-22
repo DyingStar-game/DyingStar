@@ -21,7 +21,9 @@ var camera: XRCamera3D = null
 ## runtime sees the controller (or the hand).
 var left_hand: XRController3D = null
 var right_hand: XRController3D = null
-## Where the right hand points (its aim pose): the interaction ray leaves from it (VrPointer).
+## Where each hand points (its aim pose): the interaction ray leaves from the aiming one (VrPointer), the
+## walking one can steer the walk (VrBody).
+var left_aim: XRController3D = null
 var right_aim: XRController3D = null
 ## The body kept under the head (turns, room-scale, recentring).
 var body: VrBody = null
@@ -45,15 +47,18 @@ static func install(player: Node3D) -> VrRig:
 	rig.add_child(rig.left_hand)
 	rig.right_hand = _hand(&"right_hand", "RightHand")
 	rig.add_child(rig.right_hand)
+	rig.left_aim = _hand(&"left_hand", "LeftAim")
+	rig.left_aim.pose = &"aim"
+	rig.add_child(rig.left_aim)
 	rig.right_aim = _hand(&"right_hand", "RightAim")
 	rig.right_aim.pose = &"aim"
 	rig.add_child(rig.right_aim)
-	# The right hand aims: the interaction ray leaves from it, a dot where it meets something.
+	# A hand aims: the interaction ray leaves from it, a dot where it meets something.
 	var ray := rig.camera.get_node_or_null("InteractRay") as RayCast3D
 	if ray != null:
 		var pointer := VrPointer.new()
 		pointer.name = "VrPointer"
-		pointer.setup(ray, rig.right_aim, rig.camera)
+		pointer.setup(ray, rig.left_aim, rig.right_aim, rig.camera)
 		rig.add_child(pointer)
 		# The interaction prompt over what the hand aims at, not in the HUD's panel.
 		var label := player.get("interact_label") as RichTextLabel
@@ -72,6 +77,11 @@ static func install(player: Node3D) -> VrRig:
 	controls.name = "VrInput"
 	controls.setup(player, rig.left_hand, rig.right_hand, rig.body)
 	rig.add_child(controls)
+	# Comfort: the edges of the view darken while the stick moves or turns the player.
+	var vignette := VrVignette.new()
+	vignette.name = "VrVignette"
+	vignette.setup(rig.camera, controls, rig.body)
+	rig.add_child(vignette)
 	# The controllers as the runtime draws them (OpenXR render models): any headset's, none to model.
 	# Only with a live OpenXR session: without one the manager finds no extension and errors each frame
 	# (with one, a runtime lacking render models leaves it idle).

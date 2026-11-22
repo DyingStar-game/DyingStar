@@ -6,6 +6,7 @@ extends GutTest
 var _player: Node3D = null
 var _rig: VrRig = null
 var _body: VrBody = null
+var _comfort: VrComfortSettings = null
 
 
 func before_each() -> void:
@@ -27,6 +28,8 @@ func before_each() -> void:
 	_player.rotate_object_local(Vector3.UP, 0.7)  # facing anywhere
 	_rig = VrRig.install(_player)
 	_body = _rig.body
+	_comfort = VrComfortSettings.new(ConfigFile.new(), func() -> void: pass)  # the defaults, not the player's
+	_body.comfort = _comfort
 	_body.on_foot = func() -> bool: return true
 	_body.seated = func() -> bool: return false
 
@@ -107,3 +110,33 @@ func test_the_catch_up_push_is_never_under_the_sticks_deadzone() -> void:
 	assert_lt(push.x, 0.0, "a head to the left: walk left")
 	assert_almost_eq(VrBody.catch_up(Vector2(0.0, 2.0)), Vector2(0.0, -1.0), Vector2.ONE * 1e-5,
 			"a head far behind: walk back at full push")
+
+
+func test_playing_seated_a_lean_is_not_a_step() -> void:
+	_comfort.set_value("seated", true)
+	_head(0.0, Vector3(0.0, 0.0, -0.4))
+	_body._process(0.016)
+	assert_eq(_body.chase, Vector2.ZERO)
+
+
+func test_the_walking_hand_can_steer_the_walk() -> void:
+	_comfort.set_value("walk", VrComfortSettings.WALK_HAND)
+	var hand := XRControllerTracker.new()
+	hand.name = &"left_hand"
+	hand.hand = XRPositionalTracker.TRACKER_HAND_LEFT
+	XRServer.add_tracker(hand)
+	await wait_process_frames(1)  # the aim node binds to the new tracker
+	hand.set_pose(&"aim", Transform3D(Basis(Vector3.UP, deg_to_rad(-60.0)), Vector3.ZERO), Vector3.ZERO,
+			Vector3.ZERO, XRPose.XR_TRACKING_CONFIDENCE_HIGH)
+	_head(20.0)
+	_body.stick = Vector2(0.0, 1.0)
+	_body._process(0.016)
+	assert_almost_eq(VrBody.pointing_yaw(_rig.basis * _rig.left_aim.basis), 0.0, 1e-4,
+			"the body faces where the left hand points, not the head")
+	XRServer.remove_tracker(hand)
+
+
+func test_the_edges_darken_by_the_motion() -> void:
+	assert_eq(VrVignette.target(0.0, 0.0), 0.0, "still: clear")
+	assert_almost_eq(VrVignette.target(1.0, 0.0), VrVignette.WALKING, 1e-6)
+	assert_almost_eq(VrVignette.target(0.3, 1.0), VrVignette.TURNING, 1e-6, "turning darkens most")

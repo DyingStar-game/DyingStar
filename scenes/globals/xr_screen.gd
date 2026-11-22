@@ -102,6 +102,10 @@ func _ready() -> void:
 	top.add_child(_cursor)
 
 	_build_nodes()
+	# The menus' laser starts in the hand that aims (Settings > General > VR comfort); a trigger pulled
+	# with the other one takes it over.
+	if SettingsManager.vr != null and SettingsManager.vr.left_handed():
+		_hand = 0
 
 
 ## The CanvasLayers go back to the main window before the panel's viewport is freed (quitting): left

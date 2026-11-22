@@ -7,6 +7,7 @@ var _left := XRControllerTracker.new()
 var _right := XRControllerTracker.new()
 var _input: VrInput = null
 var _player: Node3D = null
+var _comfort: VrComfortSettings = null
 
 
 func before_each() -> void:
@@ -29,6 +30,8 @@ func before_each() -> void:
 		_player.add_child(hand)
 		hands.append(hand)
 	_input = VrInput.new()
+	_comfort = VrComfortSettings.new(ConfigFile.new(), func() -> void: pass)  # the defaults, not the player's
+	_input.comfort = _comfort
 	_input.menu_has_mouse = func() -> bool: return false
 	_input.setup(_player, hands[0], hands[1])
 	_player.add_child(_input)
@@ -79,7 +82,7 @@ func test_the_left_stick_walks() -> void:
 
 func test_the_right_stick_turns_one_step_per_push() -> void:
 	_press(_right, &"primary", Vector2(1.0, 0.0))
-	var step: float = -deg_to_rad(VrInput.SNAP_TURN_DEG) / 2.0
+	var step: float = -deg_to_rad(_comfort.snap_deg()) / 2.0
 	assert_almost_eq(float(_player.get("mouse_motion").x), step, 1e-6, "one step to the right")
 	_press(_right, &"primary", Vector2(1.0, 0.0))
 	assert_almost_eq(float(_player.get("mouse_motion").x), step, 1e-6, "held: no second step")
@@ -146,3 +149,25 @@ func test_the_body_catching_up_with_the_head_walks_like_the_stick() -> void:
 	_press(_left, &"primary", Vector2.ZERO)
 	assert_almost_eq(Input.get_action_raw_strength("move_forward"), 0.6, 0.01)
 	assert_eq(body.stick, Vector2.ZERO, "the thumb's own push is told apart")
+
+
+func test_a_smooth_turn_turns_as_long_as_the_stick_is_pushed() -> void:
+	_comfort.set_value("turn", VrComfortSettings.TURN_SMOOTH)
+	_comfort.set_value("smooth_deg_s", 90.0)
+	_right.set_input(&"primary", Vector2(1.0, 0.0))
+	for i in 10:
+		_input._process(0.1)
+	var turned: float = float(_player.get("mouse_motion").x) * 2.0  # camera_sensitivity 2.0 (rad)
+	assert_almost_eq(turned, -deg_to_rad(90.0), 1e-4, "1 s at full push: 90 deg to the right")
+	assert_gt(_input.turning, 0.9, "turning: the edges darken")
+
+
+func test_left_handed_the_sticks_and_triggers_swap_hands() -> void:
+	_comfort.set_value("hand", VrComfortSettings.HAND_LEFT)
+	_press(_right, &"primary", Vector2(0.0, 1.0))
+	assert_almost_eq(Input.get_action_strength("move_forward"), 1.0, 0.01, "the right stick walks")
+	_press(_right, &"primary", Vector2.ZERO)
+	_press(_left, &"primary", Vector2(1.0, 0.0))
+	assert_lt(float(_player.get("mouse_motion").x), 0.0, "the left stick turns")
+	_press(_left, &"trigger", 1.0)
+	assert_true(Input.is_action_pressed("perforate"), "the aiming hand's trigger fires the tool")

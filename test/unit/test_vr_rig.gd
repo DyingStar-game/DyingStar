@@ -85,6 +85,7 @@ func test_the_right_hand_aims_while_it_is_tracked_and_the_head_otherwise() -> vo
 	var rig := VrRig.install(_player)
 	assert_eq(rig.right_aim.pose, &"aim", "aim_pose of xr/openxr_action_map.tres, as Godot names it")
 	var pointer: VrPointer = rig.get_node("VrPointer")
+	pointer.comfort = VrComfortSettings.new(ConfigFile.new(), func() -> void: pass)  # right-handed
 	pointer.mouse_captured = func() -> bool: return true
 	pointer._process(0.016)
 	assert_eq(_ray.get_parent(), rig.camera, "no hand seen: the head aims, as on the flat screen")

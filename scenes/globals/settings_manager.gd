@@ -50,6 +50,8 @@ var ui_scale : UiScaleSettings
 ## The debug switches (Settings > Debug). Same arrangement as `language`; on a dedicated server, the
 ## few it reads come from server.ini.
 var debug : DebugSettings
+## Settings > General > VR comfort (shown in VR only). Same arrangement as `language`.
+var vr : VrComfortSettings
 ## The saved keybindings as action -> {device key: binding text} (InputDevice.KEYS), empty when
 ## nothing was ever remapped. Kept so the controls page can show and re-save them without parsing the file a second time.
 var keybindings : Dictionary = {}
@@ -59,6 +61,7 @@ func _ready() -> void:
 	render = RenderSettings.new(config, save_settings)
 	ui_scale = UiScaleSettings.new(config, save_settings, get_tree().root)
 	debug = DebugSettings.new(config, save_settings, _server_ini_flag)
+	vr = VrComfortSettings.new(config, save_settings)
 	if OS.has_feature("dedicated_server"):
 		return
 	render.caps = RenderSettings.current_caps()
