@@ -1,15 +1,26 @@
 class_name BugReportDialog
 extends CanvasLayer
 ## The bug report form (BugReporter), on the QA team's template: a title and how bad it is, then what is
-## wrong, how to get there, what happened and what should have. The capture was taken before the form
-## opened, debug panels shown; it is displayed, small, so the player sees what is sent. Tab goes from
-## one field to the next, in the template's order. Escape or "Cancel" closes it and nothing leaves.
+## wrong, how to get there, what happened and what should have. The captures were taken before the form
+## opened, debug panels shown; they are displayed, small, so the player sees what is sent, with where
+## they stood. Tab goes from one field to the next, in the template's order.
+##
+## Four ways out: send; cancel (Escape too), and nothing is kept; "continue later", which closes the
+## form on what was typed, for the key to bring back; "attach another capture", which steps aside the
+## same way while the player goes and shows something else. What is kept is BugReporter's to hold:
+## the form only keeps its fields as they are until it is opened afresh.
 
 ## Emitted with the report ({title, severity, description, steps, actual, expected}, texts cleaned)
 ## once it follows the template (problem).
 signal submitted(report: Dictionary, with_log: bool)
-## Closed without sending.
+## Closed without sending: the report is dropped.
 signal dismissed
+## Closed on what was typed, to be finished later.
+signal postponed
+## Closed on what was typed, for one more capture to be taken in the game.
+signal capture_asked
+## The player took the capture at [param index] off the report.
+signal capture_removed(index: int)
 
 ## Above the HUD, like the place name dialog.
 const LAYER := 20
@@ -17,7 +28,10 @@ const BACKDROP := Color(0.0, 0.0, 0.0, 0.6)
 ## Two columns: the texts that take room on the left, the capture and the two results on the right.
 const LEFT_PX := 520.0
 const RIGHT_PX := 400.0
-const PREVIEW_HEIGHT_PX := 150.0
+## The captures of a report, shown side by side: their size (px) and how many a report may carry
+## (service-social attaches five pictures at most).
+const THUMB_PX := Vector2(124.0, 70.0)
+const MAX_CAPTURES := 5
 const TITLE_MIN := 3
 const TITLE_MAX := 80
 ## How bad the bug is, worst first: the key the report carries (service-social's BUG_SEVERITIES), the
@@ -29,6 +43,17 @@ const SEVERITIES: Array[Dictionary] = [
 	{"key": "minor", "label": "%%BUG_REPORT_SEVERITY_MINOR", "colour": Color("fbc02d")},
 	{"key": "cosmetic", "label": "%%BUG_REPORT_SEVERITY_COSMETIC", "colour": Color("9c27b0")},
 ]
+## Where a bug already posted stands (service-social's BUG_STATUSES, the closed ones are not listed):
+## its name and the colour of its square -- the one the QA team puts under its post in Discord.
+const STATUSES: Dictionary = {
+	"new": {"label": "%%BUG_REPORT_STATUS_NEW", "colour": Color("9aa3b5")},
+	"open": {"label": "%%BUG_REPORT_STATUS_OPEN", "colour": Color("d32f2f")},
+	"in_progress": {"label": "%%BUG_REPORT_STATUS_IN_PROGRESS", "colour": Color("f57c00")},
+	"to_test": {"label": "%%BUG_REPORT_STATUS_TO_TEST", "colour": Color("9c27b0")},
+}
+## Bugs offered at most for what was typed, and the height (px) of their list.
+const MATCHES_MAX := 6
+const MATCHES_HEIGHT_PX := 132.0
 ## Side (px) of a severity's round mark in the list.
 const MARK_PX := 14
 ## The one a form opens on: most reports are of something annoying one can play around.
@@ -49,13 +74,27 @@ const LEFT_PARTS: Array[String] = ["description", "steps"]
 
 var _title: LineEdit
 var _severity: OptionButton
+## Adding to a bug already posted: the open bugs ({id, title, status}), the row that offers them
+## (hidden when there is none), the words typed to find one, those that match, and the one picked.
+var _known: Array = []
+var _link_row: VBoxContainer
+var _link: LineEdit
+var _matches: ItemList
+var _linked: Dictionary = {}
 ## The template's fields, by the key of their part.
 var _fields: Dictionary = {}
 var _with_log: CheckBox
-var _preview: TextureRect
+## The row of captures, and how many it shows.
+var _thumbs: HFlowContainer
+var _capture_count: int = 0
+var _add_capture: Button
+## Where the player stood: one line for the world, one for the planet (hidden off a planet).
+var _world: Label
+var _planet: Label
 var _status: Label
 var _send: Button
 var _cancel: Button
+var _later: Button
 var _can_send: bool = true
 var _sending: bool = false
 ## What MenuFocus.modal was when the form opened, given back when it closes.
@@ -68,15 +107,25 @@ func _init() -> void:
 	_build()
 
 
-## Open on empty fields, showing [param capture]. [param off_text] not empty: reports cannot be sent
-## from here, the form says why and its Send button is off. [param log_path]: where the log the
-## checkbox attaches is, shown when it is hovered.
-func open_with(capture: Texture2D, off_text: String = "", log_path: String = "") -> void:
-	_title.text = ""
-	_severity.select(severity_index(DEFAULT_SEVERITY))
-	for key: String in _fields:
-		(_fields[key] as TextEdit).text = ""
-	_preview.texture = capture
+## Open showing [param captures] (the small pictures of what will be sent). [param off_text] not
+## empty: reports cannot be sent from here, the form says why and its Send button is off.
+## [param log_path]: where the log the checkbox attaches is, shown when it is hovered. [param place]:
+## where the player stood ({"world", "planet"}, either missing: in a menu, in deep space).
+## [param fresh]: on empty fields; false to come back to a report put aside, as it was typed.
+func open_with(captures: Array, off_text: String = "", log_path: String = "", place: Dictionary = {},
+		fresh: bool = true) -> void:
+	if fresh:
+		_title.text = ""
+		_severity.select(severity_index(DEFAULT_SEVERITY))
+		_link.text = ""
+		_linked = {}
+		_show_matches("")
+		for key: String in _fields:
+			(_fields[key] as TextEdit).text = ""
+		_with_log.button_pressed = true
+	show_captures(captures)
+	_show_place(_world, "%%BUG_REPORT_WORLD", str(place.get("world", "")))
+	_show_place(_planet, "%%BUG_REPORT_PLANET", str(place.get("planet", "")))
 	_with_log.tooltip_text = log_path
 	_can_send = off_text == ""
 	set_sending(false)
@@ -105,11 +154,103 @@ func is_open() -> bool:
 	return visible
 
 
+## Freed while up (the game closing, a test): the menus must not stay without their keys.
+func _exit_tree() -> void:
+	if visible:
+		MenuFocus.modal = _menus_were_modal
+
+
+## The captures of the report, in the order they were taken: a click on one takes it off.
+func show_captures(captures: Array) -> void:
+	for child: Node in _thumbs.get_children():
+		_thumbs.remove_child(child)
+		child.queue_free()
+	_capture_count = captures.size()
+	for i: int in captures.size():
+		var thumb := TextureButton.new()
+		thumb.texture_normal = captures[i] as Texture2D
+		thumb.ignore_texture_size = true
+		thumb.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+		thumb.custom_minimum_size = THUMB_PX
+		thumb.tooltip_text = "%%BUG_REPORT_CAPTURE_REMOVE_TIP"
+		thumb.focus_mode = Control.FOCUS_NONE  # Tab walks the template, not the pictures
+		thumb.pressed.connect(func() -> void: capture_removed.emit(i))
+		_thumbs.add_child(thumb)
+	_add_capture.disabled = _sending or _capture_count >= MAX_CAPTURES
+
+
+## The bugs a report can be added to ([param bugs]: {id, title, status} each, as service-social
+## lists them). None: the row is hidden, every report is a new bug.
+func set_known_bugs(bugs: Array) -> void:
+	_known = bugs
+	_link_row.visible = not bugs.is_empty()
+	_show_matches("" if not _linked.is_empty() else _link.text)
+
+
+## The bugs of [param bugs] whose title holds every word of [param typed], whatever the case, in
+## their order, [param limit] at most. None for nothing typed. Static and pure.
+static func matching(bugs: Array, typed: String, limit: int = MATCHES_MAX) -> Array:
+	var words: PackedStringArray = typed.to_lower().split(" ", false)
+	var found: Array = []
+	if words.is_empty():
+		return found
+	for bug: Variant in bugs:
+		if not bug is Dictionary:
+			continue
+		var title: String = str((bug as Dictionary).get("title", "")).to_lower()
+		var holds: bool = true
+		for word: String in words:
+			holds = holds and title.contains(word)
+		if holds:
+			found.append(bug)
+		if found.size() >= limit:
+			break
+	return found
+
+
+## The list under the search field: the bugs that match [param typed], each with the square of
+## where it stands. Hidden when there is none.
+func _show_matches(typed: String) -> void:
+	_matches.clear()
+	for bug: Dictionary in matching(_known, typed):
+		var status: Dictionary = STATUSES.get(str(bug.get("status", "new")), STATUSES["new"])
+		var at: int = _matches.add_item(str(bug.get("title", "")), square_of(status["colour"]))
+		_matches.set_item_tooltip(at, str(status["label"]))
+		_matches.set_item_metadata(at, bug)
+	_matches.visible = _matches.item_count > 0
+
+
+## Typing in the search field: whatever was picked no longer is, and the list follows the words.
+func _on_link_typed(typed: String) -> void:
+	_linked = {}
+	_show_matches(typed)
+
+
+## The bug at [param at] in the list is the one this report adds to: the field shows its title.
+func _pick_match(at: int) -> void:
+	if at < 0 or at >= _matches.item_count:
+		return
+	_linked = _matches.get_item_metadata(at)
+	_link.text = str(_linked.get("title", ""))
+	_link.caret_column = 0
+	_show_matches("")
+
+
+## One line of where the player stood, hidden when there is nothing to say.
+func _show_place(line: Label, key: String, value: String) -> void:
+	line.visible = value != ""
+	var wording: String = str(TranslationServer.translate(key))
+	# A translation not imported yet comes back as its key, with nothing to fill.
+	line.text = wording % value if "%s" in wording else value
+
+
 ## While the report travels: the buttons wait, and Escape no longer closes the form.
 func set_sending(on: bool) -> void:
 	_sending = on
 	_send.disabled = on or not _can_send
 	_cancel.disabled = on
+	_later.disabled = on
+	_add_capture.disabled = on or _capture_count >= MAX_CAPTURES
 	_send.text = "%%MISSION_ACCEPTING" if on else "%%SVC_ACT_SEND_MESSAGE"
 
 
@@ -119,7 +260,7 @@ func show_status(text: String) -> void:
 
 
 ## The report as typed: its title, how bad it is and the template's parts, spaces around the texts
-## taken off.
+## taken off; with the bug it adds to ("thread_id") when one was picked.
 func report() -> Dictionary:
 	var out: Dictionary = {
 		"title": _title.text.strip_edges(),
@@ -127,6 +268,8 @@ func report() -> Dictionary:
 	}
 	for key: String in _fields:
 		out[key] = (_fields[key] as TextEdit).text.strip_edges()
+	if not _linked.is_empty():
+		out["thread_id"] = str(_linked.get("id", ""))
 	return out
 
 
@@ -138,6 +281,13 @@ static func mark_of(colour: Color) -> Texture2D:
 		for x: int in MARK_PX:
 			var off: float = Vector2(x + 0.5 - radius, y + 0.5 - radius).length()
 			image.set_pixel(x, y, Color(colour, clampf(radius - off, 0.0, 1.0)))
+	return ImageTexture.create_from_image(image)
+
+
+## A square mark of [param colour], MARK_PX wide: where a bug already posted stands.
+static func square_of(colour: Color) -> Texture2D:
+	var image := Image.create_empty(MARK_PX, MARK_PX, false, Image.FORMAT_RGBA8)
+	image.fill(colour)
 	return ImageTexture.create_from_image(image)
 
 
@@ -224,6 +374,14 @@ func _dismiss() -> void:
 	dismissed.emit()
 
 
+## Out of the way with everything as it is: the fields keep their texts until a fresh opening.
+func _step_aside(why: Signal) -> void:
+	if _sending:
+		return
+	close()
+	why.emit()
+
+
 func _build() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -280,12 +438,46 @@ func _build() -> void:
 	_severity.custom_minimum_size = Vector2(0, 40)
 	ServiceStyle.apply_option(_severity)
 	grade.add_child(_severity)
-	_preview = TextureRect.new()
-	_preview.custom_minimum_size = Vector2(0, PREVIEW_HEIGHT_PX)
-	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	right.add_child(_preview)
+	_link_row = VBoxContainer.new()
+	_link_row.add_theme_constant_override("separation", 4)
+	_link_row.visible = false
+	left.add_child(_link_row)
+	var link_label := _caption("%%BUG_REPORT_LINK", ServiceStyle.TEXT, 13)
+	ServiceStyle.font_of(link_label, 13, true)
+	_link_row.add_child(link_label)
+	_link = LineEdit.new()
+	_link.placeholder_text = "%%BUG_REPORT_LINK_PLACEHOLDER"
+	_link.tooltip_text = "%%BUG_REPORT_LINK_TIP"
+	_link.clear_button_enabled = true
+	_link.custom_minimum_size = Vector2(0, 36)
+	ServiceStyle.apply_field(_link)
+	_link.text_changed.connect(_on_link_typed)
+	_link.text_submitted.connect(func(_t: String) -> void: _pick_match(0))  # Enter takes the first offered
+	_link_row.add_child(_link)
+	_matches = ItemList.new()
+	_matches.custom_minimum_size = Vector2(0, MATCHES_HEIGHT_PX)
+	_matches.focus_mode = Control.FOCUS_NONE  # picked with the mouse or Enter: Tab walks the template
+	_matches.visible = false
+	_matches.item_selected.connect(_pick_match)
+	_link_row.add_child(_matches)
+	_thumbs = HFlowContainer.new()
+	_thumbs.custom_minimum_size = Vector2(0, THUMB_PX.y)
+	_thumbs.add_theme_constant_override("h_separation", 6)
+	_thumbs.add_theme_constant_override("v_separation", 6)
+	right.add_child(_thumbs)
 	right.add_child(_caption("%%BUG_REPORT_CAPTURE", ServiceStyle.MUTED, 12))
+	_add_capture = Button.new()
+	_add_capture.text = "%%BUG_REPORT_ADD_CAPTURE"
+	_add_capture.tooltip_text = "%%BUG_REPORT_ADD_CAPTURE_TIP"
+	_add_capture.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_add_capture.focus_mode = Control.FOCUS_CLICK  # between two fields of the template: Tab passes it by
+	ServiceStyle.apply_button(_add_capture)
+	_add_capture.pressed.connect(func() -> void: _step_aside(capture_asked))
+	right.add_child(_add_capture)
+	_world = _caption("", ServiceStyle.MUTED, 12)
+	right.add_child(_world)
+	_planet = _caption("", ServiceStyle.MUTED, 12)
+	right.add_child(_planet)
 	for part: Dictionary in PARTS:
 		_add_part(left if LEFT_PARTS.has(part["key"]) else right, part)
 	_with_log = CheckBox.new()
@@ -305,6 +497,12 @@ func _build() -> void:
 	ServiceStyle.apply_button(_cancel)
 	_cancel.pressed.connect(_dismiss)
 	buttons.add_child(_cancel)
+	_later = Button.new()
+	_later.text = "%%BUG_REPORT_LATER"
+	_later.tooltip_text = "%%BUG_REPORT_LATER_TIP"
+	ServiceStyle.apply_button(_later)
+	_later.pressed.connect(func() -> void: _step_aside(postponed))
+	buttons.add_child(_later)
 	_send = Button.new()
 	_send.text = "%%SVC_ACT_SEND_MESSAGE"
 	ServiceStyle.apply_button(_send, true)

@@ -418,8 +418,9 @@ func setup() -> void:
 	add_child(_places)
 	_places.setup(player, _screens_root(), func(text: String) -> void: _notifications.push(text), _input_locked)
 	# The bug report (F9) is the Screenshot autoload's, so that it answers in the menus too: from here it
-	# only learns whose body says where the player stands.
-	Screenshot.bug_reporter.body = player
+	# only learns how to ask where the player stands. A method of ours: gone with us, the reporter finds
+	# the Callable invalid and says nothing of a place.
+	Screenshot.bug_reporter.locate = _bug_report_place
 	_repairs = MachineRepair.new()
 	_repairs.name = "MachineRepair"
 	add_child(_repairs)
@@ -2025,6 +2026,11 @@ func _open_controls_help(kind: InputDevice.Kind) -> void:
 ## The controls help is open: it owns the input like the chart does.
 func _help_open() -> bool:
 	return _help != null and _help.visible
+
+
+## Where the player stands, for a bug report (BugReporter.locate): world and planet coordinates, frame.
+func _bug_report_place() -> Dictionary:
+	return DevReadouts.coordinates(player)
 
 
 ## Something MODAL owns the input: the pause menu, a radial wheel, the chat, the system chart, the
