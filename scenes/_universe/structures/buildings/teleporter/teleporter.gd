@@ -175,6 +175,11 @@ func update_screen(data: Dictionary) -> void:
 		push_warning("[Teleporter] refused: body '%s' is not in the network registry"
 				% dest.planet_name)
 		return
+	# A village is listed by its centre, and its centre is under a building as often as not: the trip
+	# ends at the village's own cabin instead (VillageArrival). Anything else lands where it says.
+	var arrival: Dictionary = VillageArrival.resolve(body, dest)
+	if not arrival.is_empty():
+		dest = arrival["dest"]
 	var tile: Array = []
 	var local_pos: Vector3 = TeleportGround.local_pos_for(body, dest, tile)
 	# int, not the enum: the outcome comes back through an Array, so it arrives as a Variant.
@@ -187,7 +192,7 @@ func update_screen(data: Dictionary) -> void:
 			local_pos.x, local_pos.y, local_pos.z])
 	# Handed to the next physics frame, which is the only place the garage can be measured — see
 	# _physics_process. It is that frame which then defers the move.
-	_pending = {"body": body, "pos": local_pos, "mode": dest.height_mode}
+	_pending = {"body": body, "pos": local_pos, "mode": dest.height_mode, "cabin": arrival.get("cabin")}
 	set_physics_process(true)
 
 
@@ -291,6 +296,13 @@ func _move_riders() -> void:
 	# because the two are on opposite sides of a sphere — a world-axes offset would arrive sideways.
 	var cabin_inv: Basis = global_transform.basis.orthonormalized().inverse()
 	var landing: Basis = _frame_for_up(local_pos.normalized())
+	var around: Vector3 = local_pos
+	# Bound for a village: into ITS cabin, each where it stood in this one. Replayed around the actor's
+	# landing they came down wherever the offset fell -- in a wall of the cabin the actor lands before.
+	if trip.get("cabin") is Transform3D:
+		var into: Transform3D = trip["cabin"]
+		landing = into.basis
+		around = into.origin
 	var moved: int = 0
 	for rider: Node3D in riders:
 		# Frames have passed since the sweep: a rider could have been deleted in between.
@@ -298,7 +310,7 @@ func _move_riders() -> void:
 			continue
 		moved += 1
 		var offset: Vector3 = cabin_inv * (rider.global_position - global_position)
-		var spot: Vector3 = local_pos + landing * Vector3(offset.x, 0.0, offset.z)
+		var spot: Vector3 = around + landing * Vector3(offset.x, 0.0, offset.z)
 		var passenger := rider as Player
 		if passenger != null:
 			_place_passenger(passenger, body, spot, int(trip["mode"]))
@@ -309,7 +321,7 @@ func _move_riders() -> void:
 		for occupant: Player in _seated_in(vehicle):
 			var seat_offset: Vector3 = cabin_inv * (occupant.global_position - global_position)
 			_take_out_of_seat(occupant, true)
-			_place_passenger(occupant, body, local_pos + landing * Vector3(seat_offset.x, 0.0, seat_offset.z),
+			_place_passenger(occupant, body, around + landing * Vector3(seat_offset.x, 0.0, seat_offset.z),
 					int(trip["mode"]))
 		# Heading is carried the same way the offset is: read in the cabin's frame, replayed in the
 		# landing one. A truck that was nose-out of the door arrives nose-out of nothing in particular,

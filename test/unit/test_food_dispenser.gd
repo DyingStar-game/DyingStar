@@ -1,5 +1,5 @@
 extends GutTest
-## The ARES Energy machine: rations, three to a delivery, each a networked prop one can carry.
+## The ARES Living machine: rations, three to a delivery, each a networked prop one can carry.
 
 const FOOD_ITEMS := "res://scenes/_universe/props/food/dispenser_items/"
 const SCENE := "res://scenes/_universe/structures/dispenser/food_dispenser.tscn"
@@ -24,8 +24,8 @@ func test_a_ration_is_a_networked_prop_one_can_carry() -> void:
 		ration.free()
 
 
-func test_the_machine_is_run_by_ares_energy() -> void:
+func test_the_machine_is_run_by_ares_living() -> void:
 	var machine: ItemDispenser = (load(SCENE) as PackedScene).instantiate()
-	assert_eq(machine.brand, AresBrand.Subsidiary.ENERGY)
+	assert_eq(machine.brand, AresBrand.Subsidiary.LIVING)
 	assert_eq(machine.catalogue_dir, FOOD_ITEMS)
 	machine.free()

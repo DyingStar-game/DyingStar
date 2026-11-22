@@ -225,11 +225,12 @@ func test_the_lines_run_where_the_canyons_are() -> void:
 		# their square of the grid, which left the network in pieces that did not join.
 		assert_gt(float(on_a_canyon) / float(points.size()), 0.9,
 			"nine ends in ten stand inside a canyon")
-		# And none where the game leaves the ground whole: a town's sphere is not cut.
+		# And none where the game leaves the ground whole: a town's sphere is not cut. On the slope
+		# up to one, where the game keeps part of the depth, the canyon IS drawn (and paler).
 		for n: int in range(0, points.size(), 2):
-			var along: Vector3 = (points[n] + points[n + 1]).normalized()
-			assert_gte(CrackCarve.depth_factor(_data, along, null), 0.5,
-				"every stretch drawn is on ground the game carves")
+			var deepest: float = maxf(CrackCarve.depth_factor(_data, points[n].normalized(), null),
+					CrackCarve.depth_factor(_data, points[n + 1].normalized(), null))
+			assert_gt(deepest, 0.0, "every stretch drawn is on ground the game carves")
 		# Each stretch is also a strip as wide as the canyon it stands for.
 		var corners: PackedVector3Array = laid[2]
 		assert_eq(corners.size(), points.size() * 3, "two triangles a stretch")
@@ -317,3 +318,15 @@ func test_the_network_is_painted_once_where_it_overlaps() -> void:
 			"drawn only where nothing of the network is yet, and marking it")
 	assert_lt(lines._strip_material.render_priority, lines._material.render_priority,
 			"the strips first: the lines show only where no strip is")
+
+
+## A canyon comes up to the plateau at a massif's foot and beside a town: the one place a truck can
+## drive down into it. Drawn from half its depth only, the map showed none of that slope (playtest
+## 2026-11-20). It is drawn from a step's depth, the paler the shallower.
+func test_a_canyon_pales_as_it_comes_up() -> void:
+	assert_eq(StarMapCanyons.shade(1.0), StarMapCanyons.COLOUR, "at full depth, its whole colour")
+	assert_almost_eq(StarMapCanyons.shade(0.0).a, StarMapCanyons.DESCENT_ALPHA, 1.0e-6,
+			"at no depth, what is left of it")
+	assert_gt(StarMapCanyons.shade(0.6).a, StarMapCanyons.shade(0.2).a, "the deeper, the more of it")
+	assert_eq(StarMapCanyons.shade(7.0), StarMapCanyons.COLOUR, "never more than its colour")
+	assert_lt(StarMapCanyons.DESCENT_FROM, 0.1, "drawn from a step's depth, not from half of it")

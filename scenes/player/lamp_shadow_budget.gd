@@ -1,7 +1,7 @@
 class_name LampShadowBudget
 extends Node
 ## Shadow budget for the LAMPS of the world: the ceiling spots of the spawn apartments, the LED panels
-## of the cargo depot, every Omni / Spot / AreaLight3D a scene was authored with a shadow. Client-only,
+## of the cargo depot, the street lamps -- every Omni / Spot / AreaLight3D placed in a scene. Client-only,
 ## one instance, a child of the local player (built by PlayerClient.setup), beside TorchShadowBudget,
 ## which keeps the avatars' torches.
 ##
@@ -12,27 +12,48 @@ extends Node
 ## spawn with the lamps on (RTX 3090, 3440x1400): 52 -> 60 fps with this budget. (The NEAR lamps blinked
 ## for another reason, the planet's steps: see render_index_refresh.gd.)
 ##
-## Twice a second, the shadowed lamps within `max_distance` of the camera are ranked by distance and
-## only the `max_shadows` nearest keep their shadow; every other lamp still LIGHTS, it just casts
-## nothing. A lamp holding a shadow is ranked `hysteresis_m` closer than it is, so two lamps at the same
-## distance do not trade the shadow back and forth as the player moves.
+## Twice a second, the lamps within `max_distance` of the camera are ranked by distance and only the
+## `max_shadows` nearest cast a shadow; every other lamp still LIGHTS, it just casts nothing. A lamp
+## holding a shadow is ranked `hysteresis_m` closer than it is, so two lamps at the same distance do not
+## trade the shadow back and forth as the player moves.
+##
+## WHICH lamps are ranked is not left to the "Shadow" box of each light: a lamp placed in a scene is
+## ranked whether its author ticked it or not. The street lamps never had it ticked, for the cost, and
+## cast nothing at any distance (playtest 2026-11-20); the cost is this budget's to bound, and
+## `max_distance` is the one setting for all of them, the player's (Graphics > Shadows). A scene light
+## that must never cast -- a rotating beacon, a vehicle's position lights -- goes in the group
+## [constant NO_SHADOW_GROUP]. A light made by CODE keeps what its script gave it: a neon's glow, a
+## spark, a cave's fill light are built without a shadow on purpose.
 ##
 ## Two kinds of light are never ranked against the lamps: the player's own torch (an avatar's light,
 ## left to TorchShadowBudget, which never touches the owner's), and the lights of the vehicle the player
-## sits in — they keep their shadow whatever the count, on top of the budget.
+## sits in that were authored with a shadow -- its headlights keep it whatever the count, on top of the
+## budget.
 
 const INTERVAL : float = 0.5
 ## Marks a lamp authored with a shadow: once the budget has switched its shadow off, the flag alone no
 ## longer says so (a lamp reparented, a crate carried, comes back through node_added without it).
 const META_AUTHORED : StringName = &"_lamp_shadow_authored"
+## Marks a scene lamp authored WITHOUT one, for the same reason the other way round: holding a shadow
+## the budget gave it, it would come back looking authored with it.
+const META_GIVEN : StringName = &"_lamp_shadow_given"
+## A scene light in this group never casts and is never ranked.
+const NO_SHADOW_GROUP : StringName = &"no_lamp_shadow"
+## The graphics option `max_distance` follows (GraphicsOptions).
+const DISTANCE_OPTION : String = "lamp_shadow_distance"
 
 ## How many lamps may cast a shadow at once. Well under the atlas, so it is never full.
 @export var max_shadows : int = 8
 ## Beyond this distance from the camera (m) a lamp never casts: its shadow is a few pixels from there.
+## Zero: no lamp casts at all. The player's option when `distance_option` names one.
 @export var max_distance : float = 60.0
 ## The head start a lamp that already casts keeps over a challenger, in metres.
 @export var hysteresis_m : float = 3.0
+## The graphics option that sets `max_distance`, followed as the player changes it. Empty: the value
+## above stands (the tests, a scene with no player settings).
+@export var distance_option : String = DISTANCE_OPTION
 
+## lamp -> whether it was authored with a shadow.
 var _lamps : Dictionary = {}
 var _elapsed : float = INTERVAL  # evaluate on the first frame, then every INTERVAL
 
@@ -43,6 +64,9 @@ func _ready() -> void:
 		print("[LampShadowBudget] !! debug_no_lamp_budget=true — every lamp casts, the atlas may be full.")
 		set_process(false)
 		return
+	if distance_option != "":
+		max_distance = float(SettingsManager.render.effective(distance_option))
+		SettingsManager.render.changed.connect(_on_options_changed)
 	for node in get_tree().root.find_children("*", "Light3D", true, false):
 		_consider(node)
 	get_tree().node_added.connect(_consider)
@@ -62,15 +86,26 @@ func lamp_count() -> int:
 	return _lamps.size()
 
 
+func _on_options_changed(keys: PackedStringArray) -> void:
+	if distance_option in keys:
+		max_distance = float(SettingsManager.render.effective(distance_option))
+		_elapsed = INTERVAL  # seen on the next frame, not half a second after the slider
+
+
 func _consider(node: Node) -> void:
 	if not node is Light3D or node is DirectionalLight3D:
 		return
-	if not ((node as Light3D).shadow_enabled or node.has_meta(META_AUTHORED)):
-		return
-	if _on_an_avatar(node):
+	var light := node as Light3D
+	if light.is_in_group(NO_SHADOW_GROUP) or _on_an_avatar(light):
 		return  # the torches belong to TorchShadowBudget (and the owner's own keeps its shadow)
-	node.set_meta(META_AUTHORED, true)
-	_lamps[node] = true
+	var given : bool = light.has_meta(META_GIVEN)  # known already: moved out of its scene, it has no owner
+	var authored : bool = light.has_meta(META_AUTHORED) or (light.shadow_enabled and not given)
+	if not authored and not given and light.owner == null:
+		return  # made by code, without a shadow: its script decided
+	if light.get_world_3d() != get_viewport().world_3d:
+		return  # a lamp of another world (a preview, a map): no distance to our camera means anything
+	light.set_meta(META_AUTHORED if authored else META_GIVEN, true)
+	_lamps[light] = authored
 
 
 func _evaluate() -> void:
@@ -87,7 +122,10 @@ func _evaluate() -> void:
 		var light := lamp as Light3D
 		if not light.is_visible_in_tree():
 			continue  # off: it costs nothing whatever its flag; ranked again when it lights up
-		if vehicle != null and vehicle.is_ancestor_of(light):
+		if max_distance <= 0.0:
+			light.shadow_enabled = false  # the player wants none: the vehicle's included
+			continue
+		if vehicle != null and bool(_lamps[lamp]) and vehicle.is_ancestor_of(light):
 			light.shadow_enabled = true
 			continue
 		var d : float = eye.distance_to(light.global_position)

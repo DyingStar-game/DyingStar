@@ -2223,8 +2223,10 @@ func _refresh_ground() -> void:
 	# What is drawn over the ground, and what is asked of the tile service, goes by the tiles as the
 	# body PUBLISHES them: near the ground the chart cuts finer than that to hold the canyons, and
 	# neither a pack nor the service has anything at a level nobody exported.
+	# The streets inside the villages are not in a pack: they are the loaded planet's, when it is loaded.
 	if _roads != null:
-		_roads.show_over(StarMapRelief.published(key, shown), _ground_scale(), float(_bodies[index]["radius_m"]))
+		_roads.show_over(StarMapRelief.published(key, shown), _ground_scale(), float(_bodies[index]["radius_m"]),
+				StarMapRoads.village_roads_of(_live_planet(key)))
 	# The ground's OWN tiles here, not the published ones: a tile cut fine enough to carve the canyons
 	# needs no line over them, and only the ground's set says which those are.
 	if _canyons != null:
