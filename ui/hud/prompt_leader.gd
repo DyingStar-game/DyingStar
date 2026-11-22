@@ -168,9 +168,7 @@ static func anchor_of(target: Node3D, hit: Vector3) -> Vector3:
 
 
 func _draw() -> void:
-	# In VR the HUD is a panel of its own in the headset: no point of it lies over what the eye sees, and
-	# the dot at the end of the hand's ray already marks the target (VrPointer).
-	if not is_instance_valid(_prompt) or not _prompt.visible or _camera == null or _camera is XRCamera3D \
+	if not is_instance_valid(_prompt) or not _prompt.visible or _camera == null \
 			or not is_instance_valid(_anchor_node):
 		return
 	var at: Vector3 = _anchor_node.to_global(_anchor_local)

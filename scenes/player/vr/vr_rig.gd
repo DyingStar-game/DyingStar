@@ -53,6 +53,13 @@ static func install(player: Node3D) -> VrRig:
 		pointer.name = "VrPointer"
 		pointer.setup(ray, rig.right_aim, rig.camera)
 		rig.add_child(pointer)
+		# The interaction prompt over what the hand aims at, not in the HUD's panel.
+		var label := player.get("interact_label") as RichTextLabel
+		if label != null:
+			var prompt := VrPrompt.new()
+			prompt.name = "VrPrompt"
+			prompt.setup(label, ray, rig)
+			rig.add_child(prompt)
 	# The controllers played as a gamepad: every gamepad binding of the game works from them.
 	var controls := VrInput.new()
 	controls.name = "VrInput"

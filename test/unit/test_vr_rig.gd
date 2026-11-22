@@ -10,7 +10,7 @@ var _ray: RayCast3D = null
 
 func before_each() -> void:
 	var fake := GDScript.new()
-	fake.source_code = "extends Node3D\nvar camera_pivot: Node3D\nvar camera: Camera3D\n"
+	fake.source_code = "extends Node3D\nvar camera_pivot: Node3D\nvar camera: Camera3D\nvar interact_label: RichTextLabel\n"
 	fake.reload()
 	_player = Node3D.new()
 	_player.set_script(fake)
@@ -98,3 +98,27 @@ func test_the_right_hand_aims_while_it_is_tracked_and_the_head_otherwise() -> vo
 	assert_eq(_ray.get_parent(), rig.camera, "the hand lost: back to the head")
 	assert_false(rig.right_aim.get_node("AimDot").visible)
 	XRServer.remove_tracker(hand)
+
+
+func test_the_prompt_hangs_over_what_the_hand_aims_at() -> void:
+	var hud_prompt := RichTextLabel.new()
+	hud_prompt.bbcode_enabled = true
+	hud_prompt.fit_content = true
+	hud_prompt.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_player.add_child(hud_prompt)
+	var prompt := VrPrompt.new()
+	_player.add_child(prompt)
+	prompt.setup(hud_prompt, _ray, _player)
+	assert_eq(hud_prompt.self_modulate.a, 0.0, "the HUD's prompt is drawn clear")
+	var sprite: Sprite3D = _player.get_node("VrPrompt")
+	hud_prompt.text = "[X] Open"
+	hud_prompt.modulate = Color.RED
+	prompt._process(0.016)
+	assert_true(sprite.visible)
+	assert_eq(prompt._label.text, "[X] Open")
+	assert_eq(prompt._label.modulate, Color.RED, "a refusal stays red")
+	assert_almost_eq(sprite.global_position, _ray.global_transform * Vector3(0.0, 0.0, -VrPrompt.AHEAD_M),
+			Vector3.ONE * 1e-4, "about nothing under the ray: a little ahead along it")
+	hud_prompt.hide()
+	prompt._process(0.016)
+	assert_false(sprite.visible, "the game hides its prompt: gone")

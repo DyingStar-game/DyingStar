@@ -7,8 +7,10 @@ extends Node
 ##   main viewport renders there (custom_viewport), and the SubViewport shares the main viewport's World2D,
 ##   so the Controls that sit on its default canvas (the player's HUD) come along. No screen is touched.
 ## - The SubViewport is shown by an OpenXR quad composition layer: the headset's compositor draws it, sharp
-##   and over the world, on any OpenXR runtime (quad layers are core OpenXR). It floats in front of the
-##   head and catches up when the head turns away (a panel stuck to the eyes is tiring).
+##   and over the world, on any OpenXR runtime (quad layers are core OpenXR). In game (the HUD) it floats
+##   in front of the head and catches up when the head turns away (a panel stuck to the eyes is tiring).
+##   A menu opening (the mouse let free) puts it straight in front of the eyes, and there it stays while
+##   the laser points at it: it moves again only if the head turns well away (MENU_FOLLOW_ANGLE).
 ## - A laser from the hand points at it while the game frees the mouse (a menu is open): it moves the
 ##   mouse and the trigger clicks. The events go into the main viewport, where the Controls still live
 ##   and take their input: the desktop mouse keeps working the same way.
@@ -26,6 +28,8 @@ const WIDTH_M := 1.2
 const BELOW_EYES_M := 0.1
 ## The panel catches up once the head looks this far (rad) away from it.
 const FOLLOW_ANGLE := deg_to_rad(30.0)
+## While a menu is open, the panel stays put until the head looks this far (rad) away from it.
+const MENU_FOLLOW_ANGLE := deg_to_rad(60.0)
 ## How fast (1/s) the panel glides to its new place.
 const FOLLOW_RATE := 5.0
 ## Laser length (m) when it hits nothing.
@@ -47,6 +51,7 @@ var _layer: OpenXRCompositionLayerQuad = null
 var _origin_id: int = 0  # instance id of the origin the panel hangs on (it may be freed under us)
 var _target: Vector3 = Vector3.ZERO
 var _placed: bool = false
+var _menu_was: bool = false  # the mouse was free (a menu open) last frame
 var _pointers: Array[XRController3D] = []
 var _lasers: Array[MeshInstance3D] = []
 var _trigger_was: Array[bool] = [false, false]
@@ -123,7 +128,9 @@ func _process(delta: float) -> void:
 	_layer.visible = state == OpenXRInterface.SESSION_STATE_VISIBLE or state == OpenXRInterface.SESSION_STATE_FOCUSED
 	if not _layer.visible:
 		return
-	_follow_head(cam.transform, delta)
+	var menu := _mouse_free()
+	_follow_head(cam.transform, delta, menu, menu and not _menu_was)
+	_menu_was = menu
 	_point(delta)
 
 
@@ -148,8 +155,9 @@ func _hang_on(origin: XROrigin3D) -> void:
 
 
 ## Keep the panel in front of [param head] (the camera, in the origin's space): it moves only when the
-## head has turned FOLLOW_ANGLE away from it, then glides there. Upright in the origin's frame.
-func _follow_head(head: Transform3D, delta: float) -> void:
+## head has turned FOLLOW_ANGLE away from it -- MENU_FOLLOW_ANGLE in a [param menu] -- then glides there.
+## A menu [param opening] brings it in front of the eyes at once. Upright in the origin's frame.
+func _follow_head(head: Transform3D, delta: float, menu: bool = false, opening: bool = false) -> void:
 	var forward := -head.basis.z
 	forward.y = 0.0
 	if forward.length_squared() < 1e-4:
@@ -163,7 +171,8 @@ func _follow_head(head: Transform3D, delta: float) -> void:
 	else:
 		var now := _layer.position - head.origin
 		now.y = 0.0
-		if now.length_squared() < 1e-4 or now.normalized().angle_to(forward) > FOLLOW_ANGLE:
+		var leeway: float = MENU_FOLLOW_ANGLE if menu else FOLLOW_ANGLE
+		if opening or now.length_squared() < 1e-4 or now.normalized().angle_to(forward) > leeway:
 			_target = wanted
 		_layer.position = _layer.position.lerp(_target, 1.0 - exp(-FOLLOW_RATE * delta))
 	var away := _layer.position - head.origin
@@ -175,7 +184,7 @@ func _follow_head(head: Transform3D, delta: float) -> void:
 
 ## The laser and the mouse it drives, while the game lets the mouse free (a menu, a screen in use).
 func _point(delta: float) -> void:
-	var free := Input.mouse_mode == Input.MOUSE_MODE_VISIBLE or Input.mouse_mode == Input.MOUSE_MODE_CONFINED
+	var free := _mouse_free()
 	for i in 2:
 		_log_profile(i)
 		var pull := maxf(_pointers[i].get_float(&"trigger"), 1.0 if _pointers[i].is_button_pressed(&"trigger_click") else 0.0)
@@ -204,6 +213,11 @@ func _point(delta: float) -> void:
 	else:
 		_release()
 	_aim_laser(_lasers[_hand], reach)
+
+
+## The game lets the mouse free: a menu, a panel, a 3D screen in use.
+static func _mouse_free() -> bool:
+	return Input.mouse_mode == Input.MOUSE_MODE_VISIBLE or Input.mouse_mode == Input.MOUSE_MODE_CONFINED
 
 
 ## Which controller the runtime says a hand holds, logged when it changes: the bindings that apply are

@@ -450,16 +450,18 @@ func setup() -> void:
 	# The interaction prompt in a frame beside the crosshair, a line drawn to it from what it is about;
 	# Settings > General can turn the frame off: the plain prompt, on a dark patch fitted to its width
 	# so it reads over a bright ground.
-	var hud : Control = player.interact_label.get_parent()
-	var shade : ColorRect = PROMPT_SHADE.new()
-	hud.add_child(shade)
-	hud.move_child(shade, 0)  # under the rest of the HUD
-	shade.follow(player.interact_label)
-	var leader : Control = PROMPT_LEADER.new()
-	hud.add_child(leader)
-	hud.move_child(leader, player.interact_label.get_index())  # under the prompt it draws the line to
-	leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
-	leader.target_rule = _prompt_target
+	# In VR the prompt hangs over the target instead (VrPrompt): no frame, no patch, no line in the HUD.
+	if player.vr_rig == null:
+		var hud : Control = player.interact_label.get_parent()
+		var shade : ColorRect = PROMPT_SHADE.new()
+		hud.add_child(shade)
+		hud.move_child(shade, 0)  # under the rest of the HUD
+		shade.follow(player.interact_label)
+		var leader : Control = PROMPT_LEADER.new()
+		hud.add_child(leader)
+		hud.move_child(leader, player.interact_label.get_index())  # under the prompt it draws the line to
+		leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
+		leader.target_rule = _prompt_target
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
