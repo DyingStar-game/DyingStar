@@ -134,3 +134,15 @@ func test_in_vr_the_hud_names_the_controllers_buttons_whatever_the_desktop_does(
 	assert_eq(InputDevice.last, InputDevice.Kind.KEYBOARD_MOUSE, "let go: the keyboard counts again")
 	InputDevice.held_pad = held
 	InputDevice.last = last
+
+
+func test_the_body_catching_up_with_the_head_walks_like_the_stick() -> void:
+	var body := VrBody.new()
+	body.on_foot = func() -> bool: return false  # its own _process stands aside: the push is set by hand
+	body.seated = func() -> bool: return false
+	_player.add_child(body)
+	_input._body = body
+	body.chase = Vector2(0.0, 0.6)
+	_press(_left, &"primary", Vector2.ZERO)
+	assert_almost_eq(Input.get_action_raw_strength("move_forward"), 0.6, 0.01)
+	assert_eq(body.stick, Vector2.ZERO, "the thumb's own push is told apart")

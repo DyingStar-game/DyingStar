@@ -23,6 +23,8 @@ var left_hand: XRController3D = null
 var right_hand: XRController3D = null
 ## Where the right hand points (its aim pose): the interaction ray leaves from it (VrPointer).
 var right_aim: XRController3D = null
+## The body kept under the head (turns, room-scale, recentring).
+var body: VrBody = null
 
 
 ## Put the VR view on [param player] (a Player): returns the rig, whose camera replaces the flat one.
@@ -60,10 +62,15 @@ static func install(player: Node3D) -> VrRig:
 			prompt.name = "VrPrompt"
 			prompt.setup(label, ray, rig)
 			rig.add_child(prompt)
+	# The body under the head: it turns to the gaze, walks under a step taken in the room.
+	rig.body = VrBody.new()
+	rig.body.name = "VrBody"
+	rig.body.setup(rig, player)
+	rig.add_child(rig.body)
 	# The controllers played as a gamepad: every gamepad binding of the game works from them.
 	var controls := VrInput.new()
 	controls.name = "VrInput"
-	controls.setup(player, rig.left_hand, rig.right_hand)
+	controls.setup(player, rig.left_hand, rig.right_hand, rig.body)
 	rig.add_child(controls)
 	# The controllers as the runtime draws them (OpenXR render models): any headset's, none to model.
 	# Only with a live OpenXR session: without one the manager finds no extension and errors each frame
@@ -85,12 +92,13 @@ func _enter_tree() -> void:
 
 ## The head's pitch (rad) relative to the body: up is positive, like the camera pivot's.
 func head_pitch() -> float:
-	return camera.transform.basis.get_euler().x
+	return (basis * camera.basis).get_euler().x
 
 
-## The head's yaw (rad) relative to the body: left is positive, like the camera pivot's.
+## The head's yaw (rad) relative to the body: left is positive, like the camera pivot's. The rig's own
+## turn counts (VrBody turns it back as the body turns).
 func head_yaw() -> float:
-	return camera.transform.basis.get_euler().y
+	return (basis * camera.basis).get_euler().y
 
 
 ## Where the eye is in the pivot's space (m): the headset's offset from where it started.

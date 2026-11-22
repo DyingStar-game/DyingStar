@@ -22,6 +22,9 @@ const SNAP_TURN_DEG := 30.0
 const SNAP_PUSH := 0.7
 ## How far back (0..1) the right stick must come before the next step.
 const SNAP_REARM := 0.3
+## Held this long (s), the right stick's click recentres the view (VrBody.recenter), hands free only: a
+## load in the hands takes it to turn the load.
+const RECENTER_HOLD_S := 1.0
 ## Analog values closer than this to the last one sent are not sent again (no event flood).
 const AXIS_EPSILON := 0.01
 ## The run a left stick click starts lasts while the stick is pushed past this (0..1), on foot.
@@ -68,25 +71,35 @@ var _buttons_down: Dictionary = {}  # JoyButton -> bool, as last sent
 var _axes_sent: Dictionary = {}  # JoyAxis -> float, as last sent
 var _snap_armed: bool = true
 var _running: bool = false  # a left stick click is running (RUN_HOLD)
+var _body: VrBody = null
+var _recenter_held: float = 0.0  # how long the right stick has been held down (s); -1 once used
 
 
 ## Read [param left] and [param right] (the rig's hands) for [param player] (a Player: its
-## mouse_motion takes the snap turn, as the mouse's would).
-func setup(player: Node3D, left: XRController3D, right: XRController3D) -> void:
+## mouse_motion takes the snap turn, as the mouse's would). [param body] (optional) adds its catch-up
+## walk to the stick and recentres on a long press.
+func setup(player: Node3D, left: XRController3D, right: XRController3D, body: VrBody = null) -> void:
 	_player = player
 	_hands = [left, right]
+	_body = body
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _hands.size() != 2:
 		return
 	var in_menu: bool = menu_has_mouse.call()
 	var stick: Vector2 = Vector2.ZERO if in_menu else _hands[0].get_vector2(&"primary")
+	var pushed: Vector2 = stick  # the thumb's own push: the run follows it, not the body's catch-up
+	if _body != null:
+		_body.stick = stick
+		if not in_menu:
+			stick = (stick + _body.chase).limit_length(1.0)  # the body walking under the head
+		_hold_to_recenter(delta)
 	var wanted: Dictionary = {}
 	for entry: Array in BUTTONS:
 		var held: bool = _hands[entry[1]].is_button_pressed(entry[0])
 		wanted[entry[2]] = bool(wanted.get(entry[2], false)) or held
-	wanted[JOY_BUTTON_LEFT_STICK] = _run(wanted[JOY_BUTTON_LEFT_STICK], stick)
+	wanted[JOY_BUTTON_LEFT_STICK] = _run(wanted[JOY_BUTTON_LEFT_STICK], pushed)
 	for button: JoyButton in wanted:
 		var down: bool = wanted[button] and (not in_menu or BUTTONS_IN_MENUS.has(button))
 		if down != bool(_buttons_down.get(button, false)):
@@ -99,6 +112,19 @@ func _process(_delta: float) -> void:
 	_send_axis(JOY_AXIS_TRIGGER_RIGHT, 0.0 if in_menu else _hands[1].get_float(&"trigger"))
 	if not in_menu:
 		_snap_turn(_hands[1].get_vector2(&"primary").x)
+
+
+## A long press of the right stick recentres the view, once per press, hands free.
+func _hold_to_recenter(delta: float) -> void:
+	if not _hands[1].is_button_pressed(&"primary_click") or _player.get("_owner_carrying") == true:
+		_recenter_held = 0.0
+		return
+	if _recenter_held < 0.0:
+		return
+	_recenter_held += delta
+	if _recenter_held >= RECENTER_HOLD_S:
+		_recenter_held = -1.0
+		_body.recenter(_body.on_foot.call())
 
 
 ## The left stick's click as the game gets it: [param clicked] now, or still running since a click while
