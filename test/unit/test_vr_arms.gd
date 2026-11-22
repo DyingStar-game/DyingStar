@@ -97,3 +97,24 @@ func test_it_hangs_on_the_game_s_puppet_with_both_hands_measured() -> void:
 		assert_eq(hand._chains.size(), 4, "four fingers to close")
 	puppet.queue_free()
 	await get_tree().process_frame
+
+
+func test_a_tracked_wrist_is_read_in_godot_s_humanoid_convention() -> void:
+	# Godot turns OpenXR's joints (-Z fingers, +Y back) into its humanoid ones (+Y fingers, -Z back).
+	var openxr := Basis(Vector3.UP, 0.4) * Basis(Vector3.RIGHT, -0.3)
+	var godot: Basis = openxr * Basis(Quaternion(0.0, -sqrt(0.5), sqrt(0.5), 0.0))
+	var hand: Dictionary = VrArms.tracked_hand(Transform3D(godot, Vector3(0.1, 0.2, 0.3)))
+	assert_almost_eq(hand["forward"], openxr * Vector3.FORWARD, Vector3.ONE * 1e-5, "the fingers")
+	assert_almost_eq(hand["dorsal"], openxr * Vector3.UP, Vector3.ONE * 1e-5, "the back of the hand")
+
+
+func test_hands_holding_upright_controllers_face_each_other() -> void:
+	# Both handles upright in front of the chest (-Z of the grip up), palms facing in.
+	var right_grip := Basis(Vector3.RIGHT, Vector3.BACK, Vector3.DOWN)  # +X right, +Y towards the player
+	var left_grip := Basis(Vector3.RIGHT, Vector3.BACK, Vector3.DOWN)  # +X right: out of the left palm
+	var right: Dictionary = VrArms.gripped_hand(Transform3D(right_grip, Vector3.ZERO), false)
+	var left: Dictionary = VrArms.gripped_hand(Transform3D(left_grip, Vector3.ZERO), true)
+	assert_almost_eq(right["forward"], Vector3.FORWARD, Vector3.ONE * 1e-6, "the knuckles ahead of the wrist")
+	assert_almost_eq(right["dorsal"], Vector3.RIGHT, Vector3.ONE * 1e-6, "the right hand's back faces out")
+	assert_almost_eq(left["dorsal"], Vector3.LEFT, Vector3.ONE * 1e-6, "the left hand's back faces out")
+	assert_almost_eq(right["wrist"], Vector3.BACK * VrArms.GRIP_TO_WRIST_M, Vector3.ONE * 1e-6, "behind the palm")

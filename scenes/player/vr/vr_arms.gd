@@ -6,10 +6,14 @@ extends Node
 ##
 ## Where a hand is, best first:
 ## - the runtime's hand tracking (XR_EXT_hand_tracking -- from the cameras, or from the controller held,
-##   like the Steam Frame's or the Index's): the wrist joint, whose axes OpenXR fixes (-Z to the fingers,
-##   +Y out of the back of the hand), and every finger joint, whose bends close the avatar's fingers;
-## - else the controller's grip pose: the wrist a little behind the palm, the hand along the controller,
-##   the index closed by the trigger and the other fingers by the grip.
+##   like the Steam Frame's or the Index's): the wrist joint and every finger joint, whose bends close the
+##   avatar's fingers. Godot hands the joints over in ITS humanoid convention, not OpenXR's: +Y along the
+##   bone to the fingers, -Z out of the back of the hand (OpenXRHandTrackingExtension's bone adjustment);
+##   read as OpenXR's (-Z fingers, +Y back), both hands came out turned a quarter outwards (2026-11-22);
+## - else the controller's grip pose, whose axes OpenXR fixes: -Z along the handle from the little finger
+##   to the thumb, X square to the palm (the back of the hand: +X on the right hand, -X on the left), so
+##   the fingers' knuckles lie along -Y from the wrist; the wrist a little behind the palm, the index
+##   closed by the trigger and the other fingers by the grip.
 ## A hand the runtime sees by neither lets the animation have the arm back.
 ##
 ## Not Godot's XRHandModifier3D: it copies each joint's turn onto the bone of the same name, which needs a
@@ -68,9 +72,10 @@ func _process(delta: float) -> void:
 		_drive(side, source, delta, skeleton_from_origin, skeleton_from_player)
 
 
-## Where hand [param side] (0 left, 1 right) is, in the rig's (the XR origin's) space: {"wrist": a
-## Transform3D, -Z to the fingers, +Y out of the back of the hand; "curls": per finger of
-## HumanoidHand.FINGERS, its three joints' bends (deg)}. Empty when the runtime sees it by no means.
+## Where hand [param side] (0 left, 1 right) is, in the rig's (the XR origin's) space: {"wrist": its
+## place, "forward": from the wrist to the knuckles, "dorsal": out of the back of the hand, "curls": per
+## finger of HumanoidHand.FINGERS, its three joints' bends (deg)}. Empty when the runtime sees it by no
+## means.
 func hand_source(side: int) -> Dictionary:
 	var tracker := XRServer.get_tracker(HAND_TRACKERS[side]) as XRHandTracker
 	if tracker != null and tracker.has_tracking_data:
@@ -80,16 +85,31 @@ func hand_source(side: int) -> Dictionary:
 			var joints: Array[Vector3] = []
 			for joint in XRHandTracker.HAND_JOINT_MAX:
 				joints.append(tracker.get_hand_joint_transform(joint).origin)
-			return {"wrist": tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_WRIST),
-					"curls": finger_curls(joints)}
+			var hand := tracked_hand(tracker.get_hand_joint_transform(XRHandTracker.HAND_JOINT_WRIST))
+			hand["curls"] = finger_curls(joints)
+			return hand
 	var controller: XRController3D = _rig.left_hand if side == 0 else _rig.right_hand
 	if controller == null or not controller.get_has_tracking_data():
 		return {}
-	var grip: Transform3D = controller.transform
-	var trigger: float = controller.get_float(&"trigger")
-	var squeeze: float = controller.get_float(&"squeeze")
-	return {"wrist": Transform3D(grip.basis, grip.origin + grip.basis.z.normalized() * GRIP_TO_WRIST_M),
-			"curls": pull_curls(trigger, squeeze)}
+	var hand := gripped_hand(controller.transform, side == 0)
+	hand["curls"] = pull_curls(controller.get_float(&"trigger"), controller.get_float(&"squeeze"))
+	return hand
+
+
+## A hand from the hand tracker's wrist joint [param wrist] (Godot's humanoid convention: +Y to the
+## fingers, -Z out of the back of the hand).
+static func tracked_hand(wrist: Transform3D) -> Dictionary:
+	return {"wrist": wrist.origin, "forward": wrist.basis.y.normalized(), "dorsal": -wrist.basis.z.normalized()}
+
+
+## A hand from a controller's grip pose [param grip] held in the [param left] hand or the right one
+## (OpenXR's grip: -Z along the handle, little finger to thumb; +X square to the palm, out of the back of
+## the right hand and out of the palm of the left one): the knuckles along -Y, the wrist GRIP_TO_WRIST_M
+## behind the palm.
+static func gripped_hand(grip: Transform3D, left: bool) -> Dictionary:
+	var forward: Vector3 = -grip.basis.y.normalized()
+	var dorsal: Vector3 = grip.basis.x.normalized() * (-1.0 if left else 1.0)
+	return {"wrist": grip.origin - forward * GRIP_TO_WRIST_M, "forward": forward, "dorsal": dorsal}
 
 
 ## The bends (deg) of each finger's three joints, from the tracked joints' positions [param joints]
@@ -146,12 +166,11 @@ func _drive(side: int, source: Dictionary, delta: float, skeleton_from_origin: T
 		modifier.influence = eased
 	if source.is_empty():
 		return  # fading back to the animation: the last targets hold meanwhile
-	var wrist: Transform3D = skeleton_from_origin * (source["wrist"] as Transform3D)
-	ik.target = wrist.origin
+	ik.target = skeleton_from_origin * (source["wrist"] as Vector3)
 	var shoulder: Vector3 = _skeleton.get_bone_global_pose(int(arm["upper"])).origin
 	ik.pole = shoulder + skeleton_from_player.basis * POLES[side]
-	hand.forward = (wrist.basis * Vector3.FORWARD).normalized()
-	hand.dorsal = (wrist.basis * Vector3.UP).normalized()
+	hand.forward = (skeleton_from_origin.basis * (source["forward"] as Vector3)).normalized()
+	hand.dorsal = (skeleton_from_origin.basis * (source["dorsal"] as Vector3)).normalized()
 	hand.curls = source["curls"]
 
 
