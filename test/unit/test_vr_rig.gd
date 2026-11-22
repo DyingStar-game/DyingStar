@@ -135,3 +135,61 @@ func test_the_prompt_faces_the_eye_and_keeps_its_size_far_from_the_worlds_origin
 	assert_almost_eq(placed.basis.z.normalized().dot(to_eye), 1.0, 1e-6, "its face (+Z) to the eye")
 	assert_almost_eq(placed.basis.get_scale().x, (eye.origin - at).length(), 1e-6,
 			"twice as far, twice as big: the same size to the eye")
+
+
+## A mining tool as VrTool sees it: in the hand or not, its mount and its rock ray.
+class FakeTool:
+	extends MiningTool
+	var held: bool = true
+	var mount: Node3D = null
+	var ray: RayCast3D = null
+
+	func in_hand() -> bool:
+		return held
+
+	func equipment_mount() -> Node3D:
+		return mount
+
+	func rock_ray() -> RayCast3D:
+		return ray
+
+
+func test_the_aiming_hand_holds_the_tool_and_aims_its_rocks() -> void:
+	var hand := XRControllerTracker.new()
+	hand.name = &"right_hand"
+	hand.hand = XRPositionalTracker.TRACKER_HAND_RIGHT
+	XRServer.add_tracker(hand)
+	var rig := VrRig.install(_player)
+	rig.pointer.comfort = VrComfortSettings.new(ConfigFile.new(), func() -> void: pass)  # right-handed
+	rig.pointer.mouse_captured = func() -> bool: return true
+	var tool := FakeTool.new()
+	tool.mount = Node3D.new()
+	_player.add_child(tool.mount)
+	tool.ray = RayCast3D.new()
+	rig.camera.add_child(tool.ray)
+	rig.hold_tool(tool)
+	var holder: VrTool = rig.get_node("VrTool")
+	hand.set_pose(&"aim", Transform3D(Basis(Vector3.UP, 0.4), Vector3(0.25, -0.3, -0.35)), Vector3.ZERO,
+			Vector3.ZERO, XRPose.XR_TRACKING_CONFIDENCE_HIGH)
+	rig.pointer._process(0.016)
+	holder._process(0.016)
+	assert_eq(tool.ray.get_parent(), rig.right_aim, "the tool mines where the hand points")
+	var at := VrTool.held_at(rig.right_aim.global_transform)
+	assert_almost_eq(tool.mount.global_transform.origin, at.origin, Vector3.ONE * 1e-5, "in the hand")
+	tool.held = false
+	var stowed := tool.mount.global_transform
+	hand.set_pose(&"aim", Transform3D(Basis(), Vector3(-0.3, -0.5, -0.1)), Vector3.ZERO, Vector3.ZERO,
+			XRPose.XR_TRACKING_CONFIDENCE_HIGH)
+	holder._process(0.016)
+	assert_eq(tool.mount.global_transform, stowed, "stowed: the game's own pose")
+	XRServer.remove_tracker(hand)
+	tool.free()
+
+
+func test_a_finger_on_a_screen_presses_it_and_lifting_it_lets_go() -> void:
+	assert_eq(VrPointer.poke_change(false, true, 0.2), 0, "pointing from afar: no press")
+	assert_eq(VrPointer.poke_change(false, true, 0.005), 1, "touching: press")
+	assert_eq(VrPointer.poke_change(true, true, -0.05), 0, "through the glass: still pressed")
+	assert_eq(VrPointer.poke_change(true, true, 0.02), 0, "a tremble back: still pressed")
+	assert_eq(VrPointer.poke_change(true, true, 0.05), -1, "lifted: let go")
+	assert_eq(VrPointer.poke_change(true, false, INF), -1, "off the screen: let go")

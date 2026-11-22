@@ -27,6 +27,8 @@ var left_aim: XRController3D = null
 var right_aim: XRController3D = null
 ## The body kept under the head (turns, room-scale, recentring).
 var body: VrBody = null
+## Aims the interaction ray (and the tool's) from the aiming hand.
+var pointer: VrPointer = null
 
 
 ## Put the VR view on [param player] (a Player): returns the rig, whose camera replaces the flat one.
@@ -56,10 +58,10 @@ static func install(player: Node3D) -> VrRig:
 	# A hand aims: the interaction ray leaves from it, a dot where it meets something.
 	var ray := rig.camera.get_node_or_null("InteractRay") as RayCast3D
 	if ray != null:
-		var pointer := VrPointer.new()
-		pointer.name = "VrPointer"
-		pointer.setup(ray, rig.left_aim, rig.right_aim, rig.camera)
-		rig.add_child(pointer)
+		rig.pointer = VrPointer.new()
+		rig.pointer.name = "VrPointer"
+		rig.pointer.setup(ray, rig.left_aim, rig.right_aim, rig.camera)
+		rig.add_child(rig.pointer)
 		# The interaction prompt over what the hand aims at, not in the HUD's panel.
 		var label := player.get("interact_label") as RichTextLabel
 		if label != null:
@@ -90,6 +92,16 @@ static func install(player: Node3D) -> VrRig:
 		models.name = "ControllerModels"
 		rig.add_child(models)
 	return rig
+
+
+## The aiming hand holds [param tool] (a MiningTool, once Player has set it up) and aims it.
+func hold_tool(tool: MiningTool) -> void:
+	if pointer == null:
+		return
+	var holder := VrTool.new()
+	holder.name = "VrTool"
+	holder.setup(tool, pointer)
+	add_child(holder)
 
 
 ## Back in the tree, the headset looks from here again. The server reparents the player (building ->

@@ -21,6 +21,13 @@ const HIT_COLOUR := Color(0.55, 0.95, 1.0, 0.9)
 const TICK_HZ := 160.0
 const TICK_AMPLITUDE := 0.25
 const TICK_S := 0.02
+## The hand presses a 3D screen when the front of the controller comes this close (m) to it, or goes
+## through it, and lets go past POKE_RELEASE_M (in between: no chatter). PlayerClient._vr_poke.
+const POKE_PRESS_M := 0.01
+const POKE_RELEASE_M := 0.03
+## The screens are looked for from this far (m) behind the front of the controller: a hand already
+## through a screen still finds it, and keeps pressing.
+const POKE_BACK_M := 0.15
 
 ## Does the game have the mouse captured (the view is the player's, no menu)? A Callable for the tests.
 var mouse_captured: Callable = func() -> bool:
@@ -30,6 +37,7 @@ var mouse_captured: Callable = func() -> bool:
 var comfort: VrComfortSettings = null
 
 var _ray: RayCast3D = null
+var _followers: Array[RayCast3D] = []  # other rays aimed the same way (the mining tool's: follow())
 var _aims: Array[XRController3D] = []
 var _aim: XRController3D = null
 var _head: Node3D = null
@@ -65,8 +73,9 @@ func _process(_delta: float) -> void:
 		_dot.reparent(_aim, false)
 	var on_hand: bool = _aim.get_has_tracking_data()
 	var from: Node3D = _aim if on_hand else _head
-	if _ray.get_parent() != from:
-		_ray.reparent(from, false)
+	for ray: RayCast3D in [_ray] + _followers:
+		if is_instance_valid(ray) and ray.get_parent() != from:
+			ray.reparent(from, false)
 	var hit: bool = on_hand and mouse_captured.call() and _ray.is_colliding()
 	if hit:
 		_dot.global_position = _ray.get_collision_point()
@@ -74,6 +83,27 @@ func _process(_delta: float) -> void:
 	if hit and not _was_hit:
 		_aim.trigger_haptic_pulse(&"haptic", TICK_HZ, TICK_AMPLITUDE, TICK_S, 0.0)
 	_was_hit = hit
+
+
+## A poke's next step: 1 press, -1 let go, 0 nothing, for a hand [param poking] or not, over a screen
+## ([param on_screen]) whose surface is [param tip] m ahead of the controller's front (negative: through).
+static func poke_change(poking: bool, on_screen: bool, tip: float) -> int:
+	if poking and (not on_screen or tip > POKE_RELEASE_M):
+		return -1
+	if not poking and on_screen and tip < POKE_PRESS_M:
+		return 1
+	return 0
+
+
+## Aim [param ray] from the same place as the interaction ray: the aiming hand, or the head.
+func follow(ray: RayCast3D) -> void:
+	if ray != null and not _followers.has(ray):
+		_followers.append(ray)
+
+
+## The aiming hand while the runtime sees it, else null (the head aims).
+func aiming_hand() -> XRController3D:
+	return _aim if is_instance_valid(_aim) and _aim.get_has_tracking_data() else null
 
 
 static func _paint(colour: Color) -> StandardMaterial3D:

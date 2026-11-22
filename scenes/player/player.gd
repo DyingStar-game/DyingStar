@@ -736,6 +736,8 @@ func _ready() -> void:
 	# relay its replicated-state requests to the server + its aim signal to the UI.
 	mining_tool.setup(camera_pivot, camera)
 	mining_tool.sync_requested.connect(client_send_action_to_server)
+	if vr_rig != null:
+		vr_rig.hold_tool(mining_tool)  # in VR the aiming hand holds and aims it
 	var ui: Node = get_node_or_null(^"UserInterface")
 	if ui != null:
 		mining_tool.aiming_changed.connect(ui.set_aiming)

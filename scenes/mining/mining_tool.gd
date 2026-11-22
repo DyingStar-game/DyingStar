@@ -420,6 +420,21 @@ func set_stowed(value: bool) -> void:
 func _perforator_active() -> bool:
 	return _perforator != null and _equipped and not _stowed
 
+## Is the perforator out in the hand (equipped, not stowed for a load)? VR holds it in the hand then
+## (VrTool).
+func in_hand() -> bool:
+	return _perforator_active()
+
+
+## The ray the tool aims rocks with: from the camera, or from the aiming hand in VR (VrPointer).
+func rock_ray() -> RayCast3D:
+	return _rock_ray
+
+
+## The mount the held perforator hangs on: VR puts it in the aiming hand (VrTool).
+func equipment_mount() -> Node3D:
+	return _equipment_mount
+
 ## Is the perforator drawn: never on a player who does not own one (no one starts with it, it is taken
 ## at the ARES Mining dispenser), else always -- out in hand, or stowed on the belt, the owner's own
 ## included: looking down, a player sees the tool they carry (playtest 2026-11-08).

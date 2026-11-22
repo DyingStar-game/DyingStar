@@ -174,6 +174,7 @@ var _last_hold_action: String = ""  # last "hold:<n>:x:y:z" seen (ScreenPoke.hol
 var _last_blip_action: String = ""  # last "blip:<n>:x:y:z" seen (ScreenPoke.blip_action)
 ## OWNER: the button is held down on a screen since a tap, and when the others were last told (ms).
 var _tap_holding: bool = false
+var _poking: bool = false  # VR: the hand is pressing the screen it touches (_vr_poke)
 var _hold_said_ms: int = 0
 var _last_tap_sound: AudioStream = null  # never the same tap sound twice running
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
@@ -1141,17 +1142,20 @@ func _replicate_look() -> void:
 ## The ray is the InteractRay's: from the eye on the flat screen, from the right hand in VR (VrPointer).
 func _point_screen(ui_focus: bool) -> bool:
 	var aim: Node3D = player.interact_ray if player.camera != null else null
+	# VR: looked for from behind the hand, so the distance tells a touch (_vr_poke).
+	var back: float = VrPointer.POKE_BACK_M if player.vr_rig != null else 0.0
 	var eye: Vector3 = aim.global_position if aim != null else player.global_position
 	var gui: Node3D = null
 	var point: Variant = null
+	var nearest: float = INF
 	if not ui_focus and aim != null:
 		var ray: Vector3 = -aim.global_basis.z
-		var nearest: float = INF
+		eye -= ray * back
 		for candidate: Node in get_tree().get_nodes_in_group(ScreenTarget.GROUP):
 			var screen_gui := candidate as Node3D
 			if screen_gui == null or screen_gui.global_position.distance_to(eye) > SCREEN_REACH_M + 2.0:
 				continue
-			var at: Variant = screen_gui.hit(eye, ray, SCREEN_REACH_M)
+			var at: Variant = screen_gui.hit(eye, ray, SCREEN_REACH_M + back)
 			if at != null and eye.distance_to(at) < nearest and ScreenTarget.owner_of(screen_gui) != null:
 				nearest = eye.distance_to(at)
 				gui = screen_gui
@@ -1174,8 +1178,25 @@ func _point_screen(ui_focus: bool) -> bool:
 			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
+	if player.vr_rig != null:
+		_vr_poke(gui, nearest - back)
 	_hold_tap(gui != null)
 	return gui != null or watched
+
+
+## VR: the hand touching the screen it points at presses it, like the click: [param tip] is how far
+## (m) the front of the controller is from [param gui] (negative: through it), INF for no screen.
+func _vr_poke(gui: Node3D, tip: float) -> void:
+	var change: int = VrPointer.poke_change(_poking, gui != null, tip)
+	if change < 0:
+		_poking = false
+		_press_screen(false)
+	elif change > 0:
+		_poking = true
+		_press_screen(true)
+		var hand: XRController3D = player.vr_rig.pointer.aiming_hand() if player.vr_rig.pointer != null else null
+		if hand != null:
+			hand.trigger_haptic_pulse(&"haptic", 120.0, 0.4, 0.03, 0.0)  # the finger feels the glass
 
 
 ## Whether another player is using the screen of [param gui] (ScreenLock): it is theirs to touch.
@@ -1232,22 +1253,28 @@ func _input(event: InputEvent) -> void:
 		return
 	if not event.is_action(&"perforate"):
 		return
+	if _press_screen(event.is_pressed()):
+		get_viewport().set_input_as_handled()
+
+
+## Press ([param pressed]) or let go of the screen under the crosshair -- the click, or in VR the finger
+## (_vr_poke). True when it was the screen's (or a field let go of the keyboard).
+func _press_screen(pressed: bool) -> bool:
 	var typing: bool = _screen_typing()
-	if typing and event.is_pressed():
+	if typing and pressed:
 		var used: Node3D = ScreenTarget.gui_of(player.screen_in_use)
 		if used != null:
 			used.release_keyboard()
 	if is_instance_valid(_pointed_gui):
 		var screen_owner: Node3D = ScreenTarget.owner_of(_pointed_gui)
-		if event.is_pressed() and not ScreenLock.is_mine(screen_owner):
+		if pressed and not ScreenLock.is_mine(screen_owner):
 			ScreenTarget.send(screen_owner, {"state": ScreenLock.STATE})  # ours now, the others watch
-		_pointed_gui.click_at(_pointed_at, event.is_pressed())
-		if event.is_pressed():
+		_pointed_gui.click_at(_pointed_at, pressed)
+		if pressed:
 			_screen_tap(_pointed_at)
 			_tap_holding = true  # until the button is let go, or the crosshair leaves the screen (_hold_tap)
 			_hold_said_ms = Time.get_ticks_msec()
-	if typing or is_instance_valid(_pointed_gui):
-		get_viewport().set_input_as_handled()
+	return typing or is_instance_valid(_pointed_gui)
 
 
 ## Whether [param event] is a turn of the mouse wheel (up, down, or tilted sideways).
@@ -1270,7 +1297,7 @@ func _screen_tap(at: Vector3) -> void:
 func _hold_tap(on_screen: bool) -> void:
 	if not _tap_holding:
 		return
-	if not on_screen or not Input.is_action_pressed(&"perforate"):
+	if not on_screen or not (Input.is_action_pressed(&"perforate") or _poking):
 		_tap_holding = false
 		player.tap_hold_until_ms = 0
 		return
