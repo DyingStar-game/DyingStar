@@ -433,20 +433,30 @@ func setup() -> void:
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
-	var can_take_pointer := func() -> bool: return not _input_locked()
-	var graphics : OverlayPanel = GraphicsOverlay.in_game()
-	for panel: OverlayPanel in [graphics, DevOverlay.create(player,
-			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
-			_driven_vehicle, _star_map)]:
-		_screens_root().add_child(panel.setup(can_take_pointer, _menu_open))
-	# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
-	# the graphics panel.
-	var hints := PlayHintsPanel.new()
-	hints.hidden_rule = _modal_open
-	player.get_node("UserInterface").add_child(hints)
-	if player.direct_chat != null:
-		hints.place_under(player.direct_chat)
-	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
+	#
+	# Not in VR, nor the play hints, nor the speaker and microphone buttons: the HUD is a panel floating
+	# before the eyes there, and these stood between them and the world (playtest 2026-11-22) -- the
+	# keys of the moment name pad buttons a headset's player does not read on a pad, the AltGr pointer
+	# has no mouse, and the speaker and the microphone keep their keys.
+	if player.vr_rig == null:
+		var can_take_pointer := func() -> bool: return not _input_locked()
+		var graphics : OverlayPanel = GraphicsOverlay.in_game()
+		for panel: OverlayPanel in [graphics, DevOverlay.create(player,
+				player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
+				_driven_vehicle, _star_map)]:
+			_screens_root().add_child(panel.setup(can_take_pointer, _menu_open))
+		# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
+		# the graphics panel.
+		var hints := PlayHintsPanel.new()
+		hints.hidden_rule = _modal_open
+		player.get_node("UserInterface").add_child(hints)
+		if player.direct_chat != null:
+			hints.place_under(player.direct_chat)
+		hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
+	else:
+		var audio: Control = player.get_node_or_null(^"UserInterface/HUD/Control/AudioContainer")
+		if audio != null:
+			audio.hide()
 	_offer_play_hints()
 	# The interaction prompt in a frame beside the crosshair, a line drawn to it from what it is about;
 	# Settings > General can turn the frame off: the plain prompt, on a dark patch fitted to its width
