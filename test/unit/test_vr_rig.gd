@@ -75,3 +75,27 @@ func test_the_headset_still_looks_from_the_player_after_a_reparent() -> void:
 	parent.add_child(_player)  # ...and back in
 	assert_true(rig.is_current(), "the player's origin takes the view back")
 	assert_false(elsewhere.is_current())
+
+
+func test_the_right_hand_aims_while_it_is_tracked_and_the_head_otherwise() -> void:
+	var hand := XRControllerTracker.new()
+	hand.name = &"right_hand"
+	hand.hand = XRPositionalTracker.TRACKER_HAND_RIGHT
+	XRServer.add_tracker(hand)
+	var rig := VrRig.install(_player)
+	assert_eq(rig.right_aim.pose, &"aim", "aim_pose of xr/openxr_action_map.tres, as Godot names it")
+	var pointer: VrPointer = rig.get_node("VrPointer")
+	pointer.mouse_captured = func() -> bool: return true
+	pointer._process(0.016)
+	assert_eq(_ray.get_parent(), rig.camera, "no hand seen: the head aims, as on the flat screen")
+	hand.set_pose(&"aim", Transform3D(Basis(), Vector3(0.2, -0.3, -0.2)), Vector3.ZERO, Vector3.ZERO,
+			XRPose.XR_TRACKING_CONFIDENCE_HIGH)
+	pointer._process(0.016)
+	assert_eq(_ray.get_parent(), rig.right_aim, "the hand seen: it aims")
+	assert_eq(_ray.target_position, Vector3(0.0, 0.0, -3.0), "with the same reach")
+	assert_true(rig.right_aim.get_node("Laser").visible, "along a laser")
+	hand.invalidate_pose(&"aim")
+	pointer._process(0.016)
+	assert_eq(_ray.get_parent(), rig.camera, "the hand lost: back to the head")
+	assert_false(rig.right_aim.get_node("Laser").visible)
+	XRServer.remove_tracker(hand)

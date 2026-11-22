@@ -21,6 +21,8 @@ var camera: XRCamera3D = null
 ## runtime sees the controller (or the hand).
 var left_hand: XRController3D = null
 var right_hand: XRController3D = null
+## Where the right hand points (its aim pose): the interaction ray leaves from it (VrPointer).
+var right_aim: XRController3D = null
 
 
 ## Put the VR view on [param player] (a Player): returns the rig, whose camera replaces the flat one.
@@ -41,6 +43,16 @@ static func install(player: Node3D) -> VrRig:
 	rig.add_child(rig.left_hand)
 	rig.right_hand = _hand(&"right_hand", "RightHand")
 	rig.add_child(rig.right_hand)
+	rig.right_aim = _hand(&"right_hand", "RightAim")
+	rig.right_aim.pose = &"aim"
+	rig.add_child(rig.right_aim)
+	# The right hand aims: the interaction ray leaves from it, along a laser.
+	var ray := rig.camera.get_node_or_null("InteractRay") as RayCast3D
+	if ray != null:
+		var pointer := VrPointer.new()
+		pointer.name = "VrPointer"
+		pointer.setup(ray, rig.right_aim, rig.camera)
+		rig.add_child(pointer)
 	# The controllers played as a gamepad: every gamepad binding of the game works from them.
 	var controls := VrInput.new()
 	controls.name = "VrInput"

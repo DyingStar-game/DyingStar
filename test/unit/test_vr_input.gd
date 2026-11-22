@@ -17,7 +17,8 @@ func before_each() -> void:
 	XRServer.add_tracker(_left)
 	XRServer.add_tracker(_right)
 	var fake := GDScript.new()
-	fake.source_code = "extends Node3D\nvar mouse_motion := Vector2.ZERO\nvar camera_sensitivity := 2.0\n"
+	fake.source_code = ("extends Node3D\nvar mouse_motion := Vector2.ZERO\nvar camera_sensitivity := 2.0\n"
+			+ "var _seat_vehicle_uuid := \"\"\n")
 	fake.reload()
 	_player = Node3D.new()
 	_player.set_script(fake)
@@ -93,3 +94,43 @@ func test_in_a_menu_only_pause_and_back_reach_the_game() -> void:
 	assert_false(Input.is_action_pressed("jump"), "the laser's trigger and A are the menu's")
 	_press(_right, &"menu_button", true)
 	assert_true(Input.is_action_pressed("pause"))
+
+
+func test_a_left_stick_click_runs_until_the_stick_comes_back() -> void:
+	_left.set_input(&"primary", Vector2(0.0, 1.0))
+	_press(_left, &"primary_click", true)
+	assert_true(Input.is_action_pressed("sprint"))
+	_press(_left, &"primary_click", false)
+	assert_true(Input.is_action_pressed("sprint"), "let go of the click, still walking: still running")
+	_press(_left, &"primary", Vector2.ZERO)
+	assert_false(Input.is_action_pressed("sprint"), "the stick back to the centre: the run is over")
+	_press(_left, &"primary", Vector2(0.0, 1.0))
+	assert_false(Input.is_action_pressed("sprint"), "walking again is walking, until the next click")
+
+
+func test_seated_the_left_stick_click_is_only_held() -> void:
+	_player.set("_seat_vehicle_uuid", "truck")
+	_left.set_input(&"primary", Vector2(0.5, 0.0))
+	_press(_left, &"primary_click", true)
+	_press(_left, &"primary_click", false)
+	assert_false(Input.is_action_pressed("vehicle_horn"), "the horn stops with the click")
+
+
+func test_in_vr_the_hud_names_the_controllers_buttons_whatever_the_desktop_does() -> void:
+	var held := InputDevice.held_pad
+	var last := InputDevice.last
+	InputDevice.hold_pad(VrInput.DEVICE)
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.physical_keycode = KEY_E
+	InputDevice.feed(key)
+	var mouse := InputEventMouseMotion.new()
+	mouse.relative = Vector2(50.0, 0.0)
+	InputDevice.feed(mouse)
+	assert_eq(InputDevice.last, InputDevice.Kind.GAMEPAD, "a key or the mouse on the desk changes nothing")
+	assert_string_contains(InputLabel.for_action(&"sprint"), "LS", "run: the left stick, not Shift")
+	InputDevice.hold_pad(-1)
+	InputDevice.feed(key)
+	assert_eq(InputDevice.last, InputDevice.Kind.KEYBOARD_MOUSE, "let go: the keyboard counts again")
+	InputDevice.held_pad = held
+	InputDevice.last = last

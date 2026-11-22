@@ -24,6 +24,9 @@ const FAR_M := 5.0e5
 ## Physics steps one frame may run to catch up (the engine's default is 8). A headset frame that came late
 ## must not be followed by an even later one: past this the game's clock slows down instead.
 const MAX_PHYSICS_STEPS := 2
+## Device id of the gamepad the VR controllers play as (VrInput): a number no real pad gets. In VR it holds
+## the HUD's button names from the start (InputDevice.hold_pad): the controllers are all the player has.
+const PAD_DEVICE := 15
 
 
 ## The OpenXR interface, initialised or not; null in a build without the OpenXR module.

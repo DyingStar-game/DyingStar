@@ -49,6 +49,8 @@ func _ready() -> void:
 	# A late frame catches up at most MAX_PHYSICS_STEPS steps: at 8 (the default) a 80 ms frame made the
 	# next one run 5 steps and come later still -- the spiral the headset's runtime timed out on.
 	Engine.max_physics_steps_per_frame = XRMode.MAX_PHYSICS_STEPS
+	# The HUD and the menus name the controllers' buttons, never the keys of a keyboard out of reach.
+	InputDevice.hold_pad(XRMode.PAD_DEVICE)
 	_build_follow_origin.call_deferred()
 	var screen := XRScreen.new()  # the 2D (menus, HUD) on a panel in the headset
 	screen.name = "XRScreen"

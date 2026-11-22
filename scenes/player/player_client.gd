@@ -394,7 +394,12 @@ func setup() -> void:
 	_wrist.name = "WristDatapad"
 	player.add_child(_wrist)
 	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
-	_wrist.up_changed.connect(func(up: bool) -> void: player.get_node("UserInterface").set_crosshair_shown(not up))
+	# In VR no crosshair: the middle of the HUD's panel is not where anything aims, the hand's laser is
+	# (VrPointer).
+	var crosshair_wanted: bool = player.vr_rig == null
+	player.get_node("UserInterface").set_crosshair_shown(crosshair_wanted)
+	_wrist.up_changed.connect(func(up: bool) -> void:
+		player.get_node("UserInterface").set_crosshair_shown(crosshair_wanted and not up))
 	# The wrist's light blinks while an app has news nobody opened: put away without looking at it,
 	# the tablet blinks again (WristDatapad clears it when it is read).
 	_wrist.up_changed.connect(func(up: bool) -> void:
@@ -1131,12 +1136,14 @@ func _replicate_look() -> void:
 ## ([param ui_focus]). Seated as well as on foot: walking up to a screen used to free the cursor and
 ## freeze the view, which a seat could not allow while driving; the view stays the player's now, and a
 ## seated player reaches the consoles around the seat like anyone else. True while it points at one.
+## The ray is the InteractRay's: from the eye on the flat screen, from the right hand in VR (VrPointer).
 func _point_screen(ui_focus: bool) -> bool:
-	var eye: Vector3 = player.camera.global_position if player.camera != null else player.global_position
+	var aim: Node3D = player.interact_ray if player.camera != null else null
+	var eye: Vector3 = aim.global_position if aim != null else player.global_position
 	var gui: Node3D = null
 	var point: Variant = null
-	if not ui_focus and player.camera != null:
-		var ray: Vector3 = -player.camera.global_basis.z
+	if not ui_focus and aim != null:
+		var ray: Vector3 = -aim.global_basis.z
 		var nearest: float = INF
 		for candidate: Node in get_tree().get_nodes_in_group(ScreenTarget.GROUP):
 			var screen_gui := candidate as Node3D

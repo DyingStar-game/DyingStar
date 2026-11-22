@@ -7,14 +7,15 @@ extends Node
 ## change. The buttons are read through the action map's actions (xr/openxr_action_map.tres), which
 ## exist on every controller profile, so the same physical labels do the same thing everywhere.
 ##
-## One thing is VR's own: the right stick turns the body in steps (comfort: a smooth turn the eyes do
-## not feel makes many players sick). Looking up and down is the head's.
+## Two things are VR's own: the right stick turns the body in steps (comfort: a smooth turn the eyes do
+## not feel makes many players sick; looking up and down is the head's), and a click of the left stick
+## runs until the stick comes back to the centre (holding a stick down while pushing it is tiring).
 ##
 ## Built by VrRig for the owner's player, in VR only.
 
 ## The pad's device id for the events we make: a number no real pad gets, so the game can tell them
 ## apart (every gamepad binding of the project is for all devices, -1, and takes them).
-const DEVICE := 15
+const DEVICE := XRMode.PAD_DEVICE
 ## Each step of the snap turn (deg).
 const SNAP_TURN_DEG := 30.0
 ## The right stick turns past this (0..1), and re-arms under SNAP_REARM.
@@ -23,6 +24,8 @@ const SNAP_PUSH := 0.7
 const SNAP_REARM := 0.3
 ## Analog values closer than this to the last one sent are not sent again (no event flood).
 const AXIS_EPSILON := 0.01
+## The run a left stick click starts lasts while the stick is pushed past this (0..1), on foot.
+const RUN_HOLD := 0.2
 
 ## [action of the action map, hand (0 left / 1 right), pad button]. Laid out by what is PRINTED on the
 ## controllers, like an Xbox pad: A and B under the right thumb, X and Y under the left one (Touch, Pico,
@@ -49,7 +52,10 @@ const BUTTONS: Array = [
 	[&"dpad_right", 0, JOY_BUTTON_DPAD_RIGHT],  # ignition
 ]
 ## While a menu has the mouse (the laser points), only these reach the game: pause and back close it.
-const BUTTONS_IN_MENUS: Array[JoyButton] = [JOY_BUTTON_START, JOY_BUTTON_B]
+## The bumpers step the menus' tabs (ui_page_previous / ui_page_next).
+const BUTTONS_IN_MENUS: Array[JoyButton] = [
+	JOY_BUTTON_START, JOY_BUTTON_B, JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER,
+]
 
 ## Does a menu have the mouse (the laser points at it)? Then only BUTTONS_IN_MENUS reach the game. A
 ## Callable so the tests can play without a window (headless, the mouse is never captured).
@@ -61,6 +67,7 @@ var _hands: Array[XRController3D] = []
 var _buttons_down: Dictionary = {}  # JoyButton -> bool, as last sent
 var _axes_sent: Dictionary = {}  # JoyAxis -> float, as last sent
 var _snap_armed: bool = true
+var _running: bool = false  # a left stick click is running (RUN_HOLD)
 
 
 ## Read [param left] and [param right] (the rig's hands) for [param player] (a Player: its
@@ -74,23 +81,35 @@ func _process(_delta: float) -> void:
 	if _hands.size() != 2:
 		return
 	var in_menu: bool = menu_has_mouse.call()
+	var stick: Vector2 = Vector2.ZERO if in_menu else _hands[0].get_vector2(&"primary")
 	var wanted: Dictionary = {}
 	for entry: Array in BUTTONS:
 		var held: bool = _hands[entry[1]].is_button_pressed(entry[0])
 		wanted[entry[2]] = bool(wanted.get(entry[2], false)) or held
+	wanted[JOY_BUTTON_LEFT_STICK] = _run(wanted[JOY_BUTTON_LEFT_STICK], stick)
 	for button: JoyButton in wanted:
 		var down: bool = wanted[button] and (not in_menu or BUTTONS_IN_MENUS.has(button))
 		if down != bool(_buttons_down.get(button, false)):
 			_buttons_down[button] = down
 			_send_button(button, down)
 
-	var stick: Vector2 = Vector2.ZERO if in_menu else _hands[0].get_vector2(&"primary")
 	_send_axis(JOY_AXIS_LEFT_X, stick.x)
 	_send_axis(JOY_AXIS_LEFT_Y, -stick.y)  # OpenXR: up is +y; a pad: up is -y
 	_send_axis(JOY_AXIS_TRIGGER_LEFT, 0.0 if in_menu else _hands[0].get_float(&"trigger"))
 	_send_axis(JOY_AXIS_TRIGGER_RIGHT, 0.0 if in_menu else _hands[1].get_float(&"trigger"))
 	if not in_menu:
 		_snap_turn(_hands[1].get_vector2(&"primary").x)
+
+
+## The left stick's click as the game gets it: [param clicked] now, or still running since a click while
+## [param stick] stays pushed (on foot only: seated, the same button is the horn).
+func _run(clicked: bool, stick: Vector2) -> bool:
+	var on_foot: bool = _player != null and str(_player.get("_seat_vehicle_uuid")) in ["", "<null>"]
+	if not on_foot or stick.length() < RUN_HOLD:
+		_running = false
+	elif clicked:
+		_running = true
+	return clicked or _running
 
 
 ## One SNAP_TURN_DEG step each time the right stick is pushed sideways, then back to the centre.

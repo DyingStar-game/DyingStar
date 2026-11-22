@@ -225,6 +225,7 @@ func _move_mouse(at: Vector2) -> void:
 	motion.relative = at - _mouse_at if _mouse_at.x >= 0.0 else Vector2.ZERO
 	motion.button_mask = MOUSE_BUTTON_MASK_LEFT if _button_down else 0
 	_mouse_at = at
+	InputDevice.pointer = true  # pointed at, like a mouse: the menu shows no focus frame (InputDevice)
 	get_viewport().push_input(motion, true)
 
 
