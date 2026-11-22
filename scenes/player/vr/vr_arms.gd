@@ -26,7 +26,10 @@ extends Node
 ## skeleton's modifiers: it overrides the clip, the wrist raise and the screen poke; a driver's hands stay
 ## on the wheel (HandsOnWheel), and a load in the arms keeps the carrying pose.
 ##
-## Built by VrRig for the owner's player, in VR only.
+## The same arms play a REMOTE VR player's hands: [member source] then reads them from the network
+## (VrHandsCodec, "vr_hands", sent by VrHandsSender), in the body's frame like the local ones.
+##
+## Built by VrRig for the owner's player in VR, and by PlayerClient for a remote avatar whose hands come.
 
 const SIDES: Array[String] = ["Left", "Right"]
 ## The runtime's hand trackers, left then right.
@@ -57,8 +60,22 @@ var _player: Node3D = null
 var _skeleton: Skeleton3D = null
 var _arms: Array[Dictionary] = []  # per side: ik (WristRaise.Reach), hand (VrHand), upper, weight
 
+## Where each hand is, in the BODY's frame (see hand_source for the Dictionary): func(side) -> Dictionary,
+## {} when not there. The headset's own hands (local_hand) unless set (a remote avatar: the network's).
+var source: Callable
+## Is the body holding a load in its arms (they keep the carrying pose)? The owner's state by default.
+var carrying: Callable
+## Close the fingers (false: the hand turns but the fingers stay the clip's -- a far avatar's, cheaper).
+var fingers: bool = true
 
-## Put [param player]'s arms (a Player) on [param rig]'s hands.
+
+func _init() -> void:
+	source = local_hand
+	carrying = func() -> bool: return _player.get("_owner_carrying") == true
+
+
+## Put [param player]'s arms (a Player) on [param rig]'s hands -- [param rig] null for a remote avatar,
+## whose [member source] is then set to the network's.
 func setup(rig: VrRig, player: Node3D) -> void:
 	_rig = rig
 	_player = player
@@ -71,12 +88,29 @@ func _process(delta: float) -> void:
 		_skeleton = null
 		_arms.clear()
 		return
-	var player_from_skeleton: Transform3D = LocalFrame.of(_skeleton, _player)
-	var skeleton_from_player: Transform3D = player_from_skeleton.affine_inverse()
-	var skeleton_from_origin: Transform3D = skeleton_from_player * LocalFrame.of(_rig, _player)
+	var skeleton_from_player: Transform3D = LocalFrame.of(_skeleton, _player).affine_inverse()
 	for side in _arms.size():
-		var source: Dictionary = {} if not _arm_free(side) else hand_source(side)
-		_drive(side, source, delta, skeleton_from_origin, skeleton_from_player)
+		_drive(side, shown_hand(side), delta, skeleton_from_player)
+
+
+## Hand [param side] as the avatar shows it (body's frame): the source's, or {} while the animation keeps
+## that arm (a driver's on the wheel, a load in the arms...). What VrHandsSender sends, too.
+func shown_hand(side: int) -> Dictionary:
+	return source.call(side) if _arm_free(side) else {}
+
+
+## The headset's hand [param side] in the BODY's frame (hand_source is the XR origin's).
+func local_hand(side: int) -> Dictionary:
+	if _rig == null:
+		return {}
+	var hand: Dictionary = hand_source(side)
+	if hand.is_empty():
+		return hand
+	var body_from_origin: Transform3D = LocalFrame.of(_rig, _player)
+	hand["wrist"] = body_from_origin * (hand["wrist"] as Vector3)
+	hand["forward"] = (body_from_origin.basis * (hand["forward"] as Vector3)).normalized()
+	hand["dorsal"] = (body_from_origin.basis * (hand["dorsal"] as Vector3)).normalized()
+	return hand
 
 
 ## Where hand [param side] (0 left, 1 right) is, in the rig's (the XR origin's) space: {"wrist": its
@@ -155,30 +189,29 @@ func _arm_free(side: int) -> bool:
 	var sample: Dictionary = _player.get("locomotion_sample") if _player.get("locomotion_sample") is Dictionary else {}
 	if bool(sample.get("seated", false)) and bool(sample.get("driver", false)):
 		return false
-	if _player.get("_owner_carrying") == true or is_instance_valid(_player.get("lying_on")):
+	if carrying.call() or is_instance_valid(_player.get("lying_on")):
 		return false
 	return not (side == 0 and _player.get("datapad_raised") == true)
 
 
-func _drive(side: int, source: Dictionary, delta: float, skeleton_from_origin: Transform3D,
-		skeleton_from_player: Transform3D) -> void:
+func _drive(side: int, hand_at: Dictionary, delta: float, skeleton_from_player: Transform3D) -> void:
 	var arm: Dictionary = _arms[side]
 	var ik: WristRaise.Reach = arm["ik"]
 	var hand: VrHand = arm["hand"]
-	var weight: float = move_toward(float(arm["weight"]), 0.0 if source.is_empty() else 1.0, delta * BLEND_RATE)
+	var weight: float = move_toward(float(arm["weight"]), 0.0 if hand_at.is_empty() else 1.0, delta * BLEND_RATE)
 	arm["weight"] = weight
 	var eased: float = smoothstep(0.0, 1.0, weight)
 	for modifier: SkeletonModifier3D in [ik, hand]:
 		modifier.active = eased > 0.0
 		modifier.influence = eased
-	if source.is_empty():
+	if hand_at.is_empty():
 		return  # fading back to the animation: the last targets hold meanwhile
-	ik.target = skeleton_from_origin * (source["wrist"] as Vector3)
+	ik.target = skeleton_from_player * (hand_at["wrist"] as Vector3)
 	var shoulder: Vector3 = _skeleton.get_bone_global_pose(int(arm["upper"])).origin
 	ik.pole = shoulder + skeleton_from_player.basis * POLES[side]
-	hand.forward = (skeleton_from_origin.basis * (source["forward"] as Vector3)).normalized()
-	hand.dorsal = (skeleton_from_origin.basis * (source["dorsal"] as Vector3)).normalized()
-	hand.curls = source["curls"]
+	hand.forward = (skeleton_from_player.basis * (hand_at["forward"] as Vector3)).normalized()
+	hand.dorsal = (skeleton_from_player.basis * (hand_at["dorsal"] as Vector3)).normalized()
+	hand.curls = hand_at["curls"] if fingers else []
 
 
 ## Find the avatar's skeleton (CharacterAnimator sets it up after the rig is built) and hang the arms on

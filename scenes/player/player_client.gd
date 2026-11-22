@@ -122,6 +122,10 @@ var _gain_pushed: bool = false
 var _lod_elapsed: float = REMOTE_LOD_INTERVAL  # evaluate on the first frame, then every interval
 var _half_rate := HalfRateTicker.new()
 var _remote_far: bool = false
+## A remote VR player's hands (VrHandsCodec, "vr_hands"): its avatar's arms, built at the first hands
+## received, and the hands last received ([left, right], body's frame, {} when not there).
+var _remote_arms: VrArms = null
+var _remote_hands: Array = [{}, {}]
 var _remote_no_shadow: bool = false
 var _puppet_meshes: Array[MeshInstance3D] = []  # the puppet's meshes, whose cast_shadow the LOD flips
 
@@ -2484,6 +2488,8 @@ func _refresh_remote_lod() -> void:
 		var looks := _looks()
 		if looks != null:
 			looks.set_detail(near)
+		if _remote_arms != null:
+			_remote_arms.fingers = near  # a far VR avatar's fingers stay the clip's
 	var alive: bool = not _beyond(not _remote_alive, d, REMOTE_LIFE_EXIT, REMOTE_LIFE_ENTER)
 	if alive != _remote_alive:
 		_remote_alive = alive
@@ -2498,6 +2504,24 @@ func _refresh_remote_lod() -> void:
 		for mesh in _puppet_meshes:
 			if is_instance_valid(mesh):
 				mesh.cast_shadow = mode
+
+## A remote VR player's hands arrived ([param text], VrHandsCodec): its avatar's arms take them, built
+## on the first ones. No time-out: Horizon sends a hand again only when it moved, so still hands are
+## quiet; "" (the headset gone, or out of the hands' zone: Client.delete_player) gives them back.
+func _remote_hands_in(text: String) -> void:
+	var hands: Array = VrHandsCodec.decode(text)
+	if hands.size() != 2:
+		return
+	_remote_hands = hands
+	if _remote_arms == null and not (hands[0].is_empty() and hands[1].is_empty()):
+		_remote_arms = VrArms.new()
+		_remote_arms.name = "RemoteVrArms"
+		_remote_arms.setup(null, player)
+		_remote_arms.source = func(side: int) -> Dictionary: return _remote_hands[side]
+		_remote_arms.carrying = func() -> bool: return _remote_carrying
+		_remote_arms.fingers = _remote_near
+		add_child(_remote_arms)
+
 
 ## Threshold with hysteresis: cross `enter` to become true, fall back below `exit` to become false.
 static func _beyond(current: bool, d: float, enter: float, exit: float) -> bool:
@@ -2795,6 +2819,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 			_remote_carrying = carrying  # drives the remote avatar's carry pose
 		if data.has("datapad"):
 			player.datapad_raised = bool(data["datapad"])  # its wrist up, reading its DataPad (WristRaise)
+		if data.has("vr_hands"):
+			_remote_hands_in(str(data["vr_hands"]))
 		if data.has("seat"):
 			# The seat STATE ("driver" / "passenger" / ""), not the "seat:"/"unseat:" EVENT handled
 			# above. Both arrive together on a live change, and only this one survives in Horizon's

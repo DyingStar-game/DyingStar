@@ -326,6 +326,8 @@ func setup() -> void:
 	if not player.is_npc and player.hands_item == null:
 		player._carry_prompt = ""
 		player.server_send_properties_to_client.call_deferred({"carrying": false, "carry_prompt": ""})
+		# Same for the hands of one who left in VR (VrHandsSender): none until their headset says.
+		player.server_send_properties_to_client.call_deferred({"vr_hands": ""})
 	if player.is_npc:
 		_npc_trim()
 	# Start at the scene's walk speed, so the wheel tier is a real speed from the very first frame
@@ -545,6 +547,8 @@ func server_action_received(data: Dictionary) -> void:
 			if props.has("eye"):
 				_apply_eye(props["eye"])
 				props.erase("eye")  # the server's look ray needs it, nobody else does
+			if props.has("vr_hands") and not VrHandsCodec.valid(props["vr_hands"]):
+				props.erase("vr_hands")  # a VR player's hands are 40 characters or nothing (VrHandsCodec)
 			if not props.is_empty():
 				player.server_send_properties_to_client(props)
 		"perforate_rock":

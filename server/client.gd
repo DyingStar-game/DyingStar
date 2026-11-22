@@ -25,6 +25,9 @@ const SPAWN_TIMEOUT_MS: int = 45000
 ## _flush_pending_parent_delete. Deliberately generous: the two cases it separates are metres
 ## apart and millions of kilometres apart, so there is nothing to tune between them.
 const STALE_EXIT_RANGE: float = 500.0
+## Horizon's zone for a VR player's hands ("vr_hands", horizonserver/ds_genericprops/props/player_def.json):
+## its exit takes the hands back (delete_player).
+const HANDS_CHANNEL: int = 2
 ## Horizon's `error` codes that have their own wording here, the rest show Horizon's message as is.
 ## Must match ds_player_authentication (authentication.rs): the player's token has expired — the
 ## launcher refreshes it only when it launches the game — or was refused.
@@ -1649,6 +1652,13 @@ func _update_generic_object(event: Dictionary) -> void:
 		print("Update generic object but type not found: %s" % object_type)
 
 func delete_player(event: Dictionary) -> void:
+	if int(event["channel"]) == HANDS_CHANNEL:
+		# Out of a VR player's hands zone (Horizon's zone 2, 40 m): its last hands would stay frozen in the
+		# air -- its avatar takes the animation's back (PlayerClient._remote_hands_in).
+		var far = players_list.get(event["object_id"], null)
+		if far != null and is_instance_valid(far):
+			_apply_player_gameplay_props(far, {"vr_hands": ""})
+		return
 	if not int(event["channel"]) == 0:
 		return
 	_player_side_channels.erase(event["object_id"])

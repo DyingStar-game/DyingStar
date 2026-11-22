@@ -46,6 +46,32 @@
 				"conversation",
 				"npc_arrived"
 			]
+		},
+		{
+			"zone": 1,
+			"distance": 200.0,
+			"frequency": 1.0,
+			"properties": [
+				"appearance"
+			]
+		},
+		{
+			"zone": 2,
+			"distance": 40.0,
+			"frequency": 20.0,
+			"lod": [
+				{
+					"distance": 15.0,
+					"frequency": 20.0
+				},
+				{
+					"distance": 40.0,
+					"frequency": 8.0
+				}
+			],
+			"properties": [
+				"vr_hands"
+			]
 		}
 	]
 }

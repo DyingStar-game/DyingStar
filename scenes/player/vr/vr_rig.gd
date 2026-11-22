@@ -29,6 +29,8 @@ var right_aim: XRController3D = null
 var body: VrBody = null
 ## Aims the interaction ray (and the tool's) from the aiming hand.
 var pointer: VrPointer = null
+## The avatar's arms on the player's hands.
+var arms: VrArms = null
 
 
 ## Put the VR view on [param player] (a Player): returns the rig, whose camera replaces the flat one.
@@ -80,10 +82,15 @@ static func install(player: Node3D) -> VrRig:
 	controls.setup(player, rig.left_hand, rig.right_hand, rig.body)
 	rig.add_child(controls)
 	# The avatar's arms and fingers follow the player's hands.
-	var arms := VrArms.new()
-	arms.name = "VrArms"
-	arms.setup(rig, player)
-	rig.add_child(arms)
+	rig.arms = VrArms.new()
+	rig.arms.name = "VrArms"
+	rig.arms.setup(rig, player)
+	rig.add_child(rig.arms)
+	# ...and the others see them: the hands go to the players nearby.
+	var sender := VrHandsSender.new()
+	sender.name = "VrHandsSender"
+	sender.setup(rig.arms, player)
+	rig.add_child(sender)
 	# Comfort: the edges of the view darken while the stick moves or turns the player.
 	var vignette := VrVignette.new()
 	vignette.name = "VrVignette"
