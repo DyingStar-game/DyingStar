@@ -269,6 +269,8 @@ const NOVA_RINGS := [[1.0, 12, 0.2618], [0.62, 8, 0.3927], [0.31, 4, 0.0]]
 ## of the zone's outline; wider, a frontier seen from afar (where the pitch is kilometres) stays a band
 ## and not a line.
 const NOVA_MIN_REACH_PITCHES := 2.5
+## A zone's outline is indexed by bands of latitude holding this many of its points each (nova_entries).
+const NOVA_OUTLINE_BAND_POINTS := 4
 ## The ground outside zones counts for nothing around a vertex under the first share and in full from the
 ## second: two zones drawn side by side in QGIS rarely share their outline to the metre, and the sliver of
 ## bare ground left between them drew a grey line along every frontier.
@@ -328,10 +330,10 @@ static func nova_zones_of(data: PlanetData, level: int, tile: int) -> Array:
 
 
 ## The zones of a tile made ready for many lookups (nova_variant_in): one entry per zone that can hold a
-## point, in the zones' order — [variant id, outline, lon min, lon max, lat min, lat max], the outline empty
-## for a zone covering the whole tile (nothing after it is ever reached). The variant id of a zone is a
-## string built from its attributes: read once here instead of at every sample — it was most of the time
-## a frontier chunk took.
+## point, in the zones' order — [variant id, outline, lon min, lon max, lat min, lat max, then
+## _nova_outline's index of the outline], the outline empty for a zone covering the whole tile (nothing
+## after it is ever reached). The variant id of a zone is a string built from its attributes: read once
+## here instead of at every sample — it was most of the time a frontier chunk took.
 static func nova_entries(nova: NovaBody, zones: Array) -> Array:
 	var out: Array = []
 	for z: Dictionary in zones:
@@ -353,9 +355,83 @@ static func nova_entries(nova: NovaBody, zones: Array) -> Array:
 			lon_max = maxf(lon_max, v[0])
 			lat_min = minf(lat_min, v[1])
 			lat_max = maxf(lat_max, v[1])
-		out.append([nova.variant_id_for_zone(z), outline, lon_min - CLIP_EDGE_TOL_DEG, lon_max + CLIP_EDGE_TOL_DEG,
-				lat_min - CLIP_EDGE_TOL_DEG, lat_max + CLIP_EDGE_TOL_DEG])
+		var entry := [nova.variant_id_for_zone(z), outline, lon_min - CLIP_EDGE_TOL_DEG, lon_max + CLIP_EDGE_TOL_DEG,
+				lat_min - CLIP_EDGE_TOL_DEG, lat_max + CLIP_EDGE_TOL_DEG]
+		entry.append_array(_nova_outline(outline))
+		out.append(entry)
 	return out
+
+
+## An outline indexed for _nova_holds: [lons, lats (PackedFloat64Array), the bands' bounds (latitudes,
+## sorted), the edges by band (Array of PackedInt32Array: edge k runs from point k - 1 to point k), the
+## tile-clip edges (PackedFloat64Array, ax ay bx by each)]. The bounds are every NOVA_OUTLINE_BAND_POINTS-th
+## latitude of the outline's points, sorted: as many points in each band wherever the outline winds. A
+## frontier chunk asks 24 places a vertex: through the whole outline twice each (_point_in_polygon_lonlat,
+## then _on_clip_edge), it took 3 s a chunk on an outline of 200 points.
+static func _nova_outline(outline: Array) -> Array:
+	var n := outline.size()
+	var lons := PackedFloat64Array()
+	var lats := PackedFloat64Array()
+	lons.resize(n)
+	lats.resize(n)
+	for i in n:
+		lons[i] = float(outline[i][0])
+		lats[i] = float(outline[i][1])
+	var sorted := lats.duplicate()
+	sorted.sort()
+	var bounds := PackedFloat64Array()
+	for k in range(NOVA_OUTLINE_BAND_POINTS, n, NOVA_OUTLINE_BAND_POINTS):
+		if bounds.is_empty() or sorted[k] > bounds[bounds.size() - 1]:
+			bounds.append(sorted[k])
+	var bands: Array[PackedInt32Array] = []
+	bands.resize(bounds.size() + 1)
+	for b in bands.size():
+		bands[b] = PackedInt32Array()
+	var clips := PackedFloat64Array()
+	var j := n - 1
+	for i in n:
+		for b in range(bounds.bsearch(minf(lats[i], lats[j])), bounds.bsearch(maxf(lats[i], lats[j])) + 1):
+			bands[b].append(i)
+		if absf(lons[j] - lons[i]) <= CLIP_EDGE_TOL_DEG or absf(lats[j] - lats[i]) <= CLIP_EDGE_TOL_DEG:
+			clips.append_array(PackedFloat64Array([lons[j], lats[j], lons[i], lats[i]]))
+		j = i
+	return [lons, lats, bounds, bands, clips]
+
+
+## True when (lon, lat) is in an entry's outline (nova_entries), as _point_in_polygon_lonlat or
+## _on_clip_edge say on the whole outline, bit for bit: the even-odd crossings of the edges in the
+## latitude's band (bsearch is monotonic: an edge is listed in every band from its lowest point's to its
+## highest's, so every edge crossing that latitude is in its band; the others leave the parity as it is),
+## then the tile-clip edges alone (the only ones _on_clip_edge can match).
+static func _nova_holds(e: Array, lon: float, lat: float) -> bool:
+	var lons: PackedFloat64Array = e[6]
+	var lats: PackedFloat64Array = e[7]
+	var n := lons.size()
+	var inside := false
+	var band: PackedInt32Array = e[9][(e[8] as PackedFloat64Array).bsearch(lat)]
+	for i in band:
+		var j := i - 1 if i > 0 else n - 1
+		var viy := lats[i]
+		var vjy := lats[j]
+		if ((viy > lat) != (vjy > lat)) and (lon < (lons[j] - lons[i]) * (lat - viy) / (vjy - viy) + lons[i]):
+			inside = not inside
+	if inside:
+		return true
+	var clips: PackedFloat64Array = e[10]
+	for k in range(0, clips.size(), 4):
+		var ax := clips[k]
+		var ay := clips[k + 1]
+		var bx := clips[k + 2]
+		var by := clips[k + 3]
+		if absf(ax - bx) <= CLIP_EDGE_TOL_DEG:
+			if absf(lon - ax) <= CLIP_EDGE_TOL_DEG \
+					and lat >= minf(ay, by) - CLIP_EDGE_TOL_DEG and lat <= maxf(ay, by) + CLIP_EDGE_TOL_DEG:
+				return true
+		elif absf(ay - by) <= CLIP_EDGE_TOL_DEG:
+			if absf(lat - ay) <= CLIP_EDGE_TOL_DEG \
+					and lon >= minf(ax, bx) - CLIP_EDGE_TOL_DEG and lon <= maxf(ax, bx) + CLIP_EDGE_TOL_DEG:
+				return true
+	return false
 
 
 ## The variant at [param dir] among a tile's [param entries] (nova_entries): the first zone holding it, as
@@ -369,7 +445,7 @@ static func nova_variant_in(entries: Array, dir: Vector3) -> int:
 			lonlat = BiomeQuery._dir_to_lonlat(dir)
 		if lonlat.x < e[2] or lonlat.x > e[3] or lonlat.y < e[4] or lonlat.y > e[5]:
 			continue
-		if _point_in_polygon_lonlat(lonlat.x, lonlat.y, e[1]) or _on_clip_edge(lonlat.x, lonlat.y, e[1]):
+		if _nova_holds(e, lonlat.x, lonlat.y):
 			return e[0]
 	return 1
 
@@ -726,6 +802,15 @@ static func generate_mesh(
 	var _cbb: Array[Vector2] = []
 	if hp_mode:
 		_cbb = _healpix_lonlat_bbox(hp_nside, hp_ipix)
+
+	# Each zone's biome and Nova variant, read once for the vertex loop (it finds a vertex's zone by its index):
+	# biome_of_zone and variant_id_for_zone build the zone's key from its attributes, 40 µs a vertex twice.
+	var _pz_bds: Array = []
+	var _pz_nova := PackedInt32Array()
+	for _pz in _pz_zones:
+		_pz_bds.append(data.biome_of_zone(_pz))
+		_pz_nova.append(data.nova.variant_id_for_zone(_pz) if data.nova != null else 0)
+	var _nova_bare: int = data.nova.variant_id_for_zone({}) if data.nova != null else 0
 
 	# ── Recipe-based overlap detection ─────────────────────────────
 	# Populate zones (polygon/point biomes).
@@ -1107,14 +1192,17 @@ static func generate_mesh(
 			var bd: BiomeDefinition = null
 			var zone_color_hex: String = ""
 			var first_zone: Dictionary = {}
-			if not _pz_zones.is_empty():
-				var _vz := _query_zones_at_direction(dir, _pz_zones)
-				if not _vz.is_empty():
-					first_zone = _vz[0]
-					bd = data.biome_of_zone(first_zone)
+			# The first zone holding the vertex (_query_zones_at_direction's first answer), the others untested.
+			var _first_zi := -1
+			for _zi in _pz_zones.size():
+				if _dir_in_populate_zone(dir, _pz_zones[_zi]):
+					_first_zi = _zi
+					first_zone = _pz_zones[_zi]
+					bd = _pz_bds[_zi]
 					zone_color_hex = first_zone.get("color_hex", "")
+					break
 			if not nova_vid.is_empty():
-				nova_vid[idx] = data.nova.variant_id_for_zone(first_zone)
+				nova_vid[idx] = _pz_nova[_first_zi] if _first_zi >= 0 else _nova_bare
 			# The corundum default yields to a zone that names a known biome —
 			# and only to that (a first_zone with no biome is a rock_type /
 			# colour-only zone, which sits ON the corundum, not instead of it).
@@ -2358,6 +2446,7 @@ static func generate_mesh(
 	# per chunk) and each vertex's weight on them (CUSTOM3; CUSTOM2 is the LOD morph's): interpolated
 	# over the triangles, the weights ARE the smooth transition.
 	# The grid and its ids ride along on the mesh for the scatter (NovaScatter.lay_chunk).
+	var _t_nova := Time.get_ticks_usec() if _pf else 0
 	if not nova_vid.is_empty() and nova_vid.size() == vertices.size():
 		var _soft := {}
 		if hp_mode:
@@ -2375,6 +2464,8 @@ static func generate_mesh(
 			mesh.set_meta("nova_res", res)
 			mesh.set_meta("nova_grid", vertices.slice(0, _grid_n))
 			mesh.set_meta("nova_vid", nova_vid.slice(0, _grid_n))
+	if _pf:
+		prof["nova"] = Time.get_ticks_usec() - _t_nova
 	# A chunk whose every quad belongs to an overlay surface (an outcrop zone
 	# covering it whole) and that bakes without skirts has NO base triangle:
 	# an empty index array is refused by the renderer (five errors per
