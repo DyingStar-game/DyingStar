@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_7te8f"]
+
+[resource]
+script = ExtResource("1_7te8f")
+body_name = "P5_M5"
+weather_seed = 2761113516122736128
+radius_m = 809000.0
+surface_gravity = 0.6090156872392016
+rotation_period_s = 418320.0
+orbit_period_s = 4935773.631749268
+scale_height_m = 0.0
+irradiance_w_m2 = 366.3008573650064
+bond_albedo = 0.0
+t_eq_k = 200.46638175470144
+t_surface_k = 207.85
+diurnal_amplitude_k = 57.24620013493697
+radiative_time_s = 0.0
+delta_t_equator_pole_k = 85.42601495228746
+coriolis_45_s = 2.12415516263e-05
+hadley_edge_deg = 90.0
+cells = 1
+v10_scale_m_s = 0.0
+v10_threshold_m_s = 0.0
+sound_speed_m_s = 0.0

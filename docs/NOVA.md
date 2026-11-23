@@ -4,9 +4,6 @@
 > roches (`assets_blender/nova/…`, 217 Mo) sont restées en local chez l'auteur ; les roches livrées sont dans
 > `scenes/planet/nova/assets/` et se reconstruisent avec `tools/nova/`. Les crédits des textures de sol sont
 > dans le fichier `tex_<nom>.txt` de chaque dossier de matière (l'ancien `source.txt`).
->
-> La météo ne fait pas partie de Nova : elle est sur sa propre branche (`feat/weather`), branchée sur le
-> service météo.
 
 
 Outil de l'éditeur Godot pour habiller les biomes d'une planète : le sol et ce qui est posé dessus.
@@ -467,7 +464,7 @@ cache disque. Les packs locaux et `grade_profiles.pack` sont supprimés du dép�
   pendant 60 s et remet le joueur à sa hauteur (sinon il se retrouvait sous le terrain).
 - `RemoteTileSource` : la liste des sources en marche et son verrou sont créés au premier usage (script non
   `@tool` : dans l'éditeur ses statiques ne sont pas initialisées, `start()` plantait).
-- Vérifié après fusion : tests Nova (13), `test_remote_modifier_pack` (6) ; vue jeu à 114 images
+- Vérifié après fusion : tests Nova (13), météo (18), `test_remote_modifier_pack` (6) ; vue jeu à 114 images
   par seconde, sol de biome, tourbillons, mur de poussière.
 - Pas vérifié : le panneau dans l'éditeur ; les frontières douces quand une tuile voisine n'est pas encore
   arrivée (le poids lu serait provisoire, et pourrait être mis en cache) ; la vue jeu sans réseau ; le
@@ -510,6 +507,11 @@ cache disque. Les packs locaux et `grade_profiles.pack` sont supprimés du dép�
   est bornée en temps (2 ms par image) et non plus en nombre. À l'arrêt Nova ne coûtait déjà rien.
 - Pas vérifié : la mémoire ; les machines plus modestes ; le scatter près d'une ville (sphères de 25 à 40 km).
 
+### Météo
+
+Voir `docs/WEATHER.md` : la météo vient du service météo, le jeu la lit. La vue jeu de Nova et la carte
+météo du panneau lisent le service directement (`client.ini`, `[weather] service_url`).
+
 ### Le panneau
 
 Depuis le 19/11/2026 le panneau n'est plus une seule colonne à faire défiler (les boutons du bas étaient
@@ -519,7 +521,7 @@ hors d'atteinte). Captures : `docs/nova_captures/panneau_planete.png`, `panneau_
 - **Toujours visibles** : en haut le corps et la liste des types de zone ; en bas « Appliquer à » et
   « Enregistrer ».
 - **Trois onglets** entre les deux, chacun avec son propre défilement : **Planète** (vue jeu, heure, globe
-  qui prend la place libre, aller à une zone / une frontière / un POI, mode vol), **Sol** et
+  qui prend la place libre, carte météo, aller à une zone / une frontière / un POI, mode vol), **Sol** et
   **Scatter**.
 - **Sections repliables** dans Sol (matière principale, répétition et détail, deuxième et troisième
   matières, relief, frontières ; `GROUND_SECTIONS`) et dans Scatter (une par couche, « active » dans le

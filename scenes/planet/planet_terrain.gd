@@ -5597,10 +5597,13 @@ func _nova_scatter_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> vo
 	var grid: PackedVector3Array = mesh.get_meta("nova_grid")
 	var vid: PackedInt32Array = mesh.get_meta("nova_vid")
 	var center: Vector3 = info.center
-	var zones := NovaScatter.zone_context(planet_data, nside, ipix)
+	var data := planet_data
 	var mi_id := mi.get_instance_id()
 	var slot := [-1]  # the task's id, known only once it is added
 	slot[0] = WorkerThreadPool.add_task(func() -> void:
+		# The zones and the ground kept clear round the chunk, read here and not on the main thread: their
+		# modifier tiles may be decoded, the roads, pads and village beds gathered (as the chunk builders do).
+		var zones := NovaScatter.zone_context(data, nside, ipix)
 		var laid := NovaScatter.lay_chunk(descs, nside, ipix, res, grid, vid, center, zones)
 		_nova_scatter_done.call_deferred(slot, mi_id, gen, turn, laid))
 	_nova_scatter_tasks[slot[0]] = true

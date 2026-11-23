@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="ClimateWeather" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/weather/climate_weather.gd" id="1_cw"]
+[ext_resource type="Resource" path="res://scenes/planet/climates/tarsis_3.tres" id="2_cp"]
+
+[resource]
+script = ExtResource("1_cw")
+profile = ExtResource("2_cp")

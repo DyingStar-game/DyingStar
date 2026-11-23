@@ -6,6 +6,8 @@
 [ext_resource type="Script" uid="uid://8fhdm7c3vu4q" path="res://scenes/planet/planet_data.gd" id="script_data"]
 [ext_resource type="Script" uid="uid://div808554lq5w" path="res://scenes/planet/debug_chunk_exporter.gd" id="script_debug_export"]
 [ext_resource type="Script" uid="uid://cq77afru14v7i" path="res://scenes/planet/planet_terrain.gd" id="script_terrain"]
+[ext_resource type="Resource" path="res://scenes/planet/climates/tarsis_3_weather.tres" id="weather_tarsis3"]
+[ext_resource type="Script" path="res://scenes/planet/weather/weather_phenomena.gd" id="script_phenomena"]
 
 [sub_resource type="Resource" id="PlanetData_tarsis4"]
 script = ExtResource("script_data")
@@ -42,6 +44,7 @@ mining_zone_poi_margin = 10.0
 [node name="Tarsis3" type="Node3D" unique_id=134586975]
 script = ExtResource("script_body")
 planet_data = SubResource("PlanetData_tarsis4")
+weather_source = ExtResource("weather_tarsis3")
 uuid = "_planet_SandBox"
 map_color = Color(0.76, 0.56, 0.45, 1)
 display_name = "SandBox - Tarsis III"
@@ -238,3 +241,6 @@ font_size = 96
 [node name="CSGBox3D" type="CSGBox3D" parent="Label3D19" unique_id=800817383]
 transform = Transform3D(1.0000000000000044, -1.6653345e-16, -1.110223e-16, 8.32667270000001e-16, 1.0000000000000004, -1.110223e-15, 9.436896e-16, 0, 1.0000000000000036, -0.01601591845974326, 0, -0.5999999998603016)
 size = Vector3(2.1493865498514424, 1, 1)
+
+[node name="WeatherPhenomena" type="Node3D" parent="."]
+script = ExtResource("script_phenomena")

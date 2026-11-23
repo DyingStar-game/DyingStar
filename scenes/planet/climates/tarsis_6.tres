@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_ruhr6"]
+
+[resource]
+script = ExtResource("1_ruhr6")
+body_name = "Tarsis 6"
+has_atmosphere = true
+weather_seed = -9223372036854775808
+radius_m = 26806451.5106004
+surface_gravity = 21.328021838310782
+rotation_period_s = 88060.26059653105
+tilt_deg = 21.2256743452846
+orbit_period_s = 595739506.9288058
+pressure_pa = 3000000.0
+rho0_kg_m3 = 13.898481229265174
+scale_height_m = 10120.531782963164
+irradiance_w_m2 = 10.777839399125025
+bond_albedo = 0.700557396164891
+t_eq_k = 61.41767792228264
+t_surface_k = 61.4202692201661
+diurnal_amplitude_k = 1.261805275021e-05
+radiative_time_s = 31541045723.292618
+delta_t_equator_pole_k = 0.00114015231699067
+coriolis_45_s = 0.0001009055142027
+hadley_edge_deg = 6.3524278095175735
+v10_scale_m_s = 0.00060999166258768
+v10_threshold_m_s = 2.557599768494709
+sound_speed_m_s = 554.5937927541659

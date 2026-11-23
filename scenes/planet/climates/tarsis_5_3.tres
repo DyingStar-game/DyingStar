@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="ClimateProfile" format=3]
+
+[ext_resource type="Script" path="res://scenes/planet/climate_profile.gd" id="1_hyrqj"]
+
+[resource]
+script = ExtResource("1_hyrqj")
+body_name = "P5_M3"
+has_atmosphere = true
+weather_seed = -9223372036854775808
+radius_m = 3632000.0
+surface_gravity = 3.5654623130906864
+rotation_period_s = 1749600.0
+tidal_locked = true
+orbit_period_s = 1748707.034951793
+pressure_pa = 186000.0
+rho0_kg_m3 = 3.293060112743325
+scale_height_m = 15841.541352046728
+irradiance_w_m2 = 366.3008573650064
+bond_albedo = 0.0
+t_eq_k = 200.46638175470144
+t_surface_k = 267.97165162324995
+diurnal_amplitude_k = 0.0
+radiative_time_s = 10575728.295967247
+delta_t_equator_pole_k = 5.417911584311744
+coriolis_45_s = 5.078741355919485e-06
+hadley_edge_deg = 90.0
+cells = 1
+v10_scale_m_s = 3.688640610019002
+v10_threshold_m_s = 2.1853112312927903
+sound_speed_m_s = 272.2958587498241

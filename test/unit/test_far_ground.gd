@@ -15,6 +15,10 @@ func test_the_ground_shaders_light_themselves() -> void:
 	for path: String in [SAND, CORUNDUM, "res://assets/_universe/environment/terrain/regolith_grey.tres"]:
 		assert_true(FAR_GROUND.lights_itself(load(path)), "%s lights itself from afar" % path.get_file())
 		assert_null(FAR_GROUND.material_for(load(path)), "%s keeps its own material" % path.get_file())
+	# Nova's ground: the same body as terrain_biome's, compiled with Nova (NovaBody.build_material).
+	var nova := ShaderMaterial.new()
+	nova.shader = load(NovaBody.NOVA_SHADER)
+	assert_true(FAR_GROUND.lights_itself(nova), "Nova's ground lights itself from afar")
 
 
 func test_a_standard_material_gets_a_lit_stand_in() -> void:

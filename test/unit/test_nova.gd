@@ -117,6 +117,47 @@ func test_palette_is_one_hot_on_the_four_most_frequent_variants() -> void:
 	assert_eq(w[7 * 4 + 0], 255, "a fifth variant counts as the most frequent")
 
 
+func test_an_indexed_outline_answers_as_the_whole_outline() -> void:
+	# nova_variant_in reads a zone's outline through its latitude bands and its tile-clip edges
+	# (PlanetChunk._outline_holds on the entry's index): the same answer as _point_in_polygon_lonlat or _on_clip_edge on the whole
+	# outline, bit for bit, on winding outlines clipped by a tile's box and on the clip edges themselves.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var mismatches := 0
+	var inside := 0
+	for shape in 12:
+		var outline := []
+		var count := 8 + shape * 40
+		for k in count:
+			var a := TAU * k / count
+			var r := 0.6 + 0.35 * sin(a * (3 + shape % 5)) + rng.randf_range(-0.05, 0.05)
+			outline.append([clampf(cos(a) * r, -0.7, 0.7), clampf(sin(a) * r * 0.4, -0.25, 0.25)])
+		var e: Array = PlanetChunk.nova_entries(NovaBody.new(), [{"coverage": "polygon", "vertices": outline}])[0]
+		for k in 3000:
+			var lon := rng.randf_range(-0.8, 0.8)
+			var lat := rng.randf_range(-0.3, 0.3)
+			if k % 5 == 0:  # on a box edge, within the clip tolerance
+				lon = [-0.7, 0.7][k % 2] + rng.randf_range(-1e-7, 1e-7)
+			var whole := PlanetChunk._point_in_polygon_lonlat(lon, lat, outline) or PlanetChunk._on_clip_edge(lon, lat, outline)
+			inside += int(whole)
+			if PlanetChunk._outline_holds(e[6], lon, lat) != whole:
+				mismatches += 1
+	assert_eq(mismatches, 0, "the indexed outline answers as the whole one")
+	assert_gt(inside, 3000, "and many places are inside")
+
+
+func test_an_entry_reuses_the_index_its_zone_was_given() -> void:
+	# A zone indexed where it was made (PlanetChunk.index_populate_zone) is not indexed again by Nova.
+	var zone := {"coverage": "polygon", "vertices": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]}
+	PlanetChunk.index_populate_zone(zone)
+	var e: Array = PlanetChunk.nova_entries(NovaBody.new(), [zone])[0]
+	assert_true(is_same(e[6], zone[PlanetChunk.ZONE_INDEX_KEY]), "the zone's own index")
+	var la := deg_to_rad(0.5)
+	var lo := deg_to_rad(0.5)
+	var dir := Vector3(cos(la) * cos(lo), sin(la), -cos(la) * sin(lo))  # lon = atan2(-z, x)
+	assert_eq(PlanetChunk.nova_variant_in([e], dir), e[0], "inside")
+
+
 # ---------------------------------------------------------------------------
 # Scatter determinism
 # ---------------------------------------------------------------------------

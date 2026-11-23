@@ -333,10 +333,12 @@ static func nova_zones_of(data: PlanetData, level: int, tile: int) -> Array:
 
 
 ## The zones of a tile made ready for many lookups (nova_variant_in): one entry per zone that can hold a
-## point, in the zones' order — [variant id, outline, lon min, lon max, lat min, lat max], the outline empty
-## for a zone covering the whole tile (nothing after it is ever reached). The variant id of a zone is a
-## string built from its attributes: read once here instead of at every sample — it was most of the time
-## a frontier chunk took.
+## point, in the zones' order — [variant id, outline, lon min, lon max, lat min, lat max, the outline's
+## index (_outline_index)], the outline empty for a zone covering the whole tile (nothing after it is ever
+## reached). The variant id of a zone is a string built from its attributes: read once here instead of at
+## every sample — it was most of the time a frontier chunk took. The index is the one the zone was given
+## where it was made (index_populate_zone), built here only for a zone made elsewhere; never stored into
+## the zone: this runs on worker threads.
 static func nova_entries(nova: NovaBody, zones: Array) -> Array:
 	var out: Array = []
 	for z: Dictionary in zones:
@@ -358,8 +360,11 @@ static func nova_entries(nova: NovaBody, zones: Array) -> Array:
 			lon_max = maxf(lon_max, v[0])
 			lat_min = minf(lat_min, v[1])
 			lat_max = maxf(lat_max, v[1])
-		out.append([nova.variant_id_for_zone(z), outline, lon_min - CLIP_EDGE_TOL_DEG, lon_max + CLIP_EDGE_TOL_DEG,
-				lat_min - CLIP_EDGE_TOL_DEG, lat_max + CLIP_EDGE_TOL_DEG])
+		var entry := [nova.variant_id_for_zone(z), outline, lon_min - CLIP_EDGE_TOL_DEG, lon_max + CLIP_EDGE_TOL_DEG,
+				lat_min - CLIP_EDGE_TOL_DEG, lat_max + CLIP_EDGE_TOL_DEG]
+		var index: Variant = z.get(ZONE_INDEX_KEY)
+		entry.append(index if index != null else _outline_index(outline))
+		out.append(entry)
 	return out
 
 
@@ -374,7 +379,7 @@ static func nova_variant_in(entries: Array, dir: Vector3) -> int:
 			lonlat = BiomeQuery._dir_to_lonlat(dir)
 		if lonlat.x < e[2] or lonlat.x > e[3] or lonlat.y < e[4] or lonlat.y > e[5]:
 			continue
-		if _point_in_polygon_lonlat(lonlat.x, lonlat.y, e[1]) or _on_clip_edge(lonlat.x, lonlat.y, e[1]):
+		if _outline_holds(e[6], lonlat.x, lonlat.y):
 			return e[0]
 	return 1
 
@@ -731,6 +736,15 @@ static func generate_mesh(
 	var _cbb: Array[Vector2] = []
 	if hp_mode:
 		_cbb = _healpix_lonlat_bbox(hp_nside, hp_ipix)
+
+	# Each zone's biome and Nova variant, read once for the vertex loop (it finds a vertex's zone by its index):
+	# biome_of_zone and variant_id_for_zone build the zone's key from its attributes, 40 µs a vertex twice.
+	var _pz_bds: Array = []
+	var _pz_nova := PackedInt32Array()
+	for _pz in _pz_zones:
+		_pz_bds.append(data.biome_of_zone(_pz))
+		_pz_nova.append(data.nova.variant_id_for_zone(_pz) if data.nova != null else 0)
+	var _nova_bare: int = data.nova.variant_id_for_zone({}) if data.nova != null else 0
 
 	# ── Recipe-based overlap detection ─────────────────────────────
 	# Populate zones (polygon/point biomes).
@@ -1112,14 +1126,17 @@ static func generate_mesh(
 			var bd: BiomeDefinition = null
 			var zone_color_hex: String = ""
 			var first_zone: Dictionary = {}
-			if not _pz_zones.is_empty():
-				var _vz := _query_zones_at_direction(dir, _pz_zones)
-				if not _vz.is_empty():
-					first_zone = _vz[0]
-					bd = data.biome_of_zone(first_zone)
+			# The first zone holding the vertex (_query_zones_at_direction's first answer), the others untested.
+			var _first_zi := -1
+			for _zi in _pz_zones.size():
+				if _dir_in_populate_zone(dir, _pz_zones[_zi]):
+					_first_zi = _zi
+					first_zone = _pz_zones[_zi]
+					bd = _pz_bds[_zi]
 					zone_color_hex = first_zone.get("color_hex", "")
+					break
 			if not nova_vid.is_empty():
-				nova_vid[idx] = data.nova.variant_id_for_zone(first_zone)
+				nova_vid[idx] = _pz_nova[_first_zi] if _first_zi >= 0 else _nova_bare
 			# The corundum default yields to a zone that names a known biome —
 			# and only to that (a first_zone with no biome is a rock_type /
 			# colour-only zone, which sits ON the corundum, not instead of it).
@@ -2363,6 +2380,7 @@ static func generate_mesh(
 	# per chunk) and each vertex's weight on them (CUSTOM3; CUSTOM2 is the LOD morph's): interpolated
 	# over the triangles, the weights ARE the smooth transition.
 	# The grid and its ids ride along on the mesh for the scatter (NovaScatter.lay_chunk).
+	var _t_nova := Time.get_ticks_usec() if _pf else 0
 	if not nova_vid.is_empty() and nova_vid.size() == vertices.size():
 		var _soft := {}
 		if hp_mode:
@@ -2380,6 +2398,8 @@ static func generate_mesh(
 			mesh.set_meta("nova_res", res)
 			mesh.set_meta("nova_grid", vertices.slice(0, _grid_n))
 			mesh.set_meta("nova_vid", nova_vid.slice(0, _grid_n))
+	if _pf:
+		prof["nova"] = Time.get_ticks_usec() - _t_nova
 	# A chunk whose every quad belongs to an overlay surface (an outcrop zone
 	# covering it whole) and that bakes without skirts has NO base triangle:
 	# an empty index array is refused by the renderer (five errors per
