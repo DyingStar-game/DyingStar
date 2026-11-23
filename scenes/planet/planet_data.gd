@@ -1645,6 +1645,8 @@ func get_chunk_modifiers(nside: int, ipix: int) -> Dictionary:
 	# into the shared copy (see PlanetChunk.prepare_linear_zone).
 	for zone: Dictionary in decoded.get("linear_features", []):
 		PlanetChunk.prepare_linear_zone(zone, radius)
+	for zone: Dictionary in decoded.get("populate_zones", []):
+		PlanetChunk.index_populate_zone(zone)
 
 	_modifier_mutex.lock()
 	var again: Variant = _modifier_tiles.get(key)
@@ -1803,6 +1805,8 @@ func store_chunk_image(key: String, img: Image, craters: Array,
 	if not craters.is_empty():
 		_chunk_craters[key] = craters
 	if not populate_zones.is_empty():
+		for zone: Dictionary in populate_zones:
+			PlanetChunk.index_populate_zone(zone)
 		_chunk_populate_zones[key] = populate_zones
 	if not linear_features.is_empty():
 		_chunk_linear_features[key] = linear_features
@@ -1912,6 +1916,7 @@ func inject_biome_feature(nside: int, ipix: int, biome_update: Dictionary) -> vo
 					norm[i] = [lon_v, lat_v]
 				zone["vertices"] = norm
 				zone["polygon"] = packed
+			PlanetChunk.index_populate_zone(zone)
 			if not _chunk_populate_zones.has(key):
 				_chunk_populate_zones[key] = []
 			_chunk_populate_zones[key].append(zone)
