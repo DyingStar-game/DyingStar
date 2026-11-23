@@ -274,8 +274,6 @@ const NOVA_RINGS := [[1.0, 12, 0.2618], [0.62, 8, 0.3927], [0.31, 4, 0.0]]
 ## of the zone's outline; wider, a frontier seen from afar (where the pitch is kilometres) stays a band
 ## and not a line.
 const NOVA_MIN_REACH_PITCHES := 2.5
-## A zone's outline is indexed by bands of latitude holding this many of its points each (nova_entries).
-const NOVA_OUTLINE_BAND_POINTS := 4
 ## The ground outside zones counts for nothing around a vertex under the first share and in full from the
 ## second: two zones drawn side by side in QGIS rarely share their outline to the metre, and the sliver of
 ## bare ground left between them drew a grey line along every frontier.
@@ -335,10 +333,12 @@ static func nova_zones_of(data: PlanetData, level: int, tile: int) -> Array:
 
 
 ## The zones of a tile made ready for many lookups (nova_variant_in): one entry per zone that can hold a
-## point, in the zones' order — [variant id, outline, lon min, lon max, lat min, lat max, then
-## _nova_outline's index of the outline], the outline empty for a zone covering the whole tile (nothing
-## after it is ever reached). The variant id of a zone is a string built from its attributes: read once
-## here instead of at every sample — it was most of the time a frontier chunk took.
+## point, in the zones' order — [variant id, outline, lon min, lon max, lat min, lat max, the outline's
+## index (_outline_index)], the outline empty for a zone covering the whole tile (nothing after it is ever
+## reached). The variant id of a zone is a string built from its attributes: read once here instead of at
+## every sample — it was most of the time a frontier chunk took. The index is the one the zone was given
+## where it was made (index_populate_zone), built here only for a zone made elsewhere; never stored into
+## the zone: this runs on worker threads.
 static func nova_entries(nova: NovaBody, zones: Array) -> Array:
 	var out: Array = []
 	for z: Dictionary in zones:
@@ -362,81 +362,10 @@ static func nova_entries(nova: NovaBody, zones: Array) -> Array:
 			lat_max = maxf(lat_max, v[1])
 		var entry := [nova.variant_id_for_zone(z), outline, lon_min - CLIP_EDGE_TOL_DEG, lon_max + CLIP_EDGE_TOL_DEG,
 				lat_min - CLIP_EDGE_TOL_DEG, lat_max + CLIP_EDGE_TOL_DEG]
-		entry.append_array(_nova_outline(outline))
+		var index: Variant = z.get(ZONE_INDEX_KEY)
+		entry.append(index if index != null else _outline_index(outline))
 		out.append(entry)
 	return out
-
-
-## An outline indexed for _nova_holds: [lons, lats (PackedFloat64Array), the bands' bounds (latitudes,
-## sorted), the edges by band (Array of PackedInt32Array: edge k runs from point k - 1 to point k), the
-## tile-clip edges (PackedFloat64Array, ax ay bx by each)]. The bounds are every NOVA_OUTLINE_BAND_POINTS-th
-## latitude of the outline's points, sorted: as many points in each band wherever the outline winds. A
-## frontier chunk asks 24 places a vertex: through the whole outline twice each (_point_in_polygon_lonlat,
-## then _on_clip_edge), it took 3 s a chunk on an outline of 200 points.
-static func _nova_outline(outline: Array) -> Array:
-	var n := outline.size()
-	var lons := PackedFloat64Array()
-	var lats := PackedFloat64Array()
-	lons.resize(n)
-	lats.resize(n)
-	for i in n:
-		lons[i] = float(outline[i][0])
-		lats[i] = float(outline[i][1])
-	var sorted := lats.duplicate()
-	sorted.sort()
-	var bounds := PackedFloat64Array()
-	for k in range(NOVA_OUTLINE_BAND_POINTS, n, NOVA_OUTLINE_BAND_POINTS):
-		if bounds.is_empty() or sorted[k] > bounds[bounds.size() - 1]:
-			bounds.append(sorted[k])
-	var bands: Array[PackedInt32Array] = []
-	bands.resize(bounds.size() + 1)
-	for b in bands.size():
-		bands[b] = PackedInt32Array()
-	var clips := PackedFloat64Array()
-	var j := n - 1
-	for i in n:
-		for b in range(bounds.bsearch(minf(lats[i], lats[j])), bounds.bsearch(maxf(lats[i], lats[j])) + 1):
-			bands[b].append(i)
-		if absf(lons[j] - lons[i]) <= CLIP_EDGE_TOL_DEG or absf(lats[j] - lats[i]) <= CLIP_EDGE_TOL_DEG:
-			clips.append_array(PackedFloat64Array([lons[j], lats[j], lons[i], lats[i]]))
-		j = i
-	return [lons, lats, bounds, bands, clips]
-
-
-## True when (lon, lat) is in an entry's outline (nova_entries), as _point_in_polygon_lonlat or
-## _on_clip_edge say on the whole outline, bit for bit: the even-odd crossings of the edges in the
-## latitude's band (bsearch is monotonic: an edge is listed in every band from its lowest point's to its
-## highest's, so every edge crossing that latitude is in its band; the others leave the parity as it is),
-## then the tile-clip edges alone (the only ones _on_clip_edge can match).
-static func _nova_holds(e: Array, lon: float, lat: float) -> bool:
-	var lons: PackedFloat64Array = e[6]
-	var lats: PackedFloat64Array = e[7]
-	var n := lons.size()
-	var inside := false
-	var band: PackedInt32Array = e[9][(e[8] as PackedFloat64Array).bsearch(lat)]
-	for i in band:
-		var j := i - 1 if i > 0 else n - 1
-		var viy := lats[i]
-		var vjy := lats[j]
-		if ((viy > lat) != (vjy > lat)) and (lon < (lons[j] - lons[i]) * (lat - viy) / (vjy - viy) + lons[i]):
-			inside = not inside
-	if inside:
-		return true
-	var clips: PackedFloat64Array = e[10]
-	for k in range(0, clips.size(), 4):
-		var ax := clips[k]
-		var ay := clips[k + 1]
-		var bx := clips[k + 2]
-		var by := clips[k + 3]
-		if absf(ax - bx) <= CLIP_EDGE_TOL_DEG:
-			if absf(lon - ax) <= CLIP_EDGE_TOL_DEG \
-					and lat >= minf(ay, by) - CLIP_EDGE_TOL_DEG and lat <= maxf(ay, by) + CLIP_EDGE_TOL_DEG:
-				return true
-		elif absf(ay - by) <= CLIP_EDGE_TOL_DEG:
-			if absf(lat - ay) <= CLIP_EDGE_TOL_DEG \
-					and lon >= minf(ax, bx) - CLIP_EDGE_TOL_DEG and lon <= maxf(ax, bx) + CLIP_EDGE_TOL_DEG:
-				return true
-	return false
 
 
 ## The variant at [param dir] among a tile's [param entries] (nova_entries): the first zone holding it, as
@@ -450,7 +379,7 @@ static func nova_variant_in(entries: Array, dir: Vector3) -> int:
 			lonlat = BiomeQuery._dir_to_lonlat(dir)
 		if lonlat.x < e[2] or lonlat.x > e[3] or lonlat.y < e[4] or lonlat.y > e[5]:
 			continue
-		if _nova_holds(e, lonlat.x, lonlat.y):
+		if _outline_holds(e[6], lonlat.x, lonlat.y):
 			return e[0]
 	return 1
 

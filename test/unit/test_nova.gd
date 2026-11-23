@@ -119,7 +119,7 @@ func test_palette_is_one_hot_on_the_four_most_frequent_variants() -> void:
 
 func test_an_indexed_outline_answers_as_the_whole_outline() -> void:
 	# nova_variant_in reads a zone's outline through its latitude bands and its tile-clip edges
-	# (PlanetChunk._nova_holds): the same answer as _point_in_polygon_lonlat or _on_clip_edge on the whole
+	# (PlanetChunk._outline_holds on the entry's index): the same answer as _point_in_polygon_lonlat or _on_clip_edge on the whole
 	# outline, bit for bit, on winding outlines clipped by a tile's box and on the clip edges themselves.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
@@ -140,10 +140,22 @@ func test_an_indexed_outline_answers_as_the_whole_outline() -> void:
 				lon = [-0.7, 0.7][k % 2] + rng.randf_range(-1e-7, 1e-7)
 			var whole := PlanetChunk._point_in_polygon_lonlat(lon, lat, outline) or PlanetChunk._on_clip_edge(lon, lat, outline)
 			inside += int(whole)
-			if PlanetChunk._nova_holds(e, lon, lat) != whole:
+			if PlanetChunk._outline_holds(e[6], lon, lat) != whole:
 				mismatches += 1
 	assert_eq(mismatches, 0, "the indexed outline answers as the whole one")
 	assert_gt(inside, 3000, "and many places are inside")
+
+
+func test_an_entry_reuses_the_index_its_zone_was_given() -> void:
+	# A zone indexed where it was made (PlanetChunk.index_populate_zone) is not indexed again by Nova.
+	var zone := {"coverage": "polygon", "vertices": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]}
+	PlanetChunk.index_populate_zone(zone)
+	var e: Array = PlanetChunk.nova_entries(NovaBody.new(), [zone])[0]
+	assert_true(is_same(e[6], zone[PlanetChunk.ZONE_INDEX_KEY]), "the zone's own index")
+	var la := deg_to_rad(0.5)
+	var lo := deg_to_rad(0.5)
+	var dir := Vector3(cos(la) * cos(lo), sin(la), -cos(la) * sin(lo))  # lon = atan2(-z, x)
+	assert_eq(PlanetChunk.nova_variant_in([e], dir), e[0], "inside")
 
 
 # ---------------------------------------------------------------------------
