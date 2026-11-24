@@ -1,0 +1,123 @@
+class_name VrPointer
+extends Node
+## In VR the hand aims, not the head -- the right one, or the left for a left-handed player
+## (Settings > General > VR comfort): the player's interaction ray (InteractRay -- door handles,
+## seats, crates, consoles, 3D screens) leaves from the right controller's aim pose; a dot shows where it
+## meets something to use, and the controller ticks as it comes onto it. No beam: the dot and the tick
+## were enough, the beam only cluttered the view (playtest 2026-11-22). On the flat screen the
+## crosshair at the middle of the screen is what aims; in a headset the middle of the view is nowhere the
+## eyes can see, and nothing showed what the ray met: a truck's handle could not be found (2026-11-22).
+##
+## While the right controller is not tracked (put down, out of sight of the headset) the ray goes back to
+## the head, as on the flat screen. While a menu has the mouse, XRScreen's laser points instead.
+##
+## Built by VrRig for the owner's player, in VR only.
+
+## Radius (m) of the dot where the ray meets what it aims at.
+const DOT_M := 0.012
+## The dot's colour.
+const HIT_COLOUR := Color(0.55, 0.95, 1.0, 0.9)
+## The tick in the controller as the ray comes onto something (Hz, 0..1, s).
+const TICK_HZ := 160.0
+const TICK_AMPLITUDE := 0.25
+const TICK_S := 0.02
+## The hand presses a 3D screen when the front of the controller comes this close (m) to it, or goes
+## through it, and lets go past POKE_RELEASE_M (in between: no chatter). PlayerClient._vr_poke.
+const POKE_PRESS_M := 0.01
+const POKE_RELEASE_M := 0.03
+## The screens are looked for from this far (m) behind the front of the controller: a hand already
+## through a screen still finds it, and keeps pressing.
+const POKE_BACK_M := 0.15
+
+## Does the game have the mouse captured (the view is the player's, no menu)? A Callable for the tests.
+var mouse_captured: Callable = func() -> bool:
+	return Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+
+## The comfort settings played (SettingsManager.vr unless a test hands its own).
+var comfort: VrComfortSettings = null
+
+var _ray: RayCast3D = null
+var _followers: Array[RayCast3D] = []  # other rays aimed the same way (the mining tool's: follow())
+var _aims: Array[XRController3D] = []
+var _aim: XRController3D = null
+var _head: Node3D = null
+var _dot: MeshInstance3D = null
+var _was_hit: bool = false
+
+
+## Aim [param ray] from the aim pose of the hand that aims, [param left] or [param right], or from
+## [param head] when that hand is not tracked.
+func setup(ray: RayCast3D, left: XRController3D, right: XRController3D, head: Node3D) -> void:
+	_ray = ray
+	_aims = [left, right]
+	_aim = right
+	_head = head
+	if comfort == null:
+		comfort = SettingsManager.vr
+	var ball := SphereMesh.new()
+	ball.radius = DOT_M
+	ball.height = DOT_M * 2.0
+	ball.radial_segments = 12
+	ball.rings = 6
+	ball.material = _paint(HIT_COLOUR)
+	_dot = _shape("AimDot", ball)
+	_aim.add_child(_dot)
+
+
+func _process(_delta: float) -> void:
+	if not is_instance_valid(_ray) or not is_instance_valid(_aim):
+		return
+	var wanted: XRController3D = _aims[0 if comfort != null and comfort.left_handed() else 1]
+	if wanted != _aim:
+		_aim = wanted
+		_dot.reparent(_aim, false)
+	var on_hand: bool = _aim.get_has_tracking_data()
+	var from: Node3D = _aim if on_hand else _head
+	for ray: RayCast3D in [_ray] + _followers:
+		if is_instance_valid(ray) and ray.get_parent() != from:
+			ray.reparent(from, false)
+	var hit: bool = on_hand and mouse_captured.call() and _ray.is_colliding()
+	if hit:
+		_dot.global_position = _ray.get_collision_point()
+	_dot.visible = hit
+	if hit and not _was_hit:
+		_aim.trigger_haptic_pulse(&"haptic", TICK_HZ, TICK_AMPLITUDE, TICK_S, 0.0)
+	_was_hit = hit
+
+
+## A poke's next step: 1 press, -1 let go, 0 nothing, for a hand [param poking] or not, over a screen
+## ([param on_screen]) whose surface is [param tip] m ahead of the controller's front (negative: through).
+static func poke_change(poking: bool, on_screen: bool, tip: float) -> int:
+	if poking and (not on_screen or tip > POKE_RELEASE_M):
+		return -1
+	if not poking and on_screen and tip < POKE_PRESS_M:
+		return 1
+	return 0
+
+
+## Aim [param ray] from the same place as the interaction ray: the aiming hand, or the head.
+func follow(ray: RayCast3D) -> void:
+	if ray != null and not _followers.has(ray):
+		_followers.append(ray)
+
+
+## The aiming hand while the runtime sees it, else null (the head aims).
+func aiming_hand() -> XRController3D:
+	return _aim if is_instance_valid(_aim) and _aim.get_has_tracking_data() else null
+
+
+static func _paint(colour: Color) -> StandardMaterial3D:
+	var paint := StandardMaterial3D.new()
+	paint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	paint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	paint.albedo_color = colour
+	return paint
+
+
+static func _shape(node_name: String, mesh: Mesh) -> MeshInstance3D:
+	var shape := MeshInstance3D.new()
+	shape.name = node_name
+	shape.mesh = mesh
+	shape.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	shape.visible = false
+	return shape

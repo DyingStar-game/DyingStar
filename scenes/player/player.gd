@@ -566,6 +566,9 @@ var _saved_collision_mask: int = Globals.MASK_SOLID
 
 
 @onready var camera = $CameraPivot/Camera3D
+## The owner's VR view (VrRig) when the game runs in VR, whose head-tracked camera is then `camera`;
+## null otherwise, and always on a remote avatar or the server.
+var vr_rig: VrRig = null
 
 @onready var astronaut: Node3D = $Placeholder_Collider/Astronaut
 @onready var puppet: Node3D = $Puppet
@@ -723,10 +726,18 @@ func _ready() -> void:
 	# interact_ray (grab, line of sight, carry distance) picks this up.
 	interact_ray.target_position = Vector3(0.0, 0.0, -interact_ray_length)
 
+	# VR (`--xr-mode on`): the owner looks through the headset, whose camera takes the place of the flat
+	# one -- before anything below holds on to `camera` (the mining tool, then the client role).
+	if not remote_player and XRMode.is_active():
+		vr_rig = VrRig.install(self)
+		camera = vr_rig.camera
+
 	# Mining tool: build its equipment mount + perforator from our camera rig, and
 	# relay its replicated-state requests to the server + its aim signal to the UI.
 	mining_tool.setup(camera_pivot, camera)
 	mining_tool.sync_requested.connect(client_send_action_to_server)
+	if vr_rig != null:
+		vr_rig.hold_tool(mining_tool)  # in VR the aiming hand holds and aims it
 	var ui: Node = get_node_or_null(^"UserInterface")
 	if ui != null:
 		mining_tool.aiming_changed.connect(ui.set_aiming)
@@ -874,6 +885,11 @@ func _ride_seat(seat: Node3D) -> void:
 ## so the view is not locked straight ahead. BOTH are clamped: a seated body can't spin its view around
 ## forever (unbounded yaw also flipped the replicated head to the wrong side past 180°).
 func _seat_free_look() -> void:
+	if vr_rig != null:
+		# In VR the head looks around: the pivot stays straight ahead of the seat.
+		camera_pivot.rotation = Vector3.ZERO
+		mouse_motion = Vector2.ZERO
+		return
 	camera_pivot.rotation.y = clampf(
 		camera_pivot.rotation.y + mouse_motion.x * camera_sensitivity,
 		deg_to_rad(-120.0), deg_to_rad(120.0))

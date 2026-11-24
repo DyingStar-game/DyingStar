@@ -26,6 +26,9 @@ func _ready() -> void:
 	# Forget what the player learnt: every play hint shows again (see PlayHintsMemory).
 	(_rows.get_node("PlayHintsReset/Button") as Button).pressed.connect(func() -> void:
 		PlayHintsMemory.shared().reset())
+	# VR comfort: in a headset only (`--xr-mode on`), the lines a flat screen has no use for.
+	if XRMode.is_active():
+		VrComfortRows.build(_rows, SettingsManager.vr)
 	# Last: this reparents each row, so it must come after the node paths above are resolved.
 	SettingsRow.wrap_rows(_rows)
 

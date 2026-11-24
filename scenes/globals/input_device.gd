@@ -44,9 +44,13 @@ static var _hid_cursor : bool = false
 static var _pad_at : int = -PAD_GRACE_MS
 ## The pad the player last used, or -1.
 static var pad : int = -1
+## A pad that holds the HUD whatever the keyboard and the mouse do, or -1 (hold_pad).
+static var held_pad : int = -1
 
 
 static func feed(event: InputEvent) -> void:
+	if held_pad >= 0 and not (event is InputEventJoypadButton or event is InputEventJoypadMotion):
+		return  # the desktop's keyboard and mouse, out of reach of a player in a headset
 	if event is InputEventJoypadButton:
 		if (event as InputEventJoypadButton).pressed:
 			_use_pad(event.device)
@@ -70,6 +74,8 @@ static func feed(event: InputEvent) -> void:
 ## nothing — and it comes back as soon as the mouse moves. Only a VISIBLE cursor is hidden, and only
 ## the one hidden here is shown again: a game that captures the mouse keeps it. Called by Globals.
 static func fit_cursor() -> void:
+	if held_pad >= 0:
+		return  # the VR laser moves the mouse in the menus: its cursor stays
 	var mode : Input.MouseMode = cursor_mode(Input.mouse_mode, last == Kind.GAMEPAD, _hid_cursor)
 	if mode != Input.mouse_mode:
 		Input.mouse_mode = mode
@@ -151,6 +157,18 @@ static func likely_family() -> Family:
 		if found != Family.GENERIC:
 			return found
 	return Family.XBOX
+
+
+## Hold the HUD on the pad [param device] for good (-1 lets go): in VR (XRManager), the controllers
+## played as a pad (VrInput) are all the player has in their hands. The desktop's mouse moving, or a key
+## of a keyboard they cannot see, named the keys again ("[E] Open", "Shift" to run: playtest 2026-11-22).
+## The laser that points at the menus is the mouse: it sets [member pointer] itself (XRScreen).
+static func hold_pad(device: int) -> void:
+	held_pad = device
+	if device >= 0:
+		_use_pad(device)
+		if not Input.get_connected_joypads().has(device):
+			family = Family.XBOX  # a virtual pad: A B X Y, printed on most VR controllers
 
 
 static func _use_pad(device: int) -> void:

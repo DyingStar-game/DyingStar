@@ -50,6 +50,8 @@ var ui_scale : UiScaleSettings
 ## The debug switches (Settings > Debug). Same arrangement as `language`; on a dedicated server, the
 ## few it reads come from server.ini.
 var debug : DebugSettings
+## Settings > General > VR comfort (shown in VR only). Same arrangement as `language`.
+var vr : VrComfortSettings
 ## The saved keybindings as action -> {device key: binding text} (InputDevice.KEYS), empty when
 ## nothing was ever remapped. Kept so the controls page can show and re-save them without parsing the file a second time.
 var keybindings : Dictionary = {}
@@ -59,6 +61,7 @@ func _ready() -> void:
 	render = RenderSettings.new(config, save_settings)
 	ui_scale = UiScaleSettings.new(config, save_settings, get_tree().root)
 	debug = DebugSettings.new(config, save_settings, _server_ini_flag)
+	vr = VrComfortSettings.new(config, save_settings)
 	if OS.has_feature("dedicated_server"):
 		return
 	render.caps = RenderSettings.current_caps()
@@ -178,6 +181,7 @@ func apply_settings():
 		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 	# Cap the framerate (0 = unlimited). Default 144 so an uncapped GPU doesn't render 500+ fps.
 	Engine.max_fps = int(config.get_value("video", "max_fps", 144))
+	XRMode.pace_by_runtime()
 	apply_audio_settings()
 	language.apply()
 	# Before the dev-mode return below: dev mode is about the WINDOW, not about how the game looks.
@@ -218,6 +222,7 @@ func set_fullscreen(on: bool) -> void:
 func set_vsync(on: bool) -> void:
 	DisplayServer.window_set_vsync_mode(
 		DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED)
+	XRMode.pace_by_runtime()
 	save_video_settings("v_sync", on)
 	save_settings()
 
@@ -234,6 +239,7 @@ func get_fov() -> float:
 ## Cap the framerate at `fps` (0 = unlimited). Applied live via Engine.max_fps + persisted.
 func set_max_fps(fps: int) -> void:
 	Engine.max_fps = fps
+	XRMode.pace_by_runtime()
 	save_video_settings("max_fps", fps)
 	save_settings()
 

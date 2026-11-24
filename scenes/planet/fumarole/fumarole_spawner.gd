@@ -117,6 +117,9 @@ static func _plumes(mouths: PackedVector3Array, mouth_r: PackedFloat32Array, plu
 	r_mean /= float(mouths.size())
 	var p := GPUParticles3D.new()
 	p.name = "Plumes"
+	# Local: the GPU keeps each particle's place in float, and in the world's frame, 4e10 m out, that place is
+	# kilometres off -- no plume showed (2026-11-22). Local, they also turn with the planet under them.
+	p.local_coords = true
 	p.amount = mouths.size() * PARTICLES_PER_PLUME
 	p.lifetime = clampf(plume_h / PLUME_SPEED_M_S, 2.0, 20.0)
 	p.preprocess = p.lifetime

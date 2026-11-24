@@ -12,6 +12,8 @@ extends RefCounted
 ## Options that someone else consumes (shadows, shadow distance, atmosphere quality, the two
 ## distances) have no branch: their consumers read RenderSettings and listen to its `changed`.
 
+## Largest sun shadow map (px) in VR: see _in_vr.
+const VR_SUN_SHADOW_MAX := 2048
 ## Index = the ssao / ssil option value (0 = off).
 const _SSAO_QUALITY : Array[int] = [
 	RenderingServer.ENV_SSAO_QUALITY_VERY_LOW, RenderingServer.ENV_SSAO_QUALITY_LOW,
@@ -68,6 +70,8 @@ func _apply(option: Dictionary) -> void:
 	if _settings.is_overridden(key):
 		return
 	var value : Variant = _settings.effective(key)
+	if XRMode.is_active():
+		value = _in_vr(key, value)
 	if option.has("viewport"):
 		_viewport.set(option["viewport"], value)
 		if key == "mesh_lod":  # a head of hair's shader keeps its coverage across the LODs with it
@@ -97,6 +101,27 @@ func _apply(option: Dictionary) -> void:
 
 
 # Low and medium render at half resolution, the engine's cheap path; high and ultra at full.
+## [param value] of the option [param key] as VR can render it. The player's choice stays saved for the
+## flat screen.
+## - In Godot 4.7, SMAA and a 3D render scale under 100 % break stereo rendering (framebuffer errors every
+##   frame, nothing drawn right).
+## - Two eyes at the headset's resolution in HDR fill the video memory: on a 6 GB card SteamVR could no
+##   longer allocate its images in game and the headset went black (2026-11-22). MSAA multiplies those
+##   eyes, the sun's shadow map is the biggest other buffer: both capped.
+static func _in_vr(key: String, value: Variant) -> Variant:
+	match key:
+		"aa_screen":
+			if value == Viewport.SCREEN_SPACE_AA_SMAA:
+				return Viewport.SCREEN_SPACE_AA_FXAA
+		"render_scale":
+			return 1.0
+		"aa_msaa":
+			return Viewport.MSAA_DISABLED
+		"shadow_sun_res":
+			return mini(int(value), VR_SUN_SHADOW_MAX)
+	return value
+
+
 func _apply_ssao(level: int) -> void:
 	RenderingServer.environment_set_ssao_quality(_SSAO_QUALITY[level], level <= 2, _ADAPTIVE_TARGET,
 		3 if level == 4 else 2, _FADE_FROM_M, _FADE_TO_M)

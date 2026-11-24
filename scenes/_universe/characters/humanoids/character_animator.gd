@@ -363,6 +363,12 @@ static func add_head_shadow(skeleton: Skeleton3D, head: int, neck: int) -> MeshI
 	return mesh
 
 
+## The skeleton the animations pose, once setup() found it (null before, or on a rig without one). VR
+## hangs the owner's arms on it (VrArms).
+func posed_skeleton() -> Skeleton3D:
+	return _skeleton
+
+
 ## The skeleton the animations actually pose. The clips live in a library built for this character
 ## (addons/dyingstar/build_retargeted_animations.gd) and the AnimationPlayer names the rig they address
 ## through its root_node -- ask it, rather than assuming the puppet holds exactly one skeleton.

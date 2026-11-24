@@ -475,9 +475,31 @@ func _build_aerial_lut() -> void:
 func _aim_aerial_lut() -> void:
 	if _aerial_lut_material == null or not is_instance_valid(player) or player.camera == null:
 		return
+	if XRMode.is_active():
+		_aim_aerial_lut_for_both_eyes()
+		return
 	var projection: Projection = player.camera.get_camera_projection()
 	_aerial_lut_material.set_shader_parameter("lut_tan", Vector2(1.0 / projection.x.x, 1.0 / projection.y.y))
 	_aerial_lut_material.set_shader_parameter("lut_view_basis", player.camera.global_basis)
+
+
+## VR: the table on the head, wide enough for both eyes' frustums (each is off-centre, the outer side the
+## wider), and the aerial pass told to read it by direction (aerial_perspective.gdshader).
+func _aim_aerial_lut_for_both_eyes() -> void:
+	var xr: XRInterface = XRMode.interface()
+	var size: Vector2 = xr.get_render_target_size()
+	var aspect: float = size.x / maxf(size.y, 1.0)
+	var cam: Camera3D = player.camera
+	var tan_half := Vector2.ZERO
+	for view in xr.get_view_count():
+		var eye: Projection = xr.get_projection_for_view(view, aspect, cam.near, cam.far)
+		# NDC x = x.x * slope - z.x: the slopes the eye sees run from (-1 + z.x) / x.x to (1 + z.x) / x.x.
+		tan_half.x = maxf(tan_half.x, (1.0 + absf(eye.z.x)) / eye.x.x)
+		tan_half.y = maxf(tan_half.y, (1.0 + absf(eye.z.y)) / eye.y.y)
+	for material: ShaderMaterial in [_aerial_lut_material, _aerial_material]:
+		material.set_shader_parameter("lut_tan", tan_half)
+		material.set_shader_parameter("lut_view_basis", cam.global_basis)
+	_aerial_material.set_shader_parameter("lut_by_direction", true)
 
 
 ## The aerial pass reads its table (true), or marches every pixel (false: the reference, the bench's A/B).

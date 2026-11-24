@@ -121,6 +121,10 @@ var _gain_pushed: bool = false
 var _lod_elapsed: float = REMOTE_LOD_INTERVAL  # evaluate on the first frame, then every interval
 var _half_rate := HalfRateTicker.new()
 var _remote_far: bool = false
+## A remote VR player's hands (VrHandsCodec, "vr_hands"): its avatar's arms, built at the first hands
+## received, and the hands last received ([left, right], body's frame, {} when not there).
+var _remote_arms: VrArms = null
+var _remote_hands: Array = [{}, {}]
 var _remote_no_shadow: bool = false
 var _puppet_meshes: Array[MeshInstance3D] = []  # the puppet's meshes, whose cast_shadow the LOD flips
 
@@ -173,6 +177,7 @@ var _last_hold_action: String = ""  # last "hold:<n>:x:y:z" seen (ScreenPoke.hol
 var _last_blip_action: String = ""  # last "blip:<n>:x:y:z" seen (ScreenPoke.blip_action)
 ## OWNER: the button is held down on a screen since a tap, and when the others were last told (ms).
 var _tap_holding: bool = false
+var _poking: bool = false  # VR: the hand is pressing the screen it touches (_vr_poke)
 var _hold_said_ms: int = 0
 var _last_tap_sound: AudioStream = null  # never the same tap sound twice running
 var _last_seat_action: String = ""  # last "seat:/unseat:" seen (sit pose + optimistic-entry revert)
@@ -388,7 +393,12 @@ func setup() -> void:
 	_wrist.name = "WristDatapad"
 	player.add_child(_wrist)
 	_wrist.setup(player, _services, player.camera, player.puppet.get_node_or_null("CharacterAnimator"), _wrist_model)
-	_wrist.up_changed.connect(func(up: bool) -> void: player.get_node("UserInterface").set_crosshair_shown(not up))
+	# In VR no crosshair: the middle of the HUD's panel is not where anything aims, the right hand is
+	# (VrPointer).
+	var crosshair_wanted: bool = player.vr_rig == null
+	player.get_node("UserInterface").set_crosshair_shown(crosshair_wanted)
+	_wrist.up_changed.connect(func(up: bool) -> void:
+		player.get_node("UserInterface").set_crosshair_shown(crosshair_wanted and not up))
 	# The wrist's light blinks while an app has news nobody opened: put away without looking at it,
 	# the tablet blinks again (WristDatapad clears it when it is read).
 	_wrist.up_changed.connect(func(up: bool) -> void:
@@ -422,34 +432,46 @@ func setup() -> void:
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
-	var can_take_pointer := func() -> bool: return not _input_locked()
-	var graphics : OverlayPanel = GraphicsOverlay.in_game()
-	for panel: OverlayPanel in [graphics, DevOverlay.create(player,
-			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
-			_driven_vehicle, _star_map)]:
-		_screens_root().add_child(panel.setup(can_take_pointer, _menu_open))
-	# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
-	# the graphics panel.
-	var hints := PlayHintsPanel.new()
-	hints.hidden_rule = _modal_open
-	player.get_node("UserInterface").add_child(hints)
-	if player.direct_chat != null:
-		hints.place_under(player.direct_chat)
-	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
+	#
+	# Not in VR, nor the play hints, nor the speaker and microphone buttons: the HUD is a panel floating
+	# before the eyes there, and these stood between them and the world (playtest 2026-11-22) -- the
+	# keys of the moment name pad buttons a headset's player does not read on a pad, the AltGr pointer
+	# has no mouse, and the speaker and the microphone keep their keys.
+	if player.vr_rig == null:
+		var can_take_pointer := func() -> bool: return not _input_locked()
+		var graphics : OverlayPanel = GraphicsOverlay.in_game()
+		for panel: OverlayPanel in [graphics, DevOverlay.create(player,
+				player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
+				_driven_vehicle, _star_map)]:
+			_screens_root().add_child(panel.setup(can_take_pointer, _menu_open))
+		# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
+		# the graphics panel.
+		var hints := PlayHintsPanel.new()
+		hints.hidden_rule = _modal_open
+		player.get_node("UserInterface").add_child(hints)
+		if player.direct_chat != null:
+			hints.place_under(player.direct_chat)
+		hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
+	else:
+		var audio: Control = player.get_node_or_null(^"UserInterface/HUD/Control/AudioContainer")
+		if audio != null:
+			audio.hide()
 	_offer_play_hints()
 	# The interaction prompt in a frame beside the crosshair, a line drawn to it from what it is about;
 	# Settings > General can turn the frame off: the plain prompt, on a dark patch fitted to its width
 	# so it reads over a bright ground.
-	var hud : Control = player.interact_label.get_parent()
-	var shade : ColorRect = PROMPT_SHADE.new()
-	hud.add_child(shade)
-	hud.move_child(shade, 0)  # under the rest of the HUD
-	shade.follow(player.interact_label)
-	var leader : Control = PROMPT_LEADER.new()
-	hud.add_child(leader)
-	hud.move_child(leader, player.interact_label.get_index())  # under the prompt it draws the line to
-	leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
-	leader.target_rule = _prompt_target
+	# In VR the prompt hangs over the target instead (VrPrompt): no frame, no patch, no line in the HUD.
+	if player.vr_rig == null:
+		var hud : Control = player.interact_label.get_parent()
+		var shade : ColorRect = PROMPT_SHADE.new()
+		hud.add_child(shade)
+		hud.move_child(shade, 0)  # under the rest of the HUD
+		shade.follow(player.interact_label)
+		var leader : Control = PROMPT_LEADER.new()
+		hud.add_child(leader)
+		hud.move_child(leader, player.interact_label.get_index())  # under the prompt it draws the line to
+		leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
+		leader.target_rule = _prompt_target
 
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
@@ -1066,8 +1088,11 @@ func _handle_camera_motion() -> void:
 		player.gravity = player._compute_gravity(parent_gravity_area)
 		player.orient_player()
 		player.global_basis = player.global_basis.rotated(player.global_basis.y, look.x * player.camera_sensitivity)
-		player.camera_pivot.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
-		player.camera_pivot.rotation_degrees.x = clamp(player.camera_pivot.rotation_degrees.x, -80, 80)
+		if player.vr_rig != null:
+			player.camera_pivot.rotation.x = 0.0  # in VR the head gives the pitch
+		else:
+			player.camera_pivot.rotate_object_local(Vector3.RIGHT, look.y * player.camera_sensitivity)
+			player.camera_pivot.rotation_degrees.x = clamp(player.camera_pivot.rotation_degrees.x, -80, 80)
 	else:
 		# No gravity area. Ignore a brief gap (e.g. a reparent leaving a spawn apartment) — only treat
 		# it as real 0g after ZERO_G_GRACE, so the camera pitch survives the transition.
@@ -1097,18 +1122,27 @@ func _handle_camera_motion() -> void:
 ## pivot turns instead). Called both on foot (_handle_camera_motion) AND seated (_ride_seat path), so a
 ## seated avatar's head-look reaches remotes — the seated branch returns before the on-foot camera code.
 func _replicate_look() -> void:
-	var head_q := snappedf(player.camera_pivot.rotation.x, 0.02)
+	var pitch: float = player.camera_pivot.rotation.x
+	var yaw: float = player.camera_pivot.rotation.y
+	var eye: Vector3 = player.camera_pivot.position
+	if player.vr_rig != null:
+		# In VR the head turns on its own, standing too: the server's look ray and the others' view of
+		# our head follow the headset, not the (straight) pivot.
+		pitch = player.vr_rig.head_pitch()
+		yaw = player.vr_rig.head_yaw()
+		eye = player.camera_pivot.transform * player.vr_rig.head_offset()
+	var head_q := snappedf(pitch, 0.02)
 	if head_q != player._last_head_sent:
 		player._last_head_sent = head_q
 		player.client_send_action_to_server({"action": "update_property", "head": head_q})
-	var head_yaw_q := snappedf(player.camera_pivot.rotation.y, 0.02)
+	var head_yaw_q := snappedf(yaw, 0.02)
 	if head_yaw_q != player._last_head_yaw_sent:
 		player._last_head_yaw_sent = head_yaw_q
 		player.client_send_action_to_server({"action": "update_property", "head_yaw": head_yaw_q})
 	# Where the eye IS: the head camera moves the pivot (crouched it drops ~0.6 m, it leans forward
 	# walking), and the server, which casts the look ray that decides the carry prompt, kept it at its
 	# rest. Crouched over a rock, both rays aimed at different things (playtest 2026-11-11).
-	var eye_q: Vector3 = player.camera_pivot.position.snapped(Vector3(EYE_STEP_M, EYE_STEP_M, EYE_STEP_M))
+	var eye_q: Vector3 = eye.snapped(Vector3(EYE_STEP_M, EYE_STEP_M, EYE_STEP_M))
 	var now_ms := Time.get_ticks_msec()
 	if eye_q != player._last_eye_sent and now_ms - _eye_sent_ms >= EYE_SEND_MIN_MS:
 		player._last_eye_sent = eye_q
@@ -1122,18 +1156,23 @@ func _replicate_look() -> void:
 ## ([param ui_focus]). Seated as well as on foot: walking up to a screen used to free the cursor and
 ## freeze the view, which a seat could not allow while driving; the view stays the player's now, and a
 ## seated player reaches the consoles around the seat like anyone else. True while it points at one.
+## The ray is the InteractRay's: from the eye on the flat screen, from the right hand in VR (VrPointer).
 func _point_screen(ui_focus: bool) -> bool:
-	var eye: Vector3 = player.camera.global_position if player.camera != null else player.global_position
+	var aim: Node3D = player.interact_ray if player.camera != null else null
+	# VR: looked for from behind the hand, so the distance tells a touch (_vr_poke).
+	var back: float = VrPointer.POKE_BACK_M if player.vr_rig != null else 0.0
+	var eye: Vector3 = aim.global_position if aim != null else player.global_position
 	var gui: Node3D = null
 	var point: Variant = null
-	if not ui_focus and player.camera != null:
-		var ray: Vector3 = -player.camera.global_basis.z
-		var nearest: float = INF
+	var nearest: float = INF
+	if not ui_focus and aim != null:
+		var ray: Vector3 = -aim.global_basis.z
+		eye -= ray * back
 		for candidate: Node in get_tree().get_nodes_in_group(ScreenTarget.GROUP):
 			var screen_gui := candidate as Node3D
 			if screen_gui == null or screen_gui.global_position.distance_to(eye) > SCREEN_REACH_M + 2.0:
 				continue
-			var at: Variant = screen_gui.hit(eye, ray, SCREEN_REACH_M)
+			var at: Variant = screen_gui.hit(eye, ray, SCREEN_REACH_M + back)
 			if at != null and eye.distance_to(at) < nearest and ScreenTarget.owner_of(screen_gui) != null:
 				nearest = eye.distance_to(at)
 				gui = screen_gui
@@ -1156,8 +1195,25 @@ func _point_screen(ui_focus: bool) -> bool:
 			player.set_screen_in_use(null)  # walked away: its fields give the keyboard back
 	elif player.screen_in_use != null:
 		player.set_screen_in_use(null)  # freed (admin delete, despawn)
+	if player.vr_rig != null:
+		_vr_poke(gui, nearest - back)
 	_hold_tap(gui != null)
 	return gui != null or watched
+
+
+## VR: the hand touching the screen it points at presses it, like the click: [param tip] is how far
+## (m) the front of the controller is from [param gui] (negative: through it), INF for no screen.
+func _vr_poke(gui: Node3D, tip: float) -> void:
+	var change: int = VrPointer.poke_change(_poking, gui != null, tip)
+	if change < 0:
+		_poking = false
+		_press_screen(false)
+	elif change > 0:
+		_poking = true
+		_press_screen(true)
+		var hand: XRController3D = player.vr_rig.pointer.aiming_hand() if player.vr_rig.pointer != null else null
+		if hand != null:
+			hand.trigger_haptic_pulse(&"haptic", 120.0, 0.4, 0.03, 0.0)  # the finger feels the glass
 
 
 ## Whether another player is using the screen of [param gui] (ScreenLock): it is theirs to touch.
@@ -1214,22 +1270,28 @@ func _input(event: InputEvent) -> void:
 		return
 	if not event.is_action(&"perforate"):
 		return
+	if _press_screen(event.is_pressed()):
+		get_viewport().set_input_as_handled()
+
+
+## Press ([param pressed]) or let go of the screen under the crosshair -- the click, or in VR the finger
+## (_vr_poke). True when it was the screen's (or a field let go of the keyboard).
+func _press_screen(pressed: bool) -> bool:
 	var typing: bool = _screen_typing()
-	if typing and event.is_pressed():
+	if typing and pressed:
 		var used: Node3D = ScreenTarget.gui_of(player.screen_in_use)
 		if used != null:
 			used.release_keyboard()
 	if is_instance_valid(_pointed_gui):
 		var screen_owner: Node3D = ScreenTarget.owner_of(_pointed_gui)
-		if event.is_pressed() and not ScreenLock.is_mine(screen_owner):
+		if pressed and not ScreenLock.is_mine(screen_owner):
 			ScreenTarget.send(screen_owner, {"state": ScreenLock.STATE})  # ours now, the others watch
-		_pointed_gui.click_at(_pointed_at, event.is_pressed())
-		if event.is_pressed():
+		_pointed_gui.click_at(_pointed_at, pressed)
+		if pressed:
 			_screen_tap(_pointed_at)
 			_tap_holding = true  # until the button is let go, or the crosshair leaves the screen (_hold_tap)
 			_hold_said_ms = Time.get_ticks_msec()
-	if typing or is_instance_valid(_pointed_gui):
-		get_viewport().set_input_as_handled()
+	return typing or is_instance_valid(_pointed_gui)
 
 
 ## Whether [param event] is a turn of the mouse wheel (up, down, or tilted sideways).
@@ -1252,7 +1314,7 @@ func _screen_tap(at: Vector3) -> void:
 func _hold_tap(on_screen: bool) -> void:
 	if not _tap_holding:
 		return
-	if not on_screen or not Input.is_action_pressed(&"perforate"):
+	if not on_screen or not (Input.is_action_pressed(&"perforate") or _poking):
 		_tap_holding = false
 		player.tap_hold_until_ms = 0
 		return
@@ -2434,6 +2496,8 @@ func _refresh_remote_lod() -> void:
 		var looks := _looks()
 		if looks != null:
 			looks.set_detail(near)
+		if _remote_arms != null:
+			_remote_arms.fingers = near  # a far VR avatar's fingers stay the clip's
 	var alive: bool = not _beyond(not _remote_alive, d, REMOTE_LIFE_EXIT, REMOTE_LIFE_ENTER)
 	if alive != _remote_alive:
 		_remote_alive = alive
@@ -2448,6 +2512,24 @@ func _refresh_remote_lod() -> void:
 		for mesh in _puppet_meshes:
 			if is_instance_valid(mesh):
 				mesh.cast_shadow = mode
+
+## A remote VR player's hands arrived ([param text], VrHandsCodec): its avatar's arms take them, built
+## on the first ones. No time-out: Horizon sends a hand again only when it moved, so still hands are
+## quiet; "" (the headset gone, or out of the hands' zone: Client.delete_player) gives them back.
+func _remote_hands_in(text: String) -> void:
+	var hands: Array = VrHandsCodec.decode(text)
+	if hands.size() != 2:
+		return
+	_remote_hands = hands
+	if _remote_arms == null and not (hands[0].is_empty() and hands[1].is_empty()):
+		_remote_arms = VrArms.new()
+		_remote_arms.name = "RemoteVrArms"
+		_remote_arms.setup(null, player)
+		_remote_arms.source = func(side: int) -> Dictionary: return _remote_hands[side]
+		_remote_arms.carrying = func() -> bool: return _remote_carrying
+		_remote_arms.fingers = _remote_near
+		add_child(_remote_arms)
+
 
 ## Threshold with hysteresis: cross `enter` to become true, fall back below `exit` to become false.
 static func _beyond(current: bool, d: float, enter: float, exit: float) -> bool:
@@ -2745,6 +2827,8 @@ func client_channel_data_update(data: Dictionary) -> void:
 			_remote_carrying = carrying  # drives the remote avatar's carry pose
 		if data.has("datapad"):
 			player.datapad_raised = bool(data["datapad"])  # its wrist up, reading its DataPad (WristRaise)
+		if data.has("vr_hands"):
+			_remote_hands_in(str(data["vr_hands"]))
 		if data.has("seat"):
 			# The seat STATE ("driver" / "passenger" / ""), not the "seat:"/"unseat:" EVENT handled
 			# above. Both arrive together on a live change, and only this one survives in Horizon's
