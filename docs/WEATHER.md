@@ -43,6 +43,11 @@ service puis en relisant `/systems` et `/point` au même instant `t` et aux mêm
 Passer par le menu DyingStar ▸ Rebuild climate profiles, ou appeler sa fonction statique `build_all()` depuis un
 script `extends SceneTree`.
 
+**Un contrôle le rappelle** : `test/unit/test_derived_profiles_current.gd` refait en mémoire les profils de climat et
+d'atmosphère depuis les données de `services` (posé à côté du projet, ou `DS_SERVICES_DIR`) et échoue en nommant la
+première valeur qui a bougé. La CI clone le `develop` de `services` à côté du projet avant les tests. Côté `services`,
+`weather/crates/weather-core/tests/derived_up_to_date.rs` fait de même pour le climat dérivé du service.
+
 ## Outils sans Horizon : lire le service directement
 
 `WeatherService` (`scenes/planet/weather/weather_service.gd`) interroge l'API HTTP du service
