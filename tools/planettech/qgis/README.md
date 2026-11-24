@@ -18,6 +18,7 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`. See below. |
 | `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
 | `export_mountains.py` | QGIS Python Console | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
+| `preview_mountain_contours.py` | QGIS Python Console | **Read-only preview**: evaluates the relief Godot gives the `mountain_range` / `ridge` features and draws its elevation contours (+ a hillshade) in a `Mountain preview` group — to place roads and villages across a massif. See "Seeing the mountains in QGIS" below. |
 | `export_volcanoes.py` | QGIS Python Console | **Volcanoes-only**: the `volcano` points, `lava_flow` lines and `fumarole_field` / `fumarole_vent` features → `parts/volcanoes.dsmpart`, `parts/lava_flows.dsmpart`, `parts/fumaroles.dsmpart`, and relinks the pack. See "Volcanoes, lava flows and fumaroles" below. |
 | `export_rocky_terrain.py` | QGIS Python Console | **Rocky-terrain-only**: the `rocky_terrain` polygons → `parts/rocky_terrain.dsmpart` (ruggedness preset + style, resolved here; the relief is generated in Godot) and relinks the pack. See "Rocky terrain" below. |
 | `migrate_volcanic_layers.py` | QGIS Python Console | One-shot, per planet: creates the new volcanic tables and copies the old biome ones (`active_volcano`, `lava_dome`, `lava_river`, `fumarole`) into them. Drops nothing. |
@@ -27,7 +28,8 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export/planet/volcanoes.py` | library | The VOLCANO / LAVA / FUMAROLE part builders and their presets (`PRESETS`, `LAVA_PRESETS`, `GAS_PRESETS`). |
 | `export/planet/rocky_terrain.py` | library | The ROCKY part builder, the ruggedness presets (`PRESETS`), the styles and the export-time resolution (vectors, auto seed / azimuths, the joint and butte means). |
 | `export/planet/rock_field_noise.py` | library | Python twin of the runtime rock-field relief — golden values of the determinism test, and the term means the exporter measures. |
-| `export/planet/mountain_noise.py` | library | Python twin of the runtime mountain noise — golden values of the determinism test, future preview raster. |
+| `export/planet/mountain_noise.py` | library | Python twin of the runtime mountain noise — golden values of the determinism test. |
+| `export/planet/mountain_preview.py` | library | numpy port of `MountainRelief.offset` (ranges + ridges) on a lon/lat grid, for `preview_mountain_contours.py`; pinned to Godot's values by `test/unit/test_mountain_preview_py.py`. |
 | `link_modifiers.py` | QGIS console or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
 | `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
 | `export/planet/modifier_geom.py` | library | Tile assignment, clipping, decimation. Holds the road **partition** that makes double-rendering impossible. |
@@ -329,6 +331,39 @@ features re-bake; `heights.pack` and `data_version` are untouched.
 To iterate before the layers exist, `PlanetData` has a **Debug mountain**
 group (a synthetic 32-gon range + one ridge, `debug_mountain_*` /
 `debug_ridge_*`), ignored as soon as the pack carries a mountain part.
+
+### Seeing the mountains in QGIS (`preview_mountain_contours.py`)
+
+The layers hold only the intent, so QGIS cannot show how high a massif goes. This
+script computes the same relief as the game (a numpy port of
+`MountainRelief.offset`, equal to Godot's values to 1e-9 m) and adds, at the top
+of the layer tree, a **Mountain preview** group:
+
+- **Mountain contours** — a line every `CONTOUR_INTERVAL_M` (50 m), every
+  `INDEX_EVERY`-th one (250 m) thicker and labelled; fields `elev_m`, `major`,
+  `massif`;
+- **Mountain relief N** — a hillshade of each group of overlapping features.
+
+```python
+exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/preview_mountain_contours.py').read())
+```
+
+It changes nothing in the mountain layers nor in the pack; re-run it after moving
+or retuning a feature and the previous preview is replaced. The files go to
+`mountain_preview/` next to the `.qgz`. Settings at the top of the script:
+
+| Setting | Default | |
+|---|---|---|
+| `CONTOUR_INTERVAL_M` / `INDEX_EVERY` | 50 / 5 | Contour spacing, and which lines are thick and labelled. |
+| `SAMPLE_SPACING_M` | 50 | Grid pitch. Noise details finer than half of it are left out, as on a terrain LOD of that pitch; 25 m for a close look at a pass (4× slower). About 1–2 s for a 30 km massif at 50 m. |
+| `ADD_GROUND_ELEVATION` | False | False: height the mountains **add** above the ground (`+250 m`). True: absolute altitude, `<planet>_heightmap.tif` (a coarse global raster, a few km per pixel) + the mountains. |
+| `ADD_RELIEF_RASTER` | True | The hillshade layers. |
+| `ONLY_SELECTED` | False | Only the selected ranges / ridges. |
+| `ONLY_CANVAS_EXTENT` | True | Only the part shown in the map canvas — zoom on the area you work on, then run. Off, a set of massifs spanning thousands of km fits `MAX_SAMPLES` only at a pitch of kilometres (angular contours, the hillshade drawn as squares). |
+| `MAX_SAMPLES` | 4 M | Samples per group (a 100 km square at 50 m); past it the pitch grows and the console says so. |
+
+Not shown: volcanoes and rocky terrain (their relief stacks on top in the game),
+and features crossing ±180°.
 
 ## Volcanoes, lava flows and fumaroles (`export_volcanoes.py`)
 
