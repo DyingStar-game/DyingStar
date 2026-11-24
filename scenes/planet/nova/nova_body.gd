@@ -60,6 +60,8 @@ var _transition_max := 0.0
 ## Variant id → the biome's definition with that relief, made on first use by a chunk builder (any thread).
 var _relief_biomes: Dictionary = {}
 var _relief_mutex := Mutex.new()
+## The worker making the texture arrays in the game (_refresh_textures_later), -1 when none.
+var _textures_task := -1
 var _params_img: Image
 var _params_tex: ImageTexture
 var _albedo_paths := PackedStringArray()
@@ -433,9 +435,43 @@ func build_material(base: Material) -> ShaderMaterial:
 		material = ShaderMaterial.new()
 	material.shader = load(NOVA_SHADER)
 	material.set_shader_parameter("nova_on", true)
-	refresh_textures()
+	if Engine.is_editor_hint():
+		refresh_textures()
+	else:
+		_refresh_textures_later()
 	refresh_ground()
 	return material
+
+
+## In the game: the texture arrays made on a worker, set on the material once made (the chunks take longer to be
+## built). Made here they were 1.2 s on the main thread in the frame the player's planet arrived (2026-11-24).
+## The paths are read now: refresh_ground places each variant's layers by them.
+func _refresh_textures_later() -> void:
+	join_textures()
+	var spec := _arrays_spec()
+	_textures_task = WorkerThreadPool.add_task(func() -> void:
+		_set_arrays.call_deferred(_texture_arrays(spec)), false, "nova textures")
+
+
+## Wait for the texture arrays still being made, from the main thread (PlanetTerrain._exit_tree, before the body
+## goes). Their textures' images are read through the RenderingServer, which answers another thread only when
+## this one flushes it: the queue is kept moving meanwhile, as PlanetTerrain.join_task does.
+func join_textures() -> void:
+	if _textures_task < 0:
+		return
+	while not WorkerThreadPool.is_task_completed(_textures_task):
+		RenderingServer.force_sync()
+		OS.delay_usec(500)
+	WorkerThreadPool.wait_for_task_completion(_textures_task)
+	_textures_task = -1
+
+
+func _set_arrays(made: Dictionary) -> void:
+	join_textures()  # done: releases the task
+	if material == null:
+		return
+	for parameter: String in made:
+		material.set_shader_parameter(parameter, made[parameter])
 
 
 ## Rewrites the parameter texture from the resolved settings: the ground shows it at once.
@@ -485,27 +521,40 @@ func refresh_ground() -> void:
 		_params_tex.update(_params_img)
 
 
-## Rebuilds the albedo and normal texture arrays from the textures the variants name.
+## Rebuilds the albedo and normal texture arrays from the textures the variants name, now.
 func refresh_textures() -> void:
 	if material == null:
 		return
+	join_textures()  # an older making would set its arrays over these
+	_set_arrays(_texture_arrays(_arrays_spec()))
+
+
+## Reads the variants' texture paths, and gives what each array is made of: [shader parameter, paths, the flat
+## colour of a layer that does not load].
+func _arrays_spec() -> Array:
 	_albedo_paths = _texture_paths(ALBEDO_KEYS)
 	_normal_paths = _texture_paths(NORMAL_KEYS)
 	_orh_paths = _texture_paths(ORH_KEYS)
-	var arrays := [["nova_orh", _orh_paths, Color(1.0, 0.9, 0.5)], ["nova_albedo", _albedo_paths, Color(0.5, 0.5, 0.5)],
+	return [["nova_orh", _orh_paths, Color(1.0, 0.9, 0.5)], ["nova_albedo", _albedo_paths, Color(0.5, 0.5, 0.5)],
 			["nova_normal", _normal_paths, Color(0.5, 0.5, 1.0)]]
+
+
+## The arrays of [param spec] (_arrays_spec): shader parameter -> Texture2DArray. Any thread.
+static func _texture_arrays(spec: Array) -> Dictionary:
 	var paths := PackedStringArray()
 	var fallbacks: Array[Color] = []
-	for a: Array in arrays:
+	for a: Array in spec:
 		for path: String in a[1]:
 			paths.append(path)
 			fallbacks.append(a[2])
 	var layers := _layer_images(paths, fallbacks)
+	var made := {}
 	var at := 0
-	for a: Array in arrays:
+	for a: Array in spec:
 		var n := (a[1] as PackedStringArray).size()
-		material.set_shader_parameter(a[0], _texture_array(layers.slice(at, at + n), a[2]))
+		made[a[0]] = _texture_array(layers.slice(at, at + n), a[2])
 		at += n
+	return made
 
 
 func _texture_paths(keys: Array[String]) -> PackedStringArray:
@@ -527,9 +576,9 @@ static func _texture_array(images: Array[Image], fallback: Color) -> Texture2DAr
 
 
 ## The layer of every texture of [param paths], TEX_SIZE square with its mipmaps; [param fallbacks]' flat colour
-## for one that does not load. Read here (a texture's image may come from the RenderingServer, which answers
-## other threads only when this one flushes it), fitted on the workers, all at once: one at a time on the main
-## thread, the 2048 and 4096 px ones took 2.1 s when the body opened (tarsis_3, 2026-11-24).
+## for one that does not load. Read on the calling thread, fitted on the workers, all at once: one at a time on
+## the main thread, the 2048 and 4096 px ones took 2.1 s when the body opened (tarsis_3, 2026-11-24). Called from
+## a worker, the main thread must not wait for it without flushing the RenderingServer (join_textures).
 static func _layer_images(paths: PackedStringArray, fallbacks: Array[Color]) -> Array[Image]:
 	var slots: Array = []  # [image] per layer, each its own array: a worker writes its slot alone
 	var read: Array[bool] = []  # false: the flat colour, already a layer

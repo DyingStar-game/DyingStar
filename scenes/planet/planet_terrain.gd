@@ -2149,6 +2149,8 @@ func _exit_tree() -> void:
 	for task_id: int in _nova_scatter_tasks:
 		join_task(task_id)
 	_nova_scatter_tasks.clear()
+	if planet_data != null and planet_data.nova != null:
+		planet_data.nova.join_textures()
 	if stargrot_registry != null:
 		stargrot_registry.retire()
 	_join_lod_task()
