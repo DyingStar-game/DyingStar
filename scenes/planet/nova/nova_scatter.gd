@@ -25,6 +25,9 @@ const CLUMP_SOFT := 0.07
 const ROCK_ALBEDO_MULT := 0.4
 const ROCK_TRIPLANAR_SHARPNESS := 14.0
 const ROCK_SHADER := preload("res://scenes/planet/nova/nova_rock.gdshader")
+## load_mesh's meshes by path, in the game ([mesh or null]); guarded: the scatter's layers are read on a worker.
+static var _meshes_read: Dictionary = {}
+static var _meshes_mutex := Mutex.new()
 ## How far an object is drawn, in times its own size: a 2 m stone to 240 m, a 15 m outcrop to 1.8 km. Beyond,
 ## it is a few pixels and only costs. Measured on tarsis_3 without it: 1.2 million objects drawn, 13 fps.
 const VIEW_PER_SIZE := 120.0
@@ -335,10 +338,28 @@ static func view_of(mesh: Mesh, limit: float) -> float:
 	return limit if limit > 0.0 else mesh.get_aabb().get_longest_axis_size() * VIEW_PER_SIZE
 
 
-## A Mesh from a .tres/.res/.mesh, or the merged meshes of a scene (.glb, .tscn). Null when unusable.
+## A Mesh from a .tres/.res/.mesh, or the merged meshes of a scene (.glb, .tscn). Null when unusable. In the
+## game, read once per path (_meshes_read): the scene a model is taken from is freed here, so it leaves the
+## resource cache, and every variant naming the model read it again — 12 variants, ~200 loads of the same
+## twenty models as the player's planet arrived (2026-11-24). The editor reads it again, a model re-imported.
 static func load_mesh(path: String) -> Mesh:
 	if path == "" or not ResourceLoader.exists(path):
 		return null
+	if Engine.is_editor_hint():
+		return _read_mesh(path)
+	_meshes_mutex.lock()
+	var known: Variant = _meshes_read.get(path)
+	_meshes_mutex.unlock()
+	if known != null:
+		return (known as Array)[0]
+	var mesh := _read_mesh(path)
+	_meshes_mutex.lock()
+	_meshes_read[path] = [mesh]
+	_meshes_mutex.unlock()
+	return mesh
+
+
+static func _read_mesh(path: String) -> Mesh:
 	var res := load(path)
 	if res is Mesh:
 		return res

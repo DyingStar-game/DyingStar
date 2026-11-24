@@ -336,3 +336,12 @@ func test_the_zones_read_back_are_the_zones_written() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	assert_null(NovaBody.read_zones(path), "no file, nothing")
 	assert_eq(NovaBody.zones_cache_path(null), "", "no pack, no cache")
+
+
+func test_a_model_is_read_once_for_every_variant() -> void:
+	# The scene a model comes from is freed once its mesh is taken: without a memory, each of the 12 variants read
+	# the same models again (~200 loads as the player's planet arrived, 27 s of the scatter's setup).
+	var path := "res://scenes/planet/nova/assets/rock_sculpted/sculpted_boulder_01.glb"
+	var first := NovaScatter.load_mesh(path)
+	assert_not_null(first, "the model gives a mesh")
+	assert_same(NovaScatter.load_mesh(path), first, "read once: the same mesh the second time")
