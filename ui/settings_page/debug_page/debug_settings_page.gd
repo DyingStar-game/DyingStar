@@ -10,6 +10,7 @@ const SWITCHES : Dictionary = {
 	"SurfaceDebug": &"surface_debug",
 	"MusicDebug": &"music_debug",
 	"StarMapDebug": &"star_map_debug",
+	"WeatherDebug": &"weather_debug",
 	"VehicleHud": &"vehicle_hud",
 	"MovementDebug": &"movement_debug",
 	"SafetyNetDebug": &"safety_net_debug",

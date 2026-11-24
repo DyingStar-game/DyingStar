@@ -11,6 +11,8 @@ extends RefCounted
 ##   Ground       what we stand on and how it was decided                  (Settings: Surface debug)
 ##   Music        the track, its playlist, the rule that chose it         (Settings: Music debug)
 ##   Star map     bodies, focus, zoom, sim time, relief tiles, map open (Settings: Star map debug)
+##   Weather      wind (m/s, km/h, from where), where we look, temperature, pressure, dust
+##                (Settings: Weather debug), and a compass dial with the wind's arrow (WeatherCompass)
 ##   Movement     speed, walk target, clip, vault / step                  (Settings: Movement debug)
 ##   Vehicle      the driver's readout while driving                    (Settings: Vehicle dashboard)
 ##
@@ -53,6 +55,14 @@ static func create(body: Node3D, animator: Node, surface_info: Callable, driven_
 		panel.add_section(ReadoutSection.new("%%HUD_DEV_STAR_MAP", star_map.debug_lines, 0.25,
 			func() -> bool: return toggles.is_on(&"star_map_debug") and star_map.is_open()))
 		_show_over(panel, star_map)
+	panel.add_section(ReadoutSection.new("%%HUD_DEV_WEATHER",
+		func() -> PackedStringArray: return DevReadouts.weather_lines(body), 0.5,
+		func() -> bool: return toggles.is_on(&"weather_debug")))
+	# By path: a class_name the editor has not imported yet is unknown to a running client.
+	var compass : Control = load("res://ui/dev_overlay/weather_compass.gd").new()
+	compass.state_source = func() -> Dictionary: return DevReadouts.compass_state(body)
+	compass.shown_rule = func() -> bool: return toggles.is_on(&"weather_debug") and panel.is_shown()
+	panel.add_child(compass)
 	panel.add_section(ReadoutSection.new("%%HUD_DEV_MOVEMENT",
 		func() -> PackedStringArray: return [ReadoutFormat.escape(animator.movement_debug_text())], 0.1,
 		func() -> bool: return toggles.is_on(&"movement_debug") and is_instance_valid(animator)))

@@ -3,6 +3,11 @@ extends RefCounted
 ## What the debug panel's sections say, as pure functions: data in, lines out. The panel (DevOverlay)
 ## decides when and where; these only format — so each is tested without a panel or a server.
 
+## The eight winds a direction is named after, clockwise from north.
+const COMPASS : PackedStringArray = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+## Under this speed (m/s) the weather readout says "calm" and names no direction.
+const CALM_M_S : float = 0.05
+
 ## The server border is measured up to this far (m) along the camera; beyond, the readout says "> 30000".
 const BORDER_FAR_M : float = 30000.0
 ## Zones of the same server crossed on the way to the border, at most.
@@ -267,6 +272,130 @@ static func surface_lines(info: Dictionary, body: Node) -> PackedStringArray:
 		"surface: %s%s" % [family if family != "" else "INCONNUE", mapped],
 		ReadoutFormat.escape("via %s : %s" % [String(info.get("source", "?")), String(info.get("detail", ""))]),
 	]
+
+
+# ── Weather ─────────────────────────────────────────────────────
+
+## The weather where [param body] stands, read through the door everything else uses
+## (Planet.weather_at): what you read is what moves the dust and sounds the wind. Under the wind, the
+## compass bearing the camera looks along, to tell where the wind comes from without a map.
+static func weather_lines(body: Node3D) -> PackedStringArray:
+	var planet : Planet = Planet.of(body) if is_instance_valid(body) else null
+	if planet == null:
+		return ["weather: space"]
+	var out : PackedStringArray = weather_lines_of(planet.weather_at(body.global_position))
+	var bearing : float = camera_heading(body, planet)
+	if not is_nan(bearing):
+		out.insert(1, facing_text(bearing))
+	return out
+
+
+## What the compass dial draws (WeatherCompass): {heading_deg, wind_m_s, wind_from_deg}, from the same
+## reading as the lines above; {} off a planet, without air, or with no camera.
+static func compass_state(body: Node3D) -> Dictionary:
+	var planet : Planet = Planet.of(body) if is_instance_valid(body) else null
+	if planet == null:
+		return {}
+	var sample : Dictionary = planet.weather_at(body.global_position)
+	var bearing : float = camera_heading(body, planet)
+	if sample.is_empty() or is_nan(bearing):
+		return {}
+	var east : float = float(sample.get("wind_east_m_s", 0.0))
+	var north : float = float(sample.get("wind_north_m_s", 0.0))
+	return {"heading_deg": maxf(bearing, 0.0), "wind_m_s": _wind_speed(sample),
+		"wind_from_deg": fposmod(float(sample.get("wind_from_deg", rad_to_deg(atan2(-east, -north)))), 360.0)}
+
+
+## The compass bearing the camera looks along from where [param body] stands on [param planet]; -1 looking
+## straight up or down, NAN without a camera.
+static func camera_heading(body: Node3D, planet: Planet) -> float:
+	var camera : Camera3D = body.get_viewport().get_camera_3d() if body.is_inside_tree() else null
+	if camera == null:
+		return NAN
+	var to_local : Basis = planet.global_basis.orthonormalized().inverse()
+	return heading_of(planet.local_dir_of(body.global_position), to_local * -camera.global_basis.z)
+
+
+## The compass bearing (degrees clockwise from north) of [param forward] seen from the ground at
+## [param up], both in the planet's own frame (Planet.local_axes); -1 when looking straight up or down.
+static func heading_of(up: Vector3, forward: Vector3) -> float:
+	var axes : Array = Planet.local_axes(up)
+	var level : Vector3 = forward - up.normalized() * forward.dot(up.normalized())
+	if level.length_squared() < 1e-8:
+		return -1.0
+	return fposmod(rad_to_deg(atan2(level.dot(axes[0]), level.dot(axes[1]))), 360.0)
+
+
+## [param bearing] as the readout's line: "facing NE (045°)", or the vertical when there is none.
+static func facing_text(bearing: float) -> String:
+	if bearing < 0.0:
+		return "facing straight up or down"
+	return "facing %s (%03d°)" % [compass(bearing), roundi(bearing) % 360]
+
+
+## [param sample] (WeatherSource's keys, plus what the source adds) as the readout's lines. A source
+## gives what it knows: a line is written only for the keys it carries.
+##   wind         speed in m/s and km/h, and where it blows FROM (the eight winds, and degrees)
+##   sand         the speed at which the ground's grains lift, and whether the wind is over it now
+##   temperature  in °C and K
+##   pressure     in hPa, and what the passing systems add or take
+##   dust         optical depth over the place, and how far one sees through it
+##   air          density, what the wind's push and sound are worked out from
+##   band / here  the wind band of the latitude, and the local phenomena felt on the spot
+static func weather_lines_of(sample: Dictionary) -> PackedStringArray:
+	if sample.is_empty():
+		return ["weather: no air"]
+	var out : PackedStringArray = [wind_text(sample)]
+	var speed : float = _wind_speed(sample)
+	if sample.has("lift_threshold_m_s"):
+		var threshold : float = float(sample["lift_threshold_m_s"])
+		out.append("sand lifts over %.1f m/s: %s" % [threshold, "lifting" if speed > threshold else "not lifting"])
+	if sample.has("temperature_k"):
+		var kelvin : float = float(sample["temperature_k"])
+		out.append("temperature %.1f °C (%.1f K)" % [kelvin - 273.15, kelvin])
+	if sample.has("pressure_pa"):
+		var pressure : String = "pressure %.0f hPa" % (float(sample["pressure_pa"]) / 100.0)
+		if sample.has("pressure_anomaly_pa"):
+			pressure += " (%+.1f)" % (float(sample["pressure_anomaly_pa"]) / 100.0)
+		out.append(pressure)
+	if sample.has("dust_tau"):
+		var dust : String = "dust tau %.2f" % float(sample["dust_tau"])
+		if sample.has("visibility_m"):
+			dust += "  visibility %.1f km" % (float(sample["visibility_m"]) / 1000.0)
+		out.append(dust)
+	if sample.has("air_density_kg_m3"):
+		out.append("air %.3f kg/m³" % float(sample["air_density_kg_m3"]))
+	if sample.has("band"):
+		out.append(ReadoutFormat.escape("band: %s" % String(sample["band"])))
+	var here : PackedStringArray = []
+	for name: Variant in sample.get("phenomena", []):
+		here.append(String(name))
+	if not here.is_empty():
+		out.append(ReadoutFormat.escape("here: %s" % ", ".join(here)))
+	return out
+
+
+## The wind of [param sample] as one line: "wind 25.0 m/s (90 km/h) from NE (045°)", or "wind calm".
+static func wind_text(sample: Dictionary) -> String:
+	var speed : float = _wind_speed(sample)
+	if speed < CALM_M_S:
+		return "wind calm"
+	var east : float = float(sample.get("wind_east_m_s", 0.0))
+	var north : float = float(sample.get("wind_north_m_s", 0.0))
+	# Where it blows FROM, clockwise from north: the source's own figure, or the opposite of where it goes.
+	var from_deg : float = fposmod(float(sample.get("wind_from_deg", rad_to_deg(atan2(-east, -north)))), 360.0)
+	return "wind %.1f m/s (%.0f km/h) from %s (%03d°)" % [speed, speed * 3.6, compass(from_deg), roundi(from_deg) % 360]
+
+
+## The one of the eight winds nearest to [param degrees] (clockwise from north).
+static func compass(degrees: float) -> String:
+	return COMPASS[roundi(fposmod(degrees, 360.0) / 45.0) % COMPASS.size()]
+
+
+static func _wind_speed(sample: Dictionary) -> float:
+	if sample.has("wind_speed_m_s"):
+		return float(sample["wind_speed_m_s"])
+	return Vector2(float(sample.get("wind_east_m_s", 0.0)), float(sample.get("wind_north_m_s", 0.0))).length()
 
 
 # ── Music ───────────────────────────────────────────────────────────────────────────────────────
