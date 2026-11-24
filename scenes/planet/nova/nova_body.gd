@@ -475,8 +475,9 @@ func refresh_ground() -> void:
 					float(resolve(id, layer + "gain")), _orh_paths.find(str(resolve(id, layer + "orh"))),
 					float(resolve(id, "ground/detail_tile_m")) if k == 0
 					else (1.0 if bool(resolve(id, "ground/hex_tiling")) else 0.0)))
-		# The depth of the steep parallax, in metres.
-		_params_img.set_pixel(7, id, Color(float(resolve(id, "ground/parallax_cm")) * 0.01, 0.0, 0.0, 0.0))
+		# The depth of the steep parallax, in metres; the textures' contrast round their mean colour.
+		_params_img.set_pixel(7, id, Color(float(resolve(id, "ground/parallax_cm")) * 0.01,
+				float(resolve(id, "ground/texture_contrast")), 0.0, 0.0))
 	if _params_tex == null:
 		_params_tex = ImageTexture.create_from_image(_params_img)
 		material.set_shader_parameter("nova_params", _params_tex)

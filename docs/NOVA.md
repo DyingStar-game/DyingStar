@@ -236,6 +236,18 @@ de l'éditeur ne pilote plus la vue (le lien Nova n'existe qu'avec Nova).
 - Mesuré au même endroit, avec et sans : 117 à 120 images par seconde dans les deux cas (plafond de l'écran).
 - Une vérification lancée avec `NOVA_GAME_PROBE` ouvre une fenêtre qui ne prend pas le clavier.
 
+### Contraste de la texture (24/11/2026)
+
+- « Contraste de la texture » (`ground/texture_contrast`, par type de zone, 1 = la texture telle quelle) :
+  chaque point des trois matières s'écarte de la couleur moyenne de sa texture, lue sur son plus petit
+  mipmap (`nova_contrast` dans `terrain_biome.gdshaderinc`). Le sol ne s'éclaircit ni ne s'assombrit dans
+  l'ensemble, seuls les écarts grandissent.
+- Pourquoi : sous un soleil rasant, la roche craquelée du plateau ressemblait à du sable ondulé — l'albédo
+  variait trop peu, le relief de la normal map dessinait seul le sol — alors qu'à l'ombre d'un bâtiment, les
+  reflets du ciel faisaient voir ses plaques : deux sols différents de part et d'autre d'une ombre. À 2,
+  pierres et fissures se lisent aussi au soleil (archétype `outcrop-plateau`).
+- Coût : une lecture de plus par matière et par variante, et seulement là où le contraste n'est pas 1.
+
 ### Matières de Material Maker
 
 - Material Maker exporte en ligne de commande : `material_maker --export-material --target Godot -o <dossier>

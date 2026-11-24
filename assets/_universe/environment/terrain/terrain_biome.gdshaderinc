@@ -124,7 +124,8 @@ const bool nova_on = false;
 // One row per variant id, NovaBody.PARAM_COLUMNS RGBA float texels (see NovaBody.refresh_ground):
 // 0 = albedo layer, normal layer, tile (m), texture strength; 1 = gain, normal strength, roughness,
 // blend sharpness; 2 = macro strength, macro size (m), anti-tiling, occlusion / roughness / height layer;
-// 3-4 and 5-6 = the second and third materials (4.w = close-up tile, 6.w = hex tiling); 7 = parallax depth.
+// 3-4 and 5-6 = the second and third materials (4.w = close-up tile, 6.w = hex tiling); 7 = parallax depth,
+// texture contrast.
 uniform sampler2D nova_params : filter_nearest, repeat_disable;
 uniform sampler2DArray nova_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2DArray nova_normal : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -301,6 +302,16 @@ vec3 nova_tri_read(sampler2DArray tex, float layer, mat3 pm, float s, vec3 w, ve
 		seen += w.z;
 	}
 	return sum / max(seen, 0.001);
+}
+
+// `tex` of albedo layer `layer` moved away from (contrast > 1) or toward (< 1) the layer's mean colour, read on
+// its smallest mipmap: the stones and their gaps part without the ground turning lighter or darker on the whole.
+vec3 nova_contrast(vec3 tex, float layer, float contrast) {
+	if (abs(contrast - 1.0) < 0.001) {
+		return tex;
+	}
+	vec3 mean = textureLod(nova_albedo, vec3(0.5, 0.5, layer), 16.0).rgb;
+	return max(mean + (tex - mean) * contrast, vec3(0.0));
 }
 
 // Triplanar albedo of `layer` (nova_tri_read).
@@ -813,6 +824,10 @@ void fragment() {
 					tex = mix(tex, tex_f, fine);
 				}
 			}
+			float contrast = nova_param(id, 7).y;
+			if (p0.x >= 0.0) {
+				tex = nova_contrast(tex, p0.x, contrast);
+			}
 			cols[i] = p0.x >= 0.0 ? mix(vec3(1.0), tex * p1.x, p0.w) : vec3(mod_detail);
 			// Occlusion, roughness and height of the ground, when it has the image for them: the hollows
 			// darken, the surface shines or not point by point, and "low" is a real height instead of a
@@ -863,6 +878,7 @@ void fragment() {
 							orh_b = nova_tri_orh(pb.z, pm, sb, tw, tri_dx, tri_dy);
 						}
 					}
+					tex_b = nova_contrast(tex_b, pa.x, contrast);
 					vec3 col_b = mix(vec3(1.0), tex_b * pb.y, p0.w);
 					if (pb.z >= 0.0) {
 						col_b *= mix(1.0, orh_b.r, NOVA_AO);

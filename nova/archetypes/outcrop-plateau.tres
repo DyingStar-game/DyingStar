@@ -13,6 +13,7 @@ values = {
 "ground/detail_tile_m": 3.0,
 "ground/texture_gain": 3.0,
 "ground/texture_strength": 1.0,
+"ground/texture_contrast": 2.0,
 "ground/normal_strength": 1.4,
 "ground/roughness": 0.9,
 "ground/anti_tiling": 1.0,
