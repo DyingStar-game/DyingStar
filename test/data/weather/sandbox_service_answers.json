@@ -1,9 +1,9 @@
 {
  "source": "weather service (services/weather), GET /api/v1/Sandbox/systems and /point at t=1791313357, recorded from the service run locally; never hand-edit",
- "systems_answer": "{\"body\":\"Sandbox\",\"count\":24,\"declination_deg\":-3.7699026311958166,\"objects\":[],\"systems\":[{\"band\":0,\"born_at\":1791111764.2655246,\"centre_lat_deg\":-74.69556926912131,\"centre_lon_deg\":-1.889831249082306,\"dies_at\":1791400552.7516806,\"drift_east_m_s\":-10.52318610245456,\"drift_north_m_s\":-1.0546194974134304,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":7305473222721446415,\"intensity\":0.5751579222954493,\"kind\":\"anticyclone\",\"peak_intensity\":0.8710785313824863,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1682.7917018685232,\"sigma_m\":1387591.5444167727,\"slot\":0,\"wind_peak_m_s\":6.603058115750059},{\"band\":0,\"born_at\":1791208704.4454813,\"centre_lat_deg\":-76.1589864365368,\"centre_lon_deg\":142.54118923496486,\"dies_at\":1791497492.9316373,\"drift_east_m_s\":-10.75336205117198,\"drift_north_m_s\":0.24455059954468167,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":12663930885322112365,\"intensity\":0.6084326342717263,\"kind\":\"anticyclone\",\"peak_intensity\":0.7379872454971244,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1780.1465448171714,\"sigma_m\":1054841.2022236364,\"slot\":1,\"wind_peak_m_s\":7.232061124205062},{\"band\":1,\"born_at\":1791073228.5604343,\"centre_lat_deg\":-56.477945126573275,\"centre_lon_deg\":103.33198868711236,\"dies_at\":1791362017.0465903,\"drift_east_m_s\":8.013436345622427,\"drift_north_m_s\":-0.13315367691660945,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":17406297729874085722,\"intensity\":0.1818188698544277,\"kind\":\"anticyclone\",\"peak_intensity\":0.7130243715388176,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":531.9639590689243,\"sigma_m\":1142575.2549653933,\"slot\":0,\"wind_peak_m_s\":7.5458659389067},{\"band\":1,\"born_at\":1791214696.5156453,\"centre_lat_deg\":-62.43092611183858,\"centre_lon_deg\":-172.08037419855748,\"dies_at\":1791503485.0018013,\"drift_east_m_s\":-6.541585768679548,\"drift_north_m_s\":-0.8190260508595061,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":16249679130840530428,\"intensity\":0.7245459852529563,\"kind\":\"depression\",\"peak_intensity\":0.9382416048565811,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-2119.8699076242824,\"sigma_m\":943377.3669372553,\"slot\":1,\"wind_peak_m_s\":11.348306261519122},{\"band\":1,\"born_at\":1791307061.1709423,\"centre_lat_deg\":-58.118745794118965,\"centre_lon_deg\":-26.621357533058244,\"dies_at\":1791595849.6570983,\"drift_east_m_s\":10.752414952038968,\"drift_north_m_s\":2.1342966664930074,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":6410740674828004435,\"intensity\":0.003535250539343308,\"kind\":\"anticyclone\",\"peak_intensity\":0.7548375774224699,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":10.343403161153345,\"sigma_m\":1222882.051731676,\"slot\":2,\"wind_peak_m_s\":7.293699043144925},{\"band\":2,\"born_at\":1791045870.701562,\"centre_lat_deg\":-46.694555913507045,\"centre_lon_deg\":-144.75317001189654,\"dies_at\":1791334659.187718,\"drift_east_m_s\":10.46073042770235,\"drift_north_m_s\":0.014071348694217726,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":2245131257443580001,\"intensity\":0.028975719661974965,\"kind\":\"anticyclone\",\"peak_intensity\":0.549330746010029,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":84.77689120274833,\"sigma_m\":1123935.3280313036,\"slot\":2,\"wind_peak_m_s\":6.744094844478064},{\"band\":2,\"born_at\":1791173338.0557227,\"centre_lat_deg\":-48.133629203334884,\"centre_lon_deg\":-21.503842122034598,\"dies_at\":1791462126.5418787,\"drift_east_m_s\":10.911225323028411,\"drift_north_m_s\":2.1760997851130295,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":15723555131718026558,\"intensity\":0.6189965916973709,\"kind\":\"anticyclone\",\"peak_intensity\":0.6204010212293749,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1811.0544732411065,\"sigma_m\":1284167.6619725232,\"slot\":4,\"wind_peak_m_s\":6.256260312853412},{\"band\":3,\"born_at\":1791159914.8544421,\"centre_lat_deg\":-35.759845752407145,\"centre_lon_deg\":-146.99870675450256,\"dies_at\":1791448703.340598,\"drift_east_m_s\":9.025340162715642,\"drift_north_m_s\":-1.4374335555890976,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":11756630292128414344,\"intensity\":0.6636074359445423,\"kind\":\"anticyclone\",\"peak_intensity\":0.6700782421785616,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1941.5764665970921,\"sigma_m\":911869.0488658223,\"slot\":3,\"wind_peak_m_s\":13.281265083130128},{\"band\":3,\"born_at\":1791312657.1436396,\"centre_lat_deg\":-26.01331384941086,\"centre_lon_deg\":-84.15669218191357,\"dies_at\":1791601445.6297956,\"drift_east_m_s\":-8.808964049176081,\"drift_north_m_s\":-1.3181009121077525,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":14349399265006117909,\"intensity\":0.00003260165870484891,\"kind\":\"anticyclone\",\"peak_intensity\":0.5624582132108209,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":0.09538562994441001,\"sigma_m\":1439424.6558236612,\"slot\":4,\"wind_peak_m_s\":8.953893846471644},{\"band\":3,\"born_at\":1791042074.347892,\"centre_lat_deg\":-36.018999079737085,\"centre_lon_deg\":-30.66000465654713,\"dies_at\":1791330862.834048,\"drift_east_m_s\":7.596592064347652,\"drift_north_m_s\":-1.1181077722989217,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":9898981136798530821,\"intensity\":0.027198624824858998,\"kind\":\"anticyclone\",\"peak_intensity\":0.7590979345747031,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":79.57748364978067,\"sigma_m\":900804.8146905518,\"slot\":5,\"wind_peak_m_s\":15.427069961923099},{\"band\":4,\"born_at\":1791102836.1879044,\"centre_lat_deg\":-16.329159349177356,\"centre_lon_deg\":-5.980972349025137,\"dies_at\":1791391624.6740603,\"drift_east_m_s\":-9.446118035677223,\"drift_north_m_s\":-0.0017904321164861345,\"dust_tau\":4.63629282766035,\"epoch\":4961,\"humidity\":0.0,\"id\":1154272406561584042,\"intensity\":0.5795366034575438,\"kind\":\"dust_storm\",\"peak_intensity\":0.5795366034575438,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-1695.602806504435,\"sigma_m\":1185129.73521383,\"slot\":0,\"wind_peak_m_s\":17.47781375141348},{\"band\":4,\"born_at\":1791051765.721782,\"centre_lat_deg\":-7.694007781738303,\"centre_lon_deg\":50.580086019703344,\"dies_at\":1791340554.207938,\"drift_east_m_s\":-7.457149207051869,\"drift_north_m_s\":1.4435449910274947,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":11478315865859721983,\"intensity\":0.0529666303717804,\"kind\":\"anticyclone\",\"peak_intensity\":0.6230502545796559,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":154.96927471649045,\"sigma_m\":1348695.976821737,\"slot\":1,\"wind_peak_m_s\":24.112103983198004},{\"band\":4,\"born_at\":1791062056.3499842,\"centre_lat_deg\":-12.262041705066832,\"centre_lon_deg\":124.91425003737601,\"dies_at\":1791350844.8361402,\"drift_east_m_s\":-7.31255361064296,\"drift_north_m_s\":-1.148870390032788,\"dust_tau\":4.046467111335394,\"epoch\":4961,\"humidity\":0.0,\"id\":2659048729848939577,\"intensity\":0.5058083889169243,\"kind\":\"dust_storm\",\"peak_intensity\":0.5058083889169243,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-1479.889481845048,\"sigma_m\":1258946.0056228149,\"slot\":2,\"wind_peak_m_s\":24.05680373091394},{\"band\":5,\"born_at\":1791047819.555291,\"centre_lat_deg\":3.635796237484858,\"centre_lon_deg\":65.58983113541174,\"dies_at\":1791336608.041447,\"drift_east_m_s\":-6.237945215948359,\"drift_north_m_s\":1.022302002395035,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":8637251749032412823,\"intensity\":0.03665071283271472,\"kind\":\"depression\",\"peak_intensity\":0.5852468425630242,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-107.23231486808386,\"sigma_m\":1268723.9335673898,\"slot\":1,\"wind_peak_m_s\":30.896617303495702},{\"band\":5,\"born_at\":1791030709.7426853,\"centre_lat_deg\":2.1279480651276623,\"centre_lon_deg\":163.23343066915834,\"dies_at\":1791319498.2288413,\"drift_east_m_s\":-8.666831979502108,\"drift_north_m_s\":1.3434252201527994,\"dust_tau\":6.587911319385926,\"epoch\":4961,\"humidity\":0.0,\"id\":17837055372558588277,\"intensity\":0.3215776126619522,\"kind\":\"dust_storm\",\"peak_intensity\":0.8234889149232407,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-940.8687894526545,\"sigma_m\":1045295.5372761855,\"slot\":3,\"wind_peak_m_s\":43.641663811635546},{\"band\":5,\"born_at\":1791137855.0770264,\"centre_lat_deg\":-0.9964636362444104,\"centre_lon_deg\":-105.7057432759749,\"dies_at\":1791426643.5631824,\"drift_east_m_s\":-11.185674722340224,\"drift_north_m_s\":-1.929763333604915,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":15642672589821659158,\"intensity\":0.7181980666940672,\"kind\":\"depression\",\"peak_intensity\":0.8071573930718217,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-2101.2972265206245,\"sigma_m\":1191040.7023032364,\"slot\":5,\"wind_peak_m_s\":43.20674355159011},{\"band\":6,\"born_at\":1791025759.129139,\"centre_lat_deg\":23.367450705542133,\"centre_lon_deg\":161.32816455219978,\"dies_at\":1791314547.615295,\"drift_east_m_s\":-8.711713913878175,\"drift_north_m_s\":1.2264310118150648,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":16069882140407148336,\"intensity\":0.00011950819867818719,\"kind\":\"anticyclone\",\"peak_intensity\":0.7124248739780785,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":0.3496559766373219,\"sigma_m\":998858.0877662245,\"slot\":3,\"wind_peak_m_s\":20.76446969671673},{\"band\":6,\"born_at\":1791278157.0321457,\"centre_lat_deg\":13.70135589291889,\"centre_lon_deg\":-118.98179091171869,\"dies_at\":1791566945.5183017,\"drift_east_m_s\":-7.878880591003548,\"drift_north_m_s\":1.1213601073119057,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":522060082998977867,\"intensity\":0.0735810545492828,\"kind\":\"anticyclone\",\"peak_intensity\":0.5270758936781195,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":215.28276532486518,\"sigma_m\":909628.8462984259,\"slot\":4,\"wind_peak_m_s\":25.220854442227413},{\"band\":6,\"born_at\":1791121958.866531,\"centre_lat_deg\":8.202177328675415,\"centre_lon_deg\":-102.68455628301973,\"dies_at\":1791410747.352687,\"drift_east_m_s\":-6.818863993229503,\"drift_north_m_s\":-1.1063320798109508,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":7254499895410744345,\"intensity\":0.48368336904817333,\"kind\":\"anticyclone\",\"peak_intensity\":0.6359684205386216,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1415.1563044070697,\"sigma_m\":1189162.4764471387,\"slot\":5,\"wind_peak_m_s\":30.6062598304111},{\"band\":6,\"born_at\":1791299142.027389,\"centre_lat_deg\":14.445538521399136,\"centre_lon_deg\":-39.921221678369136,\"dies_at\":1791587930.513545,\"drift_east_m_s\":-9.190773650765417,\"drift_north_m_s\":-0.829597042478152,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":8910692977185195333,\"intensity\":0.018914723044217506,\"kind\":\"depression\",\"peak_intensity\":0.7973196066680028,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-55.34052083455478,\"sigma_m\":1310982.4012430818,\"slot\":6,\"wind_peak_m_s\":24.31921412537639},{\"band\":7,\"born_at\":1791185084.917005,\"centre_lat_deg\":34.234998234784285,\"centre_lon_deg\":163.9931462262175,\"dies_at\":1791473873.403161,\"drift_east_m_s\":6.294783711480057,\"drift_north_m_s\":-1.2288292704634378,\"dust_tau\":6.119098432365359,\"epoch\":4961,\"humidity\":0.0,\"id\":12825058295333626716,\"intensity\":0.7648873040456698,\"kind\":\"dust_storm\",\"peak_intensity\":0.7648873040456698,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-2237.90016309895,\"sigma_m\":1450087.5498133833,\"slot\":2,\"wind_peak_m_s\":9.091332984039171},{\"band\":8,\"born_at\":1791029068.0827963,\"centre_lat_deg\":40.39686811822053,\"centre_lon_deg\":-167.18228113327586,\"dies_at\":1791317856.5689523,\"drift_east_m_s\":7.977160665372206,\"drift_north_m_s\":-0.2984077672388959,\"dust_tau\":5.879221772726518,\"epoch\":4961,\"humidity\":0.0,\"id\":1152528849811449313,\"intensity\":0.1704202726004673,\"kind\":\"dust_storm\",\"peak_intensity\":0.7349027215908147,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-498.61404919486245,\"sigma_m\":1376584.7300432476,\"slot\":2,\"wind_peak_m_s\":8.149090741016405},{\"band\":8,\"born_at\":1791059570.8925204,\"centre_lat_deg\":52.056832044526175,\"centre_lon_deg\":-14.83479818098408,\"dies_at\":1791348359.3786764,\"drift_east_m_s\":8.446201402451651,\"drift_north_m_s\":0.5398748425805896,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":1403821441922063724,\"intensity\":0.07012456830868402,\"kind\":\"depression\",\"peak_intensity\":0.5077229338889588,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-205.16981001671508,\"sigma_m\":1017066.2324060356,\"slot\":4,\"wind_peak_m_s\":6.469978822635428},{\"band\":9,\"born_at\":1791031369.385751,\"centre_lat_deg\":58.13562436077587,\"centre_lon_deg\":-26.466335922013343,\"dies_at\":1791320157.871907,\"drift_east_m_s\":-9.800431179092595,\"drift_north_m_s\":-0.9529230911866806,\"dust_tau\":6.66994988680079,\"epoch\":4961,\"humidity\":0.0,\"id\":11837239087667606176,\"intensity\":0.382243776081041,\"kind\":\"dust_storm\",\"peak_intensity\":0.8337437358500988,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-1118.3652863772004,\"sigma_m\":982952.416802096,\"slot\":0,\"wind_peak_m_s\":9.785555297311396}],\"t\":1791313357.0}",
+ "systems_answer": "{\"body\":\"Sandbox\",\"count\":23,\"declination_deg\":-3.7699026311958166,\"objects\":[],\"systems\":[{\"band\":0,\"born_at\":1791111764.2655246,\"centre_lat_deg\":-74.47606869312067,\"centre_lon_deg\":5.508124280926779,\"dies_at\":1791400552.7516806,\"drift_east_m_s\":-9.317946206331275,\"drift_north_m_s\":-0.9338319829537486,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":7305473222721446415,\"intensity\":0.5751579222954493,\"kind\":\"anticyclone\",\"peak_intensity\":0.8710785313824863,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":972.6438580004728,\"sigma_m\":1421311.8020030227,\"slot\":0,\"wind_peak_m_s\":3.752222137031702},{\"band\":0,\"born_at\":1791208704.4454813,\"centre_lat_deg\":-76.18540952372899,\"centre_lon_deg\":147.47867467127872,\"dies_at\":1791497492.9316373,\"drift_east_m_s\":-9.52175967948081,\"drift_north_m_s\":0.21654176872837885,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":12663930885322112365,\"intensity\":0.6084326342717263,\"kind\":\"anticyclone\",\"peak_intensity\":0.7379872454971244,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1028.9143934062872,\"sigma_m\":1080475.1989099747,\"slot\":1,\"wind_peak_m_s\":4.109656369960047},{\"band\":1,\"born_at\":1791073228.5604343,\"centre_lat_deg\":-56.44493389291921,\"centre_lon_deg\":99.76168347947566,\"dies_at\":1791362017.0465903,\"drift_east_m_s\":7.095642714040092,\"drift_north_m_s\":-0.11790334092778046,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":17406297729874085722,\"intensity\":0.1818188698544277,\"kind\":\"anticyclone\",\"peak_intensity\":0.7130243715388176,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":307.47208753851436,\"sigma_m\":1170341.3018717272,\"slot\":0,\"wind_peak_m_s\":4.2879775889755285},{\"band\":1,\"born_at\":1791214696.5156453,\"centre_lat_deg\":-62.347499241638296,\"centre_lon_deg\":-170.6747557342901,\"dies_at\":1791503485.0018013,\"drift_east_m_s\":-5.7923658959562205,\"drift_north_m_s\":-0.7252214879781249,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":16249679130840530428,\"intensity\":0.7245459852529563,\"kind\":\"depression\",\"peak_intensity\":0.9382416048565811,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-1225.2725296430556,\"sigma_m\":966302.6491949626,\"slot\":1,\"wind_peak_m_s\":6.4487340904541774},{\"band\":1,\"born_at\":1791307061.1709423,\"centre_lat_deg\":-58.13261886822055,\"centre_lon_deg\":-26.754139041030044,\"dies_at\":1791595849.6570983,\"drift_east_m_s\":9.520921053356789,\"drift_north_m_s\":1.8898517362622003,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":6410740674828004435,\"intensity\":0.003535250539343308,\"kind\":\"anticyclone\",\"peak_intensity\":0.7548375774224699,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":5.978427124609449,\"sigma_m\":1252599.656993768,\"slot\":2,\"wind_peak_m_s\":4.144682438165483},{\"band\":2,\"born_at\":1791045870.701562,\"centre_lat_deg\":-46.69844190869368,\"centre_lon_deg\":-148.96769543668347,\"dies_at\":1791334659.187718,\"drift_east_m_s\":9.262643695099865,\"drift_north_m_s\":0.012459731198013068,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":2245131257443580001,\"intensity\":0.028975719661974965,\"kind\":\"anticyclone\",\"peak_intensity\":0.549330746010029,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":49.00055214033253,\"sigma_m\":1151248.400760809,\"slot\":2,\"wind_peak_m_s\":3.832366992095974},{\"band\":2,\"born_at\":1791173338.0557227,\"centre_lat_deg\":-48.44820883322794,\"centre_lon_deg\":-24.00381520282326,\"dies_at\":1791462126.5418787,\"drift_east_m_s\":9.661542579905861,\"drift_north_m_s\":1.9268670666731484,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":15723555131718026558,\"intensity\":0.6189965916973709,\"kind\":\"anticyclone\",\"peak_intensity\":0.6204010212293749,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1046.7789970358856,\"sigma_m\":1315374.5863155557,\"slot\":4,\"wind_peak_m_s\":3.555152480776686},{\"band\":3,\"born_at\":1791159914.8544421,\"centre_lat_deg\":-35.532127714223364,\"centre_lon_deg\":-175.31453194560288,\"dies_at\":1791448703.340598,\"drift_east_m_s\":-7.991651322255863,\"drift_north_m_s\":-1.2728016416083852,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":11756630292128414344,\"intensity\":0.6636074359445423,\"kind\":\"anticyclone\",\"peak_intensity\":0.6700782421785616,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":1122.219953293701,\"sigma_m\":934028.6385061645,\"slot\":3,\"wind_peak_m_s\":7.547148000081814},{\"band\":3,\"born_at\":1791312657.1436396,\"centre_lat_deg\":-26.012361442437143,\"centre_lon_deg\":-84.14961016373957,\"dies_at\":1791601445.6297956,\"drift_east_m_s\":-7.800057163731347,\"drift_north_m_s\":-1.1671363856875454,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":14349399265006117909,\"intensity\":0.00003260165870484891,\"kind\":\"anticyclone\",\"peak_intensity\":0.5624582132108209,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":0.055132341693817664,\"sigma_m\":1474404.5246227137,\"slot\":4,\"wind_peak_m_s\":5.088096774920853},{\"band\":3,\"born_at\":1791042074.347892,\"centre_lat_deg\":-35.70583590928762,\"centre_lon_deg\":-72.56024119199151,\"dies_at\":1791330862.834048,\"drift_east_m_s\":-6.726540376447755,\"drift_north_m_s\":-0.9900488287223312,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":9898981136798530821,\"intensity\":0.027198624824858998,\"kind\":\"anticyclone\",\"peak_intensity\":0.7590979345747031,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":45.99532468644152,\"sigma_m\":922695.5292228799,\"slot\":5,\"wind_peak_m_s\":8.766512789368242},{\"band\":4,\"born_at\":1791102836.1879044,\"centre_lat_deg\":-16.328770198412393,\"centre_lon_deg\":-1.7252029862298741,\"dies_at\":1791391624.6740603,\"drift_east_m_s\":-8.364236730030413,\"drift_north_m_s\":-0.00158537062683081,\"dust_tau\":4.63629282766035,\"epoch\":4961,\"humidity\":0.0,\"id\":1154272406561584042,\"intensity\":0.5795366034575438,\"kind\":\"dust_storm\",\"peak_intensity\":0.5795366034575438,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-980.0486022861055,\"sigma_m\":1213929.9106727627,\"slot\":0,\"wind_peak_m_s\":9.9318586199542},{\"band\":4,\"born_at\":1791051765.721782,\"centre_lat_deg\":-8.083876667029859,\"centre_lon_deg\":64.04912368251217,\"dies_at\":1791340554.207938,\"drift_east_m_s\":-6.603068166559139,\"drift_north_m_s\":1.2782131230840543,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":11478315865859721983,\"intensity\":0.0529666303717804,\"kind\":\"anticyclone\",\"peak_intensity\":0.6230502545796559,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":89.57134330078777,\"sigma_m\":1381471.0221345732,\"slot\":1,\"wind_peak_m_s\":13.70182856945651},{\"band\":4,\"born_at\":1791062056.3499842,\"centre_lat_deg\":-11.963963899252695,\"centre_lon_deg\":150.45844325684345,\"dies_at\":1791350844.8361402,\"drift_east_m_s\":-6.4750333702633345,\"drift_north_m_s\":-1.0172881471587158,\"dust_tau\":4.046467111335394,\"epoch\":4961,\"humidity\":0.0,\"id\":2659048729848939577,\"intensity\":0.5058083889169243,\"kind\":\"dust_storm\",\"peak_intensity\":0.5058083889169243,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-855.3675499099586,\"sigma_m\":1289540.0113066887,\"slot\":2,\"wind_peak_m_s\":13.670403913309876},{\"band\":5,\"born_at\":1791047819.555291,\"centre_lat_deg\":3.3555305213322892,\"centre_lon_deg\":67.30034185191778,\"dies_at\":1791336608.041447,\"drift_east_m_s\":-5.523501855268964,\"drift_north_m_s\":0.9052158701935126,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":8637251749032412823,\"intensity\":0.03665071283271472,\"kind\":\"depression\",\"peak_intensity\":0.5852468425630242,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-61.979656971093995,\"sigma_m\":1299555.5554649667,\"slot\":1,\"wind_peak_m_s\":17.557163570777455},{\"band\":5,\"born_at\":1791030709.7426853,\"centre_lat_deg\":1.7359144883514206,\"centre_lon_deg\":165.76320091294872,\"dies_at\":1791319498.2288413,\"drift_east_m_s\":-7.674203741913815,\"drift_north_m_s\":1.189560254065324,\"dust_tau\":6.587911319385926,\"epoch\":4961,\"humidity\":0.0,\"id\":17837055372558588277,\"intensity\":0.3215776126619522,\"kind\":\"dust_storm\",\"peak_intensity\":0.8234889149232407,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-543.8167113786752,\"sigma_m\":1070697.562038109,\"slot\":3,\"wind_peak_m_s\":29.984794014042027},{\"band\":5,\"born_at\":1791137855.0770264,\"centre_lat_deg\":-0.6467996357539705,\"centre_lon_deg\":-103.67764558220654,\"dies_at\":1791426643.5631824,\"drift_east_m_s\":-9.904558783767436,\"drift_north_m_s\":-1.708743982897622,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":15642672589821659158,\"intensity\":0.7181980666940672,\"kind\":\"depression\",\"peak_intensity\":0.8071573930718217,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-1214.5376275265214,\"sigma_m\":1219984.521858042,\"slot\":5,\"wind_peak_m_s\":25.793723159662495},{\"band\":6,\"born_at\":1791025759.129139,\"centre_lat_deg\":23.003289412470476,\"centre_lon_deg\":-165.01711910604706,\"dies_at\":1791314547.615295,\"drift_east_m_s\":-7.71394526563872,\"drift_north_m_s\":1.0859656080019,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":16069882140407148336,\"intensity\":0.00011950819867818719,\"kind\":\"anticyclone\",\"peak_intensity\":0.7124248739780785,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":0.20209912950712858,\"sigma_m\":1023131.6228328736,\"slot\":3,\"wind_peak_m_s\":11.799517964850464},{\"band\":6,\"born_at\":1791278157.0321457,\"centre_lat_deg\":13.66060357074397,\"centre_lon_deg\":-78.08957315557558,\"dies_at\":1791566945.5183017,\"drift_east_m_s\":-6.97649787795299,\"drift_north_m_s\":0.9929286678129736,\"dust_tau\":0.0,\"epoch\":4962,\"humidity\":0.0,\"id\":522060082998977867,\"intensity\":0.0735810545492828,\"kind\":\"anticyclone\",\"peak_intensity\":0.5270758936781195,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":124.43219157432429,\"sigma_m\":931733.9961377172,\"slot\":4,\"wind_peak_m_s\":14.331881787811625},{\"band\":6,\"born_at\":1791121958.866531,\"centre_lat_deg\":8.420796475982604,\"centre_lon_deg\":-56.43818536293628,\"dies_at\":1791410747.352687,\"drift_east_m_s\":-6.037886934488541,\"drift_north_m_s\":-0.9796218279948977,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":7254499895410744345,\"intensity\":0.48368336904817333,\"kind\":\"anticyclone\",\"peak_intensity\":0.6359684205386216,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":817.9521482449796,\"sigma_m\":1218060.6527001187,\"slot\":5,\"wind_peak_m_s\":17.392166425657386},{\"band\":7,\"born_at\":1791185084.917005,\"centre_lat_deg\":34.397736127161046,\"centre_lon_deg\":147.103125905034,\"dies_at\":1791473873.403161,\"drift_east_m_s\":-5.573830533167156,\"drift_north_m_s\":-1.0880891896678364,\"dust_tau\":6.119098432365359,\"epoch\":4961,\"humidity\":0.0,\"id\":12825058295333626716,\"intensity\":0.7648873040456698,\"kind\":\"dust_storm\",\"peak_intensity\":0.7648873040456698,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-1293.4933337498207,\"sigma_m\":1485326.5406382184,\"slot\":2,\"wind_peak_m_s\":5.166197280086079},{\"band\":8,\"born_at\":1791029068.0827963,\"centre_lat_deg\":40.48445418920588,\"centre_lon_deg\":-170.29228712732197,\"dies_at\":1791317856.5689523,\"drift_east_m_s\":7.063521754296656,\"drift_north_m_s\":-0.2642305757602146,\"dust_tau\":5.879221772726518,\"epoch\":4961,\"humidity\":0.0,\"id\":1152528849811449313,\"intensity\":0.1704202726004673,\"kind\":\"dust_storm\",\"peak_intensity\":0.7349027215908147,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-288.19603277317543,\"sigma_m\":1410037.50789645,\"slot\":2,\"wind_peak_m_s\":4.630763221996645},{\"band\":8,\"born_at\":1791059570.8925204,\"centre_lat_deg\":51.915374561171596,\"centre_lon_deg\":-18.337951726131564,\"dies_at\":1791348359.3786764,\"drift_east_m_s\":7.478842391424305,\"drift_north_m_s\":0.47804198199479886,\"dust_tau\":0.0,\"epoch\":4961,\"humidity\":0.0,\"id\":1403821441922063724,\"intensity\":0.07012456830868402,\"kind\":\"depression\",\"peak_intensity\":0.5077229338889588,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-118.58696197414054,\"sigma_m\":1041782.2487849214,\"slot\":4,\"wind_peak_m_s\":3.676599136165758},{\"band\":9,\"born_at\":1791031369.385751,\"centre_lat_deg\":58.41305401229151,\"centre_lon_deg\":-20.661656519711528,\"dies_at\":1791320157.871907,\"drift_east_m_s\":-8.677969736212875,\"drift_north_m_s\":-0.8437830535352109,\"dust_tau\":6.66994988680079,\"epoch\":4961,\"humidity\":0.0,\"id\":11837239087667606176,\"intensity\":0.382243776081041,\"kind\":\"dust_storm\",\"peak_intensity\":0.8337437358500988,\"precipitation_mm_h\":0.0,\"pressure_anomaly_pa\":-646.4086586521042,\"sigma_m\":1006839.423625509,\"slot\":0,\"wind_peak_m_s\":5.5606927223824405}],\"t\":1791313357.0}",
  "points": [
   {
-   "air_density_kg_m3": 1.2645522166032093,
+   "air_density_kg_m3": 1.257312953561185,
    "altitude_m": 0.0,
    "band": "trades",
    "declination_deg": -3.7699026311958166,
@@ -13,69 +13,69 @@
    "local_solar_hours": 15.669013245339778,
    "lon_deg": -39.5,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": -37.95793689948448,
-   "pressure_pa": 101962.04206310051,
+   "pressure_anomaly_pa": 92.25577424135204,
+   "pressure_pa": 102092.25577424135,
    "systems": [
-    "8910692977185195333"
+    7254499895410744345
    ],
-   "temperature_k": 291.05002122790046,
+   "temperature_k": 289.3606512790759,
    "visibility_m": 1000000.0,
-   "wind_east_m_s": -5.176813153419515,
-   "wind_from_deg": 72.87297397517696,
-   "wind_north_m_s": -1.5952690364281294,
-   "wind_speed_m_s": 5.417035879888894
+   "wind_east_m_s": -1.1150055461826431,
+   "wind_from_deg": 21.661434067978416,
+   "wind_north_m_s": -2.807384222315532,
+   "wind_speed_m_s": 3.0207024910977642
   },
   {
-   "air_density_kg_m3": 1.2594085205303651,
+   "air_density_kg_m3": 1.252259833230446,
    "altitude_m": 0.0,
    "band": "trades",
    "declination_deg": -3.7699026311958166,
-   "dust_tau": 0.7173599994847141,
+   "dust_tau": 0.8719696102342923,
    "humidity": 0.0,
    "lat_deg": 0.0,
    "local_solar_hours": 18.30234657867311,
    "lon_deg": 0.0,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": -452.69901951600417,
-   "pressure_pa": 101547.300980484,
+   "pressure_anomaly_pa": -318.05134285520995,
+   "pressure_pa": 101681.94865714479,
    "systems": [
-    "1154272406561584042"
+    1154272406561584042
    ],
-   "temperature_k": 298.8541764462307,
-   "visibility_m": 5453.328876449793,
-   "wind_east_m_s": 6.030819362692248,
-   "wind_from_deg": 307.13644101319653,
-   "wind_north_m_s": -4.567105403105194,
-   "wind_speed_m_s": 7.565000591440584
+   "temperature_k": 293.89386230906274,
+   "visibility_m": 4486.3948858824015,
+   "wind_east_m_s": 4.44641093256598,
+   "wind_from_deg": 292.8140443355128,
+   "wind_north_m_s": -1.870381675126881,
+   "wind_speed_m_s": 4.823784592194464
   },
   {
-   "air_density_kg_m3": 1.2644313957737758,
+   "air_density_kg_m3": 1.2556943298099423,
    "altitude_m": 0.0,
    "band": "westerlies",
    "declination_deg": -3.7699026311958166,
-   "dust_tau": 0.03745604433572246,
+   "dust_tau": 0.1046543276655535,
    "humidity": 0.0,
    "lat_deg": 45.0,
    "local_solar_hours": 18.969013245339777,
    "lon_deg": 10.0,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": -47.699834727853286,
-   "pressure_pa": 101952.30016527214,
+   "pressure_anomaly_pa": -39.17447114512685,
+   "pressure_pa": 101960.82552885487,
    "systems": [
-    "1403821441922063724",
-    "11837239087667606176"
+    1403821441922063724,
+    11837239087667606176
    ],
-   "temperature_k": 271.45701136666474,
-   "visibility_m": 104442.42229468582,
-   "wind_east_m_s": 9.417846418016197,
-   "wind_from_deg": 249.83413748635422,
-   "wind_north_m_s": 3.458723320309682,
-   "wind_speed_m_s": 10.03287586685864
+   "temperature_k": 275.05383757640874,
+   "visibility_m": 37380.202876097756,
+   "wind_east_m_s": 8.383091892181987,
+   "wind_from_deg": 249.75270898671357,
+   "wind_north_m_s": 3.092235581459178,
+   "wind_speed_m_s": 8.935219670719324
   },
   {
-   "air_density_kg_m3": 1.2656897284416457,
+   "air_density_kg_m3": 1.2562036523698785,
    "altitude_m": 0.0,
-   "band": "westerlies",
+   "band": "trades",
    "declination_deg": -3.7699026311958166,
    "dust_tau": 0.0,
    "humidity": 0.0,
@@ -83,22 +83,21 @@
    "local_solar_hours": 10.302346578673111,
    "lon_deg": -120.0,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": 53.76071923436931,
-   "pressure_pa": 102053.76071923437,
+   "pressure_anomaly_pa": 2.181890382288821,
+   "pressure_pa": 102002.18189038229,
    "systems": [
-    "2245131257443580001",
-    "14349399265006117909",
-    "11756630292128414344"
+    14349399265006117909,
+    2245131257443580001
    ],
-   "temperature_k": 294.2420265946736,
+   "temperature_k": 292.64790883109583,
    "visibility_m": 1000000.0,
-   "wind_east_m_s": 9.735453631505706,
-   "wind_from_deg": 281.2230846677125,
-   "wind_north_m_s": -1.931748285859493,
-   "wind_speed_m_s": 9.925256110102083
+   "wind_east_m_s": -4.1815054428442755,
+   "wind_from_deg": 107.6284809334693,
+   "wind_north_m_s": 1.328739750929068,
+   "wind_speed_m_s": 4.387543400837801
   },
   {
-   "air_density_kg_m3": 1.2650229779990454,
+   "air_density_kg_m3": 1.256176781389116,
    "altitude_m": 0.0,
    "band": "polar_easterlies",
    "declination_deg": -3.7699026311958166,
@@ -111,15 +110,15 @@
    "pressure_anomaly_pa": 0.0,
    "pressure_pa": 102000.0,
    "systems": [],
-   "temperature_k": 254.80653739665385,
+   "temperature_k": 262.97214630894103,
    "visibility_m": 1000000.0,
-   "wind_east_m_s": -5.664411436439756,
+   "wind_east_m_s": -5.015655956418188,
    "wind_from_deg": 72.62740218816487,
-   "wind_north_m_s": -1.7721442868524975,
-   "wind_speed_m_s": 5.935153940269236
+   "wind_north_m_s": -1.569177336025373,
+   "wind_speed_m_s": 5.255389822367978
   },
   {
-   "air_density_kg_m3": 1.2798823994278403,
+   "air_density_kg_m3": 1.265498970392959,
    "altitude_m": 0.0,
    "band": "polar_easterlies",
    "declination_deg": -3.7699026311958166,
@@ -129,22 +128,22 @@
    "local_solar_hours": 6.235679912006443,
    "lon_deg": 179.0,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": 1198.1292135376682,
-   "pressure_pa": 103198.12921353767,
+   "pressure_anomaly_pa": 756.9502099381908,
+   "pressure_pa": 102756.9502099382,
    "systems": [
-    "12663930885322112365",
-    "7305473222721446415",
-    "16249679130840530428"
+    12663930885322112365,
+    7305473222721446415,
+    16249679130840530428
    ],
-   "temperature_k": 261.03794775376196,
+   "temperature_k": 270.0041014292152,
    "visibility_m": 1000000.0,
-   "wind_east_m_s": -3.197389652673788,
-   "wind_from_deg": 145.83991329797223,
-   "wind_north_m_s": 4.71187323539772,
-   "wind_speed_m_s": 5.694299779383132
+   "wind_east_m_s": -3.7119516392855276,
+   "wind_from_deg": 131.12892437965363,
+   "wind_north_m_s": 3.2414431819853733,
+   "wind_speed_m_s": 4.928036005797236
   },
   {
-   "air_density_kg_m3": 1.2644122077656996,
+   "air_density_kg_m3": 1.2585510432869955,
    "altitude_m": 0.0,
    "band": "trades",
    "declination_deg": -3.7699026311958166,
@@ -154,20 +153,20 @@
    "local_solar_hours": 15.54901324533978,
    "lon_deg": -41.3,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": -49.24698197957068,
-   "pressure_pa": 101950.75301802043,
+   "pressure_anomaly_pa": 192.7871277129541,
+   "pressure_pa": 102192.78712771296,
    "systems": [
-    "8910692977185195333"
+    7254499895410744345
    ],
-   "temperature_k": 294.239478894151,
+   "temperature_k": 291.5779175226184,
    "visibility_m": 1000000.0,
-   "wind_east_m_s": -5.015565980441052,
-   "wind_from_deg": 71.82994903913428,
-   "wind_north_m_s": -1.6461296051114893,
-   "wind_speed_m_s": 5.27879198121901
+   "wind_east_m_s": 0.6667489822729484,
+   "wind_from_deg": 351.5686600517685,
+   "wind_north_m_s": -4.498188479292712,
+   "wind_speed_m_s": 4.547334801903605
   },
   {
-   "air_density_kg_m3": 1.26529071113632,
+   "air_density_kg_m3": 1.2561921955854185,
    "altitude_m": 0.0,
    "band": "trades",
    "declination_deg": -3.7699026311958166,
@@ -177,20 +176,20 @@
    "local_solar_hours": 20.30234657867311,
    "lon_deg": 30.0,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": 21.58757625511923,
-   "pressure_pa": 102021.58757625511,
+   "pressure_anomaly_pa": 1.2516136631075416,
+   "pressure_pa": 102001.2516136631,
    "systems": [
-    "11478315865859721983"
+    11478315865859721983
    ],
-   "temperature_k": 293.88391934061474,
+   "temperature_k": 289.1865759735203,
    "visibility_m": 1000000.0,
-   "wind_east_m_s": -5.170763011862839,
-   "wind_from_deg": 69.96845163305802,
-   "wind_north_m_s": -1.8852287848302494,
-   "wind_speed_m_s": 5.503714899592946
+   "wind_east_m_s": -4.210158620875402,
+   "wind_from_deg": 72.23888800078178,
+   "wind_north_m_s": -1.3485826433457442,
+   "wind_speed_m_s": 4.420872171739967
   },
   {
-   "air_density_kg_m3": 1.261132340699476,
+   "air_density_kg_m3": 1.252077215434691,
    "altitude_m": 0.0,
    "band": "trades",
    "declination_deg": -3.7699026311958166,
@@ -200,44 +199,42 @@
    "local_solar_hours": 12.302346578673111,
    "lon_deg": -90.0,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": -313.70576776699704,
-   "pressure_pa": 101686.294232233,
+   "pressure_anomaly_pa": -332.8796818620791,
+   "pressure_pa": 101667.12031813792,
    "systems": [
-    "14349399265006117909",
-    "15642672589821659158",
-    "7254499895410744345"
+    14349399265006117909,
+    15642672589821659158
    ],
-   "temperature_k": 302.92807938047184,
+   "temperature_k": 298.2306556985783,
    "visibility_m": 1000000.0,
-   "wind_east_m_s": -23.432958969342504,
-   "wind_from_deg": 59.075712203088756,
-   "wind_north_m_s": -14.037831309478149,
-   "wind_speed_m_s": 27.316007649952333
+   "wind_east_m_s": -15.993002642510085,
+   "wind_from_deg": 68.433678538462,
+   "wind_north_m_s": -6.32120586514,
+   "wind_speed_m_s": 17.1969118481434
   },
   {
-   "air_density_kg_m3": 1.2465023088847864,
+   "air_density_kg_m3": 1.240849252615793,
    "altitude_m": 0.0,
    "band": "westerlies",
    "declination_deg": -3.7699026311958166,
-   "dust_tau": 3.122124619877131,
+   "dust_tau": 4.501160929931956,
    "humidity": 0.0,
    "lat_deg": 38.0,
    "local_solar_hours": 4.302346578673109,
    "lon_deg": 150.0,
    "precipitation_mm_h": 0.0,
-   "pressure_anomaly_pa": -1493.3390796130307,
-   "pressure_pa": 100506.66092038697,
+   "pressure_anomaly_pa": -1244.5763669903874,
+   "pressure_pa": 100755.42363300962,
    "systems": [
-    "12825058295333626716",
-    "16069882140407148336",
-    "1152528849811449313"
+    12825058295333626716,
+    1152528849811449313
    ],
-   "temperature_k": 270.9811686489371,
-   "visibility_m": 1252.9929058866182,
-   "wind_east_m_s": 8.739114879171785,
-   "wind_from_deg": 296.69764874761637,
-   "wind_north_m_s": -4.394867547637864,
-   "wind_speed_m_s": 9.781972686152939
+   "temperature_k": 272.63041511159895,
+   "visibility_m": 869.109116713838,
+   "wind_east_m_s": 6.388195088606408,
+   "wind_from_deg": 244.9317663031947,
+   "wind_north_m_s": 2.9881314047279033,
+   "wind_speed_m_s": 7.052514855143247
   }
  ]
 }
