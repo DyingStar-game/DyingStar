@@ -1,0 +1,28 @@
+{
+  "id": "mat_metal_aluminium_tread_plate",
+  "display_name": "aluminium_tread_plate",
+  "tags": [
+    "metal"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "albedo_color": [
+    0.7354,
+    0.7354,
+    0.7354
+  ],
+  "roughness": 0.4,
+  "metallic": 1.0,
+  "license": "CC0-1.0",
+  "author": "The_Moye",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 2
+  },
+  "maps": {
+    "normal": "tex_metal_aluminium_tread_plate_normal.png"
+  }
+}

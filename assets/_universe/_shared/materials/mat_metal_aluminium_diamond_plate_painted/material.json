@@ -1,0 +1,27 @@
+{
+  "id": "mat_metal_aluminium_diamond_plate_painted",
+  "display_name": "diamond plate painted",
+  "tags": [
+    "metal",
+    "worn",
+    "painted"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "Kankan",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 2
+  },
+  "maps": {
+    "albedo": "tex_metal_aluminium_diamond_plate_painted_albedo.png",
+    "normal": "tex_metal_aluminium_diamond_plate_painted_normal.png",
+    "ao": "tex_metal_aluminium_diamond_plate_painted_ao.png",
+    "roughness": "tex_metal_aluminium_diamond_plate_painted_roughness.png",
+    "metallic": "tex_metal_aluminium_diamond_plate_painted_metallic.png"
+  }
+}

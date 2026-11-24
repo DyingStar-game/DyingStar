@@ -1,0 +1,24 @@
+{
+  "id": "mat_metal_aluminium_diamond_plate_1",
+  "display_name": "diamond plate 1 ",
+  "tags": [
+    "metal"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "Kankan",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_metal_aluminium_diamond_plate_1_albedo.png",
+    "normal": "tex_metal_aluminium_diamond_plate_1_normal.png",
+    "roughness": "tex_metal_aluminium_diamond_plate_1_roughness.png",
+    "metallic": "tex_metal_aluminium_diamond_plate_1_metallic.png"
+  }
+}

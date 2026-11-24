@@ -1,0 +1,25 @@
+{
+  "id": "mat_metal_painted_1",
+  "display_name": "metal painted 1",
+  "tags": [
+    "metal",
+    "worn"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "metallic": 0.0,
+  "license": "CC0-1.0",
+  "author": "Kankan",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 2
+  },
+  "maps": {
+    "albedo": "tex_metal_painted_1_albedo.png",
+    "normal": "tex_metal_painted_1_normal.png",
+    "roughness": "tex_metal_painted_1_roughness.png"
+  }
+}

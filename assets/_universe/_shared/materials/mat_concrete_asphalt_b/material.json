@@ -1,0 +1,22 @@
+{
+  "id": "mat_concrete_asphalt_b",
+  "display_name": "mat asphalt B",
+  "tags": [
+    "concrete"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "Kankan",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_concrete_asphalt_b_albedo.png",
+    "normal": "tex_concrete_asphalt_b_normal.png"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "mat_composite_carbon_fiber",
+  "display_name": "mat carbon fiber",
+  "tags": [
+    "composite",
+    "fabric"
+  ],
+  "physical_size_m": [
+    1.0,
+    1.0
+  ],
+  "license": "CC0-1.0",
+  "author": "Kankan",
+  "ai_generated": false,
+  "delivery": {
+    "type": "hosted",
+    "version": 1
+  },
+  "maps": {
+    "albedo": "tex_composite_carbon_fiber_albedo.png",
+    "normal": "tex_composite_carbon_fiber_normal.png",
+    "roughness": "tex_composite_carbon_fiber_roughness.png",
+    "metallic": "tex_composite_carbon_fiber_metallic.png"
+  }
+}
