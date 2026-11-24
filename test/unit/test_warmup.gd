@@ -98,3 +98,43 @@ func test_a_material_s_shader_is_started_without_making_the_material() -> void:
 	Warmup._start_compiling(BoxMesh.new(), null)
 	Warmup._start_compiling(mesh, shader_pass)
 	assert_engine_error_count(0, "no engine error")
+
+
+func test_every_terrain_material_with_a_noise_texture_is_loaded_first() -> void:
+	# A NoiseTexture2D makes its image the first time on the thread that loads it, at once: a material of the terrain
+	# the warm-up does not load ahead is noise made on the main thread at the arrival on a planet (0.8 s a water).
+	for dir: String in ["res://scenes/planet/", "res://assets/_universe/environment/terrain/",
+			"res://assets/_universe/_shared/materials/"]:
+		for file in ResourceLoader.list_directory(dir):
+			if not file.ends_with(".tres"):
+				continue
+			if FileAccess.get_file_as_string(dir + file).contains("type=\"NoiseTexture2D\""):
+				assert_true(dir + file in Warmup.NOISE_MATERIALS, "%s%s is loaded ahead" % [dir, file])
+	var wanted := Warmup.wanted()
+	for i in Warmup.NOISE_MATERIALS.size():
+		assert_eq(wanted[i], Warmup.NOISE_MATERIALS[i], "before the scenes")
+
+
+func test_the_biomes_and_the_bodies_scripts_are_loaded_before_the_places() -> void:
+	# Both were loaded on the main thread in the frame the player's planet arrived (2.3 s of scripts, 1.3 s of biomes).
+	var wanted := Warmup.wanted()
+	var first_place := wanted.find(Warmup.SCENES[0])
+	for path: String in ["res://scenes/planet/biomes/outcrop-plateau.tres", "res://scenes/planet/planet_terrain.gd"]:
+		assert_true(path in wanted, path)
+		assert_lt(wanted.find(path), first_place, "%s before the places" % path)
+	assert_gt(Warmup.folder_resources(Warmup.BIOMES_DIR).size(), 100, "every biome, read from the folder")
+
+
+func test_every_script_and_material_of_a_body_scene_is_loaded_ahead_but_no_body_is_kept() -> void:
+	# A body's scene kept by the warm-up would keep its PlanetData alive: a body made again would reuse it, caches
+	# and all. Its scripts are what costs.
+	for file in ResourceLoader.list_directory("res://scenes/systems/tarsis/"):
+		if not file.ends_with(".tscn"):
+			continue
+		var text := FileAccess.get_file_as_string("res://scenes/systems/tarsis/" + file)
+		for line in text.split("\n"):
+			if line.begins_with("[ext_resource type=\"Script\"") or line.begins_with("[ext_resource type=\"Material\""):
+				var path := line.get_slice("path=\"", 1).get_slice("\"", 0)
+				assert_true(path in Warmup.BODY_RESOURCES, "%s: %s compiled ahead" % [file, path])
+	for path: String in Warmup.wanted():
+		assert_false(path.begins_with("res://scenes/systems/"), "%s: no body's scene is kept" % path)
