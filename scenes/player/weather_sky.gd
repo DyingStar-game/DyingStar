@@ -89,7 +89,12 @@ var _scroll_fine: Vector3 = Vector3.ZERO
 var _wind_dir: Vector3 = Vector3.ZERO
 var _anchor: Vector3 = Vector3.ZERO
 var _anchor_set: bool = false
-var _noise: NoiseTexture3D = null
+var _noise: Texture3D = null
+## The gusts' noise, one for every layer of the run (_shared_noise): its layers made by a worker task
+## (_noise_task, writing _noise_layers), the texture made of them on the main thread once they are.
+static var _shared_noise: Texture3D = null
+static var _noise_task := -1
+static var _noise_layers: Array = []
 ## The real ground around the camera the layer lies on (DustGround), the far dust's coarse wide one,
 ## and the planet they were laid on.
 var _ground: DustGround = DustGround.new()
@@ -156,11 +161,13 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 			renderer.set_dust_param(&"dust_far_density", 0.0)
 			_dust_sent = false
 		return
+	if _noise == null:
+		_noise = _gust_noise()
+		if _noise == null:
+			return  # the layer shows once its noise is made
+		renderer.set_dust_param(&"dust_noise", _noise)
 	_dust_sent = true
 	renderer.set_dust_param(&"dust_albedo", blow_albedo_of(_dust_colour.toward(_dust_colour_target, delta)))
-	if _noise == null:
-		_noise = _make_noise()
-		renderer.set_dust_param(&"dust_noise", _noise)
 	var to_planet: Basis = planet.global_basis.orthonormalized().inverse()
 	var wind_planet: Vector3 = to_planet * _dust_wind
 	# The streaks' direction, smoothed: it turns over seconds, never in a frame.
@@ -303,20 +310,39 @@ static func wrap_to_period(v: Vector3, period: float) -> Vector3:
 	return Vector3(fposmod(v.x, period), fposmod(v.y, period), fposmod(v.z, period))
 
 
-## A seamless 3D noise for the layer's gusts: NOISE_TEXELS a side, NOISE_CELLS features across, three
-## octaves (generated on a worker by the engine; the layer shows once it is ready).
-static func _make_noise() -> NoiseTexture3D:
+## A seamless 3D noise for the layer's gusts: NOISE_TEXELS a side, NOISE_CELLS features across, three octaves.
+static func _gust_fast_noise() -> FastNoiseLite:
 	var noise := FastNoiseLite.new()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	noise.frequency = NOISE_CELLS / float(NOISE_TEXELS)
 	noise.fractal_octaves = 3
-	var tex := NoiseTexture3D.new()
-	tex.width = NOISE_TEXELS
-	tex.height = NOISE_TEXELS
-	tex.depth = NOISE_TEXELS
-	tex.seamless = true
-	tex.noise = noise
-	return tex
+	return noise
+
+
+## The layers a seamless NoiseTexture3D of _gust_fast_noise() makes (its default skirt and normalisation), on any
+## thread. A NoiseTexture3D makes its first ones on the main thread, at once: 2.4 s in the frame the player
+## appeared (2026-11-24).
+static func gust_layers() -> Array:
+	return _gust_fast_noise().get_seamless_image_3d(NOISE_TEXELS, NOISE_TEXELS, NOISE_TEXELS, false, 0.1, true)
+
+
+## The gusts' texture, or null while its layers are being made (asked first: their making starts).
+static func _gust_noise() -> Texture3D:
+	if _shared_noise != null:
+		return _shared_noise
+	if _noise_task < 0:
+		_noise_task = WorkerThreadPool.add_task(func() -> void: _noise_layers = gust_layers(), false, "dust gust noise")
+		return null
+	if not WorkerThreadPool.is_task_completed(_noise_task):
+		return null
+	WorkerThreadPool.wait_for_task_completion(_noise_task)
+	var layers: Array[Image] = []
+	layers.assign(_noise_layers)
+	var texture := ImageTexture3D.new()
+	texture.create(layers[0].get_format(), NOISE_TEXELS, NOISE_TEXELS, NOISE_TEXELS, false, layers)
+	_shared_noise = texture
+	_noise_layers = []
+	return _shared_noise
 
 
 ## How much of the far dust an eye [param height_m] over the ground still sees: all of it under

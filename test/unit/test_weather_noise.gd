@@ -47,3 +47,12 @@ func test_the_billows_are_a_cube_of_the_wall_noise_size() -> void:
 	for layer: Image in [layers[0], layers[layers.size() - 1]]:
 		assert_eq(layer.get_size(), Vector2i(PHENOMENA.WALL_NOISE_SIZE, PHENOMENA.WALL_NOISE_SIZE))
 		assert_eq(layer.get_format(), Image.FORMAT_L8)
+
+
+func test_the_dust_gusts_are_a_cube_of_noise_texels() -> void:
+	# WeatherSky's gusts, made on a worker for the same reason (2.4 s as the player appeared); compared to the bit
+	# with a NoiseTexture3D's under a renderer on 2026-11-24.
+	var layers: Array = WeatherSky.gust_layers()
+	assert_eq(layers.size(), WeatherSky.NOISE_TEXELS)
+	assert_eq((layers[0] as Image).get_size(), Vector2i(WeatherSky.NOISE_TEXELS, WeatherSky.NOISE_TEXELS))
+	assert_eq((layers[0] as Image).get_format(), Image.FORMAT_L8)
