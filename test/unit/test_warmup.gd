@@ -138,3 +138,15 @@ func test_every_script_and_material_of_a_body_scene_is_loaded_ahead_but_no_body_
 				assert_true(path in Warmup.BODY_RESOURCES, "%s: %s compiled ahead" % [file, path])
 	for path: String in Warmup.wanted():
 		assert_false(path.begins_with("res://scenes/systems/"), "%s: no body's scene is kept" % path)
+
+
+func test_the_services_panels_are_compiled_before_the_places() -> void:
+	# TerminalUI loads each panel as the player appears: they compiled there, with every class they name.
+	var wanted := Warmup.wanted()
+	var first_place := wanted.find(Warmup.SCENES[0])
+	for path: String in ["res://ui/services/profile_panel.gd", "res://ui/services/inventory_panel.gd"]:
+		assert_true(path in wanted, path)
+		assert_lt(wanted.find(path), first_place, "%s before the places" % path)
+	var listed: Array = (load("res://ui/services/terminal_ui.gd") as GDScript).get_script_constant_map().get("APPS", [])
+	for app: Dictionary in listed:
+		assert_true(str(app.get("path", "")) in wanted, "%s is compiled ahead" % app.get("path", ""))

@@ -54,6 +54,10 @@ const BODY_RESOURCES: Array[String] = [
 	"res://scenes/planet/weather/weather_phenomena.gd",
 	"res://assets/_universe/environment/terrain/terrain_biome.tres",
 ]
+## And the scripts of the services tablet's panels (TerminalUI, built as the player appears), read from the folder:
+## loaded there they compiled with every class they name, a good part of the 2.4 s of the frame the player
+## appeared in (2026-11-24).
+const SCRIPT_DIRS: Array[String] = ["res://ui/services/"]
 ## The scenes wanted with everything they are built of: the places the world spawns, the vehicles.
 const SCENES: Array[String] = [
 	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
@@ -161,12 +165,14 @@ static func start(tree: SceneTree) -> void:
 	tree.root.add_child.call_deferred(warmup)
 
 
-## Everything to load: the NOISE_MATERIALS, the biomes and the BODY_RESOURCES first (what entering the world needs
-## at once), the SCENES and each catalogue item's scene.
+## Everything to load: the NOISE_MATERIALS, the biomes, the BODY_RESOURCES and the SCRIPT_DIRS' scripts first (what
+## entering the world needs at once), the SCENES and each catalogue item's scene.
 static func wanted() -> Array[String]:
 	var paths: Array[String] = NOISE_MATERIALS.duplicate()
 	paths.append_array(folder_resources(BIOMES_DIR))
 	paths.append_array(BODY_RESOURCES)
+	for dir: String in SCRIPT_DIRS:
+		paths.append_array(folder_resources(dir, ".gd"))
 	paths.append_array(SCENES)
 	for dir: String in CATALOGUES:
 		for item: Resource in DispenserCatalog.all(dir):
@@ -176,11 +182,12 @@ static func wanted() -> Array[String]:
 	return paths
 
 
-## The .tres of [param dir], sorted. ResourceLoader's listing: an exported game has the same names as the project.
-static func folder_resources(dir: String) -> Array[String]:
+## The files of [param dir] ending in [param suffix], sorted. ResourceLoader's listing: an exported game has the
+## same names as the project.
+static func folder_resources(dir: String, suffix := ".tres") -> Array[String]:
 	var out: Array[String] = []
 	for entry: String in ResourceLoader.list_directory(dir):
-		if entry.ends_with(".tres"):
+		if entry.ends_with(suffix):
 			out.append(dir + entry)
 	out.sort()
 	return out
