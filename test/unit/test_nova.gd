@@ -232,6 +232,60 @@ func test_the_scatter_keeps_a_small_radius_round_a_poi_clear_not_its_sphere() ->
 	assert_null(NovaClearance.for_chunk(data, 8192, HEALPix.vec2pix_nest(8192, far)), "nothing to keep clear of 5 km out")
 
 
+func test_the_pads_read_once_give_nearest_to_the_bit() -> void:
+	var mpd := 6356000.0 * PI / 180.0
+	var pads := []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	for i in 9:
+		pads.append({"uuid": "pad-%d" % i, "lon": 10.0 + rng.randf_range(-0.002, 0.002),
+				"lat": 20.0 + rng.randf_range(-0.002, 0.002), "yaw": rng.randf_range(-PI, PI),
+				"hx": rng.randf_range(1.0, 12.0), "hy": rng.randf_range(1.0, 12.0)})
+	pads.append(pads[3].duplicate())  # two pads on the same footprint: nearest's tie rule
+	var frames := PadBed.frames(pads)
+	for k in 3000:
+		var at := Vector2(10.0 + rng.randf_range(-0.003, 0.003), 20.0 + rng.randf_range(-0.003, 0.003))
+		var want: float = PadBed.nearest(pads, at, mpd)["d"]
+		var got := PadBed.nearest_d(frames, at, mpd)
+		if got != want:
+			fail_test("at %s: %.17f, nearest %.17f" % [at, got, want])
+			return
+	assert_eq(PadBed.nearest_d([], Vector2(10.0, 20.0), mpd), INF, "no pad")
+
+
+func test_a_draw_stops_the_clearance_without_changing_the_decision() -> void:
+	var data := PlanetData.new()
+	data.radius = 6356000.0
+	var poi := HEALPix.lonlat2vec(10.0, 20.0)
+	data.set_crack_exclusions([{"dir": poi, "radius": 25000.0}])
+	var c := NovaClearance.for_chunk(data, 8192, HEALPix.vec2pix_nest(8192, poi))
+	assert_not_null(c)
+	if c == null:
+		return
+	var north: Vector3 = Planet.local_axes(poi)[1]
+	var east: Vector3 = Planet.local_axes(poi)[0]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for k in 2000:
+		var at := (poi + (north * rng.randf_range(-300.0, 300.0) + east * rng.randf_range(-300.0, 300.0))
+				/ data.radius).normalized()
+		var reach := rng.randf_range(0.0, 30.0)
+		var draw := rng.randf()
+		var whole := c.share_for(at, reach)
+		assert_eq(draw >= c.share_for(at, reach, draw), draw >= whole, "same decision at draw %.3f" % draw)
+		if c.share_for(at, reach, draw) > draw:
+			assert_eq(c.share_for(at, reach, draw), whole, "and the share itself when the object is kept")
+
+
+func test_a_cancelled_chunk_lays_nothing() -> void:
+	var grid := PackedVector3Array()
+	grid.resize(4)
+	var vid := PackedInt32Array([0, 0, 0, 0])
+	var desc := {"variant": 0, "nside": 8192 << 2, "cell_side_m": 5.0, "view_m": 100.0}
+	assert_false(NovaScatter.chunk_cells(8192, 0, desc.nside).is_empty(), "the layer has cells on the chunk")
+	assert_eq(NovaScatter.lay_chunk([desc], 8192, 0, 1, grid, vid, Vector3.ZERO, {}, [true]), {})
+
+
 func test_the_atlas_places_are_inside_their_variant() -> void:
 	if NovaBody.pack_for("tarsis_3") == null:
 		pending("no tile service serves tarsis_3's modifiers")

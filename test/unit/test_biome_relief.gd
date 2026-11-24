@@ -121,6 +121,33 @@ func test_road_weight_uses_the_railway_track_width() -> void:
 	assert_lt(BiomeRelief.road_weight(_at(3.44 + 4.0), [rail], mpd), 1.0)
 
 
+func test_prepared_road_weight_is_road_weight_to_the_bit() -> void:
+	# NovaClearance asks it for every object of a chunk: it must answer exactly as road_weight, box test included.
+	var mpd := RADIUS * PI / 180.0
+	var rail := _road(5.0, "railway")
+	rail["tracks"] = 2
+	var short := _road(4.0)
+	short["centerline"] = PackedVector2Array([(short["centerline"] as PackedVector2Array)[0]])  # one point: no road
+	var bent := _road(8.0, "highway")
+	var cl: PackedVector2Array = bent["centerline"]
+	for i in cl.size():
+		cl[i] = cl[i] + Vector2(0.0, (i % 2) * 40.0 / mpd)
+	bent["centerline"] = cl
+	var roads := [_road(6.0), rail, short, bent]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for spacing: float in [0.0, 0.5, 13.5]:
+		var prepared := BiomeRelief.prepare_roads(roads, spacing)
+		for k in 2000:
+			var at := _at(rng.randf_range(-80.0, 80.0)) + Vector2(rng.randf_range(-700.0, 700.0) / mpd, 0.0)
+			var want := BiomeRelief.road_weight(at, roads, mpd, spacing)
+			var got := BiomeRelief.prepared_road_weight(at, prepared, mpd)
+			if got != want:
+				fail_test("pitch %.1f at %s: %.17f, road_weight %.17f" % [spacing, at, got, want])
+				return
+	assert_eq(BiomeRelief.prepared_road_weight(_at(0.0), [], mpd), 1.0, "no road → untouched")
+
+
 ## visible_at is the gate the chunk builders ask BEFORE the road weight, so that weight — a walk over
 ## every road segment of nine chunks, per vertex — is skipped where the relief cannot show. It must say
 ## "invisible" only where offset() really is zero, or a skipped vertex would lose relief it should have.

@@ -369,8 +369,9 @@ static func load_mesh(path: String) -> Mesh:
 ## [param vid]: the variant id of each grid vertex. [param center]: chunk centre, planet-local.
 ## [param zones]: from zone_context — the variant at an exact direction and the variants the chunk's
 ## export tile can hold. Without it the grid answers, which depends on the LOD (tests only).
+## [param cancel]: [false] the caller sets to true to stop the laying where it is (an empty answer then).
 static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: PackedVector3Array,
-		vid: PackedInt32Array, center: Vector3, zones: Dictionary = {}) -> Dictionary:
+		vid: PackedInt32Array, center: Vector3, zones: Dictionary = {}, cancel: Array = []) -> Dictionary:
 	var out := {}
 	if grid.size() != (res + 1) * (res + 1) or vid.size() != grid.size():
 		return out
@@ -393,6 +394,8 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 		var y0: int = cells.y0
 		var blocks := clampi(ceili(r * float(d.cell_side_m) / maxf(float(d.view_m) * 0.5, BLOCK_M)), 1, MAX_BLOCKS)
 		for cy in r:
+			if not cancel.is_empty() and cancel[0]:
+				return {}
 			for cx in r:
 				var o := cell_object(d.seed, d.density, face, x0 + cx, y0 + cy)
 				if o.is_empty():
@@ -418,7 +421,7 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 				var mi := mini(int(o.u_mesh * d.meshes.size()), d.meshes.size() - 1)
 				var sc: float = lerpf(d.scale_min, d.scale_max, o.u_scale)
 				# Nothing on a road, under a building or in a village, and fewer and fewer objects toward them.
-				if clearance != null and float(o.u_keep) >= clearance.share_for(up, float(d.reaches[mi]) * sc):
+				if clearance != null and float(o.u_keep) >= clearance.share_for(up, float(d.reaches[mi]) * sc, float(o.u_keep)):
 					continue
 				if variant_at.is_valid():
 					# The zone at a point drawn within the layer's spill of the object: the same answer at

@@ -516,6 +516,36 @@ static func nearest(pads: Array, lonlat: Vector2, m_per_deg: float) -> Dictionar
 	return {"hit": true, "rec": best, "d": best_d}
 
 
+## [param pads] read once for many [method nearest_d] calls: per pad its centre, its latitude's scale, its yaw's
+## cosine and sine and its half extents — what sdf_m works out again at every call.
+static func frames(pads: Array) -> Array:
+	var out: Array = []
+	for rec: Dictionary in pads:
+		var lat0: float = float(rec["lat"])
+		var yaw: float = float(rec["yaw"])
+		out.append(PackedFloat64Array([float(rec["lon"]), lat0, maxf(cos(deg_to_rad(clampf(lat0, -89.5, 89.5))), 1e-6),
+				cos(yaw), sin(yaw), float(rec["hx"]), float(rec["hy"])]))
+	return out
+
+
+## [method nearest]'s distance over pads read by [method frames]: the same arithmetic, the same answer to the bit
+## (test_nova pins it); INF when there is no pad.
+static func nearest_d(pad_frames: Array, lonlat: Vector2, m_per_deg: float) -> float:
+	var best_d := INF
+	for f: PackedFloat64Array in pad_frames:
+		var e := wrapf(lonlat.x - f[0], -180.0, 180.0) * f[2] * m_per_deg
+		var n := (lonlat.y - f[1]) * m_per_deg
+		var c := f[3]
+		var s := f[4]
+		var p := Vector2(e * c + n * s, -e * s + n * c)
+		var qx := absf(p.x) - f[5]
+		var qy := absf(p.y) - f[6]
+		var d := Vector2(maxf(qx, 0.0), maxf(qy, 0.0)).length() + minf(maxf(qx, qy), 0.0)
+		if d < best_d - 1e-9:
+			best_d = d
+	return best_d
+
+
 ## The pad height of a terrain vertex at signed distance [param d] from
 ## [param rec]'s footprint, whose height is [param h] after every other
 ## modifier (the railway carve included — a building beside a road meets the
