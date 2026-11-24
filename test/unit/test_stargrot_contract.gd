@@ -80,6 +80,8 @@ func test_cut_preserves_native_uv2_skirt_offsets_tangents_and_road_mapping() -> 
     var uv2s := PackedVector2Array()
     var offsets := PackedFloat32Array()
     var rocks := PackedFloat32Array()
+    # Nova's weights (CUSTOM3, RGBA8): the first two slots shared across the triangle, so every interpolation sums 255.
+    var nova := PackedByteArray([255, 0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 0])
     for point in [Vector3(-200, 0, -200), Vector3(200, 0, -200), Vector3(0, 0, 200)]:
         var p: Vector3 = frame.basis * point
         vertices.append(p)
@@ -92,11 +94,13 @@ func test_cut_preserves_native_uv2_skirt_offsets_tangents_and_road_mapping() -> 
     arrays[Mesh.ARRAY_TEX_UV2] = uv2s
     arrays[Mesh.ARRAY_CUSTOM0] = offsets
     arrays[Mesh.ARRAY_CUSTOM1] = rocks
+    arrays[Mesh.ARRAY_CUSTOM3] = nova
     arrays[Mesh.ARRAY_TANGENT] = PlanetChunk._compute_tangents(vertices, arrays[Mesh.ARRAY_NORMAL],
         arrays[Mesh.ARRAY_TEX_UV], PackedInt32Array([0, 1, 2]))
     var source := ArrayMesh.new()
     var flags := Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
     flags |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
+    flags |= Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT
     source.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, flags)
     source.set_meta("road_surfaces", PackedInt32Array([0]))
     source.set_meta("roads_mesh", ArrayMesh.new())
@@ -124,6 +128,17 @@ func test_cut_preserves_native_uv2_skirt_offsets_tangents_and_road_mapping() -> 
         if result[Mesh.ARRAY_TEX_UV2][index].distance_to(Vector2(p.x * 0.1, p.z * 0.1)) > 0.001:
             preserved = false
     assert_true(preserved, "interpolated native shader attributes")
+    # Nova's weights ride along: a mine's hole cut without them drew the old ground beside Nova's.
+    assert_eq((output.surface_get_format(0) >> Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT) & 7, Mesh.ARRAY_CUSTOM_RGBA8_UNORM,
+            "Nova's weights kept, in their format")
+    var weights: PackedByteArray = result[Mesh.ARRAY_CUSTOM3]
+    assert_eq(weights.size(), result[Mesh.ARRAY_VERTEX].size() * 4, "a weight of each slot for each vertex")
+    var whole := true
+    for index in result[Mesh.ARRAY_VERTEX].size():
+        var total := weights[index * 4] + weights[index * 4 + 1] + weights[index * 4 + 2] + weights[index * 4 + 3]
+        if absi(total - 255) > 2 or weights[index * 4 + 2] != 0 or weights[index * 4 + 3] != 0:
+            whole = false
+    assert_true(whole, "interpolated, they still cover the ground whole, on the slots the corners used")
 
 
 func test_duplicate_identities_fail_before_generating_any_geometry() -> void:
