@@ -314,3 +314,25 @@ func test_the_atlas_places_are_inside_their_variant() -> void:
 		zoned += 1 if data[k] > 1 else 0
 	assert_gt(float(zoned) / (data.size() / 97.0), 0.6,
 			"the map shows the zones whole, as far chunks do, not only the outlines the export level keeps")
+
+
+func test_the_zones_read_back_are_the_zones_written() -> void:
+	# A streamed pack's variants are read from disk once found (NovaBody.zones_cache_path): the same zones must
+	# come back, to the bit, or the ids baked into the chunks would move.
+	var path := "user://test_nova_zones.var"
+	var zones := {
+		"outcrop-plateau|clarity=milky|rock_type=corundum_red": {"biome_type": "outcrop-plateau", "clarity": "milky",
+				"rock_type": "corundum_red", "density": 0.1 + 0.2, "coverage": PackedFloat64Array([1e-17, 3.5])},
+		"dunes": {"biome_type": "dunes", "depth": 12},
+	}
+	NovaBody.write_zones(path, zones)
+	var back: Variant = NovaBody.read_zones(path)
+	assert_eq(var_to_str(back), var_to_str(zones), "the zones come back whole")
+	assert_eq(float((back as Dictionary).values()[0]["density"]), 0.1 + 0.2, "a double stays a double")
+	AtomicFile.write_buffer(path, var_to_bytes({"format": NovaBody.ZONES_FORMAT + 1, "zones": zones}))
+	assert_null(NovaBody.read_zones(path), "another format is read again from the pack")
+	AtomicFile.write_buffer(path, var_to_bytes("not the zones"))
+	assert_null(NovaBody.read_zones(path), "nor is a file that holds something else")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	assert_null(NovaBody.read_zones(path), "no file, nothing")
+	assert_eq(NovaBody.zones_cache_path(null), "", "no pack, no cache")

@@ -33,6 +33,8 @@ const ORH_KEYS: Array[String] = ["ground/orh_texture", "ground/layer2_orh", "gro
 const TEX_SIZE := 1024
 ## Pack levels read by discover stop past this many tiles (tarsis_3: levels 1 to 16, about 60 ms).
 const DISCOVER_MAX_TILES := 4096
+## Bump when what _read_variants keeps per key changes (see zones_cache_path).
+const ZONES_FORMAT := 1
 
 ## The body ("tarsis_3").
 var planet_name := ""
@@ -183,8 +185,13 @@ static func discover(pack: ModifierPack) -> Array[Dictionary]:
 
 
 static func _read_variants(pack: ModifierPack) -> Array[Dictionary]:
-	var keys := {}
-	if pack != null:
+	var keys: Dictionary = {}
+	var cache := zones_cache_path(pack)
+	var cached: Variant = read_zones(cache) if cache != "" else null
+	if cached != null:
+		keys = cached
+	elif pack != null:
+		var complete := true
 		var floor_max := (pack as RemoteModifierPack).source.floor_nside_max if pack is RemoteModifierPack else 0
 		for level in pack.get_levels():
 			if floor_max > 0 and int(level) > floor_max:
@@ -193,17 +200,50 @@ static func _read_variants(pack: ModifierPack) -> Array[Dictionary]:
 			if floor_max == 0 and tiles.size() > DISCOVER_MAX_TILES and not keys.is_empty():
 				break
 			for ipix in tiles:
-				var tile := pack.decode_tile(pack.read_tile(int(level), ipix), 0.0, ModifierPack.MASK_POPULATE)
+				var bytes := pack.read_tile(int(level), ipix)
+				complete = complete and not bytes.is_empty()
+				var tile := pack.decode_tile(bytes, 0.0, ModifierPack.MASK_POPULATE)
 				for zone: Dictionary in tile.get("populate_zones", []):
 					var k := zone_key(zone)
 					if not keys.has(k):
 						keys[k] = zone
+		if cache != "" and complete:
+			write_zones(cache, keys)
 	var sorted := keys.keys()
 	sorted.sort()
 	var out: Array[Dictionary] = [_variant(1, DEFAULT_KEY, {})]
 	for k in sorted:
 		out.append(_variant(out.size() + 1, k, keys[k]))
 	return out
+
+
+## Where the zones a streamed pack's floor holds are kept once read, beside its tiles: decoding the 3890 tiles
+## of tarsis_3's floor again was 2.5 s on the main thread at every arrival on the planet (2026-11-24). A
+## version is immutable, and its folder goes with it when the version changes. "" for a pack on disk.
+static func zones_cache_path(pack: ModifierPack) -> String:
+	if not pack is RemoteModifierPack:
+		return ""
+	var src: RemoteTileSource = (pack as RemoteModifierPack).source
+	if src == null or src.floor_nside_max <= 0 or src.version == "":
+		return ""
+	# Not .bin: the tile cache's eviction counts every .bin of the folder as a tile.
+	return "%s%s/%s/nova_zones.var" % [src.cache_root, src.planet, src.version]
+
+
+## The zones written at [param path] (zone key -> zone), or null when there are none or they are not of
+## this format.
+static func read_zones(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return null
+	var held: Variant = bytes_to_var(FileAccess.get_file_as_bytes(path))
+	if not held is Dictionary or int((held as Dictionary).get("format", 0)) != ZONES_FORMAT \
+			or not (held as Dictionary).get("zones") is Dictionary:
+		return null
+	return (held as Dictionary)["zones"]
+
+
+static func write_zones(path: String, zones: Dictionary) -> void:
+	AtomicFile.write_buffer(path, var_to_bytes({"format": ZONES_FORMAT, "zones": zones}))
 
 
 static func _variant(id: int, key: String, zone: Dictionary) -> Dictionary:
@@ -451,9 +491,20 @@ func refresh_textures() -> void:
 	_albedo_paths = _texture_paths(ALBEDO_KEYS)
 	_normal_paths = _texture_paths(NORMAL_KEYS)
 	_orh_paths = _texture_paths(ORH_KEYS)
-	material.set_shader_parameter("nova_orh", _texture_array(_orh_paths, Color(1.0, 0.9, 0.5)))
-	material.set_shader_parameter("nova_albedo", _texture_array(_albedo_paths, Color(0.5, 0.5, 0.5)))
-	material.set_shader_parameter("nova_normal", _texture_array(_normal_paths, Color(0.5, 0.5, 1.0)))
+	var arrays := [["nova_orh", _orh_paths, Color(1.0, 0.9, 0.5)], ["nova_albedo", _albedo_paths, Color(0.5, 0.5, 0.5)],
+			["nova_normal", _normal_paths, Color(0.5, 0.5, 1.0)]]
+	var paths := PackedStringArray()
+	var fallbacks: Array[Color] = []
+	for a: Array in arrays:
+		for path: String in a[1]:
+			paths.append(path)
+			fallbacks.append(a[2])
+	var layers := _layer_images(paths, fallbacks)
+	var at := 0
+	for a: Array in arrays:
+		var n := (a[1] as PackedStringArray).size()
+		material.set_shader_parameter(a[0], _texture_array(layers.slice(at, at + n), a[2]))
+		at += n
 
 
 func _texture_paths(keys: Array[String]) -> PackedStringArray:
@@ -466,23 +517,43 @@ func _texture_paths(keys: Array[String]) -> PackedStringArray:
 	return out
 
 
-static func _texture_array(paths: PackedStringArray, fallback: Color) -> Texture2DArray:
-	var images: Array[Image] = []
-	for p in paths:
-		images.append(_layer_image(p, fallback))
+static func _texture_array(images: Array[Image], fallback: Color) -> Texture2DArray:
 	if images.is_empty():
-		images.append(_flat_image(fallback))
+		images = [_flat_image(fallback)]
 	var arr := Texture2DArray.new()
 	arr.create_from_images(images)
 	return arr
 
 
-static func _layer_image(path: String, fallback: Color) -> Image:
-	var tex := load(path) as Texture2D
-	var img: Image = tex.get_image() if tex != null else null
-	if img == null:
-		return _flat_image(fallback)
-	img = img.duplicate()
+## The layer of every texture of [param paths], TEX_SIZE square with its mipmaps; [param fallbacks]' flat colour
+## for one that does not load. Read here (a texture's image may come from the RenderingServer, which answers
+## other threads only when this one flushes it), fitted on the workers, all at once: one at a time on the main
+## thread, the 2048 and 4096 px ones took 2.1 s when the body opened (tarsis_3, 2026-11-24).
+static func _layer_images(paths: PackedStringArray, fallbacks: Array[Color]) -> Array[Image]:
+	var slots: Array = []  # [image] per layer, each its own array: a worker writes its slot alone
+	var read: Array[bool] = []  # false: the flat colour, already a layer
+	for i in paths.size():
+		var tex := load(paths[i]) as Texture2D
+		var img: Image = tex.get_image() if tex != null else null
+		read.append(img != null)
+		slots.append([img if img != null else _flat_image(fallbacks[i])])
+	var fit := func(i: int) -> void:
+		if read[i]:
+			slots[i][0] = _fit_layer(slots[i][0])
+	if slots.size() > 1:
+		WorkerThreadPool.wait_for_group_task_completion(WorkerThreadPool.add_group_task(fit, slots.size()))
+	elif slots.size() == 1:
+		fit.call(0)
+	var images: Array[Image] = []
+	for slot: Array in slots:
+		images.append(slot[0])
+	return images
+
+
+## [param source] as a layer: RGBA8, TEX_SIZE square, its mipmaps made again. A copy: the texture's own image
+## is left as it is. Any thread.
+static func _fit_layer(source: Image) -> Image:
+	var img := source.duplicate() as Image
 	if img.is_compressed():
 		img.decompress()
 	img.clear_mipmaps()
