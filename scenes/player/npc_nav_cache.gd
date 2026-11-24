@@ -52,8 +52,11 @@ const HALF: float = 36.0
 const INNER: float = 0.0
 ## Baked margin (m) around a tile, cut away by Recast's `border_size` so the published mesh stops EXACTLY
 ## at the cell boundary instead of agent_radius short of it (which would leave a 0.6 m gap between two
-## tiles, wider than edge_connection_margin). Must be a multiple of CELL.
-const BORDER: float = 1.0
+## tiles, wider than edge_connection_margin). Must be wider than AGENT_RADIUS and a multiple of CELL
+## IN FLOAT32 — the engine stores both as float and warns on every bake unless fmod(border, cell) is ~0:
+## 1.0 is not (0.1f is a hair above 0.1, 1.0 / 0.1f leaves 0.0999…), and that warning was 30 000 lines
+## in 48 h on the preprod servers. 0.8 = 8 × 0.1f exactly (a power-of-two multiple).
+const BORDER: float = 0.8
 ## Free edges of neighbouring tiles closer than this (m) are connected by the map (>= 2 * CELL).
 const EDGE_CONNECTION_MARGIN: float = 0.3
 ## Tiles sit on a LATTICE: cell centres every LATTICE_XZ m horizontally (= a tile's width, so tiles are

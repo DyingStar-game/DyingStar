@@ -303,6 +303,18 @@ func test_registered_obstacle_is_projected_into_the_box_frame() -> void:
 	assert_eq(NpcNavCache.obstacle_count(), 0)
 
 
+func test_border_is_a_whole_number_of_voxels_so_bakes_do_not_warn() -> void:
+	# The engine warns "Property border_size is ceiled to cell_size voxel units" on EVERY bake when
+	# fmod(border_size, cell_size) is not ~0 — computed on the float32 properties, so read them back
+	# from the real template rather than from the GDScript (double) constants.
+	var mesh: NavigationMesh = _cache._make_mesh_template()
+	var border: float = mesh.border_size
+	var cell: float = mesh.cell_size
+	assert_true(is_zero_approx(fmod(border, cell)),
+		"border %.9f m is not a whole number of %.9f m voxels: the engine warns on every bake" % [border, cell])
+	assert_gt(border, mesh.agent_radius, "the border must swallow the agent_radius erosion at the tile edge")
+
+
 func test_box_faces_are_wound_clockwise_front() -> void:
 	var bb := AABB(Vector3(-1, -2, -3), Vector3(2, 4, 6))
 	var faces := NpcNavCache.box_faces(bb)
