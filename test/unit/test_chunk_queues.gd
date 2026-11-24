@@ -44,6 +44,19 @@ func test_the_queue_serves_the_nearest_first_whatever_the_insertion_order() -> v
 	t.free()
 
 
+func test_a_terrain_out_of_the_tree_queues_no_rebuild() -> void:
+	# A mine gives its ground back at PREDELETE, after the terrain's _exit_tree joined its tasks: a chunk task
+	# started then was never joined and froze the quit.
+	var t := PlanetTerrain.new()
+	var nside := 8
+	t._active_chunks["a"] = {"key": "a", "nside": nside, "ipix": 5, "lod": 0, "center": Vector3.ZERO}
+	t._rebuild_chunks_on_tiles({5: true}, nside, "a mine")
+	assert_true(t._mesh_tasks.is_empty(), "no chunk task started")
+	assert_true(t._mesh_task_backlog.is_empty(), "nor queued for later")
+	assert_true(t._active_chunks.has("a"), "the chunk is left as it was")
+	t.free()
+
+
 func test_a_chunk_put_back_during_the_drain_waits_aside() -> void:
 	# Its tiles missing, the best chunk goes back at the same priority: put straight back it would
 	# be popped again and take every try of the drain.

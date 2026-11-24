@@ -6153,6 +6153,12 @@ func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 		why: String = "a profiled line born late", skip: Dictionary = {}) -> void:
 	if tiles.is_empty():
 		return
+	# Out of the tree nothing is drawn any more, and _exit_tree has already joined every task. A village's
+	# mine and pads give their ground back as the game quits (the mine at PREDELETE, after every _exit_tree):
+	# the chunks they queued were never joined, and each waited for its mesh read back through the
+	# RenderingServer, which the main thread no longer flushes — the client froze on quit, 2026-11-24.
+	if not is_inside_tree():
+		return
 	var n := 0
 	# Which grids the rebuilt chunks were on. A pad is only CARVED on
 	# hp_nside == 1 << max_quadtree_depth (GradeBed.carve_enabled); anything
