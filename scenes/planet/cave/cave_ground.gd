@@ -42,6 +42,23 @@ static func run(data: PlanetData, job: Callable) -> Variant:
     return result
 
 
+## A reader of [param data]'s ground for many points of one area, asked from one thread outside a cave job (the
+## wind dust's ground grids, WeatherSky): the same native path, its frames kept as long as the reader is. Make a
+## new one for each area: a tile missing when first read stays missing in it. Null for a PlanetData subclass (the
+## tests' synthetic planets), which keeps its own crack_aware_surface_dist.
+static func reader(data: PlanetData) -> CaveGround:
+    if data.get_script() != _PLANET_DATA:
+        return null
+    var ground := CaveGround.new()
+    ground._data = data
+    return ground
+
+
+## Distance (m) from the planet centre of the ground along [param direction], through this reader's frames.
+func ground_dist(direction: Vector3) -> float:
+    return _surface_dist(direction)
+
+
 ## Distance (m) from the planet centre of the ground along [param direction], cracks included.
 static func surface_dist(data: PlanetData, direction: Vector3) -> float:
     _mutex.lock()
