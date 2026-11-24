@@ -109,8 +109,8 @@ const DEFAULT_WEATHER: WeatherSource = preload("res://scenes/planet/weather/unif
 ## engine's: its spatial index skips a move shorter than 1e-5 of the coordinate — hundreds of km out
 ## here — so after a step the lamps look for their shadow casters where they no longer are. How often
 ## it shows depends on where the planet is on its orbit, not on this rate (every other step that day).
-## The RenderIndexRefresh node of the local player files the instances near the camera again after
-## each step (scenes/player/render_index_refresh.gd).
+## Fixed in our engine build (godotandaddons, patch 0003: exact comparison in DynamicBVH::update),
+## guarded by test/unit/test_engine_patches.gd.
 ## Fewer steps are also fewer hitches: each is the whole subtree's transforms and Jolt's re-insertion.
 ## The price is a bigger step (~1.8 km of arc at SandBox's surface), so a bigger one-step lag above.
 @export var rotation_update_hz: float = 0.25
