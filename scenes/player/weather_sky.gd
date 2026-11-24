@@ -50,6 +50,8 @@ const FAR_NOISE_SCALE: float = 20000.0
 const FAR_CELL_M: float = 192.0
 const FAR_REBUILD_M: float = 1500.0
 const FAR_BUDGET_MS: float = 1.0
+## Seconds a ground reader (native sampler frames) is kept at most (_reader).
+const READER_LIFE_S: float = 1.0
 ## How much brighter the dust glows in a lamp's beam than its density alone gives (dust_lamp_gain): an
 ## IMAGE choice, not physics: at the plains' visibility (km) a real beam is barely seen, only the ground
 ## it lights. 1 = physical (the first look, liked: the gusts streaming through the beam, 2026-10-10).
@@ -87,12 +89,22 @@ var _scroll_fine: Vector3 = Vector3.ZERO
 var _wind_dir: Vector3 = Vector3.ZERO
 var _anchor: Vector3 = Vector3.ZERO
 var _anchor_set: bool = false
-var _noise: NoiseTexture3D = null
+var _noise: Texture3D = null
+## The gusts' noise, one for every layer of the run (_shared_noise): its layers made by a worker task
+## (_noise_task, writing _noise_layers), the texture made of them on the main thread once they are.
+static var _shared_noise: Texture3D = null
+static var _noise_task := -1
+static var _noise_layers: Array = []
 ## The real ground around the camera the layer lies on (DustGround), the far dust's coarse wide one,
 ## and the planet they were laid on.
 var _ground: DustGround = DustGround.new()
 var _far_ground: DustGround = DustGround.new(FAR_CELL_M, FAR_REBUILD_M)
 var _ground_planet: int = 0
+## Each grid's ground reader (CaveGround: the terrain's native sampler, bit-identical to
+## crack_aware_surface_dist): a GDScript query cost ~320 µs in a village, so the two grids laid at
+## arrival took ~8 ms a frame for a minute (2026-11-23), and the eye's own query a third of a ms every
+## frame. Renewed for each build and every READER_LIFE_S (_reader).
+var _readers: Dictionary = {}  # DustGround or &"eye" -> [CaveGround (null: the plain query), made at (ms)]
 ## The far dust's banks drifting with the wind, wrapped to FAR_NOISE_SCALE.
 var _far_scroll: Vector3 = Vector3.ZERO
 ## client.ini debug_no_dust_layer: the layer off (its cost and its look).
@@ -139,7 +151,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	if camera != null and planet.planet_data != null:
 		dir = planet.local_dir_of(camera.global_position)
 		if not dir.is_zero_approx():
-			surface = planet.planet_data.crack_aware_surface_dist(dir)
+			surface = float(_reader(&"eye", planet.planet_data, false).call(dir))
 			height = camera.global_position.distance_to(planet.global_position) - surface
 	if camera != null:
 		_eye_height_m = height
@@ -149,11 +161,13 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 			renderer.set_dust_param(&"dust_far_density", 0.0)
 			_dust_sent = false
 		return
+	if _noise == null:
+		_noise = _gust_noise()
+		if _noise == null:
+			return  # the layer shows once its noise is made
+		renderer.set_dust_param(&"dust_noise", _noise)
 	_dust_sent = true
 	renderer.set_dust_param(&"dust_albedo", blow_albedo_of(_dust_colour.toward(_dust_colour_target, delta)))
-	if _noise == null:
-		_noise = _make_noise()
-		renderer.set_dust_param(&"dust_noise", _noise)
 	var to_planet: Basis = planet.global_basis.orthonormalized().inverse()
 	var wind_planet: Vector3 = to_planet * _dust_wind
 	# The streaks' direction, smoothed: it turns over seconds, never in a frame.
@@ -224,16 +238,18 @@ func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Ve
 		_ground = DustGround.new()
 		_far_ground = DustGround.new(FAR_CELL_M, FAR_REBUILD_M)
 		_ground_planet = planet.get_instance_id()
+		_readers.clear()
 		renderer.set_dust_param(&"dust_ground_on", 0)
 		renderer.set_dust_param(&"dust_far_ground_on", 0)
-	var radius: Callable = planet.planet_data.crack_aware_surface_dist
 	var data: PlanetData = planet.planet_data
 	var colour: Callable = func(dir: Vector3, ground_r: float) -> Color:
 		var a: Vector3 = blow_albedo_of(GroundLook.colour_at(data, dir, BLOW_FALLBACK_COLOUR, ground_r - data.radius))
 		return Color(a.x, a.y, a.z)
 	if near:
-		_lay_grid(renderer, _ground, "dust_ground", ground_point, cam_planet, radius, DustGround.BUDGET_MS, colour)
-	_lay_grid(renderer, _far_ground, "dust_far_ground", ground_point, cam_planet, radius, FAR_BUDGET_MS, colour)
+		var near_radius: Callable = _reader(_ground, data, not _ground.is_building())
+		_lay_grid(renderer, _ground, "dust_ground", ground_point, cam_planet, near_radius, DustGround.BUDGET_MS, colour)
+	var far_radius: Callable = _reader(_far_ground, data, not _far_ground.is_building())
+	_lay_grid(renderer, _far_ground, "dust_far_ground", ground_point, cam_planet, far_radius, FAR_BUDGET_MS, colour)
 	if _far_ground.ready:
 		# The far grid's highest ground over the ground under the camera: where the far dust ends going up.
 		var under_far: float = (ground_point - _far_ground.anchor).dot(_far_ground.up)
@@ -243,6 +259,21 @@ func _lay_grounds(renderer: AtmosphereRenderer, planet: Planet, ground_point: Ve
 		# reaches that much higher than the flat test says (a hill ahead holds dust over the eye's level).
 		var under_cam: float = (ground_point - _ground.anchor).dot(_ground.up)
 		renderer.set_dust_param(&"dust_ground_lift", maxf(0.0, _ground.top_m - under_cam))
+
+
+## How [param key] (a ground grid, or the eye) reads the ground: through its reader, a new one every
+## READER_LIFE_S and whenever [param fresh] (a grid with no build running: the next update may start one).
+## A TileFrame remembers what it read, a tile still streaming in included: kept for a whole build, the
+## arrival's first grids lay on the coarser level the frame climbed to (up to 10 m off, 2026-11-23);
+## renewed, they catch up as the GDScript query does.
+func _reader(key: Variant, data: PlanetData, fresh: bool) -> Callable:
+	var now: int = Time.get_ticks_msec()
+	var held: Array = _readers.get(key, [])
+	if held.is_empty() or fresh or now - int(held[1]) > READER_LIFE_S * 1000.0:
+		held = [CaveGround.reader(data), now]
+		_readers[key] = held
+	var reader: CaveGround = held[0]
+	return reader.ground_dist if reader != null else data.crack_aware_surface_dist
 
 
 ## Keep [param grid] around [param ground_point] and hand the layer its uniforms, named [param prefix]_*:
@@ -279,20 +310,39 @@ static func wrap_to_period(v: Vector3, period: float) -> Vector3:
 	return Vector3(fposmod(v.x, period), fposmod(v.y, period), fposmod(v.z, period))
 
 
-## A seamless 3D noise for the layer's gusts: NOISE_TEXELS a side, NOISE_CELLS features across, three
-## octaves (generated on a worker by the engine; the layer shows once it is ready).
-static func _make_noise() -> NoiseTexture3D:
+## A seamless 3D noise for the layer's gusts: NOISE_TEXELS a side, NOISE_CELLS features across, three octaves.
+static func _gust_fast_noise() -> FastNoiseLite:
 	var noise := FastNoiseLite.new()
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	noise.frequency = NOISE_CELLS / float(NOISE_TEXELS)
 	noise.fractal_octaves = 3
-	var tex := NoiseTexture3D.new()
-	tex.width = NOISE_TEXELS
-	tex.height = NOISE_TEXELS
-	tex.depth = NOISE_TEXELS
-	tex.seamless = true
-	tex.noise = noise
-	return tex
+	return noise
+
+
+## The layers a seamless NoiseTexture3D of _gust_fast_noise() makes (its default skirt and normalisation), on any
+## thread. A NoiseTexture3D makes its first ones on the main thread, at once: 2.4 s in the frame the player
+## appeared (2026-11-24).
+static func gust_layers() -> Array:
+	return _gust_fast_noise().get_seamless_image_3d(NOISE_TEXELS, NOISE_TEXELS, NOISE_TEXELS, false, 0.1, true)
+
+
+## The gusts' texture, or null while its layers are being made (asked first: their making starts).
+static func _gust_noise() -> Texture3D:
+	if _shared_noise != null:
+		return _shared_noise
+	if _noise_task < 0:
+		_noise_task = WorkerThreadPool.add_task(func() -> void: _noise_layers = gust_layers(), false, "dust gust noise")
+		return null
+	if not WorkerThreadPool.is_task_completed(_noise_task):
+		return null
+	WorkerThreadPool.wait_for_task_completion(_noise_task)
+	var layers: Array[Image] = []
+	layers.assign(_noise_layers)
+	var texture := ImageTexture3D.new()
+	texture.create(layers[0].get_format(), NOISE_TEXELS, NOISE_TEXELS, NOISE_TEXELS, false, layers)
+	_shared_noise = texture
+	_noise_layers = []
+	return _shared_noise
 
 
 ## How much of the far dust an eye [param height_m] over the ground still sees: all of it under

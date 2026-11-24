@@ -84,6 +84,33 @@ func test_a_far_chunk_wears_its_stand_ins_and_takes_them_off() -> void:
 	assert_null(mi.get_surface_override_material(1), "near again: its own material")
 
 
+func test_a_chunk_keeps_its_own_override_far_and_near() -> void:
+	# A Nova chunk wears Nova's ground over the mesh's: going near cleared every override and stripped it from
+	# the chunks built while the player's planet was still far — half the ground in the old shader.
+	var mesh := ArrayMesh.new()
+	for material: Material in [load(SAND), load(GRASS)]:
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
+	var nova := ShaderMaterial.new()
+	nova.shader = load(NovaBody.NOVA_SHADER)
+	var own_grass := StandardMaterial3D.new()
+	var mi: MeshInstance3D = autofree(MeshInstance3D.new())
+	mi.mesh = mesh
+	mi.set_surface_override_material(0, nova)
+	mi.set_surface_override_material(1, own_grass)
+	for far: bool in [true, true, false, false, true, false]:
+		FAR_GROUND.apply(mi, far)
+		assert_eq(mi.get_surface_override_material(0), nova, "Nova's ground lights itself: kept (far %s)" % far)
+		if far:
+			assert_true(FAR_GROUND.is_stand_in(mi.get_surface_override_material(1)), "the grass override hidden far")
+		else:
+			assert_eq(mi.get_surface_override_material(1), own_grass, "and put back near")
+	assert_false(mi.has_meta(FAR_GROUND.HIDDEN_META), "nothing left hidden once near")
+
+
 func _assert_shows(material: Material, where: String) -> void:
 	assert_true(FAR_GROUND.lights_itself(material) or FAR_GROUND.material_for(material) != null,
 			"%s: %s would be black from afar" % [where, material.resource_path.get_file()])

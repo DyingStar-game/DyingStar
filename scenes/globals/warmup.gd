@@ -25,6 +25,39 @@ extends Node
 ## Client only, where something is drawn; one per session (start), under the tree's root so it goes on
 ## once the game is entered. While the menu shows, a line in its corner says how far it is.
 
+## The terrain's and the water's materials, loaded before anything else. Their NoiseTexture2D make their image
+## the first time on the thread that loads them, at once: loaded by the game on the main thread, 23 of them froze
+## the arrival on a planet 2.5 s (tarsis_3, 2026-11-24; 0.8 s for each water). Loaded here on a worker they are
+## made there, and the game's load() finds them made. test_warmup lists every such material of the terrain.
+const NOISE_MATERIALS: Array[String] = [
+	"res://scenes/planet/terrain_mat.tres",
+	"res://assets/_universe/_shared/materials/terrain_blend.tres",
+	"res://assets/_universe/environment/terrain/ocean_surface.tres",
+	"res://assets/_universe/environment/terrain/ocean_surface_shallow.tres",
+	"res://assets/_universe/environment/terrain/lake_surface.tres",
+	"res://assets/_universe/environment/terrain/river_water.tres",
+]
+## Then every biome (read from the folder, so a new one is not forgotten): a planet loaded the 120 of them when
+## it was made, 1.3 s on the main thread in the frame the player's planet arrived (tarsis_3, 2026-11-24). They
+## are kept for the whole run anyway (PlanetData's shared biome list).
+const BIOMES_DIR := "res://scenes/planet/biomes/"
+## Then what a body's scene is made of but the body itself: its scripts, compiled with every class they name, and
+## the material its ground is drawn with (its textures, 1.6 s): together the 2.3 s that scene took to load, in that
+## same frame. Not the scenes: one kept here would keep its PlanetData alive for the session, and a body made again
+## (out of range, then back) would get the same data with its caches already filled, instead of a new one. A
+## script or a material holds nothing of the game.
+const BODY_RESOURCES: Array[String] = [
+	"res://scenes/planet/planet_body.gd",
+	"res://scenes/planet/planet_data.gd",
+	"res://scenes/planet/planet_terrain.gd",
+	"res://scenes/planet/debug_chunk_exporter.gd",
+	"res://scenes/planet/weather/weather_phenomena.gd",
+	"res://assets/_universe/environment/terrain/terrain_biome.tres",
+]
+## And the scripts of the services tablet's panels (TerminalUI, built as the player appears), read from the folder:
+## loaded there they compiled with every class they name, a good part of the 2.4 s of the frame the player
+## appeared in (2026-11-24).
+const SCRIPT_DIRS: Array[String] = ["res://ui/services/"]
 ## The scenes wanted with everything they are built of: the places the world spawns, the vehicles.
 const SCENES: Array[String] = [
 	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
@@ -132,15 +165,32 @@ static func start(tree: SceneTree) -> void:
 	tree.root.add_child.call_deferred(warmup)
 
 
-## Every scene to load: the SCENES and each catalogue item's scene.
+## Everything to load: the NOISE_MATERIALS, the biomes, the BODY_RESOURCES and the SCRIPT_DIRS' scripts first (what
+## entering the world needs at once), the SCENES and each catalogue item's scene.
 static func wanted() -> Array[String]:
-	var paths: Array[String] = SCENES.duplicate()
+	var paths: Array[String] = NOISE_MATERIALS.duplicate()
+	paths.append_array(folder_resources(BIOMES_DIR))
+	paths.append_array(BODY_RESOURCES)
+	for dir: String in SCRIPT_DIRS:
+		paths.append_array(folder_resources(dir, ".gd"))
+	paths.append_array(SCENES)
 	for dir: String in CATALOGUES:
 		for item: Resource in DispenserCatalog.all(dir):
 			var path: String = str(item.scene_path)
 			if not path in paths:
 				paths.append(path)
 	return paths
+
+
+## The files of [param dir] ending in [param suffix], sorted. ResourceLoader's listing: an exported game has the
+## same names as the project.
+static func folder_resources(dir: String, suffix := ".tres") -> Array[String]:
+	var out: Array[String] = []
+	for entry: String in ResourceLoader.list_directory(dir):
+		if entry.ends_with(suffix):
+			out.append(dir + entry)
+	out.sort()
+	return out
 
 
 ## [mesh, [materials]] of a mine's run-time surfaces (MINE_ROCK, MINE_DUST_SHADER): a rock cell's mesh (vertices,

@@ -23,6 +23,8 @@ const EYE_RADII_MAX := 2.0
 const WALL_UNDER_M := 250.0
 const WALL_DEEPER := 6.0
 const WALL_NOISE_SIZE := 128
+## The blend skirt of a seamless noise image: NoiseTexture2D's and NoiseTexture3D's default.
+const NOISE_SKIRT := 0.1
 ## A wall's life, drawn: at its birth it is WALL_BORN of its height and length (height, length) and grows
 ## to the whole; thinning out, it sinks to WALL_SPENT_TALL of its height (its dust spreads and settles).
 const WALL_BORN := Vector2(0.2, 0.45)
@@ -61,8 +63,14 @@ var _since := REFRESH_S
 var _shown := {}  # id → [node, velocity (the body's frame, m/s), its DustSparks (a wall's) or null, the thing]
 var _devil_mesh: Mesh
 var _wall_mesh: Mesh
-var _noise := NoiseTexture2D.new()
-var _billows := NoiseTexture3D.new()
+## The grain of every phenomenon (2-D) and the billows of the walls (3-D): what a NoiseTexture2D / NoiseTexture3D
+## of the settings in _ready would hold, made on a worker (_noise_task). A NoiseTexture makes its image the first
+## time on the main thread, at once: the 128^3 seamless cells were 2.5 s in the frame the player's planet arrived
+## (2026-11-24). Null until made; nothing is shown before.
+var _noise: Texture2D = null
+var _billows: Texture3D = null
+var _noise_task := -1
+var _noise_images: Array = []  # written by the task: [the grain's Image, the billows' Array[Image]]
 var _wall_grounds := {}  # a wall's id → the ground under it (WallGround)
 var _open_air := 1.0  # 1 in the open, 0 with the eye in a cave (CAVE_*)
 
@@ -76,10 +84,6 @@ func _ready() -> void:
 	grain.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	grain.frequency = 0.012
 	grain.fractal_octaves = 4
-	_noise.noise = grain
-	_noise.seamless = true
-	_noise.width = 256
-	_noise.height = 256
 	var column := CylinderMesh.new()
 	column.top_radius = 1.0
 	column.bottom_radius = 1.0
@@ -95,12 +99,36 @@ func _ready() -> void:
 	cells.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
 	cells.frequency = 0.07
 	cells.fractal_octaves = 3
-	_billows.noise = cells
-	_billows.seamless = true
-	_billows.width = WALL_NOISE_SIZE
-	_billows.height = WALL_NOISE_SIZE
-	_billows.depth = WALL_NOISE_SIZE
+	_noise_task = WorkerThreadPool.add_task(func() -> void: _noise_images = noise_images(grain, cells), false,
+			"weather noise")
 	_wall_mesh = BoxMesh.new()
+
+
+## What NoiseTexture2D (256 px, seamless) and NoiseTexture3D (WALL_NOISE_SIZE, seamless) make of [param grain] and
+## [param cells] with their other settings left as they are: [the grain's Image, its mipmaps made; the billows'
+## Array[Image]]. Any thread.
+static func noise_images(grain: Noise, cells: Noise) -> Array:
+	var flat := grain.get_seamless_image(256, 256, false, false, NOISE_SKIRT, true)
+	flat.generate_mipmaps()
+	return [flat, cells.get_seamless_image_3d(WALL_NOISE_SIZE, WALL_NOISE_SIZE, WALL_NOISE_SIZE, false, NOISE_SKIRT, true)]
+
+
+## The textures, once their images are made: true when they are there.
+func _noise_ready() -> bool:
+	if _noise != null:
+		return true
+	if _noise_task < 0 or not WorkerThreadPool.is_task_completed(_noise_task):
+		return false
+	WorkerThreadPool.wait_for_task_completion(_noise_task)
+	_noise_task = -1
+	_noise = ImageTexture.create_from_image(_noise_images[0])
+	var layers: Array[Image] = []
+	layers.assign(_noise_images[1])
+	var billows := ImageTexture3D.new()
+	billows.create(layers[0].get_format(), WALL_NOISE_SIZE, WALL_NOISE_SIZE, WALL_NOISE_SIZE, false, layers)
+	_billows = billows
+	_noise_images = []
+	return true
 
 
 ## The eye now, null when there is none.
@@ -109,6 +137,8 @@ func _eye() -> Node3D:
 
 
 func _process(delta: float) -> void:
+	if not _noise_ready():
+		return  # nothing is shown before the textures are made
 	var camera_now := _eye()
 	for entry: Array in _shown.values():
 		(entry[0] as Node3D).position += (entry[1] as Vector3) * delta
@@ -150,6 +180,9 @@ func _forget(id: int) -> void:
 func _exit_tree() -> void:
 	for under: WallGround in _wall_grounds.values():
 		under.finish()
+	if _noise_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_noise_task)
+		_noise_task = -1
 
 
 ## The ground under a wall, kept as long as the wall is drawn.

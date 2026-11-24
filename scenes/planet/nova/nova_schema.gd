@@ -37,6 +37,10 @@ const GROUND := [
 		"0 = la teinte de la roche seule ; 1 = la texture module pleinement la teinte."],
 	["ground/texture_gain", T_FLOAT, 1.6, 0.0, 4.0, "Gain de la texture",
 		"Multiplie la texture avant de l'appliquer : remonte une texture sombre, baisse une claire."],
+	["ground/texture_contrast", T_FLOAT, 1.0, 0.0, 3.0, "Contraste de la texture",
+		"Écarte chaque point de la texture de sa couleur moyenne (seconde et troisième matières comprises) : "
+		+ "au-dessus de 1 les pierres et leurs joints se détachent, même en plein soleil où le relief seul les "
+		+ "dessinait ; le sol ne s'éclaircit ni ne s'assombrit dans l'ensemble. 1 = la texture telle quelle."],
 	["ground/normal_strength", T_FLOAT, 1.0, 0.0, 4.0, "Force du relief",
 		"Intensité de la normal map. 0 = sol lisse sous la lumière."],
 	["ground/roughness", T_FLOAT, 0.85, 0.0, 1.0, "Rugosité",

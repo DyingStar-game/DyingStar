@@ -5,35 +5,8 @@
 [resource]
 script = ExtResource("1_profile")
 values = {
-"ground/albedo_texture": "res://assets/_universe/_shared/materials/mat_rock_cracked_062/tex_rock_cracked_062_albedo.png",
-"ground/normal_texture": "res://assets/_universe/_shared/materials/mat_rock_cracked_062/tex_rock_cracked_062_normal.png",
-"ground/orh_texture": "res://assets/_universe/_shared/materials/mat_rock_cracked_062/tex_rock_cracked_062_orh.png",
-"ground/tile_m": 20.0,
-"ground/hex_tiling": true,
-"ground/detail_tile_m": 3.0,
-"ground/texture_gain": 3.0,
-"ground/texture_strength": 1.0,
-"ground/normal_strength": 1.4,
-"ground/roughness": 0.9,
-"ground/anti_tiling": 1.0,
-"ground/macro_strength": 0.35,
-"ground/macro_size_m": 300.0,
-"ground/layer2_share": 0.45,
-"ground/layer2_patch_m": 40.0,
-"ground/layer2_albedo": "res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_albedo.png",
-"ground/layer2_normal": "res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_normal.png",
-"ground/layer2_orh": "res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_orh.png",
-"ground/layer2_gain": 2.6,
-"ground/layer2_tile_m": 2.5,
-"ground/layer3_share": 0.16,
-"ground/layer3_patch_m": 45.0,
-"ground/layer3_albedo": "res://assets/_universe/_shared/materials/mat_ground_mars_rocky/tex_ground_mars_rocky_albedo.png",
-"ground/layer3_normal": "res://assets/_universe/_shared/materials/mat_ground_mars_rocky/tex_ground_mars_rocky_normal.png",
-"ground/layer3_orh": "res://assets/_universe/_shared/materials/mat_ground_mars_rocky/tex_ground_mars_rocky_orh.png",
-"ground/layer3_tile_m": 3.5,
-"ground/layer3_gain": 2.4,
 "ground/relief_min_m": -4.0,
 "ground/relief_max_m": 8.0,
 "ground/relief_wavelength_m": 240.0
 }
-note = "Corindon rouge laiteux de Tarsis 3 : roche et plages de régolithe, variation à grande échelle ; affleurements stratifiés, dalles et rochers, éboulis, posés en amas."
+note = "Corindon rouge laiteux de Tarsis 3 : son relief (affleurements stratifiés) ; son sol, roche en hex-tiles et plages de régolithe, est celui de tout le plateau (archétype outcrop-plateau)."

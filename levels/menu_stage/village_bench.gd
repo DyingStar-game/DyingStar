@@ -23,6 +23,9 @@ const QUICK_ARG := "--bench-quick"
 const SHOTS_ARG := "--bench-shots"
 ## The sun's height (degrees) for the day windows instead of LIGHTS' (a dawn: --bench-sun=5).
 const SUN_ARG := "--bench-sun="
+## ClientPerf keeps logging during the windows (it is off by default: its census lands in them): to name
+## the script behind a slow window, at the price of slightly worse numbers.
+const PERF_ARG := "--bench-perf"
 ## Pictures only, from fixed poses (VIEWS), then quit: to show what a model change looks like up close.
 const VIEWS_ARG := "--bench-views"
 ## Name -> [eye, look], in the village's frame: over the roofs of tarsis_4-1001, its home 0-0-0's ceiling,
@@ -133,7 +136,8 @@ func setup(stage: MenuStage, planet: Planet, rig: StageRig, anchor_local: Vector
 
 
 func _ready() -> void:
-	ClientPerf.set_process(false)  # its census would land in the windows
+	if not PERF_ARG in OS.get_cmdline_user_args():
+		ClientPerf.set_process(false)  # its census would land in the windows
 	Engine.max_fps = 0
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)

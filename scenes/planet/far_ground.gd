@@ -17,6 +17,8 @@ const FLAT_SHADER := preload("res://assets/_universe/environment/terrain/terrain
 const DEFAULT_ALBEDO := Color(0.4, 0.4, 0.4)
 ## A texture is averaged on a copy halved down to this size: each halving is a 2x2 box average.
 const AVERAGE_SIZE := 32
+## Meta of a far chunk's MeshInstance3D: surface -> the override a stand-in hides (null: none), put back near.
+const HIDDEN_META := &"far_ground_hidden"
 
 ## Stand-ins by source material (key: _key_of), and texture averages by path: chunk materials are
 ## duplicated per chunk (planet_chunk.gd), so the instance cannot be the key.
@@ -46,12 +48,38 @@ static func material_for(material: Material) -> Material:
 	return _stand_ins[key]
 
 
-## Put [param mi]'s surfaces in their far dress ([param far]) or back in their own.
+## Put [param mi]'s surfaces in their far dress ([param far]) or back in their own. A surface's own material is
+## its override when it has one (a Nova chunk wears Nova's ground over the mesh's), else the mesh's: only the
+## stand-ins put here are ever taken off, and an override they hid is put back. Clearing every override
+## stripped Nova from the chunks built before the player's planet came near: half the ground in the old
+## shader, cut along the chunks' edges (2026-11-24).
 static func apply(mi: MeshInstance3D, far: bool) -> void:
 	if mi.mesh == null:
 		return
+	var hidden: Dictionary = mi.get_meta(HIDDEN_META, {})
 	for surface in mi.mesh.get_surface_count():
-		mi.set_surface_override_material(surface, material_for(mi.mesh.surface_get_material(surface)) if far else null)
+		var current := mi.get_surface_override_material(surface)
+		var worn := is_stand_in(current)
+		if far:
+			if worn:
+				continue
+			var stand_in := material_for(current if current != null else mi.mesh.surface_get_material(surface))
+			if stand_in != null:
+				hidden[surface] = current
+				mi.set_surface_override_material(surface, stand_in)
+		elif worn:
+			mi.set_surface_override_material(surface, hidden.get(surface))
+			hidden.erase(surface)
+	if hidden.is_empty():
+		if mi.has_meta(HIDDEN_META):
+			mi.remove_meta(HIDDEN_META)
+	else:
+		mi.set_meta(HIDDEN_META, hidden)
+
+
+## Is [param material] one of the stand-ins material_for makes.
+static func is_stand_in(material: Material) -> bool:
+	return material is ShaderMaterial and (material as ShaderMaterial).shader == FLAT_SHADER
 
 
 ## [param material]'s colour from afar: its albedo colour times the average of its albedo texture.

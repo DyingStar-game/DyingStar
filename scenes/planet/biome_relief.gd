@@ -33,6 +33,9 @@ const BLEND_MARGIN_M := 10.0
 ## blend reach.
 const FLAT_PITCHES := 1.5
 const BLEND_PITCHES := 3.0
+## Head room on the box test of prepared_road_weight, so a rounding of the box's gap never passes over a road
+## road_weight would weigh.
+const BOX_MARGIN := 1.000001
 
 
 ## Relief in metres at [param dir] for [param bd], 0 when the biome has none
@@ -83,6 +86,62 @@ static func road_weight(lonlat: Vector2, roads: Array, m_per_deg: float,
 		var flat_m: float = RoadTerrain.get_half_width_m(r) + flat_margin
 		var full_m: float = RoadTerrain.get_half_width_m(r) + full_margin
 		var full_deg := full_m / m_per_deg
+		var best_sq := INF
+		for i in cl.size() - 1:
+			best_sq = minf(best_sq, RoadTerrain._dist_sq_to_segment(lonlat, cl[i], cl[i + 1], lat_scale))
+			if best_sq <= 0.0:
+				break
+		if best_sq >= full_deg * full_deg:
+			continue
+		var d_m := sqrt(best_sq) * m_per_deg
+		if d_m <= flat_m:
+			return 0.0
+		w = minf(w, smoothstep(flat_m, full_m, d_m))
+	return w
+
+
+## [param roads] read once for many [method prepared_road_weight] calls (vtx_spacing_m as road_weight's): per
+## road, its centerline, its flat and full reaches (m), which road_weight works out again at every call, and
+## its lon/lat box.
+static func prepare_roads(roads: Array, vtx_spacing_m: float = 0.0) -> Array:
+	var flat_margin := maxf(FLAT_MARGIN_M, FLAT_PITCHES * vtx_spacing_m)
+	var full_margin := maxf(BLEND_MARGIN_M, BLEND_PITCHES * vtx_spacing_m)
+	var out: Array = []
+	for r in roads:
+		var cl: PackedVector2Array = r.get("centerline", PackedVector2Array())
+		if cl.size() < 2:
+			continue
+		var half := RoadTerrain.get_half_width_m(r)
+		var lo := cl[0]
+		var hi := cl[0]
+		for pt: Vector2 in cl:
+			lo = lo.min(pt)
+			hi = hi.max(pt)
+		out.append([cl, half + flat_margin, half + full_margin, lo, hi])
+	return out
+
+
+## [method road_weight] over roads read by [method prepare_roads]: the same arithmetic, the same answer to the
+## bit (test_nova pins it), without reading each road's type and width again. A road whose box is already out
+## of its reach is passed over: no segment of it can be nearer than its box (road_weight passes it over too).
+static func prepared_road_weight(lonlat: Vector2, prepared: Array, m_per_deg: float) -> float:
+	if prepared.is_empty():
+		return 1.0
+	var lat_scale := cos(deg_to_rad(clampf(lonlat.y, -89.5, 89.5)))
+	if lat_scale < 1e-6:
+		lat_scale = 1e-6
+	var w := 1.0
+	for road: Array in prepared:
+		var cl: PackedVector2Array = road[0]
+		var flat_m: float = road[1]
+		var full_m: float = road[2]
+		var full_deg := full_m / m_per_deg
+		var lo: Vector2 = road[3]
+		var hi: Vector2 = road[4]
+		var gap_x := maxf(maxf(lo.x - lonlat.x, lonlat.x - hi.x), 0.0) * lat_scale
+		var gap_y := maxf(maxf(lo.y - lonlat.y, lonlat.y - hi.y), 0.0)
+		if gap_x * gap_x + gap_y * gap_y > full_deg * full_deg * BOX_MARGIN:
+			continue
 		var best_sq := INF
 		for i in cl.size() - 1:
 			best_sq = minf(best_sq, RoadTerrain._dist_sq_to_segment(lonlat, cl[i], cl[i + 1], lat_scale))

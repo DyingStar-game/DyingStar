@@ -25,6 +25,9 @@ const CLUMP_SOFT := 0.07
 const ROCK_ALBEDO_MULT := 0.4
 const ROCK_TRIPLANAR_SHARPNESS := 14.0
 const ROCK_SHADER := preload("res://scenes/planet/nova/nova_rock.gdshader")
+## load_mesh's meshes by path, in the game ([mesh or null]); guarded: the scatter's layers are read on a worker.
+static var _meshes_read: Dictionary = {}
+static var _meshes_mutex := Mutex.new()
 ## How far an object is drawn, in times its own size: a 2 m stone to 240 m, a 15 m outcrop to 1.8 km. Beyond,
 ## it is a few pixels and only costs. Measured on tarsis_3 without it: 1.2 million objects drawn, 13 fps.
 const VIEW_PER_SIZE := 120.0
@@ -335,10 +338,28 @@ static func view_of(mesh: Mesh, limit: float) -> float:
 	return limit if limit > 0.0 else mesh.get_aabb().get_longest_axis_size() * VIEW_PER_SIZE
 
 
-## A Mesh from a .tres/.res/.mesh, or the merged meshes of a scene (.glb, .tscn). Null when unusable.
+## A Mesh from a .tres/.res/.mesh, or the merged meshes of a scene (.glb, .tscn). Null when unusable. In the
+## game, read once per path (_meshes_read): the scene a model is taken from is freed here, so it leaves the
+## resource cache, and every variant naming the model read it again — 12 variants, ~200 loads of the same
+## twenty models as the player's planet arrived (2026-11-24). The editor reads it again, a model re-imported.
 static func load_mesh(path: String) -> Mesh:
 	if path == "" or not ResourceLoader.exists(path):
 		return null
+	if Engine.is_editor_hint():
+		return _read_mesh(path)
+	_meshes_mutex.lock()
+	var known: Variant = _meshes_read.get(path)
+	_meshes_mutex.unlock()
+	if known != null:
+		return (known as Array)[0]
+	var mesh := _read_mesh(path)
+	_meshes_mutex.lock()
+	_meshes_read[path] = [mesh]
+	_meshes_mutex.unlock()
+	return mesh
+
+
+static func _read_mesh(path: String) -> Mesh:
 	var res := load(path)
 	if res is Mesh:
 		return res
@@ -369,8 +390,9 @@ static func load_mesh(path: String) -> Mesh:
 ## [param vid]: the variant id of each grid vertex. [param center]: chunk centre, planet-local.
 ## [param zones]: from zone_context — the variant at an exact direction and the variants the chunk's
 ## export tile can hold. Without it the grid answers, which depends on the LOD (tests only).
+## [param cancel]: [false] the caller sets to true to stop the laying where it is (an empty answer then).
 static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: PackedVector3Array,
-		vid: PackedInt32Array, center: Vector3, zones: Dictionary = {}) -> Dictionary:
+		vid: PackedInt32Array, center: Vector3, zones: Dictionary = {}, cancel: Array = []) -> Dictionary:
 	var out := {}
 	if grid.size() != (res + 1) * (res + 1) or vid.size() != grid.size():
 		return out
@@ -393,6 +415,8 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 		var y0: int = cells.y0
 		var blocks := clampi(ceili(r * float(d.cell_side_m) / maxf(float(d.view_m) * 0.5, BLOCK_M)), 1, MAX_BLOCKS)
 		for cy in r:
+			if not cancel.is_empty() and cancel[0]:
+				return {}
 			for cx in r:
 				var o := cell_object(d.seed, d.density, face, x0 + cx, y0 + cy)
 				if o.is_empty():
@@ -418,7 +442,7 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 				var mi := mini(int(o.u_mesh * d.meshes.size()), d.meshes.size() - 1)
 				var sc: float = lerpf(d.scale_min, d.scale_max, o.u_scale)
 				# Nothing on a road, under a building or in a village, and fewer and fewer objects toward them.
-				if clearance != null and float(o.u_keep) >= clearance.share_for(up, float(d.reaches[mi]) * sc):
+				if clearance != null and float(o.u_keep) >= clearance.share_for(up, float(d.reaches[mi]) * sc, float(o.u_keep)):
 					continue
 				if variant_at.is_valid():
 					# The zone at a point drawn within the layer's spill of the object: the same answer at

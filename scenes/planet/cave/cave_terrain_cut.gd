@@ -514,7 +514,13 @@ static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlac
             # those offsets as well as UV2; both are read by terrain shaders.
             var custom: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0] if arrays[Mesh.ARRAY_CUSTOM0] != null else PackedFloat32Array()
             var rocks: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM1] if arrays[Mesh.ARRAY_CUSTOM1] != null else PackedFloat32Array()
+            # Nova's weight of each palette slot (CUSTOM3, RGBA8): dropped here, a chunk with a mine's hole lost
+            # Nova's ground (the shader keeps its base look without them) — the mining village's three chunks
+            # drew the old ground beside the hex-tiled rock (2026-11-24).
+            var nova_w: PackedByteArray = arrays[Mesh.ARRAY_CUSTOM3] if arrays[Mesh.ARRAY_CUSTOM3] is PackedByteArray \
+                    else PackedByteArray()
             var out_rocks := PackedFloat32Array()
+            var out_nova := PackedByteArray()
             var out_pos := PackedVector3Array()
             var out_norm := PackedVector3Array()
             var out_uv := PackedVector2Array()
@@ -532,7 +538,9 @@ static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlac
                         uv2s[vi] if not uv2s.is_empty() else Vector2.ZERO,
                         Vector3(custom[vi * 3], custom[vi * 3 + 1], custom[vi * 3 + 2]) if not custom.is_empty() else Vector3.ZERO,
                         Color(rocks[vi * 4], rocks[vi * 4 + 1], rocks[vi * 4 + 2], rocks[vi * 4 + 3]) \
-                            if not rocks.is_empty() else Color(0, 0, 0, 0)])
+                            if not rocks.is_empty() else Color(0, 0, 0, 0),
+                        Color(nova_w[vi * 4] / 255.0, nova_w[vi * 4 + 1] / 255.0, nova_w[vi * 4 + 2] / 255.0,
+                            nova_w[vi * 4 + 3] / 255.0) if not nova_w.is_empty() else Color(0, 0, 0, 0)])
                 var cut := _overlaps(poly, float(opening.width) * 0.5, float(opening.length),
                     float(opening.get("back", 0.0)), axis)
                 if cut:
@@ -551,6 +559,9 @@ static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlac
                         out_custom.append_array(PackedFloat32Array([offset.x, offset.y, offset.z]))
                         var rock: Color = vertex[6]
                         out_rocks.append_array(PackedFloat32Array([rock.r, rock.g, rock.b, rock.a]))
+                        var weights: Color = vertex[7]
+                        out_nova.append_array(PackedByteArray([roundi(weights.r * 255.0), roundi(weights.g * 255.0),
+                            roundi(weights.b * 255.0), roundi(weights.a * 255.0)]))
             if out_pos.is_empty():
                 continue
             var output_arrays: Array = []
@@ -570,6 +581,9 @@ static func _mesh(source: ArrayMesh, origin: Vector3, placements: Array[CavePlac
             if not rocks.is_empty():
                 output_arrays[Mesh.ARRAY_CUSTOM1] = out_rocks
                 flags |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
+            if not nova_w.is_empty():
+                output_arrays[Mesh.ARRAY_CUSTOM3] = out_nova
+                flags |= Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT
             if arrays[Mesh.ARRAY_TANGENT] != null:
                 var out_indices := PackedInt32Array()
                 for index in out_pos.size():

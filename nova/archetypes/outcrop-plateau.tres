@@ -5,13 +5,33 @@
 [resource]
 script = ExtResource("1_profile")
 values = {
-"ground/albedo_texture": "res://assets/_universe/_shared/materials/mat_mineral_corundum_pure/tex_mineral_corundum_pure_albedo.png",
-"ground/anti_tiling": 0.6,
-"ground/normal_strength": 1.0,
-"ground/normal_texture": "res://assets/_universe/_shared/materials/mat_mineral_corundum_outcrop_marble_01/tex_mineral_corundum_outcrop_marble_01_normal.png",
-"ground/roughness": 0.95,
-"ground/texture_gain": 2.5,
+"ground/albedo_texture": "res://assets/_universe/_shared/materials/mat_rock_cracked_062/tex_rock_cracked_062_albedo.png",
+"ground/normal_texture": "res://assets/_universe/_shared/materials/mat_rock_cracked_062/tex_rock_cracked_062_normal.png",
+"ground/orh_texture": "res://assets/_universe/_shared/materials/mat_rock_cracked_062/tex_rock_cracked_062_orh.png",
+"ground/tile_m": 20.0,
+"ground/hex_tiling": true,
+"ground/detail_tile_m": 3.0,
+"ground/texture_gain": 3.0,
 "ground/texture_strength": 1.0,
-"ground/tile_m": 10.0
+"ground/texture_contrast": 2.0,
+"ground/normal_strength": 1.4,
+"ground/roughness": 0.9,
+"ground/anti_tiling": 1.0,
+"ground/macro_strength": 0.35,
+"ground/macro_size_m": 300.0,
+"ground/layer2_share": 0.45,
+"ground/layer2_patch_m": 40.0,
+"ground/layer2_albedo": "res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_albedo.png",
+"ground/layer2_normal": "res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_normal.png",
+"ground/layer2_orh": "res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_orh.png",
+"ground/layer2_gain": 2.6,
+"ground/layer2_tile_m": 2.5,
+"ground/layer3_share": 0.16,
+"ground/layer3_patch_m": 45.0,
+"ground/layer3_albedo": "res://assets/_universe/_shared/materials/mat_ground_mars_rocky/tex_ground_mars_rocky_albedo.png",
+"ground/layer3_normal": "res://assets/_universe/_shared/materials/mat_ground_mars_rocky/tex_ground_mars_rocky_normal.png",
+"ground/layer3_orh": "res://assets/_universe/_shared/materials/mat_ground_mars_rocky/tex_ground_mars_rocky_orh.png",
+"ground/layer3_tile_m": 3.5,
+"ground/layer3_gain": 2.4
 }
-note = "Plateau de roche mère : les textures de corindon de corundum_outcrop_surface.tres. Gain 2.5 = 1 / albedo_multiplier (0.4) de terrain_biome, pour garder la luminosité de l'ancienne surface."
+note = "Plateau de roche mère : roche craquelée posée en hex-tiles, plages de gravier et de régolithe, variation à grande échelle — l'apparence du corindon rouge de Tarsis 3, donnée à tout le plateau (2026-11-24) ; la teinte de chaque roche (rocks.json) distingue les variantes."

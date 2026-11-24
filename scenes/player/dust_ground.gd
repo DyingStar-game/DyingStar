@@ -143,6 +143,11 @@ func is_building() -> bool:
 	return _row >= 0
 
 
+## Cells asked so far by the build running (0 when none): with the time spent, what one ground query costs.
+func cells_asked() -> int:
+	return _cells if _row >= 0 else 0
+
+
 ## Half the width (m) of a grid of [param cell] m cells.
 static func half_m(cell: float = CELL_M) -> float:
 	return SIZE * cell * 0.5

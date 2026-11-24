@@ -413,7 +413,8 @@ var _editor_ground_r := 0.0
 var _editor_ground_task := -1
 ## The LOD morph for every terrain built from now on. Off only to compare with and without (a checking run).
 static var lod_morph_enabled := true
-## Nova scatter tasks still running (task id → true), joined before the terrain goes (_exit_tree).
+## Nova scatter tasks still running (task id → true, or a chunk's stop flag: NovaScatter.lay_chunk's cancel),
+## stopped and joined before the terrain goes (_exit_tree).
 var _nova_scatter_tasks := {}
 ## Camera position (planet frame) the scatter was last laid around, and how far it moves before the chunks'
 ## layers are looked at again; a laid layer is kept out to NOVA_KEEP times its view distance.
@@ -2142,8 +2143,14 @@ func _exit_tree() -> void:
 		join_task(_editor_ground_task)
 		_editor_ground_task = -1
 	for task_id: int in _nova_scatter_tasks:
+		var stop: Variant = _nova_scatter_tasks[task_id]
+		if stop is Array:
+			(stop as Array)[0] = true  # a village's chunk is tens of seconds of lay_chunk: the game would not close
+	for task_id: int in _nova_scatter_tasks:
 		join_task(task_id)
 	_nova_scatter_tasks.clear()
+	if planet_data != null and planet_data.nova != null:
+		planet_data.nova.join_textures()
 	if stargrot_registry != null:
 		stargrot_registry.retire()
 	_join_lod_task()
@@ -5580,9 +5587,15 @@ func _nova_scatter_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> vo
 		return
 	var layers := _nova_layers_near(info)
 	info["nova_layers"] = layers
-	# The latest request for this chunk wins: an older answer still on its way is dropped.
+	# The latest request for this chunk wins: an older answer still on its way is dropped, and the older task is
+	# stopped where it is (a chunk rebuilt when a village's pads level its ground laid it twice: 20-60 s each).
 	var turn := int(mi.get_meta("nova_turn", 0)) + 1
 	mi.set_meta("nova_turn", turn)
+	var older: Array = mi.get_meta("nova_cancel", [])
+	if not older.is_empty():
+		older[0] = true
+	var cancel := [false]
+	mi.set_meta("nova_cancel", cancel)
 	if not layers.has(1):
 		_nova_clear_scatter(mi)
 		return
@@ -5604,9 +5617,9 @@ func _nova_scatter_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> vo
 		# The zones and the ground kept clear round the chunk, read here and not on the main thread: their
 		# modifier tiles may be decoded, the roads, pads and village beds gathered (as the chunk builders do).
 		var zones := NovaScatter.zone_context(data, nside, ipix)
-		var laid := NovaScatter.lay_chunk(descs, nside, ipix, res, grid, vid, center, zones)
+		var laid := NovaScatter.lay_chunk(descs, nside, ipix, res, grid, vid, center, zones, cancel)
 		_nova_scatter_done.call_deferred(slot, mi_id, gen, turn, laid))
-	_nova_scatter_tasks[slot[0]] = true
+	_nova_scatter_tasks[slot[0]] = cancel
 
 
 func _nova_scatter_done(slot: Array, mi_id: int, gen: int, turn: int, laid: Dictionary) -> void:
@@ -6141,6 +6154,12 @@ func _chunk_touches_tiles(nside: int, ipix: int, tiles: Dictionary,
 func _rebuild_chunks_on_tiles(tiles: Dictionary, tiles_nside: int = -1,
 		why: String = "a profiled line born late", skip: Dictionary = {}) -> void:
 	if tiles.is_empty():
+		return
+	# Out of the tree nothing is drawn any more, and _exit_tree has already joined every task. A village's
+	# mine and pads give their ground back as the game quits (the mine at PREDELETE, after every _exit_tree):
+	# the chunks they queued were never joined, and each waited for its mesh read back through the
+	# RenderingServer, which the main thread no longer flushes — the client froze on quit, 2026-11-24.
+	if not is_inside_tree():
 		return
 	var n := 0
 	# Which grids the rebuilt chunks were on. A pad is only CARVED on
