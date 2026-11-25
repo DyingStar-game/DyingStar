@@ -101,6 +101,11 @@ const OUTPUT_DIR := "res://scenes/planet/atmospheres"
 ## Resolved from the project folder so it follows the standard workspace layout.
 const SYSTEM_JSON_RELATIVE := "../services/resourcesDynamic/data/system/tarsis.json"
 
+## Build without writing: every profile goes into [member built] (body name -> AtmosphereProfile) instead of
+## its file. What test_derived_profiles_current runs, on the tool's source compiled as a plain script.
+var dry_run := false
+var built: Dictionary = {}
+
 
 ## Outcome of a build pass, so the run reports without parsing logs.
 class Report extends RefCounted:
@@ -128,8 +133,7 @@ func _register_written_resources(report: Report) -> void:
 
 
 func _read_system_json(report: Report) -> Dictionary:
-	var project_dir := ProjectSettings.globalize_path("res://")
-	var path := project_dir.path_join(SYSTEM_JSON_RELATIVE).simplify_path()
+	var path := system_json_path()
 	if not FileAccess.file_exists(path):
 		report.errors.append("System JSON not found at %s" % path)
 		return {}
@@ -532,12 +536,29 @@ func _cie_z(nanometres: float) -> float:
 	return blue + indigo
 
 
+## Where the system JSON is read: [constant SYSTEM_JSON_RELATIVE] beside the project, or under the services
+## checkout named by DS_SERVICES_DIR (the CI clones it next to the project; a test may point elsewhere).
+static func system_json_path() -> String:
+	var services: String = OS.get_environment("DS_SERVICES_DIR")
+	if not services.is_empty():
+		return services.path_join("resourcesDynamic/data/system/tarsis.json")
+	return ProjectSettings.globalize_path("res://").path_join(SYSTEM_JSON_RELATIVE).simplify_path()
+
+
+## Writes [param profile] over its file, keeping the file's uid: a profile saved as a new resource loses it,
+## and the planet scenes that reference the file by uid would lose their sky.
 func _write_profile(profile: AtmosphereProfile, body_name: String, report: Report) -> void:
+	if dry_run:
+		built[body_name] = profile
+		return
 	var path := "%s/%s.tres" % [OUTPUT_DIR, body_name]
+	var uid := ResourceLoader.get_resource_uid(path) if ResourceLoader.exists(path) else ResourceUID.INVALID_ID
 	var error := ResourceSaver.save(profile, path)
 	if error != OK:
 		report.errors.append("Could not write %s (error %d)." % [path, error])
 		return
+	if uid != ResourceUID.INVALID_ID:
+		ResourceSaver.set_uid(path, uid)
 	report.written.append(path)
 
 

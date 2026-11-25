@@ -30,10 +30,23 @@ service :
 2. dans le jeu : `addons/dyingstar/build_climate_profiles.gd` (il lit `../services/weather/data/derived/`) ;
 3. copier `data/golden/tarsis_sandbox_samples.json` vers `test/data/weather/sandbox_samples.json`.
 
-Régénérés le 21/11/2026 depuis le service à jour de `develop` : identiques à ceux du prototype.
-À refaire quand la PR `services` n° 54 sera fusionnée (albédo 0,66, CO2 0,5 %) : elle change le climat dérivé
-de Sandbox (température d'équilibre 258,6 K → 217,4 K, écart équateur-pôle 33,5 K → 19,3 K, bord de Hadley
-31,9° → 35,8°, vent de référence 9,56 → 8,47 m/s).
+Régénérés le 24/11/2026 après la fusion de la PR `services` n° 54 (albédo 0,66, CO2 0,5 %), qui change le climat
+dérivé de Sandbox : température d'équilibre 258,6 K → 217,4 K, écart équateur-pôle 33,5 K → 19,3 K, bord de Hadley
+31,9° → 35,8°, vent de référence 9,56 → 8,47 m/s, hauteur d'échelle 10 371 m → 10 444 m. Les autres corps ne bougent
+qu'au dernier chiffre (moins de 1e-11 en relatif) : les fichiers précédents venaient d'une autre chaîne de
+compilation, ceux-ci du service bâti sous Linux, comme son image.
+
+Les réponses enregistrées du service (`test/data/weather/sandbox_service_answers.json`) se refont en lançant le
+service puis en relisant `/systems` et `/point` au même instant `t` et aux mêmes dix points que le fichier.
+
+⚠️ `build_climate_profiles.gd` est un `EditorScript` : le lancer par `-s` hors de l'éditeur ne rend jamais la main.
+Passer par le menu DyingStar ▸ Rebuild climate profiles, ou appeler sa fonction statique `build_all()` depuis un
+script `extends SceneTree`.
+
+**Un contrôle le rappelle** : `test/unit/test_derived_profiles_current.gd` refait en mémoire les profils de climat et
+d'atmosphère depuis les données de `services` (posé à côté du projet, ou `DS_SERVICES_DIR`) et échoue en nommant la
+première valeur qui a bougé. La CI clone le `develop` de `services` à côté du projet avant les tests. Côté `services`,
+`weather/crates/weather-core/tests/derived_up_to_date.rs` fait de même pour le climat dérivé du service.
 
 ## Outils sans Horizon : lire le service directement
 

@@ -105,6 +105,12 @@ jobs:
       - name: Import project
         run: timeout 40m "$GODOT" --headless --path . --import || true
 
+      # The climate and atmosphere profiles are derived from the services repository's data
+      # (resourcesDynamic's system file, the weather service's derived climate): its develop beside the
+      # project, where the generators read it, so test_derived_profiles_current can say when they lag.
+      - name: Services data beside the project
+        run: git clone --depth 1 --branch develop https://github.com/DyingStar-game/services.git ../services
+
       # The whole suite, the C# twins and the shared material library check included: they are in
       # test/unit and block like every other test.
       - name: GUT suite

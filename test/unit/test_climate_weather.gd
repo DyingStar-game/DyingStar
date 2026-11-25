@@ -18,7 +18,7 @@ func test_the_bands_blow_as_the_model_says() -> void:
 	var west := weather.sample(null, HEALPix.lonlat2vec(-39.5, 45.0))
 	assert_gt(float(west.wind_east_m_s), 0.0, "the westerlies blow eastward")
 	assert_gt(float(west.wind_speed_m_s), float(west.lift_threshold_m_s), "strong enough to lift the sand")
-	assert_almost_eq(float(west.lift_threshold_m_s), 5.964, 0.01)
+	assert_almost_eq(float(west.lift_threshold_m_s), 5.985, 0.01)
 	# The equator is calm.
 	assert_almost_eq(float(weather.sample(null, HEALPix.lonlat2vec(10.0, 0.0)).wind_speed_m_s), 0.0, 0.01)
 
@@ -68,11 +68,11 @@ func test_the_service_s_systems_give_the_service_s_weather() -> void:
 	# own /point said at ten places.
 	var recorded: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/data/weather/sandbox_service_answers.json"))
 	var states := WeatherService.states_of(str(recorded["systems_answer"]))
-	assert_eq(states.size(), 24, "every system of the answer is read")
+	assert_eq(states.size(), 23, "every system of the answer is read")
 	assert_eq(states[0]["id"], "7305473222721446415", "ids are read whole, as text")
 	var weather := ClimateWeather.for_body("tarsis_3").duplicate() as ClimateWeather
 	weather.feed(states)
-	assert_eq(weather.systems(null).size(), 24)
+	assert_eq(weather.systems(null).size(), 23)
 	for expected: Dictionary in recorded["points"]:
 		var lon := float(expected["lon_deg"])
 		var substellar := lon - (float(expected["local_solar_hours"]) - 12.0) * 15.0
