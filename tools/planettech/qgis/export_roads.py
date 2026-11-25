@@ -39,8 +39,8 @@ Output
     altitudes. Now each tile owns its own disjoint piece and no two chunks can
     draw the same stretch.
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_roads.py').read())
+Run from QGIS: DyingStar ▸ Export ▸ Roads (the plugin). From the Python console:
+    import export_roads; export_roads.run()
 """
 import datetime
 import os
@@ -49,57 +49,38 @@ import math
 import sys
 
 from qgis.core import (
+    Qgis,
     QgsProject,
     QgsVectorLayer,
-    QgsWkbTypes,
-    QgsExpressionContextUtils,
 )
 
-# ── Make tools/planettech/qgis importable, then drop stale modules ──────────────────
-# The QGIS Python interpreter outlives the console session, so an edited
-# helper stays cached and you debug code that is no longer on disk. Same guard
-# as export_elevation.py — copy it into any new exporter.
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
-for _name in list(sys.modules):
-    _mod = sys.modules.get(_name)
-    _file = getattr(_mod, "__file__", None) or ""
-    if _file and os.path.abspath(_file).startswith(_THIS_DIR + os.sep) \
-            and "export_roads" not in _name:
-        del sys.modules[_name]
 
 import link_modifiers                                   # noqa: E402
 from export.planet import dsmp                          # noqa: E402
 from export.planet import roads as roads_lib            # noqa: E402
 from export.planet.dsmp_strings import StringTable      # noqa: E402
 from export.planet import village_snaps                 # noqa: E402
+import ds_project                                       # noqa: E402
 
 # ============================================================
 # CONFIGURATION — edit for your planet
 # ============================================================
-_project = QgsProject.instance()
-_proj_planet_name = QgsExpressionContextUtils.projectScope(_project).variable("planet_name")
-_proj_planet_radius = QgsExpressionContextUtils.projectScope(_project).variable("planet_radius_m")
-
-PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_4"
+# The planet of the open project, read by _configure() at each run (ds_project.py).
+PLANET_NAME = None
 # Planet radius in metres — drives the metre → degree conversions (village reroutes, the part).
-PLANET_RADIUS = int(_proj_planet_radius) if _proj_planet_radius else 6_356_000
-
-# DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> the historical path.
-EXPORT_DIR = link_modifiers.resolve_export_dir()
+PLANET_RADIUS = None
+# DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> <checkout>/assets/qgis/export.
+EXPORT_DIR = None
 
 # Where the villages and cities stand (Horizon's seed) and what their layouts look like (written by
 # the game, tools/planettech/layout_snaps_export.gd): the roads are cut out of them and led to their
 # road snaps (export/planet/village_snaps.py). The seed defaults to the horizonserver checkout beside
 # this repository.
-_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", ".."))
-STARTUP_ITEMS = link_modifiers.resolve_path(
-    "DS_STARTUP_ITEMS", "startup_items",
-    os.path.join(_REPO_ROOT, "..", "horizonserver", "ds_genericprops", "startup_items.json"))
-LAYOUT_SNAPS = os.path.join(_REPO_ROOT, "assets", "qgis", "export", "layout_snaps.json")
+STARTUP_ITEMS = None
+LAYOUT_SNAPS = None
 
 # Chunk-export nside, i.e. the finest level heights.pack was baked at. Read from
 # <planet>_chunks/manifest.json at run time; this is only the fallback.
@@ -110,9 +91,7 @@ EXPORT_NSIDE_FALLBACK = 64
 # deepest baked level would fall back to a shared ancestor tile, and a shared
 # tile is exactly how the duplicate-ribbon bug came back. PlanetData re-checks
 # this at load time against the real scene value and warns on a mismatch.
-_proj_depth = QgsExpressionContextUtils.projectScope(_project).variable(
-    "max_quadtree_depth")
-MAX_QUADTREE_DEPTH = int(_proj_depth) if _proj_depth else 13
+MAX_QUADTREE_DEPTH = None
 
 # Vertices per chunk edge — PlanetData.chunk_resolution. Drives the decimation
 # tolerance (a quarter of the vertex spacing at each level).
@@ -125,12 +104,31 @@ HALF_WIDTH_M = roads_lib.HALF_WIDTH_M
 DEFAULT_HALF_WIDTH_M = roads_lib.DEFAULT_HALF_WIDTH_M
 ROAD_FIELDS = roads_lib.ROAD_FIELDS
 
-# Set True to skip the relink, e.g. when chaining several exporters and you want
-# a single link at the end (then call link_modifiers.link('<planet>')).
+# True skips the relink, e.g. when chaining several exporters for a single link at the end
+# (then call link_modifiers.link('<planet>')) — set by run(no_link=…).
 NO_LINK = False
 
-# Legacy single-table layout: name candidates, in priority order.
-_LEGACY_LAYER_NAMES = ("roads", f"{PLANET_NAME}_roads")
+
+def _configure(no_link=False):
+    """Read the open project's planet and the paths; at the start of every run."""
+    global PLANET_NAME, PLANET_RADIUS, EXPORT_DIR, MAX_QUADTREE_DEPTH, NO_LINK
+    global STARTUP_ITEMS, LAYOUT_SNAPS
+    planet = ds_project.planet()
+    PLANET_NAME = planet.name
+    PLANET_RADIUS = int(planet.radius_m)
+    MAX_QUADTREE_DEPTH = planet.max_quadtree_depth
+    EXPORT_DIR = link_modifiers.resolve_export_dir()
+    NO_LINK = bool(no_link)
+    repo = link_modifiers.repo_root() or os.path.abspath(os.path.join(_THIS_DIR, "..", "..", ".."))
+    STARTUP_ITEMS = link_modifiers.resolve_path(
+        "DS_STARTUP_ITEMS", "startup_items",
+        os.path.join(repo, "..", "horizonserver", "ds_genericprops", "startup_items.json"))
+    LAYOUT_SNAPS = os.path.join(repo, "assets", "qgis", "export", "layout_snaps.json")
+
+
+def _legacy_layer_names():
+    """Legacy single-table layout: name candidates, in priority order."""
+    return ("roads", f"{PLANET_NAME}_roads")
 
 
 # ============================================================
@@ -152,12 +150,12 @@ def _find_road_layers():
     """
     layers = [l for l in QgsProject.instance().mapLayers().values()
               if isinstance(l, QgsVectorLayer)
-              and l.geometryType() == QgsWkbTypes.LineGeometry]
+              and l.geometryType() == Qgis.GeometryType.Line]
     typed = [(l, str(l.customProperty("road_type")))
              for l in layers if l.customProperty("road_type", "")]
     if typed:
         return sorted(typed, key=lambda item: item[1])
-    for wanted in _LEGACY_LAYER_NAMES:
+    for wanted in _legacy_layer_names():
         for l in layers:
             if l.name().lower() == wanted.lower():
                 return [(l, None)]
@@ -273,7 +271,9 @@ def export_road_part(roads):
 # ============================================================
 # Export
 # ============================================================
-def run_export():
+def prepare(no_link=False):
+    """Main thread: read the road layers. Returns the export to run (any thread), or None."""
+    _configure(no_link)
     print("=" * 64)
     print(f"  Roads export — planet '{PLANET_NAME}'")
     print("=" * 64)
@@ -282,7 +282,7 @@ def run_export():
     if not road_layers:
         print("  ✗ No road layer found. Expected the highway/road/path/trail/railway "
               "layers (created by setup_planet_project.py) or a legacy 'roads' layer.")
-        return
+        return None
     for layer, road_type in road_layers:
         print(f"  Layer      : {layer.name()} ({layer.featureCount()} features)"
               + (f" → road_type={road_type}" if road_type else " (legacy, per-feature road_type)"))
@@ -335,13 +335,23 @@ def run_export():
     if defaulted_width:
         print(f"    width from road_type    : {defaulted_width}")
 
-    print("-" * 64)
-    export_road_part(roads)
+    def work():
+        print("-" * 64)
+        export_road_part(roads)
 
-    print("=" * 64)
-    print(f"  ✓ Done. {len(roads)} road(s) exported.")
-    print("    → In Godot nothing to click: once published, chunks stream the pack.")
-    print("=" * 64)
+        print("=" * 64)
+        print(f"  ✓ Done. {len(roads)} road(s) exported.")
+        print("    → In Godot nothing to click: once published, chunks stream the pack.")
+        print("=" * 64)
+    return work
 
 
-run_export()
+def run(no_link=False):
+    """The whole export, on the calling thread."""
+    work = prepare(no_link)
+    if work is not None:
+        work()
+
+
+if __name__ == "__main__":
+    run()

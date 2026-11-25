@@ -19,26 +19,20 @@ import json
 import os
 import sys
 
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 VERSION = 1
 
 
-def repo_root(start=_THIS_DIR):
-    d = start
-    while d != os.path.dirname(d):
-        if os.path.exists(os.path.join(d, "project.godot")):
-            return d
-        d = os.path.dirname(d)
-    return start
-
-
 def default_path():
-    return os.path.join(repo_root(), "assets", "_universe", "_shared", "materials", "rocks.json")
+    import link_modifiers
+    root = link_modifiers.repo_root()
+    if root is None:
+        raise RuntimeError("DyingStar checkout not found: rocks.json cannot be written "
+                           "(set the repository folder in the plugin settings)")
+    return os.path.join(root, "assets", "_universe", "_shared", "materials", "rocks.json")
 
 
 def payload():

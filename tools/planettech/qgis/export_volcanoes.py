@@ -25,8 +25,8 @@ Outputs
 Existing PostGIS tables of the old biome layers are migrated once with
 migrate_volcanic_layers.py.
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_volcanoes.py').read())
+Run from QGIS: DyingStar ▸ Export (the plugin). From the Python console:
+    import export_volcanoes; export_volcanoes.run()
 """
 
 import datetime
@@ -35,26 +35,17 @@ import os
 import sys
 
 from qgis.core import (
+    Qgis,
     QgsProject,
     QgsVectorLayer,
-    QgsWkbTypes,
-    QgsExpressionContextUtils,
 )
 
-# ── Make tools/planettech/qgis importable, then drop stale modules ─────────────
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
-for _name in list(sys.modules):
-    _mod = sys.modules.get(_name)
-    _file = getattr(_mod, "__file__", None) or ""
-    if _file and os.path.abspath(_file).startswith(_THIS_DIR + os.sep) \
-            and "export_volcanoes" not in _name:
-        del sys.modules[_name]
 
 import link_modifiers                                   # noqa: E402
+import ds_project                                       # noqa: E402
 from export.planet import dsmp                          # noqa: E402
 from export.planet import volcanoes as volcano_lib      # noqa: E402
 from export.planet.dsmp_strings import StringTable      # noqa: E402
@@ -62,21 +53,27 @@ from export.planet.dsmp_strings import StringTable      # noqa: E402
 # ============================================================
 # CONFIGURATION
 # ============================================================
-_project = QgsProject.instance()
-_scope = QgsExpressionContextUtils.projectScope(_project)
-_proj_planet_name = _scope.variable("planet_name")
-_proj_planet_radius = _scope.variable("planet_radius_m")
-
-PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_4"
-PLANET_RADIUS = int(float(_proj_planet_radius)) if _proj_planet_radius else 6_356_000
-
-EXPORT_DIR = link_modifiers.resolve_export_dir()
+# The planet of the open project, read by _configure() at each run (ds_project.py).
+PLANET_NAME = None
+PLANET_RADIUS = None
+# DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> <checkout>/assets/qgis/export.
+EXPORT_DIR = None
 EXPORT_NSIDE_FALLBACK = 64
-_proj_depth = _scope.variable("max_quadtree_depth")
-MAX_QUADTREE_DEPTH = int(_proj_depth) if _proj_depth else 13
+MAX_QUADTREE_DEPTH = None
 
 # Set True to skip the relink (chain exporters, link once at the end).
 NO_LINK = False
+
+
+def _configure(no_link=False):
+    """Read the open project's planet and the export folder; at the start of every run."""
+    global PLANET_NAME, PLANET_RADIUS, EXPORT_DIR, MAX_QUADTREE_DEPTH, NO_LINK
+    planet = ds_project.planet()
+    PLANET_NAME = planet.name
+    PLANET_RADIUS = int(planet.radius_m)
+    MAX_QUADTREE_DEPTH = planet.max_quadtree_depth
+    EXPORT_DIR = link_modifiers.resolve_export_dir()
+    NO_LINK = bool(no_link)
 
 
 # ============================================================
@@ -296,18 +293,20 @@ def export_parts(volcanoes, flows, fields, vents):
     link_modifiers.link(PLANET_NAME, EXPORT_DIR)
 
 
-def run_export():
+def prepare(no_link=False):
+    """Main thread: read the layers. Returns the export to run (any thread), or None."""
+    _configure(no_link)
     print("=" * 64)
     print(f"  Volcanoes export — planet '{PLANET_NAME}'")
     print("=" * 64)
-    volcano_layers = find_layers("volcano", QgsWkbTypes.PointGeometry)
-    flow_layers = find_layers("lava_flow", QgsWkbTypes.LineGeometry)
-    field_layers = find_layers("fumarole_field", QgsWkbTypes.PolygonGeometry)
-    vent_layers = find_layers("fumarole_vent", QgsWkbTypes.PointGeometry)
+    volcano_layers = find_layers("volcano", Qgis.GeometryType.Point)
+    flow_layers = find_layers("lava_flow", Qgis.GeometryType.Line)
+    field_layers = find_layers("fumarole_field", Qgis.GeometryType.Polygon)
+    vent_layers = find_layers("fumarole_vent", Qgis.GeometryType.Point)
     if not (volcano_layers or flow_layers or field_layers or vent_layers):
         print("  ✗ No volcano / lava_flow / fumarole layer in the project (re-run "
               "setup_planet_project.py to create them, then migrate_volcanic_layers.py).")
-        return
+        return None
     volcanoes = collect(volcano_layers, _points, "point", "volcano(es)")
     flows = collect(flow_layers, _lines, "centerline", "lava flow(s)")
     fields = collect(field_layers, _outer_rings, "ring", "fumarole field(s)")
@@ -315,10 +314,21 @@ def run_export():
     print("-" * 64)
     print(f"  {len(volcanoes)} volcano(es), {len(flows)} lava flow(s), "
           f"{len(fields)} fumarole field(s), {len(vents)} vent(s)")
-    export_parts(volcanoes, flows, fields, vents)
-    print("=" * 64)
-    print("  ✓ Done. Reopen the planet scene: chunks read the pack directly.")
-    print("=" * 64)
+
+    def work():
+        export_parts(volcanoes, flows, fields, vents)
+        print("=" * 64)
+        print("  ✓ Done. Reopen the planet scene: chunks read the pack directly.")
+        print("=" * 64)
+    return work
 
 
-run_export()
+def run(no_link=False):
+    """The whole export, on the calling thread."""
+    work = prepare(no_link)
+    if work is not None:
+        work()
+
+
+if __name__ == "__main__":
+    run()

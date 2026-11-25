@@ -26,9 +26,14 @@ Storage: PostgreSQL (PostGIS)
 
 Usage
 -----
-    exec(open('/path/to/DyingStar/tools/planettech/qgis/setup_planet_project.py').read())
+    DyingStar ▸ Planet project…        (the plugin) — asks the name and radius
+    DyingStar ▸ Update the layers       same, on the open project's planet
 
-Set INTERACTIVE = False to skip both dialogs and create everything.
+From the Python console:  import setup_planet_project; setup_planet_project.run()
+
+Where the project is saved: next to itself when it already has a file, else
+<projects dir>/<planet>/<planet>.qgz — the plugin setting "QGIS projects folder"
+($DS_QGIS_PROJECTS_DIR), by default <checkout>/assets/qgis.
 """
 
 import os
@@ -42,46 +47,39 @@ from qgis.core import (
     QgsExpressionContextUtils,
 )
 from qgis.PyQt.QtGui import QColor, QFont
-from qgis.utils import iface
 
 
 # ============================================================
-# CONFIGURATION — defaults, the dialog lets you change the first two.
-# When a planet project is already open, its planet_name / planet_radius_m
-# project variables win over these constants.
+# CONFIGURATION — defaults of the planet dialog when no planet project is open.
 # ============================================================
 PLANET_NAME = "tarsis_8"
 PLANET_RADIUS_M = 1155667
-WORK_DIR = os.path.expanduser(
-    "/datas/developpement/sources/StarDeception/StarDeception/assets/qgis"
-)
-EXISTING_FEATURES = os.path.expanduser(
-    "/datas/developpement/sources/StarDeception/StarDeception/assets/planet_features.geojson"
-)
-INTERACTIVE = True
-# Only used when exec()'d from the console (no __file__): where layers/ lives.
-TOOLS_DIR = "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
 
-
-# ============================================================
-# Module loading
-# ============================================================
-# exec() from the QGIS console reuses one long-lived interpreter: a module
-# imported by an earlier run stays in sys.modules and edits under layers/ would
-# silently do nothing.  Drop everything previously loaded from this directory.
-_tools_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else TOOLS_DIR
+_tools_dir = os.path.dirname(os.path.abspath(__file__))
 if _tools_dir not in sys.path:
     sys.path.insert(0, _tools_dir)
-for _name, _mod in list(sys.modules.items()):
-    _mod_file = getattr(_mod, "__file__", None)
-    if _mod_file and os.path.abspath(_mod_file).startswith(_tools_dir + os.sep):
-        del sys.modules[_name]
-    elif _mod_file is None and (_name == "layers" or _name.startswith("layers.")):
-        del sys.modules[_name]
 
 import layers                                   # noqa: E402
+import link_modifiers                           # noqa: E402
 from layers.core import PlanetDb                # noqa: E402
 from layers import dialog as layer_dialog       # noqa: E402
+
+
+def projects_dir():
+    """$DS_QGIS_PROJECTS_DIR (plugin setting) -> <checkout>/assets/qgis."""
+    env = os.environ.get("DS_QGIS_PROJECTS_DIR", "").strip()
+    if env:
+        return os.path.expanduser(env)
+    root = link_modifiers.repo_root()
+    if root is None:
+        raise RuntimeError("no folder to save the project in: set \"QGIS projects folder\" "
+                           "in the DyingStar plugin settings")
+    return os.path.join(root, "assets", "qgis")
+
+
+def existing_features_path():
+    """$DS_EXISTING_FEATURES (plugin setting): a reference GeoJSON loaded at the root, or ""."""
+    return os.path.expanduser(os.environ.get("DS_EXISTING_FEATURES", "").strip())
 
 
 # ============================================================
@@ -111,37 +109,31 @@ def setup_map_decorations():
     s.setValue("/qgis/scalebar/colorBar", QColor(0, 0, 0).name())
     s.setValue("/qgis/scalebar/numMapUnitsPerScaleBarUnit", 1.0)
 
-    # Ask the decoration objects to re-read their settings so they show now.
-    try:
-        for dec in iface.mainWindow().findChildren(type(None)):
-            if type(dec).__name__ in ("QgsDecorationGrid", "QgsDecorationScaleBar"):
-                dec.setEnabled(True)
-                dec.update()
-    except Exception:
-        pass
     print("  ✓ Decorations: 10° grid + scale bar "
           "(if not visible: View → Decorations)")
-    iface.mapCanvas().refresh()
 
 
 # ============================================================
 # Existing features (reference GeoJSON, root level)
 # ============================================================
 def load_existing_features(root, planet_name):
-    if not os.path.exists(EXISTING_FEATURES):
-        print(f"  · no existing features file ({EXISTING_FEATURES})")
+    path = existing_features_path()
+    if not path:
+        return
+    if not os.path.exists(path):
+        print(f"  · no existing features file ({path})")
         return
     name = f"{planet_name}_existing_features"
     if any(l.name() == name for l in QgsProject.instance().mapLayers().values()):
         print(f"  · {name} already in project")
         return
-    existing = QgsVectorLayer(EXISTING_FEATURES, name, "ogr")
+    existing = QgsVectorLayer(path, name, "ogr")
     if not existing.isValid():
-        print(f"  ⚠ Could not load: {EXISTING_FEATURES}")
+        print(f"  ⚠ Could not load: {path}")
         return
     QgsProject.instance().addMapLayer(existing, False)
     root.addLayer(existing)
-    print(f"  ✓ Loaded {EXISTING_FEATURES} ({existing.featureCount()} features)")
+    print(f"  ✓ Loaded {path} ({existing.featureCount()} features)")
 
 
 # ============================================================
@@ -159,14 +151,27 @@ def _project_defaults():
     return str(name), radius
 
 
-def setup_planet():
-    planet_name, radius_m = _project_defaults()
-    if INTERACTIVE:
-        answer = layer_dialog.ask_planet(planet_name, radius_m, iface.mainWindow())
-        if answer is None:
-            print("  ✗ Cancelled")
-            return
-        planet_name, radius_m = answer
+def run(interactive=True, update=False, decorations=False, parent=None):
+    """Create or refresh the planet's PostGIS schema, layers and QGIS project.
+
+    update: the open project's planet (ds_project), without asking its name and radius.
+    interactive: the dialogs; False creates every layer (scripts, tests).
+    decorations: also write QGIS's per-user grid / scale-bar settings.
+    """
+    from qgis.utils import iface
+    parent = parent or (iface.mainWindow() if iface else None)
+    if update:
+        import ds_project
+        planet = ds_project.planet()
+        planet_name, radius_m = planet.name, int(planet.radius_m)
+    else:
+        planet_name, radius_m = _project_defaults()
+        if interactive:
+            answer = layer_dialog.ask_planet(planet_name, radius_m, parent)
+            if answer is None:
+                print("  ✗ Cancelled")
+                return None
+            planet_name, radius_m = answer
 
     print("=" * 60)
     print(f"  Setting up planet: {planet_name}  (radius {radius_m} m)")
@@ -175,29 +180,38 @@ def setup_planet():
     db = PlanetDb(planet_name)   # creates the schema, validates the connection
 
     selection = None
-    if INTERACTIVE:
-        selection = layer_dialog.ask_selection(db, iface.mainWindow())
+    if interactive:
+        selection = layer_dialog.ask_selection(db, parent)
         if selection is None:
             print("  ✗ Cancelled")
-            return
+            return None
 
     project = QgsProject.instance()
+    same_planet = (QgsExpressionContextUtils.projectScope(project).variable("planet_name")
+                   == planet_name)
     QgsExpressionContextUtils.setProjectVariable(project, "planet_name", planet_name)
     QgsExpressionContextUtils.setProjectVariable(project, "planet_radius_m", str(radius_m))
     project.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
     print(f"  ✓ Project variables: planet_name={planet_name}, planet_radius_m={radius_m}")
 
-    canvas = iface.mapCanvas()
-    canvas.setExtent(QgsRectangle(-180, -90, 180, 90))
-    canvas.refresh()
-    setup_map_decorations()
+    if iface and not update:
+        canvas = iface.mapCanvas()
+        canvas.setExtent(QgsRectangle(-180, -90, 180, 90))
+        canvas.refresh()
+    if decorations:
+        setup_map_decorations()
 
     created = layers.setup_all(planet_name, selection)
 
     load_existing_features(project.layerTreeRoot(), planet_name)
 
-    os.makedirs(os.path.join(WORK_DIR, planet_name), exist_ok=True)
-    project_path = os.path.join(WORK_DIR, planet_name, f"{planet_name}.qgz")
+    # A project already saved for this planet stays where it is; a new one goes to the
+    # projects folder.
+    if same_planet and project.fileName():
+        project_path = project.fileName()
+    else:
+        project_path = os.path.join(projects_dir(), planet_name, f"{planet_name}.qgz")
+        os.makedirs(os.path.dirname(project_path), exist_ok=True)
     project.write(project_path)
     print(f"\n  ✓ Project saved: {project_path}")
 
@@ -207,6 +221,8 @@ def setup_planet():
     print("  Line biomes (rivers…) are buffered by their width at export,")
     print("  point biomes (craters, geysers…) by their radius.")
     print("=" * 60)
+    return created
 
 
-setup_planet()
+if __name__ == "__main__":
+    run()

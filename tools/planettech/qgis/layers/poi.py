@@ -100,19 +100,18 @@ def _poi_labels(layer):
     """The label right of the house icon, level with it.  Settings already on the
     layer (text, font, buffer…) are kept; only the placement is set, and the
     ``name`` field is used when the layer had no label yet."""
-    from qgis.core import (QgsPalLayerSettings, QgsVectorLayerSimpleLabeling,
-                           QgsUnitTypes)
+    from qgis.core import Qgis, QgsPalLayerSettings, QgsVectorLayerSimpleLabeling
     current = layer.labeling() if layer.labelsEnabled() else None
     if isinstance(current, QgsVectorLayerSimpleLabeling):
         settings = QgsPalLayerSettings(current.settings())
     else:
         settings = QgsPalLayerSettings()
         settings.fieldName = "name"
-    settings.placement = QgsPalLayerSettings.Placement.OverPoint
-    settings.quadOffset = QgsPalLayerSettings.QuadrantPosition.QuadrantRight
+    settings.placement = Qgis.LabelPlacement.OverPoint
+    settings.quadOffset = Qgis.LabelQuadrantPosition.Right
     settings.xOffset = HOUSE_OFFSET_MM[0] + HOUSE_SIZE_MM / 2 + 1
     settings.yOffset = HOUSE_OFFSET_MM[1]
-    settings.offsetUnits = QgsUnitTypes.RenderUnit.RenderMillimeters
+    settings.offsetUnits = Qgis.RenderUnit.Millimeters
     layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
     layer.setLabelsEnabled(True)
     layer.triggerRepaint()

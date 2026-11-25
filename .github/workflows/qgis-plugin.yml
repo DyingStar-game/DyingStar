@@ -1,0 +1,79 @@
+name: "QGIS plugin release"
+
+# Publishes the DyingStar QGIS plugin (tools/planettech/qgis) to our own plugin repository.
+#
+# Release: bump `version` in tools/planettech/qgis/metadata.txt, merge, then push the tag
+#     git tag qgis-plugin-v<version> && git push origin qgis-plugin-v<version>
+# This workflow builds DyingStar-<version>.zip (tools/planettech/qgis/package_plugin.py), attaches
+# it to a GitHub release of that tag, and rewrites plugins.xml on the orphan branch
+# `qgis-plugins`. QGIS reads that file from
+#     https://raw.githubusercontent.com/DyingStar-game/DyingStar/qgis-plugins/plugins.xml
+# (Plugins ▸ Manage and Install ▸ Settings ▸ Plugin repositories ▸ Add): every member who added it
+# is offered the update. No GitHub Pages needed: raw.githubusercontent.com serves the branch.
+#
+# Repository setting this needs (Settings > Actions > General): Workflow permissions "Read and
+# write permissions" — the job creates the release and pushes the `qgis-plugins` branch.
+on:
+  push:
+    tags:
+      - "qgis-plugin-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qgis-plugin-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish the plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Stdlib only: the zip and its manifest; the test is the same one the Godot tests job runs.
+      - name: Package tests
+        run: python3 test/unit/test_qgis_plugin_package_py.py
+
+      - name: Build the zip and plugins.xml
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          version="${TAG#qgis-plugin-v}"
+          url="https://github.com/${REPO}/releases/download/${TAG}/DyingStar-${version}.zip"
+          python3 tools/planettech/qgis/package_plugin.py --out dist --tag "$TAG" --download-url "$url"
+
+      - name: GitHub release with the zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#qgis-plugin-v}"
+          gh release create "$TAG" "dist/DyingStar-${version}.zip" \
+            --title "QGIS plugin DyingStar ${version}" \
+            --notes "Install: add https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/qgis-plugins/plugins.xml as a plugin repository in QGIS (Plugins ▸ Manage and Install ▸ Settings), or install this zip with \"Install from ZIP\"." \
+            --latest=false
+
+      - name: Publish plugins.xml on the qgis-plugins branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp dist/plugins.xml "$RUNNER_TEMP/plugins.xml"
+          if git ls-remote --exit-code --heads origin qgis-plugins > /dev/null; then
+            git fetch --depth 1 origin qgis-plugins
+            git switch -c qgis-plugins FETCH_HEAD
+          else
+            git switch --orphan qgis-plugins
+            git rm -rf --quiet . || true
+          fi
+          cp "$RUNNER_TEMP/plugins.xml" plugins.xml
+          printf '%s\n' "# DyingStar QGIS plugin repository" "" \
+            "Add https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/qgis-plugins/plugins.xml" \
+            "in QGIS: Plugins > Manage and Install > Settings > Plugin repositories > Add." \
+            "Written by .github/workflows/qgis-plugin.yml on the develop branch; do not edit." > README.md
+          git add plugins.xml README.md
+          git commit -m "chore(qgis): plugin repository for ${GITHUB_REF_NAME}"
+          git push origin qgis-plugins

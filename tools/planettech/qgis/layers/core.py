@@ -33,7 +33,7 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsRendererCategory,
 )
-from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QMetaType
 from qgis.PyQt.QtGui import QColor
 
 from .rocks import map_color
@@ -41,16 +41,16 @@ from .rocks import map_color
 CONNECTION_NAME = "DyingStar"
 
 _QT_TYPE = {
-    "string":   QVariant.String,
-    "integer":  QVariant.Int,
-    "double":   QVariant.Double,
-    "datetime": QVariant.DateTime,
+    "string":   QMetaType.Type.QString,
+    "integer":  QMetaType.Type.Int,
+    "double":   QMetaType.Type.Double,
+    "datetime": QMetaType.Type.QDateTime,
 }
 
 _WKB = {
-    "Point":      QgsWkbTypes.Point,
-    "LineString": QgsWkbTypes.LineString,
-    "Polygon":    QgsWkbTypes.Polygon,
+    "Point":      Qgis.WkbType.Point,
+    "LineString": Qgis.WkbType.LineString,
+    "Polygon":    Qgis.WkbType.Polygon,
 }
 
 # QgsWkbTypes.geometryDisplayString() names, per definition geometry.
@@ -282,10 +282,7 @@ def _direction_marker(color):
     at 90° is the one that points in the drawing direction (checked by rendering)."""
     ml = QgsMarkerLineSymbolLayer()
     ml.setPlacements(Qgis.MarkerLinePlacement.FirstVertex)
-    if hasattr(ml, "setRotateSymbols"):
-        ml.setRotateSymbols(True)
-    else:  # QGIS < 3.24
-        ml.setRotateMarker(True)
+    ml.setRotateSymbols(True)
     ml.setSubSymbol(QgsMarkerSymbol.createSimple({
         "name": "triangle", "angle": "90", "size": "4",
         "color": color.name(), "outline_color": "#000000", "outline_width": "0.2",

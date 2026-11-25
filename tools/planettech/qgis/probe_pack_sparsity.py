@@ -39,7 +39,8 @@ USAGE
 -----
 Depuis la console Python de QGIS, projet de la planète ouvert :
 
-    exec(open('/chemin/vers/tools/planettech/qgis/probe_pack_sparsity.py').read())
+    DyingStar ▸ Outils ▸ Sonder l'élagage du pack     (le plugin)
+    import probe_pack_sparsity; probe_pack_sparsity.run()   (console Python)
 
 Ajustez TARGET_NSIDE / TARGET_TILE_RES pour la résolution visée.
 """
@@ -50,42 +51,25 @@ import sys
 
 import numpy as np
 
-# `exec(open(...).read())` depuis la console QGIS n'expose PAS __file__ — d'où le repli,
-# même garde que export_roads.py. Ajustez le chemin si le dépôt est ailleurs.
 def _repo_root(start):
-    """Remonte jusqu'au dépôt, repéré par project.godot.
-
-    Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
-    d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas.
-    """
-    d = start
+    """Le dépôt : $DS_REPO_DIR, sinon le premier parent RÉEL qui porte project.godot (le
+    plugin est chargé par un lien symbolique depuis le profil QGIS)."""
+    env = os.environ.get("DS_REPO_DIR", "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    d = os.path.realpath(start)
     while d != os.path.dirname(d):
         if os.path.exists(os.path.join(d, "project.godot")):
             return d
         d = os.path.dirname(d)
     return start
 
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO = _repo_root(_THIS_DIR)
 for _p in (_THIS_DIR, _REPO):
     if _p not in sys.path:
         sys.path.insert(0, _p)
-
-# La console QGIS réutilise UN interpréteur : un helper importé par une exécution
-# précédente reste dans sys.modules et n'est jamais relu du disque, si bien qu'une
-# correction sous export/planet/ ou dans analyze_pack_sparsity.py ne ferait rien. On
-# purge ce qui vient de ce dépôt. Les paquets d'espace de noms n'ont pas de __file__,
-# d'où la seconde clause.
-_ROOTS = (_THIS_DIR + os.sep, os.path.join(_REPO, "tools") + os.sep)
-for _name, _mod in list(sys.modules.items()):
-    _mod_file = getattr(_mod, "__file__", None)
-    if _mod_file and os.path.abspath(_mod_file).startswith(_ROOTS):
-        del sys.modules[_name]
-    elif _mod_file is None and (_name in ("export", "tools")
-                                or _name.startswith(("export.", "tools."))):
-        del sys.modules[_name]
 
 import healpix_utils as hpx
 from export.planet.heightmap import extract_contour_points
@@ -229,4 +213,9 @@ def probe():
     print("=" * 78)
 
 
-probe()
+def run():
+    probe()
+
+
+if __name__ == "__main__":
+    run()

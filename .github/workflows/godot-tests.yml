@@ -289,6 +289,11 @@ jobs:
           python3 test/unit/test_modifier_pack_py.py
           python3 test/unit/test_mountain_preview_py.py
 
+      # The QGIS plugin as the team installs it: the zip's layout and the plugins.xml of our
+      # plugin repository (.github/workflows/qgis-plugin.yml publishes them on a tag).
+      - name: QGIS plugin package tests
+        run: python3 test/unit/test_qgis_plugin_package_py.py
+
       # The shared material library: what a material.json may leave out (every map) and what it may
       # not (a base colour), and how the Blender add-on packs an opacity map. jsonschema and pillow
       # are what tools/validate.py reads a manifest and its maps with.

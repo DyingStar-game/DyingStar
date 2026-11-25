@@ -21,27 +21,18 @@ planet from the QGIS Python Console with the planet project open:
 Re-run setup_planet_project.py afterwards so the project gets the new layers
 (and loses the old biome ones).
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/migrate_volcanic_layers.py').read())
+Run from QGIS: DyingStar ▸ Migrate the volcanic layers (the plugin). From the Python console:
+    import migrate_volcanic_layers; migrate_volcanic_layers.run()
 """
 
 import os
 import sys
 
-from qgis.core import QgsProject, QgsExpressionContextUtils
-
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
-for _name in list(sys.modules):
-    _mod = sys.modules.get(_name)
-    _file = getattr(_mod, "__file__", None) or ""
-    if _file and os.path.abspath(_file).startswith(_THIS_DIR + os.sep) \
-            and "migrate_volcanic_layers" not in _name:
-        del sys.modules[_name]
 
+import ds_project                                       # noqa: E402
 from layers import volcanoes as volcano_layers          # noqa: E402
 from layers.core import PlanetDb, open_layer            # noqa: E402
 
@@ -66,16 +57,8 @@ COPIES = [
 ]
 
 
-def _planet_name():
-    scope = QgsExpressionContextUtils.projectScope(QgsProject.instance())
-    name = scope.variable("planet_name")
-    if not name:
-        raise RuntimeError("no planet_name project variable — open the planet project first")
-    return str(name)
-
-
 def migrate():
-    planet = _planet_name()
+    planet = ds_project.planet().name
     print("=" * 64)
     print(f"  Volcanic layers migration — planet '{planet}'")
     print("=" * 64)
@@ -121,4 +104,9 @@ def migrate():
     print("=" * 64)
 
 
-migrate()
+def run():
+    migrate()
+
+
+if __name__ == "__main__":
+    run()

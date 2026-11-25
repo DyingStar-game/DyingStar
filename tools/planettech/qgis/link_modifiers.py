@@ -33,10 +33,10 @@ entries would renumber ids and invalidate every part on disk; the table only
 grows, and the u16 space (65535) is three orders of magnitude beyond what a
 planet uses.
 
-Usage — from the QGIS Python console (the exporters call link() for you):
+Usage — DyingStar ▸ Publication ▸ Relink in QGIS (the exporters call link() for you), or
+from the QGIS Python console:
 
-    exec(open('.../tools/planettech/qgis/link_modifiers.py').read())
-    link('tarsis_4')
+    import link_modifiers; link_modifiers.link('tarsis_4')
 
 or from a shell:
 
@@ -62,9 +62,31 @@ from export.planet.dsmp_strings import StringTable                # noqa: E402
 #: Warn when a level's tile count gets big enough to matter for the index.
 MAX_TILES_PER_LEVEL = 2_000_000
 
-#: Fallback when neither the environment nor export_config.ini says otherwise.
-_DEFAULT_EXPORT_DIR = ("/datas/developpement/sources/DyingStar-game/DyingStar"
-                       "/assets/qgis/export")
+
+
+def repo_root():
+    """The DyingStar checkout: $DS_REPO_DIR, else the first parent holding project.godot.
+
+    The plugin sets $DS_REPO_DIR from its settings, which is what a copy installed from a zip
+    (outside the checkout) relies on. None when neither finds a checkout.
+    """
+    env = os.environ.get("DS_REPO_DIR", "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    d = os.path.realpath(_HERE)
+    while d != os.path.dirname(d):
+        if os.path.exists(os.path.join(d, "project.godot")):
+            return d
+        d = os.path.dirname(d)
+    return None
+
+
+def _default_export_dir():
+    root = repo_root()
+    if root is None:
+        raise RuntimeError("DyingStar checkout not found: set the repository folder in the "
+                           "plugin settings (or $DS_REPO_DIR / $DS_EXPORT_DIR)")
+    return os.path.join(root, "assets", "qgis", "export")
 
 
 def auto_publish(path):
@@ -100,7 +122,9 @@ def _in_export_dir(path):
 def _publish_remote():
     """tools/planettech/publish/publish_remote.py, chargé de son fichier à chaque appel."""
     import importlib.util
-    script = os.path.abspath(os.path.join(_HERE, "..", "publish", "publish_remote.py"))
+    root = repo_root()
+    script = (os.path.join(root, "tools", "planettech", "publish", "publish_remote.py") if root
+              else os.path.abspath(os.path.join(_HERE, "..", "publish", "publish_remote.py")))
     spec = importlib.util.spec_from_file_location("ds_publish_remote", script)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -141,12 +165,9 @@ def pull_parts(planet_name, export_dir=None):
 
 
 def resolve_export_dir():
-    """DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> the default.
-
-    The historical constant points at a checkout path that does not exist on
-    every machine, so it is the last resort rather than the only option.
-    """
-    return resolve_path("DS_EXPORT_DIR", "export_dir", _DEFAULT_EXPORT_DIR)
+    """DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> <checkout>/assets/qgis/export."""
+    found = resolve_path("DS_EXPORT_DIR", "export_dir", None)
+    return found if found else _default_export_dir()
 
 
 def resolve_path(env_name, ini_key, default):

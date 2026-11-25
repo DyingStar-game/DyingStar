@@ -32,8 +32,8 @@ from qgis.core import QgsProject
 from . import all_categories, Selection, _project_layers_by_slug
 from .model import KINDS
 
-_ROLE_KIND = Qt.UserRole + 1      # "layer" | "choice"
-_ROLE_KEY = Qt.UserRole + 2       # layer slug | (layer slug, field name, value)
+_ROLE_KIND = Qt.ItemDataRole.UserRole + 1      # "layer" | "choice"
+_ROLE_KEY = Qt.ItemDataRole.UserRole + 2       # layer slug | (layer slug, field name, value)
 
 
 # ============================================================
@@ -53,11 +53,11 @@ def ask_planet(planet_name, radius_m, parent=None):
     radius_spin.setValue(radius_m)
     form.addRow("Planet name", name_edit)
     form.addRow("Radius", radius_spin)
-    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
     buttons.accepted.connect(dlg.accept)
     buttons.rejected.connect(dlg.reject)
     form.addRow(buttons)
-    if dlg.exec_() != QDialog.Accepted:
+    if dlg.exec() != QDialog.DialogCode.Accepted:
         return None
     name = name_edit.text().strip().replace(" ", "_")
     if not name:
@@ -117,8 +117,8 @@ class _SelectionDialog(QDialog):
         self._build()
 
         row = QHBoxLayout()
-        for label, fn in (("All", lambda: self._check_all(Qt.Checked)),
-                          ("None", lambda: self._check_all(Qt.Unchecked)),
+        for label, fn in (("All", lambda: self._check_all(Qt.CheckState.Checked)),
+                          ("None", lambda: self._check_all(Qt.CheckState.Unchecked)),
                           ("In database only", self._check_db_only)):
             btn = QPushButton(label)
             btn.clicked.connect(fn)
@@ -126,7 +126,7 @@ class _SelectionDialog(QDialog):
         row.addStretch()
         vbox.addLayout(row)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         vbox.addWidget(buttons)
@@ -134,11 +134,11 @@ class _SelectionDialog(QDialog):
     # ---- tree building -------------------------------------------------
     def _make_item(self, parent, texts, checked=None):
         item = QTreeWidgetItem(parent, texts)
-        flags = item.flags() | Qt.ItemIsUserCheckable
+        flags = item.flags() | Qt.ItemFlag.ItemIsUserCheckable
         if checked is None:
-            flags |= Qt.ItemIsAutoTristate
+            flags |= Qt.ItemFlag.ItemIsAutoTristate
         item.setFlags(flags)
-        item.setCheckState(0, checked if checked is not None else Qt.Unchecked)
+        item.setCheckState(0, checked if checked is not None else Qt.CheckState.Unchecked)
         return item
 
     def _build(self):
@@ -165,7 +165,7 @@ class _SelectionDialog(QDialog):
                 item = self._make_item(
                     parent,
                     [layer_def.name, layer_def.geom, table_txt, layer_def.description],
-                    Qt.Checked if ticked else Qt.Unchecked)
+                    Qt.CheckState.Checked if ticked else Qt.CheckState.Unchecked)
                 item.setData(0, _ROLE_KIND, "layer")
                 item.setData(0, _ROLE_KEY, layer_def.slug)
                 item.setToolTip(3, layer_def.description)
@@ -176,14 +176,14 @@ class _SelectionDialog(QDialog):
                     # check state is what matters, so no auto-tristate here.
                     field_item = QTreeWidgetItem(item, [f"{f.name}  — pick the values valid here",
                                                         "", "", f.comment])
-                    field_item.setFlags(field_item.flags() & ~Qt.ItemIsUserCheckable)
+                    field_item.setFlags(field_item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
                     current = None
                     if in_project:
                         current = _current_dropdown_values(self._project_layers[layer_def.slug], f.name)
                     for label, value in f.choices:
                         on = current is None or value in current
                         opt = self._make_item(field_item, [label, "", value, ""],
-                                              Qt.Checked if on else Qt.Unchecked)
+                                              Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
                         opt.setData(0, _ROLE_KIND, "choice")
                         opt.setData(0, _ROLE_KEY, (layer_def.slug, f.name, value))
 
@@ -194,7 +194,7 @@ class _SelectionDialog(QDialog):
 
     def _check_db_only(self):
         for item, _, in_db in self._layer_items:
-            item.setCheckState(0, Qt.Checked if in_db else Qt.Unchecked)
+            item.setCheckState(0, Qt.CheckState.Checked if in_db else Qt.CheckState.Unchecked)
 
     def _apply_filter(self, text):
         text = text.lower().strip()
@@ -208,7 +208,7 @@ class _SelectionDialog(QDialog):
     def selection(self):
         sel = Selection()
         for item, layer_def, _ in self._layer_items:
-            if item.checkState(0) != Qt.Checked:
+            if item.checkState(0) != Qt.CheckState.Checked:
                 continue
             sel.layers.add(layer_def.slug)
             for f in layer_def.choice_fields:
@@ -217,7 +217,7 @@ class _SelectionDialog(QDialog):
                 field_item = item.child(i)
                 for j in range(field_item.childCount()):
                     opt = field_item.child(j)
-                    if opt.checkState(0) == Qt.Checked:
+                    if opt.checkState(0) == Qt.CheckState.Checked:
                         slug, fname, value = opt.data(0, _ROLE_KEY)
                         sel.choices[(slug, fname)].append(value)
         return sel
@@ -225,6 +225,6 @@ class _SelectionDialog(QDialog):
 
 def ask_selection(db, parent=None):
     dlg = _SelectionDialog(db, parent)
-    if dlg.exec_() != QDialog.Accepted:
+    if dlg.exec() != QDialog.DialogCode.Accepted:
         return None
     return dlg.selection()
