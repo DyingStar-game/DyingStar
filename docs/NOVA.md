@@ -383,8 +383,18 @@ Tout ce qui copie « l'aspect du sol » demande d'abord à Nova sur un corps hab
   de biome × multiplicateur d'albédo × taches) par instance. Pas de matériau tant que le travailleur n'a pas fait
   les tableaux (TerrainBlend remesure à 2 s et 10 s). Bord haut de la bande moins bruité sur Nova
   (`blend_noise_strength` 0,3 au lieu de 0,6 : sur un sol clair, le bord bruité faisait des boules blanches). La
-  triplanaire reste dans l'espace de l'objet, rendue aussi tranchée que celle du sol : seule l'échelle compte
-  (pierres isotropes), et le piège du repère planète (barrières en biais) ne touche pas un objet droit.
+  triplanaire est **ancrée à la planète** (tous sols confondus) : position dans le repère de la planète,
+  ramenée modulo 8 192 m (la grille de tuilage, précise au millimètre en float32), mais lue le long des axes
+  LOCAUX — deux tangentes et le haut (`TerrainBlend.local_tangents`, `anchor_row` → `blend_tan1`, `blend_tan2`,
+  `blend_up_anchor`) — pour que les plans de projection restent droits sur un mur (projetée sur les axes de la
+  planète, elle partirait de biais, le piège des barrières). Lue dans l'espace de l'objet, elle donnait la même
+  image aux quatre portes de quatre conteneurs identiques côte à côte. Le motif ne prolonge pas exactement celui
+  du sol (qui projette sur les axes de la planète). Projections aussi tranchées que celles du sol.
+- **Pas de frange dans les bâtiments** : un mur intérieur se reconnaît à sa face tournée VERS l'intérieur de la
+  boîte de l'objet (ses limites dans le repère de sa racine), par rapport à son côté le plus proche
+  (`blend_box_x` / `blend_box_z`). L'ancien test (face tournée à l'opposé du centre de l'objet, déjà sur develop)
+  laissait la bande sur la moitié des ondulations des parois intérieures d'un conteneur près de ses portes, où
+  elles regardent dans la longueur.
   Première version (25/11 matin, retirée) : une texture 2D par matière, moyenne linéaire pour le contraste,
   occlusion moyenne et matière dominante choisie sans les creux : bande plus claire et plus contrastée que le sol
   (le shader prend la moyenne sur la mipmap sRGB, et le gravier n'avait pas de mipmaps), roche craquelée devant

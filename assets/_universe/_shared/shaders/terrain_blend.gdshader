@@ -162,13 +162,32 @@ instance uniform vec3 blend_center : instance_index(11);
 // Nova only: the patch noise of the second and third materials at the object's foot, stretched and clamped as
 // the ground shader has it before adding the height term (-1 = that material is not laid).
 instance uniform vec2 blend_nova_where : instance_index(10);
+// Where the textures and the noise are read: anchored to the PLANET, so two copies of one model standing side by
+// side show two different pieces of ground (read in the model's own space, the four doors of a row of identical
+// containers wore the very same stones, 2026-11-25). Three coordinates in metres along the LOCAL frame -- the
+// first tangent, the up, the second tangent: the projection planes stay upright on an upright wall (projected on
+// the planet's own axes, they would run askew: the fences' diagonals) -- each the dot of the model vertex with
+// the transposed basis applied to that axis (like blend_plane), plus the object's place along the axis, wrapped
+// every 8192 m (the tiling grid: every tile size divides it, and float32 keeps a millimetre there).
+// blend_tan1 / blend_tan2: xyz = transpose(basis) * tangent, w = the place; blend_up_anchor: the place along the
+// up (blend_plane.xyz being the up's). An unset blend_tan1 (all zeroes) falls back to the model's own space.
+instance uniform vec4 blend_tan1 : instance_index(8);
+instance uniform vec4 blend_tan2 : instance_index(9);
+instance uniform float blend_up_anchor : instance_index(7);
+// The object's own box (TerrainBlend: its bounds in its root's frame), its horizontal axes in this mesh's model
+// space (unit) with their half extents (w), centred on blend_center. A face looking OUT of the box's nearest
+// side is an outer wall; one looking into it is an inner wall, which keeps no sand. The test before (away from
+// the centre or not) let half the corrugations of a container's inner walls wear the band: near its doors they
+// look along its length, away from the centre. An unset box (all zeroes) falls back to that test.
+instance uniform vec4 blend_box_x : instance_index(6);
+instance uniform vec4 blend_box_z : instance_index(5);
 
 // Affine in VERTEX, so the interpolation across a triangle is exact.
 varying float blend_h;
 // The noise coordinates MUST be carried from vertex(): in fragment(), VERTEX is the position in
 // VIEW space and NORMAL the view-space normal, so sampling there would anchor the pattern to the
-// camera and the fringe would visibly slide as the player turns. Model space is also what keeps
-// the numbers small enough for float32.
+// camera and the fringe would visibly slide as the player turns. The planet-anchored local frame
+// (blend_tan1) is wrapped every 8192 m, which keeps the numbers small enough for float32.
 varying vec3 tri_pos;
 varying vec3 tri_w;
 // Cosine between this surface's normal and the planetary up: 1 on a floor or a roof, 0 on a wall.
@@ -183,14 +202,25 @@ varying vec3 up_view;
 void vertex() {
 	blend_h = dot(VERTEX, blend_plane.xyz) + blend_plane.w;
 
-	// Raw model coordinates, i.e. metres for any object at scale 1 -- which is nearly all of them.
-	// The noise and the ground's detail texture each apply their own tiling on top.
-	tri_pos = VERTEX;
-	vec3 tn = abs(NORMAL);
-	tri_w = tn / max(tn.x + tn.y + tn.z, 0.001);
 	// Guarded: an unset plane is all zeroes, and normalize(vec3(0)) is a NaN that would propagate
 	// into the alpha and make the geometry vanish -- a spectacular failure for a missing parameter.
 	float pl = length(blend_plane.xyz);
+	// Metres along the local frame, anchored to the planet (blend_tan1, see above); the model's own
+	// coordinates when the object has no anchor. The noise and the ground's textures apply their own
+	// tiling on top.
+	float t1l = length(blend_tan1.xyz);
+	float t2l = length(blend_tan2.xyz);
+	vec3 tn;
+	if (t1l > 1e-6 && t2l > 1e-6 && pl > 1e-6) {
+		tri_pos = vec3(dot(VERTEX, blend_tan1.xyz) + blend_tan1.w, dot(VERTEX, blend_plane.xyz) + blend_up_anchor,
+				dot(VERTEX, blend_tan2.xyz) + blend_tan2.w);
+		vec3 nn = normalize(NORMAL);
+		tn = abs(vec3(dot(nn, blend_tan1.xyz / t1l), dot(nn, blend_plane.xyz / pl), dot(nn, blend_tan2.xyz / t2l)));
+	} else {
+		tri_pos = VERTEX;
+		tn = abs(NORMAL);
+	}
+	tri_w = tn / max(tn.x + tn.y + tn.z, 0.001);
 	face_up = pl > 1e-6 ? dot(normalize(NORMAL), blend_plane.xyz / pl) : 0.0;
 	// Horizontal only: the vertical component is already handled by face_up, and keeping it here
 	// would make a roof read as "outward" simply because it is above the centre.
@@ -209,6 +239,14 @@ void vertex() {
 	// 1.0 == "treat as outward", the neutral answer: a face we cannot classify keeps its sand
 	// rather than losing it on a technicality.
 	face_out = (nh > 1e-4 && rl > 1e-4) ? dot(n_h / nh, radial / rl) : 1.0;
+	// With the object's box: out of its NEAREST side or into it (see blend_box_x).
+	if (blend_box_x.w > 0.0 && blend_box_z.w > 0.0 && nh > 1e-4) {
+		float px = dot(from_c, blend_box_x.xyz);
+		float pz = dot(from_c, blend_box_z.xyz);
+		vec3 side = (blend_box_x.w - abs(px) < blend_box_z.w - abs(pz))
+				? blend_box_x.xyz * sign(px) : blend_box_z.xyz * sign(pz);
+		face_out = dot(n_h / nh, side);
+	}
 
 	VERTEX += NORMAL * blend_surface_offset;
 

@@ -182,3 +182,32 @@ func test_the_scattered_rocks_wear_the_grounds_fringe() -> void:
 	other.shader = m.shader
 	NovaScatter.set_fringe(other, body, 1, aabb, 0.05)
 	assert_false(bool(other.get_shader_parameter("fringe_on")), "no Nova texture under it: no fringe")
+
+
+func test_the_fringe_reads_its_textures_anchored_to_the_planet() -> void:
+	# Two copies of one model side by side read two pieces of ground: the coordinate along an axis is the
+	# vertex's place in the planet's frame (wrapped), not its place in the model (2026-11-25).
+	var up_p := Vector3(0.3, 0.8, -0.52).normalized()
+	var t: Array[Vector3] = TerrainBlend.local_tangents(up_p)
+	assert_almost_eq(t[0].dot(up_p), 0.0, 1e-9, "tangent 1 lies flat")
+	assert_almost_eq(t[1].dot(up_p), 0.0, 1e-9, "tangent 2 lies flat")
+	assert_almost_eq(t[0].dot(t[1]), 0.0, 1e-9, "and they are square")
+	var basis := Basis(Vector3(0.0, 1.0, 0.0), 0.7).scaled(Vector3(1.0, 2.0, 1.0))
+	var a := Vector3(1234567.0, 4321000.0, -2222222.0)
+	var b := a + t[0] * 6.0  # the same model six metres further along the tangent
+	var v := Vector3(0.4, 0.1, -0.3)
+	var row_a := TerrainBlend.anchor_row(basis, t[0], t[0], a)
+	var row_b := TerrainBlend.anchor_row(basis, t[0], t[0], b)
+	var at_a := Vector3(row_a.x, row_a.y, row_a.z).dot(v) + row_a.w
+	var expected := fposmod(t[0].dot(a + basis * v), TerrainBlend.ANCHOR_WRAP_M)
+	assert_almost_eq(at_a, expected, 1e-4, "metres along the axis, in the planet's frame")
+	var at_b := Vector3(row_b.x, row_b.y, row_b.z).dot(v) + row_b.w
+	assert_almost_eq(fposmod(at_b - at_a, TerrainBlend.ANCHOR_WRAP_M), 6.0, 1e-4, "the copy reads six metres on")
+
+
+func test_the_box_axis_is_in_model_units() -> void:
+	# A mesh scaled by 2 along its X: 3 m of box half extent are 1.5 model units along that axis.
+	var inv := Basis.from_scale(Vector3(2.0, 1.0, 1.0)).inverse()
+	var row := TerrainBlend.box_axis(inv, Vector3.RIGHT, 3.0)
+	assert_almost_eq(row.x, 1.0, 1e-9)
+	assert_almost_eq(row.w, 1.5, 1e-9)
