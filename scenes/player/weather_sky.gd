@@ -119,8 +119,12 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 		return
 	_last_read_at = now
 	var sample: Dictionary = planet.weather_at(observer_world_pos)
-	var lifted: float = DustLift.ground_lift(float(sample.get("wind_speed_m_s", 0.0)),
-			float(sample.get("lift_threshold_m_s", 0.0)))
+	# The MEAN wind lifts the layer, not the gust at the eye: a gust is a few hundred metres across, and
+	# taken for the whole layer (1 km near, 6 km far) it swelled and shrank the band of dust on the
+	# horizon every ~20 s while the wind hovered at the lift threshold (2026-11-25). The gusts show in
+	# the streaks that stream past (the noise), not in the layer's density.
+	var wind_mean: float = float(sample.get("wind_mean_speed_m_s", sample.get("wind_speed_m_s", 0.0)))
+	var lifted: float = DustLift.ground_lift(wind_mean, float(sample.get("lift_threshold_m_s", 0.0)))
 	_dust_density = 0.0 if _no_dust_layer \
 			else density_for(lifted, float(sample.get("dust_tau", 0.0)))
 	_dust_wind = planet.wind_world_at(observer_world_pos)
