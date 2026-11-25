@@ -71,6 +71,9 @@ class DyingStarPlugin:
         self._add(roads, "Terrain de la zone…", self.roads.zone_terrain,
                   tip="Altitude, courbes et pente de la zone affichée, classée selon la pente "
                       "max de la route ; source rapide (QGIS) ou exacte (Godot).")
+        self._add(roads, "Profil en long", lambda: self.roads.toggle_profile(True),
+                  tip="Le profil que le jeu donnera à la route sélectionnée, sur le terrain "
+                      "de la zone : tranchées, tunnels, viaducs.")
         self._add(roads, "Aperçu des massifs…", self.mountain_preview,
                   tip="Courbes de niveau et ombrage du relief que Godot donnera aux "
                       "massifs et crêtes tels qu'ils sont dessinés — sans export.")

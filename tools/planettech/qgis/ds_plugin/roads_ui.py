@@ -1,4 +1,5 @@
 """Road design: the "DyingStar — Routes" toolbar and the zone terrain dialog (zone_terrain.py)."""
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QLabel,
     QVBoxLayout,
@@ -43,6 +44,13 @@ class RoadsUi:
         self.steep_spin.valueChanged.connect(self._restyle)
         self.terrain_action = self.toolbar.addAction("Terrain de la zone…", self.zone_terrain)
         self.terrain_action.setToolTip("Altitude, courbes et pente de la zone affichée")
+        self.profile_action = self.toolbar.addAction("Profil en long", self.toggle_profile)
+        self.profile_action.setCheckable(True)
+        self.profile_action.setToolTip("Le profil que le jeu donnera à la route sélectionnée : "
+                                       "terrain, route, tranchées, tunnels, viaducs")
+        self.dock = None
+        # A new zone terrain changes every profile.
+        plugin.runner.notifier.done.connect(lambda *_: self.dock and self.dock.schedule())
         self._watched = None
         self.iface.currentLayerChanged.connect(self._watch_layer)
         self._watch_layer(self.iface.activeLayer())
@@ -58,11 +66,26 @@ class RoadsUi:
         self.toolbar.addWidget(w)
         return w
 
+    def toggle_profile(self, show=None):
+        if self.dock is None:
+            from .profile_dock import ProfileDock
+            self.dock = ProfileDock(self.iface, self.max_spin.value)
+            self.iface.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dock)
+            self.dock.visibilityChanged.connect(self.profile_action.setChecked)
+        visible = self.profile_action.isChecked() if show is None else bool(show)
+        self.dock.setVisible(visible)
+        self.profile_action.setChecked(visible)
+
     def unload(self):
         try:
             self.iface.currentLayerChanged.disconnect(self._watch_layer)
         except TypeError:
             pass
+        if self.dock is not None:
+            self.dock.unload()
+            self.iface.removeDockWidget(self.dock)
+            self.dock.deleteLater()
+            self.dock = None
         self._watch_layer(None)
         self.toolbar.deleteLater()
 
@@ -72,6 +95,8 @@ class RoadsUi:
         settings.set_value(_KEY + "steep_deg", str(self.steep_spin.value()))
         import zone_terrain
         zone_terrain.restyle_all(self.max_spin.value(), self.steep_spin.value())
+        if self.dock is not None:
+            self.dock.schedule()
 
     def _watch_layer(self, layer):
         if self._watched is not None:

@@ -60,6 +60,12 @@ class Grid:
     def shape(self):
         return (self.ny, self.nx)
 
+    @staticmethod
+    def from_geotransform(gt, nx, ny):
+        """The grid of a raster written with geotransform() (pixel centres = nodes)."""
+        x0, px, _, y0, _, py = gt
+        return Grid(x0 + 0.5 * px, px, int(nx), y0 + 0.5 * py, -py, int(ny))
+
     def geotransform(self):
         """GDAL geotransform whose pixel centres are the nodes."""
         return (self.lon0 - self.dlon * 0.5, self.dlon, 0.0,
@@ -83,6 +89,24 @@ def slope_deg(z, grid, radius_m):
     dz_north = -np.gradient(z, axis=0) / dy_m
     dz_east = np.gradient(z, axis=1) / dx_m[:, None]
     return np.degrees(np.arctan(np.hypot(dz_east, dz_north))).astype(np.float32)
+
+
+def bilinear(z, grid, lon, lat):
+    """Heights at (lon, lat) arrays, bilinear between the nodes; NaN outside the grid."""
+    lon = np.asarray(lon, dtype=np.float64)
+    lat = np.asarray(lat, dtype=np.float64)
+    fx = (lon - grid.lon0) / grid.dlon
+    fy = (grid.lat_top - lat) / grid.dlat
+    eps = 1e-6   # a node on the edge must not fall outside by a rounding
+    inside = (fx >= -eps) & (fx <= grid.nx - 1 + eps) & (fy >= -eps) & (fy <= grid.ny - 1 + eps)
+    ix = np.clip(np.floor(fx).astype(np.int64), 0, grid.nx - 2)
+    iy = np.clip(np.floor(fy).astype(np.int64), 0, grid.ny - 2)
+    tx = np.clip(fx - ix, 0.0, 1.0)
+    ty = np.clip(fy - iy, 0.0, 1.0)
+    a = z[iy, ix] * (1.0 - tx) + z[iy, ix + 1] * tx
+    b = z[iy + 1, ix] * (1.0 - tx) + z[iy + 1, ix + 1] * tx
+    out = a * (1.0 - ty) + b * ty
+    return np.where(inside, out, np.nan)
 
 
 #: slope_classes(): 1 the road can follow the ground in any direction, 2 only across the slope

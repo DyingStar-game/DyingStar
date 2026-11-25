@@ -35,6 +35,7 @@ of this repository.
 | Mettre à jour les couches… | the same on the open project's planet, without asking name and radius (a field added to a layer definition…) |
 | Exporter ▸ … | one entry per exporter (`export_*.py`); **Tout le pack de modificateurs** runs roads, regions, mountains, volcanoes and rocky terrain, then links the pack once |
 | Routes ▸ Terrain de la zone… | `zone_terrain.py`: altitude, contours and slope classes of the area on screen (see "Drawing roads over the relief") |
+| Routes ▸ Profil en long | the panel of the selected road's profile (see "The longitudinal profile") |
 | Routes ▸ Aperçu des massifs… | `preview_mountain_contours.py`, with its options in a dialog |
 | Publication ▸ … | `publish_remote.py --pull / --check / --promote`, `link_modifiers.link()` |
 | Outils ▸ … | `migrate_volcanic_layers.py`, `probe_pack_sparsity.py`, `export_rocks.py` |
@@ -431,6 +432,39 @@ godot --headless --path . res://tools/planettech/terrain_dem.tscn -- --planet=ta
 
 It writes `/tmp/dem.f32` (float32, row 0 north), `/tmp/dem.json` (the grid, the radius, what was
 read) and `/tmp/dem.log`. Set **Binaire Godot** in the settings (the project's engine).
+
+### The longitudinal profile (`road_profile.py`, panel *Profil en long*)
+
+*DyingStar ▸ Routes ▸ Profil en long* (or the Routes toolbar button) opens a panel under the map:
+the profile the game will lay the **selected** road or railway on, over the zone terrain —
+terrain (brown), line (blue), cuttings (orange), tunnels (dark grey), viaducts (cyan) — with the
+length, the climb, the line's steepest grade, the length and share of each kind, the tunnels
+(longest, deepest cover) and the viaducts (decks of at most 400 m, highest gap).
+
+- **Choosing the road**: the panel's *Choisir sur la carte* button, then a click on a road or a
+  railway (it stays on to pick others); or any selection in any road / railway layer — not only
+  the active layer.
+- **On the map** the profiled road is drawn in bright blue on a white halo, its cuttings,
+  tunnels and viaducts on top in the plot's colours: QGIS's yellow selection is lost on the slope
+  classes. Hovering the plot puts a red marker on the road.
+- It updates while the geometry is edited, after a new zone terrain, and when the max slope
+  changes.
+
+- The grade is the line's own: a `railway` 4 %, a `highway` / `road` its `max_slope_degrees`.
+  A line without one hugs the terrain in the game; the panel then shows the profile it WOULD get
+  at the toolbar's max slope, and says so.
+- The along-distance is the road exporter's (cos-corrected, the project's radius); the terrain
+  the altitude layer of *Terrain de la zone*, which must cover the whole road (the panel says
+  how much it covers otherwise).
+- The rule is `export/planet/grade_profile.py`, a Python twin of `GradeProfile`
+  (`scenes/planet/road/grade_profile.gd`): 200 m windows, 5 m stations, the tunnel / cutting /
+  viaduct thresholds and the three absorption passes. `grade_profile_golden.json` pins it, bit for
+  bit (`test/unit/test_grade_profile_py.py`, in CI); `test/unit/test_grade_profile_golden.gd`
+  recomputes that file with the game's GradeProfile and fails when the rule changes without the
+  twin — then run `godot --headless --path . res://tools/planettech/grade_profile_golden.tscn`
+  and port the change.
+- What the panel cannot know: the corundum chasm bridges (see the *Crevasses* layer) and the
+  villages the export cuts the road at.
 
 ### Seeing the mountains in QGIS (`preview_mountain_contours.py`)
 
