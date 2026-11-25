@@ -32,6 +32,8 @@ const DEFAULTS : Dictionary = {
 	# The server's safety nets where they stand above the ground: the fallback collision under the
 	# planet (base sphere, safety shell) in red, the below-surface catch's threshold in magenta.
 	&"safety_net_debug": false,
+	# The scattered rocks that collide (NovaScatter.is_solid), as cyan boxes, and their count around us.
+	&"scatter_collision_debug": false,
 	# A test notification now and every PlayerClient.DEBUG_NOTIFICATION_S: the line, its sound, the wrist
 	# DataPad's light -- tried without waiting for a friend request.
 	&"notification_debug": false,

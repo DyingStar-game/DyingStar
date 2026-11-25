@@ -3949,6 +3949,14 @@ static func generate_collision_shape(
 	var shape := ConcavePolygonShape3D.new()
 	# Zéro = tous les sommets ont lu leur propre tuile ; la forme est persistable.
 	shape.set_meta("provisional_climbs", data.climb_count())
+	# The grid itself on a Nova body's finest chunks, as the client's mesh keeps it ("nova_grid", chunk-local):
+	# the scattered rocks stand on these triangles, and the server lays their colliders from it (NovaRockCollision).
+	if hp_mode and data.nova_relief != null and hp_nside >= (1 << data.max_quadtree_depth):
+		var _nova_grid := PackedVector3Array()
+		_nova_grid.resize(grid.size())
+		for _gi in grid.size():
+			_nova_grid[_gi] = grid[_gi] - col_origin
+		shape.set_meta("nova_grid", _nova_grid)
 	# Collide from BOTH sides. Unlike the visual mesh, the collision faces get
 	# no winding correction, so their one-sided front can end up facing inward
 	# (toward the planet centre) — leaving bodies to fall straight through the

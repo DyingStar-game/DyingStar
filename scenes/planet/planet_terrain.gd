@@ -1375,6 +1375,9 @@ func _unload_chunk(key: String) -> void:
 		body.queue_free()
 		_server_collision_chunks.erase(key)
 	_release_bridges(key)
+	var rocks: Variant = _nova_rock_jobs.get(key)
+	if rocks is Array:
+		(rocks as Array)[0] = true  # its rocks' task stops where it is
 	if _server_feature_nodes.has(key):
 		for n in _server_feature_nodes[key]:
 			if is_instance_valid(n):
@@ -1911,6 +1914,8 @@ func _server_assemble_chunk(key: String, nside: int, ipix: int,
 			if not _server_feature_nodes.has(key):
 				_server_feature_nodes[key] = []
 			(_server_feature_nodes[key] as Array).append(rail_body)
+	# Nova's scattered rocks big enough to bump into (NovaRockCollision), on the finest chunks.
+	_nova_lay_rocks(key, nside, ipix, shape)
 	# Bridges. This path — not _create_chunk — is the live server residency, and
 	# it did not build them: the deck existed on the client and nowhere else, so
 	# a vehicle drove along the visible ribbon and fell through the gorge. The
@@ -5393,6 +5398,12 @@ func _prefetch_register_one(info: Dictionary, pipeline: Dictionary) -> void:
 
 ## What every chunk lays (NovaScatter.layer_descs), rebuilt when the scatter settings change.
 var _nova_descs: Array = []
+## SERVER: the colliders of the scattered rocks (by path: no class_name to register).
+const NOVA_ROCKS := preload("res://scenes/planet/nova/nova_rock_collision.gd")
+## SERVER: the scatter layers that can hold a colliding rock (NovaRockCollision.layer_descs), read on a worker.
+var _nova_rock_descs: Array = []
+## SERVER: chunk key → the stop flag of its rocks' task still running (see _nova_lay_rocks).
+var _nova_rock_jobs := {}
 ## Bumped on every scatter rebuild: a worker result of an older generation is dropped.
 var _nova_scatter_gen := 0
 
@@ -5407,7 +5418,10 @@ func _nova_setup(data: PlanetData, server_mode: bool) -> void:
 	var body := NovaBody.open_body(data.planet_name)
 	data.nova_relief = body
 	if server_mode:
-		return  # the shape of the ground only: no material, no scatter, no link to the dock
+		# The shape of the ground, and the colliders of the rocks big enough to bump into: no material, no
+		# scatter drawn, no link to the dock.
+		_nova_read_rock_descs(data, body)
+		return
 	body.build_material(data.terrain_material)
 	data.nova = body
 	_nova_read_descs(data)
@@ -5449,6 +5463,85 @@ func _nova_descs_read(slot: Array, gen: int, descs: Array) -> void:
 			_nova_clear_scatter(mi)
 			if mi.mesh != null and mi.mesh.has_meta("nova"):
 				_nova_scatter_chunk(info, mi.mesh, mi)
+
+
+## SERVER: reads the layers whose rocks can collide on a worker (their models are loaded: a second of work).
+## Chunks assembled before the answer get no rocks until they are built again — the first ones under a
+## player at boot; then every chunk does.
+func _nova_read_rock_descs(data: PlanetData, body: NovaBody) -> void:
+	var radius := data.radius
+	var rock := data.default_rock()
+	var slot := [-1]
+	slot[0] = WorkerThreadPool.add_task(func() -> void:
+		_nova_rock_descs_read.call_deferred(slot, NOVA_ROCKS.layer_descs(body, radius, rock)))
+	_nova_scatter_tasks[slot[0]] = true
+
+
+func _nova_rock_descs_read(slot: Array, descs: Array) -> void:
+	WorkerThreadPool.wait_for_task_completion(slot[0])
+	_nova_scatter_tasks.erase(slot[0])
+	_nova_rock_descs = descs
+	print("[NovaRocks] %d scatter layer(s) can collide" % descs.size())
+	# The finest chunks already standing: their rocks now.
+	for key: String in _server_collision_chunks:
+		var nside := _parse_nside_from_key(key)
+		if nside == 1 << planet_data.max_quadtree_depth:
+			_nova_lay_rocks(key, nside, _parse_ipix_from_key(key), null)
+
+
+## SERVER: lays the colliders of the rocks of finest chunk [param key] on a worker, then adds their body
+## beside the chunk's (a chunk feature: freed with it). [param shape]: the chunk's collision shape, whose grid
+## the rocks stand on (NovaRockCollision.chunk_grid), null to build it again.
+func _nova_lay_rocks(key: String, nside: int, ipix: int, shape: ConcavePolygonShape3D) -> void:
+	if _nova_rock_descs.is_empty() or planet_data.nova_relief == null or ipix < 0 \
+			or nside != 1 << planet_data.max_quadtree_depth or not _server_collision_chunks.has(key):
+		return
+	var older: Variant = _nova_rock_jobs.get(key)
+	if older is Array:
+		(older as Array)[0] = true
+	var cancel := [false]
+	_nova_rock_jobs[key] = cancel
+	var chunk: Node = _server_collision_chunks[key]
+	var chunk_id: int = chunk.get_instance_id()
+	if shape == null:  # the chunk's own shape, which keeps the grid (_make_chunk_collision_body)
+		var col := chunk.get_child(0) as CollisionShape3D if chunk.get_child_count() > 0 else null
+		shape = col.shape as ConcavePolygonShape3D if col != null else null
+	var descs := _nova_rock_descs
+	var data := planet_data
+	var origin := _chunk_collision_origin(nside, ipix)
+	var slot := [-1]
+	slot[0] = WorkerThreadPool.add_task(func() -> void:
+		var t0 := Time.get_ticks_usec()
+		var grid := NOVA_ROCKS.chunk_grid(data, nside, ipix, shape)
+		var t1 := Time.get_ticks_usec()
+		var boxes: Array = NOVA_ROCKS.lay(descs, data, data.nova_relief, nside, ipix, grid, origin, cancel)
+		var t2 := Time.get_ticks_usec()
+		var body: StaticBody3D = NOVA_ROCKS.make_body(boxes, key, origin)
+		var times := Vector3(t1 - t0, t2 - t1, Time.get_ticks_usec() - t2) / 1000.0
+		_nova_rocks_done.call_deferred(slot, key, chunk_id, cancel, body, boxes.size(), times))
+	_nova_scatter_tasks[slot[0]] = cancel
+
+
+func _nova_rocks_done(slot: Array, key: String, chunk_id: int, cancel: Array, body: StaticBody3D, count: int,
+		times: Vector3) -> void:
+	WorkerThreadPool.wait_for_task_completion(slot[0])
+	_nova_scatter_tasks.erase(slot[0])
+	if _nova_rock_jobs.get(key) == cancel:
+		_nova_rock_jobs.erase(key)
+	var chunk: Node = _server_collision_chunks.get(key)
+	# Stopped, or the chunk went or was built again meanwhile (its new body lays its own rocks).
+	if cancel[0] or chunk == null or chunk.get_instance_id() != chunk_id:
+		if body != null:
+			body.free()
+		return
+	var t0 := Time.get_ticks_usec()
+	if body != null:
+		_chunks_node.add_child(body)
+		if not _server_feature_nodes.has(key):
+			_server_feature_nodes[key] = []
+		(_server_feature_nodes[key] as Array).append(body)
+	print("[NovaRocks] %s: %d rock collider(s), grid %.1f ms, lay %.1f ms, body %.1f ms (worker), add %.1f ms"
+			% [key, count, times.x, times.y, times.z, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## Nova's material on a Nova chunk, and its scatter (computed on a worker).
