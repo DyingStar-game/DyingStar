@@ -167,6 +167,62 @@ func test_the_music_readout_tells_a_pause_from_a_chosen_silence() -> void:
 	assert_eq(DevReadouts.music_lines({})[0], "music --", "before the director started")
 
 
+func test_the_weather_readout_gives_the_wind_in_both_units_and_where_it_blows_from() -> void:
+	var lines : PackedStringArray = DevReadouts.weather_lines_of({
+		"wind_east_m_s": -17.68, "wind_north_m_s": -17.68, "wind_speed_m_s": 25.0, "wind_from_deg": 45.0,
+		"lift_threshold_m_s": 6.0, "temperature_k": 290.0, "pressure_pa": 101800.0, "pressure_anomaly_pa": -200.0,
+		"dust_tau": 0.42, "visibility_m": 7200.0, "air_density_kg_m3": 1.256, "band": &"trades",
+		"phenomena": [&"dust_devil", &"haze"]})
+	assert_eq(lines[0], "wind 25.0 m/s (90 km/h) from NE (045°)", "both units, and where it comes FROM")
+	assert_eq(lines[1], "sand lifts over 6.0 m/s: lifting", "over the grains' threshold")
+	assert_eq(lines[2], "temperature 16.9 °C (290.0 K)", "both scales")
+	assert_eq(lines[3], "pressure 1018 hPa (-2.0)", "with what the systems take")
+	assert_eq(lines[4], "dust tau 0.42  visibility 7.2 km")
+	assert_eq(lines[5], "air 1.256 kg/m³")
+	assert_eq(lines[6], "band: trades")
+	assert_eq(lines[7], "here: dust_devil, haze", "the local phenomena felt on the spot")
+
+
+func test_the_weather_readout_keeps_to_what_the_source_gives() -> void:
+	# A uniform wind knows no temperature and no pressure: no line is invented for them.
+	var lines : PackedStringArray = DevReadouts.weather_lines_of({
+		"wind_east_m_s": 3.0, "wind_north_m_s": 4.0, "dust_tau": 0.0, "lift_threshold_m_s": 6.0, "air_density_kg_m3": 1.2})
+	assert_eq(lines[0], "wind 5.0 m/s (18 km/h) from SW (217°)", "the speed and the bearing worked out from east and north")
+	assert_eq(lines[1], "sand lifts over 6.0 m/s: not lifting")
+	assert_eq(lines.size(), 4, "wind, sand, dust, air: nothing else")
+	assert_eq(DevReadouts.weather_lines_of({"wind_speed_m_s": 0.0})[0], "wind calm", "no direction in calm air")
+	assert_eq(DevReadouts.weather_lines_of({})[0], "weather: no air", "an airless body")
+	assert_eq(DevReadouts.weather_lines(null)[0], "weather: space", "no planet under us")
+	assert_eq(DevReadouts.compass(350.0), "N", "the bearing wraps round north")
+	assert_eq(DevReadouts.compass(130.0), "SE")
+	assert_eq(DevReadouts.compass(112.0), "E", "112 degrees is nearer east (90) than south-east (135)")
+
+
+func test_the_compass_bearing_is_read_on_the_ground_clockwise_from_north() -> void:
+	# On the ground at local +Z, Planet.local_axes gives north +Y and east +X.
+	var up := Vector3(0.0, 0.0, 1.0)
+	assert_almost_eq(DevReadouts.heading_of(up, Vector3(0.0, 1.0, 0.0)), 0.0, 1e-6, "north")
+	assert_almost_eq(DevReadouts.heading_of(up, Vector3(1.0, 0.0, 0.0)), 90.0, 1e-6, "east")
+	assert_almost_eq(DevReadouts.heading_of(up, Vector3(-1.0, -1.0, 0.0)), 225.0, 1e-6, "south-west")
+	assert_almost_eq(DevReadouts.heading_of(up, Vector3(0.0, 1.0, 0.7)), 0.0, 1e-6, "looking up a slope changes nothing")
+	assert_eq(DevReadouts.heading_of(up, Vector3(0.0, 0.0, -1.0)), -1.0, "straight down: no bearing")
+	assert_eq(DevReadouts.facing_text(44.6), "facing NE (045°)")
+	assert_eq(DevReadouts.facing_text(-1.0), "facing straight up or down")
+
+
+func test_the_compass_dial_turns_with_the_view() -> void:
+	var centre := Vector2(100.0, 100.0)
+	assert_almost_eq(WeatherCompass.dial_point(centre, 10.0, 0.0, 0.0), Vector2(100.0, 90.0), Vector2.ONE * 1e-4,
+			"looking north: north at the top")
+	assert_almost_eq(WeatherCompass.dial_point(centre, 10.0, 90.0, 0.0), Vector2(110.0, 100.0), Vector2.ONE * 1e-4,
+			"east on the right")
+	assert_almost_eq(WeatherCompass.dial_point(centre, 10.0, 90.0, 90.0), Vector2(100.0, 90.0), Vector2.ONE * 1e-4,
+			"looking east: east at the top")
+	assert_almost_eq(WeatherCompass.dial_point(centre, 10.0, 0.0, 90.0), Vector2(90.0, 100.0), Vector2.ONE * 1e-4,
+			"and north on the left")
+	assert_eq(DevReadouts.compass_state(null), {}, "nothing to draw off a planet")
+
+
 func test_the_daylight_line_reads_in_lux_against_the_photocell_thresholds() -> void:
 	var text: String = DevReadouts.daylight_text(0.011)
 	assert_string_contains(text, "1100 lux", "a daylight of 0.011 is about 1100 lux")

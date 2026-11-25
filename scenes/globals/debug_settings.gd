@@ -29,6 +29,9 @@ const DEFAULTS : Dictionary = {
 	&"music_debug": false,
 	# What the star map draws: bodies, focus, zoom, simulated time, relief tiles.
 	&"star_map_debug": false,
+	# The weather where we stand, as everything in the game reads it (Planet.weather_at): wind in m/s
+	# and km/h, where it blows from, temperature, pressure, dust.
+	&"weather_debug": false,
 	# The server's safety nets where they stand above the ground: the fallback collision under the
 	# planet (base sphere, safety shell) in red, the below-surface catch's threshold in magenta.
 	&"safety_net_debug": false,
