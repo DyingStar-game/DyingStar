@@ -52,16 +52,17 @@ import sys
 import numpy as np
 
 def _repo_root(start):
-    """Le dépôt : $DS_REPO_DIR, sinon le premier parent RÉEL qui porte project.godot (le
-    plugin est chargé par un lien symbolique depuis le profil QGIS)."""
-    env = os.environ.get("DS_REPO_DIR", "").strip()
-    if env:
-        return os.path.abspath(os.path.expanduser(env))
+    """Le dépôt de ce script : le premier parent RÉEL qui porte project.godot (le plugin est
+    chargé par un lien symbolique depuis le profil QGIS), sinon $DS_REPO_DIR (plugin installé
+    depuis un zip)."""
     d = os.path.realpath(start)
     while d != os.path.dirname(d):
         if os.path.exists(os.path.join(d, "project.godot")):
             return d
         d = os.path.dirname(d)
+    env = os.environ.get("DS_REPO_DIR", "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
     return start
 
 

@@ -54,7 +54,7 @@ background publication sees them too. Empty = `export_config.ini`, then the defa
 
 | Setting | Variable | Default |
 |---|---|---|
-| Dépôt DyingStar | `DS_REPO_DIR` | the checkout the plugin is loaded from |
+| Dépôt DyingStar (zip) | `DS_REPO_DIR` | only for a plugin installed from a zip: a plugin loaded from a checkout always uses that checkout (the Godot tools it starts must be its own version) |
 | Dossier d'export | `DS_EXPORT_DIR` | `<repo>/assets/qgis/export` |
 | Dossier des projets QGIS | `DS_QGIS_PROJECTS_DIR` | `<repo>/assets/qgis` — only for a NEW project; a saved one stays where it is |
 | GeoJSON de référence | `DS_EXISTING_FEATURES` | none |

@@ -98,20 +98,20 @@ if _tools_dir not in sys.path:
 
 
 def _repo_root(start):
-    """Le dépôt : $DS_REPO_DIR, sinon le premier parent qui porte project.godot.
+    """Le dépôt de ce script : le premier parent qui porte project.godot, sinon $DS_REPO_DIR.
 
     Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
     d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas. Le
     chemin RÉEL : le plugin est chargé par un lien symbolique depuis le profil QGIS.
     """
-    env = os.environ.get("DS_REPO_DIR", "").strip()
-    if env:
-        return os.path.abspath(os.path.expanduser(env))
     d = os.path.realpath(start)
     while d != os.path.dirname(d):
         if os.path.exists(os.path.join(d, "project.godot")):
             return d
         d = os.path.dirname(d)
+    env = os.environ.get("DS_REPO_DIR", "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
     return start
 
 

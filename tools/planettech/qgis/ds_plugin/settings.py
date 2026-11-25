@@ -29,9 +29,10 @@ class Setting:
 
 
 PATHS = [
-    Setting("repo_dir", "DS_REPO_DIR", "Dépôt DyingStar",
-            "Le clone du dépôt du jeu. Vide : trouvé tout seul quand le plugin est chargé "
-            "depuis le dépôt (lien symbolique) ; obligatoire pour un plugin installé depuis un zip.",
+    Setting("repo_dir", "DS_REPO_DIR", "Dépôt DyingStar (plugin installé par zip)",
+            "Seulement pour un plugin installé depuis un zip : le clone du dépôt du jeu. Un plugin "
+            "chargé depuis un clone (lien symbolique) utilise toujours ce clone-là, pour que les "
+            "outils Godot lancés soient de la même version que lui.",
             "dir"),
     Setting("export_dir", "DS_EXPORT_DIR", "Dossier d'export",
             "Où les exports écrivent <planète>_chunks/… Vide : <dépôt>/assets/qgis/export.", "dir"),
@@ -127,7 +128,7 @@ class SettingsDialog(QDialog):
                 self._widgets[s.key] = w
             layout.addWidget(box)
         repo = detected_repo()
-        hint = QLabel(f"Dépôt utilisé : {repo}" if repo else
+        hint = QLabel(f"Dépôt utilisé (outils Godot, publication) : {repo}" if repo else
                       "Dépôt introuvable : renseigne « Dépôt DyingStar ».")
         hint.setWordWrap(True)
         layout.addWidget(hint)

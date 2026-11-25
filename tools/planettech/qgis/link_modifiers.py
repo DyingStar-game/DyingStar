@@ -65,19 +65,22 @@ MAX_TILES_PER_LEVEL = 2_000_000
 
 
 def repo_root():
-    """The DyingStar checkout: $DS_REPO_DIR, else the first parent holding project.godot.
+    """The DyingStar checkout these scripts belong to: the first parent of their REAL path
+    holding project.godot (the plugin is loaded through a symlink); else $DS_REPO_DIR.
 
-    The plugin sets $DS_REPO_DIR from its settings, which is what a copy installed from a zip
-    (outside the checkout) relies on. None when neither finds a checkout.
+    The scripts' own checkout always wins: the Godot tools and the publication scripts they
+    start must be the same version as them — another checkout may be on a branch without them.
+    $DS_REPO_DIR (the plugin setting) only serves a copy installed from a zip, outside any
+    checkout. None when neither finds one.
     """
-    env = os.environ.get("DS_REPO_DIR", "").strip()
-    if env:
-        return os.path.abspath(os.path.expanduser(env))
     d = os.path.realpath(_HERE)
     while d != os.path.dirname(d):
         if os.path.exists(os.path.join(d, "project.godot")):
             return d
         d = os.path.dirname(d)
+    env = os.environ.get("DS_REPO_DIR", "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
     return None
 
 
