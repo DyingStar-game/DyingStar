@@ -49,6 +49,33 @@ vue jeu de Nova et à la carte météo du panneau, qui tournent sans Horizon. Le
 Lancer le service en local (Rust installé) : dans `services/weather`,
 `PORT=9400 SYSTEM_JSON=../resourcesDynamic/data/system/tarsis.json CLIMATE_JSON=data/climate/tarsis.json cargo run -p weather-service`.
 
+## Champ du modèle d'atmosphère (`weather_field`)
+
+Quand le modèle d'atmosphère du service tourne pour un corps, le service publie, par Horizon, **un objet
+`weather_field` par corps**, enfant de sa planète (`items_def/weather_field_def.json`). Il porte la météo près du
+sol sur une grille de 128 × 64 cases (longitude et latitude) : vent est et nord à 10 m (m/s), épaisseur optique
+de la poussière, température de l'air (K) et pression ramenée à la sphère de référence (Pa).
+
+- Dans le jeu : nœud `WeatherField` (`scenes/_universe/environment/weather/weather_field.gd`). Il décode
+  `fields` (base64 → entiers 16 bits → `offset + scale × u`, une paire par grandeur dans `scales`), garde
+  l'image précédente et la plus récente et lit entre les cases (bilinéaire, la longitude fait le tour, la
+  latitude s'arrête aux pôles). Colonne `i` centrée sur la longitude −180 + (i + 0,5) × 360 / 128 vers l'est ;
+  ligne `j` sur la latitude 90 − (j + 0,5) × 180 / 64 (ligne 0 au nord), la convention de `WeatherSampler`.
+- Le temps : `valid_at` dit à quel instant (Unix) une image est vraie ; le service calcule une tranche
+  d'avance. Entre deux images, le jeu passe de l'une à l'autre avec `Globals.sim_time()` ; après la plus
+  récente, il la garde ; avec une seule image, il la prend telle quelle. Une image mal formée (taille fausse)
+  est ignorée avec un seul avertissement.
+- `ClimateWeather` prend le champ de sa planète comme **fond** tant qu'il est frais (pas plus de 2 h après
+  la dernière `valid_at`) : vent, poussière, température, pression. Les systèmes `weather_system` ne
+  comptent plus par-dessus (le modèle fait ses propres dépressions). Sans champ frais : profil climatique et
+  systèmes, comme avant. Les phénomènes locaux (`WeatherRelief`, `WeatherLocal`, tourbillons, murs) se posent
+  sur le fond, quel qu'il soit ; un relevé dit `weather_field` = vrai quand il vient du champ.
+- Le serveur ne l'endort jamais (`STREAM_ALWAYS_TYPES`).
+- `scales` (zone 0) et `fields` (zone 1) sont deux canaux d'Horizon : ils peuvent arriver séparés, dans
+  un sens ou dans l'autre. Le nœud redécode l'image une fois quand ses `scales` arrivent après elle.
+- Tests : `test/unit/test_weather_field.gd`. **Pas vérifié** : la chaîne réelle service → Horizon → jeu ;
+  la carte météo des outils (Nova) ne lit pas encore le champ.
+
 ## Vérifié (21/11/2026)
 
 - Service lancé en local, vue jeu de Nova : 26 systèmes reçus ; sur 10 points au même instant, le relevé du

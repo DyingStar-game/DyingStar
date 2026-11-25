@@ -2672,7 +2672,8 @@ func update_generic_object(event: Dictionary) -> void:
 ## Types that never sleep (tuning hook; empty = everything streams).
 ## weather_system: a storm 300 km across is DATA for the whole planet (Planet.weather_at reads every
 ## system of the body), not a thing standing on one chunk; a dozen Node3D per planet, no physics.
-const STREAM_ALWAYS_TYPES: Array[String] = ["weather_system"]
+## weather_field: the atmosphere model's grid over the whole body (ClimateWeather samples it), one per body.
+const STREAM_ALWAYS_TYPES: Array[String] = ["weather_system", "weather_field"]
 ## Horizon type of a networked cave (CaveSite): registered with its planet's terrain from its data.
 const CAVE_TYPE := "cave"
 ## Horizon type of a village mine (MineSite): its shaft's hole is opened in its planet's terrain from its data.
