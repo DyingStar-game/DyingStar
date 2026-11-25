@@ -22,9 +22,11 @@ extends RefCounted
 const G: float = 0.7
 const DIFFUSE_SHARE: float = 0.55
 ## The share of the direct beam the ambient term takes (the ground around, lit by the sun, lights the
-## dust from below), and a floor for the night (the sky's own glow).
+## dust from below), and a floor for the night. The floor is 0: the terrain's night light is the sky's
+## (AMBIENT_SOURCE_SKY), black but for the stars, and a dust glowing at 0.03-0.045 over it drew a grey
+## band along the night horizon, brighter than both the sky and the ground (2026-11-25).
 const DIRECT_SHARE: float = 0.22
-const AMBIENT_FLOOR := Vector3(0.03, 0.035, 0.045)
+const AMBIENT_FLOOR := Vector3.ZERO
 
 
 ## The star's beam before any dust, [param star] at [param energy], after the [param air] it crossed
