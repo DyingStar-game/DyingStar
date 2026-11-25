@@ -269,6 +269,8 @@ const PLAYER_KEY: String = "__player__"
 ## (scenes/_universe/environment/sky.gdshader), so a constellation learnt here is the one overhead, and being a
 ## function of view DIRECTION the stars stay fixed in space while the chart orbits past them.
 const BACKDROP_SHADER := preload("res://assets/shaders/starfield_sky.gdshader")
+## The weather over the ground (isobars, wind, highs and lows), while the weather debug option is on.
+const WEATHER_LAYER := preload("res://scenes/ui/star_map/star_map_weather.gd")
 ## Overall star brightness. The sky has to read as deep space without ever reaching the value of an
 ## orbit ring (see ORBIT_MIN_VALUE), which is what the artwork could not do.
 const BACKDROP_BRIGHTNESS: float = 0.85
@@ -398,6 +400,8 @@ var _guard_memo: Array = [-1, Vector3.ZERO, 0.0, -1]  # frame, direction, guard,
 var _roads: StarMapRoads = null
 ## The canyons, drawn the same way from the heights where the ground is too coarse to carry them.
 var _canyons: StarMapCanyons = null
+## The weather over that ground (star_map_weather.gd), drawn only while the weather debug option is on.
+var _weather: WEATHER_LAYER = null
 ## And what asks the service for the ground neither of them has yet. Not a node: it owns a worker
 ## thread and a queue, nothing in the scene.
 var _stream: StarMapStream = StarMapStream.new()
@@ -2173,6 +2177,7 @@ func _refresh_ground() -> void:
 			_adopt(sphere, _ground)
 			_adopt(sphere, _roads)
 			_adopt(sphere, _canyons)
+			_adopt(sphere, _weather)
 			_adopt(sphere, _metres)
 	else:
 		_drop_ground()
@@ -2212,6 +2217,12 @@ func _refresh_ground() -> void:
 		_canyons = StarMapCanyons.new()
 		_canyons.body_key = key
 		sphere.add_child(_canyons)
+		_weather = WEATHER_LAYER.new()
+		_weather.body_key = key
+		sphere.add_child(_weather)
+		# Its highs and lows are written over the chart's face, under the cursor's readout.
+		_surface.add_child(_weather.labels)
+		_surface.move_child(_weather.labels, _cursor_readout.get_index())
 		_ground_body = index
 		_ground_key = key
 	# The real height above the ground, which is what makes the level follow the zoom. Safe to hand over
@@ -2242,6 +2253,9 @@ func _refresh_ground() -> void:
 	for lines: StarMapTileLines in [_roads, _canyons]:
 		if lines != null:
 			lines.set_lift(lift)
+	if _weather != null:
+		_weather.refresh(_live_planet(key), _weather_debug_on(), _ground_scale(), sphere_m, _local_under_camera(index),
+				_surface_at(index, _cam.direction()) + lift, _camera)
 	# And ask for what is wanted but has never been downloaded.
 	var published: Dictionary = StarMapRelief.published(key, shown)
 	_stream.want(key, published)
@@ -2289,7 +2303,7 @@ func _view_half_angle(index: int) -> float:
 ## spheres. The ground keeps its tiles, its queue and its builds in flight; [method _refresh_ground]
 ## hangs it back on the new sphere of the same body.
 func _park_ground() -> void:
-	for node: Node in [_ground, _roads, _canyons, _metres]:
+	for node: Node in [_ground, _roads, _canyons, _weather, _metres]:
 		if node != null and is_instance_valid(node) and node.get_parent() != null:
 			node.get_parent().remove_child(node)
 	_ground_body = -1
@@ -2320,6 +2334,10 @@ func _drop_ground() -> void:
 				lines.queue_free()
 	_roads = null
 	_canyons = null
+	if _weather != null and is_instance_valid(_weather):
+		_weather.clear()
+		_weather.queue_free()
+	_weather = null
 	if _ground != null:
 		_ground.clear()
 		if is_instance_valid(_ground):
@@ -2859,6 +2877,10 @@ func _refresh_cursor_readout() -> void:
 				sphere.basis.orthonormalized(), key)
 		if local != Vector3.ZERO:
 			text = cursor_text(key, local, _ground_scale(), float(_bodies[body]["radius_m"]))
+			# The weather there, while its layer is drawn (weather debug option).
+			var weather: String = _weather.cursor_line(local) if _weather != null and body == _ground_body else ""
+			if weather != "":
+				text += "   " + weather
 	# Over an object on the ground: its name first, then where it stands.
 	var title: String = ""
 	if _marker_hover != -1 and _markers != null and not _dragging:  # a group is -2 - i (group_id)
@@ -2869,6 +2891,11 @@ func _refresh_cursor_readout() -> void:
 		_cursor_readout.hide_readout()
 	else:
 		_cursor_readout.show_at(at, text, on_pad, title)
+
+
+## Is the weather debug option on (Settings > Debug)? It draws the weather over the ground.
+func _weather_debug_on() -> bool:
+	return SettingsManager.debug.is_on(&"weather_debug")
 
 
 ## On the gamepad the cursor is put away (InputDevice.fit_cursor): the centre of the screen points
