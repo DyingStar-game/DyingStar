@@ -39,6 +39,7 @@ class DyingStarPlugin:
     # ── QGIS hooks ────────────────────────────────────────────────────────────
     def initGui(self):  # noqa: N802
         settings.apply_env()
+        self._enable_crash_trace()
         win = self.iface.mainWindow()
         self.menu = QMenu("DyingStar", win)
         self.menu.setObjectName("DyingStarMenu")
@@ -71,6 +72,9 @@ class DyingStarPlugin:
         self._add(roads, "Terrain de la zone…", self.roads.zone_terrain,
                   tip="Altitude, courbes et pente de la zone affichée, classée selon la pente "
                       "max de la route ; source rapide (QGIS) ou exacte (Godot).")
+        self._add(roads, "Tracer une route…", self.roads.draw_route,
+                  tip="Le tracé calculé entre tes clics, qui tient la pente max sur le terrain "
+                      "de la zone : lacets, détours, ouvrages seulement où il le faut.")
         self._add(roads, "Profil en long", lambda: self.roads.toggle_profile(True),
                   tip="Le profil que le jeu donnera à la route sélectionnée, sur le terrain "
                       "de la zone : tranchées, tunnels, viaducs.")
@@ -108,7 +112,24 @@ class DyingStarPlugin:
         else:
             bar.addMenu(self.menu)
 
+    def _enable_crash_trace(self):
+        """On a crash (SIGSEGV, SIGABRT…) Python writes its own stack to
+        <profile>/DyingStar/logs/python_crash.log: the C stack of a core dump stops at the
+        interpreter and does not say which line of the plugin was running."""
+        import faulthandler
+        try:
+            self._crash_file = open(os.path.join(log_dir(), "python_crash.log"), "a",
+                                    encoding="utf-8")
+            faulthandler.enable(file=self._crash_file, all_threads=False)
+        except (OSError, RuntimeError):
+            self._crash_file = None
+
     def unload(self):
+        if getattr(self, "_crash_file", None) is not None:
+            import faulthandler
+            faulthandler.disable()
+            self._crash_file.close()
+            self._crash_file = None
         if self.roads is not None:
             self.roads.unload()
             self.roads = None

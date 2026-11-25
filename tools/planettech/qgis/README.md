@@ -35,6 +35,7 @@ of this repository.
 | Mettre à jour les couches… | the same on the open project's planet, without asking name and radius (a field added to a layer definition…) |
 | Exporter ▸ … | one entry per exporter (`export_*.py`); **Tout le pack de modificateurs** runs roads, regions, mountains, volcanoes and rocky terrain, then links the pack once |
 | Routes ▸ Terrain de la zone… | `zone_terrain.py`: altitude, contours and slope classes of the area on screen (see "Drawing roads over the relief") |
+| Routes ▸ Tracer une route… | `zone_route.py`: the road computed between your clicks, keeping to the max slope (see "Automatic route") |
 | Routes ▸ Profil en long | the panel of the selected road's profile (see "The longitudinal profile") |
 | Routes ▸ Aperçu des massifs… | `preview_mountain_contours.py`, with its options in a dialog |
 | Publication ▸ … | `publish_remote.py --pull / --check / --promote`, `link_modifiers.link()` |
@@ -465,6 +466,38 @@ length, the climb, the line's steepest grade, the length and share of each kind,
   and port the change.
 - What the panel cannot know: the corundum chasm bridges (see the *Crevasses* layer) and the
   villages the export cuts the road at.
+
+### Automatic route (`zone_route.py`, *Tracer une route…*)
+
+*DyingStar ▸ Routes ▸ Tracer une route…* (or the Routes toolbar) asks the target layer
+(`highway`, `road`, `railway`…), the max slope, two costs and two limits, then waits for clicks:
+**left** = the start, then waypoints; **right** = the end; Backspace drops the last point, Escape
+gives up (QGIS's snapping applies: snap the ends on existing roads). The search runs in the
+background over the zone terrain, which must cover the whole route; the proposal appears in a
+scratch layer *DyingStar — tracé proposé*, selected, so the profile panel shows what the game
+will build; the message bar then offers **Ajouter à « … »** (the layer goes into edit mode, with
+its default values and `max_slope_degrees`: save it) or **Abandonner**.
+
+How it searches (`export/planet/route_search.py`, numpy + scipy, tested in CI):
+
+- every node of the zone terrain links to its 16 neighbours (the 8 round it and the knight's
+  moves, 26.6° apart — what lets a road cross a slope at a gentle grade, in bends);
+- a step costs its length while its grade stays under the max; past it, its length ×
+  (1 + *Coût des ouvrages* × (grade / max − 1)): the cutting, tunnel or viaduct the game would
+  build. Raise it for more bends and detours, lower it for more structures. A node over a
+  corundum chasm adds *Coût des ponts sur crevasse* × length;
+- scipy's Dijkstra between consecutive points, in a corridor round them, the grid subsampled to
+  at most a million nodes (the cell used is in the log: zoom the zone terrain on the route for
+  finer bends);
+- **Viaduc max / Tunnel max** (0 = no limit; design limits, the game builds any length): the
+  game's profile of the result is computed; while a structure is longer, the search runs again
+  with the place made expensive — for a viaduct, the whole depression it spans — in a corridor
+  1.5× wider each time, up to 6 searches. What is still too long (no way round in the zone
+  terrain, e.g. an end point under a cliff) is said in the log, and the profile panel flags in
+  red any structure past these limits, on a hand-drawn road too.
+
+Known limit: the search has no turning radius — a hairpin is a corner. The profile panel shows
+the result; smooth the bends by hand where needed.
 
 ### Seeing the mountains in QGIS (`preview_mountain_contours.py`)
 

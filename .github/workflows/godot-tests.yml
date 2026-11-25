@@ -281,15 +281,17 @@ jobs:
         run: python3 test/unit/test_generate_credits_py.py
 
       # The planet exporter: its geometry and pack format, and its pure-Python HEALPix (the one used
-      # without healpy, as here). numpy is the one package these checks install.
+      # without healpy, as here); the QGIS road tools' terrain grid, profile twin and route search.
+      # numpy, and scipy for the route search (its Dijkstra).
       - name: Planet exporter unit tests
         run: |
-          pip3 install --quiet numpy
+          pip3 install --quiet numpy scipy
           python3 test/unit/test_healpix_utils_py.py
           python3 test/unit/test_modifier_pack_py.py
           python3 test/unit/test_mountain_preview_py.py
           python3 test/unit/test_terrain_grid_py.py
           python3 test/unit/test_grade_profile_py.py
+          python3 test/unit/test_route_search_py.py
 
       # The QGIS plugin as the team installs it: the zip's layout and the plugins.xml of our
       # plugin repository (.github/workflows/qgis-plugin.yml publishes them on a tag).

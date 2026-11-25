@@ -163,3 +163,15 @@ class SettingsDialog(QDialog):
                 set_value(s.key, w.text().strip())
         apply_env()
         self.accept()
+
+
+#: Design limits of the road tools (0 = none): the profile panel flags a longer structure, the
+#: automatic route searches again round it. Not limits of the game, which builds any length.
+MAX_BRIDGE_KEY = "roads/max_bridge_m"
+MAX_TUNNEL_KEY = "roads/max_tunnel_m"
+
+
+def structure_limits():
+    """(max viaduct length, max tunnel length) in metres, 0 = no limit."""
+    return (float(value(MAX_BRIDGE_KEY, "0") or 0), float(value(MAX_TUNNEL_KEY, "0") or 0))
+

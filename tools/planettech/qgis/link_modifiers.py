@@ -391,7 +391,8 @@ def link(planet_name, export_dir=None, verbose=True, publish=True):
 
     out_path = os.path.join(chunks_dir, "terrainmodifier.pack")
     dsmp.write_pack(out_path, levels, manifest)
-    if publish:
+    if publish and _in_export_dir(out_path):
+        _publish_guard(chunks_dir, part_info)
         auto_publish(out_path)
 
     if verbose:
@@ -415,6 +416,67 @@ def link(planet_name, export_dir=None, verbose=True, publish=True):
             print("      godot --headless --path . res://tools/bake_grade_profiles.tscn -- --planet=%s"
                   % planet_name)
     return out_path
+
+
+# ── The team's families: never publish a pack that lost some ────────────
+
+#: Beside terrainmodifier.pack: the families (road, mountain, populate…) of the team's pack, as
+#: last brought from the server (explode) or published from here.
+TEAM_PARTS_FILE = ".team_parts.json"
+
+
+class PublishRefused(RuntimeError):
+    """The linked pack would replace the team's with fewer families: it is not published."""
+
+
+def _team_parts(chunks_dir):
+    try:
+        with open(os.path.join(chunks_dir, TEAM_PARTS_FILE), encoding="utf-8") as fh:
+            return set(json.load(fh))
+    except (OSError, ValueError):
+        return None
+
+
+def _record_team_parts(chunks_dir, names):
+    with open(os.path.join(chunks_dir, TEAM_PARTS_FILE), "w", encoding="utf-8") as fh:
+        json.dump(sorted(names), fh)
+
+
+def _publish_guard(chunks_dir, part_info):
+    """Refuse to publish a pack that would drop a family of the team's.
+
+    An export whose pull of the team's parts failed (server unreachable, wrong settings) links
+    the parts it has: on a fresh machine, only its own family — published, that pack would wipe
+    every mountain, region, volcano of the planet off the tile service (2026-11-25: a roads-only
+    tarsis_3 pack was one settings typo away from it). The families of the team's pack are noted
+    when it is brought here (explode) and when this machine publishes; a pack missing one of them
+    is not published. A pack published from here before, with nothing noted, is refused too:
+    this machine never had the team's parts. Raises PublishRefused (the pack stays local).
+    """
+    have = set(part_info)
+    known = _team_parts(chunks_dir)
+    trace = os.path.join(chunks_dir, ".published.json")
+    published_before = False
+    try:
+        with open(trace, encoding="utf-8") as fh:
+            published_before = "terrainmodifier.pack" in json.load(fh)
+    except (OSError, ValueError):
+        pass
+    if known is None and published_before:
+        raise PublishRefused(
+            "publication refusée : ce pack a déjà été publié, mais les parts de l'équipe n'ont "
+            "jamais été récupérées sur ce poste — ce pack-ci ne contient que %s. Récupère-les "
+            "(DyingStar ▸ Publication ▸ Récupérer les parts du serveur, avec un dossier parts/ "
+            "vide), puis exporte à nouveau." % ", ".join(sorted(have)))
+    missing = (known or set()) - have
+    if missing:
+        raise PublishRefused(
+            "publication refusée : le pack de l'équipe contient aussi %s, que celui-ci n'a pas "
+            "(parts de l'équipe non récupérées ?). Récupère-les (Publication ▸ Récupérer les "
+            "parts du serveur) puis exporte à nouveau. Si cette famille doit vraiment "
+            "disparaître, supprime %s." % (", ".join(sorted(missing)),
+                                           os.path.join(chunks_dir, TEAM_PARTS_FILE)))
+    _record_team_parts(chunks_dir, have | (known or set()))
 
 
 # ── Explode (bootstrap parts from an existing pack) ─────────────────────
@@ -487,6 +549,8 @@ def explode(planet_name, export_dir=None, verbose=True):
         written.append(path)
         if verbose:
             print("  exploded %s (%d levels)" % (os.path.basename(path), len(levels)))
+    # The team's families, for _publish_guard: this pack is the team's (pulled from the server).
+    _record_team_parts(chunks_dir, manifest.get("parts", {}).keys())
     return written
 
 
