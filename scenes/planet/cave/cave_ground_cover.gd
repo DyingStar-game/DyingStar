@@ -21,12 +21,23 @@ static func apply(node: Node3D, data: PlanetData, direction: Vector3) -> void:
     var texture: Texture2D = null
     var scale := 0.1
     var strength := 0.0
+    var tint := look.tint
     if look.material != null and look.material.get_shader_parameter(&"blend_use_albedo") == true:
         texture = look.material.get_shader_parameter(&"blend_albedo_tex") as Texture2D
         scale = float(look.material.get_shader_parameter(&"blend_albedo_scale"))
         strength = float(look.material.get_shader_parameter(&"blend_vertex_color_strength"))
+        # A Nova ground (GroundLook.nova_material_for) also scales its texture by a gain and darkens it by its
+        # occlusion, and shows a close-up tile near the camera, where a cave mouth is seen: folded into the
+        # tint and the tile here (exact for a texture strength of 1, Nova's usual).
+        var fine: Variant = look.material.get_shader_parameter(&"blend_albedo_fine_scale")
+        if fine != null and float(fine) > 0.0:
+            scale = float(fine)
+        var gain: Variant = look.material.get_shader_parameter(&"blend_albedo_gain")
+        var ao: Variant = look.material.get_shader_parameter(&"blend_albedo_ao")
+        var k: float = (float(gain) if gain != null else 1.0) * (float(ao) if ao != null else 1.0)
+        tint = Color(tint.r * k, tint.g * k, tint.b * k)
     surface.material_overlay = _material(texture, scale, strength)
-    surface.set_instance_shader_parameter(&"ground_tint", Vector3(look.tint.r, look.tint.g, look.tint.b))
+    surface.set_instance_shader_parameter(&"ground_tint", Vector3(tint.r, tint.g, tint.b))
 
 
 static func _material(texture: Texture2D, scale: float, strength: float) -> ShaderMaterial:

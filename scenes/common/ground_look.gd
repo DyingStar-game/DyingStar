@@ -46,13 +46,27 @@ var detail: Vector2 = Vector2.ZERO
 
 
 ## Read the ground in body-fixed direction `dir`. `fallback` is used when the biome yields nothing.
-static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
+## [param ground_r]: the ground point's distance from the body's centre when the caller has it (metres): on a
+## body dressed by Nova, the material lying exactly there (its patches of gravel, of regolith…) is read at
+## that point; without it, the material covering most of the ground's variant.
+static func at(data: PlanetData, dir: Vector3, fallback: Color, ground_r: float = NAN) -> GroundLook:
 	var look := GroundLook.new()
 	look.color = fallback
 	look.tint = fallback
 	if data == null:
 		return look
 	_share_detail_texture(data)
+	# Nova first: where it textures the ground, the planet's own materials are not what one sees.
+	var pos: Variant = dir.normalized() * ground_r if not is_nan(ground_r) else null
+	var nova := data.nova_ground_at(dir, ground_r - data.radius if not is_nan(ground_r) else NAN, pos)
+	if not nova.is_empty():
+		var t: Color = nova.tint
+		var m: float = nova.macro
+		look.color = nova.colour
+		# The fringe shader multiplies the layer's texture term by this (blend_vertex_color_strength 1).
+		look.tint = Color(t.r * m, t.g * m, t.b * m)
+		look.material = nova_material_for(nova.look, nova.layer)
+		return look
 	var ground: Material = data.ground_material_at(dir)
 	var sampled: Color = _vertex_sample(data, dir)
 	if sampled != NO_SAMPLE:  # nothing sampled: the fallback as it is, not scaled like a biome colour
@@ -72,6 +86,9 @@ static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
 static func colour_at(data: PlanetData, dir: Vector3, fallback: Color, height_m: float = NAN) -> Color:
 	if data == null:
 		return fallback
+	var nova := data.nova_ground_at(dir, height_m)
+	if not nova.is_empty():
+		return nova.colour  # what Nova's textures show there, their patches averaged
 	var sampled: Color = _vertex_sample(data, dir, height_m)
 	if sampled == NO_SAMPLE:  # the fallback as it is, not scaled like a biome colour
 		return fallback
@@ -90,12 +107,7 @@ static func vertex_colour(data: PlanetData, dir: Vector3, fallback: Color, heigh
 
 ## vertex_colour without its fallback: NO_SAMPLE where the biome map has nothing.
 static func _vertex_sample(data: PlanetData, dir: Vector3, height_m: float = NAN) -> Color:
-	var zone: Dictionary = data.first_zone_at(dir)
-	if zone.is_empty() and not data.corundum_default_biome:
-		return data.ground_albedo_at(dir)  # no zone here: the biome map (NO_SAMPLE where it is empty)
-	var cor_bd: BiomeDefinition = data.get_biome_by_type(ArideDesertCorundumPlateauTerrain.BIOME_TYPE) \
-			if data.corundum_default_biome else null
-	return PlanetChunk.road_ground_tint(data, dir, zone, cor_bd, height_m)
+	return data.ground_vertex_tint_at(dir, height_m)
 
 
 ## What a ground drawn with [param ground] and the vertex colour [param tint] shows on average.
@@ -142,6 +154,42 @@ static func material_for(ground: Material) -> ShaderMaterial:
 		mat.set_shader_parameter(&"blend_use_albedo", true)
 		mat.set_shader_parameter(&"blend_albedo_scale", scale)
 		mat.set_shader_parameter(&"blend_vertex_color_strength", _vertex_color_strength_of(ground))
+	_materials[key] = mat
+	return mat
+
+
+## The fringe material for layer [param layer] of a Nova ground [param look] (NovaBody.ground_look), created
+## once per distinct texture and way of drawing it: the same texture, tile, close-up tile, gain, strength,
+## contrast and occlusion as the ground shader gives that material (terrain_biome.gdshaderinc, Nova's loop),
+## so the band shows the ground's stones at the ground's size. The tint rides the instance (GroundLook.tint).
+static func nova_material_for(look: Dictionary, layer: int) -> ShaderMaterial:
+	var l: Dictionary = look.layers[layer]
+	var tex: Texture2D = l.tex
+	# The close-up tile is the ground's first material's only, as in the shader.
+	var fine: float = float(look.fine_scale) if layer == 0 else 0.0
+	var ao: float = NovaBody.ao_factor(l)
+	var key := "nova|%d|%s|%s|%s|%s|%s|%s" % [tex.get_instance_id(), l.scale, fine, l.gain, look.strength,
+			look.contrast, ao]
+	if _materials.has(key):
+		return _materials[key]
+	var base: ShaderMaterial = _template_material()
+	if base == null:
+		return null
+	var mat := base.duplicate() as ShaderMaterial
+	var mean: Color = NovaBody.texture_mean(tex, true)
+	mat.set_shader_parameter(&"blend_albedo_tex", tex)
+	mat.set_shader_parameter(&"blend_use_albedo", true)
+	mat.set_shader_parameter(&"blend_albedo_scale", float(l.scale))
+	mat.set_shader_parameter(&"blend_albedo_fine_scale", fine)
+	mat.set_shader_parameter(&"blend_albedo_fine_near", float(look.fine_near))
+	mat.set_shader_parameter(&"blend_albedo_fine_far", float(look.fine_far))
+	mat.set_shader_parameter(&"blend_albedo_gain", float(l.gain))
+	mat.set_shader_parameter(&"blend_albedo_strength", float(look.strength))
+	mat.set_shader_parameter(&"blend_albedo_contrast", float(look.contrast))
+	mat.set_shader_parameter(&"blend_albedo_mean", Vector3(mean.r, mean.g, mean.b))
+	mat.set_shader_parameter(&"blend_albedo_ao", ao)
+	# GroundLook.tint is the whole colour the ground starts from: applied in full.
+	mat.set_shader_parameter(&"blend_vertex_color_strength", 1.0)
 	_materials[key] = mat
 	return mat
 

@@ -357,6 +357,37 @@ le coût est nul, et l'ombre grandit avec lui.
   un rocher change encore de hauteur d'un coup quand le sol sous lui change de niveau de détail, alors que le
   sol, lui, glisse en 600 ms.
 
+### Le sol vu par les autres : frange, poussière, pied des rochers (25/11/2026)
+
+Tout ce qui copie « l'aspect du sol » demande d'abord à Nova sur un corps habillé par Nova (un client) :
+
+- `PlanetData.nova_ground_at(dir, height_m, pos)` : la variante de la direction (celle de sa première zone,
+  comme les sommets la cuisent : `nova_variant_at`), puis `NovaBody.ground_look(id)` = les réglages que
+  `refresh_ground` donne au shader du sol (texture de chaque matière, tuile accrochée à la grille `WRAP`, motif
+  fin de près et ses distances, gain, force, contraste, occlusion, taches à grande échelle). Vide hors texture
+  (variante sans albédo, serveur, corps sans Nova) : l'ancien chemin reste.
+- Avec un point du sol (`pos`, repère du corps), les plages de la seconde et de la troisième matière sont lues
+  **là**, avec le même bruit que le shader (`NovaBody.layer_weights`, `noise`, `_hash` : portage exact de
+  `nova_noise`) ; sans point, leur part moyenne. Seule différence : le shader fait d'abord remplir les creux de
+  l'image de hauteur, inconnue ici (au bord d'une plage la réponse peut être l'autre côté).
+- `PlanetData.ground_material_at` rend le matériau Nova (les chunks Nova ne portent jamais l'override d'un
+  biome) ; `ground_albedo_at` rend la couleur que Nova MONTRE (`ground_rock_albedo_at` garde l'ancienne, la
+  teinte cuite dans les sommets, qui sert de teinte aux textures).
+- **Frange** (`TerrainBlend` → `GroundLook.at`, `terrain_blend.gdshader`) : un matériau par texture et façon de
+  la dessiner (`GroundLook.nova_material_for`), la matière dominante au pied de l'objet, même tuile et même motif
+  fin de près que le sol, même règle de couleur : contraste autour de la moyenne, `mix(1, texture × gain,
+  force)`, occlusion moyenne, × teinte (couleur de biome × multiplicateur d'albédo × taches). La triplanaire de la
+  frange reste dans l'espace de l'objet : seule l'échelle compte (pierres isotropes), et le piège du repère
+  planète (barrières en biais) ne s'applique pas à un objet droit.
+- **Poussière** (`GroundLook.colour_at` : roues, pas, vent, murs de poussière) : la couleur montrée, plages
+  moyennées.
+- **Rochers du scatter** (`nova_rock.gdshader`, `NovaScatter.set_fringe`) : frange dans le shader, pas de nœud
+  par rocher ni d'appel de dessin de plus. Bande = 30 % de la hauteur du rocher au-dessus du sol, 0,9 m au plus
+  (comme `TerrainBlend`), depuis le sol du modèle enfoncé (`sink`). Les plages sous le rocher sont lues dans le
+  vertex shader à sa place (`fade_cell` modulo `WRAP` + `fade_rest` + donnée d'instance), seulement à moins de
+  200 m de la caméra ; la frange s'efface de 100 à 150 m.
+- Tests : `test/unit/test_ground_look_nova.gd`.
+
 ### Frontières douces
 
 Avant, deux sols se rejoignaient sur environ 3 mailles (75 m de près, plus loin davantage), en simple fondu,

@@ -67,6 +67,22 @@ var _params_tex: ImageTexture
 var _albedo_paths := PackedStringArray()
 var _normal_paths := PackedStringArray()
 var _orh_paths := PackedStringArray()
+## Variant id → its ground_look, read once (cleared by refresh_ground); guarded: the scatter reads it on a worker.
+var _looks: Dictionary = {}
+var _looks_mutex := Mutex.new()
+## Mean colour of a texture, linear (an albedo) or raw (a data image), by "instance id|srgb" (texture_mean).
+static var _means: Dictionary = {}
+static var _means_mutex := Mutex.new()
+
+## The ground shader's constants the ground's look is read with (terrain_biome.gdshaderinc, NOVA_*): the tiling
+## grid, the occlusion's weight, where the close-up tile shows (in times its own length), the patches' rim.
+const WRAP := 8192.0
+const AO_WEIGHT := 0.85
+const DETAIL_NEAR := 5.0
+const DETAIL_FAR := 18.0
+const PATCH_RIM := 0.07
+## Cells a side a texture is brought down to before its mean is taken (texture_mean).
+const MEAN_SIDE := 32
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +439,242 @@ func origin_of(id: int, key: String) -> String:
 
 
 # ---------------------------------------------------------------------------
+# The ground's look (what the ground fringe, the blown dust and the rocks' foot copy)
+# ---------------------------------------------------------------------------
+
+## What the ground of variant [param id] is drawn with, read from the settings refresh_ground hands the ground
+## shader: {} when the variant names no albedo texture (its ground then keeps the terrain's own look, the detail
+## layer of terrain_biome). Else {id, layers, fine_scale, fine_near, fine_far, strength, contrast, macro_strength,
+## macro_scale}. [code]layers[/code]: the ground's material first, then its second and third when they load and
+## cover a share, each {tex, orh (null without one), scale (per metre, snapped like the shader's), share,
+## patch_scale, offset (the noise offset of its patches: 0 for the second, 1 for the third), gain}. The close-up
+## tile (fine_*) is the first material's only, as in the shader. Thread-safe.
+func ground_look(id: int) -> Dictionary:
+	_looks_mutex.lock()
+	var known: Variant = _looks.get(id)
+	_looks_mutex.unlock()
+	if known != null:
+		return known
+	var look := _read_look(id)
+	_looks_mutex.lock()
+	_looks[id] = look
+	_looks_mutex.unlock()
+	return look
+
+
+func _read_look(id: int) -> Dictionary:
+	var base := _texture_at(id, "ground/albedo_texture")
+	if base == null:
+		return {}
+	var layers: Array = [{"tex": base, "orh": _texture_at(id, "ground/orh_texture"),
+			"scale": snap_scale(1.0 / maxf(float(resolve(id, "ground/tile_m")), 0.01)), "share": 1.0,
+			"patch_scale": 0.0, "offset": -1, "gain": float(resolve(id, "ground/texture_gain"))}]
+	for k in 2:
+		var key := "ground/layer%d_" % (k + 2)
+		var tex := _texture_at(id, key + "albedo")
+		var share := float(resolve(id, key + "share"))
+		if tex == null or share <= 0.0:
+			continue
+		layers.append({"tex": tex, "orh": _texture_at(id, key + "orh"),
+				"scale": snap_scale(1.0 / maxf(float(resolve(id, key + "tile_m")), 0.01)), "share": share,
+				"patch_scale": snap_scale(1.0 / maxf(float(resolve(id, key + "patch_m")), 1.0)), "offset": k,
+				"gain": float(resolve(id, key + "gain"))})
+	var fine_tile := float(resolve(id, "ground/detail_tile_m"))
+	return {
+		"id": id,
+		"layers": layers,
+		"fine_scale": snap_scale(1.0 / maxf(fine_tile, 0.05)) if fine_tile > 0.0 else 0.0,
+		"fine_near": fine_tile * DETAIL_NEAR,
+		"fine_far": fine_tile * DETAIL_FAR,
+		"strength": float(resolve(id, "ground/texture_strength")),
+		"contrast": float(resolve(id, "ground/texture_contrast")),
+		"macro_strength": float(resolve(id, "ground/macro_strength")),
+		"macro_scale": snap_scale(1.0 / maxf(float(resolve(id, "ground/macro_size_m")), 1.0)),
+	}
+
+
+## The texture variant [param id] names at [param key], null when it names none or the file is gone (the ground
+## shader then leaves that material out: refresh_ground finds no layer for it).
+func _texture_at(id: int, key: String) -> Texture2D:
+	var path := str(resolve(id, key))
+	return load(path) as Texture2D if path != "" and ResourceLoader.exists(path) else null
+
+
+## The colour the ground shader starts from for the vertex colour [param vertex]: mix(base_color, COLOR,
+## vertex_color_strength) × albedo_multiplier, read off the body's material (the terrain's defaults without one).
+func biome_tint(vertex: Color) -> Color:
+	var base := Color(0.45, 0.35, 0.25)
+	var strength := 1.0
+	var mult := 0.4
+	if material != null:
+		var b: Variant = material.get_shader_parameter(&"base_color")
+		var s: Variant = material.get_shader_parameter(&"vertex_color_strength")
+		var m: Variant = material.get_shader_parameter(&"albedo_multiplier")
+		base = b if b is Color else base
+		strength = float(s) if s != null else strength
+		mult = float(m) if m != null else mult
+	# base_color is a source_color uniform (decoded); the vertex colour is read as it is.
+	var c := base.srgb_to_linear().lerp(vertex, clampf(strength, 0.0, 1.0))
+	return Color(c.r * mult, c.g * mult, c.b * mult)
+
+
+## How much of each of [param look]'s layers covers the ground at [param pos] (a point of the ground in the
+## body's frame, metres), as the ground shader lays its patches there: the same noise, at the same place (its
+## texture position is the body's frame wrapped every WRAP metres), the same rim. Without a position, the share
+## each covers on the whole. The shader also lets a patch fill the hollows of the ground's own image first,
+## which is not known here: near a rim the answer may be the other side's.
+static func layer_weights(look: Dictionary, pos: Variant = null) -> PackedFloat32Array:
+	var layers: Array = look.get("layers", [])
+	var w := PackedFloat32Array()
+	w.resize(layers.size())
+	if w.is_empty():
+		return w
+	w[0] = 1.0
+	var p := wrapped(pos) if pos is Vector3 else Vector3.ZERO
+	for i in range(1, layers.size()):
+		var l: Dictionary = layers[i]
+		var share := clampf(float(l.share), 0.0, 1.0)
+		var over := share
+		if pos is Vector3:
+			var sp := float(l.patch_scale)
+			var off := Vector3(17.0, 31.0, 5.0) * float(l.offset)
+			var where := noise(p * sp + off, WRAP * sp) * 0.65 + noise(p * sp * 2.0 + off, WRAP * sp * 2.0) * 0.35
+			where = clampf((where - 0.5) * 1.8 + 0.5, 0.0, 1.0)
+			over = smoothstep(1.0 - share - PATCH_RIM, 1.0 - share + PATCH_RIM, where)
+		# Laid one over the other, as the shader mixes them: what lies under keeps the rest.
+		for j in i:
+			w[j] *= 1.0 - over
+		w[i] = over
+	return w
+
+
+## The index of the layer covering most of [param weights] (layer_weights).
+static func main_layer(weights: PackedFloat32Array) -> int:
+	var best := 0
+	for i in weights.size():
+		if weights[i] > weights[best]:
+			best = i
+	return best
+
+
+## The large-scale light and dark of [param look]'s ground at [param pos] (the body's frame, metres), the factor
+## the shader multiplies it by: 1 without a position or without that variation.
+static func macro_factor(look: Dictionary, pos: Variant = null) -> float:
+	var strength := float(look.get("macro_strength", 0.0))
+	if strength <= 0.0 or not pos is Vector3:
+		return 1.0
+	var p := wrapped(pos)
+	var sm := float(look.macro_scale)
+	var m := noise(p * sm, WRAP * sm) * 0.65 + noise(p * sm * 2.0, WRAP * sm * 2.0) * 0.35
+	return 1.0 + (m - 0.5) * 2.0 * strength
+
+
+## What layer [param i] of [param look] multiplies the biome tint by, on average: mix(1, texture × gain,
+## strength) × mix(1, occlusion, AO_WEIGHT), read off the means of its images (the contrast keeps the mean).
+static func layer_factor(look: Dictionary, i: int) -> Color:
+	var l: Dictionary = look.layers[i]
+	var mean := texture_mean(l.tex, true)
+	var g := float(l.gain)
+	var c := Color.WHITE.lerp(Color(mean.r * g, mean.g * g, mean.b * g), clampf(float(look.strength), 0.0, 1.0))
+	var ao := ao_factor(l)
+	return Color(c.r * ao, c.g * ao, c.b * ao)
+
+
+## mix(1, the occlusion image's mean, AO_WEIGHT): what a layer's hollows darken it by on average; 1 without one.
+static func ao_factor(layer: Dictionary) -> float:
+	var orh: Texture2D = layer.get("orh")
+	return lerpf(1.0, texture_mean(orh, false).r, AO_WEIGHT) if orh != null else 1.0
+
+
+## The colour [param look]'s ground shows under the biome tint [param tint] (biome_tint), its layers weighed by
+## [param weights] (layer_weights), times [param macro] (macro_factor): the shader's ALBEDO on average.
+static func shown_colour(look: Dictionary, tint: Color, weights: PackedFloat32Array, macro: float = 1.0) -> Color:
+	var sum := Color(0, 0, 0)
+	for i in mini(weights.size(), (look.get("layers", []) as Array).size()):
+		var f := layer_factor(look, i)
+		sum += Color(f.r * weights[i], f.g * weights[i], f.b * weights[i])
+	return Color(clampf(tint.r * sum.r * macro, 0.0, 1.0), clampf(tint.g * sum.g * macro, 0.0, 1.0),
+			clampf(tint.b * sum.b * macro, 0.0, 1.0))
+
+
+## The mean colour of [param tex], read once: linear when [param srgb] (an albedo, which the shader decodes before
+## averaging), the raw numbers otherwise (an occlusion / roughness / height image). White when its pixels cannot
+## be read (no renderer). Any thread.
+static func texture_mean(tex: Texture2D, srgb: bool) -> Color:
+	if tex == null:
+		return Color.WHITE
+	var key := "%d|%s" % [tex.get_instance_id(), srgb]
+	_means_mutex.lock()
+	var known: Variant = _means.get(key)
+	_means_mutex.unlock()
+	if known != null:
+		return known
+	var mean := Color.WHITE
+	var img: Image = tex.get_image()
+	if img != null and not img.is_empty():
+		img = img.duplicate() as Image  # the texture's own image is left as it is
+		if img.is_compressed():
+			img.decompress()
+		img.clear_mipmaps()
+		img.convert(Image.FORMAT_RGBA8)
+		# Brought down to MEAN_SIDE² cells first (trilinear: each cell the average of its block), then decoded
+		# cell by cell before the last average, as the GPU decodes before it blends: the mean of a contrasted
+		# albedo is darker decoded than encoded. Texel by texel was 4 million reads for a 2048 px texture.
+		img.resize(MEAN_SIDE, MEAN_SIDE, Image.INTERPOLATE_TRILINEAR)
+		var sum := Color(0, 0, 0)
+		for y in MEAN_SIDE:
+			for x in MEAN_SIDE:
+				var c := img.get_pixel(x, y)
+				sum += c.srgb_to_linear() if srgb else c
+		mean = Color(sum.r / (MEAN_SIDE * MEAN_SIDE), sum.g / (MEAN_SIDE * MEAN_SIDE), sum.b / (MEAN_SIDE * MEAN_SIDE))
+	_means_mutex.lock()
+	_means[key] = mean
+	_means_mutex.unlock()
+	return mean
+
+
+## A tiling scale snapped to the seamless grid, as the ground shader's snap_scale.
+static func snap_scale(raw: float) -> float:
+	return maxf(roundf(raw * WRAP), 1.0) / WRAP
+
+
+## [param pos] (the body's frame) where the ground shader reads its textures and noises: wrapped every WRAP metres,
+## like its texture position (chunk_origin_mod + the vertex), whose patterns repeat on that period.
+static func wrapped(pos: Vector3) -> Vector3:
+	return Vector3(fposmod(pos.x, WRAP), fposmod(pos.y, WRAP), fposmod(pos.z, WRAP))
+
+
+## The ground shader's value noise (nova_noise): [param x] in lattice cells, wrapping every [param period] cells.
+static func noise(x: Vector3, period: float) -> float:
+	var i := x.floor()
+	var f := x - i
+	f = f * f * (Vector3(3.0, 3.0, 3.0) - 2.0 * f)
+	var n000 := _hash(_wrap_cell(i, period))
+	var n100 := _hash(_wrap_cell(i + Vector3(1, 0, 0), period))
+	var n010 := _hash(_wrap_cell(i + Vector3(0, 1, 0), period))
+	var n110 := _hash(_wrap_cell(i + Vector3(1, 1, 0), period))
+	var n001 := _hash(_wrap_cell(i + Vector3(0, 0, 1), period))
+	var n101 := _hash(_wrap_cell(i + Vector3(1, 0, 1), period))
+	var n011 := _hash(_wrap_cell(i + Vector3(0, 1, 1), period))
+	var n111 := _hash(_wrap_cell(i + Vector3(1, 1, 1), period))
+	return lerpf(lerpf(lerpf(n000, n100, f.x), lerpf(n010, n110, f.x), f.y),
+			lerpf(lerpf(n001, n101, f.x), lerpf(n011, n111, f.x), f.y), f.z)
+
+
+static func _wrap_cell(c: Vector3, period: float) -> Vector3:
+	return Vector3(fposmod(c.x, period), fposmod(c.y, period), fposmod(c.z, period))
+
+
+## The ground shader's nova_hash.
+static func _hash(q: Vector3) -> float:
+	var p := q * 0.1031
+	p -= p.floor()
+	p += Vector3.ONE * p.dot(Vector3(p.z, p.y, p.x) + Vector3.ONE * 31.32)
+	var h := (p.x + p.y) * p.z
+	return h - floorf(h)
+
+
+# ---------------------------------------------------------------------------
 # GPU data
 # ---------------------------------------------------------------------------
 
@@ -476,6 +728,9 @@ func _set_arrays(made: Dictionary) -> void:
 
 ## Rewrites the parameter texture from the resolved settings: the ground shows it at once.
 func refresh_ground() -> void:
+	_looks_mutex.lock()
+	_looks.clear()  # the ground's look follows the settings (ground_look)
+	_looks_mutex.unlock()
 	if material == null:
 		return
 	var albedo := _texture_paths(ALBEDO_KEYS)

@@ -97,6 +97,20 @@ uniform float blend_albedo_scale = 0.1;
 // vertex_color_strength, copied by GroundLook.material_for). On the textured path blend_ground_color is
 // that tint (GroundLook.tint): without it the band showed the bare texture, white marble on corundum.
 uniform float blend_vertex_color_strength : hint_range(0.0, 1.0) = 0.0;
+// A ground drawn by Nova (GroundLook.nova_material_for) applies more to its texture than a tint, and the band
+// applies the same: the texture's contrast round its mean colour (blend_albedo_mean, linear), then
+// mix(1, texture * gain, strength), times the mean darkening of its occlusion image (blend_albedo_ao) --
+// terrain_biome.gdshaderinc's Nova loop, read off the same settings. Close to the camera the ground reads its
+// first material again at its close-up tile (blend_albedo_fine_scale, 0 = none), whole up to fine_near metres
+// and gone by fine_far. The defaults leave the planet_surface path exactly as it was: texture * tint.
+uniform float blend_albedo_fine_scale = 0.0;
+uniform float blend_albedo_fine_near = 10.0;
+uniform float blend_albedo_fine_far = 36.0;
+uniform float blend_albedo_gain = 1.0;
+uniform float blend_albedo_strength : hint_range(0.0, 1.0) = 1.0;
+uniform float blend_albedo_contrast = 1.0;
+uniform vec3 blend_albedo_mean = vec3(0.5);
+uniform float blend_albedo_ao = 1.0;
 uniform float blend_fade_start = 100.0;
 // The fringe is drawn AFTER the aerial-perspective quad and so carries no atmospheric veil: that
 // quad reads a screen copy taken once, before the whole alpha list, and overwrites every pixel it
@@ -207,6 +221,14 @@ float tri_noise(vec3 p, vec3 w) {
 			+ texture(blend_noise, p.xy).r * w.z;
 }
 
+// The ground's albedo, triplanar on model coordinates at tiling s.
+vec3 tri_albedo(vec3 p, vec3 w, float s) {
+	vec3 ap = p * s;
+	return texture(blend_albedo_tex, ap.yz).rgb * w.x
+			+ texture(blend_albedo_tex, ap.xz).rgb * w.y
+			+ texture(blend_albedo_tex, ap.xy).rgb * w.z;
+}
+
 
 void fragment() {
 	// An unconfigured plane is all zeroes, which would make blend_h zero EVERYWHERE and repaint the
@@ -269,11 +291,17 @@ void fragment() {
 		// unlike planet_surface.gdshader: its stochastic tiling exists to hide repetition across
 		// hundreds of metres of open ground, and 499 lines of it would buy nothing on a band a few
 		// dozen centimetres tall where a single tile barely fits.
-		vec3 ap = tri_pos * blend_albedo_scale;
-		ALBEDO = (texture(blend_albedo_tex, ap.yz).rgb * tri_w.x
-				+ texture(blend_albedo_tex, ap.xz).rgb * tri_w.y
-				+ texture(blend_albedo_tex, ap.xy).rgb * tri_w.z)
-				* mix(vec3(1.0), blend_ground_color, blend_vertex_color_strength);
+		vec3 tex = tri_albedo(tri_pos, tri_w, blend_albedo_scale);
+		// A uniform condition, so the second read keeps its implicit derivatives (no per-pixel branch).
+		if (blend_albedo_fine_scale > 0.0) {
+			float fine = 1.0 - smoothstep(blend_albedo_fine_near, blend_albedo_fine_far, length(VERTEX));
+			tex = mix(tex, tri_albedo(tri_pos, tri_w, blend_albedo_fine_scale), fine);
+		}
+		if (abs(blend_albedo_contrast - 1.0) > 0.001) {
+			tex = max(blend_albedo_mean + (tex - blend_albedo_mean) * blend_albedo_contrast, vec3(0.0));
+		}
+		ALBEDO = clamp(mix(vec3(1.0), tex * blend_albedo_gain, blend_albedo_strength) * blend_albedo_ao
+				* mix(vec3(1.0), blend_ground_color, blend_vertex_color_strength), vec3(0.0), vec3(1.0));
 	} else {
 		float detail = 0.5;  // neutral: no detail texture for this biome
 		if (blend_detail_uv.y > 0.0) {

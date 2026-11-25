@@ -123,8 +123,10 @@ func refresh() -> void:
 	# -- it was once written at three call sites with two different formulas -- and it was being run
 	# three times here on the same point.
 	var dir: Vector3 = planet.local_dir_of(ground)
+	# With the ground point's distance from the centre: on a Nova ground, the patch of gravel or regolith
+	# lying right there is the one the band copies.
 	_apply(_up_at(planet, ground), ground, b["center"],
-			GroundLook.at(planet.planet_data, dir, fallback_color))
+			GroundLook.at(planet.planet_data, dir, fallback_color, planet.global_position.distance_to(ground)))
 
 
 ## Turn the fringe on or off for this object without removing the component.
