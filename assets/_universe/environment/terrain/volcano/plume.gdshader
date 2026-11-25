@@ -30,6 +30,13 @@ uniform float sim_time = 0.0;
 uniform float glow = 1.0;
 uniform float multi_scatter = 0.45;
 uniform float lava_fill = 0.8;
+// The lava's light comes from the vent, a little above the origin: it falls off as an extended source of
+// radius ~lava_reach (m), so it lights the underside of the column and fades with height. At night
+// (vent_probe) the one light probe looks toward the vent instead of the set sun: the smoke between the
+// vent and a lobe shades it, which is what makes the top of the plume dark.
+uniform float vent_y = 150.0;
+uniform float lava_reach = 600.0;
+uniform bool vent_probe = false;
 uniform int max_steps = 140;
 uniform float erosion = 1.05;
 uniform float noise_freq = 0.42;
@@ -195,6 +202,7 @@ void fragment() {
 		float w_shade = 0.0;
 		float w_cloud = 0.0;
 		float w_size = 0.0;
+		float w_under = 0.0;
 		for (int word = 0; word < 7; word++) {
 			uint bits = near[word];
 			while (bits != 0u) {
@@ -222,6 +230,8 @@ void fragment() {
 				w_shade += r * pb.y;
 				w_cloud += r * pb.w;
 				w_size += r * s.w;
+				// Lit from below: the underside of each puff faces the lava, its top does not.
+				w_under += r * mix(1.0, 0.2, clamp(rel.y * 0.5 + 0.5, 0.0, 1.0));
 			}
 		}
 		if (rho <= 0.001) {
@@ -241,8 +251,12 @@ void fragment() {
 		// Broad sun/sky occlusion is already cached per puff by PlumeModel.
 		// One local sun probe preserves lobe detail; density estimates local sky attenuation.
 		float probe = size * 0.22;
-		float toward_sun = field_light(p + sun_dir * probe, near) * probe;
-		float sun_t = exp(-toward_sun * sigma * 0.3) * w_sun * inv;
+		vec3 to_vent = vec3(0.0, vent_y, 0.0) - p;
+		vec3 probe_dir = vent_probe ? normalize(to_vent) : sun_dir;
+		float toward = field_light(p + probe_dir * probe, near) * probe;
+		float probe_t = exp(-toward * sigma * 0.3);
+		float sun_t = (vent_probe ? 1.0 : probe_t) * w_sun * inv;
+		float vent_t = vent_probe ? probe_t : 1.0;
 		// A little powder: the very edge of a thick lobe scatters less than just under it.
 		sun_t *= mix(1.0, 1.0 - exp(-rho * 3.0), 0.5);
 		float sky_t = exp(-rho * sigma * size * 0.16) * w_sky * inv;
@@ -253,7 +267,8 @@ void fragment() {
 		vec3 light = sun_color * sun_t * phase + sky_color * mix(0.05, 1.0, sky_t);
 		light += sun_color * multi_scatter * mix(0.3, 1.0, sky_t);
 		light += ground_color * (1.0 - smoothstep(0.0, 1500.0, p.y)) * 0.3;
-		light += vec3(1.0, 0.3, 0.07) * glow * exp(-max(p.y, 0.0) / 800.0) * lava_fill;
+		float reach2 = dot(to_vent, to_vent) / (lava_reach * lava_reach);
+		light += vec3(1.0, 0.3, 0.07) * glow * lava_fill * vent_t * (w_under * inv) / (1.0 + reach2);
 		vec3 src = albedo * light;
 		// The fire under the volcano, lighting the very base of the column.
 		src += vec3(1.0, 0.27, 0.05) * glow * exp(-max(p.y, 0.0) / 130.0) * 0.8;

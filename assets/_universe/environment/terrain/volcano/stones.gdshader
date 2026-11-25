@@ -32,8 +32,10 @@ void vertex() {
 		vec3 vel = age < b.y ? a.xyz + vec3(0.0, -gravity * t, 0.0) : vec3(0.0);
 		float dist = length(pos - cam_local);
 		v_q = VERTEX * pow(b.x, 0.7) * 0.5 + vec3(b.z * 37.0);
-		// A stone never gets smaller than about a pixel: from afar it is the glowing dot that counts.
-		float size = max(b.x, dist * 0.0009);
+		// A stone never gets smaller than about a pixel: from afar it is the glowing dot that counts, and
+		// a fresh, incandescent bomb reads as a bigger spark than a cooled one.
+		float hot = 1.0 - smoothstep(4.0, 40.0, age);
+		float size = max(b.x, dist * 0.0009 * (1.0 + 1.2 * hot));
 		// Gone at the end of its slot, before the slot is reused.
 		size *= 1.0 - smoothstep(period - 8.0, period - 2.0, age);
 		// Its own proportions: flattened, elongated, from its seed.
@@ -51,7 +53,7 @@ void vertex() {
 			v += dir * dot(v, dir) * min(speed * 0.04, 5.0) * smoothstep(120.0, 1500.0, dist);
 		}
 		VERTEX = v + pos;
-		v_heat = 1.0 - smoothstep(4.0, 40.0, age);
+		v_heat = hot;
 		v_far = smoothstep(300.0, 1500.0, dist);
 	}
 }

@@ -9,6 +9,7 @@ extends Node3D
 ## works in local metres and receives the camera position computed here in double precision.
 
 const SHADER_DIR := "res://assets/_universe/environment/terrain/volcano/"
+const VENT_GLOW := preload("res://scenes/planet/volcano/volcano_vent_glow.gd")
 const MAX_VIEW_M := 300000.0
 const MAX_FULL := 3
 ## Stones are not thrown for an eye farther than this (m): a stone is a pixel by then.
@@ -29,6 +30,8 @@ static var _billow: NoiseTexture3D = null
 
 var model := VolcanoPlumeModel.new()
 var stones: VolcanoStoneField
+## The vent's light, halo and flank flows (volcano_vent_glow.gd).
+var vent_glow: VENT_GLOW
 var volcano: VolcanoRelief.Volcano
 var data: PlanetData
 var _mat := ShaderMaterial.new()
@@ -140,6 +143,11 @@ func _ready() -> void:
 	stones.throw_rate = scale_h
 	stones.player_hit.connect(_on_player_hit)
 	add_child(stones)
+	_mat.set_shader_parameter("vent_y", clampf(model.vent_radius, VENT_GLOW.LIGHT_MIN_Y_M, VENT_GLOW.LIGHT_MAX_Y_M))
+	_mat.set_shader_parameter("lava_reach", clampf(model.vent_radius * 2.0, 400.0, 1200.0))
+	vent_glow = VENT_GLOW.new()
+	vent_glow.setup(_relief, model.vent_radius, volcano.seed ^ int(model.volcano_key.hash()))
+	add_child(vent_glow)
 
 
 func _exit_tree() -> void:
@@ -225,6 +233,7 @@ func _process(delta: float) -> void:
 	if not stones.visible:
 		stones.suspend()
 	if not drawn:
+		vent_glow.update(delta, eye, false, 0.0, 1.0)
 		_model_elapsed = 1.0
 		return
 	var t := clock()
@@ -261,7 +270,9 @@ func _process(delta: float) -> void:
 	_mat.set_shader_parameter("cam_local", eye)
 	_mat.set_shader_parameter("sim_time", fmod(t, 50.0))
 	var flicker := 0.8 + 0.2 * sin(fmod(t, 1000.0) * 9.0) * sin(fmod(t, 1000.0) * 3.7)
-	_mat.set_shader_parameter("glow", clampf(model.eruption_activity(t), 0.0, 1.3) * flicker)
+	var heat := clampf(model.eruption_activity(t), 0.0, 1.3)
+	_mat.set_shader_parameter("glow", heat * flicker)
+	vent_glow.update(delta, eye, true, heat, flicker)
 	if stones.visible:
 		_foot_check_at -= delta
 		if not stones.has_live_stones(t):
@@ -309,6 +320,8 @@ func _update_wind(t: float) -> void:
 
 
 ## Sun and sky, in this frame: the star's real direction, and how much of it reaches here by now.
+## At night every term goes to zero with the sun, like the ground's ambient (the sky, black at night):
+## a floor here made the smoke a grey puff over a black landscape. Only the lava lights it then.
 func _light() -> void:
 	var to_star := Vector3.UP
 	var scene: Node = NetworkOrchestrator.universe_scene
@@ -320,14 +333,16 @@ func _light() -> void:
 	var day := smoothstep(-0.1, 0.18, to_star.y)
 	var low := 1.0 - smoothstep(0.0, 0.35, to_star.y)
 	var sun := Vector3(1.9, 1.8, 1.65).lerp(Vector3(2.1, 1.25, 0.7), low) * day
-	var sky := Vector3(0.6, 0.66, 0.75) * lerpf(0.1, 1.0, day)
-	stones.trail_mat.set_shader_parameter("smoke_color", Vector3(0.26, 0.25, 0.245) * lerpf(0.05, 1.0, day))
+	var sky := Vector3(0.6, 0.66, 0.75) * day
+	stones.trail_mat.set_shader_parameter("smoke_color", Vector3(0.26, 0.25, 0.245) * day)
 	_mat.set_shader_parameter("sun_dir", to_star)
 	_mat.set_shader_parameter("sun_color", sun)
 	_mat.set_shader_parameter("sky_color", sky)
-	_mat.set_shader_parameter("ground_color", Vector3(0.3, 0.27, 0.25) * lerpf(0.05, 1.0, day))
+	_mat.set_shader_parameter("ground_color", Vector3(0.3, 0.27, 0.25) * day)
 	_mat.set_shader_parameter("haze_color", sky * 0.85)
 	_mat.set_shader_parameter("lava_fill", lerpf(3.5, 0.7, day))
+	# Once the sun no longer counts, the shader's one light probe looks toward the vent instead.
+	_mat.set_shader_parameter("vent_probe", day < 0.05)
 
 
 ## Only the puffs that can touch the screen go to the shader: every pixel tests each one it receives.
