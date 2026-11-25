@@ -237,6 +237,8 @@ func _light_for(moon: Node3D) -> DirectionalLight3D:
 	light.shadow_opacity = 1.0  # a shadow stops all of it, as the sun's (PlayerSunLight)
 	light.shadow_blur = 1.649
 	light.directional_shadow_max_distance = SettingsManager.get_shadow_distance()
+	# Effects that draw their own light (the volcano plumes) read the moonlight from this group.
+	light.add_to_group(&"moon_light")
 	add_child(light)
 	_lights[moon] = light
 	return light

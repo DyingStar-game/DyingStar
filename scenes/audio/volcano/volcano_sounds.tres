@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="VolcanoSoundSet" load_steps=7 format=3]
+[gd_resource type="Resource" script_class="VolcanoSoundSet" load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://scenes/audio/volcano/volcano_sound_set.gd" id="1_set"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/geothermal-steam-loop.ogg" id="2_steam"]
@@ -6,6 +6,22 @@
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/rock-cracking-rumble-loop.ogg" id="4_cracks"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-explosion-far-1.ogg" id="5_far1"]
 [ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-explosion-far-2.ogg" id="6_far2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-1.ogg" id="7_wave1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-2.ogg" id="8_wave2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-3.ogg" id="9_wave3"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-4.ogg" id="10_wave4"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/volcanic-quake-1.ogg" id="11_quake1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/volcanic-quake-2.ogg" id="12_quake2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-small-1.ogg" id="13_small1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-small-2.ogg" id="14_small2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-1.ogg" id="15_medium1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-2.ogg" id="16_medium2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-3.ogg" id="17_medium3"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-4.ogg" id="18_medium4"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-large-1.ogg" id="19_large1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/ash-fall-loop-1.ogg" id="20_ash1"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/ash-fall-loop-2.ogg" id="21_ash2"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/environment/volcano/ash-fall-loop-3.ogg" id="22_ash3"]
 
 [resource]
 script = ExtResource("1_set")
@@ -13,3 +29,9 @@ steam = ExtResource("2_steam")
 rumble = ExtResource("3_rumble")
 cracks = ExtResource("4_cracks")
 explosions = Array[AudioStream]([ExtResource("5_far1"), ExtResource("6_far2")])
+quakes = Array[AudioStream]([ExtResource("11_quake1"), ExtResource("12_quake2")])
+blast_waves = Array[AudioStream]([ExtResource("7_wave1"), ExtResource("8_wave2"), ExtResource("9_wave3"), ExtResource("10_wave4")])
+impacts_small = Array[AudioStream]([ExtResource("13_small1"), ExtResource("14_small2")])
+impacts_medium = Array[AudioStream]([ExtResource("15_medium1"), ExtResource("16_medium2"), ExtResource("17_medium3"), ExtResource("18_medium4")])
+impacts_large = Array[AudioStream]([ExtResource("19_large1")])
+ash_loops = Array[AudioStream]([ExtResource("20_ash1"), ExtResource("21_ash2"), ExtResource("22_ash3")])
