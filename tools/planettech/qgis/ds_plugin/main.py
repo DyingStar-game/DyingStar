@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from . import settings
+from .roads_ui import RoadsUi
 from .runner import Job, Runner, Step, log_dir
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +33,7 @@ class DyingStarPlugin:
         self.runner = Runner(iface, PLUGIN_DIR, PACKAGE)
         self.menu = None
         self.toolbar = None
+        self.roads = None
         self.actions = []
 
     # ── QGIS hooks ────────────────────────────────────────────────────────────
@@ -65,6 +67,10 @@ class DyingStarPlugin:
         self._add(exp, "Grottes", lambda: self._export("export_cave_sites", "Grottes"))
 
         roads = self.menu.addMenu("Routes")
+        self.roads = RoadsUi(self)
+        self._add(roads, "Terrain de la zone…", self.roads.zone_terrain,
+                  tip="Altitude, courbes et pente de la zone affichée, classée selon la pente "
+                      "max de la route ; source rapide (QGIS) ou exacte (Godot).")
         self._add(roads, "Aperçu des massifs…", self.mountain_preview,
                   tip="Courbes de niveau et ombrage du relief que Godot donnera aux "
                       "massifs et crêtes tels qu'ils sont dessinés — sans export.")
@@ -100,6 +106,9 @@ class DyingStarPlugin:
             bar.addMenu(self.menu)
 
     def unload(self):
+        if self.roads is not None:
+            self.roads.unload()
+            self.roads = None
         for action in self.actions:
             self.iface.removeToolBarIcon(action)
         if self.toolbar is not None:
