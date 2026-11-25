@@ -29,6 +29,8 @@ const AIR_S := 0.5
 ## A blast heard this long (s) after its time is still played; later (a player who arrives in the middle
 ## of an eruption), it is not.
 const BLAST_GRACE_S := 3.0
+## A flash seen this long (s) after its blast is still shown; later, not (it lasts under a second).
+const FLASH_GRACE_S := 0.5
 ## Under this level (dB) a loop is stopped.
 const QUIET_DB := -70.0
 ## How far either way (share of the mean gap) a later blast of an eruption moves from its even place.
@@ -51,6 +53,8 @@ static var _played: Dictionary = {}
 static var _felt: Dictionary = {}
 ## The same for the quakes of strong eruptions.
 static var _quaked: Dictionary = {}
+## The same for the flashes of the blasts, seen at once.
+static var _flashed: Dictionary = {}
 
 var sounds: SoundSet
 var _plume: VolcanoPlume
@@ -397,6 +401,7 @@ func _process(delta: float) -> void:
 	if _elapsed < UPDATE_S:
 		return
 	_elapsed = 0.0
+	_flash_due()
 	if _dist >= sounds.explosion_range_m and _dist >= sounds.rumble_range_m:
 		_silence()
 		return
@@ -418,6 +423,24 @@ func _process(delta: float) -> void:
 			_ash_wind = _plume.global_basis.inverse() * _planet.wind_world_at(cam.global_position)
 	_set_voice(rank)
 	_hear(cam)
+
+
+## The flash of a blast, at the time of the blast itself: light does not wait like sound and ground do.
+## Same schedule and same draws as the blasts heard later (blast_due), so it is the same explosion.
+func _flash_due() -> void:
+	if _plume.vent_glow == null:
+		return
+	var model: VolcanoPlumeModel = _plume.model
+	var now: float = VolcanoPlume.clock()
+	var window: Dictionary = window_at(model.profile, now, sounds.build_up_s, model.volcano_seed,
+			model.volcano_key, model.dormant)
+	var salt: int = model.volcano_seed ^ int(float(window.get("start_unix", 0.0)))
+	var last: float = float(_flashed.get(model.volcano_key, NAN))
+	var index: int = blast_due(window, now, last, FLASH_GRACE_S, sounds.explosion_repeat_s, salt)
+	if index < 0:
+		return
+	_flashed[model.volcano_key] = blast_time_of(window, index, sounds.explosion_repeat_s, salt)
+	_plume.vent_glow.flash(index == 0, db_to_linear(blast_drop_db(index, sounds.explosion_repeat_drop_db, salt)))
 
 
 ## Reads the schedule at the heard time and sets every sound.

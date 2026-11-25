@@ -172,8 +172,9 @@ extends Resource
 @export_group("Ash fall")
 ## Loops of falling ash and lapilli; one plays, and it crossfades now and then to another.
 @export var ash_loops: Array[AudioStream] = []
-## Level (dB) of the ash fall at its densest (ash_full). The loops sit near -28 LUFS: raise to bring them up.
-@export_range(-60.0, 12.0, 0.5) var ash_db: float = 0.0
+## Level (dB) of the ash fall at its densest (ash_full). The loops sit near -28 LUFS; -6 keeps the patter
+## under the rumble and the impacts. Raise to bring it up.
+@export_range(-60.0, 12.0, 0.5) var ash_db: float = -6.0
 ## Ash over the listener (sum of the densities of the puffs overhead, each 0..~1) at which the fall is at
 ## its full level: lower = loud already under a thin plume.
 @export_range(0.05, 20.0, 0.05) var ash_full: float = 2.0

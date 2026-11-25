@@ -64,3 +64,15 @@ func test_ash_fades_in_and_out_without_a_corner() -> void:
 	assert_eq(ASH.envelope_gain(1.0), 1.0, "full at the end")
 	assert_lt(ASH.envelope_gain(0.05), 0.05, "starts gently")
 	assert_gt(ASH.envelope_gain(0.95), 0.95, "ends gently")
+
+
+func test_ash_lands_downwind_not_upwind() -> void:
+	# A puff 8 km up over the vent, 3 km wide; wind 10 m/s toward +x; ash falling at 4 m/s.
+	var puff := Vector4(0.0, 8000.0, 0.0, 3000.0)
+	var wind := Vector2(10.0, 0.0)
+	var downwind := VolcanoPlume.fallout_weight(puff, Vector3(10000.0, 0.0, 0.0), wind, 4.0)
+	var upwind := VolcanoPlume.fallout_weight(puff, Vector3(-5000.0, 0.0, 0.0), wind, 4.0)
+	assert_gt(downwind, 0.5, "the ash lands downwind")
+	assert_eq(upwind, 0.0, "nothing upwind of the volcano")
+	assert_eq(VolcanoPlume.fallout_weight(puff, Vector3(0.0, 9000.0, 0.0), wind, 4.0), 0.0, "none from a puff below")
+	assert_gt(VolcanoPlume.fallout_weight(puff, Vector3.ZERO, Vector2.ZERO, 4.0), 0.9, "straight down without wind")

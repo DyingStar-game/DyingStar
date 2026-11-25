@@ -11,12 +11,13 @@ const SHADER := "res://assets/_universe/environment/terrain/volcano/ash_fall.gds
 ## The group WeatherMasks puts itself in.
 const MASKS_GROUP := &"weather_masks"
 
-## Particles at the densest fall; the ash level scales how many are alive (amount_ratio).
-@export var flakes: int = 3000
+## Particles at the densest fall; the ash level scales how many are alive (amount_ratio). Fine ash:
+## many small flakes rather than a few big ones.
+@export var flakes: int = 6000
 ## Size (m) of the box of falling ash around the camera: larger = deeper but sparser for the same count.
 @export var box_m: Vector3 = Vector3(40.0, 30.0, 40.0)
-## Size (m) of a flake of ash; lapilli draw up to 1.6 times it.
-@export var flake_m: float = 0.05
+## Size (m) of a flake of ash; the rare lapilli draw up to 1.4 times it.
+@export var flake_m: float = 0.022
 ## Falling speed (m/s) of a mean flake; lapilli fall faster, fine ash slower.
 @export var fall_m_s: float = 1.8
 ## Albedo of the ash: dark grey, lit by the scene's lights.

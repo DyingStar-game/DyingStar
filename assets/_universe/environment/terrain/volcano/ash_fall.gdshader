@@ -30,9 +30,10 @@ void start() {
 		TRANSFORM = mat4(1.0);
 		TRANSFORM[3].xyz = (r - 0.5) * box_size;
 	}
-	// Phase of its flutter, and its build: lapilli bigger and faster than flakes of ash.
+	// Phase of its flutter, and its build: mostly fine ash, a rare lapillus bigger and faster.
 	CUSTOM.x = rand01(seed) * 6.2832;
-	CUSTOM.y = mix(0.6, 1.6, rand01(seed) * rand01(seed));
+	float build = rand01(seed);
+	CUSTOM.y = mix(0.6, 1.4, build * build * build);
 	float s = CUSTOM.y;
 	TRANSFORM[0].xyz = vec3(s, 0.0, 0.0);
 	TRANSFORM[1].xyz = vec3(0.0, s, 0.0);

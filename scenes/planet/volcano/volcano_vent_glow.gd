@@ -41,6 +41,22 @@ const FLOW_HEAT_UP_S := 30.0
 const FLOW_COOL_S := 240.0
 const SHADER_DIR := "res://assets/_universe/environment/terrain/volcano/"
 
+@export_group("Explosion flash")
+## Peak of the flash of an eruption's FIRST explosion, in multiples of the vent's full glow: the light,
+## the halo and the plume's underside jump this high, then fall within flash_decay_s. 6 = a blinding
+## burst that lights the flanks and the ground for a few km, as the eruption opens.
+@export var flash_first: float = 6.0
+## Peak of the flash of a later explosion of the same eruption (times the vent's full glow), before the
+## explosion's own drop: they come every half minute or so, so smaller.
+@export var flash_later: float = 3.0
+## Time constant (s) of the flash's fall: after it the flash is at 37 %, after three at 5 %. 0.3 to 1 s
+## reads as a flash; longer as a glow.
+@export var flash_decay_s: float = 0.45
+## Flicker of the flash while it falls (0 = smooth decay, 1 = it stutters to black and back).
+@export var flash_flicker: float = 0.35
+
+var _flash_age := INF
+var _flash_peak := 0.0
 var _relief: Callable
 var _vent_radius := 300.0
 var _seed := 0
@@ -96,20 +112,44 @@ func _ready() -> void:
 	add_child(_halo)
 
 
+## Strength (0..1) of a flash [param age_s] after its explosion: instant rise, exponential fall of time
+## constant [param decay_s], stuttering by [param flicker] (0..1). 0 before it and once spent. Pure.
+static func flash_envelope(age_s: float, decay_s: float, flicker: float) -> float:
+	if age_s < 0.0 or age_s > decay_s * 8.0:
+		return 0.0
+	var fall: float = exp(-age_s / maxf(decay_s, 0.01))
+	var stutter: float = 0.5 + 0.5 * sin(age_s * 61.0) * sin(age_s * 23.0 + 1.3)
+	return fall * (1.0 - clampf(flicker, 0.0, 1.0) * stutter)
+
+
+## An explosion now: its light arrives at once (the sound and the shock wave later). [param first]: the
+## eruption's first one; [param scale]: its own level (0..1, the later blasts' drop).
+func flash(first: bool, scale: float) -> void:
+	_flash_age = 0.0
+	_flash_peak = (flash_first if first else flash_later) * clampf(scale, 0.0, 1.0)
+
+
+## The flash's strength now, in multiples of the vent's full glow (0 without one).
+func flash_level() -> float:
+	return _flash_peak * flash_envelope(_flash_age, flash_decay_s, flash_flicker)
+
+
 ## Once a frame from the plume. [param drawn]: the plume is drawn (near and among the nearest);
 ## [param heat]: eruption strength 0..~1.3; [param flicker]: the plume's flicker, ~0.6..1.
 func update(delta: float, eye: Vector3, drawn: bool, heat: float, flicker: float) -> void:
 	var rate := 1.0 / FLOW_HEAT_UP_S if heat > _flow_heat else 1.0 / FLOW_COOL_S
 	_flow_heat = move_toward(_flow_heat, clampf(heat, 0.0, 1.0), rate * delta)
-	var lit := drawn and heat > 0.02
+	_flash_age += delta
+	var glow := heat * flicker + flash_level()
+	var lit := drawn and glow > 0.02
 	_light.visible = lit
 	_halo.visible = lit
 	if lit:
-		_light.light_energy = LIGHT_ENERGY * heat * flicker
+		_light.light_energy = LIGHT_ENERGY * glow
 		var size := clampf(_vent_radius * HALO_VENT_SHARE, HALO_MIN_M, HALO_MAX_M)
 		size = maxf(size, eye.distance_to(_halo.position) * HALO_MIN_ANGLE)
 		_halo.scale = Vector3.ONE * size
-		_halo_mat.set_shader_parameter("intensity", heat * flicker)
+		_halo_mat.set_shader_parameter("intensity", glow)
 	if not drawn:
 		return
 	if not _laid and _flow_heat > 0.0 and eye.length() < FLOW_BUILD_M:

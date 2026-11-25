@@ -27,6 +27,11 @@ const LIGHT_PER_ENERGY := 0.95
 const MOON_LIGHT_GROUP := &"moon_light"
 ## Ash keeps falling from the plume this long (s) after an eruption stops throwing it.
 const ASH_SETTLE_S := 300.0
+## Mean settling speed (m/s) of the ash that reaches the ground near a volcano (fine ash ~0.5, lapilli
+## several): with it and the wind, where a puff's ash lands (fallout_weight).
+const ASH_FALL_M_S := 4.0
+## Longest fall (s) taken into account: a footprint never lies further downwind than wind x this.
+const ASH_MAX_FALL_S := 1800.0
 
 ## R&D only: added to the shared clock, to jump to a moment of the volcano's life.
 static var debug_time_shift := 0.0
@@ -278,7 +283,8 @@ func _process(delta: float) -> void:
 	_mat.set_shader_parameter("sim_time", fmod(t, 50.0))
 	var flicker := 0.8 + 0.2 * sin(fmod(t, 1000.0) * 9.0) * sin(fmod(t, 1000.0) * 3.7)
 	var heat := clampf(model.eruption_activity(t), 0.0, 1.3)
-	_mat.set_shader_parameter("glow", heat * flicker)
+	# An explosion's flash lights the underside of the plume too.
+	_mat.set_shader_parameter("glow", heat * flicker + vent_glow.flash_level())
 	vent_glow.update(delta, eye, true, heat, flicker)
 	if stones.visible:
 		_foot_check_at -= delta
@@ -401,22 +407,33 @@ func _compact(eye: Vector3, fwd: Vector3, fov_deg: float) -> int:
 	return n
 
 
-## Ash over a point of this frame: the summed density of the drawn puffs above it, each weighed by how
-## close to its axis the point stands (0 outside it). Only while an eruption throws ash, or did within
-## ASH_SETTLE_S. For the ash-fall sound, a few times a second: one pass over the live puffs.
+## Ash falling on a point of this frame: the summed density of the drawn puffs whose FALLOUT reaches it.
+## Ash does not fall straight down from a puff: on its way down the wind carries it, so a puff's footprint
+## lies downwind of it (fallout_weight). Only while an eruption throws ash, or did within ASH_SETTLE_S.
+## For the ash fall, twice a second: one pass over the live puffs.
 func ash_over(local: Vector3) -> float:
 	var t := clock()
 	if model.eruption_activity(t) <= 0.0 and model.eruption_activity(t - ASH_SETTLE_S) <= 0.0:
 		return 0.0
 	var ash := 0.0
 	for i in _snap_active:
-		var s: Vector4 = _snap_a[i]
-		if s.y <= local.y:
-			continue
-		var off := Vector2(s.x - local.x, s.z - local.z).length() / maxf(s.w, 1.0)
-		if off < 1.0:
-			ash += _snap_b[i].x * (1.0 - smoothstep(0.5, 1.0, off))
+		ash += _snap_b[i].x * fallout_weight(_snap_a[i], local, model.wind, ASH_FALL_M_S)
 	return ash
+
+
+## How much (0..1) of the ash of puff [param puff] (centre xyz, radius w, this frame) lands on [param at]:
+## the puff's disc moved downwind by what [param wind] (m/s, x/z, the plume's wind at its ceiling; half
+## of it on average down the fall) carries the ash while it falls from the puff's height to [param at]'s at
+## [param fall_m_s], widened by the turbulence on the way. 0 for a puff below. Pure.
+static func fallout_weight(puff: Vector4, at: Vector3, wind: Vector2, fall_m_s: float) -> float:
+	var drop := puff.y - at.y
+	if drop <= 0.0:
+		return 0.0
+	var carried := wind * 0.5 * minf(drop / maxf(fall_m_s, 0.01), ASH_MAX_FALL_S)
+	var footprint := Vector2(puff.x, puff.z) + carried
+	var radius := maxf(puff.w + carried.length() * 0.15, 1.0)
+	var off := Vector2(at.x, at.z).distance_to(footprint) / radius
+	return 1.0 - smoothstep(0.5, 1.0, off)
 
 
 func _on_player_hit(impact_speed: float, radius: float) -> void:

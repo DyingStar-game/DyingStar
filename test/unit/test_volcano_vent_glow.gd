@@ -82,3 +82,30 @@ func test_no_flows_far_away_or_before_an_eruption() -> void:
 	for i in 50:
 		glow.update(0.1, Vector3(VENT_GLOW.FLOW_BUILD_M * 2.0, 0.0, 0.0), true, 1.0, 1.0)
 	assert_false(glow.has_node("FlankFlows"), "nothing laid for a far camera")
+
+
+func test_flash_envelope() -> void:
+	assert_eq(VENT_GLOW.flash_envelope(-0.1, 0.45, 0.0), 0.0, "nothing before the explosion")
+	assert_eq(VENT_GLOW.flash_envelope(0.0, 0.45, 0.0), 1.0, "full at once: light does not wait")
+	assert_almost_eq(VENT_GLOW.flash_envelope(0.45, 0.45, 0.0), exp(-1.0), 0.001, "37 % after one decay")
+	assert_lt(VENT_GLOW.flash_envelope(1.4, 0.45, 0.0), 0.05, "spent within about a second")
+	assert_eq(VENT_GLOW.flash_envelope(10.0, 0.45, 0.35), 0.0, "nothing long after")
+	for i in 50:
+		var age := i * 0.02
+		var flickering := VENT_GLOW.flash_envelope(age, 0.45, 0.35)
+		assert_between(flickering, VENT_GLOW.flash_envelope(age, 0.45, 0.0) * 0.64, VENT_GLOW.flash_envelope(age, 0.45, 0.0),
+				"the flicker only takes some of it away")
+
+
+func test_first_explosion_flashes_brighter() -> void:
+	var glow := _glow()
+	glow.flash(true, 1.0)
+	var first: float = glow.flash_level()
+	glow.flash(false, 1.0)
+	var later: float = glow.flash_level()
+	assert_gt(first, later, "the first explosion of an eruption is the brightest")
+	glow.update(0.1, Vector3(3000.0, 1500.0, 0.0), true, 0.0, 1.0)
+	assert_true(_light(glow).visible, "a flash lights the vent even without a steady glow")
+	for i in 40:
+		glow.update(0.1, Vector3(3000.0, 1500.0, 0.0), true, 0.0, 1.0)
+	assert_false(_light(glow).visible, "dark again once spent: no floor")
