@@ -50,6 +50,11 @@ const FRINGE_MAX_M := 0.9
 ## chunk again, which the fade in needs and a shader cannot read back from the transform — and, last, the
 ## object's layer slot (1, 2…), positive when the object collides ([method is_solid]), negative when not.
 const ROW := 16
+## A dressed model's meta: the ground colour its material was tinted for (NovaBody.biome_tint of its variant's
+## catalogue rock, rock_tint). Each block of rocks is tinted again for the ground it stands on (_tint_block).
+const BASE_TINT_META := &"nova_base_tint"
+## How far a block's tint may stray from its material's, per channel (ground_ratio).
+const GROUND_RATIO_RANGE := Vector2(0.2, 4.0)
 ## Which laid objects collide (the server lays them as boxes, NovaRockCollision): those at least
 ## SOLID_MIN_SIZE_M long (largest side) AND standing at least SOLID_MIN_PROUD_M above the ground — a 4 m wide
 ## gravel patch 6 cm thick is long, and nothing anyone bumps into.
@@ -395,6 +400,7 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "", bare 
 					continue
 				if look != null:
 					m = dressed(m, body, id, look, float(of.call("own_texture")), default_rock, float(of.call("sink")))
+					m.set_meta(BASE_TINT_META, body.biome_tint(rock_tint(body, id, default_rock)))
 				meshes.append(m)
 				heights.append(maxf(m.get_aabb().size.y, 0.01))
 				reaches.append(maxf(m.get_aabb().size.x, m.get_aabb().size.z) * 0.5)
@@ -687,7 +693,32 @@ static func build_node(key: Array, rows: PackedFloat32Array, layers: int, center
 	mmi.set_instance_shader_parameter("fade_end_m", view)
 	if not Engine.is_editor_hint():
 		COLLISION_DEBUG.on_block(mmi, rows)
+	if (key[0] as Mesh).has_meta(BASE_TINT_META):
+		mmi.ready.connect(_tint_block.bind(mmi, center), CONNECT_ONE_SHOT)
 	return mmi
+
+
+## The rocks of block [param mmi] (a chunk centred at [param center], planet frame) in the colour of the ground
+## they stand on: the ground's vertex colour there through the ground shader's start (NovaBody.biome_tint, as
+## nova_ground_at colours the ground), over the colour their material was made for (its variant's catalogue
+## rock). Made for the catalogue rock alone, the rocks stood beige on a dark green-grey corundum (2026-11-25).
+static func _tint_block(mmi: MultiMeshInstance3D, center: Vector3) -> void:
+	var planet := Planet.of(mmi)
+	if planet == null or planet.planet_data == null or planet.planet_data.nova == null or center.is_zero_approx():
+		return
+	var vertex := planet.planet_data.ground_vertex_tint_at(center.normalized())
+	if vertex == Color(0, 0, 0, 0):  # nothing sampled there (GroundLook.NO_SAMPLE)
+		return
+	var base: Color = mmi.multimesh.mesh.get_meta(BASE_TINT_META)
+	mmi.set_instance_shader_parameter("ground_ratio", ground_ratio(planet.planet_data.nova.biome_tint(vertex), base))
+
+
+## The tint that takes a material made for ground colour [param base] to ground colour [param here], per
+## channel, within GROUND_RATIO_RANGE.
+static func ground_ratio(here: Color, base: Color) -> Vector3:
+	return Vector3(clampf(here.r / maxf(base.r, 1e-4), GROUND_RATIO_RANGE.x, GROUND_RATIO_RANGE.y),
+			clampf(here.g / maxf(base.g, 1e-4), GROUND_RATIO_RANGE.x, GROUND_RATIO_RANGE.y),
+			clampf(here.b / maxf(base.b, 1e-4), GROUND_RATIO_RANGE.x, GROUND_RATIO_RANGE.y))
 
 
 ## True when the block of an entry of lay_chunk's result is worth a node for a camera at [param cam] (the
