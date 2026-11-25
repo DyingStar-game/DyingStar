@@ -49,6 +49,7 @@ const STATUSES: Dictionary = {
 	"new": {"label": "%%BUG_REPORT_STATUS_NEW", "colour": Color("9aa3b5")},
 	"open": {"label": "%%BUG_REPORT_STATUS_OPEN", "colour": Color("d32f2f")},
 	"in_progress": {"label": "%%BUG_REPORT_STATUS_IN_PROGRESS", "colour": Color("f57c00")},
+	"next_build": {"label": "%%BUG_REPORT_STATUS_NEXT_BUILD", "colour": Color("1e88e5")},
 	"to_test": {"label": "%%BUG_REPORT_STATUS_TO_TEST", "colour": Color("9c27b0")},
 }
 ## Bugs offered at most for what was typed, and the height (px) of their list.
