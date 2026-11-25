@@ -25,6 +25,8 @@ const CLUMP_SOFT := 0.07
 const ROCK_ALBEDO_MULT := 0.4
 const ROCK_TRIPLANAR_SHARPNESS := 14.0
 const ROCK_SHADER := preload("res://scenes/planet/nova/nova_rock.gdshader")
+## Settings > Debug > scatter rock collisions: the rocks that collide, drawn as boxes (client only).
+const COLLISION_DEBUG := preload("res://scenes/planet/nova/nova_scatter_collision_debug.gd")
 ## load_mesh's meshes by path, in the game ([mesh or null]); guarded: the scatter's layers are read on a worker.
 static var _meshes_read: Dictionary = {}
 static var _meshes_mutex := Mutex.new()
@@ -45,8 +47,44 @@ const FADE_CELL_M := 1024.0
 const FRINGE_RATIO := 0.3
 const FRINGE_MAX_M := 0.9
 ## Floats per laid object: a MultiMesh transform (12) and its custom data (4) — the object's place in the
-## chunk again, which the fade in needs and a shader cannot read back from the transform.
+## chunk again, which the fade in needs and a shader cannot read back from the transform — and, last, the
+## object's layer slot (1, 2…), positive when the object collides ([method is_solid]), negative when not.
 const ROW := 16
+## Which laid objects collide (the server lays them as boxes, NovaRockCollision): those at least
+## SOLID_MIN_SIZE_M long (largest side) AND standing at least SOLID_MIN_PROUD_M above the ground — a 4 m wide
+## gravel patch 6 cm thick is long, and nothing anyone bumps into.
+const SOLID_MIN_SIZE_M := 1.0
+const SOLID_MIN_PROUD_M := 0.5
+
+
+## How far a model of bounds [param aabb], scaled by [param scale] and sunk by [param sink] of its height
+## (lay_chunk), stands above the ground: from the ground line to its top, along its own up.
+static func proud_height(aabb: AABB, scale: float, sink: float) -> float:
+	return (aabb.end.y - sink * maxf(aabb.size.y, 0.01)) * scale
+
+
+## True when an object of bounds [param aabb] at [param scale], sunk by [param sink], collides.
+static func is_solid(aabb: AABB, scale: float, sink: float) -> bool:
+	return aabb.get_longest_axis_size() * scale >= SOLID_MIN_SIZE_M \
+			and proud_height(aabb, scale, sink) >= SOLID_MIN_PROUD_M
+
+
+## The smallest scale at which a model of bounds [param aabb] sunk by [param sink] collides (both sides of
+## [method is_solid] grow with the scale), INF when none does.
+static func solid_scale(aabb: AABB, sink: float) -> float:
+	var longest := aabb.get_longest_axis_size()
+	var proud := proud_height(aabb, 1.0, sink)
+	if longest <= 0.0 or proud <= 0.0:
+		return INF
+	return maxf(SOLID_MIN_SIZE_M / longest, SOLID_MIN_PROUD_M / proud)
+
+
+## True when some object of layer [param d] (an entry of layer_descs) can collide.
+static func layer_can_collide(d: Dictionary) -> bool:
+	for s: float in d.get("solid_scales", PackedFloat32Array()):
+		if s <= float(d.scale_max):
+			return true
+	return false
 
 
 ## HEALPix level whose cells are closest to [param cell_m] metres on a body of [param radius] metres.
@@ -299,8 +337,9 @@ static func chunk_cells(nside: int, ipix: int, sn: int) -> Dictionary:
 ## it (PlanetChunk.nova_tiles_within), clearance: the ground the scatter keeps clear of on this chunk (roads,
 ## buildings, villages: NovaClearance) — absent when the chunk meets none}.
 ## Thread-safe like the chunk builders (PlanetData's zone cache is locked).
-static func zone_context(data: PlanetData, nside: int, ipix: int) -> Dictionary:
-	var nova := data.nova
+## [param body]: the Nova body to read, when it is not [param data]'s dressed one (the server's, data.nova_relief).
+static func zone_context(data: PlanetData, nside: int, ipix: int, body: NovaBody = null) -> Dictionary:
+	var nova := body if body != null else data.nova
 	if nova == null or data.export_nside <= 0:
 		return {}
 	var en := data.export_nside
@@ -328,8 +367,9 @@ static func zone_context(data: PlanetData, nside: int, ipix: int) -> Dictionary:
 
 ## Everything a worker needs to lay one layer: plain values and loaded meshes, read-only.
 ## [param body] gives the settings; meshes are loaded here (main thread). [param default_rock]: the rock of
-## the ground outside any zone (see NovaBody.rock_of).
-static func layer_descs(body: NovaBody, radius: float, default_rock := "") -> Array:
+## the ground outside any zone (see NovaBody.rock_of). [param bare]: the models as they are, without the
+## ground's look (the server, which only needs their bounds).
+static func layer_descs(body: NovaBody, radius: float, default_rock := "", bare := false) -> Array:
 	var out: Array = []
 	for v in body.variants:
 		var id: int = v.id
@@ -343,10 +383,12 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "") -> Ar
 			var meshes: Array = []
 			var heights := PackedFloat32Array()
 			var reaches := PackedFloat32Array()  # how far each model reaches from its middle, along the ground
+			var solid_scales := PackedFloat32Array()  # from which scale each model collides (solid_scale)
 			var view := 0.0
 			# Dressed in the ground's look: this variant's own copy of each model, so the same model stands
 			# on two corundums in two colours.
-			var look: Material = ground_material(body, id, default_rock) if bool(of.call("like_ground")) else null
+			var look: Material = ground_material(body, id, default_rock) \
+					if bool(of.call("like_ground")) and not bare else null
 			for p in of.call("meshes"):
 				var m := load_mesh(str(p))
 				if m == null:
@@ -356,6 +398,9 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "") -> Ar
 				meshes.append(m)
 				heights.append(maxf(m.get_aabb().size.y, 0.01))
 				reaches.append(maxf(m.get_aabb().size.x, m.get_aabb().size.z) * 0.5)
+				solid_scales.append(solid_scale(m.get_aabb(), float(of.call("sink"))))
+				if not Engine.is_editor_hint():
+					m.set_meta("nova_path", str(p))  # its file, named by the collision debug view's legend
 				view = maxf(view, view_of(m, view_limit))
 			if meshes.is_empty():
 				continue
@@ -363,6 +408,7 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "") -> Ar
 			var cell_side := HEALPix.pixel_side_length(nside, radius)
 			out.append({
 				"variant": id,
+				"slot": slot,
 				"seed": mix32(int(of.call("seed")) * 131 + slot) ^ (str(v.key).hash() & _M32),
 				"nside": nside,
 				# Clumps, in object cells a side (1 = no clumps).
@@ -386,6 +432,7 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "") -> Ar
 				"meshes": meshes,
 				"heights": heights,
 				"reaches": reaches,
+				"solid_scales": solid_scales,
 			})
 	return out
 
@@ -449,8 +496,10 @@ static func _read_mesh(path: String) -> Mesh:
 ## [param zones]: from zone_context — the variant at an exact direction and the variants the chunk's
 ## export tile can hold. Without it the grid answers, which depends on the LOD (tests only).
 ## [param cancel]: [false] the caller sets to true to stop the laying where it is (an empty answer then).
+## [param solid_only]: only the objects that collide (the server's colliders), the same rows as the full laying.
 static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: PackedVector3Array,
-		vid: PackedInt32Array, center: Vector3, zones: Dictionary = {}, cancel: Array = []) -> Dictionary:
+		vid: PackedInt32Array, center: Vector3, zones: Dictionary = {}, cancel: Array = [],
+		solid_only := false) -> Dictionary:
 	var out := {}
 	if grid.size() != (res + 1) * (res + 1) or vid.size() != grid.size():
 		return out
@@ -472,12 +521,23 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 		var x0: int = cells.x0
 		var y0: int = cells.y0
 		var blocks := clampi(ceili(r * float(d.cell_side_m) / maxf(float(d.view_m) * 0.5, BLOCK_M)), 1, MAX_BLOCKS)
+		var slot := float(d.get("slot", 0))
+		var solid_from: PackedFloat32Array = d.get("solid_scales", PackedFloat32Array())
+		var model_count := (d.get("meshes", []) as Array).size()
+		if solid_from.size() != model_count:
+			solid_from.resize(model_count)
+			solid_from.fill(INF)
 		for cy in r:
 			if not cancel.is_empty() and cancel[0]:
 				return {}
 			for cx in r:
 				var o := cell_object(d.seed, d.density, face, x0 + cx, y0 + cy)
 				if o.is_empty():
+					continue
+				# The model and its scale come first in a solid-only laying: most cells end here, before the
+				# clumps, the clearance and the zones are asked.
+				if solid_only and lerpf(d.scale_min, d.scale_max, o.u_scale) \
+						< solid_from[mini(int(o.u_mesh * d.meshes.size()), d.meshes.size() - 1)]:
 					continue
 				if d.clump_cells > 1 and float(o.u_edge) >= clump_weight(d.seed, face, float(o.fx), float(o.fy),
 						d.clump_cells, d.clump_share):
@@ -545,8 +605,37 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 				rows.append_array([basis.x.x, basis.y.x, basis.z.x, origin.x,
 						basis.x.y, basis.y.y, basis.z.y, origin.y,
 						basis.x.z, basis.y.z, basis.z.z, origin.z,
-						origin.x, origin.y, origin.z, 0.0])
+						origin.x, origin.y, origin.z, slot if sc >= solid_from[mi] else -slot])
 				out[key] = rows
+	return out
+
+
+## The transform of the object at float [param at] of [param rows] (lay_chunk's), in the chunk's frame.
+static func row_transform(rows: PackedFloat32Array, at: int) -> Transform3D:
+	return Transform3D(Basis(Vector3(rows[at], rows[at + 4], rows[at + 8]), Vector3(rows[at + 1], rows[at + 5], rows[at + 9]),
+			Vector3(rows[at + 2], rows[at + 6], rows[at + 10])), Vector3(rows[at + 3], rows[at + 7], rows[at + 11]))
+
+
+## The box that stands for a colliding object of model bounds [param aabb] placed by [param xform] (a row of
+## lay_chunk, uniformly scaled): [its transform, unscaled, at the box's middle; its size].
+static func solid_box(aabb: AABB, xform: Transform3D) -> Array:
+	var sc := xform.basis.x.length()
+	return [Transform3D(xform.basis.orthonormalized(), xform * aabb.get_center()), aabb.size * sc]
+
+
+## The boxes of every colliding object of a lay_chunk result, in the chunk's frame: [[transform, size, slot,
+## model], …] (solid_box, the slot of its layer, its model).
+static func solid_boxes(laid: Dictionary) -> Array:
+	var out: Array = []
+	for key: Array in laid:
+		var mesh: Mesh = key[0]
+		var aabb := mesh.get_aabb()
+		var rows: PackedFloat32Array = laid[key]
+		for at in range(0, rows.size(), ROW):
+			if rows[at + 15] > 0.0:
+				var box := solid_box(aabb, row_transform(rows, at))
+				box.append_array([int(rows[at + 15]), mesh])
+				out.append(box)
 	return out
 
 
@@ -596,6 +685,8 @@ static func build_node(key: Array, rows: PackedFloat32Array, layers: int, center
 	mmi.set_instance_shader_parameter("fade_cell", parts[0])
 	mmi.set_instance_shader_parameter("fade_rest", parts[1])
 	mmi.set_instance_shader_parameter("fade_end_m", view)
+	if not Engine.is_editor_hint():
+		COLLISION_DEBUG.on_block(mmi, rows)
 	return mmi
 
 

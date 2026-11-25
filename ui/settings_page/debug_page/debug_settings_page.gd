@@ -14,6 +14,7 @@ const SWITCHES : Dictionary = {
 	"VehicleHud": &"vehicle_hud",
 	"MovementDebug": &"movement_debug",
 	"SafetyNetDebug": &"safety_net_debug",
+	"ScatterCollisionDebug": &"scatter_collision_debug",
 	"NotificationDebug": &"notification_debug",
 	"ShadowAtlasDebug": &"shadow_atlas_debug",
 }
