@@ -38,6 +38,11 @@ uniform float lava_fill = 0.8;
 // vent and a lobe shades it, which is what makes the top of the plume dark.
 uniform float vent_y = 150.0;
 uniform float lava_reach = 600.0;
+// An explosion's flash lights the plume from INSIDE (the incandescent ejecta and gas in it), strongest
+// low, fading out at flash_reach (m, about half the plume's height).
+uniform float flash_inner = 0.0;
+uniform vec3 flash_tint = vec3(1.0, 0.3, 0.06);
+uniform float flash_reach = 4000.0;
 uniform bool vent_probe = false;
 uniform int max_steps = 140;
 uniform float erosion = 1.05;
@@ -299,6 +304,7 @@ void fragment() {
 		light += ground_color * (1.0 - smoothstep(0.0, 1500.0, p.y)) * 0.3;
 		float reach2 = dot(to_vent, to_vent) / (lava_reach * lava_reach);
 		light += vec3(1.0, 0.3, 0.07) * glow * lava_fill * vent_t * (w_under * inv) / (1.0 + reach2);
+		light += flash_tint * flash_inner * (1.0 - smoothstep(0.2, 1.0, max(p.y, 0.0) / max(flash_reach, 1.0)));
 		vec3 src = albedo * light;
 		// The fire under the volcano, lighting the very base of the column.
 		src += vec3(1.0, 0.27, 0.05) * glow * exp(-max(p.y, 0.0) / 130.0) * 0.8;

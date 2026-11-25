@@ -127,14 +127,23 @@ extends Resource
 ## From this distance (m) only the far shock wave is heard: the air has eaten the crack, the thump stays.
 @export_range(0.0, 100000.0, 100.0) var blast_wave_to_m: float = 12000.0
 ## How far (m) the shock wave of a blast jolts the view, next to the volcano. It comes WITH the sound
-## (sound_speed_m_s), after the ground's kick: a short knock rather than a shake.
-@export_range(0.0, 1.0, 0.005) var shock_m: float = 0.04
+## (sound_speed_m_s), after the ground's kick: a short, hard knock, stronger than a blast's kick.
+@export_range(0.0, 1.0, 0.005) var shock_m: float = 0.12
 ## The shock wave is at its full strength up to this distance (m); further it weakens with distance.
 @export_range(1.0, 50000.0, 1.0) var shock_full_m: float = 2000.0
 ## The shock wave is not felt beyond this distance (m).
 @export_range(100.0, 100000.0, 100.0) var shock_range_m: float = 20000.0
 ## Seconds the jolt of a shock wave takes to die: short, it is a knock.
-@export_range(0.05, 5.0, 0.05) var shock_s: float = 0.4
+@export_range(0.05, 5.0, 0.05) var shock_s: float = 0.35
+## Strength of the ring of distortion the shock wave sweeps across the view, next to the volcano (screen
+## offset at its crest, share of the screen height): 0.025 = a clear ripple, higher = a harder smear.
+@export_range(0.0, 0.2, 0.001) var shock_blur: float = 0.025
+## The distortion is at full strength up to this distance (m) from the vent, weaker further.
+@export_range(1.0, 50000.0, 1.0) var shock_blur_full_m: float = 2000.0
+## No distortion beyond this distance (m).
+@export_range(100.0, 100000.0, 100.0) var shock_blur_range_m: float = 15000.0
+## Seconds the ring takes to sweep across the view.
+@export_range(0.05, 2.0, 0.05) var shock_blur_s: float = 0.35
 
 @export_group("Impacts")
 ## Takes of a small stone or shard landing (a handful of pebbles clacking and bouncing).

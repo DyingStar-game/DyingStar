@@ -84,17 +84,24 @@ func test_no_flows_far_away_or_before_an_eruption() -> void:
 	assert_false(glow.has_node("FlankFlows"), "nothing laid for a far camera")
 
 
-func test_flash_envelope() -> void:
-	assert_eq(VENT_GLOW.flash_envelope(-0.1, 0.45, 0.0), 0.0, "nothing before the explosion")
-	assert_eq(VENT_GLOW.flash_envelope(0.0, 0.45, 0.0), 1.0, "full at once: light does not wait")
-	assert_almost_eq(VENT_GLOW.flash_envelope(0.45, 0.45, 0.0), exp(-1.0), 0.001, "37 % after one decay")
-	assert_lt(VENT_GLOW.flash_envelope(1.4, 0.45, 0.0), 0.05, "spent within about a second")
-	assert_eq(VENT_GLOW.flash_envelope(10.0, 0.45, 0.35), 0.0, "nothing long after")
-	for i in 50:
-		var age := i * 0.02
-		var flickering := VENT_GLOW.flash_envelope(age, 0.45, 0.35)
-		assert_between(flickering, VENT_GLOW.flash_envelope(age, 0.45, 0.0) * 0.64, VENT_GLOW.flash_envelope(age, 0.45, 0.0),
+func test_flash_envelope_in_two_beats() -> void:
+	var env := func(age: float, flicker: float) -> float:
+		return VENT_GLOW.flash_envelope(age, 0.1, 1.7, 0.6, flicker)
+	assert_eq(env.call(-0.1, 0.0), 0.0, "nothing before the explosion")
+	assert_eq(env.call(0.0, 0.0), 1.0, "full at once: light does not wait")
+	assert_almost_eq(env.call(0.3, 0.0), 0.6 * exp(-3.0) + 0.4 * exp(-0.3 / 1.7), 0.001, "the white burst is gone")
+	assert_between(env.call(1.7, 0.0), 0.4 * exp(-1.0) - 0.001, 0.4 * exp(-1.0) + 0.001, "the red glow at 37 % after 1.7 s")
+	assert_lt(env.call(5.5, 0.0), 0.02, "spent within a few seconds")
+	assert_eq(env.call(20.0, 0.35), 0.0, "nothing long after")
+	for i in 100:
+		var age := i * 0.03
+		assert_between(env.call(age, 0.35), env.call(age, 0.0) * 0.64, env.call(age, 0.0),
 				"the flicker only takes some of it away")
+
+
+func test_flash_turns_from_white_to_red() -> void:
+	assert_gt(VENT_GLOW.flash_whiteness(0.0, 0.1, 1.7, 0.6), 0.55, "white at the burst")
+	assert_lt(VENT_GLOW.flash_whiteness(0.5, 0.1, 1.7, 0.6), 0.05, "red once the burst is over")
 
 
 func test_first_explosion_flashes_brighter() -> void:
@@ -106,6 +113,6 @@ func test_first_explosion_flashes_brighter() -> void:
 	assert_gt(first, later, "the first explosion of an eruption is the brightest")
 	glow.update(0.1, Vector3(3000.0, 1500.0, 0.0), true, 0.0, 1.0)
 	assert_true(_light(glow).visible, "a flash lights the vent even without a steady glow")
-	for i in 40:
+	for i in 150:
 		glow.update(0.1, Vector3(3000.0, 1500.0, 0.0), true, 0.0, 1.0)
 	assert_false(_light(glow).visible, "dark again once spent: no floor")

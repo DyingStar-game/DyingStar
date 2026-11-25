@@ -155,6 +155,17 @@ func set_framed_prompts_enabled(on: bool) -> void:
 	save_settings()
 
 
+## Shake and blur effects (the view shaken by volcanic quakes, blasts and shock waves, the shock wave's
+## distortion): a comfort switch for players prone to motion sickness. On by default.
+func is_shake_effects_enabled() -> bool:
+	return bool(config.get_value("video", "screen_shake", true))
+
+
+func set_shake_effects_enabled(on: bool) -> void:
+	config.set_value("video", "screen_shake", on)
+	save_settings()
+
+
 func save_settings():
 	config.save(CONFIG_FILEPATH)
 

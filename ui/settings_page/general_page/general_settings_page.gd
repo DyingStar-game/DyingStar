@@ -8,6 +8,7 @@ const TOGGLES : Array[Dictionary] = [
 	{"node": "MenuStage", "owner": "render", "getter": "is_menu_stage_enabled", "setter": "set_menu_stage_enabled"},
 	{"node": "PlayHints", "getter": "is_play_hints_enabled", "setter": "set_play_hints_enabled"},
 	{"node": "FramedPrompts", "getter": "is_framed_prompts_enabled", "setter": "set_framed_prompts_enabled"},
+	{"node": "ShakeEffects", "getter": "is_shake_effects_enabled", "setter": "set_shake_effects_enabled"},
 ]
 
 @onready var _rows : VBoxContainer = $ScrollContainer/MarginContainer/VBoxContainer

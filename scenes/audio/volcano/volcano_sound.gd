@@ -16,6 +16,7 @@ const SoundSet := preload("res://scenes/audio/volcano/volcano_sound_set.gd")
 const ImpactSounds := preload("res://scenes/audio/volcano/volcano_impact_sounds.gd")
 const AshFall := preload("res://scenes/audio/volcano/volcano_ash_fall.gd")
 const AshVisual := preload("res://scenes/audio/volcano/volcano_ash_visual.gd")
+const ShockBlur := preload("res://scenes/audio/volcano/volcano_shock_blur.gd")
 const SOUNDS_PATH := "res://scenes/audio/volcano/volcano_sounds.tres"
 ## Volcanoes heard at once, the nearest ones: one mixer bus each.
 const VOICES := 3
@@ -76,6 +77,9 @@ var _shaken: Camera3D = null
 var _impacts: ImpactSounds
 var _ash: AshFall
 var _ash_visual: AshVisual
+var _shock_blur: ShockBlur
+## The player's "shake and blur effects" setting, read with the schedule.
+var _effects_on: bool = true
 ## Camera height over the ground (m) and local wind (m/s, plume frame), read with the schedule.
 var _height: float = INF
 var _ash_wind := Vector3.ZERO
@@ -395,12 +399,15 @@ func _process(delta: float) -> void:
 	# Every frame: the direction must not lag behind a fast listener.
 	_proxy.position = eye * (1.0 - PROXY_M / _dist) if _dist > PROXY_M else Vector3.ZERO
 	_shake(cam, delta)
+	if _shock_blur != null:
+		_shock_blur.step(delta, _blast_origin(cam))
 	_ash_visual.update(_plume.to_local(cam.global_position), cam.global_position, _ash.level, _height, _ash_wind)
 	_elapsed += delta
 	_air_elapsed += delta
 	if _elapsed < UPDATE_S:
 		return
 	_elapsed = 0.0
+	_effects_on = SettingsManager.is_shake_effects_enabled()
 	_flash_due()
 	if _dist >= sounds.explosion_range_m and _dist >= sounds.rumble_range_m:
 		_silence()
@@ -477,6 +484,9 @@ func _hear(cam: Camera3D) -> void:
 		if _grounded and _voice == 0 and _dist < sounds.shock_range_m:
 			_shock = 1.0
 			_shock_share = db_to_linear(drop) * falloff_share(_dist, sounds.shock_full_m, sounds.shock_range_m)
+		if _grounded and _voice == 0 and _effects_on and _dist < sounds.shock_blur_range_m:
+			_start_shock_blur(db_to_linear(drop) * falloff_share(_dist, sounds.shock_blur_full_m,
+					sounds.shock_blur_range_m))
 	_feel()
 
 
@@ -538,6 +548,8 @@ func _shake(cam: Camera3D, delta: float) -> void:
 	var reach: float = _tremor * (sounds.tremor_m * _ground_level * swell(t) + sounds.tremor_kick_m * _kick * _kick)
 	reach += sounds.quake_m * _quake_share * quake_envelope(_quake_age, _quake_len)
 	reach += sounds.shock_m * _shock_share * _shock * _shock
+	if not _effects_on:
+		reach = 0.0
 	reach *= steady_share(cam.fov)
 	if reach <= 0.0001:
 		_still()
@@ -572,6 +584,31 @@ func _blast(index: int, salt: int, extra_db: float) -> void:
 		_last_take = SurfaceSounds.pick_from(sounds.explosions, _last_take)
 		_play_take(_last_take, near_db)
 	_play_take(pick_take(sounds.blast_waves, index, salt, 824), wave_db)
+
+
+## The shock wave's ring of distortion, made on the first wave.
+func _start_shock_blur(share: float) -> void:
+	if share <= 0.001 or sounds.shock_blur <= 0.0:
+		return
+	if _shock_blur == null:
+		_shock_blur = ShockBlur.new()
+		add_child(_shock_blur)
+	_shock_blur.start(sounds.shock_blur * share, sounds.shock_blur_s)
+
+
+## Where the blast comes from on the screen (UV, 0..1 on screen, beyond when the vent is off screen or
+## behind the camera: the ring then sweeps in from that side).
+func _blast_origin(cam: Camera3D) -> Vector2:
+	var size := cam.get_viewport().get_visible_rect().size
+	if not cam.is_position_behind(global_position):
+		var at := cam.unproject_position(global_position) / size
+		if at.x >= 0.0 and at.x <= 1.0 and at.y >= 0.0 and at.y <= 1.0:
+			return at
+	var local := cam.global_basis.inverse() * (global_position - cam.global_position)
+	var side := Vector2(local.x, -local.y)
+	if side.length_squared() < 0.000001:
+		side = Vector2.DOWN
+	return Vector2(0.5, 0.5) + side.normalized() * 0.9
 
 
 ## One take on the proxy at [param db], through this volcano's bus (its distance low-pass), freed when over.

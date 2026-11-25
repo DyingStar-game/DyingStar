@@ -98,3 +98,27 @@ func test_near_explosion_fades_into_the_far_shock_wave() -> void:
 	assert_almost_eq(mid, 0.5, 0.01, "half way between")
 	var power := pow(cos(mid * PI * 0.5), 2.0) + pow(sin(mid * PI * 0.5), 2.0)
 	assert_almost_eq(power, 1.0, 0.001, "equal power through the fade")
+
+
+func test_shock_wave_sweeps_then_dies() -> void:
+	var blur: GDScript = load("res://scenes/audio/volcano/volcano_shock_blur.gd")
+	assert_eq(blur.wave_envelope(-0.1, 0.35).y, 0.0, "nothing before the wave")
+	assert_eq(blur.wave_envelope(0.0, 0.35).y, 0.0, "it rises, never pops")
+	var peak := 0.0
+	var last_progress := -1.0
+	for i in 35:
+		var env: Vector2 = blur.wave_envelope(i * 0.01, 0.35)
+		assert_gt(env.x, last_progress, "the ring always moves on")
+		last_progress = env.x
+		peak = maxf(peak, env.y)
+	assert_between(peak, 0.5, 1.0, "a clear crest")
+	assert_eq(blur.wave_envelope(0.35, 0.35).y, 0.0, "gone after its length")
+	assert_eq(blur.wave_envelope(2.0, 0.35).y, 0.0, "nothing long after")
+
+
+func test_shock_wave_weakens_with_distance_and_stops_at_15_km() -> void:
+	var near := VolcanoSound.falloff_share(1500.0, 2000.0, 15000.0)
+	var mid := VolcanoSound.falloff_share(8000.0, 2000.0, 15000.0)
+	assert_eq(near, 1.0, "full near the volcano")
+	assert_between(mid, 0.05, 0.6, "weaker at 8 km")
+	assert_eq(VolcanoSound.falloff_share(15000.0, 2000.0, 15000.0), 0.0, "none from 15 km")

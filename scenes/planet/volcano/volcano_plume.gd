@@ -283,8 +283,13 @@ func _process(delta: float) -> void:
 	_mat.set_shader_parameter("sim_time", fmod(t, 50.0))
 	var flicker := 0.8 + 0.2 * sin(fmod(t, 1000.0) * 9.0) * sin(fmod(t, 1000.0) * 3.7)
 	var heat := clampf(model.eruption_activity(t), 0.0, 1.3)
-	# An explosion's flash lights the underside of the plume too.
-	_mat.set_shader_parameter("glow", heat * flicker + vent_glow.flash_level())
+	# An explosion's flash lights the underside of the plume too, and the lower plume from inside.
+	var flashing := vent_glow.flash_level()
+	_mat.set_shader_parameter("glow", heat * flicker + flashing)
+	var tint := vent_glow.flash_color()
+	_mat.set_shader_parameter("flash_inner", flashing * vent_glow.flash_plume_inner)
+	_mat.set_shader_parameter("flash_tint", Vector3(tint.r, tint.g, tint.b))
+	_mat.set_shader_parameter("flash_reach", model.ceiling_m * 0.5)
 	vent_glow.update(delta, eye, true, heat, flicker)
 	if stones.visible:
 		_foot_check_at -= delta

@@ -43,20 +43,42 @@ const SHADER_DIR := "res://assets/_universe/environment/terrain/volcano/"
 
 @export_group("Explosion flash")
 ## Peak of the flash of an eruption's FIRST explosion, in multiples of the vent's full glow: the light,
-## the halo and the plume's underside jump this high, then fall within flash_decay_s. 6 = a blinding
-## burst that lights the flanks and the ground for a few km, as the eruption opens.
-@export var flash_first: float = 6.0
+## the halo and the whole lower plume jump this high. 20 = a burst that lights the slopes and the ground
+## for kilometres as the eruption opens.
+@export var flash_first: float = 20.0
 ## Peak of the flash of a later explosion of the same eruption (times the vent's full glow), before the
 ## explosion's own drop: they come every half minute or so, so smaller.
-@export var flash_later: float = 3.0
-## Time constant (s) of the flash's fall: after it the flash is at 37 %, after three at 5 %. 0.3 to 1 s
-## reads as a flash; longer as a glow.
-@export var flash_decay_s: float = 0.45
+@export var flash_later: float = 10.0
+## Time constant (s) of the white-orange burst that opens a flash: very short, it is the bang of light.
+@export var flash_white_s: float = 0.1
+## Time constant (s) of the red glow that follows: after it 37 % is left, after three 5 %. 1.5 to 2 s
+## reads as glowing debris and gas cooling.
+@export var flash_red_s: float = 1.7
+## Share (0..1) of the peak carried by the white burst; the rest is the red glow. Higher = a sharper,
+## whiter flash with less afterglow.
+@export var flash_white_share: float = 0.6
 ## Flicker of the flash while it falls (0 = smooth decay, 1 = it stutters to black and back).
 @export var flash_flicker: float = 0.35
+## Reach (m) of the vent's light at the height of a flash (6 km otherwise): the slopes and the ground
+## light up this far, for the flash only.
+@export var flash_range_m: float = 12000.0
+## How much the halo swells at the first explosion's peak (0 = not at all, 2 = to three times its size).
+@export var flash_halo_grow: float = 2.0
+## How brightly a flash lights the plume from the INSIDE, up to half its height, per unit of flash:
+## higher = the whole lower plume glows, not just its underside.
+@export var flash_plume_inner: float = 0.15
+## Strength (0..1) of the brief brightening of the whole screen at the first explosion's peak, for a
+## player looking at the volcano within flash_screen_m. Back to normal with the flash (under a second).
+@export var flash_screen: float = 0.25
+## The screen flash is felt within this distance (m) of the vent, fading to nothing at it.
+@export var flash_screen_m: float = 4000.0
+
+const FLASH_WHITE := Color(1.0, 0.82, 0.58)
+const FLASH_RED := Color(1.0, 0.3, 0.06)
 
 var _flash_age := INF
 var _flash_peak := 0.0
+var _screen: ColorRect = null
 var _relief: Callable
 var _vent_radius := 300.0
 var _seed := 0
@@ -112,14 +134,27 @@ func _ready() -> void:
 	add_child(_halo)
 
 
-## Strength (0..1) of a flash [param age_s] after its explosion: instant rise, exponential fall of time
-## constant [param decay_s], stuttering by [param flicker] (0..1). 0 before it and once spent. Pure.
-static func flash_envelope(age_s: float, decay_s: float, flicker: float) -> float:
-	if age_s < 0.0 or age_s > decay_s * 8.0:
+## Strength (0..1) of a flash [param age_s] after its explosion, in two beats: a white burst of time
+## constant [param white_s] carrying [param white_share] of the peak, then a red glow falling over
+## [param red_s]; stuttering by [param flicker] (0..1). Instant rise; 0 before it and once spent. Pure.
+static func flash_envelope(age_s: float, white_s: float, red_s: float, white_share: float, flicker: float) -> float:
+	if age_s < 0.0 or age_s > maxf(white_s, red_s) * 8.0:
 		return 0.0
-	var fall: float = exp(-age_s / maxf(decay_s, 0.01))
+	var share: float = clampf(white_share, 0.0, 1.0)
+	var fall: float = share * exp(-age_s / maxf(white_s, 0.01)) + (1.0 - share) * exp(-age_s / maxf(red_s, 0.01))
 	var stutter: float = 0.5 + 0.5 * sin(age_s * 61.0) * sin(age_s * 23.0 + 1.3)
 	return fall * (1.0 - clampf(flicker, 0.0, 1.0) * stutter)
+
+
+## How white (0..1) a flash still is [param age_s] after its explosion: the white burst's share of what is
+## left; 0 = all red glow. Pure.
+static func flash_whiteness(age_s: float, white_s: float, red_s: float, white_share: float) -> float:
+	if age_s < 0.0:
+		return 0.0
+	var share: float = clampf(white_share, 0.0, 1.0)
+	var white: float = share * exp(-age_s / maxf(white_s, 0.01))
+	var red: float = (1.0 - share) * exp(-age_s / maxf(red_s, 0.01))
+	return white / maxf(white + red, 0.000001)
 
 
 ## An explosion now: its light arrives at once (the sound and the shock wave later). [param first]: the
@@ -131,7 +166,12 @@ func flash(first: bool, scale: float) -> void:
 
 ## The flash's strength now, in multiples of the vent's full glow (0 without one).
 func flash_level() -> float:
-	return _flash_peak * flash_envelope(_flash_age, flash_decay_s, flash_flicker)
+	return _flash_peak * flash_envelope(_flash_age, flash_white_s, flash_red_s, flash_white_share, flash_flicker)
+
+
+## The flash's colour now: white-orange in its burst, red in its glow.
+func flash_color() -> Color:
+	return FLASH_RED.lerp(FLASH_WHITE, flash_whiteness(_flash_age, flash_white_s, flash_red_s, flash_white_share))
 
 
 ## Once a frame from the plume. [param drawn]: the plume is drawn (near and among the nearest);
@@ -140,16 +180,24 @@ func update(delta: float, eye: Vector3, drawn: bool, heat: float, flicker: float
 	var rate := 1.0 / FLOW_HEAT_UP_S if heat > _flow_heat else 1.0 / FLOW_COOL_S
 	_flow_heat = move_toward(_flow_heat, clampf(heat, 0.0, 1.0), rate * delta)
 	_flash_age += delta
-	var glow := heat * flicker + flash_level()
+	var flashing := flash_level()
+	var steady := heat * flicker
+	var glow := steady + flashing
 	var lit := drawn and glow > 0.02
 	_light.visible = lit
 	_halo.visible = lit
+	# Share of the first explosion's peak reached now: drives the reach, the halo and the screen.
+	var burst := clampf(flashing / maxf(flash_first, 0.01), 0.0, 1.0)
 	if lit:
 		_light.light_energy = LIGHT_ENERGY * glow
+		_light.light_color = LIGHT_COLOR.lerp(flash_color(), flashing / maxf(glow, 0.0001))
+		_light.omni_range = lerpf(LIGHT_RANGE_M, maxf(flash_range_m, LIGHT_RANGE_M),
+				clampf(flashing / maxf(flash_later, 0.01), 0.0, 1.0))
 		var size := clampf(_vent_radius * HALO_VENT_SHARE, HALO_MIN_M, HALO_MAX_M)
 		size = maxf(size, eye.distance_to(_halo.position) * HALO_MIN_ANGLE)
-		_halo.scale = Vector3.ONE * size
+		_halo.scale = Vector3.ONE * size * (1.0 + flash_halo_grow * burst)
 		_halo_mat.set_shader_parameter("intensity", glow)
+	_screen_flash(burst if drawn else 0.0, eye)
 	if not drawn:
 		return
 	if not _laid and _flow_heat > 0.0 and eye.length() < FLOW_BUILD_M:
@@ -157,6 +205,36 @@ func update(delta: float, eye: Vector3, drawn: bool, heat: float, flicker: float
 	if _flows != null:
 		_flows.visible = _flow_heat > 0.01
 		_flow_mat.set_shader_parameter("heat", _flow_heat * lerpf(0.85, 1.0, flicker))
+
+
+## The brief brightening of the screen for a player near the vent and looking at it: an additive tint,
+## drawn under the interface. Made on the first flash, hidden the rest of the time.
+func _screen_flash(burst: float, eye: Vector3) -> void:
+	var strength := 0.0
+	if burst > 0.001 and flash_screen > 0.0:
+		var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
+		var near := 1.0 - smoothstep(flash_screen_m * 0.5, flash_screen_m, eye.length())
+		if cam != null and near > 0.0:
+			var to_vent := (global_position - cam.global_position).normalized()
+			var facing := smoothstep(0.3, 0.9, to_vent.dot(-cam.global_basis.z))
+			strength = flash_screen * burst * near * facing
+	if strength <= 0.001:
+		if _screen != null:
+			_screen.visible = false
+		return
+	if _screen == null:
+		var layer := CanvasLayer.new()
+		layer.layer = -1  # over the 3D view, under the interface
+		add_child(layer)
+		_screen = ColorRect.new()
+		_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var add := CanvasItemMaterial.new()
+		add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		_screen.material = add
+		layer.add_child(_screen)
+	_screen.visible = true
+	_screen.color = Color(flash_color(), strength)
 
 
 ## Marches the flows down the relief, FLOW_READS_PER_FRAME relief reads at a time, then builds them.
