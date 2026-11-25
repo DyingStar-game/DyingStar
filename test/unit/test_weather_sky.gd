@@ -12,8 +12,9 @@ func test_the_layer_follows_the_lift_and_takes_the_grounds_colour() -> void:
 	assert_almost_eq(WeatherSky.blow_extinction(3.0), full, 1e-9, "capped at the full blow")
 	var ochre: Vector3 = WeatherSky.blow_albedo_of(Color(0.8, 0.6, 0.4))
 	assert_almost_eq(ochre.x, WeatherSky.BLOW_ALBEDO_MAX, 1e-9, "the brightest channel at the cap")
-	assert_almost_eq(ochre.y / ochre.x, 0.75, 1e-6, "the ground's own hue kept (Color is float32)")
-	assert_almost_eq(ochre.z / ochre.x, 0.5, 1e-6)
+	var s: float = WeatherSky.BLOW_SATURATION
+	assert_almost_eq(ochre.y / ochre.x, 1.0 - s * 0.25, 1e-6, "the ground's hue, paler (Color is float32)")
+	assert_almost_eq(ochre.z / ochre.x, 1.0 - s * 0.5, 1e-6)
 	assert_eq(WeatherSky.blow_albedo_of(Color.BLACK), WeatherSky.blow_albedo_of(WeatherSky.BLOW_FALLBACK_COLOUR),
 			"no colour: the plains' ochre")
 

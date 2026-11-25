@@ -10,6 +10,7 @@ shader_type spatial;
 // Drawn from the box's back faces with no depth test, so it shows from outside and from inside alike; the
 // ray stops at what the scene has already drawn (depth_texture).
 render_mode blend_mix, cull_front, depth_test_disabled, depth_draw_never, shadows_disabled, unshaded;
+#include "res://scenes/planet/weather/dust_sea_light.gdshaderinc"
 
 uniform sampler3D billows : repeat_enable, filter_linear;
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
@@ -20,7 +21,7 @@ uniform sampler2D ground_map : filter_linear, repeat_disable;
 uniform vec2 ground_span = vec2(1.0);
 uniform vec2 ground_shift = vec2(0.0);
 // Steps along the view ray at most, and toward the sun. A step is step_m long (m), longer from far away
-// (step_far of the distance to the box) and thin_stride times as long through thin dust and empty air.
+// (step_far of the distance to the box) and thin_stride times as long through empty air (half as long through a rim's thin dust).
 uniform int steps = 48;
 uniform int sun_steps = 3;
 uniform float step_m = 90.0;
@@ -69,9 +70,21 @@ uniform float forward = 1.6;
 // much they light the dust and how far round them (m).
 uniform vec4 sparks[5];
 uniform vec3 spark_colour : source_color = vec3(0.72, 0.84, 1.0);
+// The glow a spark lights in the dust round it: warm white (the arc itself is drawn blue, dust_bolt).
+uniform vec3 spark_glow_colour : source_color = vec3(1.0, 0.93, 0.82);
 uniform float spark_power = 0.45;
 uniform float spark_reach_m = 140.0;
+// The dust's colour at its foot (the ground's under the wall now, a little paler) and higher up (the white
+// dust sea's palette), blended between half and one and a half foot_m over the ground (WeatherPhenomena).
+// With the ground's colour map (WallGround.colour_texture, over the same span as ground_map) each part of
+// the wall takes the ground under it, foot_pale of the way to the sea's white at its foot, and the sea's
+// palette above; tint / tint_high (the ground under the front's middle) before the map is read.
 instance uniform vec3 tint = vec3(0.74, 0.60, 0.42);
+instance uniform vec3 tint_high = vec3(0.92, 0.88, 0.82);
+uniform float foot_m = 300.0;
+uniform sampler2D ground_colour : filter_linear, repeat_disable;
+uniform int ground_colour_on = 0;
+uniform float foot_pale = 0.25;
 instance uniform float strength = 1.0;
 instance uniform float light = 1.0;
 // Where the sun is, in the wall's own frame.
@@ -150,15 +163,44 @@ vec2 shape(vec3 u) {
 	return vec2(inside, max(left, tail_dust * smoothstep(0.2, 0.55, tatter)));
 }
 
-// The large billows at a place (metres in the box's frame): 0 in a hollow, 1 in a crown.
+// The large billows at a place (metres in the box's frame): 0 in a hollow, 1 in a crown. Two reads of the
+// tile at sizes whose ratio is no fraction (the golden one) and on two slants: one read alone came round
+// again every tile and a half along the front, columns repeated across the whole wall (2026-11-25).
 float swells(vec3 m) {
-	return 1.0 - textureLod(billows, ASKEW * (m - roll * TIME) / (tall() * billow_tile), 0.0).r;
+	vec3 at = (m - roll * TIME) / (tall() * billow_tile);
+	float a = textureLod(billows, ASKEW * at, 0.0).r;
+	float b = textureLod(billows, ASKEW_FINE * at * 0.618 + vec3(0.29, 0.61, 0.17), 0.0).r;
+	return 1.0 - (a * 0.62 + b * 0.38);
 }
 
 // What the billows leave of a shape: they eat the edges, and deeper as the wall thins out.
 float eaten(float base, float puff) {
 	float bite = erosion * mix(1.0, 1.5, spent);
 	return clamp((base - (1.0 - puff) * mix(bite, bite * 0.2, base)) * 2.5, 0.0, 1.0);
+}
+
+// The ground maps' coordinates of a place of the box.
+vec2 ground_uv(vec3 u) {
+	return (u.xz * size.xz + ground_shift) / ground_span + 0.5;
+}
+
+// The height (m) of a place of the box over the ground under it.
+float over_ground_m(vec3 u) {
+	return (u.y + 0.5) * size.y + bottom_m - textureLod(ground_map, ground_uv(u), 0.0).r;
+}
+
+// The dust's colour at a place of the box (see foot_m).
+vec3 colour_at(vec3 u) {
+	float high = smoothstep(0.5 * foot_m, 1.5 * foot_m, over_ground_m(u));
+	if (ground_colour_on == 0) {
+		return mix(tint, tint_high, high);
+	}
+	vec3 g = textureLod(ground_colour, ground_uv(u), 0.0).rgb;
+	// The body: like the ground over the sea, the sea's palette in it.
+	float alt = (u.y + 0.5) * size.y + bottom_m;
+	float over_sea = sea_beta > 0.0 ? smoothstep(sea_top - 150.0, sea_top + 150.0, alt) : 1.0;
+	float share = mix(sea_rock_tint, body_ground_share, over_sea);
+	return mix(mix(g, sea_white, foot_pale), mix(sea_white, g, share), high);
 }
 
 // The dust's density at a place of the box, 0 to 1, in full detail.
@@ -197,16 +239,19 @@ void fragment() {
 	// One step, as a share of the ray: longer from far away, where a pixel covers more of the wall.
 	float stride_m = max(step_m, ray_m * t_in * step_far);
 	float span = stride_m / ray_m;
-	// Each pixel starts its steps a little differently, and differently every frame: the layers a fixed
-	// step would draw turn into a grain the temporal anti-aliasing smooths away.
-	vec2 pixel = FRAGCOORD.xy + 5.588238 * float(int(TIME * 60.0) % 64);
+	// Each pixel starts its steps a little differently: the layers a fixed step would draw turn into a fine
+	// grain. The same every frame: the game runs without temporal anti-aliasing by default, and a jitter
+	// changing every frame drew a crawling dither along the wall's edges (2026-11-25).
+	vec2 pixel = FRAGCOORD.xy;
 	float jitter = fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 	vec3 sun = normalize(sun_local);
 	float toward_sun = max(dot(normalize(ray * size), sun), 0.0);
 	float glow = 1.0 + forward * toward_sun * toward_sun * toward_sun * toward_sun;
 	float thick = extinction * strength;
 	float through = 1.0;
-	float lit = 0.0;
+	vec3 lit = vec3(0.0);
+	vec3 colour = tint;
+	vec3 light_here = vec3(light);
 	float sparked = 0.0;
 	float t = t_in + jitter * span;
 	int dense = 0;
@@ -218,8 +263,10 @@ void fragment() {
 		}
 		vec3 u = eye_local + ray * t;
 		float d = density(u);
-		// Through thin dust and empty air the steps are longer: the dust taken is counted over each one's length.
-		float stride = d < 0.03 ? thin_stride : 1.0;
+		// Through empty air the steps are longer; through the thin dust of a rim, shorter (half a step): long
+		// steps there left each pixel's edge where its jitter fell, a stipple along every billow without a
+		// temporal filter to smooth it (2026-11-25). The dust taken is counted over each step's length.
+		float stride = d <= 0.002 ? thin_stride : (d < 0.03 ? 0.5 : 1.0);
 		t += span * stride;
 		if (d > 0.002) {
 			vec3 m = u * size;
@@ -234,6 +281,11 @@ void fragment() {
 				sunlit = exp(-shade * thick * 0.6);
 				// The sky lights a place less under a billow than on top of one: the folds read even in the shade.
 				sky = mix(0.25, 1.0, exp(-density_coarse((m + vec3(0.0, sun_step_m * 2.5, 0.0)) / size) * 1.5));
+				colour = colour_at(u);
+				// The sea's light at this height (its sun through the dust over the place, its overcast).
+				float alt = (u.y + 0.5) * size.y + bottom_m;
+				light_here = sea_light(alt, sun.y, sunlit, glow, sky,
+						light * (ambient * sky + (1.0 - ambient) * sunlit * glow * sun_tint));
 			}
 			dense++;
 			float flash = 0.0;
@@ -241,8 +293,9 @@ void fragment() {
 				vec3 away = (m - sparks[k].xyz) / spark_reach_m;
 				flash += sparks[k].w * exp(-dot(away, away));
 			}
-			float taken = 1.0 - exp(-d * thick * stride_m * stride);
-			lit += through * taken * (ambient * sky + (1.0 - ambient) * sunlit * glow);
+			// Seen through the sea round the eye: dust past its visibility neither shows nor hides.
+			float taken = (1.0 - exp(-d * thick * stride_m * stride)) * sea_fog(ray_m * t, (u.y + 0.5) * size.y + bottom_m);
+			lit += colour * light_here * (through * taken);
 			sparked += through * taken * flash;
 			through *= 1.0 - taken;
 			if (through < 0.01) {
@@ -251,6 +304,9 @@ void fragment() {
 		}
 	}
 	float cover = 1.0 - through;
-	ALBEDO = (tint * light * lit + spark_colour * sparked * spark_power) / max(cover, 0.001);
-	ALPHA = clamp(cover * open_air, 0.0, 1.0);
+	ALBEDO = (lit + spark_glow_colour * sparked * spark_power) / max(cover, 0.001);
+	// A body the march found nearly opaque is opaque: the sky behind holds the star's disc, thousands of
+	// times brighter than the dust, and the last few percent let it shine through a wall kilometres deep
+	// (2026-11-25). The soft edges, where the dust is thin, keep their gradient.
+	ALPHA = clamp(smoothstep(0.0, 0.93, cover) * open_air, 0.0, 1.0);
 }

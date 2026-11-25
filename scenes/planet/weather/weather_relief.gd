@@ -87,6 +87,24 @@ const WALL_HEIGHT_M := [500.0, 3000.0]
 const WALL_DEPTH_M := 1500.0
 const WALL_SPREAD := 0.05
 const WALL_TAU := 3.0
+## A wall's gust front, over a few hundred metres instead of a step at the line (the compass flipped from E
+## 7 m/s to SW 7 m/s in one stride, 2026-11-25). Ahead of it, over WALL_LULL_M: the wind there drops by up to
+## WALL_LULL (a lull) and the air is drawn toward the front at up to WALL_INFLOW_M_S (strength 1). At it, the
+## wall's wind rises over WALL_RAMP_M to a gust WALL_GUST stronger than the wall's own, fading back over
+## WALL_GUST_M, then thins out over the wall's depth as before. Its dust rises over the same WALL_RAMP_M.
+const WALL_LULL_M := 250.0
+const WALL_LULL := 0.5
+const WALL_INFLOW_M_S := 1.5
+const WALL_RAMP_M := 120.0
+const WALL_GUST := 0.3
+const WALL_GUST_M := 150.0
+## A wall's height now (wall_tall): at its birth WALL_BORN_TALL of its height, growing to the whole; thinning
+## out, it sinks to WALL_SPENT_TALL of it (its dust spreads and settles). Over its top (the ground under the
+## place plus that height) its wind and dust fade out within WALL_TOP_FADE_M (over_walls): a player flying
+## high over a wall got its whole wind and dust (2026-11-25).
+const WALL_BORN_TALL := 0.2
+const WALL_SPENT_TALL := 0.45
+const WALL_TOP_FADE_M := 200.0
 ## Cells around a place a wall may have run in from.
 const WALL_REACH_CELLS := 2
 
@@ -190,12 +208,52 @@ static func _cells_near(at: Vector2, reach_m: float, cell_m: float, radius_m: fl
 	return out
 
 
+## How tall a wall stands now, metres: small at its birth, sinking as it thins out.
+static func wall_tall(wall: Dictionary) -> float:
+	return float(wall["height_m"]) * lerpf(WALL_BORN_TALL, 1.0, float(wall.get("grown", 1.0))) \
+			* lerpf(1.0, WALL_SPENT_TALL, float(wall.get("spent", 0.0)))
+
+
+## [param sample] (apply's, at the ground) for a place [param altitude_m] over the reference sphere: the walls'
+## wind, lull and dust faded out over their top (WALL_TOP_FADE_M), as apply recorded them ("wall_*" keys).
+## The sample itself when no wall reaches it or the place is under their top.
+static func over_walls(sample: Dictionary, altitude_m: float) -> Dictionary:
+	if not sample.has("wall_top_m"):
+		return sample
+	var top := float(sample["wall_top_m"])
+	var f := 1.0 - smoothstep(top, top + WALL_TOP_FADE_M, altitude_m)
+	if f >= 1.0:
+		return sample
+	var out := sample.duplicate()
+	var added := Vector2(float(sample["wall_east_m_s"]), float(sample["wall_north_m_s"]))
+	var kept := float(sample["wall_kept"])
+	var wind := Vector2(float(sample["wind_east_m_s"]), float(sample["wind_north_m_s"]))
+	var background := (wind - added) / maxf(kept, 1e-3)
+	wind = background * lerpf(1.0, kept, f) + added * f
+	out["wind_east_m_s"] = wind.x
+	out["wind_north_m_s"] = wind.y
+	out["wind_speed_m_s"] = wind.length()
+	out["wind_from_deg"] = WeatherSampler.wind_from_deg(wind.x, wind.y)
+	var dust := maxf(float(sample["dust_tau"]) - float(sample["wall_dust_tau"]) * (1.0 - f), 0.0)
+	out["dust_tau"] = dust
+	out["visibility_m"] = 3.912 / (dust / WeatherSampler.DUST_LAYER_M) if dust > 1e-6 else WeatherSampler.NO_DUST_VISIBILITY_M
+	if f <= 0.0 and out.has("phenomena"):
+		var names := PackedStringArray(out["phenomena"])
+		var at := names.find(String(NAME_WALL))
+		if at >= 0:
+			names.remove_at(at)
+		out["phenomena"] = names
+	return out
+
+
 ## The dust devils alive at [param t] within [param range_m] of a place, each as {id, lon, lat, radius_m,
 ## height_m, wind_m_s, spin (+1 / -1), strength (0–1)}. [param air_of]: Callable(lon_deg, lat_deg) ->
 ## the service's weather there (WeatherSampler's keys). [param known] keeps the cells' hashes (the same
 ## numbers, drawn once: a cell's phase forever, its draw for a life): pass the same Dictionary again.
+## [param ground_share]: Callable(lon_deg, lat_deg) -> how much of a devil's strength the ground there can
+## drive (0..1: the planet's dust sea shades the basins, DustSea.devil_share); none: all of it.
 static func devils_near(profile: ClimateProfile, at: Vector2, range_m: float, t: float, decl_deg: float,
-		substellar_lon_deg: float, air_of: Callable, known: Dictionary = {}) -> Array:
+		substellar_lon_deg: float, air_of: Callable, known: Dictionary = {}, ground_share: Callable = Callable()) -> Array:
 	var out := []
 	var r := profile.radius_m
 	# How far the air may carry a devil that still stands (it needs a wind under DEVIL_CALM_M_S[1]), as an
@@ -242,6 +300,8 @@ static func devils_near(profile: ClimateProfile, at: Vector2, range_m: float, t:
 		var strength := sin(PI * age / DEVIL_LIFE_S) * smoothstep(DEVIL_SUN[0], DEVIL_SUN[1], sun) \
 				* (1.0 - smoothstep(DEVIL_CALM_M_S[0], DEVIL_CALM_M_S[1], air.length())) \
 				* (1.0 - smoothstep(DEVIL_VEIL_TAU[0], DEVIL_VEIL_TAU[1], float(there["dust_tau"])))
+		if strength >= 0.05 and ground_share.is_valid():
+			strength *= float(ground_share.call(place.x, place.y))
 		if strength < 0.05 or offset_m(at, place, r).length() > range_m:
 			continue
 		var size: float = draws[2]
@@ -339,19 +399,28 @@ static func _wall_source(cell: Array, draws: PackedFloat64Array, terrain_of: Cal
 	return best
 
 
-## What a wall adds at a place: [wind (east, north), dust optical depth]. The dusty air lies behind the
-## front, thickest right behind it, thinning toward the front's two ends.
+## What a wall does at a place: [wind added (east, north), dust optical depth, the share of the wind already
+## there that is kept]. The dusty air lies behind the front, thickest right behind it, thinning toward the
+## front's two ends; at the front a gust, and a lull ahead of it (see WALL_LULL_M).
 static func wall_effect(wall: Dictionary, at: Vector2, radius_m: float) -> Array:
 	var d := offset_m(Vector2(wall["lon"], wall["lat"]), at, radius_m)
 	var way := Vector2(wall["east"], wall["north"])
 	var behind := -d.dot(way)
 	var aside := absf(d.dot(Vector2(-way.y, way.x)))
 	var half: float = float(wall["length_m"]) * 0.5
-	if behind < 0.0 or behind > float(wall["depth_m"]) or aside > half:
-		return [Vector2.ZERO, 0.0]
-	var share: float = float(wall["strength"]) * (1.0 - behind / float(wall["depth_m"])) \
-			* (1.0 - smoothstep(half * 0.8, half, aside))
-	return [way * float(wall["speed_m_s"]) * share, WALL_TAU * share]
+	var depth: float = float(wall["depth_m"])
+	if behind < -WALL_LULL_M or behind > depth or aside > half:
+		return [Vector2.ZERO, 0.0, 1.0]
+	var strength: float = float(wall["strength"]) * (1.0 - smoothstep(half * 0.8, half, aside))
+	if behind < 0.0:
+		# Ahead: the lull deepens toward the front, the inflow peaks halfway.
+		var near := smoothstep(-WALL_LULL_M, 0.0, behind)
+		var inflow := -way * WALL_INFLOW_M_S * strength * 4.0 * near * (1.0 - near)
+		return [inflow, 0.0, 1.0 - WALL_LULL * strength * near]
+	var ramp := smoothstep(0.0, WALL_RAMP_M, behind)
+	var share := strength * ramp * (1.0 - behind / depth)
+	var gust := 1.0 + WALL_GUST * exp(-behind / WALL_GUST_M)
+	return [way * float(wall["speed_m_s"]) * share * gust, WALL_TAU * share, 1.0 - WALL_LULL * strength * (1.0 - ramp)]
 
 
 ## [param count] numbers in [0, 1) drawn after the hash [param h].
@@ -387,13 +456,32 @@ static func apply(sample: Dictionary, profile: ClimateProfile, terrain: Dictiona
 	var dust: float = float(sample["dust_tau"]) + veil
 	if veil > 0.05:
 		names.append(NAME_HAZE)
+	var added := Vector2.ZERO
+	var kept := 1.0  # the share of the wind there a wall's lull leaves
+	var wall_added := Vector2.ZERO
+	var wall_dust := 0.0
+	var wall_top := -INF
 	for group: Array in [[devils, devil_effect, NAME_DEVIL], [walls, wall_effect, NAME_WALL]]:
 		for one: Dictionary in group[0]:
 			var effect: Array = (group[1] as Callable).call(one, at, profile.radius_m)
-			wind += effect[0]
+			added += effect[0]
 			dust += effect[1]
+			if effect.size() > 2:
+				kept *= float(effect[2])
+				if float(effect[2]) < 1.0 or float(effect[1]) > 0.0:
+					wall_added += effect[0]
+					wall_dust += effect[1]
+					wall_top = maxf(wall_top, height + wall_tall(one))
 			if float(effect[1]) > 0.05 and not names.has(group[2]):
 				names.append(group[2])
+	wind = wind * kept + added
+	if wall_top > -INF:
+		# What the walls did here, for over_walls (a place over their top gets none of it).
+		out["wall_east_m_s"] = wall_added.x
+		out["wall_north_m_s"] = wall_added.y
+		out["wall_kept"] = kept
+		out["wall_dust_tau"] = wall_dust
+		out["wall_top_m"] = wall_top
 	var speed := minf(wind.length(), profile.wind_scale_max_ms)
 	if wind.length() > speed:
 		wind = wind.normalized() * speed

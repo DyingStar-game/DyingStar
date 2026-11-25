@@ -20,6 +20,10 @@ const NSIDE := 256
 const KEPT_S := 8.0
 const MARGIN := 1.25
 const FLAT_REACH_M := 1500.0
+## The colour map's size (places along the front, from the back to the leading face): the dust at the foot of
+## each part of the wall is the ground's under it (DustSea.wall_dust_of), not the colour of the place
+## where the front's middle stands (a wall tens of km long crossed brown ground with a blue-green foot, 2026-11-25).
+const COLOUR_SIZE := Vector2i(16, 4)
 
 ## The map (R: metres over the reference sphere); the lowest and the highest ground in it; what it spans on
 ## the ground (m: along the front, along the wall's way).
@@ -27,6 +31,8 @@ var texture: ImageTexture
 var low := -FLAT_REACH_M
 var high := FLAT_REACH_M
 var span := Vector2.ONE
+## The dust's colour over the same span (RGB: a dust albedo); null before the first map.
+var colour_texture: ImageTexture = null
 
 var _heights := PackedFloat32Array()
 var _read := false
@@ -74,11 +80,26 @@ func refresh(data: PlanetData, middle: Vector3, across: Vector3, way: Vector3, s
 				var x := ((i + 0.5) / SIZE.x - 0.5) * over.x
 				heights[j * SIZE.x + i] = data.sample_height_for_direction((middle + across * x + way * z).normalized(),
 						-1, -1, Vector2i(-1, -1), null, nside)
-		_use.call_deferred(heights, middle, across, way, over))
+		var colours := PackedFloat32Array()
+		colours.resize(COLOUR_SIZE.x * COLOUR_SIZE.y * 3)
+		for j in COLOUR_SIZE.y:
+			var z := ((j + 0.5) / COLOUR_SIZE.y - 0.5) * over.y
+			for i in COLOUR_SIZE.x:
+				var x := ((i + 0.5) / COLOUR_SIZE.x - 0.5) * over.x
+				var dir := (middle + across * x + way * z).normalized()
+				var dust := DustSea.wall_dust_of(GroundLook.colour_at(data, dir, WeatherSky.BLOW_FALLBACK_COLOUR))
+				var k := (j * COLOUR_SIZE.x + i) * 3
+				colours[k] = dust.r
+				colours[k + 1] = dust.g
+				colours[k + 2] = dust.b
+		_use.call_deferred(heights, middle, across, way, over, colours))
 
 
-func _use(heights: PackedFloat32Array, middle: Vector3, across: Vector3, way: Vector3, over: Vector2) -> void:
+func _use(heights: PackedFloat32Array, middle: Vector3, across: Vector3, way: Vector3, over: Vector2,
+		colours: PackedFloat32Array) -> void:
 	_heights = heights
+	colour_texture = ImageTexture.create_from_image(Image.create_from_data(COLOUR_SIZE.x, COLOUR_SIZE.y, false,
+			Image.FORMAT_RGBF, colours.to_byte_array()))
 	_middle = middle
 	_across = across
 	_way = way

@@ -93,6 +93,10 @@ uniform vec4 dust_light_spot[4];
 // How much brighter the dust glows in a lamp's beam than its density alone gives: an IMAGE choice
 // (WeatherSky.LAMP_GAIN). At the plains' visibility a real beam is barely seen; the lit ground is.
 uniform float dust_lamp_gain = 1.0;
+// The dust sea's extinction around the eye (1/m, DustSea; 0 outside it): inside the sea the wind's dust
+// past its visibility neither shows nor hides anything. Composited in front of the sea, the far dust 3 to
+// 6 km out drew a band over a fog that hides everything past 1 km.
+uniform float dust_veil_beta = 0.0;
 
 
 // The height (m) over the real ground of the camera-relative point [param p] whose height over the
@@ -242,8 +246,9 @@ void dust_far(vec3 dir, float limit, vec2 pixel, vec3 lit, inout vec3 light, ino
 				* mix(0.25, 1.6, smoothstep(0.3, 0.7, bank))
 				* smoothstep(dust_far_start, dust_far_start + max(dust_far_fade, 0.01), t);
 		float step_t = exp(-sigma * dt);
-		light += trans * (1.0 - step_t) * lit * dust_far_albedo_at(p);
-		trans *= step_t;
+		float veil = exp(-dust_veil_beta * t);
+		light += trans * (1.0 - step_t) * lit * dust_far_albedo_at(p) * veil;
+		trans *= mix(1.0, step_t, veil);
 		if (trans < DUST_OPAQUE) {
 			break;
 		}
@@ -327,8 +332,9 @@ vec3 dust_march(vec3 dir, float limit, vec2 pixel, out float trans) {
 		float fade = smoothstep(dust_start, dust_start + 6.0, t) * (1.0 - smoothstep(range * 0.7, range, t));
 		float sigma = dust_sigma_at(dir * t, true) * fade;
 		float step_t = exp(-sigma * dt);
-		light += trans * (1.0 - step_t) * lit * dust_albedo_at(dir * t);
-		trans *= step_t;
+		float veil = exp(-dust_veil_beta * t);
+		light += trans * (1.0 - step_t) * lit * dust_albedo_at(dir * t) * veil;
+		trans *= mix(1.0, step_t, veil);
 		if (trans < DUST_OPAQUE) {
 			break;
 		}

@@ -12,6 +12,7 @@ render_mode blend_mix, depth_test_disabled, depth_draw_never, cull_disabled, uns
 // exactly what the two disjoint systems this replaces could never close.
 #include "res://scenes/_universe/environment/atmosphere_common.gdshaderinc"
 #include "res://scenes/_universe/environment/weather_common.gdshaderinc"
+#include "res://scenes/_universe/environment/dust_sea.gdshaderinc"
 #include "res://scenes/_universe/environment/dust_layer.gdshaderinc"
 
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
@@ -28,6 +29,9 @@ uniform int lut_slices = 32;
 // the air scatters in (and the wind's dust) is the sun's and the sky's: none reaches the bottom of a shaft, where it
 // would light the far end of the shaft like daylight. The air still dims what lies behind it.
 uniform float open_sky : hint_range(0.0, 1.0) = 1.0;
+// The dust sea's probe (DustSeaProbe): 0 the picture; 1 which branch each pixel took (red terrain, blue sky),
+// as bright as the sea lets through; 2 the sea's light alone, over black.
+uniform int sea_debug = 0;
 
 
 // One band of the table (0 in-scattered light, 1 transmittance) at [slice], where the pixel is. The cell
@@ -71,13 +75,24 @@ void fragment() {
 	// already integrated it. Adding the air a second time would double the horizon.
 	// (Godot forbids an early `return` in a processor function, hence the branch.)
 	if (depth <= 0.0) {
-		// The sky behind is already drawn; only the wind's dust goes over it (near and far: the horizon
-		// sinks into the dust like the far plains).
+		// The sky behind is already drawn; the dust sea in front of it (its far reaches past the drawn
+		// terrain, the whole overcast from inside it: the star's disc goes with it) and the wind's dust
+		// nearest the eye (near and far: the horizon sinks into the dust like the far plains).
 		vec3 sky_dir = normalize((INV_VIEW_MATRIX * vec4((INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, 0.0, 1.0)).xyz, 0.0)).xyz);
+		float sea_t;
+		vec3 sea = sea_march(sky_dir, 1e12, FRAGCOORD.xy, sea_t);
 		float dust_t;
 		vec3 dust = dust_march(sky_dir, max(dust_range, dust_far_range), FRAGCOORD.xy, dust_t);
-		ALPHA = 1.0 - dust_t;
-		ALBEDO = ALPHA > 1e-4 ? dust / ALPHA : vec3(0.0);
+		vec3 front = dust + dust_t * sea;
+		ALPHA = 1.0 - dust_t * sea_t;
+		ALBEDO = ALPHA > 1e-4 ? front / ALPHA : vec3(0.0);
+		if (sea_debug == 1) {
+			ALBEDO = vec3(0.0, 0.0, 0.2 + 0.8 * sea_t);
+			ALPHA = 1.0;
+		} else if (sea_debug == 2) {
+			ALBEDO = sea;
+			ALPHA = 1.0;
+		}
 		ALPHA *= open_sky;
 	} else {
 		// View-space position of the drawn surface, then its distance and its world direction. The
@@ -97,10 +112,19 @@ void fragment() {
 		}
 
 		// What the surface sent us, dimmed by the air it crossed, plus what that air scattered in; the
-		// wind's dust, nearest the eye, over all (dust_layer.gdshaderinc, WeatherSky).
+		// dust sea between the eye and the surface over that (dust_sea.gdshaderinc, DustSea); the wind's
+		// dust, nearest the eye, over all (dust_layer.gdshaderinc, WeatherSky).
+		float sea_t;
+		vec3 sea = sea_march(world_dir, distance_to_surface, FRAGCOORD.xy, sea_t);
 		float dust_t;
 		vec3 dust = dust_march(world_dir, distance_to_surface, FRAGCOORD.xy, dust_t);
-		ALBEDO = (texture(screen_tex, SCREEN_UV).rgb * transmittance + air * open_sky) * dust_t + dust * open_sky;
+		vec3 behind = (texture(screen_tex, SCREEN_UV).rgb * transmittance + air * open_sky) * sea_t + sea * open_sky;
+		ALBEDO = behind * dust_t + dust * open_sky;
 		ALPHA = 1.0;
+		if (sea_debug == 1) {
+			ALBEDO = vec3(0.2 + 0.8 * sea_t, 0.0, 0.0);
+		} else if (sea_debug == 2) {
+			ALBEDO = sea;
+		}
 	}
 }
