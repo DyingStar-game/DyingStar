@@ -833,6 +833,20 @@ func _build_navigation() -> void:
 			_goto_poi(_poi_pick.get_item_id(i)))
 	_into.add_child(_poi_pick)
 
+	var crow := HBoxContainer.new()
+	var coords := LineEdit.new()
+	coords.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	coords.placeholder_text = "lon lat (ex. -68.4 9.45)"
+	coords.tooltip_text = "Longitude puis latitude en degrés, séparées par un espace ou un point-virgule " \
+			+ "(la virgule décimale est acceptée).\nEntrée ou « Aller » envoie la caméra là, à la hauteur choisie."
+	var go := Button.new()
+	go.text = "Aller"
+	go.pressed.connect(func() -> void: _goto_typed(coords.text))
+	coords.text_submitted.connect(_goto_typed)
+	crow.add_child(coords)
+	crow.add_child(go)
+	_into.add_child(crow)
+
 	add_child(fly)
 	_fly_btn = CheckButton.new()
 	_fly_btn.text = "Mode vol (Z Q S D)"
@@ -1121,6 +1135,25 @@ func _list_pois(body: String) -> void:
 	_poi_pick.disabled = _pois.is_empty()
 	for i: int in order:
 		_poi_pick.add_item("%s — %s" % [str(_pois[i].label), str(_pois[i].kind)], i)
+
+
+## Send the camera over the longitude and latitude typed in [param text] ("-68.4 9.45", "-68,4; 9,45").
+func _goto_typed(text: String) -> void:
+	var parts := text.strip_edges().replace(";", " ").replace(", ", " ").split(" ", false)
+	if parts.size() != 2 or not parts[0].replace(",", ".").is_valid_float() \
+			or not parts[1].replace(",", ".").is_valid_float():
+		_say("Coordonnées attendues : longitude puis latitude en degrés, par exemple « -68.4 9.45 ».")
+		return
+	var lon := parts[0].replace(",", ".").to_float()
+	var lat := parts[1].replace(",", ".").to_float()
+	if absf(lat) > 90.0:
+		_say("La latitude doit être entre -90 et 90°.")
+		return
+	if not _can_go():
+		_say("Lance d'abord la vue jeu (bouton ci-dessus) ou ouvre la scène du corps.")
+		return
+	_send_camera(HEALPix.lonlat2vec(lon, lat), "Nova lon %.3f lat %.3f" % [lon, lat])
+	_say("Caméra envoyée à lon %.2f°, lat %.2f°." % [lon, lat])
 
 
 ## Send the camera over point of interest [param index] of _pois.

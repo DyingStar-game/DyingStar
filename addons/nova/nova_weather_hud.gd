@@ -29,12 +29,12 @@ var _task := -1
 
 
 func _ready() -> void:
-	_line.position = Vector2(12, 102)
+	_line.position = Vector2(12, 136)
 	_line.add_theme_font_size_override("font_size", 13)
 	_line.add_theme_color_override("font_outline_color", Color.BLACK)
 	_line.add_theme_constant_override("outline_size", 4)
 	add_child(_line)
-	_note.position = Vector2(12, 126)
+	_note.position = Vector2(12, 160)
 	_note.add_theme_font_size_override("font_size", 16)
 	_note.add_theme_color_override("font_color", Color(1.0, 0.9, 0.6))
 	_note.add_theme_color_override("font_outline_color", Color.BLACK)
