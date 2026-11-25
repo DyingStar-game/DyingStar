@@ -1,6 +1,7 @@
 extends GutTest
-## The relative wind slams an open cab door shut once the truck goes fast enough (DoorWind), with the
-## air's density taken from the planet's atmosphere at the vehicle's altitude (AtmosphereProfile).
+## The relative wind slams an open cab door shut once the truck goes fast enough, or a gust does on a
+## parked truck (DoorWind), with the air's density taken from the planet's atmosphere at the vehicle's
+## altitude (AtmosphereProfile).
 
 const WIND := preload("res://scenes/_universe/vehicles/door_wind.gd")
 const TRUCK := "res://scenes/_universe/vehicles/ground/trucks/truck.tscn"
@@ -9,6 +10,12 @@ const AREA := 1.0
 const WIDTH := 0.9
 const OPEN := 60.0
 const HOLD := 25.0
+## The air on a door is the weather's wind minus the truck's velocity, vehicle frame (forward = -Z,
+## right = +X). The truck's cab doors are hinged at their front edge: wind_shut_travel = FORWARD.
+const RIGHT_DOOR := Vector3(0.9, 1.0, -1.0)
+const LEFT_DOOR := Vector3(-0.9, 1.0, -1.0)
+## Air density on Tarsis 3's reference sphere (kg/m3).
+const RHO := 1.265
 
 
 ## Tarsis 3 from its system JSON: 1.02 bar, g 7.77 m/s2, scale height 10371 m.
@@ -40,6 +47,53 @@ func test_the_torque_grows_with_the_square_of_the_speed() -> void:
 	assert_almost_eq(WIND.torque_nm(1.265, 20.0, AREA, WIDTH, OPEN), 4.0 * at_10, 0.001)
 	assert_eq(WIND.torque_nm(1.265, -10.0, AREA, WIDTH, OPEN), 0.0, "reversing opens nothing and shuts nothing")
 	assert_eq(WIND.torque_nm(1.265, 10.0, AREA, WIDTH, 0.0), 0.0, "a shut door has no face to the wind")
+
+
+## Torque towards shut on a cab door at [param door_pos] from the air [param air_ms] on it.
+func _torque(air_ms: Vector3, door_pos: Vector3) -> float:
+	var push : Vector3 = WIND.push_direction(Vector3.FORWARD, Vector3.UP, door_pos, OPEN)
+	return WIND.torque_from_air_nm(RHO, air_ms, push, AREA, WIDTH)
+
+
+## The truck's velocity, in the vehicle frame, driving forward at [param kmh].
+func _driving(kmh: float) -> Vector3:
+	return Vector3.FORWARD * kmh / 3.6
+
+
+func test_still_air_while_driving_is_the_old_model() -> void:
+	for door: Vector3 in [RIGHT_DOOR, LEFT_DOOR]:
+		assert_almost_eq(_torque(-_driving(40.0), door), WIND.torque_nm(RHO, 40.0 / 3.6, AREA, WIDTH, OPEN), 1e-6,
+				"air straight from the front: the same torque as before")
+
+
+func test_parked_a_strong_wind_from_the_right_shuts_the_right_door() -> void:
+	var from_right := Vector3.LEFT * 20.0  # the air moves leftward: it comes from the right
+	assert_gt(_torque(from_right, RIGHT_DOOR), HOLD, "it hits the outer face: the door slams")
+	assert_eq(_torque(from_right, LEFT_DOOR), 0.0, "the far door gets it on its inner face: held open")
+
+
+func test_parked_in_calm_air_the_door_stays_open() -> void:
+	assert_eq(_torque(Vector3.ZERO, RIGHT_DOOR), 0.0)
+	assert_lt(_torque(Vector3.LEFT * 3.0, RIGHT_DOOR), HOLD, "a breeze does not beat the door check")
+
+
+func test_a_head_wind_adds_to_the_speed() -> void:
+	var still : float = _torque(-_driving(25.0), LEFT_DOOR)
+	assert_lt(still, HOLD, "25 km/h in still air: below the 33 km/h it takes")
+	var head_wind := Vector3.BACK * 5.0  # the air moves rearward: it comes from the front
+	assert_gt(_torque(head_wind - _driving(25.0), LEFT_DOOR), HOLD, "into an 18 km/h head wind: it slams")
+
+
+func test_a_tail_wind_cancels_the_speed() -> void:
+	assert_gt(_torque(-_driving(40.0), LEFT_DOOR), HOLD, "40 km/h in still air: it slams")
+	var tail_wind := Vector3.FORWARD * 40.0 / 3.6  # the air moves with the truck
+	assert_almost_eq(_torque(tail_wind - _driving(40.0), LEFT_DOOR), 0.0, 1e-6, "a 40 km/h tail wind: no air on it")
+
+
+func test_a_door_on_the_centre_line_takes_the_travel_part_only() -> void:
+	var push : Vector3 = WIND.push_direction(Vector3.FORWARD, Vector3.UP, Vector3(0.0, 1.0, 2.0), OPEN)
+	assert_almost_eq(push.distance_to(Vector3.BACK * sin(deg_to_rad(OPEN))), 0.0, 1e-6,
+			"no side to tell: air from the front only")
 
 
 ## A future vehicle needs nothing set: its "<where>_door"s catch the wind, its hatches do not.
