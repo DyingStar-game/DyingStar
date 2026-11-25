@@ -10,6 +10,10 @@ extends WeatherSource
 ## ([method feed], WeatherService). With no system received the weather is the climate's mean winds: the
 ## fallback the service's design intends.
 ##
+## While the planet has a fresh WeatherField (the service's atmosphere model, relayed by Horizon), its
+## near-ground wind, dust, temperature and pressure are the background instead of the climate profile and
+## the systems ([method field_frames]); without one, the profile and the systems as above.
+##
 ## Beside WeatherSource's keys, a sample carries "temperature_k", "pressure_pa", "pressure_anomaly_pa",
 ## "visibility_m" and "band" (WeatherSampler's names).
 ##
@@ -62,6 +66,7 @@ var _kept_slot := -1
 var _kept_epoch := 0  # one more at each feed: a sample computed before it is not kept
 var _air_kept := {}  # [lon, lat] → WeatherSampler.air there, under the systems _air_live
 var _air_live: Array = []
+var _air_field: Variant = null  # the field frames _air_kept was computed under (null: none)
 var _air_mutex := Mutex.new()
 var _devil_cells := {}  # WeatherRelief.devils_near's known: the cells' hashes
 var _devil_mutex := Mutex.new()
@@ -69,6 +74,8 @@ var _fed: Array = []
 var _systems: Array = []
 var _systems_at_ms := -1
 var _systems_of := 0
+var _field: Array = []  # WeatherField.frames() of the planet's field, read with the systems
+var _fed_field: Array = []
 var _mutex := Mutex.new()
 
 
@@ -90,6 +97,34 @@ func feed(states: Array) -> void:
 	_mutex.unlock()
 
 
+## Hand in the frames of a weather field (WeatherField.frames()) a tool or a test has without Horizon: they
+## stand for the planet's WeatherField node. An empty list takes them away.
+func feed_field(held: Array) -> void:
+	_mutex.lock()
+	_fed_field = held
+	_systems_at_ms = -1
+	_kept.clear()
+	_kept_slot = -1
+	_kept_epoch += 1
+	_mutex.unlock()
+
+
+## The frames of [param planet]'s WeatherField (WeatherField.frames()), read with [method systems]: [] when
+## the planet has none. Thread-safe.
+func field_frames(planet: Planet) -> Array:
+	systems(planet)
+	_mutex.lock()
+	var out := _field
+	_mutex.unlock()
+	return out
+
+
+## [method field_frames] when they may stand for the weather at [param t] (WeatherField.frames_fresh), else [].
+func fresh_field(planet: Planet, t: float) -> Array:
+	var held := field_frames(planet)
+	return held if WeatherField.frames_fresh(held, t) else []
+
+
 ## The weather systems over [param planet] now, as the Dictionaries WeatherSampler reads
 ## (WeatherSystem.state()): the props Horizon parented to it, and what a tool handed in ([method feed]).
 ## Empty when the service was not heard from. Thread-safe: the nodes are read on the main thread only, a
@@ -105,12 +140,18 @@ func systems(planet: Planet) -> Array:
 	if not due or OS.get_thread_caller_id() != OS.get_main_thread_id():
 		return out
 	out = fed.duplicate()
+	var held: Array = _fed_field
 	if planet != null and planet.is_inside_tree():
 		for node: Node in planet.get_tree().get_nodes_in_group(WeatherSystem.GROUP):
 			if node is WeatherSystem and node.get_parent() == planet:
 				out.append((node as WeatherSystem).state())
+		for node: Node in planet.get_tree().get_nodes_in_group(WeatherField.GROUP):
+			if node is WeatherField and node.get_parent() == planet:
+				held = (node as WeatherField).frames()
+				break
 	_mutex.lock()
 	_systems = out
+	_field = held
 	_systems_at_ms = ms
 	_systems_of = id
 	_mutex.unlock()
@@ -120,11 +161,49 @@ func systems(planet: Planet) -> Array:
 ## The service's weather at a longitude and latitude (degrees) and an altitude, under [param live] systems
 ## ([method systems]), for the star's declination and the longitude it stands over: every key of
 ## WeatherSampler.sample, and the dust threshold. The one sample behind [method sample] and the weather map.
+## With [param field] (fresh WeatherField frames, [method fresh_field]) sampled at [param t], the field is
+## the background and the systems are not counted (the model makes its own); "weather_field" says which.
 func sample_at(lon_deg: float, lat_deg: float, altitude_m: float, decl_deg: float, substellar_lon_deg: float,
-		live: Array) -> Dictionary:
-	var out := WeatherSampler.sample(profile, live, lon_deg, lat_deg, altitude_m,
+		live: Array, field: Array = [], t: float = 0.0) -> Dictionary:
+	var got := WeatherField.sample_frames(field, lon_deg, lat_deg, t)
+	var out := WeatherSampler.sample(profile, live if got.is_empty() else [], lon_deg, lat_deg, altitude_m,
 			WeatherRelief.solar_hours(lon_deg, substellar_lon_deg), decl_deg)
+	if not got.is_empty():
+		out = with_field(profile, out, got)
+	out["weather_field"] = not got.is_empty()
 	out["lift_threshold_m_s"] = profile.v10_threshold_m_s
+	return out
+
+
+## [param sample] (WeatherSampler.sample's keys, no system counted) with what the field [param got]
+## (WeatherField.sample) says in place of the profile's: the wind, the dust and what follows from it
+## (visibility), the temperature, and the pressure brought from the reference sphere to the sample's
+## altitude (and the density with it). A quantity the field lacks keeps the profile's value.
+static func with_field(p: ClimateProfile, sample: Dictionary, got: Dictionary) -> Dictionary:
+	var out := sample.duplicate()
+	if got.has("wind_east") and got.has("wind_north"):
+		var we := float(got["wind_east"])
+		var wn := float(got["wind_north"])
+		out["wind_east_m_s"] = we
+		out["wind_north_m_s"] = wn
+		out["wind_speed_m_s"] = sqrt(we * we + wn * wn)
+		out["wind_from_deg"] = WeatherSampler.wind_from_deg(we, wn)
+	if got.has("dust_tau"):
+		var dust := maxf(float(got["dust_tau"]), 0.0)
+		out["dust_tau"] = dust
+		out["visibility_m"] = (3.912 / (dust / WeatherSampler.DUST_LAYER_M) if dust > 1e-6
+				else WeatherSampler.NO_DUST_VISIBILITY_M)
+	if got.has("t_air"):
+		out["temperature_k"] = float(got["t_air"])
+	if got.has("p_sea") and p.has_atmosphere:
+		var altitude := float(sample.get("altitude_m", 0.0))
+		var fall := exp(-altitude / p.scale_height_m)
+		var pressure := float(got["p_sea"]) * fall
+		var column := p.pressure_pa * fall
+		out["pressure_pa"] = pressure
+		out["pressure_anomaly_pa"] = pressure - column
+		if column > 0.0:
+			out["air_density_kg_m3"] = WeatherSampler.air_density(p, altitude) * pressure / column
 	return out
 
 
@@ -170,7 +249,8 @@ func _regional(planet: Planet, local_dir: Vector3) -> Dictionary:
 		return kept.duplicate()
 	var sun := sun_over(planet)
 	var live := systems(planet)
-	var out := sample_at(lonlat.x, lonlat.y, 0.0, sun.y, sun.x, live)
+	var field := fresh_field(planet, t)
+	var out := sample_at(lonlat.x, lonlat.y, 0.0, sun.y, sun.x, live, field, t)
 	if not local_enabled or planet == null or planet.planet_data == null:
 		return out
 	var data: PlanetData = planet.planet_data
@@ -180,7 +260,7 @@ func _regional(planet: Planet, local_dir: Vector3) -> Dictionary:
 		if wind.length() > 0.1:
 			var upwind := WeatherRelief.moved(lonlat, -wind.normalized() * LEE_REACH_M, profile.radius_m)
 			terrain["upwind_drop_m"] = float(relief_at(data, upwind.x, upwind.y)["height_m"]) - float(terrain["height_m"])
-	out = WeatherRelief.apply(out, profile, terrain, _devils(lonlat, WeatherRelief.DEVIL_CELL_M, t, sun, live),
+	out = WeatherRelief.apply(out, profile, terrain, _devils(lonlat, WeatherRelief.DEVIL_CELL_M, t, sun, live, field),
 			walls_near(planet, lonlat),
 			Vector3(haze_base_m, haze_top_m, haze_tau), t)
 	_mutex.lock()
@@ -217,28 +297,43 @@ func relief_at(data: PlanetData, lon_deg: float, lat_deg: float) -> Dictionary:
 	return out
 
 
-## The air of the service's weather on the ground at a place under [param live] systems
-## (WeatherSampler.air: band, wind, dust), as the Callable WeatherRelief asks it through.
-func _air_of(live: Array) -> Callable:
-	return func(lon: float, lat: float) -> Dictionary: return air_at(lon, lat, live)
+## The air of the service's weather on the ground at a place under [param live] systems, or of the fresh
+## [param field] when there is one (WeatherSampler.air: band, wind, dust), as the Callable WeatherRelief asks
+## it through.
+func _air_of(live: Array, field: Array = []) -> Callable:
+	var t := now()
+	return func(lon: float, lat: float) -> Dictionary: return air_at(lon, lat, live, field, t)
 
 
 ## WeatherSampler.air at (lon, lat) under [param live] systems ([method systems]), kept for that place
 ## while the systems are that same list: the devils' and walls' places stay put for minutes and are asked
-## again at every refresh. The Dictionary is shared: read it, never write to it. Thread-safe.
-func air_at(lon_deg: float, lat_deg: float, live: Array) -> Dictionary:
+## again at every refresh. With fresh [param field] frames ([method fresh_field]), the field's wind and
+## dust at [param t] instead (the band stays the climate's). The Dictionary is shared: read it, never write
+## to it. Thread-safe.
+func air_at(lon_deg: float, lat_deg: float, live: Array, field: Array = [], t: float = 0.0) -> Dictionary:
 	var key := [lon_deg, lat_deg]
+	# An empty default list is a new Array at each call: only a held field is told apart by identity.
+	var field_key: Variant = field if not field.is_empty() else null
 	_air_mutex.lock()
-	if not is_same(live, _air_live) or _air_kept.size() >= KEPT_MAX:
+	if not is_same(live, _air_live) or not is_same(field_key, _air_field) or _air_kept.size() >= KEPT_MAX:
 		_air_kept.clear()
 		_air_live = live
+		_air_field = field_key
 	var known: Variant = _air_kept.get(key)
 	_air_mutex.unlock()
 	if known != null:
 		return known
-	var out := WeatherSampler.air(profile, live, lon_deg, lat_deg)
+	var got := WeatherField.sample_frames(field, lon_deg, lat_deg, t)
+	var out: Dictionary
+	if got.is_empty():
+		out = WeatherSampler.air(profile, live, lon_deg, lat_deg)
+	else:
+		var we := float(got.get("wind_east", 0.0))
+		var wn := float(got.get("wind_north", 0.0))
+		out = {"band": WeatherSampler.band_wind(profile, lat_deg)["band"], "wind_east_m_s": we, "wind_north_m_s": wn,
+			"wind_speed_m_s": sqrt(we * we + wn * wn), "dust_tau": maxf(float(got.get("dust_tau", 0.0)), 0.0)}
 	_air_mutex.lock()
-	if is_same(live, _air_live):
+	if is_same(live, _air_live) and is_same(field_key, _air_field):
 		_air_kept[key] = out
 	_air_mutex.unlock()
 	return out
@@ -246,16 +341,17 @@ func air_at(lon_deg: float, lat_deg: float, live: Array) -> Dictionary:
 
 ## The dust devils alive now within [param range_m] of a place of [param planet] (WeatherRelief.devils_near).
 func devils_near(planet: Planet, lonlat: Vector2, range_m: float) -> Array:
-	return _devils(lonlat, range_m, now(), sun_over(planet), systems(planet))
+	var t := now()
+	return _devils(lonlat, range_m, t, sun_over(planet), systems(planet), fresh_field(planet, t))
 
 
 ## WeatherRelief.devils_near at [param t] under [param live] systems, the sun at [param sun] (sun_over),
 ## the cells' hashes kept from one call to the next. Thread-safe.
-func _devils(lonlat: Vector2, range_m: float, t: float, sun: Vector2, live: Array) -> Array:
+func _devils(lonlat: Vector2, range_m: float, t: float, sun: Vector2, live: Array, field: Array = []) -> Array:
 	_devil_mutex.lock()
 	if _devil_cells.size() >= KEPT_MAX * 4:
 		_devil_cells.clear()
-	var out := WeatherRelief.devils_near(profile, lonlat, range_m, t, sun.y, sun.x, _air_of(live), _devil_cells)
+	var out := WeatherRelief.devils_near(profile, lonlat, range_m, t, sun.y, sun.x, _air_of(live, field), _devil_cells)
 	_devil_mutex.unlock()
 	return out
 
@@ -264,7 +360,7 @@ func _devils(lonlat: Vector2, range_m: float, t: float, sun: Vector2, live: Arra
 func walls_near(planet: Planet, lonlat: Vector2) -> Array:
 	var data: PlanetData = planet.planet_data
 	var sun := sun_over(planet)
-	var air := _air_of(systems(planet))
+	var air := _air_of(systems(planet), fresh_field(planet, now()))
 	_mutex.lock()
 	if _wall_sources.size() >= KEPT_MAX:
 		_wall_sources.clear()

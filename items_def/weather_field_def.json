@@ -1,0 +1,37 @@
+{
+    "channels": [
+        {
+            "zone": 0,
+            "distance": 20000000.0,
+            "frequency": 1.0,
+            "properties": [
+                "name",
+                "parent_id",
+                "position",
+                "rotation",
+                "grid_w",
+                "grid_h",
+                "quantities"
+            ]
+        },
+        {
+            "zone": 1,
+            "distance": 20000000.0,
+            "frequency": 0.2,
+            "properties": [
+                "valid_at",
+                "model_day",
+                "scales",
+                "fields"
+            ]
+        },
+        {
+            "zone": 6,
+            "distance": 20000001.0,
+            "frequency": 1.0,
+            "properties": [
+                "scenename"
+            ]
+        }
+    ]
+}

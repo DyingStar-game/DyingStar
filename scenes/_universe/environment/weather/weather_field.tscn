@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/environment/weather/weather_field.gd" id="1_field"]
+[ext_resource type="Script" path="res://scenes/globals/prop_sync.gd" id="2_propsync"]
+
+[node name="WeatherField" type="Node3D"]
+script = ExtResource("1_field")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_propsync")
+type_name = "weather_field"
