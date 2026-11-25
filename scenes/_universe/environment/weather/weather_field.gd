@@ -40,8 +40,8 @@ var model_day: float = 0.0
 var _prev: Dictionary = {}
 var _newest: Dictionary = {}
 var _newest_raw := PackedByteArray()
-# Zone 0 (scales) and zone 1 (fields) may reach us in separate messages, either one first: a frame is
-# re-decoded once when its scales come after it.
+# Scales and fields share zone 1 and normally arrive in one message. As a guard, should they ever come
+# apart (either one first), a frame is re-decoded once when its scales come after it.
 var _newest_needs_scales := false
 var _scales_ahead := false
 var _warned := false

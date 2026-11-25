@@ -11,8 +11,7 @@
                 "rotation",
                 "grid_w",
                 "grid_h",
-                "quantities",
-                "scales"
+                "quantities"
             ]
         },
         {
@@ -22,6 +21,7 @@
             "properties": [
                 "valid_at",
                 "model_day",
+                "scales",
                 "fields"
             ]
         },

@@ -148,9 +148,14 @@ func test_a_malformed_frame_is_ignored() -> void:
 
 
 func test_scales_that_come_apart_from_their_fields_are_paired_with_them() -> void:
-	# Zone 0 (scales) and zone 1 (fields) are separate channels: either may arrive first.
+	# Scales and fields share zone 1 and normally come together; should they ever come apart, either first,
+	# the frame is still decoded with its own scales.
 	var other := [[-30.0, 0.02], [-60.0, 0.01], [0.0, 0.001], [150.0, 0.01], [60000.0, 1.0]]
 	var node := _field()
+	node.apply_prop_data(_data(_flat([10.0, 0.0, 0.0, 200.0, 61000.0]), 500.0))
+	node.apply_prop_data({"valid_at": 700.0, "scales": other, "fields": _fields(func(q: int, _i: int, _j: int) -> float:
+		return [30.0, 0.0, 0.0, 200.0, 61000.0][q], other)})
+	assert_almost_eq(float(node.sample(0.0, 0.0, 700.0)["wind_east"]), 30.0, 1e-3, "one message: its own scales")
 	node.apply_prop_data(_data(_flat([10.0, 0.0, 0.0, 200.0, 61000.0]), 1000.0))
 	# Fields first, then their scales.
 	node.apply_prop_data({"valid_at": 2000.0, "fields": _fields(func(q: int, _i: int, _j: int) -> float:
@@ -238,8 +243,8 @@ func test_the_def_lists_the_contract_s_channels() -> void:
 	for channel: Dictionary in def["channels"]:
 		zones[int(channel["zone"])] = channel
 	assert_eq(zones.keys(), [0, 1, 6])
-	assert_eq(zones[0]["properties"], ["name", "parent_id", "position", "rotation", "grid_w", "grid_h", "quantities", "scales"])
-	assert_eq(zones[1]["properties"], ["valid_at", "model_day", "fields"])
+	assert_eq(zones[0]["properties"], ["name", "parent_id", "position", "rotation", "grid_w", "grid_h", "quantities"])
+	assert_eq(zones[1]["properties"], ["valid_at", "model_day", "scales", "fields"], "a frame's scales travel with it")
 	assert_eq(zones[6]["properties"], ["scenename"], "zone 6 carries the deletion")
 	assert_almost_eq(float(zones[0]["frequency"]), 1.0, 1e-9)
 	assert_almost_eq(float(zones[1]["frequency"]), 0.2, 1e-9)

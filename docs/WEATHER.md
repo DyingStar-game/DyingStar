@@ -71,8 +71,8 @@ de la poussière, température de l'air (K) et pression ramenée à la sphère d
   systèmes, comme avant. Les phénomènes locaux (`WeatherRelief`, `WeatherLocal`, tourbillons, murs) se posent
   sur le fond, quel qu'il soit ; un relevé dit `weather_field` = vrai quand il vient du champ.
 - Le serveur ne l'endort jamais (`STREAM_ALWAYS_TYPES`).
-- `scales` (zone 0) et `fields` (zone 1) sont deux canaux d'Horizon : ils peuvent arriver séparés, dans
-  un sens ou dans l'autre. Le nœud redécode l'image une fois quand ses `scales` arrivent après elle.
+- `scales` voyage avec `fields` (zone 1, un seul message par image). Par prudence, s'ils arrivaient
+  séparés, le nœud redécode l'image une fois quand ses `scales` arrivent après elle.
 - Tests : `test/unit/test_weather_field.gd`. **Pas vérifié** : la chaîne réelle service → Horizon → jeu ;
   la carte météo des outils (Nova) ne lit pas encore le champ.
 
