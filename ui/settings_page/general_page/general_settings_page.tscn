@@ -153,6 +153,23 @@ theme_override_fonts/font = ExtResource("2_pcucv")
 toggle_mode = true
 text = "%%MENU_ON"
 
+[node name="ShakeEffects" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000016]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ScrollContainer/MarginContainer/VBoxContainer/ShakeEffects" unique_id=1700000017]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "%%MENU_SHAKE_EFFECTS_TOGGLE"
+label_settings = ExtResource("settings_label")
+
+[node name="Button" type="Button" parent="ScrollContainer/MarginContainer/VBoxContainer/ShakeEffects" unique_id=1700000018]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_fonts/font = ExtResource("2_pcucv")
+toggle_mode = true
+text = "%%MENU_ON"
+
 [node name="PlayHintsReset" type="HBoxContainer" parent="ScrollContainer/MarginContainer/VBoxContainer" unique_id=1700000010]
 layout_mode = 2
 

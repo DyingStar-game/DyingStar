@@ -228,6 +228,33 @@
 	],
 	"sfx": [
 		{
+			"asset": "ash-fall-loop-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/ash-fall-loop-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ash-fall-loop-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/ash-fall-loop-2.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ash-fall-loop-3.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/ash-fall-loop-3.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "button.mp3",
 			"path": "res://assets/_universe/audio/sfx/ui/button.mp3",
 			"author": "RescopicSound",
@@ -426,6 +453,42 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "eruption-blast-wave-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "eruption-blast-wave-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-2.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "eruption-blast-wave-3.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-3.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "eruption-blast-wave-4.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/eruption-blast-wave-4.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "eruption-explosion-far-1.ogg",
 			"path": "res://assets/_universe/audio/sfx/environment/volcano/eruption-explosion-far-1.ogg",
 			"author": "Hugo Lisoir",
@@ -505,6 +568,69 @@
 			"id": "",
 			"url": "https://pixabay.com/sound-effects/road-hammer-drill-machine-short-278458/",
 			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "lava-bomb-impact-large-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-large-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lava-bomb-impact-medium-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lava-bomb-impact-medium-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-2.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lava-bomb-impact-medium-3.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-3.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lava-bomb-impact-medium-4.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-medium-4.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lava-bomb-impact-small-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-small-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "lava-bomb-impact-small-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/lava-bomb-impact-small-2.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
 		},
 		{
 			"asset": "lift-departure-alarm.ogg",
@@ -982,6 +1108,24 @@
 			"id": "",
 			"url": "https://pixabay.com/sound-effects/wave-cape-cloth-in-wind-350430/",
 			"license": "Pixabay Content License"
+		},
+		{
+			"asset": "volcanic-quake-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/volcanic-quake-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "volcanic-quake-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/environment/volcano/volcanic-quake-2.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
 		},
 		{
 			"asset": "volcano-deep-rumble-loop.ogg",

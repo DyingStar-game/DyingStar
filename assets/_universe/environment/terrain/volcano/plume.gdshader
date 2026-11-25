@@ -12,6 +12,8 @@ render_mode unshaded, blend_premul_alpha, cull_front, depth_test_disabled, depth
 // sky) is only paid at the visible surface. That is what draws lit lobes and dark creases.
 
 const int COUNT = 220;
+// Side of billow_tex in texels (VolcanoPlume._billow_texture).
+const int BILLOW_TEXELS = 96;
 
 uniform vec4 puff_a[220];
 uniform vec4 puff_b[220];
@@ -30,6 +32,18 @@ uniform float sim_time = 0.0;
 uniform float glow = 1.0;
 uniform float multi_scatter = 0.45;
 uniform float lava_fill = 0.8;
+// The lava's light comes from the vent, a little above the origin: it falls off as an extended source of
+// radius ~lava_reach (m), so it lights the underside of the column and fades with height. At night
+// (vent_probe) the one light probe looks toward the vent instead of the set sun: the smoke between the
+// vent and a lobe shades it, which is what makes the top of the plume dark.
+uniform float vent_y = 150.0;
+uniform float lava_reach = 600.0;
+// An explosion's flash lights the plume from INSIDE (the incandescent ejecta and gas in it), strongest
+// low, fading out at flash_reach (m, about half the plume's height).
+uniform float flash_inner = 0.0;
+uniform vec3 flash_tint = vec3(1.0, 0.3, 0.06);
+uniform float flash_reach = 4000.0;
+uniform bool vent_probe = false;
 uniform int max_steps = 140;
 uniform float erosion = 1.05;
 uniform float noise_freq = 0.42;
@@ -57,10 +71,28 @@ vec3 puff_q(vec3 rel, vec4 pb, vec4 pc) {
 	return q * noise_freq + vec3(pb.z, pb.z * 1.7 + sim_time * 0.02, pb.z * 2.3);
 }
 
-float carve(float shape, float billow, vec4 pb) {
+// [param soft]: the shell's softness can never be thinner than about two pixels (in units of r), or a
+// far puff's edge goes from clear to opaque within one pixel and its silhouette aliases into steps.
+float carve(float shape, float billow, vec4 pb, float soft) {
 	// A solid core: the noise only carves the outer shell, so a ray stops on a surface.
 	float r = shape * 1.9 - (1.0 - billow) * erosion * (1.0 - smoothstep(0.3, 0.75, shape));
-	return smoothstep(0.0, mix(0.05, 0.4, pb.w), r) * pb.x;
+	return smoothstep(0.0, max(mix(0.05, 0.4, pb.w), soft), r) * pb.x;
+}
+
+// How much of a noise octave a pixel can still resolve: 1 while a pixel ([param pix], m) is smaller than
+// a texel of it ([param texel], m), 0 once it spans two. The texture has no mipmaps (a 3D noise): read at
+// level 0 under a pixel covering several texels, the carved edge flickered and stepped from afar. An
+// unresolved octave is replaced by its mean, which is what a prefiltered read would return.
+float resolve(float pix, float texel) {
+	return 1.0 - smoothstep(0.7, 2.0, pix / texel);
+}
+
+float texel_m(float radius) {
+	return radius / (float(BILLOW_TEXELS) * noise_freq);
+}
+
+float soft_of(float pix, float radius) {
+	return min(3.8 * pix / radius, 0.8);
 }
 
 vec3 puff_relative(vec3 p, vec4 sphere, float cloudiness) {
@@ -75,7 +107,8 @@ int first_bit(uint bits) {
 }
 
 // One noise fetch per puff: for the search and the light probes.
-float field_light(vec3 p, in uint near[7]) {
+// [param pix]: a pixel's footprint (m) at p.
+float field_light(vec3 p, in uint near[7], float pix) {
 	float rho = 0.0;
 	for (int word = 0; word < 7; word++) {
 		uint bits = near[word];
@@ -89,8 +122,10 @@ float field_light(vec3 p, in uint near[7]) {
 				continue;
 			}
 			vec4 pb = puff_b[i];
-			float n = textureLod(billow_tex, puff_q(rel, pb, puff_c[i]), 0.0).r;
-			rho += carve(1.0 - sqrt(d2), smoothstep(0.18, 0.82, n), pb);
+			float k = resolve(pix, texel_m(s.w));
+			float n = k > 0.0 ? textureLod(billow_tex, puff_q(rel, pb, puff_c[i]), 0.0).r : 0.5;
+			n = mix(0.5, n, k);
+			rho += carve(1.0 - sqrt(d2), smoothstep(0.18, 0.82, n), pb, soft_of(pix, s.w));
 		}
 	}
 	return rho;
@@ -141,6 +176,8 @@ void fragment() {
 	}
 	t1 = min(t1, scene_t);
 
+	// Angle (rad) one pixel spans: a pixel's footprint at distance t is t * pix_angle.
+	float pix_angle = 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y);
 	float dither = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 	// Short step: fine enough for the lobes at this distance, whatever the distance.
 	float fine = max(t0 * 0.0022, 12.0);
@@ -160,6 +197,7 @@ void fragment() {
 			break;
 		}
 		vec3 p = ro + rd * t;
+		float pix = t * pix_angle;
 		fine = max(t * 0.0022, 12.0);
 		coarse = fine * 3.0;
 		// The puffs this stretch of the ray can touch, the probes' reach included.
@@ -180,7 +218,7 @@ void fragment() {
 			}
 		}
 		if (!inside) {
-			if (field_light(p, near) > 0.001) {
+			if (field_light(p, near, t * pix_angle) > 0.001) {
 				inside = true;
 				empty = 0;
 				t = max(t - coarse, t0);
@@ -195,6 +233,7 @@ void fragment() {
 		float w_shade = 0.0;
 		float w_cloud = 0.0;
 		float w_size = 0.0;
+		float w_under = 0.0;
 		for (int word = 0; word < 7; word++) {
 			uint bits = near[word];
 			while (bits != 0u) {
@@ -209,10 +248,14 @@ void fragment() {
 				vec4 pb = puff_b[i];
 				vec4 pc = puff_c[i];
 				vec3 q = puff_q(rel, pb, pc);
-				float n = textureLod(billow_tex, q, 0.0).r;
-				float n2 = fine < 90.0 ? textureLod(billow_tex, q * 3.3 + 0.37, 0.0).r : n;
-				float billow = smoothstep(0.18, 0.82, n) * 0.72 + smoothstep(0.2, 0.8, n2) * 0.28;
-				float r = carve(1.0 - sqrt(d2), billow, pb);
+				float texel = texel_m(s.w);
+				float k1 = resolve(pix, texel);
+				float k2 = resolve(pix, texel / 3.3);
+				float n = k1 > 0.0 ? textureLod(billow_tex, q, 0.0).r : 0.5;
+				n = mix(0.5, n, k1);
+				float n2 = k2 > 0.0 ? textureLod(billow_tex, q * 3.3 + 0.37, 0.0).r : 0.5;
+				float billow = smoothstep(0.18, 0.82, n) * (1.0 - 0.28 * k2) + smoothstep(0.2, 0.8, n2) * 0.28 * k2;
+				float r = carve(1.0 - sqrt(d2), billow, pb, soft_of(pix, s.w));
 				if (r <= 0.0) {
 					continue;
 				}
@@ -222,6 +265,8 @@ void fragment() {
 				w_shade += r * pb.y;
 				w_cloud += r * pb.w;
 				w_size += r * s.w;
+				// Lit from below: the underside of each puff faces the lava, its top does not.
+				w_under += r * mix(1.0, 0.2, clamp(rel.y * 0.5 + 0.5, 0.0, 1.0));
 			}
 		}
 		if (rho <= 0.001) {
@@ -241,8 +286,12 @@ void fragment() {
 		// Broad sun/sky occlusion is already cached per puff by PlumeModel.
 		// One local sun probe preserves lobe detail; density estimates local sky attenuation.
 		float probe = size * 0.22;
-		float toward_sun = field_light(p + sun_dir * probe, near) * probe;
-		float sun_t = exp(-toward_sun * sigma * 0.3) * w_sun * inv;
+		vec3 to_vent = vec3(0.0, vent_y, 0.0) - p;
+		vec3 probe_dir = vent_probe ? normalize(to_vent) : sun_dir;
+		float toward = field_light(p + probe_dir * probe, near, pix) * probe;
+		float probe_t = exp(-toward * sigma * 0.3);
+		float sun_t = (vent_probe ? 1.0 : probe_t) * w_sun * inv;
+		float vent_t = vent_probe ? probe_t : 1.0;
 		// A little powder: the very edge of a thick lobe scatters less than just under it.
 		sun_t *= mix(1.0, 1.0 - exp(-rho * 3.0), 0.5);
 		float sky_t = exp(-rho * sigma * size * 0.16) * w_sky * inv;
@@ -253,7 +302,9 @@ void fragment() {
 		vec3 light = sun_color * sun_t * phase + sky_color * mix(0.05, 1.0, sky_t);
 		light += sun_color * multi_scatter * mix(0.3, 1.0, sky_t);
 		light += ground_color * (1.0 - smoothstep(0.0, 1500.0, p.y)) * 0.3;
-		light += vec3(1.0, 0.3, 0.07) * glow * exp(-max(p.y, 0.0) / 800.0) * lava_fill;
+		float reach2 = dot(to_vent, to_vent) / (lava_reach * lava_reach);
+		light += vec3(1.0, 0.3, 0.07) * glow * lava_fill * vent_t * (w_under * inv) / (1.0 + reach2);
+		light += flash_tint * flash_inner * (1.0 - smoothstep(0.2, 1.0, max(p.y, 0.0) / max(flash_reach, 1.0)));
 		vec3 src = albedo * light;
 		// The fire under the volcano, lighting the very base of the column.
 		src += vec3(1.0, 0.27, 0.05) * glow * exp(-max(p.y, 0.0) / 130.0) * 0.8;

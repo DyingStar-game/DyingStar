@@ -64,6 +64,8 @@ void fragment() {
 	float rag = 0.55 + 0.45 * sin(v_u * 37.0 + v_seed * 90.0) * sin(v_u * 91.0 + v_seed * 31.0);
 	// Never a negative base: pow() is undefined there, and one invalid pixel becomes a white disc through the glow.
 	float tail = pow(max(1.0 - v_u, 0.0), 1.4);
-	ALBEDO = mix(smoke_color, vec3(1.0, 0.45, 0.12), smoothstep(0.03, 0.0, v_u) * 0.8);
+	// The first half second behind the stone is its incandescent streak: by night, the arc a bomb draws.
+	float streak = smoothstep(0.08, 0.0, v_u);
+	ALBEDO = mix(smoke_color, vec3(1.0, 0.45, 0.12), streak * 0.85);
 	ALPHA = smoothstep(0.0, 0.7, across) * tail * mix(0.5, 1.0, rag) * v_fade * v_near * 0.65;
 }

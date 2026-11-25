@@ -9,6 +9,7 @@ extends Node3D
 ## works in local metres and receives the camera position computed here in double precision.
 
 const SHADER_DIR := "res://assets/_universe/environment/terrain/volcano/"
+const VENT_GLOW := preload("res://scenes/planet/volcano/volcano_vent_glow.gd")
 const MAX_VIEW_M := 300000.0
 const MAX_FULL := 3
 ## Stones are not thrown for an eye farther than this (m): a stone is a pixel by then.
@@ -19,6 +20,18 @@ const BOX_SIZE := Vector3(110000.0, 22000.0, 110000.0)
 const ON_FOOT_M := 6.0
 const EYE_M := 1.7
 const REFERENCE_HEIGHT_M := 2500.0
+## The plume's light per unit of a DirectionalLight3D's energy: its sun colour (1.9) stands for the scene's
+## sun (PlayerSunLight.sun_energy 2.0), so a moon's light reaches the smoke in the same proportion.
+const LIGHT_PER_ENERGY := 0.95
+## The group MoonLights puts its lights in: the plume takes the moonlight the terrain gets.
+const MOON_LIGHT_GROUP := &"moon_light"
+## Ash keeps falling from the plume this long (s) after an eruption stops throwing it.
+const ASH_SETTLE_S := 300.0
+## Mean settling speed (m/s) of the ash that reaches the ground near a volcano (fine ash ~0.5, lapilli
+## several): with it and the wind, where a puff's ash lands (fallout_weight).
+const ASH_FALL_M_S := 4.0
+## Longest fall (s) taken into account: a footprint never lies further downwind than wind x this.
+const ASH_MAX_FALL_S := 1800.0
 
 ## R&D only: added to the shared clock, to jump to a moment of the volcano's life.
 static var debug_time_shift := 0.0
@@ -29,6 +42,8 @@ static var _billow: NoiseTexture3D = null
 
 var model := VolcanoPlumeModel.new()
 var stones: VolcanoStoneField
+## The vent's light, halo and flank flows (volcano_vent_glow.gd).
+var vent_glow: VENT_GLOW
 var volcano: VolcanoRelief.Volcano
 var data: PlanetData
 var _mat := ShaderMaterial.new()
@@ -140,6 +155,11 @@ func _ready() -> void:
 	stones.throw_rate = scale_h
 	stones.player_hit.connect(_on_player_hit)
 	add_child(stones)
+	_mat.set_shader_parameter("vent_y", clampf(model.vent_radius, VENT_GLOW.LIGHT_MIN_Y_M, VENT_GLOW.LIGHT_MAX_Y_M))
+	_mat.set_shader_parameter("lava_reach", clampf(model.vent_radius * 2.0, 400.0, 1200.0))
+	vent_glow = VENT_GLOW.new()
+	vent_glow.setup(_relief, model.vent_radius, volcano.seed ^ int(model.volcano_key.hash()))
+	add_child(vent_glow)
 
 
 func _exit_tree() -> void:
@@ -225,6 +245,7 @@ func _process(delta: float) -> void:
 	if not stones.visible:
 		stones.suspend()
 	if not drawn:
+		vent_glow.update(delta, eye, false, 0.0, 1.0)
 		_model_elapsed = 1.0
 		return
 	var t := clock()
@@ -261,7 +282,15 @@ func _process(delta: float) -> void:
 	_mat.set_shader_parameter("cam_local", eye)
 	_mat.set_shader_parameter("sim_time", fmod(t, 50.0))
 	var flicker := 0.8 + 0.2 * sin(fmod(t, 1000.0) * 9.0) * sin(fmod(t, 1000.0) * 3.7)
-	_mat.set_shader_parameter("glow", clampf(model.eruption_activity(t), 0.0, 1.3) * flicker)
+	var heat := clampf(model.eruption_activity(t), 0.0, 1.3)
+	# An explosion's flash lights the underside of the plume too, and the lower plume from inside.
+	var flashing := vent_glow.flash_level()
+	_mat.set_shader_parameter("glow", heat * flicker + flashing)
+	var tint := vent_glow.flash_color()
+	_mat.set_shader_parameter("flash_inner", flashing * vent_glow.flash_plume_inner)
+	_mat.set_shader_parameter("flash_tint", Vector3(tint.r, tint.g, tint.b))
+	_mat.set_shader_parameter("flash_reach", model.ceiling_m * 0.5)
+	vent_glow.update(delta, eye, true, heat, flicker)
 	if stones.visible:
 		_foot_check_at -= delta
 		if not stones.has_live_stones(t):
@@ -309,6 +338,8 @@ func _update_wind(t: float) -> void:
 
 
 ## Sun and sky, in this frame: the star's real direction, and how much of it reaches here by now.
+## At night every term goes to zero with the sun, like the ground's ambient (the sky, black at night):
+## a floor here made the smoke a grey puff over a black landscape. Only the lava lights it then.
 func _light() -> void:
 	var to_star := Vector3.UP
 	var scene: Node = NetworkOrchestrator.universe_scene
@@ -316,18 +347,49 @@ func _light() -> void:
 	if star != null:
 		to_star = (star.global_position - global_position).normalized()
 		to_star = (global_basis.inverse() * to_star).normalized()
-	model.sun_dir = to_star
 	var day := smoothstep(-0.1, 0.18, to_star.y)
 	var low := 1.0 - smoothstep(0.0, 0.35, to_star.y)
 	var sun := Vector3(1.9, 1.8, 1.65).lerp(Vector3(2.1, 1.25, 0.7), low) * day
-	var sky := Vector3(0.6, 0.66, 0.75) * lerpf(0.1, 1.0, day)
-	stones.trail_mat.set_shader_parameter("smoke_color", Vector3(0.26, 0.25, 0.245) * lerpf(0.05, 1.0, day))
-	_mat.set_shader_parameter("sun_dir", to_star)
-	_mat.set_shader_parameter("sun_color", sun)
+	var sky := Vector3(0.6, 0.66, 0.75) * day
+	# By night the moons take the sun's place: the same directional light the terrain receives from
+	# them (MoonLights), no ambient. No moon up, no light: the night stays black.
+	var moon := _moonlight()
+	var moon_color: Vector3 = moon[1]
+	var light_dir := to_star
+	var light_color := sun
+	if day < 0.05 and moon_color.length_squared() > sun.length_squared():
+		light_dir = moon[0]
+		light_color = sun + moon_color
+	model.sun_dir = light_dir
+	stones.trail_mat.set_shader_parameter("smoke_color",
+			Vector3(0.26, 0.25, 0.245) * (Vector3.ONE * day + moon_color / 1.9))
+	_mat.set_shader_parameter("sun_dir", light_dir)
+	_mat.set_shader_parameter("sun_color", light_color)
 	_mat.set_shader_parameter("sky_color", sky)
-	_mat.set_shader_parameter("ground_color", Vector3(0.3, 0.27, 0.25) * lerpf(0.05, 1.0, day))
+	_mat.set_shader_parameter("ground_color", Vector3(0.3, 0.27, 0.25) * day)
 	_mat.set_shader_parameter("haze_color", sky * 0.85)
 	_mat.set_shader_parameter("lava_fill", lerpf(3.5, 0.7, day))
+	# Once the sun no longer counts, the shader's one light probe looks toward the erupting vent instead
+	# (a moonlit plume without an eruption keeps it toward the moon).
+	var erupting := model.eruption_activity(clock()) > 0.02
+	_mat.set_shader_parameter("vent_probe", day < 0.05 and (erupting or moon_color == Vector3.ZERO))
+
+
+## The moons' light here, summed: [direction toward it in this frame (the brightest wins), colour × energy
+## in the plume's units]. Read from MoonLights' own lights, so it is what the terrain gets.
+func _moonlight() -> Array:
+	var color := Vector3.ZERO
+	var dir := Vector3.ZERO
+	for node in get_tree().get_nodes_in_group(MOON_LIGHT_GROUP):
+		var light := node as DirectionalLight3D
+		if light == null or not light.is_visible_in_tree() or light.light_energy <= 0.0:
+			continue
+		var c := light.light_color
+		var part := Vector3(c.r, c.g, c.b) * light.light_energy * LIGHT_PER_ENERGY
+		color += part
+		# A directional light shines along -Z: its +Z points at the moon.
+		dir += (global_basis.inverse() * light.global_basis.z).normalized() * (part.x + part.y + part.z)
+	return [dir.normalized() if dir != Vector3.ZERO else Vector3.UP, color]
 
 
 ## Only the puffs that can touch the screen go to the shader: every pixel tests each one it receives.
@@ -348,6 +410,35 @@ func _compact(eye: Vector3, fwd: Vector3, fov_deg: float) -> int:
 		_c[n] = _snap_c[i]
 		n += 1
 	return n
+
+
+## Ash falling on a point of this frame: the summed density of the drawn puffs whose FALLOUT reaches it.
+## Ash does not fall straight down from a puff: on its way down the wind carries it, so a puff's footprint
+## lies downwind of it (fallout_weight). Only while an eruption throws ash, or did within ASH_SETTLE_S.
+## For the ash fall, twice a second: one pass over the live puffs.
+func ash_over(local: Vector3) -> float:
+	var t := clock()
+	if model.eruption_activity(t) <= 0.0 and model.eruption_activity(t - ASH_SETTLE_S) <= 0.0:
+		return 0.0
+	var ash := 0.0
+	for i in _snap_active:
+		ash += _snap_b[i].x * fallout_weight(_snap_a[i], local, model.wind, ASH_FALL_M_S)
+	return ash
+
+
+## How much (0..1) of the ash of puff [param puff] (centre xyz, radius w, this frame) lands on [param at]:
+## the puff's disc moved downwind by what [param wind] (m/s, x/z, the plume's wind at its ceiling; half
+## of it on average down the fall) carries the ash while it falls from the puff's height to [param at]'s at
+## [param fall_m_s], widened by the turbulence on the way. 0 for a puff below. Pure.
+static func fallout_weight(puff: Vector4, at: Vector3, wind: Vector2, fall_m_s: float) -> float:
+	var drop := puff.y - at.y
+	if drop <= 0.0:
+		return 0.0
+	var carried := wind * 0.5 * minf(drop / maxf(fall_m_s, 0.01), ASH_MAX_FALL_S)
+	var footprint := Vector2(puff.x, puff.z) + carried
+	var radius := maxf(puff.w + carried.length() * 0.15, 1.0)
+	var off := Vector2(at.x, at.z).distance_to(footprint) / radius
+	return 1.0 - smoothstep(0.5, 1.0, off)
 
 
 func _on_player_hit(impact_speed: float, radius: float) -> void:

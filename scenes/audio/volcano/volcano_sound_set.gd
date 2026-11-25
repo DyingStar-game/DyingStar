@@ -88,3 +88,113 @@ extends Resource
 @export_range(0.0, 1.0, 0.005) var tremor_kick_m: float = 0.05
 ## Seconds the kick of a blast takes to die.
 @export_range(0.1, 20.0, 0.1) var tremor_kick_s: float = 2.5
+
+@export_group("Quakes")
+## Strength (0..4, VolcanoEvent / random eruptions, ~1.2 for a middling one) from which an eruption shakes
+## the ground with volcanic earthquakes. 1.5 = only the stronger third of the random eruptions.
+@export_range(0.0, 4.0, 0.05) var quake_min_strength: float = 1.5
+## Mean seconds between two quakes of a strong eruption: lower = more quakes. 0 = none. 90 s gives a
+## handful in a typical eruption, rare enough to stay an event.
+@export_range(0.0, 1200.0, 1.0) var quake_repeat_s: float = 90.0
+## Shortest quake (s): each one draws its length between this and quake_max_s.
+@export_range(0.2, 10.0, 0.1) var quake_min_s: float = 1.0
+## Longest quake (s): each one draws its length between quake_min_s and this.
+@export_range(0.2, 10.0, 0.1) var quake_max_s: float = 2.0
+## How far (m) a quake moves the view at full strength: higher = a harder jolt. About twice the kick of a
+## blast (tremor_kick_m): a quake is the strongest thing the ground does.
+@export_range(0.0, 1.0, 0.005) var quake_m: float = 0.1
+## A quake is felt at its full strength up to this distance (m) from the vent; further it weakens like
+## a surface wave (1 / square root of the distance).
+@export_range(1.0, 50000.0, 1.0) var quake_full_m: float = 3000.0
+## A quake is not felt beyond this distance (m). 25 km: still a light shake at 20 km.
+@export_range(100.0, 100000.0, 100.0) var quake_range_m: float = 25000.0
+## Takes of a volcanic quake (deep jolt, rock and gravel rattling), one drawn per quake, the same on
+## every client.
+@export var quakes: Array[AudioStream] = []
+## Level (dB) of a quake's sound next to the volcano. The takes are normalised to -20 LUFS like the blasts;
+## 0 = as loud as a near blast, lower = quieter. The bus low-pass makes it deeper with distance.
+@export_range(-60.0, 12.0, 0.5) var quake_db: float = 0.0
+
+@export_group("Shock wave")
+## Takes of a far blast's shock wave (dull low thump and air roll), one drawn per blast, the same on every
+## client. Played from blast_wave_from_m, alone beyond blast_wave_to_m; nearer, the explosions above.
+@export var blast_waves: Array[AudioStream] = []
+## Level (dB) of the shock wave sound, before the distance takes its share: higher = louder far blasts.
+@export_range(-60.0, 12.0, 0.5) var blast_wave_db: float = 6.0
+## From this distance (m) the near explosion starts giving way to the far shock wave (equal-power fade).
+## 5 km: up to there the crack of the explosion itself still carries.
+@export_range(0.0, 100000.0, 100.0) var blast_wave_from_m: float = 5000.0
+## From this distance (m) only the far shock wave is heard: the air has eaten the crack, the thump stays.
+@export_range(0.0, 100000.0, 100.0) var blast_wave_to_m: float = 12000.0
+## How far (m) the shock wave of a blast jolts the view, next to the volcano. It comes WITH the sound
+## (sound_speed_m_s), after the ground's kick: a short, hard knock, stronger than a blast's kick.
+@export_range(0.0, 1.0, 0.005) var shock_m: float = 0.12
+## The shock wave is at its full strength up to this distance (m); further it weakens with distance.
+@export_range(1.0, 50000.0, 1.0) var shock_full_m: float = 2000.0
+## The shock wave is not felt beyond this distance (m).
+@export_range(100.0, 100000.0, 100.0) var shock_range_m: float = 20000.0
+## Seconds the jolt of a shock wave takes to die: short, it is a knock.
+@export_range(0.05, 5.0, 0.05) var shock_s: float = 0.35
+## Strength of the ring of distortion the shock wave sweeps across the view, next to the volcano (screen
+## offset at its crest, share of the screen height): 0.025 = a clear ripple, higher = a harder smear.
+@export_range(0.0, 0.2, 0.001) var shock_blur: float = 0.025
+## The distortion is at full strength up to this distance (m) from the vent, weaker further.
+@export_range(1.0, 50000.0, 1.0) var shock_blur_full_m: float = 2000.0
+## No distortion beyond this distance (m).
+@export_range(100.0, 100000.0, 100.0) var shock_blur_range_m: float = 15000.0
+## Seconds the ring takes to sweep across the view.
+@export_range(0.05, 2.0, 0.05) var shock_blur_s: float = 0.35
+
+@export_group("Impacts")
+## Takes of a small stone or shard landing (a handful of pebbles clacking and bouncing).
+@export var impacts_small: Array[AudioStream] = []
+## Takes of a ball-sized bomb crashing down, bouncing and rolling.
+@export var impacts_medium: Array[AudioStream] = []
+## Takes of a big block crashing and bursting.
+@export var impacts_large: Array[AudioStream] = []
+## Stones up to this radius (m) sound small: the frequent shards and gravel.
+@export_range(0.05, 5.0, 0.05) var impact_small_max_m: float = 0.35
+## Stones from this radius (m) sound large; between the two, medium.
+@export_range(0.1, 10.0, 0.05) var impact_large_min_m: float = 1.2
+## Level (dB) of a small impact at impact_full_m. The takes are peak-normalised (-2 dBTP), so the small
+## ones sit under the medium.
+@export_range(-60.0, 12.0, 0.5) var impact_small_db: float = -8.0
+## Level (dB) of a medium impact at impact_full_m.
+@export_range(-60.0, 12.0, 0.5) var impact_medium_db: float = -2.0
+## Level (dB) of a large impact at impact_full_m.
+@export_range(-60.0, 12.0, 0.5) var impact_large_db: float = 2.0
+## Distance (m) under which an impact is at its full level; further it falls as 1/d (Godot's own 3D
+## attenuation), with its highs taken by the distance low-pass.
+@export_range(1.0, 500.0, 1.0) var impact_full_m: float = 20.0
+## No impact is heard beyond this distance (m). The rocks only land as rocks within 350 m of the eye.
+@export_range(10.0, 2000.0, 10.0) var impact_range_m: float = 400.0
+## Cut-off (Hz) of the distance low-pass on an impact: lower = far impacts duller.
+@export_range(200.0, 20000.0, 10.0) var impact_far_hz: float = 2000.0
+## Impact sounds playing at once, at most: a volley of shards must not become a wall of noise.
+@export_range(1, 32, 1) var impact_voices: int = 6
+## A rebound slower than this (m/s) into the ground makes no sound.
+@export_range(0.0, 50.0, 0.5) var impact_min_speed: float = 4.0
+## An impact at this speed (m/s) into the ground or faster is at its full level; slower ones are quieter
+## (by the square root of the speed ratio).
+@export_range(1.0, 200.0, 1.0) var impact_full_speed: float = 30.0
+
+@export_group("Ash fall")
+## Loops of falling ash and lapilli; one plays, and it crossfades now and then to another.
+@export var ash_loops: Array[AudioStream] = []
+## Level (dB) of the ash fall at its densest (ash_full). The loops sit near -28 LUFS; -14 keeps the
+## patter a background hiss under the rumble and the impacts (heard in game). Raise to bring it up.
+@export_range(-60.0, 12.0, 0.5) var ash_db: float = -14.0
+## Ash over the listener (sum of the densities of the puffs overhead, each 0..~1) at which the fall is at
+## its full level: lower = loud already under a thin plume.
+@export_range(0.05, 20.0, 0.05) var ash_full: float = 2.0
+## Seconds the ash fall takes to come in when ash starts falling (an S-shaped fade, no abrupt start).
+@export_range(0.1, 60.0, 0.1) var ash_fade_in_s: float = 4.0
+## Seconds the ash fall takes to die away once no more ash falls: longer = a gentler end.
+@export_range(0.1, 60.0, 0.1) var ash_fade_out_s: float = 8.0
+## Time constant (s) smoothing the ash density over the listener, sound and flakes alike: the plume's
+## puffs come and go, and a density read twice a second would make the level jump. Higher = smoother.
+@export_range(0.1, 30.0, 0.1) var ash_smooth_s: float = 3.0
+## Seconds between two changes of loop, so a long fall never repeats the same 25 s.
+@export_range(5.0, 300.0, 1.0) var ash_switch_s: float = 20.0
+## Seconds of crossfade from one loop to the next.
+@export_range(0.5, 30.0, 0.5) var ash_crossfade_s: float = 5.0

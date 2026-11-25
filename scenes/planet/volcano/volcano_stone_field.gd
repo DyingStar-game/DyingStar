@@ -74,6 +74,9 @@ static var _shared_clod_material: StandardMaterial3D
 static var _shared_clod_scale: Curve
 
 signal player_hit(impact_speed: float, radius: float)
+## A rock near the player struck the ground ([param contact] in this node's frame, [param speed] into the
+## ground in m/s); [param rebound] for every contact after its landing. For the impact sounds.
+signal impacted(contact: Vector3, radius: float, speed: float, rebound: bool, born: float)
 
 
 ## One landed rock.
@@ -645,6 +648,7 @@ func _impact(rock: Rock, impact: float, contact: Vector3, normal: Vector3) -> vo
 	# A shard's cloud scales with its impact like a rebound: a pebble does not raise a block's dust.
 	var rebound := rock.has_landed or rock.shard
 	_dust(contact, rock.r, impact, normal, rebound)
+	impacted.emit(contact, rock.r, impact, rebound, rock.born)
 	if rock.has_landed:
 		return
 	rock.has_landed = true
