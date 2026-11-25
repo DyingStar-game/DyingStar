@@ -39,3 +39,28 @@ func test_ash_level() -> void:
 	assert_eq(ASH.ash_level(0.0, 2.0), 0.0, "no ash, silence")
 	assert_almost_eq(ASH.ash_level(1.0, 2.0), 0.5, 0.001, "half the full ash, half the level")
 	assert_eq(ASH.ash_level(9.0, 2.0), 1.0, "never over full")
+
+
+func test_ash_level_is_smoothed_whatever_the_frame_rate() -> void:
+	var fast := 0.0
+	for i in 120:
+		fast = ASH.smooth_toward(fast, 1.0, 1.0 / 120.0, 3.0)
+	var slow := 0.0
+	for i in 10:
+		slow = ASH.smooth_toward(slow, 1.0, 0.1, 3.0)
+	assert_almost_eq(fast, slow, 0.001, "same level after 1 s at 120 or 10 fps")
+	assert_almost_eq(fast, 1.0 - exp(-1.0 / 3.0), 0.001, "a first-order lag of 3 s")
+
+
+func test_ash_fades_in_and_out_without_a_corner() -> void:
+	var env := 0.0
+	env = ASH.step_envelope(env, true, 1.0, 4.0, 8.0)
+	assert_almost_eq(env, 0.25, 0.001, "a quarter in after 1 s of a 4 s fade in")
+	env = ASH.step_envelope(env, true, 10.0, 4.0, 8.0)
+	assert_eq(env, 1.0, "in")
+	env = ASH.step_envelope(env, false, 2.0, 4.0, 8.0)
+	assert_almost_eq(env, 0.75, 0.001, "a quarter out after 2 s of an 8 s fade out")
+	assert_eq(ASH.envelope_gain(0.0), 0.0, "silent at the start")
+	assert_eq(ASH.envelope_gain(1.0), 1.0, "full at the end")
+	assert_lt(ASH.envelope_gain(0.05), 0.05, "starts gently")
+	assert_gt(ASH.envelope_gain(0.95), 0.95, "ends gently")

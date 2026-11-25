@@ -15,6 +15,7 @@ const Acoustics := preload("res://scenes/audio/volcano/volcano_acoustics.gd")
 const SoundSet := preload("res://scenes/audio/volcano/volcano_sound_set.gd")
 const ImpactSounds := preload("res://scenes/audio/volcano/volcano_impact_sounds.gd")
 const AshFall := preload("res://scenes/audio/volcano/volcano_ash_fall.gd")
+const AshVisual := preload("res://scenes/audio/volcano/volcano_ash_visual.gd")
 const SOUNDS_PATH := "res://scenes/audio/volcano/volcano_sounds.tres"
 ## Volcanoes heard at once, the nearest ones: one mixer bus each.
 const VOICES := 3
@@ -70,6 +71,10 @@ var _kick: float = 0.0
 var _shaken: Camera3D = null
 var _impacts: ImpactSounds
 var _ash: AshFall
+var _ash_visual: AshVisual
+## Camera height over the ground (m) and local wind (m/s, plume frame), read with the schedule.
+var _height: float = INF
+var _ash_wind := Vector3.ZERO
 ## The camera stands on the ground (GROUND_M), read with the schedule: only then is anything felt.
 var _grounded: bool = false
 ## The quake under way: its age and length (s), and the share of it that reaches here (0..1).
@@ -362,11 +367,16 @@ func _ready() -> void:
 	_ash.name = "AshFall"
 	_ash.sounds = sounds
 	add_child(_ash)
+	# In the plume's frame (+Y up), so the flakes fall down.
+	_ash_visual = AshVisual.new()
+	_plume.add_child(_ash_visual)
 
 
 func _exit_tree() -> void:
 	_alive.erase(self)
 	_still()
+	if is_instance_valid(_ash_visual):
+		_ash_visual.queue_free()
 
 
 func _process(delta: float) -> void:
@@ -381,6 +391,7 @@ func _process(delta: float) -> void:
 	# Every frame: the direction must not lag behind a fast listener.
 	_proxy.position = eye * (1.0 - PROXY_M / _dist) if _dist > PROXY_M else Vector3.ZERO
 	_shake(cam, delta)
+	_ash_visual.update(_plume.to_local(cam.global_position), cam.global_position, _ash.level, _height, _ash_wind)
 	_elapsed += delta
 	_air_elapsed += delta
 	if _elapsed < UPDATE_S:
@@ -403,6 +414,8 @@ func _process(delta: float) -> void:
 		# Ash only from the nearest plume: the one overhead, if any.
 		var ash: float = _plume.ash_over(_plume.to_local(cam.global_position)) if rank == 0 else 0.0
 		_ash.set_target(AshFall.ash_level(ash, sounds.ash_full))
+		if ash > 0.0 and is_instance_valid(_planet):
+			_ash_wind = _plume.global_basis.inverse() * _planet.wind_world_at(cam.global_position)
 	_set_voice(rank)
 	_hear(cam)
 
@@ -411,8 +424,8 @@ func _process(delta: float) -> void:
 func _hear(cam: Camera3D) -> void:
 	var model: VolcanoPlumeModel = _plume.model
 	var felt_range: float = maxf(sounds.quake_range_m, maxf(sounds.shock_range_m, sounds.tremor_range_m))
-	_grounded = (_dist < felt_range
-			and _plume.height_over_ground(_plume.to_local(cam.global_position)) < GROUND_M)
+	_height = _plume.height_over_ground(_plume.to_local(cam.global_position)) if _dist < felt_range else INF
+	_grounded = _height < GROUND_M
 	var heard: float = Acoustics.heard_time(VolcanoPlume.clock(), _dist, sounds.sound_speed_m_s)
 	var window: Dictionary = window_at(model.profile, heard, sounds.build_up_s, model.volcano_seed,
 			model.volcano_key, model.dormant)

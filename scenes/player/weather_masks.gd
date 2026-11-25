@@ -36,6 +36,8 @@ var _roots: Array[Node3D] = []
 func _init(player: Node3D) -> void:
 	_player = player
 	name = "WeatherMasks"
+	# Effects that are not drawn by the renderer (the volcanoes' falling ash) ask it from this group.
+	add_to_group(&"weather_masks")
 
 
 func _physics_process(_delta: float) -> void:

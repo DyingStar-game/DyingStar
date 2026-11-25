@@ -177,8 +177,13 @@ extends Resource
 ## Ash over the listener (sum of the densities of the puffs overhead, each 0..~1) at which the fall is at
 ## its full level: lower = loud already under a thin plume.
 @export_range(0.05, 20.0, 0.05) var ash_full: float = 2.0
-## Seconds the ash fall takes to swell or die as the plume passes over or away.
-@export_range(0.1, 60.0, 0.1) var ash_fade_s: float = 6.0
+## Seconds the ash fall takes to come in when ash starts falling (an S-shaped fade, no abrupt start).
+@export_range(0.1, 60.0, 0.1) var ash_fade_in_s: float = 4.0
+## Seconds the ash fall takes to die away once no more ash falls: longer = a gentler end.
+@export_range(0.1, 60.0, 0.1) var ash_fade_out_s: float = 8.0
+## Time constant (s) smoothing the ash density over the listener, sound and flakes alike: the plume's
+## puffs come and go, and a density read twice a second would make the level jump. Higher = smoother.
+@export_range(0.1, 30.0, 0.1) var ash_smooth_s: float = 3.0
 ## Seconds between two changes of loop, so a long fall never repeats the same 25 s.
 @export_range(5.0, 300.0, 1.0) var ash_switch_s: float = 20.0
 ## Seconds of crossfade from one loop to the next.
