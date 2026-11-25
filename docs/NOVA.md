@@ -373,12 +373,22 @@ Tout ce qui copie « l'aspect du sol » demande d'abord à Nova sur un corps hab
 - `PlanetData.ground_material_at` rend le matériau Nova (les chunks Nova ne portent jamais l'override d'un
   biome) ; `ground_albedo_at` rend la couleur que Nova MONTRE (`ground_rock_albedo_at` garde l'ancienne, la
   teinte cuite dans les sommets, qui sert de teinte aux textures).
-- **Frange** (`TerrainBlend` → `GroundLook.at`, `terrain_blend.gdshader`) : un matériau par texture et façon de
-  la dessiner (`GroundLook.nova_material_for`), la matière dominante au pied de l'objet, même tuile et même motif
-  fin de près que le sol, même règle de couleur : contraste autour de la moyenne, `mix(1, texture × gain,
-  force)`, occlusion moyenne, × teinte (couleur de biome × multiplicateur d'albédo × taches). La triplanaire de la
-  frange reste dans l'espace de l'objet : seule l'échelle compte (pierres isotropes), et le piège du repère
-  planète (barrières en biais) ne s'applique pas à un objet droit.
+- **Frange** (`TerrainBlend` → `GroundLook.at`, `terrain_blend.gdshader`, `nova_ground`) : un matériau par
+  variante (`GroundLook.nova_material_for`) qui lit **les mêmes tableaux de textures que le sol** (`nova_albedo`,
+  `nova_orh` du matériau Nova, avec leurs mipmaps), aux mêmes couches et tuiles, et colore pixel par pixel comme
+  la boucle Nova du sol : contraste autour de la moyenne lue sur la plus petite mipmap, `mix(1, texture × gain,
+  force)`, rouge de l'occlusion, motif fin de près, puis seconde et troisième matières posées là où le bruit de
+  plages le dit **en remplissant d'abord les creux** (bleu de l'image de hauteur). Le bruit de plages est lu une
+  fois au pied de l'objet (`NovaBody.patch_where` → `blend_nova_where`, donnée d'instance n° 10). Teinte (couleur
+  de biome × multiplicateur d'albédo × taches) par instance. Pas de matériau tant que le travailleur n'a pas fait
+  les tableaux (TerrainBlend remesure à 2 s et 10 s). Bord haut de la bande moins bruité sur Nova
+  (`blend_noise_strength` 0,3 au lieu de 0,6 : sur un sol clair, le bord bruité faisait des boules blanches). La
+  triplanaire reste dans l'espace de l'objet, rendue aussi tranchée que celle du sol : seule l'échelle compte
+  (pierres isotropes), et le piège du repère planète (barrières en biais) ne touche pas un objet droit.
+  Première version (25/11 matin, retirée) : une texture 2D par matière, moyenne linéaire pour le contraste,
+  occlusion moyenne et matière dominante choisie sans les creux : bande plus claire et plus contrastée que le sol
+  (le shader prend la moyenne sur la mipmap sRGB, et le gravier n'avait pas de mipmaps), roche craquelée devant
+  du gravier.
 - **Poussière** (`GroundLook.colour_at` : roues, pas, vent, murs de poussière) : la couleur montrée, plages
   moyennées.
 - **Rochers du scatter** (`nova_rock.gdshader`, `NovaScatter.set_fringe`) : frange dans le shader, pas de nœud

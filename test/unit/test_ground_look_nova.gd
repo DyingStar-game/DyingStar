@@ -80,21 +80,50 @@ func test_outside_any_zone_the_default_ground_keeps_the_terrains_look() -> void:
 func test_ground_look_prefers_nova_on_a_nova_body() -> void:
 	var data := _data(true, PLATEAU)
 	var dir := Vector3(-0.2, 0.4, 0.9).normalized()
+	assert_null(GroundLook.at(data, dir, Color.MAGENTA).material,
+			"no fringe before the ground's texture arrays are made (TerrainBlend measures again)")
+	_give_arrays(data.nova)
 	var nova := data.nova_ground_at(dir)
-	var look := GroundLook.at(data, dir, Color.MAGENTA)
+	var ground_r := data.radius + 12.0
+	var look := GroundLook.at(data, dir, Color.MAGENTA, ground_r)
 	assert_not_null(look.material)
-	var layer: Dictionary = nova.look.layers[nova.layer]
-	assert_eq(look.material.get_shader_parameter(&"blend_albedo_tex"), layer.tex, "the band paints Nova's texture")
-	assert_almost_eq(float(look.material.get_shader_parameter(&"blend_albedo_scale")), float(layer.scale), 1e-9,
-			"at the ground's own tile")
-	assert_almost_eq(float(look.material.get_shader_parameter(&"blend_albedo_gain")), float(layer.gain), 1e-6)
-	assert_almost_eq(float(look.material.get_shader_parameter(&"blend_vertex_color_strength")), 1.0, 1e-6)
+	var layers: Array = nova.look.layers
+	assert_true(bool(look.material.get_shader_parameter(&"blend_nova")), "the band reads Nova's arrays")
+	assert_same(look.material.get_shader_parameter(&"blend_nova_albedo"),
+			data.nova.material.get_shader_parameter(&"nova_albedo"), "the very arrays the ground reads")
+	var a_layer: Vector3 = look.material.get_shader_parameter(&"blend_nova_albedo_layer")
+	var scale: Vector3 = look.material.get_shader_parameter(&"blend_nova_scale")
+	var gain: Vector3 = look.material.get_shader_parameter(&"blend_nova_gain")
+	for i in mini(layers.size(), 3):
+		assert_eq(int(a_layer[i]), int(layers[i].albedo_layer), "at the ground's own layers")
+		assert_almost_eq(scale[i], float(layers[i].scale), 1e-6, "at the ground's own tiles")
+		assert_almost_eq(gain[i], float(layers[i].gain), 1e-6, "with the ground's own gains")
+	assert_almost_eq(float(look.material.get_shader_parameter(&"blend_nova_contrast")),
+			float(data.nova.resolve(2, "ground/texture_contrast")), 1e-6)
+	var pos := dir * ground_r
+	assert_eq(look.nova_where, NovaBody.patch_where(nova.look, pos), "the patch noise at the object's foot")
 	var t: Color = nova.tint
-	assert_almost_eq(look.tint.g, t.g * float(nova.macro), 1e-6, "tinted like the ground: biome tint × albedo multiplier")
+	assert_almost_eq(look.tint.g, t.g * float(nova.macro), 0.05,
+			"tinted like the ground: biome tint x albedo multiplier x its large light and dark")
 	assert_eq(GroundLook.colour_at(data, dir, Color.MAGENTA), data.nova_ground_at(dir).colour,
 			"the dust takes the colour Nova's ground shows")
 	assert_eq(data.ground_albedo_at(dir), data.nova_ground_at(dir).colour, "and so does every other reader")
-	assert_same(GroundLook.at(data, dir, Color.MAGENTA).material, look.material, "one material per texture, shared")
+	assert_same(GroundLook.at(data, dir, Color.MAGENTA, ground_r).material, look.material,
+			"one material per variant, shared")
+
+
+## Texture arrays on the body's material and the paths that place each variant's images in them, as
+## NovaBody.build_material leaves them once its worker is done (flat layers: only their places matter here).
+func _give_arrays(body: NovaBody) -> void:
+	body._arrays_spec()
+	body.refresh_ground()
+	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.5, 0.5, 0.5))
+	var images: Array[Image] = [img]
+	var arr := Texture2DArray.new()
+	arr.create_from_images(images)
+	body.material.set_shader_parameter(&"nova_albedo", arr)
+	body.material.set_shader_parameter(&"nova_orh", arr)
 
 
 func test_ground_look_falls_back_on_a_body_without_nova() -> void:
@@ -103,8 +132,8 @@ func test_ground_look_falls_back_on_a_body_without_nova() -> void:
 	assert_true(data.nova_ground_at(dir).is_empty())
 	assert_eq(data.nova_variant_at(dir), 0)
 	var look := GroundLook.at(data, dir, Color.MAGENTA)
-	var gain: Variant = look.material.get_shader_parameter(&"blend_albedo_gain") if look.material != null else null
-	assert_true(gain == null or is_equal_approx(float(gain), 1.0), "the planet's own material path, unchanged")
+	var nova: Variant = look.material.get_shader_parameter(&"blend_nova") if look.material != null else null
+	assert_false(nova == true, "the planet's own material path, unchanged")
 
 
 func test_the_patches_cover_the_ground_once_and_repeat_with_the_tiling() -> void:

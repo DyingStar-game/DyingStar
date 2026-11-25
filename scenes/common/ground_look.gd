@@ -14,6 +14,9 @@ extends RefCounted
 const MATERIAL_PATH := "res://assets/_universe/_shared/materials/terrain_blend.tres"
 ## What the biome map gives where it has nothing (PlanetData.ground_albedo_at).
 const NO_SAMPLE := Color(0, 0, 0, 0)
+## The swing of the band's height on a Nova ground (terrain_blend.gdshader's blend_noise_strength; the template's
+## is 0.6): see nova_material_for.
+const NOVA_NOISE_STRENGTH := 0.3
 
 # ONE fringe material PER GROUND TEXTURE -- never per object. A texture cannot be a per-instance
 # uniform, so objects standing on different ground need different materials; but they GROUP, and a
@@ -43,6 +46,9 @@ var color: Color = Color(0.45, 0.35, 0.25)
 var tint: Color = Color(0.45, 0.35, 0.25)
 ## (detail layer, tiling scale) of the ground's own detail texture. Zero means "no detail texture".
 var detail: Vector2 = Vector2.ZERO
+## Nova only: the patch noise of the ground's second and third materials at this point (NovaBody.patch_where),
+## which the fringe shader finishes pixel by pixel; -1 where there is none.
+var nova_where: Vector2 = Vector2(-1.0, -1.0)
 
 
 ## Read the ground in body-fixed direction `dir`. `fallback` is used when the biome yields nothing.
@@ -65,7 +71,15 @@ static func at(data: PlanetData, dir: Vector3, fallback: Color, ground_r: float 
 		look.color = nova.colour
 		# The fringe shader multiplies the layer's texture term by this (blend_vertex_color_strength 1).
 		look.tint = Color(t.r * m, t.g * m, t.b * m)
-		look.material = nova_material_for(nova.look, nova.layer)
+		look.material = nova_material_for(nova.look, data.nova.material)
+		if pos is Vector3:
+			look.nova_where = NovaBody.patch_where(nova.look, pos)
+		else:
+			# No point: the share each covers stands for the noise (an even chance of its patch).
+			var w := Vector2(-1.0, -1.0)
+			for i in range(1, mini((nova.look.layers as Array).size(), 3)):
+				w[i - 1] = 1.0 - float(nova.look.layers[i].share)
+			look.nova_where = w
 		return look
 	var ground: Material = data.ground_material_at(dir)
 	var sampled: Color = _vertex_sample(data, dir)
@@ -158,38 +172,63 @@ static func material_for(ground: Material) -> ShaderMaterial:
 	return mat
 
 
-## The fringe material for layer [param layer] of a Nova ground [param look] (NovaBody.ground_look), created
-## once per distinct texture and way of drawing it: the same texture, tile, close-up tile, gain, strength,
-## contrast and occlusion as the ground shader gives that material (terrain_biome.gdshaderinc, Nova's loop),
-## so the band shows the ground's stones at the ground's size. The tint rides the instance (GroundLook.tint).
-static func nova_material_for(look: Dictionary, layer: int) -> ShaderMaterial:
-	var l: Dictionary = look.layers[layer]
-	var tex: Texture2D = l.tex
-	# The close-up tile is the ground's first material's only, as in the shader.
-	var fine: float = float(look.fine_scale) if layer == 0 else 0.0
-	var ao: float = NovaBody.ao_factor(l)
-	var key := "nova|%d|%s|%s|%s|%s|%s|%s" % [tex.get_instance_id(), l.scale, fine, l.gain, look.strength,
-			look.contrast, ao]
+## The fringe material of a Nova ground [param look] (NovaBody.ground_look) drawn with [param ground] (the body's
+## Nova material), created once per variant and texture arrays: it reads the ground's own arrays at the same
+## layers and tiles and colours them by the ground shader's rule (terrain_blend.gdshader, nova_ground), so the band
+## shows the ground's stones at the ground's size and contrast. Null until the arrays are made (a worker makes
+## them as the body opens; TerrainBlend measures again 2 s and 10 s later), and for a layer the arrays lack.
+## The tint and the patch noise at the object's foot ride the instance (GroundLook.tint, nova_where).
+static func nova_material_for(look: Dictionary, ground: ShaderMaterial) -> ShaderMaterial:
+	if ground == null:
+		return null
+	var albedo: Variant = ground.get_shader_parameter(&"nova_albedo")
+	var orh: Variant = ground.get_shader_parameter(&"nova_orh")
+	var layers: Array = look.layers
+	if not albedo is Texture2DArray or int(layers[0].albedo_layer) < 0:
+		return null
+	var a_layer := Vector3(-1.0, -1.0, -1.0)
+	var o_layer := Vector3(-1.0, -1.0, -1.0)
+	var scale := Vector3(0.1, 0.1, 0.1)
+	var gain := Vector3.ONE
+	var share := Vector3(1.0, 0.0, 0.0)
+	for i in mini(layers.size(), 3):
+		var l: Dictionary = layers[i]
+		a_layer[i] = float(l.albedo_layer)
+		o_layer[i] = float(l.orh_layer) if orh is Texture2DArray else -1.0
+		scale[i] = float(l.scale)
+		gain[i] = float(l.gain)
+		share[i] = float(l.share) if i > 0 else 1.0
+	var key := "nova|%d|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s" % [int(look.id), (albedo as Object).get_instance_id(),
+			(orh as Object).get_instance_id() if orh is Object else 0, a_layer, o_layer, scale, gain, share,
+			look.fine_scale, look.strength, look.contrast]
 	if _materials.has(key):
 		return _materials[key]
 	var base: ShaderMaterial = _template_material()
 	if base == null:
 		return null
 	var mat := base.duplicate() as ShaderMaterial
-	var mean: Color = NovaBody.texture_mean(tex, true)
-	mat.set_shader_parameter(&"blend_albedo_tex", tex)
-	mat.set_shader_parameter(&"blend_use_albedo", true)
-	mat.set_shader_parameter(&"blend_albedo_scale", float(l.scale))
-	mat.set_shader_parameter(&"blend_albedo_fine_scale", fine)
-	mat.set_shader_parameter(&"blend_albedo_fine_near", float(look.fine_near))
-	mat.set_shader_parameter(&"blend_albedo_fine_far", float(look.fine_far))
-	mat.set_shader_parameter(&"blend_albedo_gain", float(l.gain))
-	mat.set_shader_parameter(&"blend_albedo_strength", float(look.strength))
-	mat.set_shader_parameter(&"blend_albedo_contrast", float(look.contrast))
-	mat.set_shader_parameter(&"blend_albedo_mean", Vector3(mean.r, mean.g, mean.b))
-	mat.set_shader_parameter(&"blend_albedo_ao", ao)
-	# GroundLook.tint is the whole colour the ground starts from: applied in full.
-	mat.set_shader_parameter(&"blend_vertex_color_strength", 1.0)
+	mat.set_shader_parameter(&"blend_nova", true)
+	mat.set_shader_parameter(&"blend_nova_albedo", albedo)
+	if orh is Texture2DArray:
+		mat.set_shader_parameter(&"blend_nova_orh", orh)
+	mat.set_shader_parameter(&"blend_nova_albedo_layer", a_layer)
+	mat.set_shader_parameter(&"blend_nova_orh_layer", o_layer)
+	mat.set_shader_parameter(&"blend_nova_scale", scale)
+	mat.set_shader_parameter(&"blend_nova_gain", gain)
+	mat.set_shader_parameter(&"blend_nova_share", share)
+	mat.set_shader_parameter(&"blend_nova_fine_scale", float(look.fine_scale))
+	mat.set_shader_parameter(&"blend_nova_fine_near", float(look.fine_near))
+	mat.set_shader_parameter(&"blend_nova_fine_far", float(look.fine_far))
+	mat.set_shader_parameter(&"blend_nova_strength", float(look.strength))
+	mat.set_shader_parameter(&"blend_nova_contrast", float(look.contrast))
+	# A bright, contrasted ground made the band's ragged top read as round white blobs up the walls: a smaller
+	# swing of its height (the template's 0.6) keeps it a soft edge.
+	mat.set_shader_parameter(&"blend_noise_strength", NOVA_NOISE_STRENGTH)
+	# What a reader that cannot sample arrays takes (CaveGroundCover): the first material as a plain texture,
+	# its close-up tile, and the gain and mean occlusion folded into a tint.
+	var first: Dictionary = layers[0]
+	mat.set_meta(&"nova_plain", {"tex": first.tex, "scale": float(look.fine_scale) if float(look.fine_scale) > 0.0
+			else float(first.scale), "gain": float(first.gain) * NovaBody.ao_factor(first)})
 	_materials[key] = mat
 	return mat
 

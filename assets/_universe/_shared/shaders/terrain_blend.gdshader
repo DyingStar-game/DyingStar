@@ -97,20 +97,30 @@ uniform float blend_albedo_scale = 0.1;
 // vertex_color_strength, copied by GroundLook.material_for). On the textured path blend_ground_color is
 // that tint (GroundLook.tint): without it the band showed the bare texture, white marble on corundum.
 uniform float blend_vertex_color_strength : hint_range(0.0, 1.0) = 0.0;
-// A ground drawn by Nova (GroundLook.nova_material_for) applies more to its texture than a tint, and the band
-// applies the same: the texture's contrast round its mean colour (blend_albedo_mean, linear), then
-// mix(1, texture * gain, strength), times the mean darkening of its occlusion image (blend_albedo_ao) --
-// terrain_biome.gdshaderinc's Nova loop, read off the same settings. Close to the camera the ground reads its
-// first material again at its close-up tile (blend_albedo_fine_scale, 0 = none), whole up to fine_near metres
-// and gone by fine_far. The defaults leave the planet_surface path exactly as it was: texture * tint.
-uniform float blend_albedo_fine_scale = 0.0;
-uniform float blend_albedo_fine_near = 10.0;
-uniform float blend_albedo_fine_far = 36.0;
-uniform float blend_albedo_gain = 1.0;
-uniform float blend_albedo_strength : hint_range(0.0, 1.0) = 1.0;
-uniform float blend_albedo_contrast = 1.0;
-uniform vec3 blend_albedo_mean = vec3(0.5);
-uniform float blend_albedo_ao = 1.0;
+// ── A ground drawn by Nova (GroundLook.nova_material_for) ───────────────────────────────────────────
+// The band reads the SAME texture arrays as the ground (the material's nova_albedo / nova_orh, mipmapped
+// there), at the same layers and tiles, and colours them pixel by pixel by terrain_biome.gdshaderinc's Nova
+// loop: the contrast round the layer's mean (its smallest mipmap, as nova_contrast), mix(1, texture * gain,
+// strength), the occlusion image's red, and the second and third materials laid over the first where the
+// patch noise says, filling its hollows first (its height, the occlusion image's blue). The patch noise
+// itself is read once per object at its foot (blend_nova_where, GroundLook.nova_where): the patches are tens
+// of metres wide. What is left out: the hex tiling, the parallax, the per-pixel edge noise.
+uniform bool blend_nova = false;
+uniform sampler2DArray blend_nova_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2DArray blend_nova_orh : filter_linear_mipmap_anisotropic, repeat_enable;
+// Per material (first, second, third): albedo layer and occlusion / roughness / height layer (-1 = none),
+// tiling (per metre), gain, share of the ground (the first's unused).
+uniform vec3 blend_nova_albedo_layer = vec3(-1.0);
+uniform vec3 blend_nova_orh_layer = vec3(-1.0);
+uniform vec3 blend_nova_scale = vec3(0.1);
+uniform vec3 blend_nova_gain = vec3(1.0);
+uniform vec3 blend_nova_share = vec3(1.0, 0.0, 0.0);
+// The first material's close-up tile (per metre, 0 = none), whole up to fine_near metres, gone by fine_far.
+uniform float blend_nova_fine_scale = 0.0;
+uniform float blend_nova_fine_near = 10.0;
+uniform float blend_nova_fine_far = 36.0;
+uniform float blend_nova_strength : hint_range(0.0, 1.0) = 1.0;
+uniform float blend_nova_contrast = 1.0;
 uniform float blend_fade_start = 100.0;
 // The fringe is drawn AFTER the aerial-perspective quad and so carries no atmospheric veil: that
 // quad reads a screen copy taken once, before the whole alpha list, and overwrites every pixel it
@@ -149,6 +159,9 @@ instance uniform vec2 blend_detail_uv : instance_index(12);
 // outward from inward: a mesh's own centre would say nothing, since an inner wall is perfectly
 // centred on itself.
 instance uniform vec3 blend_center : instance_index(11);
+// Nova only: the patch noise of the second and third materials at the object's foot, stretched and clamped as
+// the ground shader has it before adding the height term (-1 = that material is not laid).
+instance uniform vec2 blend_nova_where : instance_index(10);
 
 // Affine in VERTEX, so the interpolation across a triangle is exact.
 varying float blend_h;
@@ -221,12 +234,66 @@ float tri_noise(vec3 p, vec3 w) {
 			+ texture(blend_noise, p.xy).r * w.z;
 }
 
-// The ground's albedo, triplanar on model coordinates at tiling s.
-vec3 tri_albedo(vec3 p, vec3 w, float s) {
+// One layer of a Nova array, triplanar on model coordinates at tiling s.
+vec3 nova_tri(sampler2DArray t, float layer, vec3 p, vec3 w, float s) {
 	vec3 ap = p * s;
-	return texture(blend_albedo_tex, ap.yz).rgb * w.x
-			+ texture(blend_albedo_tex, ap.xz).rgb * w.y
-			+ texture(blend_albedo_tex, ap.xy).rgb * w.z;
+	return texture(t, vec3(ap.yz, layer)).rgb * w.x
+			+ texture(t, vec3(ap.xz, layer)).rgb * w.y
+			+ texture(t, vec3(ap.xy, layer)).rgb * w.z;
+}
+
+// nova_contrast of the ground shader: away from the layer's mean colour, read on its smallest mipmap.
+vec3 nova_contrasted(vec3 tex, float layer) {
+	if (abs(blend_nova_contrast - 1.0) < 0.001) {
+		return tex;
+	}
+	vec3 mean = textureLod(blend_nova_albedo, vec3(0.5, 0.5, layer), 16.0).rgb;
+	return max(mean + (tex - mean) * blend_nova_contrast, vec3(0.0));
+}
+
+// The second or third material of a Nova ground (albedo layer la, occlusion layer lo, tiling s, gain g, share
+// sh, patch noise wh), laid over `col` where it lies: the ground shader's rule, h the first material's height.
+vec3 nova_over(vec3 col, float la, float lo, float s, float g, float sh, float wh, float h, vec3 p, vec3 w) {
+	if (la < 0.0 || wh < 0.0 || sh <= 0.0) {
+		return col;
+	}
+	float over = smoothstep(1.0 - sh - 0.07, 1.0 - sh + 0.07, wh + (0.5 - h) * 0.35);
+	vec3 tex = nova_contrasted(nova_tri(blend_nova_albedo, la, p, w, s), la);
+	vec3 c = mix(vec3(1.0), tex * g, blend_nova_strength);
+	if (lo >= 0.0) {
+		c *= mix(1.0, nova_tri(blend_nova_orh, lo, p, w, s).r, 0.85);
+	}
+	return mix(col, c, over);
+}
+
+// What a Nova ground shows at model point p (before the biome tint): terrain_biome.gdshaderinc's loop for one
+// variant. Every condition is uniform across the draw, so the reads keep their implicit derivatives.
+vec3 nova_ground(vec3 p, vec3 w, float cam_d) {
+	float la = blend_nova_albedo_layer.x;
+	float lo = blend_nova_orh_layer.x;
+	float s = blend_nova_scale.x;
+	vec3 tex = nova_tri(blend_nova_albedo, la, p, w, s);
+	vec3 orh = lo >= 0.0 ? nova_tri(blend_nova_orh, lo, p, w, s) : vec3(1.0);
+	if (blend_nova_fine_scale > 0.0) {
+		float fine = 1.0 - smoothstep(blend_nova_fine_near, blend_nova_fine_far, cam_d);
+		tex = mix(tex, nova_tri(blend_nova_albedo, la, p, w, blend_nova_fine_scale), fine);
+		if (lo >= 0.0) {
+			orh = mix(orh, nova_tri(blend_nova_orh, lo, p, w, blend_nova_fine_scale), fine);
+		}
+	}
+	tex = nova_contrasted(tex, la);
+	if (lo < 0.0) {
+		orh = vec3(1.0, 1.0, dot(tex, vec3(0.333)));
+	}
+	vec3 col = mix(vec3(1.0), tex * blend_nova_gain.x, blend_nova_strength);
+	if (lo >= 0.0) {
+		col *= mix(1.0, orh.r, 0.85);
+	}
+	col = nova_over(col, blend_nova_albedo_layer.y, blend_nova_orh_layer.y, blend_nova_scale.y, blend_nova_gain.y,
+			blend_nova_share.y, blend_nova_where.x, orh.b, p, w);
+	col = nova_over(col, blend_nova_albedo_layer.z, blend_nova_orh_layer.z, blend_nova_scale.z, blend_nova_gain.z,
+			blend_nova_share.z, blend_nova_where.y, orh.b, p, w);
+	return col;
 }
 
 
@@ -286,22 +353,24 @@ void fragment() {
 	// centimetres tall and mostly seen at a glancing angle, so the other two would not survive the
 	// mip chain. The combination is the terrain's own -- colour * mix(1, detail*2, strength) --
 	// because a detail layer is a greyscale modifier centred on 0.5, not a colour.
-	if (blend_use_albedo) {
+	if (blend_nova) {
+		// A sharp choice between the projections, as the ground's (NOVA_TRIPLANAR_SHARPNESS): blended wide,
+		// two copies of every stone lie over each other and the band reads smoother than the ground.
+		vec3 nw = pow(tri_w, vec3(8.0));
+		nw /= max(nw.x + nw.y + nw.z, 1e-6);
+		// blend_ground_color is the whole colour the ground starts from (biome tint, albedo multiplier, large
+		// light and dark): GroundLook.tint.
+		ALBEDO = clamp(nova_ground(tri_pos, nw, length(VERTEX)) * blend_ground_color, vec3(0.0), vec3(1.0));
+	} else if (blend_use_albedo) {
 		// Sample the ground's real texture, triplanar on model coordinates. No hex-tiling here,
 		// unlike planet_surface.gdshader: its stochastic tiling exists to hide repetition across
 		// hundreds of metres of open ground, and 499 lines of it would buy nothing on a band a few
 		// dozen centimetres tall where a single tile barely fits.
-		vec3 tex = tri_albedo(tri_pos, tri_w, blend_albedo_scale);
-		// A uniform condition, so the second read keeps its implicit derivatives (no per-pixel branch).
-		if (blend_albedo_fine_scale > 0.0) {
-			float fine = 1.0 - smoothstep(blend_albedo_fine_near, blend_albedo_fine_far, length(VERTEX));
-			tex = mix(tex, tri_albedo(tri_pos, tri_w, blend_albedo_fine_scale), fine);
-		}
-		if (abs(blend_albedo_contrast - 1.0) > 0.001) {
-			tex = max(blend_albedo_mean + (tex - blend_albedo_mean) * blend_albedo_contrast, vec3(0.0));
-		}
-		ALBEDO = clamp(mix(vec3(1.0), tex * blend_albedo_gain, blend_albedo_strength) * blend_albedo_ao
-				* mix(vec3(1.0), blend_ground_color, blend_vertex_color_strength), vec3(0.0), vec3(1.0));
+		vec3 ap = tri_pos * blend_albedo_scale;
+		ALBEDO = (texture(blend_albedo_tex, ap.yz).rgb * tri_w.x
+				+ texture(blend_albedo_tex, ap.xz).rgb * tri_w.y
+				+ texture(blend_albedo_tex, ap.xy).rgb * tri_w.z)
+				* mix(vec3(1.0), blend_ground_color, blend_vertex_color_strength);
 	} else {
 		float detail = 0.5;  // neutral: no detail texture for this biome
 		if (blend_detail_uv.y > 0.0) {

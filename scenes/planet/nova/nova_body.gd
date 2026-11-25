@@ -83,6 +83,8 @@ const DETAIL_FAR := 18.0
 const PATCH_RIM := 0.07
 ## Cells a side a texture is brought down to before its mean is taken (texture_mean).
 const MEAN_SIDE := 32
+## Points a side a height image is read at (height_samples).
+const HEIGHT_SAMPLES := 16
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +468,11 @@ func _read_look(id: int) -> Dictionary:
 	var base := _texture_at(id, "ground/albedo_texture")
 	if base == null:
 		return {}
+	# albedo_layer / orh_layer: where the ground shader's arrays hold these images (refresh_ground's rows),
+	# -1 when they do not (no arrays made, an image that does not load).
 	var layers: Array = [{"tex": base, "orh": _texture_at(id, "ground/orh_texture"),
+			"albedo_layer": _albedo_paths.find(str(resolve(id, "ground/albedo_texture"))),
+			"orh_layer": _orh_paths.find(str(resolve(id, "ground/orh_texture"))),
 			"scale": snap_scale(1.0 / maxf(float(resolve(id, "ground/tile_m")), 0.01)), "share": 1.0,
 			"patch_scale": 0.0, "offset": -1, "gain": float(resolve(id, "ground/texture_gain"))}]
 	for k in 2:
@@ -476,6 +482,8 @@ func _read_look(id: int) -> Dictionary:
 		if tex == null or share <= 0.0:
 			continue
 		layers.append({"tex": tex, "orh": _texture_at(id, key + "orh"),
+				"albedo_layer": _albedo_paths.find(str(resolve(id, key + "albedo"))),
+				"orh_layer": _orh_paths.find(str(resolve(id, key + "orh"))),
 				"scale": snap_scale(1.0 / maxf(float(resolve(id, key + "tile_m")), 0.01)), "share": share,
 				"patch_scale": snap_scale(1.0 / maxf(float(resolve(id, key + "patch_m")), 1.0)), "offset": k,
 				"gain": float(resolve(id, key + "gain"))})
@@ -530,22 +538,72 @@ static func layer_weights(look: Dictionary, pos: Variant = null) -> PackedFloat3
 	if w.is_empty():
 		return w
 	w[0] = 1.0
-	var p := wrapped(pos) if pos is Vector3 else Vector3.ZERO
+	var where := patch_where(look, pos) if pos is Vector3 else Vector2(-1.0, -1.0)
+	# The first material's heights: a patch fills its hollows first (the shader's (0.5 - height) * 0.35).
+	var heights := height_samples(layers[0].get("orh"))
 	for i in range(1, layers.size()):
 		var l: Dictionary = layers[i]
 		var share := clampf(float(l.share), 0.0, 1.0)
 		var over := share
 		if pos is Vector3:
-			var sp := float(l.patch_scale)
-			var off := Vector3(17.0, 31.0, 5.0) * float(l.offset)
-			var where := noise(p * sp + off, WRAP * sp) * 0.65 + noise(p * sp * 2.0 + off, WRAP * sp * 2.0) * 0.35
-			where = clampf((where - 0.5) * 1.8 + 0.5, 0.0, 1.0)
-			over = smoothstep(1.0 - share - PATCH_RIM, 1.0 - share + PATCH_RIM, where)
+			var wh := where.x if i == 1 else where.y
+			over = 0.0
+			for h in heights:
+				over += smoothstep(1.0 - share - PATCH_RIM, 1.0 - share + PATCH_RIM, wh + (0.5 - h) * 0.35)
+			over /= heights.size()
 		# Laid one over the other, as the shader mixes them: what lies under keeps the rest.
 		for j in i:
 			w[j] *= 1.0 - over
 		w[i] = over
 	return w
+
+
+## The patch noise of [param look]'s second and third layers (x, y; -1 for a layer it does not have) at
+## [param pos] (the body's frame, metres), stretched and clamped as the ground shader has it before it adds the
+## first material's height: the fringe shader finishes the rule pixel by pixel (blend_nova_where).
+static func patch_where(look: Dictionary, pos: Vector3) -> Vector2:
+	var layers: Array = look.get("layers", [])
+	var out := Vector2(-1.0, -1.0)
+	var p := wrapped(pos)
+	for i in range(1, mini(layers.size(), 3)):
+		var l: Dictionary = layers[i]
+		var sp := float(l.patch_scale)
+		var off := Vector3(17.0, 31.0, 5.0) * float(l.offset)
+		var where := noise(p * sp + off, WRAP * sp) * 0.65 + noise(p * sp * 2.0 + off, WRAP * sp * 2.0) * 0.35
+		out[i - 1] = clampf((where - 0.5) * 1.8 + 0.5, 0.0, 1.0)
+	return out
+
+
+## Heights (the blue of an occlusion / roughness / height image) at HEIGHT_SAMPLES² points of [param orh], read
+## once: their spread is what lets a patch fill the hollows first. [0.5] without an image, or one that cannot be
+## read (the shader then takes the texel's brightness: its mean is close enough). Any thread.
+static func height_samples(orh: Texture2D) -> PackedFloat32Array:
+	if orh == null:
+		return PackedFloat32Array([0.5])
+	var key := "h|%d" % orh.get_instance_id()
+	_means_mutex.lock()
+	var known: Variant = _means.get(key)
+	_means_mutex.unlock()
+	if known != null:
+		return known
+	var out := PackedFloat32Array([0.5])
+	var img: Image = orh.get_image()
+	if img != null and not img.is_empty():
+		img = img.duplicate() as Image
+		if img.is_compressed():
+			img.decompress()
+		img.clear_mipmaps()
+		img.convert(Image.FORMAT_RGBA8)
+		# Nearest: single texels, so the spread of the heights survives (an average would flatten it).
+		img.resize(HEIGHT_SAMPLES, HEIGHT_SAMPLES, Image.INTERPOLATE_NEAREST)
+		out = PackedFloat32Array()
+		for y in HEIGHT_SAMPLES:
+			for x in HEIGHT_SAMPLES:
+				out.append(img.get_pixel(x, y).b)
+	_means_mutex.lock()
+	_means[key] = out
+	_means_mutex.unlock()
+	return out
 
 
 ## The index of the layer covering most of [param weights] (layer_weights).
