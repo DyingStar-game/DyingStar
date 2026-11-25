@@ -40,6 +40,10 @@ const MAX_BLOCKS := 8
 ## The rocks' fade in (nova_rock.gdshader) measures distances in the planet's frame, positions split in whole
 ## cells of this size and a rest: both parts are exact in the shader's single floats.
 const FADE_CELL_M := 1024.0
+## The rocks' ground fringe (set_fringe): the band climbs this share of a rock's height above the ground, and
+## never more than FRINGE_MAX_M metres — TerrainBlend's max_height_ratio and height, for placed objects.
+const FRINGE_RATIO := 0.3
+const FRINGE_MAX_M := 0.9
 ## Floats per laid object: a MultiMesh transform (12) and its custom data (4) — the object's place in the
 ## chunk again, which the fade in needs and a shader cannot read back from the transform.
 const ROW := 16
@@ -160,13 +164,16 @@ static func _texture_of(body: NovaBody, id: int, key: String) -> Texture2D:
 ## [param mesh] dressed for variant [param id]: a copy whose textured surfaces (a scanned or sculpted rock)
 ## wear [method rock_material] — the ground's rock grain over the model's own textures, [param own_share]
 ## of its base colour kept — and whose bare surfaces wear [param ground] ([method ground_material]).
+## [param sink]: the share of its height the model is sunk into the ground (lay_chunk), where its fringe starts.
 static func dressed(mesh: Mesh, body: NovaBody, id: int, ground: Material, own_share: float = 1.0,
-		default_rock := "") -> Mesh:
+		default_rock := "", sink: float = 0.0) -> Mesh:
 	var copy: Mesh = mesh.duplicate()
 	for surface in copy.get_surface_count():
 		var own := copy.surface_get_material(surface) as BaseMaterial3D
 		if own != null and own.albedo_texture != null:
-			copy.surface_set_material(surface, rock_material(own, body, id, own_share, default_rock))
+			var m := rock_material(own, body, id, own_share, default_rock)
+			set_fringe(m, body, id, mesh.get_aabb(), sink, default_rock)
+			copy.surface_set_material(surface, m)
 		else:
 			copy.surface_set_material(surface, ground)
 	return copy
@@ -191,6 +198,57 @@ static func rock_material(own: BaseMaterial3D, body: NovaBody, id: int, own_shar
 	m.set_shader_parameter("detail_normal", look.normal)
 	m.set_shader_parameter("detail_normal_strength", look.normal_strength)
 	return m
+
+
+## Gives rock material [param m] (nova_rock.gdshader) its ground fringe: the foot of the rock in the look of
+## variant [param id]'s ground (NovaBody.ground_look: its materials, tiles, gains, strength, contrast,
+## occlusion), the band starting where the ground meets a model of bounds [param aabb] sunk by [param sink] of its
+## height (lay_chunk), or at its lowest point when that is higher. The patches the rock stands in are read by the
+## shader at the rock's place, as the ground reads them. Left off when the variant's ground has no texture.
+static func set_fringe(m: ShaderMaterial, body: NovaBody, id: int, aabb: AABB, sink: float, default_rock := "") -> void:
+	var look := body.ground_look(id)
+	if look.is_empty():
+		m.set_shader_parameter("fringe_on", false)
+		return
+	var layers: Array = look.layers
+	var ground_y := maxf(aabb.position.y, sink * aabb.size.y)
+	m.set_shader_parameter("fringe_on", true)
+	m.set_shader_parameter("fringe_ground_y", ground_y)
+	m.set_shader_parameter("fringe_top_y", aabb.end.y)
+	m.set_shader_parameter("fringe_ratio", FRINGE_RATIO)
+	m.set_shader_parameter("fringe_max_m", FRINGE_MAX_M)
+	var scale := Vector3.ZERO
+	var gain := Vector3.ONE
+	var share := Vector3(1.0, 0.0, 0.0)
+	var patch := Vector3.ZERO
+	var offset := Vector3(0.0, 0.0, 1.0)
+	var ao := Vector3.ONE
+	for i in 3:
+		var l: Dictionary = layers[i] if i < layers.size() else layers[0]
+		var mean := NovaBody.texture_mean(l.tex, true)
+		m.set_shader_parameter("ground_albedo_%d" % i, l.tex)
+		m.set_shader_parameter("ground_mean_%d" % i, Vector3(mean.r, mean.g, mean.b))
+		scale[i] = float(l.scale)
+		gain[i] = float(l.gain)
+		ao[i] = NovaBody.ao_factor(l)
+		if i > 0 and i < layers.size():
+			share[i] = float(l.share)
+			patch[i] = float(l.patch_scale)
+			offset[i] = float(l.offset)
+	m.set_shader_parameter("ground_scale", scale)
+	m.set_shader_parameter("ground_gain", gain)
+	m.set_shader_parameter("ground_share", share)
+	m.set_shader_parameter("ground_patch_scale", patch)
+	m.set_shader_parameter("ground_offset_k", offset)
+	m.set_shader_parameter("ground_ao", ao)
+	m.set_shader_parameter("ground_fine_scale", float(look.fine_scale))
+	m.set_shader_parameter("ground_fine_range", Vector2(float(look.fine_near), float(look.fine_far)))
+	m.set_shader_parameter("ground_strength", float(look.strength))
+	m.set_shader_parameter("ground_contrast", float(look.contrast))
+	m.set_shader_parameter("ground_macro", Vector2(float(look.macro_strength), float(look.macro_scale)))
+	# The vertex colour the ground wears there: the rock's tint, as the rocks themselves take it (rock_tint).
+	var t := body.biome_tint(rock_tint(body, id, default_rock))
+	m.set_shader_parameter("ground_tint", Vector3(t.r, t.g, t.b))
 
 
 ## The ground's look for a model without textures of its own, standing on variant [param id]: the ground's
@@ -294,7 +352,7 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "") -> Ar
 				if m == null:
 					continue
 				if look != null:
-					m = dressed(m, body, id, look, float(of.call("own_texture")), default_rock)
+					m = dressed(m, body, id, look, float(of.call("own_texture")), default_rock, float(of.call("sink")))
 				meshes.append(m)
 				heights.append(maxf(m.get_aabb().size.y, 0.01))
 				reaches.append(maxf(m.get_aabb().size.x, m.get_aabb().size.z) * 0.5)

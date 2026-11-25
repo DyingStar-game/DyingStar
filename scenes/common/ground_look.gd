@@ -14,6 +14,9 @@ extends RefCounted
 const MATERIAL_PATH := "res://assets/_universe/_shared/materials/terrain_blend.tres"
 ## What the biome map gives where it has nothing (PlanetData.ground_albedo_at).
 const NO_SAMPLE := Color(0, 0, 0, 0)
+## The swing of the band's height on a Nova ground (terrain_blend.gdshader's blend_noise_strength; the template's
+## is 0.6): see nova_material_for.
+const NOVA_NOISE_STRENGTH := 0.3
 
 # ONE fringe material PER GROUND TEXTURE -- never per object. A texture cannot be a per-instance
 # uniform, so objects standing on different ground need different materials; but they GROUP, and a
@@ -43,16 +46,41 @@ var color: Color = Color(0.45, 0.35, 0.25)
 var tint: Color = Color(0.45, 0.35, 0.25)
 ## (detail layer, tiling scale) of the ground's own detail texture. Zero means "no detail texture".
 var detail: Vector2 = Vector2.ZERO
+## Nova only: the patch noise of the ground's second and third materials at this point (NovaBody.patch_where),
+## which the fringe shader finishes pixel by pixel; -1 where there is none.
+var nova_where: Vector2 = Vector2(-1.0, -1.0)
 
 
 ## Read the ground in body-fixed direction `dir`. `fallback` is used when the biome yields nothing.
-static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
+## [param ground_r]: the ground point's distance from the body's centre when the caller has it (metres): on a
+## body dressed by Nova, the material lying exactly there (its patches of gravel, of regolith…) is read at
+## that point; without it, the material covering most of the ground's variant.
+static func at(data: PlanetData, dir: Vector3, fallback: Color, ground_r: float = NAN) -> GroundLook:
 	var look := GroundLook.new()
 	look.color = fallback
 	look.tint = fallback
 	if data == null:
 		return look
 	_share_detail_texture(data)
+	# Nova first: where it textures the ground, the planet's own materials are not what one sees.
+	var pos: Variant = dir.normalized() * ground_r if not is_nan(ground_r) else null
+	var nova := data.nova_ground_at(dir, ground_r - data.radius if not is_nan(ground_r) else NAN, pos)
+	if not nova.is_empty():
+		var t: Color = nova.tint
+		var m: float = nova.macro
+		look.color = nova.colour
+		# The fringe shader multiplies the layer's texture term by this (blend_vertex_color_strength 1).
+		look.tint = Color(t.r * m, t.g * m, t.b * m)
+		look.material = nova_material_for(nova.look, data.nova.material)
+		if pos is Vector3:
+			look.nova_where = NovaBody.patch_where(nova.look, pos)
+		else:
+			# No point: the share each covers stands for the noise (an even chance of its patch).
+			var w := Vector2(-1.0, -1.0)
+			for i in range(1, mini((nova.look.layers as Array).size(), 3)):
+				w[i - 1] = 1.0 - float(nova.look.layers[i].share)
+			look.nova_where = w
+		return look
 	var ground: Material = data.ground_material_at(dir)
 	var sampled: Color = _vertex_sample(data, dir)
 	if sampled != NO_SAMPLE:  # nothing sampled: the fallback as it is, not scaled like a biome colour
@@ -72,6 +100,9 @@ static func at(data: PlanetData, dir: Vector3, fallback: Color) -> GroundLook:
 static func colour_at(data: PlanetData, dir: Vector3, fallback: Color, height_m: float = NAN) -> Color:
 	if data == null:
 		return fallback
+	var nova := data.nova_ground_at(dir, height_m)
+	if not nova.is_empty():
+		return nova.colour  # what Nova's textures show there, their patches averaged
 	var sampled: Color = _vertex_sample(data, dir, height_m)
 	if sampled == NO_SAMPLE:  # the fallback as it is, not scaled like a biome colour
 		return fallback
@@ -90,12 +121,7 @@ static func vertex_colour(data: PlanetData, dir: Vector3, fallback: Color, heigh
 
 ## vertex_colour without its fallback: NO_SAMPLE where the biome map has nothing.
 static func _vertex_sample(data: PlanetData, dir: Vector3, height_m: float = NAN) -> Color:
-	var zone: Dictionary = data.first_zone_at(dir)
-	if zone.is_empty() and not data.corundum_default_biome:
-		return data.ground_albedo_at(dir)  # no zone here: the biome map (NO_SAMPLE where it is empty)
-	var cor_bd: BiomeDefinition = data.get_biome_by_type(ArideDesertCorundumPlateauTerrain.BIOME_TYPE) \
-			if data.corundum_default_biome else null
-	return PlanetChunk.road_ground_tint(data, dir, zone, cor_bd, height_m)
+	return data.ground_vertex_tint_at(dir, height_m)
 
 
 ## What a ground drawn with [param ground] and the vertex colour [param tint] shows on average.
@@ -142,6 +168,67 @@ static func material_for(ground: Material) -> ShaderMaterial:
 		mat.set_shader_parameter(&"blend_use_albedo", true)
 		mat.set_shader_parameter(&"blend_albedo_scale", scale)
 		mat.set_shader_parameter(&"blend_vertex_color_strength", _vertex_color_strength_of(ground))
+	_materials[key] = mat
+	return mat
+
+
+## The fringe material of a Nova ground [param look] (NovaBody.ground_look) drawn with [param ground] (the body's
+## Nova material), created once per variant and texture arrays: it reads the ground's own arrays at the same
+## layers and tiles and colours them by the ground shader's rule (terrain_blend.gdshader, nova_ground), so the band
+## shows the ground's stones at the ground's size and contrast. Null until the arrays are made (a worker makes
+## them as the body opens; TerrainBlend measures again 2 s and 10 s later), and for a layer the arrays lack.
+## The tint and the patch noise at the object's foot ride the instance (GroundLook.tint, nova_where).
+static func nova_material_for(look: Dictionary, ground: ShaderMaterial) -> ShaderMaterial:
+	if ground == null:
+		return null
+	var albedo: Variant = ground.get_shader_parameter(&"nova_albedo")
+	var orh: Variant = ground.get_shader_parameter(&"nova_orh")
+	var layers: Array = look.layers
+	if not albedo is Texture2DArray or int(layers[0].albedo_layer) < 0:
+		return null
+	var a_layer := Vector3(-1.0, -1.0, -1.0)
+	var o_layer := Vector3(-1.0, -1.0, -1.0)
+	var scale := Vector3(0.1, 0.1, 0.1)
+	var gain := Vector3.ONE
+	var share := Vector3(1.0, 0.0, 0.0)
+	for i in mini(layers.size(), 3):
+		var l: Dictionary = layers[i]
+		a_layer[i] = float(l.albedo_layer)
+		o_layer[i] = float(l.orh_layer) if orh is Texture2DArray else -1.0
+		scale[i] = float(l.scale)
+		gain[i] = float(l.gain)
+		share[i] = float(l.share) if i > 0 else 1.0
+	var key := "nova|%d|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s" % [int(look.id), (albedo as Object).get_instance_id(),
+			(orh as Object).get_instance_id() if orh is Object else 0, a_layer, o_layer, scale, gain, share,
+			look.fine_scale, look.strength, look.contrast]
+	if _materials.has(key):
+		return _materials[key]
+	var base: ShaderMaterial = _template_material()
+	if base == null:
+		return null
+	var mat := base.duplicate() as ShaderMaterial
+	mat.set_shader_parameter(&"blend_nova", true)
+	mat.set_shader_parameter(&"blend_nova_albedo", albedo)
+	if orh is Texture2DArray:
+		mat.set_shader_parameter(&"blend_nova_orh", orh)
+	mat.set_shader_parameter(&"blend_nova_albedo_layer", a_layer)
+	mat.set_shader_parameter(&"blend_nova_orh_layer", o_layer)
+	mat.set_shader_parameter(&"blend_nova_scale", scale)
+	mat.set_shader_parameter(&"blend_nova_gain", gain)
+	mat.set_shader_parameter(&"blend_nova_share", share)
+	mat.set_shader_parameter(&"blend_nova_fine_scale", float(look.fine_scale))
+	mat.set_shader_parameter(&"blend_nova_fine_near", float(look.fine_near))
+	mat.set_shader_parameter(&"blend_nova_fine_far", float(look.fine_far))
+	mat.set_shader_parameter(&"blend_nova_strength", float(look.strength))
+	mat.set_shader_parameter(&"blend_nova_contrast", float(look.contrast))
+	# A bright, contrasted ground made the band's ragged top read as round white blobs up the walls: a smaller
+	# swing of its height (the template's 0.6) keeps it a soft edge.
+	mat.set_shader_parameter(&"blend_noise_strength", NOVA_NOISE_STRENGTH)
+	# What a reader that cannot sample arrays takes (CaveGroundCover): the first material as a plain texture,
+	# its close-up tile, and the gain and mean occlusion folded into a tint.
+	var first: Dictionary = layers[0]
+	mat.set_meta(&"nova_plain", {"tex": first.tex, "scale": float(look.fine_scale) if float(look.fine_scale) > 0.0
+			else float(first.scale), "gain": float(first.gain) * NovaBody.ao_factor(first)})
 	_materials[key] = mat
 	return mat
 

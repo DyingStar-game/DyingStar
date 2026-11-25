@@ -123,8 +123,10 @@ func refresh() -> void:
 	# -- it was once written at three call sites with two different formulas -- and it was being run
 	# three times here on the same point.
 	var dir: Vector3 = planet.local_dir_of(ground)
-	_apply(_up_at(planet, ground), ground, b["center"],
-			GroundLook.at(planet.planet_data, dir, fallback_color))
+	# With the ground point's distance from the centre: on a Nova ground, the patch of gravel or regolith
+	# lying right there is the one the band copies.
+	_apply(planet, _up_at(planet, ground), ground,
+			GroundLook.at(planet.planet_data, dir, fallback_color, planet.global_position.distance_to(ground)))
 
 
 ## Turn the fringe on or off for this object without removing the component.
@@ -274,11 +276,24 @@ func _clear() -> void:
 			gi.material_overlay = null
 
 
-func _apply(up: Vector3, ground: Vector3, center: Vector3, look: GroundLook) -> void:
+func _apply(planet: Planet, up: Vector3, ground: Vector3, look: GroundLook) -> void:
 	_grounded = true
 	if look.material == null:
 		_clear()
 		return
+	# The object's own box, in its root's frame: what tells an outer wall from an inner one (blend_box_x).
+	var root := get_parent() as Node3D
+	var root_xf: Transform3D = root.global_transform
+	var box: AABB = _box_in(root_xf)
+	var center: Vector3 = root_xf * box.get_center()
+	var box_x: Vector3 = root_xf.basis.x
+	var box_z: Vector3 = root_xf.basis.z
+	var half_x: float = box.size.x * 0.5 * box_x.length()
+	var half_z: float = box.size.z * 0.5 * box_z.length()
+	# The local frame the textures are read along, anchored to the planet (blend_tan1).
+	var bp: Basis = planet.global_basis.orthonormalized()
+	var up_p: Vector3 = (bp.inverse() * up).normalized()
+	var tangents: Array[Vector3] = local_tangents(up_p)
 	for gi in _targets:
 		if not is_instance_valid(gi):
 			continue
@@ -298,7 +313,62 @@ func _apply(up: Vector3, ground: Vector3, center: Vector3, look: GroundLook) -> 
 				&"blend_ground_color", Vector3(look.tint.r, look.tint.g, look.tint.b))
 		gi.set_instance_shader_parameter(&"blend_height", _band)
 		gi.set_instance_shader_parameter(&"blend_detail_uv", look.detail)
+		gi.set_instance_shader_parameter(&"blend_nova_where", look.nova_where)
 		gi.set_instance_shader_parameter(&"blend_center", gi.to_local(center))
+		var inv: Basis = gi.global_basis.inverse()
+		gi.set_instance_shader_parameter(&"blend_box_x", box_axis(inv, box_x, half_x))
+		gi.set_instance_shader_parameter(&"blend_box_z", box_axis(inv, box_z, half_z))
+		var origin_p: Vector3 = bp.inverse() * (gi.global_position - planet.global_position)
+		gi.set_instance_shader_parameter(&"blend_tan1", anchor_row(gi.global_basis, bp * tangents[0], tangents[0], origin_p))
+		gi.set_instance_shader_parameter(&"blend_tan2", anchor_row(gi.global_basis, bp * tangents[1], tangents[1], origin_p))
+		gi.set_instance_shader_parameter(&"blend_up_anchor", fposmod(up_p.dot(origin_p), ANCHOR_WRAP_M))
+
+
+## Two tangents of the local frame around [param up_p] (the planet's frame), a pure function of it: the same
+## object measured twice reads its textures along the same axes, whatever the planet's spin did meanwhile.
+static func local_tangents(up_p: Vector3) -> Array[Vector3]:
+	var ref := Vector3.UP if absf(up_p.y) < 0.9 else Vector3.RIGHT
+	var t1: Vector3 = ref.cross(up_p).normalized()
+	return [t1, up_p.cross(t1).normalized()]
+
+
+## The texture coordinate along one axis of the local frame, for a mesh of world basis [param basis] whose
+## origin is [param origin_p] in the planet's frame: xyz = transpose(basis) * the axis in world space (so
+## dot(VERTEX, xyz) is metres along it, like plane_for's), w = the origin's place along the axis in the planet's
+## frame, wrapped every ANCHOR_WRAP_M -- the planet-anchored part, small enough for a shader's float32.
+static func anchor_row(basis: Basis, axis_world: Vector3, axis_planet: Vector3, origin_p: Vector3) -> Vector4:
+	var n: Vector3 = basis.transposed() * axis_world
+	return Vector4(n.x, n.y, n.z, fposmod(axis_planet.dot(origin_p), ANCHOR_WRAP_M))
+
+
+## One horizontal axis of the object's box in a mesh's model space ([param inv]: the inverse of its world
+## basis): xyz the unit direction, w the half extent in model units along it ([param half_m] metres).
+static func box_axis(inv: Basis, axis_world: Vector3, half_m: float) -> Vector4:
+	var a: Vector3 = inv * axis_world.normalized()
+	var l: float = a.length()
+	if l < 1e-9:
+		return Vector4.ZERO
+	return Vector4(a.x / l, a.y / l, a.z / l, half_m * l)
+
+
+## The bounds of every mesh of the object in the frame [param root_xf] (its root's), corners and all.
+func _box_in(root_xf: Transform3D) -> AABB:
+	var to_root: Transform3D = root_xf.affine_inverse()
+	var box := AABB()
+	var first := true
+	for gi in _targets:
+		if not is_instance_valid(gi):
+			continue
+		var aabb: AABB = gi.get_aabb()
+		var xf: Transform3D = to_root * gi.global_transform
+		for i in 8:
+			var corner: Vector3 = xf * aabb.get_endpoint(i)
+			if first:
+				box = AABB(corner, Vector3.ZERO)
+				first = false
+			else:
+				box = box.expand(corner)
+	return box
 
 
 ## Height above the ground of the lowest corner of `gi`, in metres. The height is affine in the
@@ -369,6 +439,9 @@ func _up_at(planet: Planet, world_pos: Vector3) -> Vector3:
 ## refused by type, and every mesh whose bounds sit above the band is dropped before it is ever
 ## overlaid. The count of meshes FOUND buys one walk, once; only the meshes PAINTED cost per frame.
 const MAX_MESHES: int = 512
+## The planet-anchored texture coordinates wrap every this many metres: the tiling grid of the ground
+## shaders (WRAP), which every tile size divides, so the wrap shows no seam.
+const ANCHOR_WRAP_M: float = 8192.0
 ## A part of an object that never meets the ground -- the furniture inside a home -- is left out of
 ## the fringe, with all below it: each mesh the fringe dresses takes 16 slots of the shared instance
 ## uniform buffer, and a bed, a wardrobe and a bedside table in each of a village's 124 containers

@@ -357,6 +357,57 @@ le coût est nul, et l'ombre grandit avec lui.
   un rocher change encore de hauteur d'un coup quand le sol sous lui change de niveau de détail, alors que le
   sol, lui, glisse en 600 ms.
 
+### Le sol vu par les autres : frange, poussière, pied des rochers (25/11/2026)
+
+Tout ce qui copie « l'aspect du sol » demande d'abord à Nova sur un corps habillé par Nova (un client) :
+
+- `PlanetData.nova_ground_at(dir, height_m, pos)` : la variante de la direction (celle de sa première zone,
+  comme les sommets la cuisent : `nova_variant_at`), puis `NovaBody.ground_look(id)` = les réglages que
+  `refresh_ground` donne au shader du sol (texture de chaque matière, tuile accrochée à la grille `WRAP`, motif
+  fin de près et ses distances, gain, force, contraste, occlusion, taches à grande échelle). Vide hors texture
+  (variante sans albédo, serveur, corps sans Nova) : l'ancien chemin reste.
+- Avec un point du sol (`pos`, repère du corps), les plages de la seconde et de la troisième matière sont lues
+  **là**, avec le même bruit que le shader (`NovaBody.layer_weights`, `noise`, `_hash` : portage exact de
+  `nova_noise`) ; sans point, leur part moyenne. Seule différence : le shader fait d'abord remplir les creux de
+  l'image de hauteur, inconnue ici (au bord d'une plage la réponse peut être l'autre côté).
+- `PlanetData.ground_material_at` rend le matériau Nova (les chunks Nova ne portent jamais l'override d'un
+  biome) ; `ground_albedo_at` rend la couleur que Nova MONTRE (`ground_rock_albedo_at` garde l'ancienne, la
+  teinte cuite dans les sommets, qui sert de teinte aux textures).
+- **Frange** (`TerrainBlend` → `GroundLook.at`, `terrain_blend.gdshader`, `nova_ground`) : un matériau par
+  variante (`GroundLook.nova_material_for`) qui lit **les mêmes tableaux de textures que le sol** (`nova_albedo`,
+  `nova_orh` du matériau Nova, avec leurs mipmaps), aux mêmes couches et tuiles, et colore pixel par pixel comme
+  la boucle Nova du sol : contraste autour de la moyenne lue sur la plus petite mipmap, `mix(1, texture × gain,
+  force)`, rouge de l'occlusion, motif fin de près, puis seconde et troisième matières posées là où le bruit de
+  plages le dit **en remplissant d'abord les creux** (bleu de l'image de hauteur). Le bruit de plages est lu une
+  fois au pied de l'objet (`NovaBody.patch_where` → `blend_nova_where`, donnée d'instance n° 10). Teinte (couleur
+  de biome × multiplicateur d'albédo × taches) par instance. Pas de matériau tant que le travailleur n'a pas fait
+  les tableaux (TerrainBlend remesure à 2 s et 10 s). Bord haut de la bande moins bruité sur Nova
+  (`blend_noise_strength` 0,3 au lieu de 0,6 : sur un sol clair, le bord bruité faisait des boules blanches). La
+  triplanaire est **ancrée à la planète** (tous sols confondus) : position dans le repère de la planète,
+  ramenée modulo 8 192 m (la grille de tuilage, précise au millimètre en float32), mais lue le long des axes
+  LOCAUX — deux tangentes et le haut (`TerrainBlend.local_tangents`, `anchor_row` → `blend_tan1`, `blend_tan2`,
+  `blend_up_anchor`) — pour que les plans de projection restent droits sur un mur (projetée sur les axes de la
+  planète, elle partirait de biais, le piège des barrières). Lue dans l'espace de l'objet, elle donnait la même
+  image aux quatre portes de quatre conteneurs identiques côte à côte. Le motif ne prolonge pas exactement celui
+  du sol (qui projette sur les axes de la planète). Projections aussi tranchées que celles du sol.
+- **Pas de frange dans les bâtiments** : un mur intérieur se reconnaît à sa face tournée VERS l'intérieur de la
+  boîte de l'objet (ses limites dans le repère de sa racine), par rapport à son côté le plus proche
+  (`blend_box_x` / `blend_box_z`). L'ancien test (face tournée à l'opposé du centre de l'objet, déjà sur develop)
+  laissait la bande sur la moitié des ondulations des parois intérieures d'un conteneur près de ses portes, où
+  elles regardent dans la longueur.
+  Première version (25/11 matin, retirée) : une texture 2D par matière, moyenne linéaire pour le contraste,
+  occlusion moyenne et matière dominante choisie sans les creux : bande plus claire et plus contrastée que le sol
+  (le shader prend la moyenne sur la mipmap sRGB, et le gravier n'avait pas de mipmaps), roche craquelée devant
+  du gravier.
+- **Poussière** (`GroundLook.colour_at` : roues, pas, vent, murs de poussière) : la couleur montrée, plages
+  moyennées.
+- **Rochers du scatter** (`nova_rock.gdshader`, `NovaScatter.set_fringe`) : frange dans le shader, pas de nœud
+  par rocher ni d'appel de dessin de plus. Bande = 30 % de la hauteur du rocher au-dessus du sol, 0,9 m au plus
+  (comme `TerrainBlend`), depuis le sol du modèle enfoncé (`sink`). Les plages sous le rocher sont lues dans le
+  vertex shader à sa place (`fade_cell` modulo `WRAP` + `fade_rest` + donnée d'instance), seulement à moins de
+  200 m de la caméra ; la frange s'efface de 100 à 150 m.
+- Tests : `test/unit/test_ground_look_nova.gd`.
+
 ### Frontières douces
 
 Avant, deux sols se rejoignaient sur environ 3 mailles (75 m de près, plus loin davantage), en simple fondu,

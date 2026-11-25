@@ -5486,7 +5486,19 @@ func _rock_of_zone(zone: Dictionary) -> String:
 ## The duplication of that chain is deliberate and bounded. The chunk's copy is threaded through a
 ## vertex loop that also bakes impurity slots and crack distances, so lifting it out would touch the
 ## build loop and therefore the versioned disk cache. If that chain moves, this must move with it.
+##
+## On a body dressed by Nova (a client), where the zone's variant has a texture, it is the colour that ground
+## SHOWS instead (nova_ground_at): Nova's textures, not the rock's tint alone, are what one sees there.
 func ground_albedo_at(dir: Vector3) -> Color:
+	var nova_look := nova_ground_at(dir)
+	if not nova_look.is_empty():
+		return nova_look.colour
+	return ground_rock_albedo_at(dir)
+
+
+## The colour the terrain bakes into its vertices in direction [param dir] (the rock's tint, the zone's biome…):
+## [method ground_albedo_at] without Nova. What Nova's textures are tinted with.
+func ground_rock_albedo_at(dir: Vector3) -> Color:
 	var zone: Dictionary = first_zone_at(dir)
 	# The ROCK first, not the biome. Where a catalogue rock applies, PlanetChunk bakes ITS shade
 	# over the base colour (RockImpurity.tint, planet_chunk.gd:1299) -- on a corundum world that is
@@ -5538,11 +5550,61 @@ func ground_detail_at(dir: Vector3) -> Vector2:
 ##
 ## Callers that want to look like the ground must ask THIS, then read whatever that material
 ## exposes -- there is no single parameter name common to both shaders.
+##
+## On a body dressed by Nova it is Nova's material everywhere: its chunks never wear a biome's override
+## (PlanetChunk leaves them out under Nova), and a variant's textures are read with [method nova_ground_at].
 func ground_material_at(dir: Vector3) -> Material:
+	if nova != null and nova.material != null:
+		return nova.material
 	var bd: BiomeDefinition = biome_at(dir)
 	if bd != null and bd.terrain_material_override != null:
 		return bd.terrain_material_override
 	return terrain_material
+
+
+## The Nova variant id of the ground in direction [param dir]: that of its first zone, as the chunks bake it
+## into their vertices (1, the ground outside zones, where none holds it); 0 on a body without Nova.
+## Main thread only, like [method first_zone_at].
+func nova_variant_at(dir: Vector3) -> int:
+	return nova.variant_id_for_zone(first_zone_at(dir)) if nova != null else 0
+
+
+## What Nova draws the ground with in direction [param dir], {} where it does not texture it (a body without
+## Nova — the server's included —, or a variant naming no texture: the terrain's own look stands there). Else
+## {look (NovaBody.ground_look), id, layer (the material covering most of the ground there), tint (the
+## colour the shader starts from: NovaBody.biome_tint of the vertex colour), macro, colour (what it shows)}.
+## [param height_m]: the ground's height over the reference sphere when the caller has it (NAN samples it).
+## [param pos]: the ground point in the body's frame (metres) when the caller has it: the patches of the
+## second and third materials, and the large-scale light and dark, are then read there; without it the colour
+## is their average, and layer the material covering most of the variant.
+func nova_ground_at(dir: Vector3, height_m: float = NAN, pos: Variant = null) -> Dictionary:
+	if nova == null:
+		return {}
+	var id := nova_variant_at(dir)
+	var look := nova.ground_look(id)
+	if look.is_empty():
+		return {}
+	var vertex := ground_vertex_tint_at(dir, height_m)
+	if vertex == Color(0, 0, 0, 0):  # nothing sampled (GroundLook.NO_SAMPLE)
+		vertex = Color(0.45, 0.35, 0.25)  # sample_biome_at's own fallback
+	var tint := nova.biome_tint(vertex)
+	var weights := NovaBody.layer_weights(look, pos)
+	var macro := NovaBody.macro_factor(look, pos)
+	return {"look": look, "id": id, "layer": NovaBody.main_layer(weights), "tint": tint, "macro": macro,
+			"colour": NovaBody.shown_colour(look, tint, weights, macro)}
+
+
+## The colour the terrain bakes into its vertex at [param dir]: the planet's default rock or the zone's,
+## shaded by RockImpurity at the surface (PlanetChunk.road_ground_tint, the terrain's own rule), the
+## biome's colour else; Color(0, 0, 0, 0) where the biome map has nothing.
+## [param height_m]: the ground's height there over the reference sphere when known; NAN samples it.
+func ground_vertex_tint_at(dir: Vector3, height_m: float = NAN) -> Color:
+	var zone: Dictionary = first_zone_at(dir)
+	if zone.is_empty() and not corundum_default_biome:
+		return ground_rock_albedo_at(dir)  # no zone here: the biome map (alpha 0 where it is empty)
+	var cor_bd: BiomeDefinition = get_biome_by_type(ArideDesertCorundumPlateauTerrain.BIOME_TYPE) \
+			if corundum_default_biome else null
+	return PlanetChunk.road_ground_tint(self, dir, zone, cor_bd, height_m)
 
 
 ## The BiomeDefinition covering a body-fixed direction, or null when we cannot tell.

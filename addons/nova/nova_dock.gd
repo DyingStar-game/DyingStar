@@ -913,7 +913,8 @@ static func _far_albedos(body: NovaBody, colors: Dictionary, mat: Material) -> D
 ## source_color does on the smallest mipmap. Cached by path.
 static func _texture_mean(path: String) -> Color:
 	if not _texture_means.has(path):
-		var img := NovaBody._layer_image(path, Color(0.5, 0.5, 0.5))
+		var fallbacks: Array[Color] = [Color(0.5, 0.5, 0.5)]
+		var img: Image = NovaBody._layer_images(PackedStringArray([path]), fallbacks)[0]
 		img.resize(1, 1, Image.INTERPOLATE_TRILINEAR)
 		var mean := img.get_pixel(0, 0).srgb_to_linear()
 		_texture_means[path] = Color(mean.r, mean.g, mean.b)

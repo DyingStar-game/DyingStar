@@ -1063,9 +1063,21 @@ func _apply_ground_look(mat: ShaderMaterial, rock_tex: Texture2D) -> void:
 	var gain: float = 1.0
 	var ground: ShaderMaterial = null
 	var planet: Planet = SurfaceProbe.planet_of(self)
+	var nova := {}
 	if planet != null and planet.planet_data != null:
-		ground = planet.planet_data.ground_material_at(planet.local_dir_of(global_position)) as ShaderMaterial
-	if ground != null:
+		var dir: Vector3 = planet.local_dir_of(global_position)
+		ground = planet.planet_data.ground_material_at(dir) as ShaderMaterial
+		# A ground textured by Nova: the colour it SHOWS there (its textures' means, gains and tint), read on
+		# this client — the replicated ground_color is the server's, which knows nothing of Nova's look.
+		nova = planet.planet_data.nova_ground_at(dir)
+	if not nova.is_empty():
+		var shown: Color = nova.colour
+		var lum: float = maxf(_texture_mean(rock_tex, true).get_luminance(), 0.001)
+		tint = Vector3(shown.r, shown.g, shown.b) / lum  # the rock's texture times this averages to the ground
+		var rough: Variant = ground.get_shader_parameter(&"roughness") if ground != null else null
+		if rough != null:
+			mat.set_shader_parameter("rock_roughness", clampf(float(rough), 0.0, 1.0))
+	elif ground != null:
 		var strength: Variant = ground.get_shader_parameter(&"vertex_color_strength")
 		if strength != null:
 			tint = Vector3.ONE.lerp(tint, float(strength))
