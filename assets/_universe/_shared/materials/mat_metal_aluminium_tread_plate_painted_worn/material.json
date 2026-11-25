@@ -16,7 +16,7 @@
   "ai_generated": false,
   "delivery": {
     "type": "hosted",
-    "version": 2
+    "version": 3
   },
   "maps": {
     "albedo": "tex_metal_aluminium_tread_plate_painted_worn_albedo.png",

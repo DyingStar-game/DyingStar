@@ -15,7 +15,7 @@
   "ai_generated": false,
   "delivery": {
     "type": "hosted",
-    "version": 2
+    "version": 3
   },
   "maps": {
     "albedo": "tex_metal_aluminium_diamond_plate_painted_albedo.png",
