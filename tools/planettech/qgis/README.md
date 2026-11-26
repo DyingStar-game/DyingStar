@@ -758,6 +758,7 @@ the crater — and its lava a darker crust of the same rock.
 | Layer | Geometry | What it says |
 |---|---|---|
 | `volcano` | Point | The summit. A `type` preset — `stratovolcano`, `shield`, `caldera`, `cinder_cone`, `lava_dome` — fills every NULL field: `base_diameter_m`, `height_m`, `crater_diameter_m`, `crater_depth_m`, `floor_frac`, `flank_exponent` (0.5 convex … 2 concave, snapped to 0.5 / 1 / 1.5 / 2 / 3), `roughness`, `gullies`, `irregularity`. `has_lava_lake` + `lake_fill_m` fill the crater; `activity` (dormant / fuming / active) adds the plume and the glow. |
+| `volcanic_region` | Polygon | The outline of a volcanic zone, in `layer 02 - massifs` › `volcanoes` beside the volcano points. Drawn only for now: no exporter reads it yet. |
 | `lava_flow` | LineString | Drawn **from the source downhill**: the drawing direction is the flow direction. `state` active / cooling / solid, `width_start_m` → `width_end_m`, `depth_m` (how far the crust sits below its banks). |
 | `fumarole_field` | Polygon | Godot scatters vents over it at `density` vents/km², with a `gas` (steam / sulfur / co2 / chlorine) that colours the plumes and stains the rock (`stain`). Keeps its old table. |
 | `fumarole_vent` | Point | One vent placed by hand. |

@@ -19,7 +19,7 @@ the order the layers apply on the ground::
     layer 00 - base/        contours, region, world border
     layer 01 - outcrop/     plateau, volcanic
     layer 02 - massifs/     mountains/  mountain range, ridge
-                            volcanoes/  volcano
+                            volcanoes/  volcano, volcanic region
     layer 03 - rocky terrain/  rocky terrain
     layer 10 - final/       poi
                             cave site
