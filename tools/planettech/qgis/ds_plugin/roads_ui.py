@@ -44,6 +44,11 @@ class RoadsUi:
         self.steep_spin.valueChanged.connect(self._restyle)
         self.terrain_action = self.toolbar.addAction("Terrain de la zone…", self.zone_terrain)
         self.terrain_action.setToolTip("Altitude, courbes et pente de la zone affichée")
+        self.route_action = self.toolbar.addAction("Tracer une route…", self.draw_route)
+        self.route_action.setToolTip("Le tracé calculé entre tes clics, qui tient la pente max "
+                                     "sur le terrain de la zone (lacets compris)")
+        self._route_tool = None
+        self._route_opts = None
         self.profile_action = self.toolbar.addAction("Profil en long", self.toggle_profile)
         self.profile_action.setCheckable(True)
         self.profile_action.setToolTip("Le profil que le jeu donnera à la route sélectionnée : "
@@ -81,6 +86,12 @@ class RoadsUi:
             self.iface.currentLayerChanged.disconnect(self._watch_layer)
         except TypeError:
             pass
+        if self._route_tool is not None:
+            canvas = self.iface.mapCanvas()
+            if canvas.mapTool() is self._route_tool:
+                canvas.unsetMapTool(self._route_tool)
+            self._route_tool.reset()
+            self._route_tool = None
         if self.dock is not None:
             self.dock.unload()
             self.iface.removeDockWidget(self.dock)
@@ -123,6 +134,24 @@ class RoadsUi:
                 except (TypeError, ValueError):
                     pass
             return
+
+    # ── automatic route ───────────────────────────────────────────────────────
+    def draw_route(self):
+        from .route_tool import HELP, RouteDialog, RouteTool
+        dlg = RouteDialog(self.max_spin.value(), self.iface.mainWindow())
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._route_opts = dlg.options()
+        canvas = self.iface.mapCanvas()
+        if self._route_tool is None:
+            self._route_tool = RouteTool(canvas, self._route_clicked)
+        canvas.setMapTool(self._route_tool)
+        self.iface.messageBar().pushInfo("DyingStar", HELP)
+
+    def _route_clicked(self, points):
+        opts = dict(self._route_opts or {})
+        self.toggle_profile(True)
+        self.plugin._job("Tracé automatique", [Step("zone_route", points=points, **opts)])
 
     # ── zone terrain ──────────────────────────────────────────────────────────
     def zone_terrain(self):

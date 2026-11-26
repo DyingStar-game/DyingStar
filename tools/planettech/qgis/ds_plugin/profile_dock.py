@@ -135,14 +135,21 @@ class ProfileDock(QDockWidget):
                 layer.selectionChanged.connect(self._selection_changed)
                 layer.geometryChanged.connect(self._edited)
                 layer.afterCommitChanges.connect(self._edited)
-        if self._layer is not None and self._layer.id() not in self._watched:
+        try:
+            if self._layer is not None and self._layer.id() not in self._watched:
+                self._layer = None
+        except RuntimeError:
             self._layer = None
         self.schedule()
 
     def _disconnect(self, layer):
-        for sig, slot in ((layer.selectionChanged, self._selection_changed),
-                          (layer.geometryChanged, self._edited),
-                          (layer.afterCommitChanges, self._edited)):
+        try:
+            signals = ((layer.selectionChanged, self._selection_changed),
+                       (layer.geometryChanged, self._edited),
+                       (layer.afterCommitChanges, self._edited))
+        except RuntimeError:   # the layer was removed from the project: already deleted
+            return
+        for sig, slot in signals:
             try:
                 sig.disconnect(slot)
             except (TypeError, RuntimeError):
@@ -287,6 +294,15 @@ class ProfileDock(QDockWidget):
             decks = sum(v[1] for v in s["viaducts"])
             parts.append(f"{len(s['viaducts'])} viaduc(s) — {decks} tablier(s) de ≤ 400 m, "
                          f"hauteur max {s['max_gap_m']:.0f} m")
+        from . import settings
+        max_bridge, max_tunnel = settings.structure_limits()
+        for seg in prof["segments"]:
+            length = seg["hi"] - seg["lo"]
+            limit = max_bridge if seg["kind"] == 3 else max_tunnel if seg["kind"] == 2 else 0.0
+            if limit > 0 and length > limit:
+                parts.append(f"<span style='color:#d7301f'><b>⚠ {SEG_NAMES[seg['kind']]} de "
+                             f"{length:.0f} m &gt; {limit:.0f} m max</b> "
+                             f"(à {(seg['lo'] - prof['along0']) / 1000.0:.2f} km)</span>")
         self.stats.setText(" · ".join(parts))
 
     # ── the road on the map ───────────────────────────────────────────────────

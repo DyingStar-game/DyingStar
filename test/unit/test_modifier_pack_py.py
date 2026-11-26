@@ -1499,6 +1499,79 @@ class TestVolcanoParts(unittest.TestCase):
         self.assertTrue(kinds & {dsmp.COVERAGE_FULL, dsmp.COVERAGE_PARTIAL})
 
 
+class TestPublishGuard(TestLinker):
+    """A pack that lost families of the team's is never published (link_modifiers._publish_guard).
+
+    2026-11-25: the pull of the team's parts failed (wrong server settings), the roads export
+    linked a roads-only tarsis_3 pack and handed it to the publication — which only failed on a
+    typo of the server's python. Published, it would have wiped every mountain, region and
+    volcano of the planet off the tile service."""
+
+    def setUp(self):
+        super().setUp()
+        self._env = {k: os.environ.get(k) for k in ("DS_EXPORT_DIR", "DS_PUBLISH_SSH")}
+        os.environ["DS_EXPORT_DIR"] = self.export_dir   # the guard only runs in the export dir
+        os.environ["DS_PUBLISH_SSH"] = ""                # and nothing is ever sent
+
+    def tearDown(self):
+        for k, v in self._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        super().tearDown()
+
+    def _team(self):
+        p = os.path.join(self.chunks, link_modifiers.TEAM_PARTS_FILE)
+        with open(p) as fh:
+            return set(json.load(fh))
+
+    def _published_before(self):
+        with open(os.path.join(self.chunks, ".published.json"), "w") as fh:
+            json.dump({"terrainmodifier.pack": {"body": "testplanet.mod", "version": "x"}}, fh)
+
+    def test_a_first_publication_records_the_families(self):
+        self._write_roads()
+        self._write_craters()
+        link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        self.assertEqual(self._team(), {"road", "crater"})
+
+    def test_a_pack_missing_a_team_family_is_refused(self):
+        self._write_roads()
+        self._write_craters()
+        link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        os.remove(link_modifiers.part_path(self.planet, "crater", self.export_dir))
+        with self.assertRaises(link_modifiers.PublishRefused) as ctx:
+            link_modifiers.link(self.planet, self.export_dir, verbose=False)
+        self.assertIn("crater", str(ctx.exception))
+
+    def test_published_before_but_never_pulled_is_refused(self):
+        self._published_before()
+        self._write_roads()
+        with self.assertRaises(link_modifiers.PublishRefused):
+            link_modifiers.link(self.planet, self.export_dir, verbose=False)
+
+    def test_explode_notes_the_team_s_families_then_an_export_on_top_passes(self):
+        self._published_before()
+        self._write_roads()
+        self._write_craters()
+        link_modifiers.link(self.planet, self.export_dir, verbose=False, publish=False)
+        for name in os.listdir(self.parts):
+            os.remove(os.path.join(self.parts, name))
+        link_modifiers.explode(self.planet, self.export_dir, verbose=False)   # = the pull
+        self.assertEqual(self._team(), {"road", "crater"})
+        self._write_roads(width=8.0)                                         # the new export
+        link_modifiers.link(self.planet, self.export_dir, verbose=False)
+
+    def test_outside_the_export_dir_nothing_is_checked(self):
+        elsewhere = tempfile.mkdtemp(prefix="elsewhere_")
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        os.environ["DS_EXPORT_DIR"] = elsewhere
+        self._published_before()
+        self._write_roads()
+        link_modifiers.link(self.planet, self.export_dir, verbose=False)
+
+
 if __name__ == "__main__":
     print("canonical tile SHA-256: %s" % CANONICAL_TILE_SHA256)
     unittest.main(verbosity=2)

@@ -58,7 +58,8 @@ class PluginPackage(unittest.TestCase):
                        "export/planet/dsmp.py", "preview_mountain_contours.py",
                        "zone_terrain.py", "ds_plugin/roads_ui.py", "export/planet/terrain_grid.py",
                        "road_profile.py", "ds_plugin/profile_dock.py",
-                       "export/planet/grade_profile.py"):
+                       "export/planet/grade_profile.py", "zone_route.py",
+                       "ds_plugin/route_tool.py", "export/planet/route_search.py"):
             self.assertIn("DyingStar/" + needed, self.names)
 
     def test_nothing_personal_or_cached(self):

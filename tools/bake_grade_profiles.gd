@@ -20,6 +20,11 @@ extends Node
 ## Several planets: --planet=tarsis_3,tarsis_8. Without --planet, every
 ## planet scene whose modifier pack carries a profiled line.
 ## --fetchers=N sets the parallel tile downloads (default 8).
+## --tile-channel=CHANNEL reads that channel (StreamChannel) — unstable right after an export.
+## --log=PATH writes the progress there instead of user://grade_bake.log (the QGIS plugin's
+## « Recuire les profils des lignes » follows it).
+## --no-publish leaves the bake local: the caller publishes it (the QGIS plugin, from its own
+## export folder).
 
 const HeadlessPlanet := preload("res://tools/planettech/headless_planet.gd")
 const SCENES_DIR := HeadlessPlanet.SCENES_DIR
@@ -28,13 +33,16 @@ var _fetchers := 8
 ## stdout is buffered through the observability bridge: progress goes to
 ## user://grade_bake.log too, flushed line by line.
 var _log: FileAccess = null
+var _log_path := "user://grade_bake.log"
+var _publish_bake := true
 
 
 func _say(t: String) -> void:
 	if _log == null:
-		_log = FileAccess.open("user://grade_bake.log", FileAccess.WRITE)
-	_log.store_line(t)
-	_log.flush()
+		_log = FileAccess.open(_log_path, FileAccess.WRITE)
+	if _log != null:
+		_log.store_line(t)
+		_log.flush()
 	print(t)
 
 
@@ -51,6 +59,10 @@ func _ready() -> void:
 				planets.append(p.strip_edges())
 		elif a.begins_with("--fetchers="):
 			_fetchers = maxi(int(a.trim_prefix("--fetchers=")), 1)
+		elif a.begins_with("--log="):
+			_log_path = a.trim_prefix("--log=")
+		elif a == "--no-publish":
+			_publish_bake = false
 	if planets.is_empty():
 		planets = _all_planets()
 	var failed := 0
@@ -224,7 +236,7 @@ func _bake(planet: String) -> bool:
 	var complete := readable == baked_lines.size() and baked_lines.size() == lines.size() \
 			and bridges_ok and (bridges.is_empty() or bridges_read)
 	# Only a complete bake goes out; an incomplete one (lines or crossings missing) stays local.
-	if complete:
+	if complete and _publish_bake:
 		_publish(data.grade_bake_path())
 	return complete
 

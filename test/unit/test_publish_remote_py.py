@@ -124,6 +124,8 @@ class Commands(unittest.TestCase):
         self.assertIn("--out '/var/www/my dist'", line)
         self.assertIn("--channel unstable", line)
         self.assertTrue(line.endswith("--compress"))
+        self.assertIn(" -u tools/planettech/publish/publish_tiles.py", line,
+                      "unbuffered: the server's lines reach publish.log as they come")
 
 
 class PublishOverSsh(unittest.TestCase):
