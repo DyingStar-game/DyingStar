@@ -56,4 +56,6 @@ func update(delta: float) -> void:
 	_weather_age = 0.0
 	var planet: Planet = Planet.of(_player)
 	var sample: Dictionary = planet.weather_at(_player.global_position) if planet != null else {}
-	_audio.update(sample, float(_shelter.get("shelter", 0.0)), buried)
+	# How high over the ground: the wind's loops are the ground's (WeatherAudio.aloft_factor).
+	var over_ground: float = planet.surface_altitude_of(_player.global_position) if planet != null else 0.0
+	_audio.update(sample, float(_shelter.get("shelter", 0.0)), buried, over_ground)

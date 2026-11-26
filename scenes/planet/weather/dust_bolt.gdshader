@@ -3,9 +3,14 @@ shader_type spatial;
 // crooked arc drawn on it from its top to its bottom, a few side arcs branching off, and a faint glow.
 // Added over what is behind it; hidden by the ground like anything else.
 render_mode blend_add, cull_disabled, depth_draw_never, shadows_disabled, unshaded;
+#include "res://scenes/planet/weather/dust_sea_light.gdshaderinc"
 
 uniform sampler2D noise : repeat_enable, filter_linear_mipmap;
 uniform vec3 colour : source_color = vec3(0.72, 0.84, 1.0);
+// Seen through the dust sea, the arc is lost in the fog and only lights it: a soft, warm-white glow over the
+// quad, this bright at most (dust_sea_light.gdshaderinc; unfogged, the arc showed through the whole sea).
+uniform vec3 fog_glow_colour : source_color = vec3(1.0, 0.93, 0.82);
+uniform float fog_glow = 0.3;
 // How crooked the arc is (shares of the quad's width: its large bends, its fine ones), how thick its core
 // (a share of the width, never under a pixel and a half), and how wide and bright the glow round it.
 uniform vec2 crooked = vec2(0.55, 0.1);
@@ -21,6 +26,9 @@ instance uniform float seed = 0.0;
 // How much of the open air the eye is in, 1 outside to 0 under the ground (a cave, a mine): the weather
 // does not come in (WeatherPhenomena).
 instance uniform float open_air = 1.0;
+// The spark's altitude (m over the reference sphere, DustSparks): the sea fogs it only over the stretch of the
+// view under the sea's top. A spark over a plateau seen from over the sea is the plain arc.
+instance uniform float bolt_alt_m = 0.0;
 
 // Where the arc is across the quad (0 to 1) at a height (0 bottom, 1 top).
 float path(float y, float s) {
@@ -53,6 +61,9 @@ void fragment() {
 	}
 	// Nothing at the quad's edges.
 	glow *= smoothstep(0.0, 0.08, UV.x) * smoothstep(1.0, 0.92, UV.x);
-	ALBEDO = colour * glow * bright * open_air;
-	ALPHA = clamp(glow * bright * open_air, 0.0, 1.0);
+	float fog = sea_fog(length(VERTEX), bolt_alt_m);
+	vec2 off = UV - 0.5;
+	float diffuse = (1.0 - fog) * fog_glow * exp(-dot(off, off) * 10.0);
+	ALBEDO = (colour * glow * fog + fog_glow_colour * diffuse) * bright * open_air;
+	ALPHA = clamp((glow * fog + diffuse) * bright * open_air, 0.0, 1.0);
 }

@@ -20,6 +20,11 @@ const STORM_COLUMN_M: float = 1000.0
 ## What the blown dust reflects at most (its brightest channel), and the colour it takes when the
 ## ground under the observer has none to give (a pale ochre, the corundum plains).
 const BLOW_ALBEDO_MAX: float = 0.92
+## A powder is paler than its rock (grinding scatters more light, and the fine grains hide the colour of
+## the coarse ones): the dust keeps this share of its rock's colour, the rest a pale grey of the same top.
+## At full colour, a dark green-grey corundum gave a saturated green dust: a green glow toward the sun at
+## the horizon and cyan devils (2026-11-25).
+const BLOW_SATURATION: float = 0.4
 const BLOW_FALLBACK_COLOUR: Color = Color(0.86, 0.74, 0.56)
 ## The near layer belongs to an eye on or near the ground: none under it (god mode through the
 ## terrain drew the whole screen dust-grey), whole from the ground up, gone past NEAR_LAYER_GONE_M
@@ -126,7 +131,7 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	var wind_mean: float = float(sample.get("wind_mean_speed_m_s", sample.get("wind_speed_m_s", 0.0)))
 	var lifted: float = DustLift.ground_lift(wind_mean, float(sample.get("lift_threshold_m_s", 0.0)))
 	_dust_density = 0.0 if _no_dust_layer \
-			else density_for(lifted, float(sample.get("dust_tau", 0.0)))
+			else density_for(lifted, renderer.dust_sea.storm_tau(sample))
 	_dust_wind = planet.wind_world_at(observer_world_pos)
 	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
 	_dust_colour_target = GroundLook.colour_at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR) \
@@ -370,9 +375,11 @@ static func blow_extinction(lifted: float) -> float:
 
 ## The dust's single-scattering albedo from the colour of the ground it is made of: the colour scaled
 ## so its brightest channel is BLOW_ALBEDO_MAX (mineral dust absorbs a little of everything, and more of
-## what the ground does not reflect). A black or unknown ground gives the fallback.
+## what the ground does not reflect), paler than the rock (BLOW_SATURATION). A black or unknown ground
+## gives the fallback.
 static func blow_albedo_of(ground: Color) -> Vector3:
 	var top: float = maxf(ground.r, maxf(ground.g, ground.b))
 	if top <= 1e-6:
 		return blow_albedo_of(BLOW_FALLBACK_COLOUR)
-	return Vector3(ground.r, ground.g, ground.b) / top * BLOW_ALBEDO_MAX
+	var full: Vector3 = Vector3(ground.r, ground.g, ground.b) / top * BLOW_ALBEDO_MAX
+	return (Vector3.ONE * BLOW_ALBEDO_MAX).lerp(full, BLOW_SATURATION)

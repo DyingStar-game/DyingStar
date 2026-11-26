@@ -4,6 +4,7 @@ shader_type spatial;
 // flaring upward, bending as it climbs, with a skirt of dust thrown out at its foot. Lit by hand (light,
 // sun_local): a veil of dust has no surface for the sun to shade.
 render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, unshaded;
+#include "res://scenes/planet/weather/dust_sea_light.gdshaderinc"
 
 uniform sampler2D noise : repeat_enable, filter_linear_mipmap;
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
@@ -13,7 +14,15 @@ uniform float flare = 1.8;
 uniform float sway = 0.5;
 uniform float skirt = 2.2;
 uniform float soft_m = 12.0;
+// The dust's colour at its foot (the ground's under the devil now, a little paler) and higher up (the white
+// dust sea's palette), blended between half and one and a half foot_m over the ground; the devil's height
+// (m) (WeatherPhenomena).
 instance uniform vec3 tint = vec3(0.80, 0.66, 0.47);
+instance uniform vec3 tint_high = vec3(0.92, 0.88, 0.82);
+instance uniform float height_m = 300.0;
+uniform float foot_m = 300.0;
+// The height of the devil's foot over the reference sphere (m): where it stands in the dust sea.
+uniform float foot_alt_m = 0.0;
 instance uniform float strength = 1.0;
 instance uniform float light = 1.0;
 // Where the sun is, in the devil's own frame.
@@ -53,7 +62,11 @@ void fragment() {
 	float depth = texture(depth_texture, SCREEN_UV).r;
 	vec4 scene = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
 	float ground = clamp((-scene.z / scene.w + VERTEX.z) / soft_m, 0.0, 1.0);
-	ALBEDO = tint * light * mix(0.55, 1.05, sunlit) * mix(0.8, 1.1, grain);
+	vec3 colour = mix(tint, tint_high, smoothstep(0.5 * foot_m, 1.5 * foot_m, rise * height_m));
+	vec3 sun = normalize(sun_local);
+	float shade = mix(0.55, 1.05, sunlit);
+	vec3 lit = sea_light(foot_alt_m + rise * height_m, sun.y, shade, 1.0, 1.0, light * shade * sun_tint);
+	ALBEDO = colour * lit * mix(0.8, 1.1, grain);
 	ALPHA = clamp(smoothstep(0.25, 0.65, grain + 0.15 + 0.2 * (1.0 - rise)) * body * column * ground * strength
-			* mix(0.55, 0.9, shell) * open_air, 0.0, 1.0);
+			* mix(0.55, 0.9, shell) * open_air * sea_fog(length(VERTEX), foot_alt_m + rise * height_m), 0.0, 1.0);
 }

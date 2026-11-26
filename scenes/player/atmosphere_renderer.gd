@@ -97,6 +97,9 @@ const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_b
 ## layer near the ground itself (WeatherSky, drawn by the aerial pass).
 var weather_masks: WeatherMasks = null
 var _weather_sky: WeatherSky = WeatherSky.new()
+## The corundum dust sea (DustSea, drawn by the aerial pass): while it is drawn it replaces the profile's
+## slab, dims the star by the dust over the eye and lights the world with its overcast.
+var dust_sea: DustSea = DustSea.new()
 ## The lamps that light that dust (DustLights), made with the renderer.
 var _dust_lights: DustLights = null
 
@@ -136,6 +139,7 @@ func _ready() -> void:
 	# Run AFTER PlayerSunLight (priority 100) so the star direction we read is this frame's, not the
 	# previous one — otherwise the sky lags the light by a frame at sunrise and sunset.
 	process_priority = 110
+	DustSeaProbe.register_action()
 	if _dust_cost != null:  # the probe reads the frame's GPU time, which Godot measures on demand
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	# Bisection switches, read from client.ini (client_config.gd) because a packaged build takes no
@@ -245,7 +249,8 @@ func _refresh_transmittance_lut(values: Dictionary, profile: AtmosphereProfile) 
 		_lut_material.set_shader_parameter(param, lut_values[param])
 	_lut_material.set_shader_parameter("planet_center", Vector3.ZERO)
 	_lut_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-	if not debug_pretend_lowlands:
+	# The CPU twin knows the profile's own slab only, not the thin dust over the sea that replaces it.
+	if not debug_pretend_lowlands and not dust_sea.is_on():
 		_check_transmittance_lut.call_deferred(profile)
 
 
@@ -388,9 +393,36 @@ func _update_atmosphere(_delta: float) -> void:
 	var profile: AtmosphereProfile = current_profile()
 	_show_star_mesh(profile == null)
 	if profile == null:
+		dust_sea.off(self)
+		_push_overcast()
 		_push_airless(star_direction)
 		return
+	dust_sea.animate(self, current_body(), player.camera, _delta)
 	_push_profile(profile, star_direction)
+	_push_overcast()
+
+
+## Under the dust sea the world is lit by its overcast, not by the sky dome: the dome is the profile's
+## single scattering (a dark brown sky under the sea), and the sea that hides it from the eye is drawn by
+## the aerial pass, which the engine's ambient never sees. The overcast (DustSea.overcast: the light the
+## sea lets through, all of it diffuse) takes the ambient over as the dust above the eye thickens.
+func _push_overcast() -> void:
+	var env: Environment = player.get_world_3d().environment if is_instance_valid(player) else null
+	if env == null:
+		return
+	var share: float = 0.0
+	var profile: AtmosphereProfile = current_profile()
+	if dust_sea.is_on() and profile != null and is_instance_valid(sun):
+		var altitude: float = altitude_above_sphere()
+		share = dust_sea.under_share(altitude)
+		if share > 0.0:
+			var sin_e: float = sun.star_direction.dot(sun.stable_up())
+			var air: Color = profile.transmittance_to_star(altitude, sin_e, 0.0)
+			# The engine takes an Environment's colours as sRGB: handed back so it gets the linear light
+			# the shader lights the sea with.
+			env.ambient_light_color = dust_sea.overcast(altitude, sin_e,
+					DustLight.free_beam(DustSea.light_colour(profile.star_color), sun.sun_energy, air)).linear_to_srgb()
+	env.ambient_light_sky_contribution = 1.0 - share
 
 
 ## Hand the star's disc to whichever of the two things that draw it is right here.
@@ -562,6 +594,20 @@ func _clear_wind_dust() -> void:
 	_weather_sky = WeatherSky.new()
 
 
+## The dust sea's probe (DustSeaProbe, Alt+J): what the render is sent, written to user:// with captures.
+func _unhandled_input(event: InputEvent) -> void:
+	if _aerial_material == null or not DustSeaProbe.enabled() or not InputMap.has_action(DustSeaProbe.ACTION):
+		return
+	if event.is_action_pressed(DustSeaProbe.ACTION, false, true):
+		get_viewport().set_input_as_handled()
+		DustSeaProbe.run(self)
+
+
+## A uniform of the aerial pass as it holds it now (null without the pass), for the probe.
+func aerial_param(param: String) -> Variant:
+	return _aerial_material.get_shader_parameter(param) if _aerial_material != null else null
+
+
 ## Set a uniform of the wind's dust layer (aerial_perspective.gdshader: dust_*), WeatherSky's hand.
 func set_dust_param(param: StringName, value: Variant) -> void:
 	if _aerial_material != null:
@@ -571,6 +617,8 @@ func set_dust_param(param: StringName, value: Variant) -> void:
 ## The profile's veil over the eye as a vertical optical depth (0 without a slab, or over it): what dims
 ## the star's beam before the wind's dust is lit by it (DustLight).
 func veil_tau_above() -> float:
+	if dust_sea.is_on():
+		return dust_sea.tau_above(altitude_above_sphere())
 	var profile := current_profile()
 	if profile == null or profile.haze_top <= profile.haze_bottom:
 		return 0.0
@@ -604,6 +652,12 @@ func transmittance_at(sin_elevation: float) -> Color:
 	var profile := current_profile()
 	if profile == null:
 		return Color.WHITE
+	# Under the dust sea: the air alone, then the sea and the thin dust over the eye (DustSea): a basin
+	# gets none of the beam straight, its light is the overcast's.
+	if dust_sea.is_on():
+		var altitude: float = altitude_above_sphere()
+		var dust: float = exp(-dust_sea.tau_above(altitude) / maxf(sin_elevation, 0.02))
+		return profile.transmittance_to_star(altitude, sin_elevation, 0.0) * Color(dust, dust, dust, 1.0)
 	# The debug lift has to reach the LIGHT too, or the veil rises over your head while the star keeps
 	# shining at full plateau strength. Raising the ceiling for the shader and lowering the observer
 	# for the integral both mean the same thing: 3500 m of corundum overhead.
@@ -630,12 +684,8 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"atmosphere_top": profile.atmosphere_top,
 		"rayleigh_beta": profile.rayleigh_beta,
 		"rayleigh_scale_height": profile.rayleigh_scale_height,
-		"mie_beta": profile.mie_beta,
 		"mie_g": profile.mie_g,
 		"mie_albedo": profile.mie_albedo,
-		"haze_top": profile.haze_top + _haze_lift(),
-		"haze_bottom": profile.haze_bottom + _haze_lift(),
-		"haze_falloff": maxf(profile.haze_falloff, 1.0),
 		"mie_scale_height": maxf(profile.mie_scale_height, 1.0),
 		"absorption_beta": profile.absorption_beta,
 		"absorption_center": profile.absorption_center,
@@ -648,11 +698,53 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 		"sky_exposure": _sky_exposure(profile),
 		"use_transmittance_lut": _use_lut,
 	}
+	values.merge(_haze_values(profile), true)
 	_refresh_transmittance_lut(values, profile)
+	values["sky_bounce"] = sky_bounce(profile)  # after the LUT: it changes every frame, the LUT does not need it
 	_apply(values)
 	_sky_material.set_shader_parameter("star_angular_diameter", profile.star_angular_diameter)
 	_sky_material.set_shader_parameter("star_limb_softness", star_limb_softness)
 	_sky_material.set_shader_parameter("star_brightness", star_brightness)
+	_sky_material.set_shader_parameter("star_disc_dust", star_disc_dust())
+
+
+## The light the ground under the air sends back up, as a share of the star's irradiance per channel
+## (atmosphere_common.gdshaderinc sky_bounce): over the dust sea, its albedo (DustSea.ALBEDO) x the sun's
+## height x the air's transmittance down to the sea's top. None elsewhere (the other bodies' skies are tuned
+## without it) nor under the sea (the sea hides the sky there).
+func sky_bounce(profile: AtmosphereProfile) -> Vector3:
+	if profile == null or not dust_sea.is_on() or not is_instance_valid(sun):
+		return Vector3.ZERO
+	var sin_e: float = sun.star_direction.dot(sun.stable_up())
+	if sin_e <= 0.0:
+		return Vector3.ZERO
+	var over: float = 1.0 - dust_sea.under_share(altitude_above_sphere())
+	var air: Color = profile.transmittance_to_star(DustSea.SEA_TOP_M, sin_e, 0.0)
+	return Vector3(air.r, air.g, air.b) * (DustSea.ALBEDO * sin_e * over)
+
+
+## What the dust sea over the eye leaves of the star's disc (0..1): the sky draws the disc through the air
+## alone, and the aerial pass dimming it by the sea's 1e-8 left a bright dot through 12 optical depths of
+## sea, the disc's radiance being ~1e4 times its irradiance (2026-11-26). The same column as the light's.
+func star_disc_dust() -> float:
+	if not dust_sea.is_on() or not is_instance_valid(sun):
+		return 1.0
+	var sin_e: float = sun.star_direction.dot(sun.stable_up())
+	return exp(-dust_sea.tau_above(altitude_above_sphere()) / maxf(sin_e, 0.02))
+
+
+## The profile's slab as the shaders get it: its own (raised by debug_pretend_lowlands), or, while the dust
+## sea is drawn, the thin dust over the sea alone (DustSea.THIN_*): the sea itself is the aerial pass's
+## volume, and keeping the slab too would count the dust twice. The slab's integral is its thickness, so
+## the extinction is the thin dust's optical depth over it, in the profile's own colour.
+func _haze_values(profile: AtmosphereProfile) -> Dictionary:
+	if not dust_sea.is_on():
+		return {"mie_beta": profile.mie_beta, "haze_top": profile.haze_top + _haze_lift(),
+			"haze_bottom": profile.haze_bottom + _haze_lift(), "haze_falloff": maxf(profile.haze_falloff, 1.0)}
+	var mean: float = maxf(profile.mie_beta.length() / sqrt(3.0), 1e-12)
+	return {"mie_beta": profile.mie_beta / mean * (DustSea.THIN_TAU / DustSea.THIN_M), "mie_g": DustSea.THIN_G,
+		"haze_top": DustSea.SEA_TOP_M + DustSea.THIN_M, "haze_bottom": DustSea.SEA_TOP_M,
+		"haze_falloff": DustSea.THIN_FALLOFF_M}
 
 
 ## Open space, or an airless body: zero the coefficients so scatter() returns nothing and its
@@ -668,8 +760,10 @@ func _push_airless(star_direction: Vector3) -> void:
 		"absorption_beta": Vector3.ZERO,
 		"to_star": star_direction,
 		"star_irradiance": 0.0,
+		"sky_bounce": Vector3.ZERO,
 	})
 	_sky_material.set_shader_parameter("star_brightness", star_brightness)
+	_sky_material.set_shader_parameter("star_disc_dust", 1.0)
 
 
 func _apply(values: Dictionary) -> void:

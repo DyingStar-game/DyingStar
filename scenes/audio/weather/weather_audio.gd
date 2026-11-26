@@ -34,6 +34,11 @@ const OPEN_CUTOFF_HZ: float = 20000.0
 const SHELTERED_CUTOFF_HZ: float = 600.0
 ## What being deep in a cave or a mine takes off the mix (dB), on top of a full shelter: nothing is left.
 const BURIED_DB: float = -60.0
+## The loops are the wind breaking on the ground, its rocks and its walls: full up to ALOFT_FROM_M over the
+## ground, faded out by ALOFT_TO_M (m). Flying high, one moves with the air and hears none of it: the wind of
+## the ground went on at full strength 2 km over the relief (the user, 2026-11-26).
+const ALOFT_FROM_M: float = 30.0
+const ALOFT_TO_M: float = 400.0
 
 ## The loops and their windows. Empty = default_layers (the strong wind).
 @export var layers: Array[WeatherAudioLayer] = []
@@ -87,11 +92,12 @@ func _ready() -> void:
 
 ## The weather at the listener (Planet.weather_at, {} for none) and how sheltered they are
 ## (0 open, 1 walled in: ShelterProbe), and how much rock is around them ([param buried], 0..1: a cave, a
-## mine -- the weather stays at the mouth). Sets the targets; _process ramps the gains.
-func update(sample: Dictionary, shelter: float, buried: float = 0.0) -> void:
+## mine -- the weather stays at the mouth), [param over_ground_m] metres over the ground (aloft_factor).
+## Sets the targets; _process ramps the gains.
+func update(sample: Dictionary, shelter: float, buried: float = 0.0, over_ground_m: float = 0.0) -> void:
 	_buried = clampf(buried, 0.0, 1.0)
 	_shelter = maxf(clampf(shelter, 0.0, 1.0), _buried)
-	var air: float = air_factor(sample)
+	var air: float = air_factor(sample) * aloft_factor(over_ground_m)
 	for i in layers.size():
 		var layer: WeatherAudioLayer = layers[i]
 		_targets[i] = 0.0 if layer == null else air * gain_for(parameter_of(sample, layer.parameter), layer.from,
@@ -123,6 +129,12 @@ static func air_factor(sample: Dictionary) -> float:
 		return 0.0
 	var density: float = float(sample.get("air_density_kg_m3", 0.0))
 	return sqrt(clampf(density / REFERENCE_AIR_KG_M3, 0.0, 1.0))
+
+
+## How much of the loops reaches a listener [param over_ground_m] metres over the ground, 0..1: 1 near it,
+## 0 high in the air (ALOFT_FROM_M, ALOFT_TO_M).
+static func aloft_factor(over_ground_m: float) -> float:
+	return 1.0 - smoothstep(ALOFT_FROM_M, ALOFT_TO_M, over_ground_m)
 
 
 ## The low-pass cut-off (Hz) for a shelter of [param shelter] (0..1): from OPEN_CUTOFF_HZ to

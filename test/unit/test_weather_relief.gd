@@ -163,3 +163,59 @@ func test_the_service_s_wind_carries_a_wall_or_holds_it() -> void:
 			"held under the speed that lifts dust, no wall")
 	assert_eq(WeatherRelief.walls_near(profile, at, 0.0, sun, cliff, {}, _blowing(0.0, 0.0, WeatherRelief.WALL_VEIL_TAU[1])).size(), 0,
 			"none in the mixed air of a storm")
+
+
+## A wall at (0, 0) running east at 12 m/s, its front 20 km long, 1.5 km deep, at full strength.
+func _test_wall() -> Dictionary:
+	return {"lon": 0.0, "lat": 0.0, "east": 1.0, "north": 0.0, "length_m": 20000.0, "depth_m": 1500.0,
+		"strength": 1.0, "speed_m_s": 12.0}
+
+
+## The wind (east, north) a wall leaves at [param ahead_m] metres ahead of its front (negative: behind)
+## over a background wind [param background], as apply lays it.
+func _wind_across(wall: Dictionary, ahead_m: float, background: Vector2) -> Vector2:
+	var at := WeatherRelief.moved(Vector2(0.0, 0.0), Vector2(ahead_m, 0.0), profile.radius_m)
+	var effect: Array = WeatherRelief.wall_effect(wall, at, profile.radius_m)
+	return background * float(effect[2]) + (effect[0] as Vector2)
+
+
+func test_a_wall_s_gust_front_is_a_ramp_not_a_step() -> void:
+	var wall := _test_wall()
+	var background := Vector2(-7.0, 0.0)  # from the east, against the wall's way
+	var far := _wind_across(wall, WeatherRelief.WALL_LULL_M + 50.0, background)
+	assert_eq(far, background, "well ahead: the wind as it was")
+	var lull := _wind_across(wall, 30.0, background)
+	assert_lt(lull.length(), background.length(), "just ahead: a lull")
+	# Every 10 m across the front, no jump: 3 m/s at most from one to the next.
+	var last := _wind_across(wall, WeatherRelief.WALL_LULL_M, background)
+	var peak := 0.0
+	for k in range(int(WeatherRelief.WALL_LULL_M / 10.0), -int(WeatherRelief.WALL_RAMP_M * 3.0 / 10.0), -1):
+		var now := _wind_across(wall, k * 10.0, background)
+		assert_lt((now - last).length(), 3.0, "no step at %d m" % (k * 10))
+		last = now
+		var effect: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO, Vector2(k * 10.0, 0.0),
+				profile.radius_m), profile.radius_m)
+		peak = maxf(peak, (effect[0] as Vector2).x)
+	assert_gt(peak, 12.0, "a gust at the front, stronger than the wall's own wind")
+	var dust_front: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO, Vector2(-5.0, 0.0),
+			profile.radius_m), profile.radius_m)
+	var dust_in: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO,
+			Vector2(-WeatherRelief.WALL_RAMP_M, 0.0), profile.radius_m), profile.radius_m)
+	assert_lt(float(dust_front[1]), float(dust_in[1]), "the dust rises over the same ramp")
+
+
+func test_a_wall_s_wind_and_dust_stop_at_its_top() -> void:
+	var wall := _test_wall()
+	wall["height_m"] = 1000.0
+	var at := WeatherRelief.moved(Vector2.ZERO, Vector2(-300.0, 0.0), profile.radius_m)  # behind the front
+	var base := {"band": WeatherSampler.BAND_TRADES, "lon_deg": at.x, "lat_deg": at.y, "local_solar_hours": 17.0,
+		"wind_east_m_s": -3.0, "wind_north_m_s": 0.0, "dust_tau": 0.0, "declination_deg": 0.0}
+	var ground := WeatherRelief.apply(base, profile, {"height_m": 200.0}, [], [wall], Vector3.ZERO, 0.0)
+	assert_gt(float(ground.wind_east_m_s), 0.0, "on the ground behind the front: the wall's wind")
+	assert_gt(float(ground.dust_tau), 0.0, "and its dust")
+	var tall := WeatherRelief.wall_tall(wall)
+	var inside := WeatherRelief.over_walls(ground, 200.0 + tall * 0.5)
+	assert_eq(float(inside.wind_east_m_s), float(ground.wind_east_m_s), "within its height: the same")
+	var over := WeatherRelief.over_walls(ground, 200.0 + tall + WeatherRelief.WALL_TOP_FADE_M + 10.0)
+	assert_almost_eq(float(over.wind_east_m_s), -3.0, 1e-3, "over its top: the wind as it was")
+	assert_almost_eq(float(over.dust_tau), 0.0, 1e-6, "and no dust")

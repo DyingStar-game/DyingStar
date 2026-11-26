@@ -29,3 +29,17 @@ func test_the_free_beam_crosses_the_air_but_no_dust() -> void:
 	assert_gt(dawn.x, dawn.z * 4.0, "at sunrise the beam is orange and faint, not white")
 	var night: Vector3 = DustLight.free_beam(Color.WHITE, 2.0, Color.BLACK)
 	assert_eq(night, Vector3.ZERO, "the star under the horizon lights no dust")
+
+
+func test_under_the_sea_the_dust_takes_the_overcast_not_the_orange_beam() -> void:
+	var orange := Vector3(1.0, 0.5, 0.2)
+	var white := Vector3(0.6, 0.6, 0.6)
+	var overcast := Vector3(0.1, 0.1, 0.1)
+	var over: Array[Vector3] = DustLight.under_sea(orange, orange * 0.3, white, overcast, 0.0)
+	assert_eq(over[0], orange, "over the sea: the star's beam as it is")
+	assert_eq(over[1], orange * 0.3)
+	var under: Array[Vector3] = DustLight.under_sea(orange, orange * 0.3, white, overcast, 1.0)
+	assert_eq(under[0], white, "deep in the sea: the whitened light")
+	assert_eq(under[1], overcast, "and the sea's overcast as ambient, like the ground")
+	var beyond: Array[Vector3] = DustLight.under_sea(orange, orange * 0.3, white, overcast, 3.0)
+	assert_eq(beyond[1], overcast, "a share past 1 is clamped")

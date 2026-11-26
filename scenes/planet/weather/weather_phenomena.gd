@@ -26,9 +26,8 @@ const WALL_NOISE_SIZE := 128
 ## The blend skirt of a seamless noise image: NoiseTexture2D's and NoiseTexture3D's default.
 const NOISE_SKIRT := 0.1
 ## A wall's life, drawn: at its birth it is WALL_BORN of its height and length (height, length) and grows
-## to the whole; thinning out, it sinks to WALL_SPENT_TALL of its height (its dust spreads and settles).
+## to the whole; its height as the weather has it (WeatherRelief.wall_tall: born and thinning out).
 const WALL_BORN := Vector2(0.2, 0.45)
-const WALL_SPENT_TALL := 0.45
 ## The wall's front, seen from above (the same numbers go to dust_wall_volume.gdshader, see wall_front_m): its
 ## two ends trail its middle by WALL_BOW of half its length; it wanders back and forth by WALL_WANDER (wall
 ## depths: the short lobes, the long ones), in waves WALL_WANDER_M metres to the radian (three of them, whose
@@ -51,9 +50,18 @@ const LIGHT_GAIN := 1.4
 ## (WeatherSky: none under the ground).
 const CAVE_FULL_M := -10.0
 const CAVE_GONE_M := -25.0
-## Dust in the air is paler than the ground it comes from: its colour goes this share of the way from the
-## ground to the pale ochre of fine dust (WeatherSky.BLOW_FALLBACK_COLOUR).
-const DUST_PALE := 0.5
+## The dust's colour, low and high. At the foot (the first few hundred metres) it is the ground's under the
+## thing now, this share of the way paler (toward the white grains of the dust sea, DustSea.WHITE); higher
+## up, mostly the ground's dust still (DustSea.BODY_GROUND_SHARE of it over the sea, the sea's own palette
+## in it): a wall looks like the ground it rides over. The ground is read again every TINT_REFRESH_S (s) under
+## the thing as it travels, and its colour eased toward over TINT_EASE_S (s): read once at its birth, a
+## wall born on yellow ground stayed yellow over a pink range (2026-11-25).
+const DUST_PALE := 0.25
+const TINT_REFRESH_S := 3.0
+## The share of the dust sea's extinction that fogs a wall, a devil or a spark seen from inside the sea
+## (dust_sea_light.gdshaderinc sea_fog_share): they loom out of the fog from two or three times the sea's 1 km.
+const SEA_FOG_SHARE := 0.4
+const TINT_EASE_S := 4.0
 
 ## The eye the phenomena are drawn round: a Callable returning a Node3D. Not set: the viewport's camera.
 var eye: Callable
@@ -73,6 +81,8 @@ var _noise_task := -1
 var _noise_images: Array = []  # written by the task: [the grain's Image, the billows' Array[Image]]
 var _wall_grounds := {}  # a wall's id → the ground under it (WallGround)
 var _open_air := 1.0  # 1 in the open, 0 with the eye in a cave (CAVE_*)
+var _wall_sounds := {}  # a wall's id → its sound (DustWallSound), client only
+var _tints := {}  # id → [the ground's dust colour now, the one eased toward, when it is read next (s)]
 
 
 func _ready() -> void:
@@ -140,11 +150,17 @@ func _process(delta: float) -> void:
 	if not _noise_ready():
 		return  # nothing is shown before the textures are made
 	var camera_now := _eye()
+	var over_ground := NAN  # the eye's height over the ground, read once a frame when a wall's sound needs it
 	for entry: Array in _shown.values():
 		(entry[0] as Node3D).position += (entry[1] as Vector3) * delta
 		if entry[2] != null and camera_now != null:
 			var under := _wall_ground(entry[3])
 			(entry[2] as DustSparks).advance(delta, entry[3], to_local(camera_now.global_position), under, _wall_bottom(under))
+			var sound: DustWallSound = _wall_sounds.get(int((entry[3] as Dictionary)["id"]))
+			if sound != null:
+				if is_nan(over_ground):
+					over_ground = _planet.surface_altitude_of(camera_now.global_position)
+				sound.advance(delta, entry[3], to_local(camera_now.global_position), _planet.planet_data.radius, over_ground)
 	_since += delta
 	if _since < REFRESH_S:
 		return
@@ -174,6 +190,10 @@ func _forget(id: int) -> void:
 	if _wall_grounds.has(id):
 		(_wall_grounds[id] as WallGround).finish()
 		_wall_grounds.erase(id)
+	_tints.erase(id)
+	if _wall_sounds.has(id):
+		(_wall_sounds[id] as Node).queue_free()
+		_wall_sounds.erase(id)
 	_shown.erase(id)
 
 
@@ -220,6 +240,11 @@ func _show(seen: Dictionary, thing: Dictionary, make: Callable, frame: Transform
 			add_child(sparks)
 			sparks.setup(entry[0], ((entry[0] as Node3D).get_child(0) as MeshInstance3D).material_override, _noise)
 			entry[2] = sparks
+			if not Sfx3D.muted():
+				var sound := DustWallSound.new()
+				add_child(sound)
+				sound.setup(id)
+				_wall_sounds[id] = sound
 	else:
 		entry[3] = thing
 		# Along the ground the node glides to its new place; up and down it is put there at once (the ground
@@ -234,7 +259,24 @@ func _show(seen: Dictionary, thing: Dictionary, make: Callable, frame: Transform
 	var to_sun := _to_sun()
 	var light := clampf(LIGHT_HORIZON + LIGHT_GAIN * frame.basis.y.normalized().dot(to_sun), LIGHT_NIGHT, 1.0)
 	var sun_local := frame.basis.orthonormalized().inverse() * to_sun
-	for part: GeometryInstance3D in node.get_children():
+	var tints := _tints_of(thing)
+	# The dust sea's light and fog (DustSea): a thing standing in the sea is lit and veiled as the sea is.
+	var lit_material := (node.get_child(0) as GeometryInstance3D).material_override as ShaderMaterial
+	DustSea.light_material(lit_material)
+	lit_material.set_shader_parameter("sea_fog_share", SEA_FOG_SHARE)
+	lit_material.set_shader_parameter("sun_tint", _sun_tint(frame.basis.y.normalized().dot(to_sun),
+			frame.origin.length() - _planet.planet_data.radius))
+	if entry[2] != null:
+		(entry[2] as DustSparks).sea(SEA_FOG_SHARE)
+	if not thing.has("length_m"):
+		lit_material.set_shader_parameter("foot_alt_m", frame.origin.length() - _planet.planet_data.radius)
+	for child: Node in node.get_children():
+		if child is DustDevilSound:
+			(child as DustDevilSound).set_strength(float(thing["strength"]))
+			continue
+		var part := child as GeometryInstance3D
+		part.set_instance_shader_parameter("tint", tints[0])
+		part.set_instance_shader_parameter("tint_high", tints[1])
 		part.set_instance_shader_parameter("strength", float(thing["strength"]))
 		part.set_instance_shader_parameter("light", light)
 		part.set_instance_shader_parameter("sun_local", sun_local)
@@ -247,11 +289,30 @@ func _show(seen: Dictionary, thing: Dictionary, make: Callable, frame: Transform
 			var material := part.material_override as ShaderMaterial
 			var up_now := frame.basis.y.normalized()
 			material.set_shader_parameter("ground_map", under.texture)
+			if under.colour_texture != null:
+				material.set_shader_parameter("ground_colour", under.colour_texture)
+				material.set_shader_parameter("ground_colour_on", 1)
+				material.set_shader_parameter("foot_pale", DUST_PALE)
+			_sort_wall(part, node)
 			material.set_shader_parameter("ground_span", under.span)
 			material.set_shader_parameter("ground_shift", under.shift_m(frame.origin - up_now * frame.origin.dot(up_now)
 					+ up_now * _planet.planet_data.radius))
 			part.set_instance_shader_parameter("spent", float(thing.get("spent", 0.0)))
 			part.set_instance_shader_parameter("body", 1.0 / WALL_DEEPER)
+
+
+## Sorts wall [param part] (of box [param node]) among the other transparent things (a volcano's plume) by its
+## nearest face to the eye, not its middle: the box is tens of kilometres wide, and sorted by its middle a
+## plume behind the wall's near face was drawn after it, over it (2026-11-25). Inside the box the wall sorts
+## as nearest of all: what is in it is seen through its dust.
+func _sort_wall(part: GeometryInstance3D, node: Node3D) -> void:
+	var camera := _eye()
+	if camera == null:
+		return
+	var eye := to_local(camera.global_position)
+	var unit := node.transform.affine_inverse() * eye
+	var nearest := node.transform * unit.clamp(Vector3(-0.5, -0.5, -0.5), Vector3(0.5, 0.5, 0.5))
+	part.sorting_offset = eye.distance_to(node.transform.origin) - eye.distance_to(nearest)
 
 
 ## The ground point at a longitude and latitude, in the body's frame, and the unit way up there.
@@ -272,8 +333,7 @@ func _devil_frame(devil: Dictionary) -> Transform3D:
 
 ## How tall a wall stands now, metres: small at its birth, sinking as it thins out.
 static func wall_tall(wall: Dictionary) -> float:
-	return float(wall["height_m"]) * lerpf(WALL_BORN.x, 1.0, float(wall.get("grown", 1.0))) \
-			* lerpf(1.0, WALL_SPENT_TALL, float(wall.get("spent", 0.0)))
+	return WeatherRelief.wall_tall(wall)
 
 
 ## Where the foot of a wall's front stands at [param x_m] metres along it, in metres from the middle of its
@@ -312,12 +372,20 @@ func _wall_frame(wall: Dictionary) -> Transform3D:
 func _make_devil(devil: Dictionary) -> Node3D:
 	var node := Node3D.new()
 	var material := _material(DEVIL_SHADER)
-	var tint := _dust_colour(devil)
+	var tints := _tints_of(devil)
 	for k in DEVIL_SHELLS:
-		var shell := _part(node, _devil_mesh, material, tint, 3.0)
+		var shell := _part(node, _devil_mesh, material, tints, 3.0)
+		shell.set_instance_shader_parameter("height_m", float(devil["height_m"]))
 		shell.set_instance_shader_parameter("shell", float(k) / (DEVIL_SHELLS - 1))
 		shell.set_instance_shader_parameter("spin", float(devil["spin"]))
 		shell.set_instance_shader_parameter("slender", float(devil["height_m"]) / float(devil["radius_m"]))
+	# Its sound, a little over its foot (the node is scaled: radius across, height up).
+	if not Sfx3D.muted():
+		var sound := DustDevilSound.new()
+		sound.position = Vector3(0.0, 0.03, 0.0)
+		node.add_child(sound)
+		sound.setup(int(devil["id"]))
+		sound.set_strength(float(devil["strength"]))
 	return node
 
 
@@ -329,29 +397,47 @@ func _make_wall(wall: Dictionary) -> Node3D:
 	material.set_shader_parameter("bow", WALL_BOW)
 	material.set_shader_parameter("wander", WALL_WANDER)
 	material.set_shader_parameter("wander_m", WALL_WANDER_M)
-	_part(node, _wall_mesh, material, _dust_colour(wall), 0.0)
+	_part(node, _wall_mesh, material, _tints_of(wall), 0.0)
 	return node
 
 
-## One drawn part of a phenomenon under [param node]: a mesh in the dust's colour, casting no shadow, kept
-## drawn [param margin] past its box (the shaders move its points).
-func _part(node: Node3D, mesh: Mesh, material: Material, tint: Color, margin: float) -> MeshInstance3D:
+## One drawn part of a phenomenon under [param node]: a mesh in the dust's colours ([param tints], _tints_of),
+## casting no shadow, kept drawn [param margin] past its box (the shaders move its points).
+func _part(node: Node3D, mesh: Mesh, material: Material, tints: Array, margin: float) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
 	part.mesh = mesh
 	part.material_override = material
 	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	part.extra_cull_margin = margin
-	part.set_instance_shader_parameter("tint", tint)
+	part.set_instance_shader_parameter("tint", tints[0])
+	part.set_instance_shader_parameter("tint_high", tints[1])
 	node.add_child(part)
 	return part
 
 
-## The colour of the dust a phenomenon lifts: the ground's where it stands, as the dust layer takes it
-## (WeatherSky.blow_albedo_of).
+## The colour of the dust the ground under a phenomenon gives now (a wall's: under the middle of its
+## front), as a wall's dust (DustSea.wall_dust_of).
 func _dust_colour(thing: Dictionary) -> Color:
 	var up := HEALPix.lonlat2vec(thing["lon"], thing["lat"])
-	var albedo := WeatherSky.blow_albedo_of(GroundLook.colour_at(_planet.planet_data, up, WeatherSky.BLOW_FALLBACK_COLOUR))
-	return Color(albedo.x, albedo.y, albedo.z).lerp(WeatherSky.BLOW_FALLBACK_COLOUR, DUST_PALE)
+	return DustSea.wall_dust_of(GroundLook.colour_at(_planet.planet_data, up, WeatherSky.BLOW_FALLBACK_COLOUR))
+
+
+## A phenomenon's two colours now: [its foot's, its body's] (see DUST_PALE). The ground under it is read
+## again when due (TINT_REFRESH_S) and eased toward at each refresh (TINT_EASE_S).
+func _tints_of(thing: Dictionary) -> Array:
+	var id: int = thing["id"]
+	var now := Time.get_ticks_msec() / 1000.0
+	var held: Array = _tints.get(id, [])
+	if held.is_empty():
+		var first := _dust_colour(thing)
+		held = [first, first, now + TINT_REFRESH_S]
+		_tints[id] = held
+	elif now >= float(held[2]):
+		held[1] = _dust_colour(thing)
+		held[2] = now + TINT_REFRESH_S
+	held[0] = (held[0] as Color).lerp(held[1], 1.0 - exp(-REFRESH_S / TINT_EASE_S))
+	var ground: Color = held[0]
+	return [ground.lerp(DustSea.WHITE, DUST_PALE), DustSea.WHITE.lerp(ground, DustSea.BODY_GROUND_SHARE)]
 
 
 func _material(shader: Shader) -> ShaderMaterial:
@@ -359,6 +445,62 @@ func _material(shader: Shader) -> ShaderMaterial:
 	material.shader = shader
 	material.set_shader_parameter("noise", _noise)
 	return material
+
+
+## The hue of the sunlight at [param elevation] m under a sun [param sin_e] high: the star's colour through the
+## air (AtmosphereProfile.transmittance_to_star, the air alone), brightest channel 1. White without an air or a sun.
+func _sun_tint(sin_e: float, elevation: float) -> Vector3:
+	var profile: AtmosphereProfile = _planet.planet_data.atmosphere_profile
+	if profile == null or not profile.has_atmosphere():
+		return Vector3.ONE
+	var air: Color = profile.transmittance_to_star(maxf(elevation, 0.0), maxf(sin_e, 0.02), 0.0)
+	var c := Vector3(profile.star_color.r * air.r, profile.star_color.g * air.g, profile.star_color.b * air.b)
+	var top := maxf(c.x, maxf(c.y, c.z))
+	return c / top if top > 1e-6 else Vector3.ONE
+
+
+## What is drawn and in which colours, for the dust sea's probe (DustSeaProbe): each wall and devil, its
+## distance from [param eye_world], the colours sent (foot, body, sun tint, the wall's ground colour map along
+## its front), and the ground's colour under it (GroundLook, raw and as dust) at five points along its front.
+func probe(eye_world: Vector3) -> Array:
+	var out: Array = []
+	var eye := to_local(eye_world)
+	var data: PlanetData = _planet.planet_data if _planet != null else null
+	for id: int in _shown:
+		var entry: Array = _shown[id]
+		var thing: Dictionary = entry[3]
+		var node: Node3D = entry[0]
+		var wall := thing.has("length_m")
+		var got := {"id": id, "kind": "wall" if wall else "devil", "distance_m": eye.distance_to(node.position),
+			"strength": thing.get("strength"), "ground_dust_eased": (_tints.get(id, [null]) as Array)[0]}
+		var part := node.get_child(0) as GeometryInstance3D
+		if part != null:
+			got["foot_sent"] = part.get_instance_shader_parameter("tint")
+			got["body_sent"] = part.get_instance_shader_parameter("tint_high")
+			var material := part.material_override as ShaderMaterial
+			if material != null:
+				for key: String in ["sun_tint", "foot_pale", "sea_rock_tint", "body_ground_share", "ground_colour_on",
+						"sea_beta", "sea_eye_alt"]:
+					got[key] = material.get_shader_parameter(key)
+		var under: WallGround = _wall_grounds.get(id)
+		if wall and under != null and under.colour_texture != null:
+			var image := under.colour_texture.get_image()
+			var row: Array = []
+			for i in WallGround.COLOUR_SIZE.x:
+				row.append(image.get_pixel(i, WallGround.COLOUR_SIZE.y - 1))  # the leading face's row
+			got["colour_map_front_row"] = row
+		if data != null:
+			var across := Vector2(-float(thing.get("north", 0.0)), float(thing.get("east", 1.0)))
+			var half := float(thing.get("length_m", 0.0)) * 0.5
+			var points: Array = []
+			for f: float in [-0.8, -0.4, 0.0, 0.4, 0.8]:
+				var ll := WeatherRelief.moved(Vector2(thing["lon"], thing["lat"]), across * f * half, data.radius)
+				var raw := GroundLook.colour_at(data, HEALPix.lonlat2vec(ll.x, ll.y), WeatherSky.BLOW_FALLBACK_COLOUR)
+				points.append({"along": f, "ground_raw": raw, "as_haze_dust": WeatherSky.blow_albedo_of(raw),
+					"as_wall_dust": DustSea.wall_dust_of(raw)})
+			got["ground_under_front"] = points
+		out.append(got)
+	return out
 
 
 ## The unit way to the sun, in the body's frame (straight up without a star).

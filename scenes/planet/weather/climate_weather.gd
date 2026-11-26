@@ -342,16 +342,28 @@ func air_at(lon_deg: float, lat_deg: float, live: Array, field: Array = [], t: f
 ## The dust devils alive now within [param range_m] of a place of [param planet] (WeatherRelief.devils_near).
 func devils_near(planet: Planet, lonlat: Vector2, range_m: float) -> Array:
 	var t := now()
-	return _devils(lonlat, range_m, t, sun_over(planet), systems(planet), fresh_field(planet, t))
+	return _devils(lonlat, range_m, t, sun_over(planet), systems(planet), fresh_field(planet, t), _sea_shade(planet))
+
+
+## Under the planet's dust sea (DustSea), how much of a devil the ground can drive at a longitude and latitude:
+## Callable(lon_deg, lat_deg) -> 0..1, or none on a planet without the sea.
+static func _sea_shade(planet: Planet) -> Callable:
+	var data: PlanetData = planet.planet_data if planet != null else null
+	if data == null or not DustSea.has_sea(data.atmosphere_profile):
+		return Callable()
+	return func(lon: float, lat: float) -> float:
+		return DustSea.devil_share(data.sample_height_for_direction(HEALPix.lonlat2vec(lon, lat)))
 
 
 ## WeatherRelief.devils_near at [param t] under [param live] systems, the sun at [param sun] (sun_over),
 ## the cells' hashes kept from one call to the next. Thread-safe.
-func _devils(lonlat: Vector2, range_m: float, t: float, sun: Vector2, live: Array, field: Array = []) -> Array:
+func _devils(lonlat: Vector2, range_m: float, t: float, sun: Vector2, live: Array, field: Array = [],
+		ground_share: Callable = Callable()) -> Array:
 	_devil_mutex.lock()
 	if _devil_cells.size() >= KEPT_MAX * 4:
 		_devil_cells.clear()
-	var out := WeatherRelief.devils_near(profile, lonlat, range_m, t, sun.y, sun.x, _air_of(live, field), _devil_cells)
+	var out := WeatherRelief.devils_near(profile, lonlat, range_m, t, sun.y, sun.x, _air_of(live, field), _devil_cells,
+			ground_share)
 	_devil_mutex.unlock()
 	return out
 

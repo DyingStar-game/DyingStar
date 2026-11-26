@@ -781,8 +781,24 @@ func weather_at(world_pos: Vector3) -> Dictionary:
 	if dir.is_zero_approx():
 		return {}
 	var sample: Dictionary = current_weather_source().sample(self, dir)
+	# A dust wall's wind and dust stop at its top: the sample is the ground's (WeatherRelief.over_walls).
+	sample = WeatherRelief.over_walls(sample, elevation_of(world_pos))
 	if not sample.has("air_density_kg_m3"):
 		sample["air_density_kg_m3"] = profile.air_density(elevation_of(world_pos))
+	# The dust sea is the planet's, whatever the source says (DustSea): its fog under its top, and over it no
+	# more of the climate's permanent haze (the old veil the sea replaces). A copy: the source may keep the
+	# sample it handed out.
+	if DustSea.has_sea(profile):
+		var elevation: float = elevation_of(world_pos)
+		sample = sample.duplicate()
+		sample["visibility_m"] = DustSea.visibility_at(elevation, sample)
+		sample["in_dust_sea"] = elevation < DustSea.SEA_TOP_M
+		if sample.has("phenomena"):
+			var names := PackedStringArray(sample["phenomena"])
+			var at := names.find(String(WeatherRelief.NAME_HAZE))
+			if at >= 0:
+				names.remove_at(at)
+			sample["phenomena"] = names
 	return sample
 
 
