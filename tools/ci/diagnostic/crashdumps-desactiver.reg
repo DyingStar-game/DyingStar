@@ -1,0 +1,5 @@
+Windows Registry Editor Version 5.00
+
+; DyingStar - build de diagnostic : n'enregistre plus de minidump quand le jeu plante.
+
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\DyingStar.exe]

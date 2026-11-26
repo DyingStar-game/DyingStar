@@ -1,0 +1,65 @@
+DyingStar - build de diagnostic (preprod)
+=========================================
+
+Ce build est le même jeu que la preprod du launcher, à la même version, mais compilé pour le
+diagnostic. Il sert quand le jeu plante, fige ou fait planter le pilote graphique. Il écrit dans
+son log ce qu'il faut à l'équipe pour trouver la cause :
+
+- le dernier travail envoyé à la carte graphique quand le pilote a planté ("Vulkan device was lost",
+  écran noir, pilote réinitialisé) : lignes "Last known breadcrumb" ;
+- la pile d'appels du jeu (C++ et GDScript) quand le jeu plante ;
+- des erreurs de script que le jeu normal laisse passer en silence ;
+- les mesures de performance (debug_perf=true dans client.ini).
+
+Il est un peu plus lent que le jeu normal. C'est voulu : il vérifie davantage de choses et attend la
+carte graphique entre ses commandes pour savoir laquelle la fait planter.
+
+
+Installation
+------------
+
+1. Installer et mettre à jour la preprod ("Universe Testing") avec le launcher, comme d'habitude.
+2. Fermer le jeu.
+3. Décompresser ce zip DANS le dossier du jeu preprod, celui qui contient DyingStar.exe, en
+   remplaçant les fichiers existants.
+4. Lancer le jeu depuis le launcher, comme d'habitude. Il ne propose pas de mise à jour : ce build a
+   la même version que la preprod.
+
+La prochaine mise à jour de la preprod remet le jeu normal. Pour revenir au jeu normal avant cela,
+il suffit de supprimer le dossier du jeu preprod et de le réinstaller avec le launcher.
+
+
+Après un plantage : quoi envoyer
+--------------------------------
+
+Le log se trouve ici (à coller dans la barre d'adresse de l'explorateur) :
+
+    %APPDATA%\Godot\app_userdata\DyingStar\logs
+
+godot.log est la session en cours ou la dernière. Les sessions précédentes y sont gardées avec leur
+date dans le nom : après un plantage, envoyer la plus récente. Envoyer le fichier entier sur
+Discord, avec l'heure du plantage et ce que vous faisiez (où, en véhicule ou à pied, etc.).
+
+
+Facultatif : minidump Windows
+-----------------------------
+
+Si l'équipe le demande, double-cliquer sur crashdumps-activer.reg (il faut les droits
+administrateur). À chaque plantage du jeu, Windows garde alors un fichier .dmp dans :
+
+    %LOCALAPPDATA%\CrashDumps
+
+Envoyer le .dmp le plus récent avec le log. crashdumps-desactiver.reg remet Windows comme avant.
+
+
+Facultatif : plantage du pilote graphique (AMD / NVIDIA / Intel)
+---------------------------------------------------------------
+
+Quand c'est le pilote qui plante (écran noir, "le pilote d'affichage a cessé de répondre"), il
+est utile d'envoyer aussi :
+
+- l'Observateur d'événements Windows : Journaux Windows > Système, les erreurs "Display",
+  "amdkmdag" ou "nvlddmkm" (ID 4101) à l'heure du plantage ;
+- la version du pilote graphique, et si la carte est overclockée ou sous-voltée.
+
+Ne modifiez pas le registre (TdrDelay...) sans que l'équipe vous le demande.

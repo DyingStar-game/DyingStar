@@ -13,17 +13,27 @@ on:
         description: "Dev release of this build (empty: <NEXT_VERSION>-dev.<UTC yyyymmddhhmm>)"
         required: false
         type: string
+      debug_client:
+        description: "Also build the Windows diagnostic client (debug template: GPU breadcrumbs, crash backtraces)"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       dev_release:
         description: "Dev release of this build (empty: <NEXT_VERSION>-dev.<UTC yyyymmddhhmm>)"
         required: false
         type: string
+      debug_client:
+        description: "Also build the Windows diagnostic client (debug template: GPU breadcrumbs, crash backtraces)"
+        required: false
+        type: boolean
+        default: false
 
 env:
   GODOT_VERSION: 4.7.2
   # The engine release (DyingStar-game/godotandaddons): Godot + our patches. Its name keys the caches.
-  GODOT_RELEASE: 4.7.2-stable-ds2
+  GODOT_RELEASE: 4.7.2-stable-ds3
 
 jobs:
   version:
@@ -33,6 +43,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release_date: ${{ steps.version.outputs.release_date }}
       dev_release: ${{ steps.version.outputs.dev_release }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      debug_client: ${{ steps.matrix.outputs.debug_client }}
     steps:
       - name: Compute version info
         id: version
@@ -62,24 +74,48 @@ jobs:
           echo "dev_release=$DEV_RELEASE" >> "$GITHUB_OUTPUT"
           echo "release_date=$DATE" >> "$GITHUB_OUTPUT"
 
+      - name: Compute build matrix
+        id: matrix
+        env:
+          DEBUG_CLIENT: ${{ inputs.debug_client || false }}
+        run: |
+          # The release clients, and the diagnostic one when asked: a preprod
+          # build only (never a v* tag, never a pull request). It is exported on
+          # Godot's debug template, the one where Vulkan breadcrumbs
+          # (--accurate-breadcrumbs, passed by the launcher), GPU memory reports
+          # and GDScript backtraces are compiled in; testers unzip it over their
+          # preprod install (tools/ci/diagnostic/LISEZMOI-DIAGNOSTIC.txt).
+          MATRIX='[
+            {"preset": "Linux", "os_name": "linux", "export_mode": "release",
+             "build_dir": "build/dyingstar_linux", "output_file": "build/dyingstar_linux/DyingStar.x86_64",
+             "artifact_name": "build-linux"},
+            {"preset": "Windows Desktop", "os_name": "windows", "export_mode": "release",
+             "build_dir": "build/windows_client", "output_file": "build/windows_client/DyingStar.exe",
+             "artifact_name": "build-windows"}
+          ]'
+          DEBUG=false
+          if [[ "$DEBUG_CLIENT" == "true" && "$GITHUB_REF_TYPE" != "tag" \
+                && "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            DEBUG=true
+            MATRIX=$(jq -c '. + [
+              {"preset": "Windows Desktop", "os_name": "windows-debug", "export_mode": "debug",
+               "build_dir": "build/windows_client_debug", "output_file": "build/windows_client_debug/DyingStar.exe",
+               "artifact_name": "build-windows-debug"}
+            ]' <<< "$MATRIX")
+          fi
+          echo "matrix={\"include\":$(jq -c . <<< "$MATRIX")}" >> "$GITHUB_OUTPUT"
+          echo "debug_client=$DEBUG" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.os_name }} client
     runs-on: dyingstar-runners
     needs: version
+    # A failed diagnostic client must not hold back the preprod deploy of the release ones.
+    continue-on-error: ${{ matrix.export_mode == 'debug' }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - preset: "Linux"
-            os_name: linux
-            build_dir: build/dyingstar_linux
-            output_file: build/dyingstar_linux/DyingStar.x86_64
-            artifact_name: build-linux
-          - preset: "Windows Desktop"
-            os_name: windows
-            build_dir: build/windows_client
-            output_file: build/windows_client/DyingStar.exe
-            artifact_name: build-windows
+      # Linux and Windows, plus the Windows diagnostic client when asked: see the version job.
+      matrix: ${{ fromJSON(needs.version.outputs.matrix) }}
 
     steps:
       - name: Install build tooling
@@ -175,6 +211,8 @@ jobs:
           # (Vector3/Transform3D layout mismatch). Point NuGet to the local
           # double-precision nupkgs shipped with the editor zip — see NuGet.Config.
           GODOT_SHARP_NUPKGS: /home/runner/godot/Godot_v${{ env.GODOT_VERSION }}-stable_mono_linux_x86_64/GodotSharp/Tools/nupkgs
+          # release, or debug for the diagnostic client (Godot's debug template)
+          EXPORT_MODE: ${{ matrix.export_mode }}
         run: |
           # Drop any cached single-precision GodotSharp/Godot.NET.Sdk so they get
           # restored from the local nupkg source instead.
@@ -214,6 +252,29 @@ jobs:
           set_key url "$SERVICES_URL"
           grep -vE '^[[:space:]]*(;|$)' "$INI"
 
+      - name: Diagnostic client extras
+        if: matrix.export_mode == 'debug'
+        run: |
+          DIR="${{ matrix.build_dir }}"
+          # Performance logging on: the testers who take this build are the ones reporting a problem.
+          sed -i -E 's/^[[:space:]]*debug_perf[[:space:]]*=.*/debug_perf=true/' "$DIR/client.ini"
+          grep -qE '^debug_perf=true$' "$DIR/client.ini" \
+            || { echo "::error::client.ini: key 'debug_perf' not found"; exit 1; }
+          # How to install it and what to send back; the WER minidump switches.
+          cp tools/ci/diagnostic/LISEZMOI-DIAGNOSTIC.txt tools/ci/diagnostic/*.reg "$DIR/"
+          # The debug template's DWARF beside the exe: Godot's crash handler then names the C++ frames
+          # of a crash in the log (platform/windows/crash_handler_windows_signal.cpp loads
+          # <exe>.debugsymbols). Engine releases from ds3 on publish them; without them this build would
+          # be no better than the normal one for a crash, so it fails (only this leg: continue-on-error).
+          SYM="Godot_v${GODOT_VERSION}-stable_mono_debug_templates_debugsymbols.zip"
+          URL="https://github.com/DyingStar-game/godotandaddons/releases/download/${GODOT_RELEASE}/$SYM"
+          wget -q -O "$RUNNER_TEMP/$SYM" "$URL" \
+            || { echo "::error::No debug template symbols in engine release ${GODOT_RELEASE} ($SYM)"; exit 1; }
+          unzip -o -j "$RUNNER_TEMP/$SYM" '*/windows_debug_x86_64.exe.debugsymbols' -d "$RUNNER_TEMP/sym"
+          mv "$RUNNER_TEMP/sym/windows_debug_x86_64.exe.debugsymbols" "$DIR/DyingStar.exe.debugsymbols"
+          rm -rf "$RUNNER_TEMP/$SYM" "$RUNNER_TEMP/sym"
+          ls -la "$DIR"
+
       - name: Write version.json
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -239,7 +300,7 @@ jobs:
 
   deploy-testing:
     name: Deploy to testing server
-    needs: build
+    needs: [version, build]
     if: github.event_name != 'pull_request' && github.ref_type != 'tag'
     runs-on: ubuntu-latest
     steps:
@@ -253,10 +314,24 @@ jobs:
         with:
           name: build-windows
 
+      - name: Download windows diagnostic build
+        if: needs.version.outputs.debug_client == 'true'
+        # Missing when its build failed: the release clients are deployed all the same.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows-debug
+
       - name: Rename zip archives
         run: |
           mv build-linux.zip DyingStar-linux-testing.zip
           mv build-windows.zip DyingStar-windows-testing.zip
+          if [ -f build-windows-debug.zip ]; then
+            # Beside the others: https://dyingstar-game.com/DyingStar-windows-testing-debug.zip
+            mv build-windows-debug.zip DyingStar-windows-testing-debug.zip
+          elif [ "${{ needs.version.outputs.debug_client }}" == "true" ]; then
+            echo "::warning::The Windows diagnostic client was asked for but not built: not deployed"
+          fi
 
       - name: Extract version.json
         run: unzip -p DyingStar-linux-testing.zip version.json > version.json
@@ -267,12 +342,14 @@ jobs:
         run: |
           install -m 600 /dev/null /tmp/deploy_key
           printf '%s\n' "$DEPLOY_SSH_KEY" > /tmp/deploy_key
+          FILES=(DyingStar-linux-testing.zip DyingStar-windows-testing.zip version.json)
+          if [ -f DyingStar-windows-testing-debug.zip ]; then
+            FILES+=(DyingStar-windows-testing-debug.zip)
+          fi
           scp -i /tmp/deploy_key \
             -o StrictHostKeyChecking=no \
             -o BatchMode=yes \
-            DyingStar-linux-testing.zip \
-            DyingStar-windows-testing.zip \
-            version.json \
+            "${FILES[@]}" \
             "${{ secrets.DEPLOY_USERNAME }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}"
           rm -f /tmp/deploy_key
 

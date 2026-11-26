@@ -1,0 +1,9 @@
+Windows Registry Editor Version 5.00
+
+; DyingStar - build de diagnostic : quand le jeu plante, Windows garde un minidump dans
+; %LOCALAPPDATA%\CrashDumps (les 5 derniers). Double-clic, puis accepter (droits administrateur).
+; crashdumps-desactiver.reg remet Windows comme avant.
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\DyingStar.exe]
+"DumpType"=dword:00000001
+"DumpCount"=dword:00000005
