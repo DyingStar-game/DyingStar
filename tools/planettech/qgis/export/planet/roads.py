@@ -9,6 +9,8 @@ The part builder is pure (stdlib + modifier_geom + dsmp, no QGIS import) so it
 can be unit-tested with plain python3; only find_roads_layer() and
 collect_roads_from_layer() touch PyQGIS, and they import it lazily.
 """
+import hashlib
+import json
 import math
 
 from . import dsmp
@@ -186,6 +188,12 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
 
     levels = []
     counts = {"features": len(prepared), "records_per_level": {}}
+    # The records name their type and surface by string-table index: the strings go in the
+    # digest, an index alone may keep its value while what it names changes.
+    digest = hashlib.sha1()
+    for r in roads:
+        digest.update(json.dumps([r.get("road_type") or "trail", r.get("surface")],
+                                 default=str).encode("utf-8"))
     for nside in levels_ns:
         eps_deg = 0.0
         per_tile = {}
@@ -208,7 +216,10 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
         for ipix in sorted(per_tile):
             blocks = per_tile[ipix]
             n_records += len(blocks)
-            tiles.append((ipix, dsmp.part_tile(len(blocks), b"".join(blocks))))
+            payload = dsmp.part_tile(len(blocks), b"".join(blocks))
+            digest.update(b"%d:%d:" % (nside, ipix))
+            digest.update(payload)
+            tiles.append((ipix, payload))
         levels.append((nside, tiles))
         counts["records_per_level"][str(nside)] = n_records
         if verbose:
@@ -231,6 +242,9 @@ def build_road_part(roads, radius_m, export_nside, max_quadtree_nside, table,
         # the profiles only when one does).
         "record_layout": dsmp.ROAD_RECORD_LAYOUT,
         "profiled_roads": sum(1 for r in prepared if r["max_slope_deg"] is not None),
+        # Re-keys the chunk cache (PlanetData.road_fingerprint): ribbons, beds and cuttings
+        # are baked into the cached meshes.
+        "fingerprint": digest.hexdigest(),
     }
     return levels, manifest
 
