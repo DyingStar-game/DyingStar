@@ -138,8 +138,15 @@ redemandé au même endroit dans le quart de seconde est rendu de mémoire avant
 
 Sur un corps dont le profil d'atmosphère a une couche de corindon (Sandbox), la passe de perspective aérienne
 dessine la **mer de poussière blanche** (`DustSea`, `dust_sea.gdshaderinc`) : sommet en bosses vers 3 300 m,
-poussière jusqu'au sol des bassins, visibilité ~1 km dedans, réglée sur le modèle d'atmosphère du service
-(`sandbox.toml`, `[sea]`). Tant qu'elle est dessinée, elle remplace le voile du profil par une fine poussière
+base à 500 m (dessous, un dixième de sa poussière : ~10 km de visibilité au fond des bassins, dans la pénombre
+de la mer), visibilité ~1 km dedans, réglée sur le modèle d'atmosphère du service (`sandbox.toml`, `[sea]`,
+`below_share`). Le dessus ensoleillé montre la **gloire** (anneaux colorés autour de l'ombre de l'œil) et ses
+bords fins vers le soleil des **irisations** : couleurs de la diffusion de Mie des grains de corindon, calculées
+une fois par `tools/weather/mie_glory_table.py` (tables `dust_sea_mie.gdshaderinc` et `DustSeaMie`, forces
+`DustSea.MIE_FORE_STRENGTH` et `MIE_BACK_STRENGTH`). Au-dessus de la mer, l'air et la fine poussière sont aussi
+éclairés par-dessous par la mer blanche (`AtmosphereRenderer.sky_bounce`, albédo 0,66) : sans ce terme, le ciel
+côté opposé au soleil était presque noir, avec un trait sombre à l'horizon. Sous la mer, le disque du soleil est
+éteint par la même épaisseur que sa lumière (`star_disc_dust`). Tant qu'elle est dessinée, elle remplace le voile du profil par une fine poussière
 au-dessus d'elle, atténue le soleil sous elle et éclaire le monde de son ciel couvert ; son épaisseur suit le
 `dust_tau` du champ du service quand il en publie un. Les murs, tourbillons et éclairs y sont éclairés et noyés
 de la même façon (`dust_sea_light.gdshaderinc`). `client.ini` `debug_no_dust_sea=true` l'éteint.

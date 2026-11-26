@@ -1,7 +1,7 @@
 extends GutTest
 ## The dust sea's calibration against the atmosphere model's white sea (services weather, Nova-Atmo):
-## visibility ~1 km inside, a basin column of ~15, 23 % of the sunlight reaching a basin floor (all of it
-## diffuse), the plateaus over the top nearly in full sun (DustSea).
+## visibility ~1 km inside, the base at 500 m with a tenth of the dust under it, ~28 % of the sunlight
+## reaching a basin floor (all of it diffuse), the plateaus over the top nearly in full sun (DustSea).
 
 
 func _sea(ground_m: float) -> DustSea:
@@ -18,12 +18,23 @@ func test_the_inside_of_the_sea_is_a_one_kilometre_fog() -> void:
 func test_a_basin_floor_has_the_models_column_and_light() -> void:
 	var sea := _sea(-550.0)
 	var tau := sea.sea_tau_above(-550.0)
-	assert_between(tau, 14.5, 16.5, "the model's basin column: ~15.5")
-	assert_lt(exp(-tau), 1e-6, "no direct beam at the bottom of the sea")
+	assert_between(tau, 12.0, 13.0, "the sea over its base, and a tenth of it under: ~12.5")
+	assert_lt(exp(-tau), 1e-5, "no direct beam at the bottom of the sea")
 	var light := sea.overcast(-550.0, 1.0, Vector3.ONE)
 	var white_share := light.get_luminance() / (DustSea.MS_GAIN * sea.eye_gain(-550.0) * DustSea.WHITE.lerp(sea._eye_dust,
 			DustSea.ROCK_TINT).get_luminance())
-	assert_almost_eq(white_share, 0.23, 0.02, "23 % of the sunlight reaches a basin floor, diffuse")
+	assert_almost_eq(white_share, 0.28, 0.02, "~28 % of the sunlight reaches a basin floor, diffuse")
+
+
+func test_under_the_base_the_dust_is_a_tenth_of_the_sea() -> void:
+	assert_almost_eq(DustSea.depth_between(-500.0, 1500.0), 1000.0 + 0.1 * 1000.0, 1e-6,
+			"full over the base, a tenth under it")
+	assert_eq(DustSea.depth_between(1000.0, 2000.0), 1000.0, "all over the base")
+	assert_almost_eq(DustSea.depth_between(-500.0, 0.0), 50.0, 1e-6, "all under the base")
+	assert_eq(DustSea.base_share(2000.0), 1.0)
+	assert_almost_eq(DustSea.base_share(-200.0), DustSea.BELOW_SHARE, 1e-6)
+	assert_almost_eq(DustSea.visibility_at(-550.0, {}), DustSea.VISIBILITY_M / DustSea.BELOW_SHARE, 1.0,
+			"a basin floor sees ten times further than the inside of the sea")
 
 
 func test_a_plateau_over_the_top_is_in_the_sun() -> void:
@@ -44,7 +55,7 @@ func test_the_storm_share_leaves_the_sea_out_of_the_fields_dust() -> void:
 
 
 func test_the_readout_sees_the_sea_and_no_more_of_the_old_veil() -> void:
-	assert_eq(DustSea.visibility_at(-550.0, {"dust_tau": 0.5, "haze_tau": 0.5}), DustSea.VISIBILITY_M,
+	assert_eq(DustSea.visibility_at(2000.0, {"dust_tau": 0.5, "haze_tau": 0.5}), DustSea.VISIBILITY_M,
 			"under the top: the sea's fog")
 	var over := DustSea.visibility_at(3900.0, {"dust_tau": 0.48, "haze_tau": 0.48})
 	assert_almost_eq(over, 3.912 / (DustSea.THIN_TAU / DustSea.THIN_M), 1.0,

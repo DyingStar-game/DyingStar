@@ -64,6 +64,12 @@ const vec2 TRANSMITTANCE_LUT_SIZE = vec2(256.0, 64.0);
 // Physical radiance is in W/m2/sr and the engine's lights are in arbitrary units, so the two need a
 // bridge. This is the ONLY non-physical number in the model: it scales, it never tints.
 uniform float sky_exposure = 1.0;
+// The light the ground sends back up, as a share of the star's irradiance (AtmosphereRenderer.sky_bounce:
+// albedo x the sun's height x the air's transmittance to the ground, per channel; 0 = none). The march is
+// single scattering from the star alone: over Sandbox's white dust sea (albedo 0.66) the air and the thin
+// dust over it, lit only from the front, read nearly black away from the sun, with a dark line at the
+// horizon, where the real sky over a cloud sea is lit from below (2026-11-26).
+uniform vec3 sky_bounce = vec3(0.0);
 
 const float PI_F = 3.14159265358979;
 
@@ -271,6 +277,10 @@ vec3 scatter(
 	vec3 depth_view = vec3(0.0);
 	vec3 sum_rayleigh = vec3(0.0);
 	vec3 sum_mie = vec3(0.0);
+	// Lit from below by the ground (sky_bounce): the same samples, through the view's air only.
+	vec3 sum_bounce_r = vec3(0.0);
+	vec3 sum_bounce_m = vec3(0.0);
+	bool bounce = max(sky_bounce.r, max(sky_bounce.g, sky_bounce.b)) > 0.0;
 
 	for (int i = 0; i < steps_view; i++) {
 		float step_width = span / float(steps_view);
@@ -294,6 +304,11 @@ vec3 scatter(
 		float density_r = rayleigh_density(h);
 		float density_m = mie_density(h);
 		depth_view += atmo_extinction(h) * step_width;
+		if (bounce) {
+			vec3 seen = exp(-depth_view) * step_width;
+			sum_bounce_r += density_r * seen;
+			sum_bounce_m += density_m * seen;
+		}
 
 		// Is this sample in the planet's own shadow? A star ray that enters the ground never gets
 		// here, and testing it is what draws the terminator and the shadow of the planet climbing
@@ -318,9 +333,14 @@ vec3 scatter(
 	}
 
 	view_transmittance = exp(-depth_view);
+	// The ground's light: a Lambertian ground of radiance albedo E mu / pi under the whole lower hemisphere,
+	// scattered isotropically (the integral of an isotropic phase over a hemisphere is 1/2): beta x E x
+	// sky_bounce / (2 pi). Both air and grains take it, whatever their own phase toward the star.
+	vec3 from_ground = (rayleigh_beta * sum_bounce_r + mie_beta * mie_albedo * sum_bounce_m) * sky_bounce * 0.1591549;
 	return star_irradiance * star_color * (
 		rayleigh_beta * phase_r * sum_rayleigh
 		+ mie_beta * mie_albedo * phase_m * sum_mie
+		+ from_ground
 	) * sky_exposure;
 }
 

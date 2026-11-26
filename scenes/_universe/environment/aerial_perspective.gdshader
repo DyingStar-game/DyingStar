@@ -12,6 +12,7 @@ render_mode blend_mix, depth_test_disabled, depth_draw_never, cull_disabled, uns
 // exactly what the two disjoint systems this replaces could never close.
 #include "res://scenes/_universe/environment/atmosphere_common.gdshaderinc"
 #include "res://scenes/_universe/environment/weather_common.gdshaderinc"
+#include "res://scenes/_universe/environment/dust_sea_mie.gdshaderinc"
 #include "res://scenes/_universe/environment/dust_sea.gdshaderinc"
 #include "res://scenes/_universe/environment/dust_layer.gdshaderinc"
 

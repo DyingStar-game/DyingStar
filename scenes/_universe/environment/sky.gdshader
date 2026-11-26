@@ -23,6 +23,10 @@ uniform float star_angular_diameter = 0.5;
 // starfield include documents for stars, from the other side. At 0.5 the fade spans half the radius,
 // roughly two pixels, and the core merges into its halo instead of fighting it.
 uniform float star_limb_softness : hint_range(0.0, 1.0) = 0.5;
+// What the dust sea over the eye leaves of the disc (AtmosphereRenderer.star_disc_dust; 1 without the sea).
+// The aerial pass dims the whole sky by the sea afterwards, but the disc is ~1e4 times brighter than the
+// sky: what its blend leaves of 1e-8 was a bright dot under 12 optical depths of sea (2026-11-26).
+uniform float star_disc_dust : hint_range(0.0, 1.0) = 1.0;
 
 // Brightness of the starfield, driven by AtmosphereRenderer.
 //
@@ -69,7 +73,7 @@ void sky() {
 	// star that has set. That is the light that survived turning the moons off.
 	if (disc > 0.0 && !AT_CUBEMAP_PASS) {
 		float solid_angle = max(2.0 * PI_F * (1.0 - cos(radius)), 1.0e-12);
-		air += star_irradiance / solid_angle * star_color * disc * transmittance * sky_exposure;
+		air += star_irradiance / solid_angle * star_color * disc * transmittance * star_disc_dust * sky_exposure;
 	}
 
 	// Stars sit outside the atmosphere, so the same transmittance dims them — that is why they fade

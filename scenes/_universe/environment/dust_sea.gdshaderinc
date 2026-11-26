@@ -4,10 +4,10 @@
 // inside, its dust reaching down to the ground in the basins. Ported from the October cloud layer
 // (wip/weather, cloud_layer.gdshaderinc), the sea only: no storm grid, no tears.
 //
-// The numbers come from the atmosphere model (services weather, Nova-Atmo): a column optical depth of
-// ~15 in the basins, visibility ~1 km inside, the top near 3 300 m. DustSea (GDScript) pushes them; the
-// extinction is uniform from the ground to a billowed top, so the light under it follows the two-stream
-// estimate DustLight uses for the near dust (1 / (1 + 3/4 (1 - g) tau): 23 % in a basin).
+// The numbers come from the atmosphere model (services weather, Nova-Atmo): visibility ~1 km inside, the
+// top near 3 300 m, the base at 500 m with a tenth of the dust under it. DustSea (GDScript) pushes them; the
+// extinction is uniform from the base to a billowed top (and from the ground to the base), so the light under
+// it follows the two-stream estimate DustLight uses for the near dust (1 / (1 + 3/4 (1 - g) tau)).
 //
 // Frame: the planet's, relative to an anchor on the reference sphere under the eye (DustSea, re-laid as
 // the eye travels): sea_frame takes a world direction there, sea_cam is the camera. No astronomic
@@ -26,6 +26,11 @@ uniform float sea_top = 3300.0;
 uniform float sea_floor = -3000.0;
 uniform float sea_beta = 0.0039;
 uniform float sea_ground = -500.0;
+// The sea's base (m over the reference sphere): under it the dust is sea_below_share of the sea's (the model
+// holds the base, services weather sandbox.toml [sea] below_share), the change sea_base_edge m soft.
+uniform float sea_base = 500.0;
+uniform float sea_below_share = 1.0;
+uniform float sea_base_edge = 150.0;
 // The top denser than the inside (an IMAGE choice: the domes read as shapes, not as a soft fog): the
 // extinction rises by sea_top_boost over the last sea_top_scale metres under the billowed top.
 uniform float sea_top_boost = 2.0;
@@ -72,6 +77,10 @@ uniform float sea_crease_floor = 0.4;
 // The share of the air's own tint the eye discounts on the sea (DustSea.NEUTRAL_LIGHT): the sea reads white,
 // not in the colour of the sunlight that crossed the air.
 uniform float sea_neutral = 0.0;
+// The colours of the grains' own scattering on the direct beam (dust_sea_mie.gdshaderinc, DustSeaMie): the
+// glory around the eye's shadow on the sunlit top, the iridescence of the thin edges near the sun. 0 = white.
+uniform float sea_mie_fore_strength = 0.5;
+uniform float sea_mie_back_strength = 1.0;
 // Quality: the most steps a ray takes, how far it looks inside the shell (m), the angle one pixel spans
 // (rad), and the rays averaged per pixel (more from high up, where the jitter alone left a grain).
 uniform int sea_steps = 48;
@@ -156,12 +165,67 @@ float sea_billow(vec3 q, int octaves, float blur) {
 }
 
 
+// The sea's optical depth per unit of extinction between heights [param lo] and [param hi] (m): full over
+// the base, sea_below_share under it (DustSea.depth_between).
+float sea_depth_between(float lo, float hi) {
+	float over_base = max(hi - max(lo, sea_base), 0.0);
+	float under_base = max(min(hi, sea_base) - lo, 0.0);
+	return over_base + sea_below_share * under_base;
+}
+
+
+// The share of the sea's extinction at height [param alt] (m): 1 over the base, sea_below_share under it.
+float sea_base_share(float alt) {
+	return mix(sea_below_share, 1.0, smoothstep(sea_base - sea_base_edge, sea_base + sea_base_edge, alt));
+}
+
+
+// The MEAN of that share between heights [param a] and [param b] (a step of the march): read at one point, a
+// step crossing the base took all of it or a tenth, and looking up from a basin the base drew rings around the
+// zenith where the steps' count across it changed (2026-11-26).
+float sea_base_mean(float a, float b) {
+	float lo = min(a, b);
+	float hi = max(a, b);
+	return hi - lo > 1.0 ? sea_depth_between(lo, hi) / (hi - lo) : sea_base_share(lo);
+}
+
+
 // The sea's extinction (1/m) at [param q] with [param octaves] of billows ([param shallow] of their height),
 // a top [param edge] m soft; out: how far q stands over the billowed top (< 0 inside).
 float sea_medium(vec3 q, int octaves, float edge, float blur, float shallow, out float over_top) {
-	over_top = sea_altitude(q) - sea_top - sea_billow(q, octaves, blur) * shallow;
+	float alt = sea_altitude(q);
+	over_top = alt - sea_top - sea_billow(q, octaves, blur) * shallow;
 	float layer = 1.0 - smoothstep(-edge, edge, over_top);
-	return sea_beta * layer * (1.0 + sea_top_boost * exp(min(over_top, 0.0) / sea_top_scale));
+	return sea_beta * sea_base_share(alt) * layer * (1.0 + sea_top_boost * exp(min(over_top, 0.0) / sea_top_scale));
+}
+
+
+// A lobe's table at [param u] (0..1 across it): the sample index and the blend to the next, linear, faded to
+// white at the lobe's far end so nothing shows a seam.
+vec2 sea_mie_index(float u) {
+	float f = clamp(u * float(SEA_MIE_SAMPLES) - 0.5, 0.0, float(SEA_MIE_SAMPLES - 1));
+	float i = min(floor(f), float(SEA_MIE_SAMPLES - 2));
+	return vec2(i, f - i);
+}
+
+
+// The colour of the light the grains scatter toward the eye at [param cos_sun] from the sun (DustSeaMie.tint):
+// the forward lobe's iridescence near the sun, the glory around the antisolar point, white between.
+vec3 sea_mie_tint(float cos_sun) {
+	float angle = degrees(acos(clamp(cos_sun, -1.0, 1.0)));
+	vec3 c = vec3(1.0);
+	if (angle < SEA_MIE_FORE_DEG) {
+		float u = angle / SEA_MIE_FORE_DEG;
+		vec2 k = sea_mie_index(u);
+		c = mix(mix(SEA_MIE_FORE[int(k.x)], SEA_MIE_FORE[int(k.x) + 1], k.y), vec3(1.0), smoothstep(SEA_MIE_FORE_FADE, 1.0, u));
+		c = mix(vec3(1.0), c, sea_mie_fore_strength);
+	} else if (180.0 - angle < SEA_MIE_BACK_DEG) {
+		float u = (180.0 - angle) / SEA_MIE_BACK_DEG;
+		vec2 k = sea_mie_index(u);
+		c = mix(mix(SEA_MIE_BACK[int(k.x)], SEA_MIE_BACK[int(k.x) + 1], k.y), vec3(1.0), smoothstep(SEA_MIE_BACK_FADE, 1.0, u));
+		c = mix(vec3(1.0), c, sea_mie_back_strength);
+	}
+	return c;
 }
 
 
@@ -284,6 +348,7 @@ vec3 sea_march_ray(vec3 dir, float limit, float jitter, out float trans) {
 		shallow = smoothstep(0.0, 3.0 * sea_billow_m, sea_top - sea_altitude(sea_cam + d * limit));
 	}
 	float phase = dust_phase(dot(dir, to_star));
+	vec3 mie = sea_mie_tint(dot(dir, to_star));
 	vec3 sun_q = sea_frame * to_star;
 	float tau_one_m = 1.0 / max(sea_beta, 1e-6);  // one optical depth inside (m)
 	float tau_top_m = 1.0 / max(sea_beta * (1.0 + sea_top_boost), 1e-6);  // and at the top
@@ -300,23 +365,57 @@ vec3 sea_march_ray(vec3 dir, float limit, float jitter, out float trans) {
 	int fine_left = 0;
 	float fine = sea_edge_m;
 	float coarse = 4.0 * fine;
+	bool was_thin = false;
 	for (int i = 0; i < budget; i++) {
 		if (t >= t_b) {
 			break;
 		}
+		// Under the base the dust is thin and even: steps of a quarter of ITS optical depth, up to the base. At
+		// the sea's 30-60 m a ray up from a basin spent its budget under the base and stopped short of the top,
+		// by more steps the more slanted: rings around the zenith (2026-11-26). No step, the jittered first one
+		// included, goes past the base; out of the thin dust the steps are worked out again for the sea.
+		bool thin = false;
+		float to_base = 1e9;
+		if (sea_below_share < 1.0) {
+			float alt_t = sea_altitude(sea_cam + d * t);
+			thin = alt_t < sea_base - sea_base_edge;
+			to_base = rise > 0.05 ? max((sea_base - sea_base_edge - alt_t) / rise, sea_edge_m) : 1e9;
+			if (was_thin && !thin) {
+				fine_left = 0;
+			}
+			was_thin = thin;
+		}
 		if (fine_left == 0) {
 			// Crisp near the eye (2 % of the distance), never under a pixel, at most half an optical depth.
 			fine = max(clamp(t * 0.02, sea_edge_m, max(sea_edge_m, tau_one_m * 0.25)), min(t * sea_pixel_rad, tau_one_m * 0.5));
+			if (thin) {
+				fine = max(fine, min(0.25 * tau_one_m / sea_below_share, to_base));
+			}
 			coarse = max(4.0 * fine, (t_b - t) / float(budget - i) * 1.5);
+			if (thin) {
+				// Never a coarse step across the base either: the fine run it starts would go on into the sea.
+				coarse = max(min(coarse, to_base), fine);
+			}
 			fine = coarse / float(min(int(ceil(coarse / fine)), SEA_FINE_RUN_MAX));
 		}
 		float dt = min((fine_left > 0 ? fine : coarse) * (shifted ? 1.0 : first), t_b - t);
+		if (thin) {
+			dt = min(dt, to_base);
+		}
 		float ts = t + dt * inside;
 		vec3 q = sea_cam + d * ts;
 		float blur = max(dt, ts * sea_pixel_rad);
 		int octaves = blur < 72.0 ? 4 : (blur < 280.0 ? 3 : (blur < 960.0 ? 2 : 1));
 		float over;
 		float sigma = sea_medium(q, octaves, max(sea_edge_m, blur), blur, shallow, over);
+		// The base over the whole step, not at its sample (sea_base_mean).
+		if (sea_below_share < 1.0 && sigma > 0.0) {
+			float alt_q = sea_altitude(q);
+			if (alt_q - dt < sea_base + sea_base_edge) {
+				float mean = sea_base_mean(sea_altitude(sea_cam + d * t), sea_altitude(sea_cam + d * (t + dt)));
+				sigma *= mean / max(sea_base_share(alt_q), 1e-3);
+			}
+		}
 		if (sigma <= 1e-9) {
 			if (fine_left > 0) {
 				fine_left--;
@@ -351,9 +450,10 @@ vec3 sea_march_ray(vec3 dir, float limit, float jitter, out float trans) {
 			over_l = max(over, -tau_top_m * max(-rise_q, 0.05));
 		}
 		float alt = sea_altitude(q) + (over_l - over);
-		float column = sea_beta * max(-over_l, 0.0) + sea_beta * sea_top_boost * sea_top_scale
-				* (1.0 - exp(min(over_l, 0.0) / sea_top_scale));
-		float below = sea_beta * max(alt - sea_ground, 0.0);
+		// Over the sample to the top (the base's thinner dust taken off under it), and from the ground up to it.
+		float column = sea_beta * (max(-over_l, 0.0) - (1.0 - sea_below_share) * max(sea_base - alt, 0.0))
+				+ sea_beta * sea_top_boost * sea_top_scale * (1.0 - exp(min(over_l, 0.0) / sea_top_scale));
+		float below = sea_beta * sea_depth_between(sea_ground, alt);
 		float shade = 1.0 - smoothstep(400.0, 900.0, blur);
 		int taps = blur < 100.0 ? 2 : (shade > 0.0 ? 1 : 0);
 		float mu;
@@ -366,7 +466,7 @@ vec3 sea_march_ray(vec3 dir, float limit, float jitter, out float trans) {
 		// 0.4, the fog of a basin two and a half times too dark).
 		float crease = mix(sea_crease_floor, 1.0, smoothstep(-0.7 * sea_billow_m, 0.0, over));
 		crease = mix(crease, 1.0, 1.0 - smoothstep(-2.8 * sea_billow_m, -1.4 * sea_billow_m, over));
-		vec3 lit = sea_eye_gain * albedo * (sea_sun * air * (sea_direct_gain * phase * beam_t + sea_ms_gain * multi * crease)
+		vec3 lit = sea_eye_gain * albedo * (sea_sun * air * (sea_direct_gain * phase * beam_t * mie + sea_ms_gain * multi * crease)
 				+ sea_ambient * crease * smoothstep(-0.25, 0.05, mu));
 		float step_t = exp(-sigma * dt);
 		light += trans * (1.0 - step_t) * lit;

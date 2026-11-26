@@ -66,3 +66,12 @@ func test_a_shelter_closes_the_low_pass_in_octaves() -> void:
 	assert_almost_eq(WeatherAudio.cutoff_for(0.5), sqrt(WeatherAudio.OPEN_CUTOFF_HZ * WeatherAudio.SHELTERED_CUTOFF_HZ),
 			1e-3, "halfway, in octaves")
 	assert_almost_eq(WeatherAudio.cutoff_for(7.0), WeatherAudio.SHELTERED_CUTOFF_HZ, 1e-6, "clamped")
+
+
+func test_the_wind_of_the_ground_is_not_heard_high_in_the_air() -> void:
+	assert_eq(WeatherAudio.aloft_factor(0.0), 1.0, "on the ground: all of it")
+	assert_eq(WeatherAudio.aloft_factor(WeatherAudio.ALOFT_FROM_M), 1.0, "a few tens of metres up: still all of it")
+	var half := WeatherAudio.aloft_factor(0.5 * (WeatherAudio.ALOFT_FROM_M + WeatherAudio.ALOFT_TO_M))
+	assert_true(half > 0.0 and half < 1.0, "fading on the way up")
+	assert_eq(WeatherAudio.aloft_factor(2000.0), 0.0, "2 km over the relief: none")
+	assert_eq(WeatherAudio.aloft_factor(-5.0), 1.0, "under the sampled ground (a pit, a step): all of it")

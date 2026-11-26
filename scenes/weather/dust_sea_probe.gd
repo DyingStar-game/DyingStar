@@ -19,8 +19,12 @@ extends RefCounted
 
 const ACTION := &"debug_dust_sea_probe"
 const DIR := "user://dust_sea_probe"
+
+## The GPU readback the captures go through (_shot), made on the first one, under the renderer.
+static var _readback: ScreenReadback = null
 ## The aerial material's uniforms read back.
-const PARAMS: Array[String] = ["sea_on", "sea_beta", "sea_top", "sea_floor", "sea_ground", "sea_top_boost",
+const PARAMS: Array[String] = ["sea_on", "sea_beta", "sea_top", "sea_floor", "sea_ground", "sea_base",
+	"sea_below_share", "sea_mie_fore_strength", "sea_mie_back_strength", "sky_bounce", "sea_top_boost",
 	"sea_top_scale", "sea_billow_m", "sea_sun", "sea_ambient", "sea_ms_gain", "sea_eye_gain", "sea_direct_gain",
 	"sea_crease_floor", "sea_neutral", "sea_white", "sea_rock_tint", "sea_edge_tint", "sea_map_on", "sea_steps",
 	"sea_rays", "sea_far", "sea_pixel_rad", "sea_cam", "sea_up", "sea_radius", "dust_veil_beta", "dust_density",
@@ -63,11 +67,15 @@ static func run(renderer: AtmosphereRenderer) -> void:
 	renderer.set_dust_param(&"sea_debug", 0)
 
 
-## The screen two frames from now, to [param path].
+## The screen two frames from now, to [param path], in the colours the player sees: the window's texture
+## is LINEAR (hdr_2d), and saved as it was every capture came out far darker than the screen, a dusk sky
+## read as nearly black (the user, 2026-11-26). ScreenReadback converts it on the GPU.
 static func _shot(renderer: AtmosphereRenderer, path: String) -> void:
 	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
-	var image := renderer.get_viewport().get_texture().get_image()
+	if not is_instance_valid(_readback):
+		_readback = ScreenReadback.new()
+		renderer.add_child(_readback)
+	var image: Image = await _readback.capture(renderer.get_viewport())
 	if image != null:
 		image.save_png(path)
 

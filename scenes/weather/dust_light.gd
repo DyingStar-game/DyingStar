@@ -63,8 +63,30 @@ static func push(renderer: AtmosphereRenderer, up: Vector3, tau_storm_above: flo
 	var air: Color = profile.transmittance_to_star(renderer.altitude_above_sphere(), sin_e, 0.0) \
 			if profile != null else Color.WHITE
 	var free: Vector3 = free_beam(star, renderer.sun.sun_energy, air)
+	var ambient_share: float = DIRECT_SHARE * light.x + DIFFUSE_SHARE * maxf(light.y - light.x, 0.0)
+	var ambient: Vector3 = free * ambient_share + AMBIENT_FLOOR
+	# Under the dust sea the wind's dust is lit like the ground around it: by the sea's overcast, the
+	# star's light whitened by the sea (DustSea.light_colour), not by the orange beam of the star through
+	# the air, which no longer reaches it (2026-11-26: an orange dust over a grey basin).
+	var sea: DustSea = renderer.dust_sea
+	var altitude: float = renderer.altitude_above_sphere()
+	var share: float = sea.under_share(altitude) if sea.is_on() else 0.0
+	if share > 0.0:
+		var neutral: Vector3 = free_beam(DustSea.light_colour(star), renderer.sun.sun_energy, air)
+		var overcast: Color = sea.overcast(altitude, sin_e, neutral)
+		var lit: Array[Vector3] = under_sea(free, ambient, neutral, Vector3(overcast.r, overcast.g, overcast.b), share)
+		free = lit[0]
+		ambient = lit[1]
 	renderer.set_dust_param(&"dust_sun", Vector3(c.r, c.g, c.b))
 	renderer.set_dust_param(&"dust_sun_free", free)
-	var ambient_share: float = DIRECT_SHARE * light.x + DIFFUSE_SHARE * maxf(light.y - light.x, 0.0)
-	renderer.set_dust_param(&"dust_ambient", free * ambient_share + AMBIENT_FLOOR)
+	renderer.set_dust_param(&"dust_ambient", ambient)
 	renderer.set_dust_param(&"dust_sun_dir", renderer.sun.star_direction)
+
+
+## The light on the wind's dust with [param share] (0..1) of the dust sea over the eye: the beam before
+## the dust goes from [param free] (the star's colour through the air) to [param neutral] (the same
+## whitened by the sea), the ambient from [param ambient] to the sea's [param overcast]. [free, ambient].
+static func under_sea(free: Vector3, ambient: Vector3, neutral: Vector3, overcast: Vector3,
+		share: float) -> Array[Vector3]:
+	var s: float = clampf(share, 0.0, 1.0)
+	return [free.lerp(neutral, s), ambient.lerp(overcast, s)]

@@ -5,8 +5,8 @@ extends RefCounted
 ## profile has a corundum slab (haze_top > haze_bottom); off with client.ini debug_no_dust_sea.
 ##
 ## Calibrated on the atmosphere model's white (opaque) sea (services weather, Nova-Atmo, sea optical depth
-## 14): visibility ~1 km inside, dust down to the ground in the basins (a column of ~15 there, 23 % of the
-## sunlight reaching the ground, all of it diffuse), a billowed top near 3 300 m, the plateaus over it in
+## 14): visibility ~1 km inside, a base at 500 m with a tenth of the dust under it (the model holds it since
+## 2026-11-26: before, its columns reached the ground), a billowed top near 3 300 m, the plateaus over it in
 ## the clear (a thin dust of optical depth ~0.4 above). One uniform extinction from the ground to the top
 ## gives all of these at once with the two-stream estimate DustLight already uses (1 / (1 + 3/4 (1-g) tau)).
 ## When the service publishes its field (WeatherField, through Planet.weather_at), the sea's thickness
@@ -23,11 +23,18 @@ extends RefCounted
 
 ## The mean top of the sea (m over the reference sphere: the model's 3 250 m mean profile, the billows
 ## reach ±BILLOW_M around it), the lowest ground a ray is marched down to (m), and the base the
-## worldbuilding gives the sea (m): the basins under it hold dust down to their floor all the same (the
-## model's columns reach the ground), so the base only caps the ground the light bounces on.
+## worldbuilding gives the sea (m): under it a thinner dust (BELOW_SHARE), and the light bounces on the
+## ground or the base, the lower.
 const SEA_TOP_M: float = 3300.0
 const FLOOR_M: float = -3000.0
 const BASE_M: float = 500.0
+## Under the base the dust is BELOW_SHARE of the sea's (the model brings it back there in half a day: sandbox.toml
+## [sea] below_share), the change BASE_EDGE_M soft: a basin floor sees ~10 km, dim under the sea over it.
+const BELOW_SHARE: float = 0.1
+## The share of the sunlight the sea's top sends back (the model's planetary albedo with the white sea, 0.657):
+## what lights the air over it from below (AtmosphereRenderer.sky_bounce).
+const ALBEDO: float = 0.66
+const BASE_EDGE_M: float = 150.0
 ## The visibility inside the sea (m) at the calibrated default (Koschmieder: extinction 3.912 / V), and
 ## the model's sea optical depth it stands for. 1 km over a basin column of 3.8 km is the model's ~15.
 const VISIBILITY_M: float = 1000.0
@@ -108,6 +115,12 @@ const UNDER_FULL: float = 3.0
 ## pale overcast, not one dark and the other burnt out (the probe's numbers, 2026-11-25).
 ## At the bare physics the fog read a dark brown-ochre (2026-11-25).
 const NEUTRAL_LIGHT: float = 0.85
+## The colours of the grains' own scattering on the sun's direct beam (DustSeaMie, tools/weather/mie_glory_table.py):
+## the glory around the eye's shadow on the sunlit top, the iridescence of the thin edges near the sun. 0 = white,
+## 1 = the Mie colours as computed (IMAGE choices). The iridescence at half: at 1 it was a gold disc around the
+## sun with an orange ring (the user, 2026-11-26); the glory as computed.
+const MIE_FORE_STRENGTH: float = 0.5
+const MIE_BACK_STRENGTH: float = 1.0
 const EYE_TARGET: float = 0.6
 const UNDER_GAIN_MAX: float = 4.0
 ## How far the march looks inside the shell (m), its step budget against the atmosphere quality (view
@@ -244,7 +257,18 @@ func sea_tau_above(altitude: float) -> float:
 	if not _on:
 		return 0.0
 	var b: float = beta()
-	return b * maxf(SEA_TOP_M - altitude, 0.0) + (b * TOP_BOOST * TOP_SCALE_M if altitude < SEA_TOP_M else 0.0)
+	return b * depth_between(altitude, SEA_TOP_M) + (b * TOP_BOOST * TOP_SCALE_M if altitude < SEA_TOP_M else 0.0)
+
+
+## The sea's optical depth per unit of extinction between heights [param lo] and [param hi] (m): full over
+## the base, BELOW_SHARE under it (dust_sea.gdshaderinc sea_depth_between).
+static func depth_between(lo: float, hi: float) -> float:
+	return maxf(hi - maxf(lo, BASE_M), 0.0) + BELOW_SHARE * maxf(minf(hi, BASE_M) - lo, 0.0)
+
+
+## The share of the sea's extinction at [param altitude] (m): 1 over the base, BELOW_SHARE under it.
+static func base_share(altitude: float) -> float:
+	return lerpf(BELOW_SHARE, 1.0, smoothstep(BASE_M - BASE_EDGE_M, BASE_M + BASE_EDGE_M, altitude))
 
 
 ## All the dust's optical depth over [param altitude]: the sea's and the thin dust over it.
@@ -260,7 +284,7 @@ func tau_above(altitude: float) -> float:
 func veil_beta(altitude: float) -> float:
 	if not _on:
 		return 0.0
-	return beta() * (1.0 - smoothstep(SEA_TOP_M - 100.0, SEA_TOP_M + 100.0, altitude))
+	return beta() * base_share(altitude) * (1.0 - smoothstep(SEA_TOP_M - 100.0, SEA_TOP_M + 100.0, altitude))
 
 
 ## How much of the world's ambient light is the overcast's at [param altitude] (0..1).
@@ -278,7 +302,7 @@ func eye_gain(altitude: float) -> float:
 ## The share of a sunlit top's light the overcast gives at [param altitude] (the two-stream radiance over
 ## E mu0: 1 at the top, ~0.2 at the bottom of a basin).
 func diffuse_share(altitude: float) -> float:
-	var below: float = beta() * maxf(altitude - minf(_ground_m, BASE_M), 0.0)
+	var below: float = beta() * depth_between(minf(_ground_m, BASE_M), altitude)
 	return (1.0 + TWO_STREAM * below) / (1.0 + TWO_STREAM * (below + sea_tau_above(altitude)))
 
 
@@ -292,6 +316,8 @@ static func light_material(material: ShaderMaterial) -> void:
 	material.set_shader_parameter("sea_beta", beta_now)
 	material.set_shader_parameter("sea_top", SEA_TOP_M)
 	material.set_shader_parameter("sea_ground", ground_now)
+	material.set_shader_parameter("sea_base", BASE_M)
+	material.set_shader_parameter("sea_below_share", BELOW_SHARE)
 	material.set_shader_parameter("sea_sun", sun_now)
 	material.set_shader_parameter("sea_gain", gain_now)
 	material.set_shader_parameter("sea_eye_alt", eye_alt_now)
@@ -305,7 +331,7 @@ static func light_material(material: ShaderMaterial) -> void:
 static func ground_sun_share(elevation: float) -> float:
 	if elevation >= SEA_TOP_M:
 		return 1.0
-	var tau: float = 3.912 / VISIBILITY_M * (SEA_TOP_M - elevation + TOP_BOOST * TOP_SCALE_M)
+	var tau: float = 3.912 / VISIBILITY_M * (depth_between(elevation, SEA_TOP_M) + TOP_BOOST * TOP_SCALE_M)
 	return 1.0 / (1.0 + TWO_STREAM * tau)
 
 
@@ -313,7 +339,8 @@ static func ground_sun_share(elevation: float) -> float:
 ## the ground's heat rising, and a basin under the opaque sea gets a fifth of the sun, all of it diffuse: none
 ## there, fewer and weaker on the slopes, all of them over the top (the user, 2026-11-25).
 static func devil_share(elevation: float) -> float:
-	return smoothstep(0.25, 0.9, ground_sun_share(elevation))
+	# From 0.32: a basin floor under the held base gets ~0.27 of the sun (0.23 when the dust reached the ground).
+	return smoothstep(0.32, 0.9, ground_sun_share(elevation))
 
 
 ## The colour of a wall's or a devil's dust over a ground of colour [param ground] (see WALL_SATURATION).
@@ -338,7 +365,7 @@ static func has_sea(profile: AtmosphereProfile) -> bool:
 ## For the weather's readouts (Planet.weather_at): the sea is the planet's, whatever the weather source says.
 static func visibility_at(elevation: float, sample: Dictionary) -> float:
 	if elevation < SEA_TOP_M:
-		return VISIBILITY_M
+		return VISIBILITY_M / base_share(elevation)
 	var dust: float = maxf(float(sample.get("dust_tau", 0.0)) - float(sample.get("haze_tau", 0.0)), 0.0)
 	var beta: float = dust / WeatherSampler.DUST_LAYER_M
 	if elevation < SEA_TOP_M + THIN_M:
@@ -386,7 +413,7 @@ func _refresh(planet: Planet, camera: Camera3D, to_planet: Basis) -> void:
 	_last_sample = sample
 	var column_m: float = SEA_TOP_M - _ground_m
 	if bool(sample.get("weather_field", false)) and column_m >= MIN_COLUMN_M:
-		var calibrated: float = 3.912 / VISIBILITY_M * (column_m + TOP_BOOST * TOP_SCALE_M)
+		var calibrated: float = 3.912 / VISIBILITY_M * (depth_between(_ground_m, SEA_TOP_M) + TOP_BOOST * TOP_SCALE_M)
 		var ratio: float = float(sample.get("dust_tau", 0.0)) / calibrated
 		_factor_target = 1.0 if ratio < FIELD_NO_SEA else clampf(ratio, FACTOR_MIN, FACTOR_MAX)
 	elif not bool(sample.get("weather_field", false)):
@@ -403,6 +430,11 @@ func _push_sea(renderer: AtmosphereRenderer) -> void:
 	renderer.set_dust_param(&"sea_floor", FLOOR_M)
 	renderer.set_dust_param(&"sea_beta", beta())
 	renderer.set_dust_param(&"sea_ground", minf(_ground_m, BASE_M))
+	renderer.set_dust_param(&"sea_base", BASE_M)
+	renderer.set_dust_param(&"sea_below_share", BELOW_SHARE)
+	renderer.set_dust_param(&"sea_base_edge", BASE_EDGE_M)
+	renderer.set_dust_param(&"sea_mie_fore_strength", MIE_FORE_STRENGTH)
+	renderer.set_dust_param(&"sea_mie_back_strength", MIE_BACK_STRENGTH)
 	renderer.set_dust_param(&"sea_top_boost", TOP_BOOST)
 	renderer.set_dust_param(&"sea_top_scale", TOP_SCALE_M)
 	renderer.set_dust_param(&"sea_billow_m", BILLOW_M)

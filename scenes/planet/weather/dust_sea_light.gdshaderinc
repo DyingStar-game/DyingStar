@@ -27,7 +27,18 @@ uniform float body_ground_share = 0.7;
 // the thing's place, brightest channel 1): golden at a low sun, as on the ground beside it.
 uniform vec3 sun_tint = vec3(1.0);
 
+// The sea's base (m) and the share of its dust under it (DustSea.BASE_M, BELOW_SHARE).
+uniform float sea_base = 500.0;
+uniform float sea_below_share = 1.0;
+
 const float SEA_LIGHT_TWO_STREAM = 0.225;
+
+
+// The sea's optical depth per unit of extinction between heights [param lo] and [param hi] (m): full over
+// the base, sea_below_share under it (dust_sea.gdshaderinc sea_depth_between, DustSea.depth_between).
+float sea_light_depth(float lo, float hi) {
+	return max(hi - max(lo, sea_base), 0.0) + sea_below_share * max(min(hi, sea_base) - lo, 0.0);
+}
 const float SEA_LIGHT_MS_GAIN = 0.85;
 const float SEA_LIGHT_DIRECT_GAIN = 0.45;
 
@@ -41,13 +52,13 @@ vec3 sea_light(float alt, float mu, float shade, float glow, float sky, vec3 abo
 	if (sea_beta <= 0.0) {
 		return above;
 	}
-	float column = sea_beta * max(sea_top - alt, 0.0);
+	float column = sea_beta * sea_light_depth(alt, sea_top);
 	float under = smoothstep(0.3, 3.0, column);
 	if (under <= 0.0) {
 		return above;
 	}
 	float m = max(mu, 0.0);
-	float below = sea_beta * max(alt - sea_ground, 0.0);
+	float below = sea_beta * sea_light_depth(sea_ground, alt);
 	float multi = m * (1.0 + SEA_LIGHT_TWO_STREAM * below) / (1.0 + SEA_LIGHT_TWO_STREAM * (below + column));
 	float direct = exp(-column / max(m, 0.05)) * shade * glow;
 	vec3 lit = sea_gain * sea_sun * (SEA_LIGHT_MS_GAIN * multi * sky + SEA_LIGHT_DIRECT_GAIN * direct);
@@ -63,6 +74,8 @@ float sea_fog(float distance_m, float alt) {
 	}
 	float low = min(alt, sea_eye_alt);
 	float high = max(alt, sea_eye_alt);
-	float under = high - low > 1.0 ? clamp((sea_top - low) / (high - low), 0.0, 1.0) : float(low < sea_top);
+	// The view's mean share of the sea's extinction: none over the top, sea_below_share under the base.
+	float under = high - low > 1.0 ? clamp(sea_light_depth(low, min(high, sea_top)) / (high - low), 0.0, 1.0)
+			: (low < sea_top ? (low < sea_base ? sea_below_share : 1.0) : 0.0);
 	return exp(-sea_beta * sea_fog_share * distance_m * under);
 }

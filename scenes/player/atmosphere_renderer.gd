@@ -700,10 +700,37 @@ func _push_profile(profile: AtmosphereProfile, star_direction: Vector3) -> void:
 	}
 	values.merge(_haze_values(profile), true)
 	_refresh_transmittance_lut(values, profile)
+	values["sky_bounce"] = sky_bounce(profile)  # after the LUT: it changes every frame, the LUT does not need it
 	_apply(values)
 	_sky_material.set_shader_parameter("star_angular_diameter", profile.star_angular_diameter)
 	_sky_material.set_shader_parameter("star_limb_softness", star_limb_softness)
 	_sky_material.set_shader_parameter("star_brightness", star_brightness)
+	_sky_material.set_shader_parameter("star_disc_dust", star_disc_dust())
+
+
+## The light the ground under the air sends back up, as a share of the star's irradiance per channel
+## (atmosphere_common.gdshaderinc sky_bounce): over the dust sea, its albedo (DustSea.ALBEDO) x the sun's
+## height x the air's transmittance down to the sea's top. None elsewhere (the other bodies' skies are tuned
+## without it) nor under the sea (the sea hides the sky there).
+func sky_bounce(profile: AtmosphereProfile) -> Vector3:
+	if profile == null or not dust_sea.is_on() or not is_instance_valid(sun):
+		return Vector3.ZERO
+	var sin_e: float = sun.star_direction.dot(sun.stable_up())
+	if sin_e <= 0.0:
+		return Vector3.ZERO
+	var over: float = 1.0 - dust_sea.under_share(altitude_above_sphere())
+	var air: Color = profile.transmittance_to_star(DustSea.SEA_TOP_M, sin_e, 0.0)
+	return Vector3(air.r, air.g, air.b) * (DustSea.ALBEDO * sin_e * over)
+
+
+## What the dust sea over the eye leaves of the star's disc (0..1): the sky draws the disc through the air
+## alone, and the aerial pass dimming it by the sea's 1e-8 left a bright dot through 12 optical depths of
+## sea, the disc's radiance being ~1e4 times its irradiance (2026-11-26). The same column as the light's.
+func star_disc_dust() -> float:
+	if not dust_sea.is_on() or not is_instance_valid(sun):
+		return 1.0
+	var sin_e: float = sun.star_direction.dot(sun.stable_up())
+	return exp(-dust_sea.tau_above(altitude_above_sphere()) / maxf(sin_e, 0.02))
 
 
 ## The profile's slab as the shaders get it: its own (raised by debug_pretend_lowlands), or, while the dust
@@ -733,8 +760,10 @@ func _push_airless(star_direction: Vector3) -> void:
 		"absorption_beta": Vector3.ZERO,
 		"to_star": star_direction,
 		"star_irradiance": 0.0,
+		"sky_bounce": Vector3.ZERO,
 	})
 	_sky_material.set_shader_parameter("star_brightness", star_brightness)
+	_sky_material.set_shader_parameter("star_disc_dust", 1.0)
 
 
 func _apply(values: Dictionary) -> void:
