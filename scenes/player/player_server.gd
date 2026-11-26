@@ -694,7 +694,10 @@ func server_action_received(data: Dictionary) -> void:
 					)
 		"vehicle_input":
 			var veh_in = _piloted_vehicle(data)
-			if veh_in != null and veh_in.has_method("set_drive_input"):
+			if veh_in != null and veh_in.has_method("set_flight_input"):
+				# A ship (Spaceship): the same message carries its six axes and the brake (flight_input).
+				veh_in.set_flight_input(data)
+			elif veh_in != null and veh_in.has_method("set_drive_input"):
 				veh_in.set_drive_input(
 					float(data.get("throttle", 0.0)),
 					float(data.get("steer", 0.0)),
@@ -1354,7 +1357,7 @@ func _physics_process_impl(delta: float) -> void:
 	else:
 		_idle_settled_ticks = 0
 
-	var parent_gravity_area: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
+	var parent_gravity_area: Area3D = player.get_current_gravity_parent()
 	_weightless_time = 0.0 if parent_gravity_area != null else _weightless_time + delta
 	_replicate_floating(_weightless_time >= player.ZERO_G_GRACE)
 
@@ -1536,7 +1539,9 @@ func _push_touched_bodies(want: Vector3, fall_speed: float) -> void:
 			break
 	if floor_rb != null and floor_rb.freeze:
 		floor_rb = null
-	if floor_rb != null:
+	# A body we are a CHILD of carries us by the tree (a ship we walk in, ShipInteriorRider): it gets no
+	# weight from us. Pressed on every tick, the hover holding the ship at its own weight let it sink.
+	if floor_rb != null and floor_rb != player.get_parent():
 		var arm: Vector3 = floor_at - floor_rb.global_position
 		# Weight: on a body that is awake. A sleeping one is at rest under it, as it would stay (and
 		# waking it every tick would keep a truck someone stands in out of sleep for good). The share
@@ -1894,7 +1899,7 @@ func _report_move() -> void:
 		var tilt: float = rad_to_deg(acos(clampf(kc.get_normal().dot(up), -1.0, 1.0)))
 		cols += " [%s tilt=%.1f depth=%.3f]" % [cname, tilt, kc.get_depth()]
 	var alt: float = -1.0
-	var grav: Area3D = player.gravity_parents.back() if not player.gravity_parents.is_empty() else null
+	var grav: Area3D = player.get_current_gravity_parent()
 	if grav and grav.gravity_point:
 		alt = (player.global_position - grav.global_position).length()
 	print("[Move] on_floor=%s vup=%+.2f vh=%.2f floor_tilt=%.1f alt=%.2f pos=%s%s" % [

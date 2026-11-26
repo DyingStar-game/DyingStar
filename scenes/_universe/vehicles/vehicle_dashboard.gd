@@ -18,6 +18,11 @@ extends Panel
 ## A light that is off stays in place, faint: the eye always finds a light where it was.
 ## Colours follow the real dashboards: green = on, amber = caution, red = danger.
 ##
+## The same screen serves the spaceship (layout = SHIP): a ship has no handbrake, doors, cargo, bays,
+## drive mode, gearbox or battery model, so those cells are hidden rather than left as dead lights. It
+## keeps the speed (the body's, in km/h: no wheels to read), the headlights, the limiter / cruise cell,
+## the engine light and the thrust gauge, and it lights with the engine alone.
+##
 ## @tool only for the editor's sake: the strip is built in code, so the scene showed an empty panel
 ## there. In the editor it builds a still preview with sample values (_preview) and does nothing else;
 ## its nodes have no owner, so nothing of it is saved into a scene.
@@ -64,6 +69,14 @@ const FIGURE_WIDTH_PX: int = 300
 const ENERGY_CELLS: int = 3
 const BATTERY_CELLS: int = 3
 
+## Which vehicle the screen is laid out for (see the class doc).
+enum Layout { TRUCK, SHIP }
+
+## Which vehicle the screen is laid out for. TRUCK: every light, the speed read off the wheels, dark
+## without a charged battery. SHIP: speed (body speed, km/h), headlights, limiter / cruise, engine and
+## thrust only; the truck's cells are hidden and the engine alone lights it.
+@export var layout: Layout = Layout.TRUCK
+
 ## Beyond this distance (m) from the player's view the screen stops rendering and its labels stop
 ## updating: it keeps its last image, unreadable from there anyway. Every truck carried a 1921x1112
 ## screen redrawn every frame wherever it stood — eleven of them around the spawn.
@@ -101,6 +114,7 @@ var _load: TextureRect
 var _load_text: Label
 var _doors: TextureRect
 var _drive: Label
+var _motor: TextureRect
 var _power: ProgressBar
 var _rpm: Label
 ## The energy column: icon | bar | figure, one row for the motor and one per battery, so every bar
@@ -135,13 +149,16 @@ func _process(delta: float) -> void:
 	# Engine off, or no charge left: the screen goes dark (matches the rear-view screens). Multiplying
 	# by black keeps the panel opaque, so the cab screen reads as a powered-off display rather than a
 	# frozen dash. It draws nothing from the batteries, but it needs one with some charge.
-	if not _vehicle.is_engine_on() or not _vehicle.energy.has_energy():
+	if not powered(layout, _vehicle.is_engine_on(), _vehicle.energy.has_energy()):
 		_door_alarm.step(delta, 0.0)
 		modulate = Color(0, 0, 0, 1)
 		_set_state("off")
 		return
 	modulate = Color(1, 1, 1, 1)
 	_set_state("live")
+	if layout == Layout.SHIP:
+		_show_ship()
+		return
 	# The digits read the WHEELS' speed, as a real speedometer does (and as the rev counter already
 	# does): the body's speed counted a fall off a cliff as driving, and climbed at ~35 km/h a second
 	# all the way down (playtest 2026-10-16). In the air the free wheels spin down, so do the digits.
@@ -152,14 +169,7 @@ func _process(delta: float) -> void:
 	_odometer.text = "%s km" % _km_text(_vehicle.odometer.km())
 	_lights.modulate = light_colour(_vehicle.is_headlights_on())
 	_handbrake.modulate = handbrake_colour(_vehicle.is_handbraked(), speed, Time.get_ticks_msec() * 0.001)
-	# One cell for the two speed systems, which are never on together: the cruise control's icon and set
-	# speed while it holds the truck, the limiter's otherwise (on or off: its limit is always shown).
-	var limiter: VehicleSpeedLimiter = _vehicle.limiter
-	var cruise: VehicleCruiseControl = _vehicle.cruise
-	_limiter.texture = _cruise_icon if cruise.enabled else _limiter_icon
-	_limiter.modulate = speed_colour(limiter.enabled, limiter.is_over(speed), cruise.enabled)
-	_limiter_cap.text = "%d" % (cruise.set_kmh if cruise.enabled else limiter.cap_kmh)
-	_limiter_cap.modulate = _limiter.modulate if limiter.enabled or cruise.enabled else OFF_COLOR
+	_show_speed_cell(speed)
 	_load.modulate = load_colour(_vehicle.is_overloaded())
 	_load_text.text = "%.0f / %.0f kg" % [_vehicle.get_cargo_mass(), _vehicle.max_payload]
 	_load_text.modulate = _load.modulate
@@ -172,6 +182,57 @@ func _process(delta: float) -> void:
 	_rpm.text = tr("%%HUD_RPM") % _vehicle.get_engine_rpm()
 	_show_batteries(_vehicle.energy.levels())
 	_show_bays(_vehicle.bays.all())
+
+
+## The ship's refresh (layout SHIP): the body's speed -- a ship has no wheels, and on a replica it is the
+## figure the server replicates ("speed") --, the headlights, the limiter / cruise cell, the engine light
+## and the thrust asked (replicated "power"), as a gauge and a percentage in the rpm's place.
+func _show_ship() -> void:
+	var speed: float = _vehicle.get_display_speed_kmh()
+	_speed.text = "%.0f" % absf(speed)
+	_lights.modulate = light_colour(_vehicle.is_headlights_on())
+	_show_speed_cell(speed)
+	_motor.modulate = GREEN
+	var share: float = _vehicle.get_power_share()
+	_show_power(share)
+	_rpm.text = EnergyFormat.percent(share)
+
+
+## One cell for the two speed systems, which are never on together: the cruise control's icon and set
+## speed while it holds the vehicle, the limiter's otherwise (on or off: its limit is always shown).
+## [param speed] (km/h) tells whether the limiter is holding it back.
+func _show_speed_cell(speed: float) -> void:
+	var limiter: VehicleSpeedLimiter = _vehicle.limiter
+	var cruise: VehicleCruiseControl = _vehicle.cruise
+	_limiter.texture = _cruise_icon if cruise.enabled else _limiter_icon
+	_limiter.modulate = speed_colour(limiter.enabled, limiter.is_over(speed), cruise.enabled)
+	_limiter_cap.text = "%d" % (cruise.set_kmh if cruise.enabled else limiter.cap_kmh)
+	_limiter_cap.modulate = _limiter.modulate if limiter.enabled or cruise.enabled else OFF_COLOR
+
+
+## Whether the screen is lit, for a [param screen_layout]: with the engine on ([param engine_on]), and
+## for a truck a battery with some charge ([param has_energy]); a ship has no battery model yet. Pure.
+static func powered(screen_layout: Layout, engine_on: bool, has_energy: bool) -> bool:
+	return engine_on and (has_energy or screen_layout == Layout.SHIP)
+
+
+## The truck's cells a [param screen_layout] hides (their nodes stay built, only hidden): none for a
+## truck; for a ship the handbrake, the doors, the load, the bays, the odometer (it counts wheels on the
+## ground) and the drive mode. The batteries are never added on a ship (_show_batteries is not called).
+static func hidden_cells(screen_layout: Layout) -> PackedStringArray:
+	if screen_layout == Layout.SHIP:
+		return PackedStringArray(["handbrake", "doors", "load", "bays", "odometer", "drive"])
+	return PackedStringArray()
+
+
+## Hide what the layout does not show (hidden_cells), in the live strip and the editor preview alike.
+func _apply_layout() -> void:
+	var nodes: Dictionary = {
+		"handbrake": _handbrake, "doors": _doors, "load": _load.get_parent(), "bays": _bay_boxes,
+		"odometer": _odometer, "drive": _drive,
+	}
+	for cell: String in hidden_cells(layout):
+		(nodes[cell] as CanvasItem).visible = false
 
 
 ## The editor's still preview: the strip at the truck screen's shape, filled with sample values.
@@ -190,6 +251,9 @@ func _preview() -> void:
 	_load_text.text = "800 / 4000 kg"
 	_lights.modulate = GREEN
 	_doors.modulate = ORANGE
+	if layout == Layout.SHIP:
+		_rpm.text = EnergyFormat.percent(0.6)
+		return  # no batteries nor bays on a ship
 	_show_batteries([{"fraction": 0.8, "active": true}, {"fraction": 0.35, "active": false}] as Array[Dictionary])
 	var sample: Array[String] = ["motor", "battery", "battery", ""]
 	for i in sample.size():
@@ -324,6 +388,7 @@ func _build(host: Control) -> void:
 		logo.size = LOGO_SIZE
 		logo.modulate = Color(1, 1, 1, 0.55)
 		host.add_child(logo)
+	_apply_layout()
 
 
 ## Left: the speed, big, and the odometer.
@@ -454,9 +519,9 @@ func _energy() -> Control:
 	_drive = _label("", SMALL_FONT * 3 / 4, WHITE)
 	_drive.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	motor_cell.add_child(_drive)
-	var motor := _icon("motor", SMALL_ICON_PX)
-	motor.modulate = WHITE  # always shown: what drives the truck, not a warning
-	motor_cell.add_child(motor)
+	_motor = _icon("motor", SMALL_ICON_PX)
+	_motor.modulate = WHITE  # always shown: what drives the truck, not a warning (the ship's lights green)
+	motor_cell.add_child(_motor)
 	_power = _bar(GREEN)
 	_rpm = _figure()
 	for node: Control in [motor_cell, _power, _rpm]:

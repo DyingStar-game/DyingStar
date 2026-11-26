@@ -8,13 +8,18 @@ const GARAGE := "res://scenes/_universe/structures/industrial/garage.tscn"
 const PARTS := "res://scenes/_universe/structures/dispenser/component_dispenser.tscn"
 
 
-func test_it_offers_the_truck_under_ares_corp() -> void:
+func test_it_offers_the_truck_first_and_the_ship_under_ares_corp() -> void:
 	var terminal := (load(TERMINAL) as PackedScene).instantiate() as ItemDispenser
 	assert_eq(terminal.brand, AresBrand.Subsidiary.CORP, "ARES Corp's colours and logo")
 	var items: Array[Resource] = DispenserCatalog.all(terminal.catalogue_dir)
-	assert_eq(items.size(), 1, "the truck, for now")
+	assert_eq(items.size(), 2, "the truck and the test ship")
+	# FIRST: the NPC service's "kiosk_spawn" orders items[0] (ItemDispenser.server_order_first).
 	assert_eq(str(items[0].scene_path), "res://scenes/_universe/vehicles/ground/trucks/truck.tscn")
-	assert_ne(MarkerSpawn.scene_type(load(items[0].scene_path)), "", "a networked vehicle")
+	var paths: Array[String] = []
+	for item: Resource in items:
+		paths.append(str(item.scene_path))
+		assert_eq(MarkerSpawn.scene_type(load(item.scene_path)), "vehicle", "%s: a networked vehicle" % item.scene_path)
+	assert_has(paths, "res://scenes/_universe/vehicles/spaceship/spaceship.tscn", "the ship")
 	terminal.free()
 
 

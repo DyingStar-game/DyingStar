@@ -8,7 +8,7 @@ const UUID_UTIL = preload("res://addons/uuid/uuid.gd")
 const PIN_INTERVAL_MS: int = 250
 ## Prop type names in props_list that may contain RigidBody3D instances
 ## we want to pin chunks for.  "planets" intentionally excluded.
-const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m", "ship"]
+const PIN_PROP_TYPES: Array[String] = ["box50cm", "box4m"]
 ## Seeds mining zones under players as they walk the planet. Server-owned: it publishes zones
 ## through NetworkOrchestrator.spawn_prop_authoritative and arms/disarms their detection.
 var _mining_planner := MiningZonePlanner.new()
@@ -64,18 +64,15 @@ var props_list = {
 	"planets": {},
 	"box50cm": {},
 	"box4m": {},
-	"ship": {},
 	"spawnbuilding": {},
 }
 var props_list_last_movement = {
 	# "box50cm": {},
 	# "box4m": {},
-	# "ship": {},
 }
 var props_list_last_rotation = {
 	# "box50cm": {},
 	# "box4m": {},
-	# "ship": {},
 }
 
 var servers_ticks_tasks = {

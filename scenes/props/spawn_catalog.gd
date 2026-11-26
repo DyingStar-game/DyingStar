@@ -91,6 +91,11 @@ const ENTRIES := {
 		"label": "%%SPAWN_TRUCK", "scene": "res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
 		"type": "vehicle", "distance": 8.0, "origin_height": 1.0,
 	},
+	"ship": {
+		# The test spaceship (Spaceship): a vehicle too, its hull's bottom half a metre under its origin.
+		"label": "%%SPAWN_SHIP", "scene": "res://scenes/_universe/vehicles/spaceship/spaceship.tscn",
+		"type": "vehicle", "distance": 10.0, "origin_height": 0.6,
+	},
 }
 
 ## The wheel layout: a top-level entry is either a catalogue key (a leaf) or a category holding keys.
@@ -101,6 +106,7 @@ const WHEEL := [
 			"pallet_plate", "pallet_crate", "pallet_benne", "pallet_liquid"]},
 	{"text": "%%SPAWN_COMPONENTS_T1", "keys": ["engine_t1", "battery_t1"]},
 	{"key": "truck"},
+	{"key": "ship"},
 	{"key": "mining_tool"},
 ]
 
