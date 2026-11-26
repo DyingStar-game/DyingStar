@@ -1,85 +1,293 @@
 # DyingStar QGIS plugin — the planet pipeline
 
-This folder is the **DyingStar QGIS plugin** (QGIS 4.2, Qt6) and the library its scripts share:
-designing planet data in QGIS on the PostGIS base and exporting it to the packs the game streams.
+This folder is the **DyingStar QGIS plugin** (QGIS 4.2, Qt6) and the library its scripts share.
 
-## The plugin
+**Everything goes through QGIS**, in the **DyingStar** menu. You never copy a file or type a
+command:
+- create a planet project on the PostGIS base;
+- draw;
+- export to the packs the game streams;
+- publish them to the tile service;
+- re-bake the line profiles;
+- promote from `unstable` to `dev`, and further up.
 
-### Install
+The command lines further down this page are what the plugin runs under the hood, for
+troubleshooting.
 
-- **Developers (the plugin follows your checkout)** — link this folder into your QGIS profile,
-  under the name `DyingStar`, then enable it in *Plugins ▸ Manage and Install ▸ Installed*:
-  ```sh
-  ln -s "$PWD/tools/planettech/qgis" ~/.local/share/QGIS/QGIS4/profiles/default/python/plugins/DyingStar
-  ```
-  (Windows: `mklink /D "%APPDATA%\QGIS\QGIS4\profiles\default\python\plugins\DyingStar" <repo>\tools\planettech\qgis`.)
-  Every run re-reads the scripts from disk: an edited exporter needs no QGIS restart (the
-  plugin's own `ds_plugin/` does — or use the *Plugin Reloader* plugin).
-- **The team** — add our plugin repository once in *Plugins ▸ Manage and Install ▸ Settings ▸
-  Plugin repositories ▸ Add*:
-  `https://raw.githubusercontent.com/DyingStar-game/DyingStar/qgis-plugins/plugins.xml`.
-  QGIS then offers each new version. Or *Install from ZIP* with the zip of a
-  [`qgis-plugin-v*` release](https://github.com/DyingStar-game/DyingStar/releases).
-  An installed copy lives outside the repository: set **Dépôt DyingStar** in the settings (the
-  exports write into the checkout, publication and the Godot tools run from it).
+- [1. Install](#1-install)
+- [2. Settings](#2-settings-dyingstar--paramètres)
+- [3. What the plugin does](#3-what-the-plugin-does)
+- [4. For developers](#4-for-developers)
 
-Requirements: QGIS ≥ 4.0 with numpy and scipy (both in the standard QGIS installs), the
-PostgreSQL connection **`DyingStar`** (*Layer ▸ Data Source Manager ▸ PostgreSQL*), a checkout
-of this repository.
+## 1. Install
 
-### Menu **DyingStar**
+### What you need
 
-| Entry | What it runs |
-|---|---|
-| Projet planète… | `setup_planet_project.py`: planet name + radius, the layer picker, PostGIS schema and tables, the `.qgz` |
-| Mettre à jour les couches… | the same on the open project's planet, without asking name and radius (a field added to a layer definition…) |
-| Exporter ▸ … | one entry per exporter (`export_*.py`); **Tout le pack de modificateurs** runs roads, regions, mountains, volcanoes and rocky terrain, then links the pack once |
-| Routes ▸ Terrain de la zone… | `zone_terrain.py`: altitude, contours and slope classes of the area on screen (see "Drawing roads over the relief") |
-| Routes ▸ Tracer une route… | `zone_route.py`: the road computed between your clicks, keeping to the max slope (see "Automatic route") |
-| Routes ▸ Profil en long | the panel of the selected road's profile (see "The longitudinal profile") |
-| Routes ▸ Aperçu des massifs… | `preview_mountain_contours.py`, with its options in a dialog |
-| Publication ▸ … | `publish_remote.py --pull / --check / --promote`, `link_modifiers.link()` |
-| Outils ▸ … | `migrate_volcanic_layers.py`, `probe_pack_sparsity.py`, `export_rocks.py` |
-| Journal / Dossier des journaux / Paramètres… | the log, the log files, the settings |
+- **QGIS 4.2** (4.0 at least: the plugin is Qt6 only), with numpy and scipy.
+  - The Windows and macOS installers ship both.
+  - On Linux, install your distribution's `python3-numpy` and `python3-scipy`.
+- **A clone of this repository.** The exports write into it, and the Godot tools and the
+  publication run from it, even when the plugin itself was installed from a zip.
+- **The project's Godot** (4.7, double precision, mono). Two tools start it without a window:
+  *Terrain de la zone* (exact source) and *Recuire les profils des lignes*.
+- **The PostgreSQL connection named exactly `DyingStar`**, which holds the planet layers.
+  1. Open *Layer ▸ Data Source Manager ▸ PostgreSQL ▸ New*.
+  2. Name: `DyingStar`. Host, port, database and account: ask the team.
+  3. Keep the password in an *authentication configuration*, not in the project.
+- **To publish**: an SSH key the tile server accepts. Ask the team for the target.
 
-How a run goes (`ds_plugin/runner.py`): the script reads the project and its layers on the
-main thread (`prepare()`), then computes and writes in a **background task** (QGIS stays usable;
-progress and *Cancel* in the task bar at the bottom — the elevation export can be cancelled
-between two batches of tiles). Everything it prints goes to the **DyingStar** tab of the log
-panel and to a file under `<QGIS profile>/DyingStar/logs/`. One run at a time: the exporters
-share `parts/` and the string table. A project without the `planet_name` / `planet_radius_m`
-variables is refused (the scripts used to fall back to another planet).
+### Option A — from our plugin repository (the team)
 
-### Settings (*DyingStar ▸ Paramètres…*)
+1. *Plugins ▸ Manage and Install Plugins… ▸ Settings ▸ Plugin repositories ▸ Add…*
+   - Name: `DyingStar`.
+   - URL: `https://raw.githubusercontent.com/DyingStar-game/DyingStar/qgis-plugins/plugins.xml`.
+2. *All* tab: search **DyingStar**, then *Install Plugin*.
+3. *DyingStar ▸ Paramètres…*: set **Dépôt DyingStar** to your clone (see §2).
 
-They are handed to the scripts as the environment variables the scripts already read, so the
-background publication sees them too. Empty = `export_config.ini`, then the default.
+QGIS then offers every new version in *Upgradeable*. You can also take the zip of a
+[`qgis-plugin-v*` release](https://github.com/DyingStar-game/DyingStar/releases) and use
+*Install from ZIP*. Both need a released version (see "Releasing the plugin" in §4); until the
+first one, use option B.
 
-| Setting | Variable | Default |
+### Option B — from your clone (developers, or before the first release)
+
+The plugin then follows your checkout: `git pull` updates it.
+
+1. Link this folder into your QGIS profile under the name `DyingStar`.
+
+   - Linux:
+     ```sh
+     ln -s "$PWD/tools/planettech/qgis" ~/.local/share/QGIS/QGIS4/profiles/default/python/plugins/DyingStar
+     ```
+   - macOS:
+     ```sh
+     ln -s "$PWD/tools/planettech/qgis" ~/Library/Application\ Support/QGIS/QGIS4/profiles/default/python/plugins/DyingStar
+     ```
+   - Windows, in a terminal opened as administrator (or with Developer Mode on):
+     ```bat
+     mklink /D "%APPDATA%\QGIS\QGIS4\profiles\default\python\plugins\DyingStar" C:\path\to\DyingStar\tools\planettech\qgis
+     ```
+
+2. Restart QGIS, then tick **DyingStar** in *Plugins ▸ Manage and Install Plugins… ▸ Installed*.
+
+**After a `git pull`:**
+- The exporters and tools are read again from disk at every run: nothing to do.
+- A change in the plugin's own code (`ds_plugin/`) needs QGIS restarted, or the *Plugin
+  Reloader* plugin on `DyingStar`.
+
+### Check the install
+
+- A **DyingStar** menu appears in the menu bar, before *Help*.
+- Two toolbars appear: *DyingStar* and *DyingStar — Routes*.
+- *DyingStar ▸ Paramètres…* shows at the bottom **Dépôt utilisé : <your clone>**.
+- With a publication target set, *DyingStar ▸ Publication ▸ Vérifier la cible de publication*
+  ends with `OK : …`.
+
+## 2. Settings (*DyingStar ▸ Paramètres…*)
+
+The settings are kept in your QGIS profile, for all your projects. Every field has a tooltip.
+An empty field falls back to `export_config.ini` (the old per-checkout file, still read), then
+to the default below.
+
+**Chemins**
+
+| Setting | What it is | Empty = |
 |---|---|---|
-| Dépôt DyingStar (zip) | `DS_REPO_DIR` | only for a plugin installed from a zip: a plugin loaded from a checkout always uses that checkout (the Godot tools it starts must be its own version) |
-| Dossier d'export | `DS_EXPORT_DIR` | `<repo>/assets/qgis/export` |
-| Dossier des projets QGIS | `DS_QGIS_PROJECTS_DIR` | `<repo>/assets/qgis` — only for a NEW project; a saved one stays where it is |
-| GeoJSON de référence | `DS_EXISTING_FEATURES` | none |
-| Dossier d'export des grottes | `DS_CAVE_EXPORT_DIR` | `~/dyingstar-private/caves` |
-| startup_items.json | `DS_STARTUP_ITEMS` | `../horizonserver/ds_genericprops/startup_items.json` |
-| Binaire Godot | `GODOT_BIN` | — |
-| Publication (SSH, port, dist…) | `DS_PUBLISH_*` | `export_config.ini [publish]` |
+| Dépôt DyingStar (plugin installé par zip) | Your clone of the game. Only used by a plugin installed from a zip: a plugin linked from a clone always uses that clone, so the Godot tools it starts are its own version. | the plugin's own clone |
+| Dossier d'export | Where exports write `<planet>_chunks/…` and `<planet>_poi.json`. | `<repo>/assets/qgis/export` |
+| Dossier des projets QGIS | Where *Projet planète* saves a **new** project (`<folder>/<planet>/<planet>.qgz`). A saved project stays where it is. | `<repo>/assets/qgis` |
+| GeoJSON de référence | Optional: a GeoJSON loaded at the root of the project by *Projet planète*. | none |
+| Dossier d'export des grottes | Private, outside the repository (caves export). | `~/dyingstar-private/caves` |
+| startup_items.json (Horizon) | The villages whose roads are cut at export. | `../horizonserver/ds_genericprops/startup_items.json` |
+| Binaire Godot | The project's Godot executable (see §1). | — (the tools that need it say so) |
+
+**Publication sur le service de tuiles** (ask the team for the values)
+
+| Setting | What it is | Empty = |
+|---|---|---|
+| SSH | `user@server` of the tile service. | no automatic publication |
+| Port | SSH port. | 22 |
+| dist | The folder nginx serves on the server. | `/var/www/dist` |
+| Dossier de travail | On the server, where packs are received; it also keeps the team's last pack. | `ds-publish` |
+| python du serveur | The server's Python executable. | `python3` |
+| Canal | Where an export lands. Leave it on `unstable`: you promote from there. | `unstable` |
+| URL HTTP | The tile service as the game reads it, used for the checks after publishing and by *Promouvoir…*. | `client.ini [stream] tiles_url` |
+
+**Options**
+
+| Setting | What it is |
+|---|---|
+| Grille 10° et barre d'échelle | *Projet planète* also sets QGIS's grid and scale bar (your user settings, for all your projects). |
+
+The road tools keep their own settings (max slope, the route search's costs, max viaduct and
+tunnel lengths) in their dialogs and in the *DyingStar — Routes* toolbar. They remember the
+last values.
+
+## 3. What the plugin does
+
+### How a job runs
+
+Every menu entry is a **QGIS background task**.
+- QGIS stays usable while it runs.
+- Its progress and its *Cancel* button are in the task bar at the bottom.
+- One job at a time: the exporters share `parts/` and the string table.
+
+Everything a job prints goes to the **DyingStar** tab of the log panel (*DyingStar ▸ Journal*)
+and to a file in *DyingStar ▸ Dossier des journaux*. A project that is not a planet project
+(no `planet_name` / `planet_radius_m` variables) is refused.
+
+### The planet project
+
+- **Projet planète…** creates or reopens a planet.
+  - It asks the planet's name and radius, then which layers to create. Under a layer with a
+    value list (rock types…), you tick the values that exist on this planet.
+  - It then creates the PostGIS schema and tables, the layers with their forms, styles and
+    groups, and saves the `.qgz`.
+  - A table that holds features is never dropped.
+  - Details in "Step 1" below.
+- **Mettre à jour les couches…** does the same on the open project without asking the name and
+  radius. Run it after a layer definition changed (a new field, a new style).
+
+### Drawing
+
+Plain QGIS editing on the planet layers, in EPSG:4326 (longitude, latitude). The fields have
+dropdowns and default values. Save the layer (the 💾 button) to write to the database: the
+exports read the database, not your unsaved edits. Layer by layer: "Step 2" below.
+
+### Exporting (*DyingStar ▸ Exporter*)
+
+| Entry | Writes | Then |
+|---|---|---|
+| Élévation (heights.pack)… | the height pyramid from the contours (long: minutes to hours) | published |
+| Routes / Régions / Massifs / Volcans / Terrain rocheux | its own part of the modifier pack | the pack is relinked and published |
+| Tout le pack de modificateurs | the five parts above, then one single link | published once |
+| POI et régions nommées | `<planet>_poi.json` (read locally by the game: commit it) | — |
+| Grottes | the caves import for the admin panel (private folder) | — |
+
+Each modifier export:
+1. first **pulls the team's parts** from the server, so you never overwrite someone else's
+   massifs with your roads;
+2. rewrites its own part and relinks the pack.
+
+A guard refuses to publish a pack that lost a family the team has (`.team_parts.json`).
+
+### Publishing: from an export to `dev`
+
+The whole chain, without leaving QGIS:
+
+1. **Export** (for example *Exporter ▸ Routes*). When the job ends, the pack is being published
+   on `unstable` in the background. This is a separate process: it carries on even if you close
+   QGIS.
+2. The message bar says **Publication de <planet> (…) en cours**.
+   - **Voir le journal**, or *Publication ▸ Journal de publication*, opens the live journal
+     (`<planet>_chunks/publish.log`).
+   - The journal's state is one of: running, published, failed, nothing to do, or stopped.
+3. **Publication terminée : <planet>.mod <version> sur le canal unstable.** For a modifier
+   pack, the message adds **Les profils des lignes sont à recuire**, with a button.
+4. **Recuire les profils des lignes** (also in the *Publication* menu).
+   - It computes the longitudinal profiles of the railways and graded roads, and the chasm
+     bridges (Godot without a window), from what `unstable` serves.
+   - It takes about 15 minutes on tarsis_3. The bar stays near 25 % for 5 minutes, while the
+     railway round the planet is profiled.
+   - It ends with its own publication, `<planet>.lines`.
+   - **Do not skip it.** Every modifier publication makes the previous profiles stale. The game
+     then recomputes them while you play, and builds chunks before their road's profile lands:
+     roads cut off at a chunk edge, holes along the cuttings.
+5. **Test on `unstable`.** Set `channel=unstable` in the `[stream]` section of `client.ini`, or
+   start the game with `-- --tile-channel=unstable`.
+6. **Publication ▸ Promouvoir…**, to `dev` (then `preprod`, `prod`). For each body, the
+   dialog shows what the source channel and the target channel serve:
+   - `tarsis_3`: the elevation;
+   - `tarsis_3.mod`: the modifiers;
+   - `tarsis_3.lines`: the line profiles.
+
+   A body already up to date is unticked. The dialog warns in red, and asks again on *OK*, when:
+   - the modifiers would go up without their line profiles;
+   - or the source channel's profiles were baked for other modifiers.
+
+   A promotion is immediate. It changes nothing on `unstable`, and nothing is deleted.
+
+Other *Publication* entries:
+- **Récupérer les parts du serveur**: brings `parts/` to the server's version (each export
+  already does it).
+- **Relier le pack de modificateurs**: relinks without exporting.
+- **Vérifier la cible de publication**: tests SSH, the server's Python and write access to `dist`.
+
+### Designing roads over the relief (*DyingStar ▸ Routes* and the *DyingStar — Routes* toolbar)
+
+- **Pente max / raide** (toolbar): the slope classes of the zone terrain.
+  - **Green**: the road follows the ground at its max slope.
+  - **Orange**: up to "raide", it can climb only across the slope or in hairpins.
+  - **Red**: steeper than that, a tunnel or a viaduct.
+  - **Purple**: corundum chasms.
+  - Changing a value recolours the map without recomputing.
+- **Terrain de la zone…**: altitude, contours and slope of the area on screen. Two sources:
+  - **quick** (QGIS): the contours plus the massifs as drawn, even before any export;
+  - **exact** (Godot without a window): exactly the ground the game builds, read from the
+    tile service.
+  - Details: "Drawing roads over the relief" below.
+- **Profil en long**: a panel showing the profile the game will give the selected road.
+  - It shows the terrain, the road line, cuttings, tunnels and viaducts, with statistics.
+  - *Choisir sur la carte* picks a road on the map.
+  - Hovering the curve places a marker on the map.
+  - Structures past the max lengths are shown in red.
+  - Details: "The longitudinal profile" below.
+- **Tracer une route…**: a dialog first, then the clicks.
+  - The dialog asks the target layer, the max slope, the cost of structures and of chasm
+    bridges, and the max viaduct and tunnel lengths.
+  - On the map:
+    - left click: the start, then waypoints;
+    - right click: the end;
+    - Backspace: drop the last point;
+    - Escape: give up.
+  - The computed road (hairpins, detours, structures only where needed) shows in the profile
+    panel. The message bar then offers **Ajouter à « … »**, or **Abandonner**.
+  - *Ajouter* puts the road in the layer in edit mode: **save the layer** to write it to the
+    database.
+  - Details: "Automatic route" below.
+- **Aperçu des massifs…**: contours and hillshade of the relief Godot will give the massifs and
+  ridges as drawn, without exporting.
+
+### Tools and logs
+
+| Entry | What it does |
+|---|---|
+| Outils ▸ Migrer les couches volcaniques… | One-off, per planet: creates the new volcanic tables and copies the old biome ones into them. Drops nothing. |
+| Outils ▸ Sonder l'élagage du pack | Before a full elevation export, estimates how many fine tiles a sparse pack would prune. |
+| Outils ▸ Écrire rocks.json | The rock catalogue for Godot. |
+| Journal | The DyingStar tab of the log panel. |
+| Dossier des journaux | One file per job; `python_crash.log` names the Python line if QGIS crashes. |
+
+## 4. For developers
 
 ### From the Python console
 
-Every script is a module with `run()` (the whole job on the calling thread) and `prepare()` (the
-plugin's entry point): `import export_roads; export_roads.run(no_link=True)`. Nothing runs at
-import any more.
+Every script is a module with two entry points:
+- `run()`: the whole job, on the calling thread;
+- `prepare()`: the plugin's entry point. It reads the project on the main thread and returns
+  the work for the background task.
+
+For example: `import export_roads; export_roads.run(no_link=True)`. Nothing runs at import.
 
 ### Releasing the plugin
 
-Bump `version` in `metadata.txt`, merge, push the tag `qgis-plugin-v<version>`:
-`.github/workflows/qgis-plugin.yml` builds the zip (`package_plugin.py`), attaches it to a
-GitHub release and updates `plugins.xml` on the `qgis-plugins` branch.
-`test/unit/test_qgis_plugin_package_py.py` checks the zip and the manifest.
+1. Bump `version` in `metadata.txt` and merge.
+2. Push the tag `qgis-plugin-v<version>`.
 
-> **Full documentation**: see [`docs/QGIS_PLANET_WORKFLOW.md`](../../docs/QGIS_PLANET_WORKFLOW.md) for the complete step-by-step QGIS guide (layer creation, styling, coordinate system explanation, etc.).
+`.github/workflows/qgis-plugin.yml` then builds the zip (`package_plugin.py`), attaches it to a
+GitHub release and updates `plugins.xml` on the `qgis-plugins` branch, which the team's QGIS
+reads. `test/unit/test_qgis_plugin_package_py.py` checks the zip and the manifest.
+
+### Tests
+
+The Python tests of the plugin run without QGIS:
+- `test_qgis_plugin_package_py`, `test_publish_log_py`, `test_bake_lines_py`;
+- the exporters: `test_modifier_pack_py`, `test_terrain_grid_py`, `test_grade_profile_py`,
+  `test_route_search_py`…
+
+The CI runs them in `godot-tests.yml`. A headless QGIS run of the plugin needs
+`QT_QPA_PLATFORM=offscreen`, and an organisation name or a throwaway profile, so it does not
+write into your real QGIS profile.
 
 ---
 
@@ -88,7 +296,12 @@ GitHub release and updates `plugins.xml` on the `qgis-plugins` branch.
 | File | Menu | Purpose |
 |---|---|---|
 | `setup_planet_project.py` | Projet planète… | Creates/refreshes a planet's QGIS project + PostGIS schema. Interactive: asks the planet name/radius, then which layers (and which per-planet values, e.g. rock types) to create. |
-| `ds_plugin/` | plugin | The menu (`main.py`), the background runner (`runner.py`), the settings (`settings.py`), the publication steps (`jobs.py`). |
+| `ds_plugin/` | plugin | The menu (`main.py`), the background runner (`runner.py`), the settings (`settings.py`), the publication steps (`jobs.py`), the publication journal and its notices (`publish_log.py`), the road tools' toolbar (`roads_ui.py`), the profile panel (`profile_dock.py`) and the route map tool (`route_tool.py`). |
+| `bake_lines.py` | Publication ▸ Recuire les profils des lignes | Runs `tools/bake_grade_profiles.tscn` without a window on the publication channel, copies the bake into the export folder, records the modifier pack it was baked for (`grade_profiles.json`) and publishes it. |
+| `channels.py` | library | What each channel serves, read over HTTP like the game; whether a channel's line profiles were baked for its modifiers (*Promouvoir…*). |
+| `zone_terrain.py` | Routes ▸ Terrain de la zone | Altitude, contours, slope classes and chasms of the area on screen: quick source (contours + `mountain_preview.py`) or exact (`tools/planettech/terrain_dem.tscn`). |
+| `road_profile.py` | Routes ▸ Profil en long | The profile of a drawn road over the zone terrain, for the panel. |
+| `zone_route.py` | Routes ▸ Tracer une route | The computed road between the clicked points, its scratch layer and the *Ajouter* / *Abandonner* offer. |
 | `ds_project.py` | library | The planet of the open project (`planet_name`, `planet_radius_m`, `max_quadtree_depth`, `planet_parent_id`); refuses a project that is not a planet. |
 | `package_plugin.py` | `python3` | Builds the plugin zip and `plugins.xml` (release workflow). |
 | `layers/` | library | **Where the layers are defined.** One small declarative module per category (`layers/biomes/forest.py`, `layers/roads.py`…); `layers/core.py` is the PostGIS plumbing, `layers/dialog.py` the picker. See "Layer definitions" below. |
@@ -110,6 +323,9 @@ GitHub release and updates `plugins.xml` on the `qgis-plugins` branch.
 | `export/planet/rock_field_noise.py` | library | Python twin of the runtime rock-field relief — golden values of the determinism test, and the term means the exporter measures. |
 | `export/planet/mountain_noise.py` | library | Python twin of the runtime mountain noise — golden values of the determinism test. |
 | `export/planet/mountain_preview.py` | library | numpy port of `MountainRelief.offset` (ranges + ridges) on a lon/lat grid, for `preview_mountain_contours.py`; pinned to Godot's values by `test/unit/test_mountain_preview_py.py`. |
+| `export/planet/terrain_grid.py` | library | The lon/lat grid of a zone terrain, true-metre slope, bilinear reads. |
+| `export/planet/grade_profile.py` | library | Python twin of the game's `GradeProfile` (knots, cuttings, tunnels, viaducts), pinned to Godot by `grade_profile_golden.json`. |
+| `export/planet/route_search.py` | library | The grade-limited route search (16-neighbour graph, scipy Dijkstra) and the max viaduct / tunnel re-search. |
 | `link_modifiers.py` | Publication ▸ Relier, or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
 | `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
 | `export/planet/modifier_geom.py` | library | Tile assignment, clipping, decimation. Holds the road **partition** that makes double-rendering impossible. |
@@ -653,10 +869,12 @@ assets/qgis/export/<planet>_chunks/
 `terrainmodifier.pack` and `grade_profiles.pack` are gitignored, excluded from every
 export preset, and never read by the game, the server, the star map or the tools
 even when they sit on disk: everything comes over HTTP into `user://tile_cache/`.
-To see an export, publish it — first on `unstable`, then promote:
+To see an export, publish it on `unstable`, re-bake the line profiles, then promote. In QGIS
+all of this is in the menu (see §3, "Publishing: from an export to `dev`"). What it runs
+underneath, for troubleshooting from a shell:
 
 ```
-# 1. export in QGIS (relinks terrainmodifier.pack), then publish the tiles
+# 1. export (relinks terrainmodifier.pack), then publish the tiles
 python3 tools/planettech/publish/publish_tiles.py \
     assets/qgis/export/tarsis_3_chunks/terrainmodifier.pack --out <dist> --compress
 # 2. bake the line profiles FROM the published tiles
@@ -669,11 +887,15 @@ python3 tools/planettech/publish/stream_channels.py --dist <dist> --to dev --pla
 python3 tools/planettech/publish/stream_channels.py --dist <dist> --to dev --planet tarsis_3.lines
 ```
 
-**Publishing straight to the server.** With a target in
-`tools/planettech/qgis/export_config.ini` `[publish]` (or `$DS_PUBLISH_SSH`), every step above
-publishes by itself, in the background (`<planet>_chunks/publish.log`): `link_modifiers.link()`
-and `export_elevation.py` at the end of an export, `bake_grade_profiles.gd` after a complete
-bake. `tools/planettech/publish/publish_remote.py` sends the pack ONCE over SSH (rsync when both
+**Publishing straight to the server.** With a publication target (§2; outside QGIS:
+`tools/planettech/qgis/export_config.ini` `[publish]` or `$DS_PUBLISH_SSH`), every step above
+publishes by itself, in the background (`<planet>_chunks/publish.log`, shown live by
+*Publication ▸ Journal de publication*):
+- `link_modifiers.link()` and `export_elevation.py`, at the end of an export;
+- `bake_grade_profiles.gd`, after a complete bake (the plugin's *Recuire* passes `--no-publish`
+  and publishes the copy in its export folder itself).
+
+`tools/planettech/publish/publish_remote.py` sends the pack ONCE over SSH (rsync when both
 sides have it: only the changed blocks) and runs `publish_tiles.py` on the server, where the
 millions of tile files are created; then it checks a sample over HTTP from your machine. An
 unchanged export is not sent again. By hand:
@@ -938,7 +1160,7 @@ to keep aligned instead of three.
 ### Prerequisites
 
 - **QGIS 4.2** installed ([download](https://qgis.org/en/site/forusers/alldownloads.html)) with the
-  **DyingStar** plugin (see "The plugin" at the top)
+  **DyingStar** plugin (§1 at the top)
 - **Godot 4.7** double-precision build (the project's engine)
 - Your planet scene already has a `Planet` node with `PlanetTerrain`, `PlanetSettings`, etc.
 
@@ -1097,10 +1319,10 @@ One script per family, each in *DyingStar ▸ Exporter* with the planet project 
 - `export_biomes.py`, `export_roads.py`, `export_mountains.py`, `export_volcanoes.py`,
   `export_rocky_terrain.py` — one part each of the modifier pack (sections above).
 
-With a `[publish]` target configured, each export pulls the team's parts from the server,
-relinks and publishes on its own; then bake the line profiles and promote (see "Publishing
-straight to the server" above). The game reads nothing of this locally but the
-`manifest.json` descriptors and the POI JSON.
+With a publication target set (§2), each export pulls the team's parts from the server,
+relinks and publishes on its own. Then re-bake the line profiles and promote, all from the
+*Publication* menu (§3, "Publishing: from an export to `dev`"). The game reads nothing of this
+locally but the `manifest.json` descriptors and the POI JSON.
 
 ---
 
