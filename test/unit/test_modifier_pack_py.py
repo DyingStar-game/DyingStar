@@ -452,6 +452,25 @@ class TestStringTable(unittest.TestCase):
 
 class TestRoadPart(unittest.TestCase):
 
+    def _fingerprint(self, roads):
+        _levels, manifest = roads_mod.build_road_part(roads, 6_356_000.0, 1024, 13, StringTable(),
+                                                      verbose=False)
+        return manifest["fingerprint"]
+
+    def test_fingerprint_follows_the_roads(self):
+        """It re-keys the chunk cache (PlanetData.road_fingerprint): a moved road, another
+        surface, must change it; the same roads must not."""
+        road = {"centerline": [(10.0, 20.0), (10.05, 20.02), (10.1, 20.05)], "road_type": "road",
+                "surface": "asphalt", "max_slope_degrees": 8}
+        fp = self._fingerprint([road])
+        self.assertEqual(len(fp), 40)
+        self.assertEqual(fp, self._fingerprint([dict(road)]))
+        moved = dict(road, centerline=[(10.0, 20.0), (10.05, 20.03), (10.1, 20.05)])
+        self.assertNotEqual(fp, self._fingerprint([moved]))
+        self.assertNotEqual(fp, self._fingerprint([dict(road, surface="gravel")]))
+        self.assertNotEqual(fp, self._fingerprint([road, dict(road, centerline=[
+            (11.0, 21.0), (11.1, 21.1)])]))
+
     def test_half_width_matches_gdscript_rules(self):
         self.assertEqual(roads_mod.half_width_m({"width": 6.0}), 3.0)
         self.assertEqual(roads_mod.half_width_m({"road_type": "road", "width": 8.0}), 4.0)

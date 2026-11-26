@@ -3327,6 +3327,25 @@ func mountain_fingerprint() -> String:
 	return (a + "-" + b + "-" + c).sha1_text().substr(0, 12)
 
 
+## Identity of the road part ("" without one) — PlanetTerrain folds it into the chunk cache
+## key: the road ribbons, beds and cuttings are baked into a chunk's mesh and collision, and a
+## cached chunk from before a road re-export showed the road stopping at its edge (tarsis_3,
+## 39.49 W 24.73 N, 2026-11-26). The part's own fingerprint (export_roads.py), else its whole
+## manifest entry: generated_at changes at every export, so an older pack re-keys too.
+func road_fingerprint() -> String:
+	var pack = _ensure_modifier_pack()
+	if pack == null:
+		return ""
+	var parts: Dictionary = pack.get_manifest().get("parts", {})
+	var road: Dictionary = parts.get("road", {})
+	if road.is_empty():
+		return ""
+	var fp := str(road.get("fingerprint", ""))
+	if fp == "":
+		fp = JSON.stringify(road, "", true).sha1_text()
+	return fp.substr(0, 12)
+
+
 ## Fingerprint of the pack's rocky terrain part ("" without one).
 func rocky_fingerprint() -> String:
 	var pack = _ensure_modifier_pack()

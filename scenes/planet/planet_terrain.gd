@@ -738,6 +738,14 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# Fumarole fields: their deposit stain is in the vertex colours.
 		if data.has_fumaroles():
 			_mt += "_fm%s_%s" % [data.fumarole_fingerprint().substr(0, 12), FumaroleField.signature()]
+		# Roads: ribbons, beds and cuttings are baked geometry. Their part had no key, and every
+		# road re-export needed a vNN bump (v60, v69) — forgotten, a road stopped at the edge of a
+		# chunk cached before it. Not in relief_signature: a road re-export does not ask every
+		# building pad of the planet to settle again.
+		var _rd := ""
+		var _rd_fp := data.road_fingerprint()
+		if _rd_fp != "":
+			_rd = "_rd%s" % _rd_fp
 		# v26 → v27: the road ribbon's perpendicular is now taken in metric
 		# space. That widens every road that is not east-west, on EVERY planet
 		# with roads, so it is a runtime change no data field captures.
@@ -880,10 +888,10 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		var _rk := ""
 		if FileAccess.file_exists(RockCatalogue.PATH):
 			_rk = "_rk%s" % FileAccess.get_md5(RockCatalogue.PATH).substr(0, 8)
-		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v69%s%s%s%s%s%s%s%s" % [
+		var _cache_version := "%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v69%s%s%s%s%s%s%s%s%s" % [
 			data.planet_name, data.export_nside, data.radius,
 			data.max_height, data.height_offset, data.terrain_exaggeration,
-			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _sk, _rk]
+			data.chunk_heightmap_res, _cor, _brg, _rw, _dv, _pz, _mt, _rd, _sk, _rk]
 		# The same key without the parts that only change how the ground looks (skirts, rock tints):
 		# what a building's persisted pad altitude (terrain_settled) is checked against.
 		data.relief_signature = ("%s_%d_%.0f_%.0f_%.1f_%.2f_tr%d_v69%s%s%s%s%s%s" % [
