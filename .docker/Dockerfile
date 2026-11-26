@@ -5,7 +5,7 @@ FROM debian:trixie-slim AS builder
 
 ENV GODOT_VERSION=4.7.2
 # The engine release (DyingStar-game/godotandaddons): Godot + our patches.
-ENV GODOT_RELEASE=4.7.2-stable-ds2
+ENV GODOT_RELEASE=4.7.2-stable-ds3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
