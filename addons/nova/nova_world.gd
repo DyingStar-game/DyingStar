@@ -22,9 +22,20 @@ const START := Vector3(-41.3, 20.0, 500.0)
 const BEHIND := Vector3(0.0, 0.4, 3.5)
 ## Steps the day is searched in for the sun's highest point (96: a quarter of an hour of a 24 h day).
 const SUN_STEPS := 96
-const HELP := "Clic : prendre la souris · Échap : la rendre · Z Q S D : se déplacer · Espace / Ctrl : monter / descendre\n" \
-		+ "Molette : vitesse · Maj : plus vite · G : à pied / en vol · V : voir le personnage · B : avant / après · L : fondu des LOD\n" \
-		+ "Météo — M : carte · P : aller devant un mur de poussière · T : aller voir un tourbillon"
+## The help line: the game's own actions (god mode, map, time), named by the keys they are bound to, then the
+## view's own keys.
+const HELP := "Clic : prendre la souris · Échap : la rendre · %s : se déplacer · %s / %s : monter / descendre\n" \
+		+ "Molette : vitesse · %s : plus vite · %s : à pied / en vol · %s : se poser · %s / %s : heure\n" \
+		+ "%s : carte météo · P : aller devant un mur de poussière · T : aller voir un tourbillon\n" \
+		+ "V : voir le personnage · B : avant / après · L : fondu des LOD"
+## The dust sea's mean top (m above the reference level) and how far its billows rise and sink round it, as
+## the sea is drawn (DustSea.SEA_TOP_M, BILLOW_M): the place line says whether the player is in the sea, in
+## its billowed top or above it. The sea's dust reaches the ground in the basins: there is no "under".
+const SEA_TOP_M := 3300.0
+const SEA_BILLOW_M := 250.0
+## How often the place line (position, heights, heading) is written again (s).
+const WHERE_EVERY_S := 0.25
+const DIRECTIONS := ["N", "NE", "E", "SE", "S", "SO", "O", "NO"]
 const AFTER := "APRÈS — avec Nova"
 const BEFORE := "AVANT — le jeu actuel, sans Nova"
 ## After a before / after switch, how long the dock's "go to" is ignored (s): the rebuilt game says hello
@@ -63,6 +74,8 @@ var _built := false
 var _switching := false
 var _keep_place_until := 0
 var _state := Label.new()
+var _where := Label.new()
+var _where_since := 0.0
 var _weather_hud := WeatherHud.new()
 ## The last place the player was put at: [ground point, height over the ground, the ground's height read then].
 var _settled: Array = []
@@ -82,15 +95,33 @@ func _ready() -> void:
 		PlanetTerrain.lod_morph_enabled = OS.get_environment("NOVA_LOD_MORPH") != "0"
 	var layer := CanvasLayer.new()
 	add_child(layer)
-	_hud.text = HELP
+	_hud.text = _help()
 	_hud.position = Vector2(12, 8)
-	_state.position = Vector2(12, 70)
-	for label: Label in [_hud, _state]:
+	_state.position = Vector2(12, 84)
+	_where.position = Vector2(12, 112)
+	for label: Label in [_hud, _state, _where]:
 		label.add_theme_font_size_override("font_size", 13)
 		label.add_theme_color_override("font_outline_color", Color.BLACK)
 		label.add_theme_constant_override("outline_size", 4)
 		layer.add_child(label)
 	_state.add_theme_font_size_override("font_size", 18)
+	_where.add_theme_font_size_override("font_size", 15)
+	# The game's weather compass (the debug panel's): the top of the dial is where the camera looks, the arrow
+	# where the wind blows to. Inside a full-window Control, as in the game's panel, so that its corner anchors
+	# have a parent rectangle to hold to.
+	var frame := Control.new()
+	frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(frame)
+	var compass: Control = load("res://ui/dev_overlay/weather_compass.gd").new()
+	compass.state_source = func() -> Dictionary:
+		var state: Dictionary = DevReadouts.compass_state(world.player) if _built and not _switching else {}
+		for value: Variant in state.values():
+			if not is_finite(float(value)):
+				return {}
+		return state
+	compass.shown_rule = func() -> bool: return _built and not _switching
+	frame.add_child(compass)
 	add_child(_weather_hud)
 	await _build()
 	var probe := OS.get_environment("NOVA_GAME_PROBE")  # a checking script to run in the game view, for tests
@@ -213,7 +244,43 @@ func _place(dir: Vector3, above: float, keep_clock := false) -> void:
 		_apply_hour()
 
 
+## The help text, with the keys the game's actions are bound to now (they can be rebound in the settings).
+func _help() -> String:
+	var keys := [&"move_forward", &"strafe_up", &"strafe_down", &"sprint", &"god_mode", &"god_mode_land",
+			&"debug_time_back", &"debug_time_forward", &"star_map"].map(
+			func(action: StringName) -> String: return InputLabel.for_action(action))
+	keys[0] = "%s %s %s %s" % [keys[0], InputLabel.for_action(&"move_left"), InputLabel.for_action(&"move_back"),
+			InputLabel.for_action(&"move_right")]
+	return HELP % keys
+
+
+## The place line: where the player is (longitude, latitude), how high (over the reference level and over
+## the ground), whether that is in the dust sea, and the way the camera looks.
+func _write_where() -> void:
+	var player: Player = world.player
+	var data: PlanetData = world.body.planet_data
+	var dir := player_direction()
+	var ll := HEALPix.vec2lonlat(dir)
+	var height: float = world.body.to_local(player.global_position).length() - data.radius
+	var ground := _ground_at(dir)
+	var sea := "dans la mer de poussière" if height < SEA_TOP_M - SEA_BILLOW_M \
+			else ("dans le haut moutonné de la mer" if height <= SEA_TOP_M + SEA_BILLOW_M \
+			else "au-dessus de la mer de poussière")
+	var heading := DevReadouts.camera_heading(player, world.body)
+	var facing := "" if is_nan(heading) or heading < 0.0 \
+			else " · regard %s (%.0f°)" % [DIRECTIONS[posmod(roundi(heading / 45.0), 8)], heading]
+	_where.text = "lon %.3f° lat %.3f° · altitude %.0f m (sol %.0f m, %.0f m au-dessus) · %s%s" \
+			% [ll.x, ll.y, height, ground, height - ground, sea, facing]
+
+
 func _process(delta: float) -> void:
+	if _built and not _switching:
+		_where_since += delta
+		if _where_since >= WHERE_EVERY_S:
+			_where_since = 0.0
+			_write_where()
+	else:
+		_where.text = ""
 	if _settle_left <= 0.0 or not _built or _switching or _settled.is_empty():
 		return
 	_settle_left -= delta
@@ -271,18 +338,32 @@ func player_direction() -> Vector3:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo or world == null or world.player == null:
+	if world == null or world.player == null or not _built or _switching:
 		return
-	# By their letters: on an AZERTY keyboard the M key is not where QWERTY has it.
-	var weather_key: Callable = {KEY_M: _weather_hud.toggle_map, KEY_P: goto_wall, KEY_T: goto_devil}.get(key.keycode, Callable())
+	# The game's own actions first, as the game binds them: the map, god mode on / off, landing.
+	if InputCombo.pressed(event, &"star_map"):
+		_weather_hud.toggle_map()
+	elif InputCombo.pressed(event, &"god_mode") \
+			or (world.player.god_mode and InputCombo.pressed(event, &"god_mode_land")):
+		world.toggle_walk()
+	else:
+		_view_key(event)
+		return
+	get_viewport().set_input_as_handled()
+
+
+## The view's own keys (no game action for them).
+func _view_key(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	# By their letters: on an AZERTY keyboard they are not where QWERTY has them.
+	var weather_key: Callable = {KEY_P: goto_wall, KEY_T: goto_devil}.get(key.keycode, Callable())
 	if weather_key.is_valid():
 		weather_key.call()
 		get_viewport().set_input_as_handled()
 		return
 	match key.physical_keycode:
-		KEY_G:
-			world.toggle_walk()
 		KEY_V:
 			_set_third_person(not world.player.puppet.visible)
 		KEY_B:

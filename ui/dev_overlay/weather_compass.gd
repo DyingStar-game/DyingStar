@@ -25,6 +25,7 @@ var state_source : Callable = func() -> Dictionary: return {}
 var shown_rule : Callable = func() -> bool: return false
 
 var _state : Dictionary = {}
+var _said_not_finite : bool = false
 
 
 func _ready() -> void:
@@ -48,6 +49,13 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	var centre : Vector2 = size * 0.5
 	var heading : float = float(_state.get("heading_deg", 0.0))
+	# A size or a heading that is not a number draws nothing but one warning per line, every frame (the Nova
+	# game view filled gigabytes of log that way): skip the frame, and say it once.
+	if not centre.is_finite() or not is_finite(heading):
+		if not _said_not_finite:
+			_said_not_finite = true
+			push_warning("WeatherCompass: not drawn, size %s heading %s" % [size, heading])
+		return
 	draw_circle(centre, RADIUS_PX, DIAL_COLOUR)
 	draw_arc(centre, RADIUS_PX, 0.0, TAU, 64, RIM_COLOUR, 3.0, true)
 	for bearing in range(0, 360, 30):

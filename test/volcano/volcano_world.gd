@@ -125,7 +125,8 @@ func _physics_process(delta: float) -> void:
 	player.new_input_from_server = true
 	var sprint := captured and _pressed("sprint")
 	player.server_action_received({"action": "sprint", "held": sprint})
-	var vertical := float(_held.has(KEY_SPACE)) - float(_held.has(KEY_CTRL)) if captured else 0.0
+	# The game's strafe_up / strafe_down actions (Space / Ctrl by default), as the god mode reads them in game.
+	var vertical := float(_pressed("strafe_up")) - float(_pressed("strafe_down")) if captured else 0.0
 	player.server_action_received({"action": "thrust_vertical", "value": vertical})
 	player.god_mode_speed = GodMode.clamp_speed(flight_speed * (5.0 if sprint else 1.0))
 	_tick += delta
@@ -204,7 +205,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.physical_keycode == KEY_ESCAPE:
 			_release_controls()
-		elif event.physical_keycode == KEY_SPACE and not player.god_mode and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		elif event.is_action("jump") and not player.god_mode and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			player.server_action_received({"action": "jump"})
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		player.rotate_object_local(Vector3.UP, -event.relative.x * 0.002)
