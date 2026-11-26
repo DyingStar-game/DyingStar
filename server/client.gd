@@ -50,8 +50,6 @@ const CLOSE_DICTIONARY_MISMATCH := 4002
 const CLOSE_KICKED := 4005
 const CLOSE_SERVER_FULL := 4007
 
-var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
-
 var client_peer: ENetMultiplayerPeer = null
 ## Move packets sent so far: numbers them in order (MoveOrder), so the server can drop one that arrives late.
 var _move_counter: int = 0
@@ -80,7 +78,6 @@ var props_list: Dictionary = {
 	"planet": {},
 	"box50cm": {},
 	"box4m": {},
-	"ship": {},
 }
 # We need it when a channel arrives before another in the case of this channel not have the scenename property
 var props_pre_creations: Dictionary = {}
@@ -863,20 +860,8 @@ func _on_client_action_requested(datas: Dictionary) -> void:
 	# which spawned the prop from data the client had chosen itself (scene, type, position, parent) —
 	# the game server was never asked. Spawning now goes through the "spawn_prop" action above, like
 	# every other gameplay action: the server validates the key and decides the placement.
-	if datas.has("action"):
-		match datas["action"]:
-			"control":
-				if datas.has("entity"):
-					match datas["entity"]:
-						"ship":
-							var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
-							NetworkOrchestrator.request_control.rpc_id(1, player_instance.get_path(), ship_instance_path)
-			"release_control":
-				if datas.has("entity"):
-					match datas["entity"]:
-						"ship":
-							var ship_instance_path: String = datas["entity_node"].get_path() if datas.has("entity_node") else ""
-							NetworkOrchestrator.request_release.rpc_id(peer_id, player_instance.get_path(), ship_instance_path)
+	# (The old test ship's "control" / "release_control" ENet RPCs were here: the ship is a Vehicle now,
+	# boarded through its seat like the truck.)
 
 func _on_client_action_move(move_direction: Vector2, move_rotation: Vector3) -> void:
 	# print("action move")

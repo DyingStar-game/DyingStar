@@ -1,0 +1,277 @@
+[gd_scene format=3 uid="uid://xud5xo51ir5r"]
+
+[ext_resource type="Script" uid="uid://bpb1urve1pqnj" path="res://scenes/_universe/vehicles/spaceship/spaceship.gd" id="1_ship"]
+[ext_resource type="Material" uid="uid://wm1k35sl1iwp" path="res://assets/_universe/environment/terrain/material_basic_orange.tres" id="2_orange"]
+[ext_resource type="Script" uid="uid://smslf5v47u3e" path="res://scenes/_universe/vehicles/vehicle_seat.gd" id="3_seat"]
+[ext_resource type="PackedScene" uid="uid://dumbqmrjvj582" path="res://scenes/grid/physics_grid.tscn" id="4_grid"]
+[ext_resource type="Script" path="res://scenes/_universe/vehicles/spaceship/spaceship_sound.gd" id="5_sound"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-engine-start.ogg" id="6_start"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-engine-stop.ogg" id="7_stop"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-engine-idle-loop-1.ogg" id="8_idle"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-main-thrust-loop-1.ogg" id="9_thrust"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-1.ogg" id="11_puff"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-2.ogg" id="12_puff"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-3.ogg" id="13_puff"]
+[ext_resource type="AudioStream" path="res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-4.ogg" id="14_puff"]
+[ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="15_gui3d"]
+[ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/_universe/vehicles/vehicle_dashboard.tscn" id="16_dash"]
+[ext_resource type="Script" path="res://scenes/_universe/vehicles/spaceship/ship_interior_rider.gd" id="17_rider"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(3.61938, 0.5835, 5.396)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wall"]
+size = Vector3(0.30676, 2.5685, 2.723)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cockpit_wall"]
+size = Vector3(0.30676, 1.0765, 2.673)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_roof"]
+size = Vector3(3.61938, 0.252, 4.726)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_dashboard"]
+size = Vector3(3.00586, 0.9265, 0.297)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_console"]
+size = Vector3(1, 0.812, 0.425)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ramp"]
+size = Vector3(2.5918, 0.1, 1.293)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
+size = Vector3(1.6, 1.4, 1.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_grid"]
+size = Vector3(3.00586, 3.09, 6.85)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_cabin"]
+size = Vector3(3.00586, 2.57, 5.55)
+
+[sub_resource type="QuadMesh" id="QuadMesh_screen"]
+size = Vector2(0.64, 0.16)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_bezel"]
+albedo_color = Color(0.06, 0.065, 0.075, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="BoxMesh_bezel"]
+material = SubResource("StandardMaterial3D_bezel")
+size = Vector3(0.68, 0.2, 0.02)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lamp_glass"]
+resource_name = "ShipHeadlightGlass"
+albedo_color = Color(0.9, 0.92, 0.95, 1)
+emission_enabled = true
+emission = Color(1, 0.96, 0.86, 1)
+emission_energy_multiplier = 4.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_lamp"]
+material = SubResource("StandardMaterial3D_lamp_glass")
+size = Vector3(0.3, 0.12, 0.02)
+
+[node name="Spaceship" type="VehicleBody3D" unique_id=2073676086]
+collision_layer = 4
+collision_mask = 13
+mass = 1000.0
+continuous_cd = true
+linear_damp_mode = 1
+angular_damp_mode = 1
+angular_damp = 0.5
+script = ExtResource("1_ship")
+center_of_mass_offset = Vector3(0, 1.2, -0.6)
+drag_coefficient = 0.9
+frontal_area_m2 = 10.0
+empty_mass = 1000.0
+body_length = 7.4
+body_width = 3.6
+body_height = 2.9
+debug_color_driven_wheels = false
+debug_show_cargo_bay = false
+dust = null
+id_type = "SHIP"
+limiter_step_kmh = 72
+limiter_max_kmh = 1843
+limiter_default_kmh = 216
+headlight_glass_materials = PackedStringArray("ShipHeadlightGlass")
+sfx_engine_start = ExtResource("6_start")
+sfx_engine_start_db = -2.0
+sfx_engine_stop = ExtResource("7_stop")
+sfx_engine_stop_db = -2.0
+sfx_engine_idle = ExtResource("8_idle")
+sfx_engine_rev_pitch = 1.25
+sfx_engine_rev_db = 3.0
+
+[node name="HullFloor" type="CollisionShape3D" parent="." unique_id=212679118]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.21825, -1.255)
+shape = SubResource("BoxShape3D_floor")
+
+[node name="HullWallLeft" type="CollisionShape3D" parent="." unique_id=212679119]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.65631, 1.35775, 0.0815)
+shape = SubResource("BoxShape3D_wall")
+
+[node name="HullWallRight" type="CollisionShape3D" parent="." unique_id=212679120]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.65631, 1.35775, 0.0815)
+shape = SubResource("BoxShape3D_wall")
+
+[node name="HullCockpitWallLeft" type="CollisionShape3D" parent="." unique_id=212679121]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.65631, 0.61175, -2.6165)
+shape = SubResource("BoxShape3D_cockpit_wall")
+
+[node name="HullCockpitWallRight" type="CollisionShape3D" parent="." unique_id=212679122]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.65631, 0.61175, -2.6165)
+shape = SubResource("BoxShape3D_cockpit_wall")
+
+[node name="HullRoof" type="CollisionShape3D" parent="." unique_id=212679123]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.768, 1.063)
+shape = SubResource("BoxShape3D_roof")
+
+[node name="HullDashboard" type="CollisionShape3D" parent="." unique_id=212679124]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.53675, -3.8045)
+shape = SubResource("BoxShape3D_dashboard")
+
+[node name="HullConsole" type="CollisionShape3D" parent="." unique_id=212679125]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47925, -3.6045)
+shape = SubResource("BoxShape3D_console")
+
+[node name="HullRamp" type="CollisionShape3D" parent="." unique_id=212679126]
+transform = Transform3D(1, 0, 0, 0, 0.930507, -0.366274, 0, 0.366274, 0.930507, 0, -0.20984, 2.02625)
+shape = SubResource("BoxShape3D_ramp")
+
+[node name="InteriorZone" type="Area3D" parent="." unique_id=212679127 groups=["active_monitor"]]
+collision_layer = 0
+collision_mask = 2
+monitoring = false
+monitorable = false
+script = ExtResource("17_rider")
+metadata/monitor_reason = "Server only (ShipInteriorRider turns monitoring on there): polls the players in the cabin to make them ride the ship, like the vehicle lift's platform. Scans the player layer alone."
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="InteriorZone" unique_id=212679128]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.355, -0.875)
+shape = SubResource("BoxShape3D_cabin")
+
+[node name="ExitPoint" type="Marker3D" parent="." unique_id=212679129]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, -1.5)
+
+[node name="SeatPilot" type="Area3D" parent="." unique_id=1598888004 node_paths=PackedStringArray("sit_point")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -2.7)
+collision_layer = 32
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_seat")
+role = 0
+sit_point = NodePath("SitPoint")
+prompt_key = "%%HUD_PILOT_SHIP"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SeatPilot" unique_id=1030894998]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+shape = SubResource("BoxShape3D_seat")
+
+[node name="SitPoint" type="Marker3D" parent="SeatPilot" unique_id=1853790653]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.12, 0.15)
+
+[node name="ShipPhysicsGrid" parent="." unique_id=1149110914 instance=ExtResource("4_grid")]
+collision_mask = 0
+monitoring = false
+priority = 10
+gravity_space_override = 3
+gravity = 7.77
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="ShipPhysicsGrid" unique_id=249783493]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.095, -0.525)
+shape = SubResource("BoxShape3D_grid")
+
+[node name="Hull" type="CSGBox3D" parent="." unique_id=292542460 groups=["vehicle_model"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.411571, -0.263438)
+size = Vector3(3.61938, 2.96515, 7.37906)
+material = ExtResource("2_orange")
+
+[node name="Cavity" type="CSGBox3D" parent="Hull" unique_id=74528152]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0539665, -0.449631)
+operation = 2
+size = Vector3(3.00586, 2.5683, 8.62767)
+material = ExtResource("2_orange")
+
+[node name="Dashboard" type="CSGBox3D" parent="Hull" unique_id=88344665]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.805416, -3.68321)
+size = Vector3(3.00586, 1.0654, 0.582211)
+material = ExtResource("2_orange")
+
+[node name="WindshieldCut" type="CSGBox3D" parent="Hull" unique_id=2102879118]
+transform = Transform3D(1, 0, 0, 0, 0.811737, 0.584023, 0, -0.584023, 0.811737, 0, 1.07062, -3.1071)
+operation = 2
+size = Vector3(5.47656, 1.98004, 4.65421)
+material = ExtResource("2_orange")
+
+[node name="RampCut" type="CSGBox3D" parent="Hull" unique_id=1387114488]
+transform = Transform3D(1, 0, 0, 0, 0.627025, 0.778999, 0, -0.778999, 0.627025, 0, -0.452029, 3.68998)
+operation = 2
+size = Vector3(5.47656, 1.98004, 4.65421)
+material = ExtResource("2_orange")
+
+[node name="Console" type="CSGBox3D" parent="Hull" unique_id=1941004259]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.02611, -3.34108)
+size = Vector3(1, 1, 0.424927)
+
+[node name="Ramp" type="CSGBox3D" parent="Hull" unique_id=1677588919]
+transform = Transform3D(1, 0, 0, 0, 0.930507, -0.366274, 0, 0.366274, 0.930507, 0, -1.621411, 2.289688)
+size = Vector3(2.5918, 0.1, 1.293)
+
+[node name="HeadlightGlassLeft" type="MeshInstance3D" parent="Hull" unique_id=1630482917]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, -0.911571, -3.984562)
+cast_shadow = 0
+mesh = SubResource("BoxMesh_lamp")
+
+[node name="HeadlightGlassRight" type="MeshInstance3D" parent="Hull" unique_id=1630482918]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, -0.911571, -3.984562)
+cast_shadow = 0
+mesh = SubResource("BoxMesh_lamp")
+
+[node name="HeadlightLeft" type="SpotLight3D" parent="." unique_id=308028998 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 0.9986295, 0.052335955, 0, -0.052335955, 0.9986295, -1.2, 0.5, -4.3)
+visible = false
+light_energy = 16.0
+shadow_enabled = true
+distance_fade_enabled = true
+spot_range = 300.0
+spot_attenuation = 0.6
+spot_angle = 30.0
+
+[node name="HeadlightRight" type="SpotLight3D" parent="." unique_id=308028999 groups=["vehicle_light"]]
+transform = Transform3D(1, 0, 0, 0, 0.9986295, 0.052335955, 0, -0.052335955, 0.9986295, 1.2, 0.5, -4.3)
+visible = false
+light_energy = 16.0
+shadow_enabled = true
+distance_fade_enabled = true
+spot_range = 300.0
+spot_attenuation = 0.6
+spot_angle = 30.0
+
+[node name="Gui3D" parent="." unique_id=438346038 node_paths=PackedStringArray("node_viewport", "node_quad") instance=ExtResource("15_gui3d")]
+transform = Transform3D(1, 0, 0, 0, 0.9284767, 0.37139067, 0, -0.37139067, 0.9284767, 0, 1.24, -3.8)
+node_viewport = NodePath("SubViewport")
+node_quad = NodePath("Screen")
+render_when_seen = false
+hums = false
+
+[node name="Screen" type="MeshInstance3D" parent="Gui3D" unique_id=1779030411]
+cast_shadow = 0
+mesh = SubResource("QuadMesh_screen")
+
+[node name="Bezel" type="MeshInstance3D" parent="Gui3D" unique_id=1779030412]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.011)
+mesh = SubResource("BoxMesh_bezel")
+
+[node name="SubViewport" type="SubViewport" parent="Gui3D" unique_id=2131469254]
+disable_3d = true
+handle_input_locally = false
+size = Vector2i(1600, 400)
+size_2d_override_stretch = true
+
+[node name="VehicleDashboard" parent="Gui3D/SubViewport" unique_id=957292937 instance=ExtResource("16_dash")]
+layout = 1
+
+[node name="ThrusterSound" type="Node3D" parent="." unique_id=1739462051]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 3.2)
+script = ExtResource("5_sound")
+thrust_loop = ExtResource("9_thrust")
+puffs = Array[AudioStream]([ExtResource("11_puff"), ExtResource("12_puff"), ExtResource("13_puff"), ExtResource("14_puff")])

@@ -782,9 +782,41 @@ func connect_area_detect():
 	if not $AreaDetector.area_exited.is_connected(_on_area_detector_area_exited):
 		$AreaDetector.area_exited.connect(_on_area_detector_area_exited)
 
-func get_current_gravity_parent() -> Node3D:
-	if gravity_parents.is_empty(): return null
-	return gravity_parents.back()
+## The gravity area that holds this body now (pick_gravity_area), or null: weightless. Seated, the areas
+## of the vehicle we sit in are left out: a ship's own gravity (ShipPhysicsGrid) is for whoever walks in
+## it, and the pilot's up stays the world's, as before the ship had one (the sunlight is measured on it).
+## Every reader of "the gravity that holds me" asks HERE, client and server alike.
+func get_current_gravity_parent() -> Area3D:
+	var seat_vehicle: Node = null
+	if is_instance_valid(_seat_node) and _seat_node.has_method("vehicle"):
+		seat_vehicle = _seat_node.vehicle()
+	return pick_gravity_area(gravity_parents, seat_vehicle)
+
+
+## Of the gravity areas [param areas] (in the order they were entered), the one that holds a body: the
+## highest Area3D.priority; on a tie a directional area (a ship's or a station pad's PhysicsGrid) over a
+## point one (a planet); then the last entered. Areas under [param skip_under] are left out.
+##
+## Not simply the last entered, as it was: a reparent takes the body out of the physics space and back
+## in, and every area is entered again in no set order -- inside a flying ship, the planet's sphere
+## could come last and pull the walker out through the floor. Pure.
+static func pick_gravity_area(areas: Array, skip_under: Node = null) -> Area3D:
+	var best: Area3D = null
+	for area in areas:
+		if not is_instance_valid(area) or not (area is Area3D):
+			continue
+		if skip_under != null and skip_under.is_ancestor_of(area):
+			continue
+		if best == null or gravity_area_beats(area, best):
+			best = area
+	return best
+
+
+## Whether [param area], entered after [param held], takes over from it (see pick_gravity_area). Pure.
+static func gravity_area_beats(area: Area3D, held: Area3D) -> bool:
+	if area.priority != held.priority:
+		return area.priority > held.priority
+	return not (area.gravity_point and not held.gravity_point)
 
 func update_last_basis() -> void:
 	var gravity_parent = get_current_gravity_parent()

@@ -60,7 +60,6 @@ var universe_datas_spawner_node: MultiplayerSpawner = null
 var spawnable_station_scene: PackedScene = null
 
 var players: Dictionary = {}
-var player_ship: Dictionary = {}
 
 var server_sdo_id = 0
 var players_list = {}
@@ -68,7 +67,6 @@ var servers_list = {}
 var props_list = {
 	"box50cm": {},
 	"box4m": {},
-	"ship": {}
 }
 
 # UUIDs of world/infrastructure props placed by designers (spawned from editor placeholders).
@@ -78,7 +76,6 @@ var protected_prop_uuids: Dictionary = {}
 var client_change_server = null
 
 var player_scene_path: String = "res://scenes/player/player.tscn"
-var ship_scene_path: String = "res://scenes/_universe/vehicles/spaceship/test_spaceship/test_spaceship.tscn"
 
 func _enter_tree() -> void:
 	pass
@@ -253,12 +250,6 @@ func _spawn_entity(datas: Dictionary) -> Node:
 				spawned_entity_instance.spawn_position = datas["player_spawn_position"]
 				spawned_entity_instance.spawn_up = datas["player_spawn_up"]
 				spawned_entity_instance.set_multiplayer_authority(datas["authority_peer_id"])
-
-			"ship":
-				spawned_entity_instance = load(datas["ship_scene_path"]).instantiate()
-				spawned_entity_instance.spawn_position = datas["ship_spawn_position"]
-				spawned_entity_instance.spawn_rotation = datas["ship_spawn_rotation"]
-				spawned_entity_instance.set_multiplayer_authority(1)
 
 	return spawned_entity_instance
 
@@ -719,8 +710,6 @@ func get_spawnable_props_newinstance(proptype):
 			return small_spawnable_props[2].instantiate()
 		"box4m":
 			return small_spawnable_props[3].instantiate()
-		"ship":
-			return load(ship_scene_path).instantiate()
 		_:
 			return null
 
@@ -782,52 +771,6 @@ func random_spawn_on_planet(planet_position: Vector3, radius: float) -> Vector3:
 	var random_point_on_unit_sphere = Vector3(sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi))
 
 	return planet_position + random_point_on_unit_sphere * (radius + 1.0)
-
-## Request the control of the ship to the server
-@rpc("any_peer", "call_remote", "reliable")
-func request_control(player_instance_path: String = "", ship_instance_path: String =""):
-	if not multiplayer.is_server():
-		return
-
-	var senderid = universe_scene.multiplayer.get_remote_sender_id()
-	var player_instance = get_node(player_instance_path)
-	if player_instance:
-		var ship_instance = get_node(ship_instance_path)
-		if ship_instance:
-			give_control.rpc(senderid, player_instance_path, ship_instance_path)
-
-@rpc("authority", "call_local", "reliable")
-func give_control(id, player_instance_path, ship_instance_path):
-	var player_instance = get_node(player_instance_path)
-	if player_instance:
-		var ship_instance = get_node(ship_instance_path)
-		if ship_instance:
-			ship_instance.pilot = player_instance
-			ship_instance.pilot.active = false
-			ship_instance.pilot.camera_pivot.rotation.x = 0
-			ship_instance.pilot_seat.remote_path = player_instance.get_path()
-
-			ship_instance.set_multiplayer_authority(id)
-
-@rpc("authority", "call_local", "reliable")
-func request_release(player_instance_path, ship_instance_path):
-	var player_instance = get_node(player_instance_path)
-	if player_instance:
-		var ship_instance = get_node(ship_instance_path)
-		if ship_instance:
-			release_control.rpc(player_instance_path, ship_instance_path)
-
-@rpc("any_peer", "call_local", "reliable")
-func release_control(player_instance_path, ship_instance_path):
-	var player_instance = get_node(player_instance_path)
-	if player_instance:
-		var ship_instance = get_node(ship_instance_path)
-		if ship_instance and ship_instance.pilot != null:
-			ship_instance.pilot.active = true
-			ship_instance.pilot = null
-			ship_instance.pilot_seat.remote_path = NodePath("")
-			ship_instance.active = false
-			ship_instance.set_multiplayer_authority(1)
 
 @rpc("authority", "call_remote", "reliable")
 func notify_client_connected():

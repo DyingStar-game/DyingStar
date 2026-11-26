@@ -3759,10 +3759,7 @@ func server_exit(player: Node) -> void:
 		# The world position is set on the line ABOVE on purpose: reparent() preserves it, so the
 		# single move this emits already carries the spot beside the cab, not the seat we left.
 		if player.has_method("_safe_reparent_and_sync"):
-			var frame: Node = PropSpawn.find_net_parent(self)
-			if frame == null:
-				frame = get_parent()  # no networked ancestor: at least do not leave them in the cab
-			player.call_deferred("_safe_reparent_and_sync", frame)
+			player.call_deferred("_safe_reparent_and_sync", _exit_frame())
 	print("🚚 Vehicle %s: seat exit" % uuid)
 
 ## Server: [param player] leaves THIS SERVER from its seat (handed over to another game server, gone
@@ -3840,6 +3837,13 @@ func _pilot_uuid_now() -> String:
 	if Time.get_ticks_msec() < _expected_pilot_until_ms:
 		return pilot_uuid
 	return ""
+
+## Server: the node a player leaving a seat is parented to (server_exit) -- the frame the vehicle itself
+## lives in: the planet, or the city it is parked in. A vehicle one walks in (Spaceship) keeps them.
+func _exit_frame() -> Node:
+	var frame: Node = PropSpawn.find_net_parent(self)
+	return frame if frame != null else get_parent()  # no networked ancestor: at least not left in the cab
+
 
 ## Drop position beside the vehicle, on the side of the given seat (left vs right, derived from
 ## the seat's local X so any layout works), raised so the player lands on the ground on exit.

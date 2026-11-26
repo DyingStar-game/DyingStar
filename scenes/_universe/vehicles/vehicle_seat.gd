@@ -30,6 +30,9 @@ const REACH_M := 4.0
 ## Door that gates this seat: its door_id (a VehicleDoorHandle's door_id, e.g. "front_l_door"). When
 ## set, the player must OPEN that door before E can board this seat. Leave empty to board directly.
 @export var door_id: String = ""
+## Words shown after the action key when a player aims at this seat while it is free: a translation key
+## (e.g. %%HUD_PILOT_SHIP). Empty = the default "Driver seat" / "Passenger seat" by role.
+@export var prompt_key: String = ""
 
 ## Server-authoritative occupant (a player's client_uuid). "" = free.
 var occupant_uuid: String = ""
