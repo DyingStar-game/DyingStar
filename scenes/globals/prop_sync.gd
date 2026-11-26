@@ -146,7 +146,12 @@ func _on_host_sleeping_state_changed() -> void:
 	if not (body is RigidBody3D):
 		return  # only ever connected on a RigidBody3D host, but the cache may have gone stale
 	var rb: RigidBody3D = body
-	set_physics_process(not rb.sleeping or PropNet.rides_parent(rb))
+	if rb.sleeping and not PropNet.rides_parent(rb):
+		# Parked, not merely off: `sleeping = false` from a script wakes a body without this signal, and
+		# poll_parked still sees it.
+		_park()
+	else:
+		set_physics_process(true)
 
 ## A host that is NOT a RigidBody3D (StaticBody3D shelves and rocks, Node3D props) never moves on its
 ## own, so its tick can only ever find the pose it found last time — yet ~200 of them cost ~2.6 ms of
@@ -156,28 +161,111 @@ func _on_host_sleeping_state_changed() -> void:
 ## nor to a smooth_transform host: the server moves it continuously (a lift platform, an
 ## AnimatableBody3D), and at 6 Hz the client's interpolator caught up and waited between packets.
 const STATIC_TICK_EVERY: int = 10
-var _static_phase: int = randi() % STATIC_TICK_EVERY
+
+## SERVER: the PropSyncs whose callback is off ("parked") because their host cannot move on its own -- a
+## static host, a RigidBody3D frozen or asleep, a prop with no uuid yet. poll_parked looks at each of them
+## once every STATIC_TICK_EVERY steps instead: it samples a static host's pose and re-arms the callback of a
+## body that can move again. A callback per prop per step only to find nothing to do was the largest script
+## cost of a busy server: crates on shelves and settled mining rocks frozen by their own script (the culler
+## silences those it freezes itself), thousands once mining fields were seeded (preprod 2026-11-26, 10
+## players on one pod, 23 % of the main thread). Freed ones are dropped by the poll.
+static var _parked: Array = []
+static var _park_cursor: int = 0
+var _is_parked: bool = false
+## The host as the poll reads it, set when parked: the RigidBody3D, or null for a static host.
+var _park_rb: RigidBody3D = null
+var _park_host: Node3D = null
+
+
+## SERVER, once per physics step (server.gd): a STATIC_TICK_EVERY-th of the parked PropSyncs, round robin.
+static func poll_parked() -> void:
+	var count := ceili(float(_parked.size()) / STATIC_TICK_EVERY)
+	for i: int in count:
+		if _parked.is_empty():
+			return
+		if _park_cursor >= _parked.size():
+			_park_cursor = 0
+		var sync: Variant = _parked[_park_cursor]
+		var valid := is_instance_valid(sync)
+		if valid and not sync._parked_tick():
+			_park_cursor += 1
+			continue
+		if valid:
+			sync._is_parked = false
+		_parked[_park_cursor] = _parked[_parked.size() - 1]  # swap-remove: the order does not matter
+		_parked.pop_back()
+
+
+## How many PropSyncs are parked (the tests, the perf rig).
+static func parked_count() -> int:
+	return _parked.size()
+
+
+## Whether [param host] has nothing to replicate on this step that a sample every STATIC_TICK_EVERY steps
+## would miss. Riding a Player / Vehicle / carrier never parks: a carried prop re-sends its constant local
+## pose every step on purpose (see PropNet.server_tick); nor does a smooth_transform host, which the server
+## moves continuously (see STATIC_TICK_EVERY).
+func _parks(host: Node3D) -> bool:
+	if uuid == "":
+		return true  # not networked yet: nothing to replicate until the dispatch gives it one
+	if smooth_transform or PropNet.rides_parent(host):
+		return false
+	if host is RigidBody3D:
+		var rb: RigidBody3D = host
+		return rb.freeze or rb.sleeping  # server_tick returns at once for those (its resting early-out)
+	return true
+
+
+func _park() -> void:
+	set_physics_process(false)
+	_park_host = _body()
+	_park_rb = _park_host as RigidBody3D
+	if not _is_parked:
+		_is_parked = true
+		_parked.append(self)
+
+
+## SERVER, from poll_parked: true when this PropSync leaves the parked list -- its callback is on again or
+## its body can move. Kept to the least, it runs for every parked prop: a new parent (carried, loaded in a
+## bed, on a lift) is not looked for here, because a reparent goes through _enter_tree, which re-arms the
+## callback. A static host's pose is sampled.
+func _parked_tick() -> bool:
+	if is_physics_processing():
+		return true
+	if uuid == "":
+		return false
+	if _park_rb != null:
+		if _park_rb.freeze or _park_rb.sleeping:
+			return false
+		set_physics_process(true)
+		return true
+	if _park_host != null:
+		_server_tick(_park_host)
+	return false
+
 
 func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
-	if uuid == "":
-		return  # not networked yet (e.g. an in-scene placeholder before/without dispatch) — don't replicate
 	var host := _body()
-	if host != null and not smooth_transform and not (host is RigidBody3D) \
-			and not PropNet.rides_parent(host):
-		_static_phase += 1
-		if _static_phase % STATIC_TICK_EVERY != 0:
-			return
+	if host == null:
+		return
+	if _parks(host):
+		_park()
+		return
+	_server_tick(host)
+
+
+func _server_tick(host: Node3D) -> void:
 	if PropNet.prof_on:
 		# Measured HERE, not inside server_tick: this is the inclusive per-call cost (body + emit +
 		# server.gd's handler), which is exactly what the engine profiler claimed was 5.9 ms.
 		var _t0: int = Time.get_ticks_usec()
-		PropNet.server_tick(_body(), self)
+		PropNet.server_tick(host, self)
 		PropNet.prof_tick_usec += Time.get_ticks_usec() - _t0
 		PropNet.prof_calls += 1
 		return
-	PropNet.server_tick(_body(), self)
+	PropNet.server_tick(host, self)
 
 func _process(delta: float) -> void:
 	if Engine.is_editor_hint():

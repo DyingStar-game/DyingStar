@@ -283,6 +283,7 @@ func _physics_process(_delta: float) -> void:
 		_perf_gap_usec += _t0 - _perf_prev_exit_usec
 	_perf_tick(_delta)
 	planet_spaces.tick()
+	PropSync.poll_parked()  # the props that cannot move on their own, a tenth of them per step
 	_tps_ticks += 1
 	_horizon_update_counter += 1
 	if _horizon_update_counter >= 2:
@@ -550,13 +551,14 @@ func _perf_tick(delta: float) -> void:
 		var _type_parts: PackedStringArray = []
 		for _t: String in _types.slice(0, 6):
 			_type_parts.append("%s=%.1f/f" % [_t, float(PropNet.prof_emit_types[_t]) / float(_window_frames)])
-		print(("[Perf/net] calls=%.0f/f emits=%.0f/f (%.0f%%)"
+		print(("[Perf/net] calls=%.0f/f emits=%.0f/f (%.0f%%) parked=%d"
 				+ " | per frame: tick=%.2fms (body+dispatch=%.2f handler=%.2f) flush=%.2fms"
 				+ " | per call: %.1fus | flush avg entries=%.0f (%.1f KB/s of JSON)"
 				+ " | emitters: %s | branches: carried=%.1f/f riding=%.1f/f world=%.1f/f (world mean move %.1f mm over %d)") % [
 			PropNet.prof_calls / _fr,
 			PropNet.prof_emits / _fr,
 			(100.0 * PropNet.prof_emits / PropNet.prof_calls) if PropNet.prof_calls > 0 else 0.0,
+			PropSync.parked_count(),
 			_tick_ms, _tick_ms - _hand_ms, _hand_ms, _flush_ms,
 			_per_call_us,
 			(float(PropNet.prof_flush_entries) / float(PropNet.prof_flushes)) if PropNet.prof_flushes > 0 else 0.0,
