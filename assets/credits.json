@@ -849,6 +849,78 @@
 			"license": "CC0"
 		},
 		{
+			"asset": "ship-engine-idle-loop-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-engine-idle-loop-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ship-engine-start.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-engine-start.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ship-engine-stop.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-engine-stop.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ship-main-thrust-loop-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-main-thrust-loop-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ship-rcs-puff-1.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-1.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ship-rcs-puff-2.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-2.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ship-rcs-puff-3.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-3.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
+			"asset": "ship-rcs-puff-4.ogg",
+			"path": "res://assets/_universe/audio/sfx/vehicles/spaceship/ship-rcs-puff-4.ogg",
+			"author": "WarpZone",
+			"source": "Discord",
+			"id": "111043432687874048",
+			"url": "",
+			"license": "CC BY-NC-SA 4.0"
+		},
+		{
 			"asset": "special-lee-horn.ogg",
 			"path": "res://assets/_universe/audio/sfx/vehicles/ground/special-lee-horn.ogg",
 			"author": "Myinstants",
