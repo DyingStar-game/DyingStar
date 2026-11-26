@@ -67,6 +67,21 @@ class GridConvention(unittest.TestCase):
         self.assertEqual(float(p[4]), g.dlat)
 
 
+class Bilinear(unittest.TestCase):
+
+    def test_nodes_exact_plane_linear_outside_nan(self):
+        g = tg.Grid(10.0, 0.01, 5, 20.0, 0.01, 4)
+        lon, lat = np.meshgrid(g.lons, g.lats)
+        z = 3.0 * (lon - 10.0) + 7.0 * (lat - 20.0)
+        np.testing.assert_allclose(tg.bilinear(z, g, lon, lat), z)
+        self.assertAlmostEqual(float(tg.bilinear(z, g, 10.015, 19.985)), 3.0 * 0.015 - 7.0 * 0.015)
+        self.assertTrue(np.isnan(tg.bilinear(z, g, 9.99, 19.99)))
+
+    def test_geotransform_round_trip(self):
+        g = tg.Grid(10.0, 0.01, 5, 20.0, 0.02, 4)
+        self.assertEqual(tg.Grid.from_geotransform(g.geotransform(), g.nx, g.ny), g)
+
+
 class Slope(unittest.TestCase):
 
     def _plane(self, lat0, grade_east, grade_north):
