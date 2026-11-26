@@ -25,6 +25,9 @@
 #   DOTNET_ROOT    the .NET SDK, under $RUNNER_TEMP (actions/setup-dotnet with DOTNET_INSTALL_DIR)
 #   EXPORT_GPU_ARGS  the docker run arguments that give the container the GPU (default: the render node,
 #                  for Mesa; "--gpus all -e NVIDIA_DRIVER_CAPABILITIES=all" on a machine with NVIDIA's runtime)
+#   EXPORT_MODE    release (default) or debug: the diagnostic build, exported on Godot's debug template, the
+#                  one where Vulkan breadcrumbs (--accurate-breadcrumbs), GPU memory reports and GDScript
+#                  backtraces are compiled in
 
 set -uo pipefail
 
@@ -41,11 +44,16 @@ stage="$RUNNER_TEMP/export-bake"
 log="$RUNNER_TEMP/export-$(basename "$output").log"
 # A baked export stores ~200 of these; a headless one none.
 min_baked=100
+case "${EXPORT_MODE:-release}" in
+    release) export_flag=--export-release ;;
+    debug) export_flag=--export-debug ;;
+    *) echo "::error::EXPORT_MODE must be release or debug, not '$EXPORT_MODE'"; exit 2 ;;
+esac
 
 export_headless() {
     echo "::warning::$1: exporting headless, the shaders are NOT baked"
     "$godot_dir/$godot_bin" --headless --path "$GITHUB_WORKSPACE" --verbose \
-        --export-release "$preset" "$output" 2>&1 | tee "$log"
+        "$export_flag" "$preset" "$output" 2>&1 | tee "$log"
     exit "${PIPESTATUS[0]}"
 }
 
@@ -77,8 +85,8 @@ docker run --rm "${gpu_args[@]}" -u "$(id -u):$(id -g)" \
         Xvfb :99 -screen 0 1280x720x24 -nolisten tcp 2> /dev/null &
         export DISPLAY=:99
         sleep 3
-        "$0" --display-driver x11 --rendering-driver vulkan --path "$1" --verbose --export-release "$2" "$3"
-    ' "$stage/godot/$godot_bin" "$GITHUB_WORKSPACE" "$preset" "$output" 2>&1 | tee "$log"
+        "$0" --display-driver x11 --rendering-driver vulkan --path "$1" --verbose "$4" "$2" "$3"
+    ' "$stage/godot/$godot_bin" "$GITHUB_WORKSPACE" "$preset" "$output" "$export_flag" 2>&1 | tee "$log"
 status=${PIPESTATUS[0]}
 rm -rf "$stage"
 

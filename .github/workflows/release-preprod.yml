@@ -17,6 +17,10 @@ on:
         description: "Build and deploy the preprod client"
         type: boolean
         default: true
+      debug_client:
+        description: "Also deploy the Windows diagnostic client (DyingStar-windows-testing-debug.zip)"
+        type: boolean
+        default: true
       no_cache:
         description: "Disable the server's Docker layer cache (force full rebuild)"
         type: boolean
@@ -59,6 +63,7 @@ jobs:
       contents: write
     with:
       dev_release: ${{ needs.version.outputs.version }}
+      debug_client: ${{ inputs.debug_client }}
     secrets: inherit
 
   dev-release:
