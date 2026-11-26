@@ -28,7 +28,8 @@ extends Area3D
 ## 0 = the wind never shuts this door; a value = that area. See DoorWind.
 @export_range(-1.0, 5.0, 0.05) var wind_area_m2: float = -1.0
 ## The direction of travel, in the vehicle's frame, whose airflow pushes this door SHUT: a cab door
-## hinged at its front edge is shut by driving forward, Vector3(0, 0, -1).
+## hinged at its front edge is shut by driving forward, Vector3(0, 0, -1). The weather's wind counts
+## too: from the front or from the door's own side it pushes the door shut, even parked.
 @export var wind_shut_travel: Vector3 = Vector3.FORWARD
 ## Width of the leaf (m), hinge to free edge: the wind's push acts at half of it. -1 = measured from
 ## the door's mesh, like the area.

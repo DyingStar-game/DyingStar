@@ -2330,16 +2330,22 @@ func server_toggle_door(door_id: String) -> void:
 	_door_state[door_id] = not is_door_open(door_id)
 	_apply_door(door_id, _door_state[door_id])
 
-## SERVER, ten times a second on a moving vehicle (a door does not need 60 Hz to feel the wind): shut
-## each open door the relative wind presses closed harder than its check holds (DoorWind). With every
-## door shut — most of the time — it costs a counter test; with one open, a few multiplications per
-## door. The leaf is measured once (door_leaf) and the handles listed once.
+## SERVER, ten times a second, moving or parked (a door does not need 60 Hz to feel the wind): shut
+## each open door the air presses closed harder than its check holds (DoorWind). The air on the doors
+## is the weather's wind where the vehicle stands minus its own velocity: a head wind adds to the
+## speed, a tail wind takes from it, and a gust (a dust wall's front) slams a door left open on a
+## parked truck. With every door shut — most of the time — it costs a counter test; with one open,
+## one weather read and a few multiplications per door. The leaf is measured once (door_leaf) and the
+## handles listed once.
 func _wind_on_doors() -> void:
 	if Engine.get_physics_frames() % WIND_CHECK_EVERY_FRAMES != 0 or not _door_state.values().has(true):
 		return
 	if _wind_handles.is_empty():
 		_wind_handles = find_children("*", "VehicleDoorHandle", true, false)
-	var velocity_local : Vector3 = global_basis.inverse() * linear_velocity
+	var to_local_basis : Basis = global_basis.orthonormalized().inverse()
+	var planet := Planet.of(self)
+	var wind_world : Vector3 = planet.wind_world_at(global_position) if planet != null else Vector3.ZERO
+	var air_local : Vector3 = to_local_basis * (wind_world - linear_velocity)
 	var rho : float = air_density_now()
 	for handle: VehicleDoorHandle in _wind_handles:
 		if not is_door_open(handle.door_id):
@@ -2347,16 +2353,21 @@ func _wind_on_doors() -> void:
 		var leaf : Vector2 = door_leaf(handle)
 		if leaf.x <= 0.0:
 			continue
-		var speed : float = velocity_local.dot(handle.wind_shut_travel.normalized())
-		var torque : float = DOOR_WIND.torque_nm(rho, speed, leaf.x, leaf.y, handle.open_angle_deg)
+		var hinge : Vector3 = handle.hinge_axis if handle.hinge_axis.length_squared() > 0.000001 \
+				else door_hinge_axis
+		var push : Vector3 = DOOR_WIND.push_direction(handle.wind_shut_travel, hinge,
+				to_local(handle.global_position), handle.open_angle_deg)
+		var torque : float = DOOR_WIND.torque_from_air_nm(rho, air_local, push, leaf.x, leaf.y)
 		if torque > handle.wind_hold_nm:
-			print("🚚 Vehicle %s: the wind shuts %s at %.0f km/h (%.0f N.m > %.0f, air %.2f kg/m3)"
-					% [uuid, handle.door_id, speed * 3.6, torque, handle.wind_hold_nm, rho])
+			print("🚚 Vehicle %s: the wind shuts %s (air on it %.0f km/h, weather wind %.0f km/h, %.0f N.m > %.0f)"
+					% [uuid, handle.door_id, air_local.length() * 3.6, wind_world.length() * 3.6, torque,
+					handle.wind_hold_nm])
 			server_toggle_door(handle.door_id)
 
 
 ## For the dashboard's door light: whether a door or hatch is open, and the lowest speed (km/h) at which
-## the wind shuts one of the open doors (DoorWind, the same sum _wind_on_doors does) — INF when none
+## the wind shuts one of the open doors in still air (DoorWind; _wind_on_doors adds the weather's wind,
+## so a head wind shuts it sooner, a tail wind later) — INF when none
 ## open or the wind moves none of them (a hatch). Server and replica alike: the doors' state is
 ## replicated, the leaves measured from the meshes.
 func open_doors_wind_kmh() -> Vector2:
@@ -2917,6 +2928,7 @@ func _physics_process_impl(delta: float) -> void:
 					angular_velocity = Vector3.ZERO
 					engine_force = 0.0
 					sleeping = true
+				_wind_on_doors()  # parked too: a gust slams a door left open
 				_replicate_transform()  # still replicate doors/headlights/etc.
 				return
 		else:
