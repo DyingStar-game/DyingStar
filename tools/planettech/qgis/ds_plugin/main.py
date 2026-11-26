@@ -34,6 +34,7 @@ class DyingStarPlugin:
         self.menu = None
         self.toolbar = None
         self.roads = None
+        self.publish_watch = None
         self.actions = []
 
     # ── QGIS hooks ────────────────────────────────────────────────────────────
@@ -83,6 +84,12 @@ class DyingStarPlugin:
                       "massifs et crêtes tels qu'ils sont dessinés — sans export.")
 
         pub = self.menu.addMenu("Publication")
+        from .publish_log import PublishWatch
+        self.publish_watch = PublishWatch(self.iface)
+        self._add(pub, "Journal de publication", self.publish_watch.show,
+                  tip="Le journal de la publication en arrière-plan (publish.log de la "
+                      "planète), suivi en direct : elle continue après la fin de l'export.")
+        pub.addSeparator()
         self._add(pub, "Récupérer les parts du serveur", lambda: self._job(
             "Récupérer les parts", [Step(JOBS, "pull")]))
         self._add(pub, "Relier le pack de modificateurs", lambda: self._job(
@@ -133,6 +140,9 @@ class DyingStarPlugin:
         if self.roads is not None:
             self.roads.unload()
             self.roads = None
+        if self.publish_watch is not None:
+            self.publish_watch.unload()
+            self.publish_watch = None
         for action in self.actions:
             self.iface.removeToolBarIcon(action)
         if self.toolbar is not None:

@@ -266,7 +266,8 @@ _REMOTE_VERSION_PY = ("import sys; sys.path.insert(0, '.'); "
 def publish_cmd(cfg, remote_file, compress):
     """The server-side publish_tiles.py line; [remote_file] is relative to the workdir."""
     q = shlex.quote
-    cmd = "cd %s && %s tools/planettech/publish/publish_tiles.py %s --out %s --channel %s" % (
+    # -u: the server's lines reach publish.log as they are printed, not in one block at the end.
+    cmd = "cd %s && %s -u tools/planettech/publish/publish_tiles.py %s --out %s --channel %s" % (
         q(cfg["workdir"]), q(cfg["python"]), q(remote_file), q(cfg["dist"]), q(cfg["channel"]))
     return cmd + (" --compress" if compress else "")
 
@@ -538,7 +539,10 @@ def publish_in_background(path, extra=()):
     with open(log, "a", encoding="utf-8") as fh:
         fh.write("\n--- %s %s\n" % (datetime.datetime.now().isoformat(timespec="seconds"), path))
         fh.flush()
-        subprocess.Popen([python, os.path.abspath(__file__), os.path.abspath(path)] + list(extra),
+        # -u: stdout is a file here, so Python would buffer it and publish.log (followed live by
+        # the QGIS plugin's « Journal de publication ») would stay empty until the very end.
+        subprocess.Popen([python, "-u", os.path.abspath(__file__), os.path.abspath(path)]
+                         + list(extra),
                          stdout=fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                          cwd=_REPO, start_new_session=True)
     return log
