@@ -34,6 +34,7 @@ of this repository.
 | Projet planète… | `setup_planet_project.py`: planet name + radius, the layer picker, PostGIS schema and tables, the `.qgz` |
 | Mettre à jour les couches… | the same on the open project's planet, without asking name and radius (a field added to a layer definition…) |
 | Exporter ▸ … | one entry per exporter (`export_*.py`); **Tout le pack de modificateurs** runs roads, regions, mountains, volcanoes and rocky terrain, then links the pack once |
+| Routes ▸ Terrain de la zone… | `zone_terrain.py`: altitude, contours and slope classes of the area on screen (see "Drawing roads over the relief") |
 | Routes ▸ Aperçu des massifs… | `preview_mountain_contours.py`, with its options in a dialog |
 | Publication ▸ … | `publish_remote.py --pull / --check / --promote`, `link_modifiers.link()` |
 | Outils ▸ … | `migrate_volcanic_layers.py`, `probe_pack_sparsity.py`, `export_rocks.py` |
@@ -392,6 +393,44 @@ features re-bake; `heights.pack` and `data_version` are untouched.
 To iterate before the layers exist, `PlanetData` has a **Debug mountain**
 group (a synthetic 32-gon range + one ridge, `debug_mountain_*` /
 `debug_ridge_*`), ignored as soon as the pack carries a mountain part.
+
+### Drawing roads over the relief (`zone_terrain.py`)
+
+The road and railway profiles (`GradeProfile`) are laid on the heightmap **plus** the mountain
+ranges, ridges, volcanoes and rocky terrain, all generated in Godot — none of which QGIS showed.
+*DyingStar ▸ Routes ▸ Terrain de la zone…* computes the ground of the area on screen and adds a
+**DyingStar — terrain** group:
+
+- **Terrain** — the altitude, as a hillshade, and **Courbes** — contour lines (the 5th one thicker);
+- **Pente — praticabilité** — the slope in true metres (an east-west step is R·cos φ·dλ), in three
+  classes for the road's max slope: green, the road can follow the ground in any direction;
+  orange (up to the "raide" threshold, 30° by default), only across the slope, with bends, cut and
+  fill; red, a tunnel or a viaduct;
+- **Crevasses** (exact source, corundum planets) — where the road needs a chasm bridge.
+
+The **DyingStar — Routes** toolbar holds the max slope and the steep threshold: changing them
+recolours the slope at once, nothing recomputed; selecting a `highway` / `road` takes its
+`max_slope_degrees`.
+
+Two sources, one grid (`export/planet/terrain_grid.py`, node = pixel centre, row 0 north):
+
+| Source | What it reads | When |
+|---|---|---|
+| **Rapide** | QGIS alone, nothing exported: the contours through the same spherical TIN as the elevation export, plus the ranges and ridges as drawn (`mountain_preview.py`, Godot's values to 1e-9 m). No volcanoes, no rocky terrain; the TIN itself where the game reads 198 m pack texels — close, not exact. | while drawing massifs and roads together; under a second |
+| **Exact** | Godot without a window, `tools/planettech/terrain_dem.tscn`: `PlanetData.grade_height_sampler`, the very function the profiles read. The modifiers come from the **local** `terrainmodifier.pack` of the last export (a massif just exported shows without publishing), the elevation from the tile service (channel of `client.ini`, or the one chosen). | before exporting a road; ~1 min for 2.4 M nodes at 25 m |
+
+The exact tool samples every node through the C# twin of the sampler (one tile frame per tile,
+as the chunk builders) and checks 256 random nodes against the GDScript sampler — equal to the
+bit on tarsis_3. A coarse pitch reads the pyramid level a terrain LOD of that pitch reads, with
+the relief's finer octaves dropped. By hand:
+
+```sh
+godot --headless --path . res://tools/planettech/terrain_dem.tscn -- --planet=tarsis_3 \
+    --bbox=-17.6,0.8,-17.2,1.1 --pitch=25 --out=/tmp/dem [--cracks] [--local-modifiers=<pack>]
+```
+
+It writes `/tmp/dem.f32` (float32, row 0 north), `/tmp/dem.json` (the grid, the radius, what was
+read) and `/tmp/dem.log`. Set **Binaire Godot** in the settings (the project's engine).
 
 ### Seeing the mountains in QGIS (`preview_mountain_contours.py`)
 

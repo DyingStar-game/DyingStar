@@ -21,7 +21,8 @@ extends Node
 ## planet scene whose modifier pack carries a profiled line.
 ## --fetchers=N sets the parallel tile downloads (default 8).
 
-const SCENES_DIR := "res://scenes/systems"
+const HeadlessPlanet := preload("res://tools/planettech/headless_planet.gd")
+const SCENES_DIR := HeadlessPlanet.SCENES_DIR
 
 var _fetchers := 8
 ## stdout is buffered through the observability bridge: progress goes to
@@ -60,18 +61,8 @@ func _ready() -> void:
 	get_tree().quit(1 if failed else 0)
 
 
-## Planet scenes under SCENES_DIR (recursively), by planet name.
 func _planet_scenes() -> Dictionary:
-	var out := {}
-	var dirs: Array[String] = [SCENES_DIR]
-	while not dirs.is_empty():
-		var d: String = dirs.pop_back()
-		for sub in DirAccess.get_directories_at(d):
-			dirs.append(d.path_join(sub))
-		for f in DirAccess.get_files_at(d):
-			if f.ends_with(".tscn"):
-				out[f.get_basename()] = d.path_join(f)
-	return out
+	return HeadlessPlanet.planet_scenes()
 
 
 func _all_planets() -> PackedStringArray:
@@ -86,23 +77,9 @@ func _all_planets() -> PackedStringArray:
 	return out
 
 
-## The planet's own PlanetData, as its scene configures it — read from the
-## PackedScene state, nothing instantiated.
+## The planet's own PlanetData, as its scene configures it (headless_planet.gd).
 func _planet_data(planet: String) -> PlanetData:
-	var path: String = _planet_scenes().get(planet, "")
-	if path == "":
-		return null
-	var ps := load(path) as PackedScene
-	if ps == null:
-		return null
-	var st := ps.get_state()
-	for ni in st.get_node_count():
-		for pi in st.get_node_property_count(ni):
-			if st.get_node_property_name(ni, pi) == &"planet_data":
-				var res: Variant = st.get_node_property_value(ni, pi)
-				if res is PlanetData:
-					return (res as PlanetData).duplicate(true)
-	return null
+	return HeadlessPlanet.planet_data(planet)
 
 
 ## The crack exclusion spheres PlanetTerrain hands the sampler, read from the
@@ -263,124 +240,23 @@ func _publish(bake_path: String) -> void:
 		_say("[GradeBake] %s" % str(line).strip_edges())
 
 
-## Download [param tiles] (export level) with _fetchers connections of their
-## own: RemoteTileSource.fetch_now shares one connection per source, so one
-## source per fetcher. Returns how many are on disk afterwards.
+## Download [param tiles] (export level) in parallel (tools/planettech/headless_planet.gd).
+## Returns how many are on disk afterwards.
 func _fetch_parallel(data: PlanetData, tiles: Array) -> int:
-	var base := RemoteTileSource.configured_base_url()
-	var srcs: Array = []
-	for k in _fetchers:
-		var s := RemoteTileSource.new()
-		if s.open_planet(base, data.planet_name):
-			srcs.append(s)
-	if srcs.is_empty():
-		srcs.append(data.remote_source)
-	var ns := data.export_nside
-	var n_src := srcs.size()
-	var task := WorkerThreadPool.add_group_task(func(k: int) -> void:
-		var src: RemoteTileSource = srcs[k]
-		var i := k
-		while i < tiles.size():
-			src.fetch_now(ns, int(tiles[i]))
-			i += n_src,
-		n_src, n_src, true, "grade bake tile fetch")
-	WorkerThreadPool.wait_for_group_task_completion(task)
-	var present := 0
-	for t in tiles:
-		if FileAccess.file_exists(data.remote_source.tile_cache_path(ns, int(t))):
-			present += 1
-	return present
+	return HeadlessPlanet.fetch_parallel(data, tiles, _fetchers)
 
 
-## A tile the service pruned is read on its finest PUBLISHED ancestor
-## (TileResidency.tile_available). The game learns the presence maps and
-## fetches those ancestors on the source's own thread; a tool may block:
-## the maps are read here, on the planet's source (so its presence_of()
-## knows them afterwards), and the ancestors fetched in parallel.
-## Returns how many ancestors were fetched.
+## The published ancestors of the pruned tiles (tools/planettech/headless_planet.gd).
+## Returns how many were fetched.
 func _fetch_ancestors(data: PlanetData, tiles: Array) -> int:
-	var src := data.remote_source
-	var ancestors := {}
-	for t in tiles:
-		var ns := data.export_nside
-		var ip := int(t)
-		while ns >= data.export_nside_min:
-			if src.has_tile(ns, ip):
-				if ns != data.export_nside:
-					ancestors[Vector2i(ns, ip)] = true
-				break
-			ns >>= 1
-			ip >>= 2
-	var keys: Array = ancestors.keys()
-	if keys.is_empty():
-		return 0
-	var base := RemoteTileSource.configured_base_url()
-	var srcs: Array = []
-	for k in _fetchers:
-		var s := RemoteTileSource.new()
-		if s.open_planet(base, data.planet_name):
-			srcs.append(s)
-	if srcs.is_empty():
-		srcs.append(src)
-	var n_src := srcs.size()
-	var task := WorkerThreadPool.add_group_task(func(k: int) -> void:
-		var f: RemoteTileSource = srcs[k]
-		var i := k
-		while i < keys.size():
-			var a: Vector2i = keys[i]
-			f.fetch_now(a.x, a.y)
-			i += n_src,
-		n_src, n_src, true, "grade bake ancestor fetch")
-	WorkerThreadPool.wait_for_group_task_completion(task)
-	return keys.size()
+	return HeadlessPlanet.fetch_ancestors(data, tiles, _fetchers)
 
 
-## Wait until every tile under a line is readable — pruned tiles climb to
-## their finest published ancestor, which the source fetches on its own
-## thread once _grade_tiles_missing has queued it. False when one never can.
+## Wait until every tile under a line is readable (tools/planettech/headless_planet.gd).
+## False when one never can: the line is then not baked.
 func _wait_tiles(data: PlanetData, tiles: Dictionary, fid: int) -> bool:
-	var deadline := Time.get_ticks_msec() + 60000
-	var next_report := 0
-	while true:
-		var state := data._grade_tiles_missing(tiles)
-		var missing := int(state["missing"])
-		if missing == 0:
-			return true
-		if Time.get_ticks_msec() >= next_report:
-			next_report = Time.get_ticks_msec() + 10000
-			var hist := {}
-			for ipix: int in tiles:
-				if data._grade_tile_available(ipix):
-					continue
-				var st := TileResidency.finest_published_ancestor_state(data, ipix, data.export_nside)
-				hist[st] = int(hist.get(st, 0)) + 1
-			var src := data.remote_source
-			for ipix: int in tiles:
-				if data._grade_tile_available(ipix):
-					continue
-				var chain := ""
-				var ns := data.export_nside
-				var ip := ipix
-				while ns >= data.export_nside_min:
-					chain += " n%d/%d:p%d,f%d" % [ns, ip, src.presence_of(ns, ip),
-							int(not data.load_chunk_floats(ip, ns).is_empty())]
-					ns >>= 1
-					ip >>= 2
-				_say("[GradeBake]   first missing tile chain:%s" % chain)
-				break
-			_say("[GradeBake] %s fid %d: waiting for %d tile(s) — states %s — source queue %d, fetched %d, failed %d"
-					% [data.planet_name, fid, missing, str(hist), int(src.queue_stats()["queued"]),
-					src.stat_fetched, src.stat_failed])
-		if bool(state["hopeless"]):
-			_err("[GradeBake] %s fid %d: %d tile(s) can never be read — line not baked"
-					% [data.planet_name, fid, missing])
-			return false
-		if Time.get_ticks_msec() > deadline:
-			_err("[GradeBake] %s fid %d: %d tile(s) still missing after 60 s — line not baked"
-					% [data.planet_name, fid, missing])
-			return false
-		OS.delay_msec(500)
-	return false
+	return HeadlessPlanet.wait_tiles(data, tiles, "[GradeBake] %s fid %d" % [data.planet_name, fid],
+			_say, func(t: String) -> void: _err(t + " — line not baked"))
 
 
 ## GradeProfile.compute with the stations — the bulk of the work, and
