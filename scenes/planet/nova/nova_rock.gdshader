@@ -43,6 +43,9 @@ instance uniform vec3 fade_cell;
 instance uniform vec3 fade_rest;
 // How far the node's objects are drawn, 0 = no fade.
 instance uniform float fade_end_m = 0.0;
+// This block's ground over the ground the material was tinted for (NovaScatter._tint_block): the rocks and their
+// fringe take the colour of the ground they stand on, not their variant's catalogue rock.
+instance uniform vec3 ground_ratio = vec3(1.0);
 const float FADE_BAND = 0.2;
 
 // Ground fringe: the foot of the rock takes on the look of the ground it rests on, so the meeting line stops
@@ -175,7 +178,7 @@ void fragment() {
 	vec3 grain = tri_read(detail_albedo, l_pos, w, s);
 	vec3 own = texture(own_albedo, UV).rgb;
 	vec3 orm = texture(own_orm, UV).rgb;
-	ALBEDO = tint * grain * mix(vec3(1.0), own / OWN_MEAN, own_share);
+	ALBEDO = tint * ground_ratio * grain * mix(vec3(1.0), own / OWN_MEAN, own_share);
 	AO = orm.r;
 	// The foot of the rock in the ground's look. The conditions hold for a whole rock (a uniform and a flat
 	// varying): the reads below keep their implicit derivatives.
@@ -203,7 +206,7 @@ void fragment() {
 			g += ground_layer(tri_read(ground_albedo_2, l_pos, w, ground_scale.z), ground_mean_2, ground_gain.z,
 					ground_ao.z) * fringe_w.z;
 		}
-		ALBEDO = mix(ALBEDO, clamp(ground_tint * fringe_w.w * g, vec3(0.0), vec3(1.0)), a);
+		ALBEDO = mix(ALBEDO, clamp(ground_tint * ground_ratio * fringe_w.w * g, vec3(0.0), vec3(1.0)), a);
 		AO = mix(AO, 1.0, a);  // the ground's own occlusion is in g
 	}
 	AO_LIGHT_AFFECT = 0.5;
