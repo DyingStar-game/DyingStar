@@ -1,6 +1,80 @@
-# QGIS Tools for StarDeception — Quick Start
+# DyingStar QGIS plugin — the planet pipeline
 
-This folder contains the QGIS ↔ Godot pipeline scripts for designing and importing planet data.
+This folder is the **DyingStar QGIS plugin** (QGIS 4.2, Qt6) and the library its scripts share:
+designing planet data in QGIS on the PostGIS base and exporting it to the packs the game streams.
+
+## The plugin
+
+### Install
+
+- **Developers (the plugin follows your checkout)** — link this folder into your QGIS profile,
+  under the name `DyingStar`, then enable it in *Plugins ▸ Manage and Install ▸ Installed*:
+  ```sh
+  ln -s "$PWD/tools/planettech/qgis" ~/.local/share/QGIS/QGIS4/profiles/default/python/plugins/DyingStar
+  ```
+  (Windows: `mklink /D "%APPDATA%\QGIS\QGIS4\profiles\default\python\plugins\DyingStar" <repo>\tools\planettech\qgis`.)
+  Every run re-reads the scripts from disk: an edited exporter needs no QGIS restart (the
+  plugin's own `ds_plugin/` does — or use the *Plugin Reloader* plugin).
+- **The team** — add our plugin repository once in *Plugins ▸ Manage and Install ▸ Settings ▸
+  Plugin repositories ▸ Add*:
+  `https://raw.githubusercontent.com/DyingStar-game/DyingStar/qgis-plugins/plugins.xml`.
+  QGIS then offers each new version. Or *Install from ZIP* with the zip of a
+  [`qgis-plugin-v*` release](https://github.com/DyingStar-game/DyingStar/releases).
+  An installed copy lives outside the repository: set **Dépôt DyingStar** in the settings (the
+  exports write into the checkout, publication and the Godot tools run from it).
+
+Requirements: QGIS ≥ 4.0 with numpy and scipy (both in the standard QGIS installs), the
+PostgreSQL connection **`DyingStar`** (*Layer ▸ Data Source Manager ▸ PostgreSQL*), a checkout
+of this repository.
+
+### Menu **DyingStar**
+
+| Entry | What it runs |
+|---|---|
+| Projet planète… | `setup_planet_project.py`: planet name + radius, the layer picker, PostGIS schema and tables, the `.qgz` |
+| Mettre à jour les couches… | the same on the open project's planet, without asking name and radius (a field added to a layer definition…) |
+| Exporter ▸ … | one entry per exporter (`export_*.py`); **Tout le pack de modificateurs** runs roads, regions, mountains, volcanoes and rocky terrain, then links the pack once |
+| Routes ▸ Aperçu des massifs… | `preview_mountain_contours.py`, with its options in a dialog |
+| Publication ▸ … | `publish_remote.py --pull / --check / --promote`, `link_modifiers.link()` |
+| Outils ▸ … | `migrate_volcanic_layers.py`, `probe_pack_sparsity.py`, `export_rocks.py` |
+| Journal / Dossier des journaux / Paramètres… | the log, the log files, the settings |
+
+How a run goes (`ds_plugin/runner.py`): the script reads the project and its layers on the
+main thread (`prepare()`), then computes and writes in a **background task** (QGIS stays usable;
+progress and *Cancel* in the task bar at the bottom — the elevation export can be cancelled
+between two batches of tiles). Everything it prints goes to the **DyingStar** tab of the log
+panel and to a file under `<QGIS profile>/DyingStar/logs/`. One run at a time: the exporters
+share `parts/` and the string table. A project without the `planet_name` / `planet_radius_m`
+variables is refused (the scripts used to fall back to another planet).
+
+### Settings (*DyingStar ▸ Paramètres…*)
+
+They are handed to the scripts as the environment variables the scripts already read, so the
+background publication sees them too. Empty = `export_config.ini`, then the default.
+
+| Setting | Variable | Default |
+|---|---|---|
+| Dépôt DyingStar (zip) | `DS_REPO_DIR` | only for a plugin installed from a zip: a plugin loaded from a checkout always uses that checkout (the Godot tools it starts must be its own version) |
+| Dossier d'export | `DS_EXPORT_DIR` | `<repo>/assets/qgis/export` |
+| Dossier des projets QGIS | `DS_QGIS_PROJECTS_DIR` | `<repo>/assets/qgis` — only for a NEW project; a saved one stays where it is |
+| GeoJSON de référence | `DS_EXISTING_FEATURES` | none |
+| Dossier d'export des grottes | `DS_CAVE_EXPORT_DIR` | `~/dyingstar-private/caves` |
+| startup_items.json | `DS_STARTUP_ITEMS` | `../horizonserver/ds_genericprops/startup_items.json` |
+| Binaire Godot | `GODOT_BIN` | — |
+| Publication (SSH, port, dist…) | `DS_PUBLISH_*` | `export_config.ini [publish]` |
+
+### From the Python console
+
+Every script is a module with `run()` (the whole job on the calling thread) and `prepare()` (the
+plugin's entry point): `import export_roads; export_roads.run(no_link=True)`. Nothing runs at
+import any more.
+
+### Releasing the plugin
+
+Bump `version` in `metadata.txt`, merge, push the tag `qgis-plugin-v<version>`:
+`.github/workflows/qgis-plugin.yml` builds the zip (`package_plugin.py`), attaches it to a
+GitHub release and updates `plugins.xml` on the `qgis-plugins` branch.
+`test/unit/test_qgis_plugin_package_py.py` checks the zip and the manifest.
 
 > **Full documentation**: see [`docs/QGIS_PLANET_WORKFLOW.md`](../../docs/QGIS_PLANET_WORKFLOW.md) for the complete step-by-step QGIS guide (layer creation, styling, coordinate system explanation, etc.).
 
@@ -8,21 +82,24 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 
 ## Files Overview
 
-| File | Runs In | Purpose |
+| File | Menu | Purpose |
 |---|---|---|
-| `setup_planet_project.py` | QGIS Python Console | Creates/refreshes a planet's QGIS project + PostGIS schema. Interactive: asks the planet name/radius, then which layers (and which per-planet values, e.g. rock types) to create. |
+| `setup_planet_project.py` | Projet planète… | Creates/refreshes a planet's QGIS project + PostGIS schema. Interactive: asks the planet name/radius, then which layers (and which per-planet values, e.g. rock types) to create. |
+| `ds_plugin/` | plugin | The menu (`main.py`), the background runner (`runner.py`), the settings (`settings.py`), the publication steps (`jobs.py`). |
+| `ds_project.py` | library | The planet of the open project (`planet_name`, `planet_radius_m`, `max_quadtree_depth`, `planet_parent_id`); refuses a project that is not a planet. |
+| `package_plugin.py` | `python3` | Builds the plugin zip and `plugins.xml` (release workflow). |
 | `layers/` | library | **Where the layers are defined.** One small declarative module per category (`layers/biomes/forest.py`, `layers/roads.py`…); `layers/core.py` is the PostGIS plumbing, `layers/dialog.py` the picker. See "Layer definitions" below. |
-| `export_elevation.py` | QGIS Python Console | **Elevation-only**: builds the whole height pyramid into a single `heights.pack`. Documented at [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export). |
-| `export_poi.py` | QGIS Python Console | **POI-only**: flattens the `poi` point layer to `<planet>_poi.json`, read back by the `PlanetTerrain` inspector button. See below. |
-| `export_cave_sites.py` | QGIS Python Console | **Caves-only**: the `cave_site` point layer → `<planet>_cave_items.json`, the admin-panel import (and `<planet>_cave_sites.json`), in a private folder outside the repository. The game server fits each cave to the relief when a player comes near. See "Caves pipeline" below. |
-| `export_roads.py` | QGIS Python Console | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`. See below. |
-| `export_biomes.py` | QGIS Python Console | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
-| `export_mountains.py` | QGIS Python Console | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
-| `preview_mountain_contours.py` | QGIS Python Console | **Read-only preview**: evaluates the relief Godot gives the `mountain_range` / `ridge` features and draws its elevation contours (+ a hillshade) in a `Mountain preview` group — to place roads and villages across a massif. See "Seeing the mountains in QGIS" below. |
-| `export_volcanoes.py` | QGIS Python Console | **Volcanoes-only**: the `volcano` points, `lava_flow` lines and `fumarole_field` / `fumarole_vent` features → `parts/volcanoes.dsmpart`, `parts/lava_flows.dsmpart`, `parts/fumaroles.dsmpart`, and relinks the pack. See "Volcanoes, lava flows and fumaroles" below. |
-| `export_rocky_terrain.py` | QGIS Python Console | **Rocky-terrain-only**: the `rocky_terrain` polygons → `parts/rocky_terrain.dsmpart` (ruggedness preset + style, resolved here; the relief is generated in Godot) and relinks the pack. See "Rocky terrain" below. |
-| `migrate_volcanic_layers.py` | QGIS Python Console | One-shot, per planet: creates the new volcanic tables and copies the old biome ones (`active_volcano`, `lava_dome`, `lava_river`, `fumarole`) into them. Drops nothing. |
-| `export_rocks.py` | QGIS console or `python3` | Writes the rock catalogue (`layers/rocks.py`) to `assets/_universe/_shared/materials/rocks.json`, read by `RockCatalogue` in Godot. |
+| `export_elevation.py` | Exporter ▸ Élévation | **Elevation-only**: builds the whole height pyramid into a single `heights.pack`. Documented at [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export). |
+| `export_poi.py` | Exporter ▸ POI | **POI-only**: flattens the `poi` point layer to `<planet>_poi.json`, read back by the `PlanetTerrain` inspector button. See below. |
+| `export_cave_sites.py` | Exporter ▸ Grottes | **Caves-only**: the `cave_site` point layer → `<planet>_cave_items.json`, the admin-panel import (and `<planet>_cave_sites.json`), in a private folder outside the repository. The game server fits each cave to the relief when a player comes near. See "Caves pipeline" below. |
+| `export_roads.py` | Exporter ▸ Routes | **Roads-only**: writes `parts/roads.dsmpart` (per chunk, per LOD) and relinks `terrainmodifier.pack`. See below. |
+| `export_biomes.py` | Exporter ▸ Régions | **Regions-only**: every Polygon biome layer → `parts/biomes.dsmpart` (POPULATE records per tile, n1…export_nside) and relinks the pack; refreshes `rocks.json`. See below. |
+| `export_mountains.py` | Exporter ▸ Massifs | **Mountains-only**: the `mountain_range` polygons and `ridge` lines → `parts/mountains.dsmpart` + `parts/ridges.dsmpart` (intent + style only, the relief is generated in Godot) and relinks the pack. See "Procedural mountains" below. |
+| `preview_mountain_contours.py` | Routes ▸ Aperçu des massifs | **Read-only preview**: evaluates the relief Godot gives the `mountain_range` / `ridge` features and draws its elevation contours (+ a hillshade) in a `Mountain preview` group — to place roads and villages across a massif. See "Seeing the mountains in QGIS" below. |
+| `export_volcanoes.py` | Exporter ▸ Volcans | **Volcanoes-only**: the `volcano` points, `lava_flow` lines and `fumarole_field` / `fumarole_vent` features → `parts/volcanoes.dsmpart`, `parts/lava_flows.dsmpart`, `parts/fumaroles.dsmpart`, and relinks the pack. See "Volcanoes, lava flows and fumaroles" below. |
+| `export_rocky_terrain.py` | Exporter ▸ Terrain rocheux | **Rocky-terrain-only**: the `rocky_terrain` polygons → `parts/rocky_terrain.dsmpart` (ruggedness preset + style, resolved here; the relief is generated in Godot) and relinks the pack. See "Rocky terrain" below. |
+| `migrate_volcanic_layers.py` | Outils ▸ Migrer… | One-shot, per planet: creates the new volcanic tables and copies the old biome ones (`active_volcano`, `lava_dome`, `lava_river`, `fumarole`) into them. Drops nothing. |
+| `export_rocks.py` | Outils ▸ Écrire rocks.json, or `python3` | Writes the rock catalogue (`layers/rocks.py`) to `assets/_universe/_shared/materials/rocks.json`, read by `RockCatalogue` in Godot. |
 | `export/planet/biomes.py` | library | The POPULATE part builder: tiling, full / partial coverage, overlap order. |
 | `export/planet/mountains.py` | library | The MOUNTAIN / RIDGE part builders and the style presets (`PRESETS`, `RIDGE_PRESETS`). |
 | `export/planet/volcanoes.py` | library | The VOLCANO / LAVA / FUMAROLE part builders and their presets (`PRESETS`, `LAVA_PRESETS`, `GAS_PRESETS`). |
@@ -30,7 +107,7 @@ This folder contains the QGIS ↔ Godot pipeline scripts for designing and impor
 | `export/planet/rock_field_noise.py` | library | Python twin of the runtime rock-field relief — golden values of the determinism test, and the term means the exporter measures. |
 | `export/planet/mountain_noise.py` | library | Python twin of the runtime mountain noise — golden values of the determinism test. |
 | `export/planet/mountain_preview.py` | library | numpy port of `MountainRelief.offset` (ranges + ridges) on a lon/lat grid, for `preview_mountain_contours.py`; pinned to Godot's values by `test/unit/test_mountain_preview_py.py`. |
-| `link_modifiers.py` | QGIS console or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
+| `link_modifiers.py` | Publication ▸ Relier, or `python3` | Reassembles `terrainmodifier.pack` from every `parts/*.dsmpart`. Called automatically by each exporter; `--explode` does the reverse. See below. |
 | `export/planet/dsmp.py` | library | Authoritative DSMP/DSMQ format spec + encoder. No QGIS import, unit-testable with plain `python3`. |
 | `export/planet/modifier_geom.py` | library | Tile assignment, clipping, decimation. Holds the road **partition** that makes double-rendering impossible. |
 | `export/planet/dsmp_strings.py` | library | The append-only `parts/strings.json` intern table. |
@@ -49,8 +126,8 @@ Documented in full on the technical docs site:
 - [How the game reads elevation](https://developper.dyingstar-game.com/docs/planetTech/elevation_runtime)
   — client, server and editor.
 
-Short version: run it from the QGIS Python Console with the planet project open, read the
-plan banner it prints **before** it starts working, and let it write
+Short version: *DyingStar ▸ Exporter ▸ Élévation* with the planet project open, read the
+plan banner it prints in the log **before** it starts working, and let it write
 `assets/qgis/export/<planet>_chunks/heights.pack` plus `manifest.json`. Point the planet's
 `PlanetData.chunk_heightmaps_dir` at that folder; `PlanetTerrain.initialize()` reads the
 manifest and applies radius, tiling and elevation range on its own.
@@ -69,10 +146,7 @@ lon/lat → X/Y/Z conversion described in §4.3 no longer has to be done by hand
    (offset north-east, so the centre stays visible) inside its `radius`
    circle, measured on the planet's sphere (`@planet_radius_m`), so the
    footprint widens east-west towards the poles.
-2. **Export** from the QGIS Python Console:
-   ```python
-   exec(open('…/tools/planettech/qgis/export_poi.py').read())
-   ```
+2. **Export**: *DyingStar ▸ Exporter ▸ POI et régions nommées*.
    Output: `<EXPORT_DIR>/<planet>_poi.json` — a flat list of
    `{id, name, poi_type, population, radius, description, lon, lat, elevation}`.
    `planet_name` / `planet_radius_m` are read from the QGIS project variables,
@@ -111,10 +185,7 @@ and tuned; the game never reads this layer directly.
    authored parameters (heading, seed, size, entrance type…). A new point gets a
    `placement_id` and a seed by default; never change the `placement_id` of an
    existing cave, it is its identity.
-2. **Export** from the QGIS Python Console:
-   ```python
-   exec(open('…/tools/planettech/qgis/export_cave_sites.py').read())
-   ```
+2. **Export**: *DyingStar ▸ Exporter ▸ Grottes*.
    Output, in `<dir>` = `$DS_CAVE_EXPORT_DIR`, else `export_config.ini [paths]
    cave_export_dir`, else `~/dyingstar-private/caves/` (not public, not in the
    repository):
@@ -164,10 +235,7 @@ mesh generator.
    (see "Draw Roads" below). The layer *is* the road type and drives everything;
    `width` (total, metres) is pre-filled and optional. A legacy single `roads`
    layer with a `road_type` field is still exported when present.
-2. **Export** from the QGIS Python Console:
-   ```python
-   exec(open('…/tools/planettech/qgis/export_roads.py').read())
-   ```
+2. **Export**: *DyingStar ▸ Exporter ▸ Routes*.
    Output: `<planet>_chunks/parts/roads.dsmpart`, merged into
    `<planet>_chunks/terrainmodifier.pack` by the automatic relink, then published.
 3. **Nothing to wire in Godot**: chunks stream the published pack.
@@ -183,10 +251,7 @@ the layer (`biome_type`, `biome_index`, `color_hex`, `ds_priority` — set by
 and `clarity` (see `layers/rocks.py`), `name`, `density`…
 
 1. **Draw** the regions in QGIS.
-2. **Export** from the QGIS Python Console:
-   ```python
-   exec(open('…/tools/planettech/qgis/export_biomes.py').read())
-   ```
+2. **Export**: *DyingStar ▸ Exporter ▸ Régions*.
    Outputs `<planet>_chunks/parts/biomes.dsmpart`, relinks
    `terrainmodifier.pack`, and rewrites `assets/_universe/_shared/materials/rocks.json`.
 3. **Godot** reads the pack directly (nothing to click): `PlanetChunk` asks the
@@ -302,11 +367,7 @@ vertical walls — the wall takes `terrace_width` of a step's horizontal run, so
 the `cliffs` preset's 250 m bands at 0.05 measure ~85° on a 13.5 m grid),
 and on a ridge `sharpness` and `asymmetry`.
 
-Run it from the QGIS console like the other exporters:
-
-```python
-exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_mountains.py').read())
-```
+Run it with *DyingStar ▸ Exporter ▸ Massifs*, like the other exporters.
 
 It takes seconds: the pack only gets the polygons / lines and their numbers
 (POPULATE record layout under two kinds of their own, `KIND_MOUNTAIN = 6` and
@@ -344,23 +405,22 @@ of the layer tree, a **Mountain preview** group:
   `massif`;
 - **Mountain relief N** — a hillshade of each group of overlapping features.
 
-```python
-exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/preview_mountain_contours.py').read())
-```
+Run it with *DyingStar ▸ Routes ▸ Aperçu des massifs…*; the dialog holds the options below
+(remembered between runs; from the console: `preview_mountain_contours.run(spacing_m=25, …)`).
 
 It changes nothing in the mountain layers nor in the pack; re-run it after moving
 or retuning a feature and the previous preview is replaced. The files go to
-`mountain_preview/` next to the `.qgz`. Settings at the top of the script:
+`mountain_preview/` next to the `.qgz`.
 
-| Setting | Default | |
+| Option (console keyword) | Default | |
 |---|---|---|
-| `CONTOUR_INTERVAL_M` / `INDEX_EVERY` | 50 / 5 | Contour spacing, and which lines are thick and labelled. |
-| `SAMPLE_SPACING_M` | 50 | Grid pitch. Noise details finer than half of it are left out, as on a terrain LOD of that pitch; 25 m for a close look at a pass (4× slower). About 1–2 s for a 30 km massif at 50 m. |
-| `ADD_GROUND_ELEVATION` | False | False: height the mountains **add** above the ground (`+250 m`). True: absolute altitude, `<planet>_heightmap.tif` (a coarse global raster, a few km per pixel) + the mountains. |
-| `ADD_RELIEF_RASTER` | True | The hillshade layers. |
-| `ONLY_SELECTED` | False | Only the selected ranges / ridges. |
-| `ONLY_CANVAS_EXTENT` | True | Only the part shown in the map canvas — zoom on the area you work on, then run. Off, a set of massifs spanning thousands of km fits `MAX_SAMPLES` only at a pitch of kilometres (angular contours, the hillshade drawn as squares). |
-| `MAX_SAMPLES` | 4 M | Samples per group (a 100 km square at 50 m); past it the pitch grows and the console says so. |
+| Équidistance / courbe maîtresse (`interval_m` / `index_every`) | 50 / 5 | Contour spacing, and which lines are thick and labelled. |
+| Pas de la grille (`spacing_m`) | 50 | Grid pitch. Noise details finer than half of it are left out, as on a terrain LOD of that pitch; 25 m for a close look at a pass (4× slower). About 1–2 s for a 30 km massif at 50 m. |
+| Altitude absolue (`add_ground`) | False | False: height the mountains **add** above the ground (`+250 m`). True: absolute altitude, `<planet>_heightmap.tif` (a coarse global raster, a few km per pixel) + the mountains. |
+| Ombrage du relief (`add_relief`) | True | The hillshade layers. |
+| Entités sélectionnées seulement (`only_selected`) | False | Only the selected ranges / ridges. |
+| Emprise de la carte seulement (`only_canvas`) | True | Only the part shown in the map canvas — zoom on the area you work on, then run. Off, a set of massifs spanning thousands of km fits `max_samples` only at a pitch of kilometres (angular contours, the hillshade drawn as squares). |
+| `max_samples` (console only) | 4 M | Samples per group (a 100 km square at 50 m); past it the pitch grows and the log says so. |
 
 Not shown: volcanoes and rocky terrain (their relief stacks on top in the game),
 and features crossing ±180°.
@@ -390,9 +450,7 @@ volcano's lava lake, or within 200 m of its shore, is made to start ON the
 shore (on the ray from the summit): the lava leaves at the lake's level and
 its channel breaches the crater rim.
 
-```python
-exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_volcanoes.py').read())
-```
+Run it with *DyingStar ▸ Exporter ▸ Volcans*.
 
 Pack kinds: `KIND_VOLCANO = 8` (POPULATE point records, the resolved style plus
 the unit centre `cx/cy/cz` computed at export, baked n1…export_nside),
@@ -437,9 +495,7 @@ a plateau or a `mountain_range` and its relief is **added** to theirs.
 | `style` | `slabs` (default) · `columnar` (narrow walls, smaller blocks — cliffs) · `yardang` (buttes stretched along the wind) · `strata` (inclined ledges, dip 8-20°) · `chalk` (Seven Sisters: no ledges, soft knobs `lump_m`; the shader draws a lumpy surface, wandering cracks and flint bands on the walls). |
 | overrides | `lump_m`, `lump_wavelength_m`, `cell_m`, `step_m`, `riser`, `joint_depth_m`, `joint_width_m`, `butte_rate`, `butte_height_m`, `butte_cell_m`, `butte_wall_m`, `dip_deg`, `dip_azimuth_deg`, `wind_azimuth_deg`, `elongation`, `detail_m`, `feather_m`, `seed` — NULL takes the preset; NULL azimuths, dip and seed come from the polygon's position (stable across re-exports). |
 
-```python
-exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_rocky_terrain.py').read())
-```
+Run it with *DyingStar ▸ Exporter ▸ Terrain rocheux*.
 
 One formula makes the ground and the cliffs: every Voronoi cell is a block
 that **terraces** the ground under it with a phase of its own — slabs at
@@ -553,10 +609,11 @@ grows, ids stay valid forever and the linker copies record blocks byte for byte 
 two links over unchanged parts produce a byte-identical pack.
 
 ```python
-# chain several exporters, link once
-NO_LINK = True   # set at the top of each exporter
-exec(open('…/tools/planettech/qgis/export_roads.py').read())
-import link_modifiers; link_modifiers.link('tarsis_4')
+# chain several exporters, link once (what Exporter ▸ Tout le pack de modificateurs does)
+import export_roads, export_biomes, link_modifiers
+export_roads.run(no_link=True)
+export_biomes.run(no_link=True)
+link_modifiers.link('tarsis_4')
 
 # a checkout that has the pack but no parts/
 link_modifiers.explode('tarsis_4')
@@ -774,8 +831,9 @@ to keep aligned instead of three.
 
 ### Prerequisites
 
-- **QGIS 3.44** installed ([download](https://qgis.org/en/site/forusers/alldownloads.html))
-- **Godot 4.5** with double-precision build (your current project setup)
+- **QGIS 4.2** installed ([download](https://qgis.org/en/site/forusers/alldownloads.html)) with the
+  **DyingStar** plugin (see "The plugin" at the top)
+- **Godot 4.7** double-precision build (the project's engine)
 - Your planet scene already has a `Planet` node with `PlanetTerrain`, `PlanetSettings`, etc.
 
 ---
@@ -784,14 +842,9 @@ to keep aligned instead of three.
 
 1. Open **QGIS** and make sure the PostgreSQL connection **`DyingStar`** exists
    (**Layer → Data Source Manager → PostgreSQL**).
-2. Open the **Python Console** (**Plugins → Python Console**, or **Ctrl+Alt+P**)
-3. Optionally edit the defaults at the top of `setup_planet_project.py`
-   (`PLANET_NAME`, `PLANET_RADIUS_M`, `WORK_DIR`, `EXISTING_FEATURES`)
-4. Run the script:
-   ```python
-   exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/setup_planet_project.py').read())
-   ```
-5. Two dialogs:
+2. *DyingStar ▸ Projet planète…* (or the toolbar's DyingStar button). Where a new project is
+   saved and the optional reference GeoJSON are in *DyingStar ▸ Paramètres…*.
+3. Two dialogs:
    - **planet name + radius** — the name is the PostGIS schema and the `.qgz` name
    - **layer picker** — a checkable tree `Region / POI / Lines → category → layer`.
      Untick what this planet will never use. Under a layer that declares a value
@@ -799,7 +852,7 @@ to keep aligned instead of three.
      that field's dropdown. On a re-run, layers already in the database are
      pre-ticked. Unticking removes the layer from the project and drops its
      table **only if it is empty** — drawn data is never deleted.
-6. The layer tree is organised by **stage** — the order the layers apply on the
+4. The layer tree is organised by **stage** — the order the layers apply on the
    ground — then by category (`STAGES` in `layers/model.py`, `stage=` on a
    `Category` or a `Layer`):
    - **layer 00 - base** — `contours` (the heightmap), `region`, `world border`
@@ -821,7 +874,9 @@ to keep aligned instead of three.
 Each layer is a PostGIS table named after its slug (`sandy_desert`, `river`,
 `highway`) in the schema `<planet_name>`. Re-running the script on an existing
 planet loads the tables untouched and re-applies widgets/styles from the
-definitions. The project is saved to `<WORK_DIR>/<planet_name>/<planet_name>.qgz`.
+definitions (*DyingStar ▸ Mettre à jour les couches…* does it without asking the name and
+radius). A project that already has a file is saved in place; a new one goes to
+`<projects folder>/<planet_name>/<planet_name>.qgz`.
 
 #### Layer definitions (`layers/`)
 
@@ -927,8 +982,7 @@ Now use the standard QGIS editing tools to draw your planet's features. The coor
 
 ### Step 3: Export from QGIS
 
-One script per family, each run from the QGIS Python Console with the planet project open
-(`exec(open('<repo>/tools/planettech/qgis/<script>').read())`):
+One script per family, each in *DyingStar ▸ Exporter* with the planet project open:
 
 - `export_elevation.py` — the elevation (`heights.pack`), see
   [Elevation — from contours to a pack](https://developper.dyingstar-game.com/docs/planetTech/elevation_export);

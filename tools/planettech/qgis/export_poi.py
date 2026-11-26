@@ -46,61 +46,61 @@ Output
       ]
     }
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_poi.py').read())
+Run from QGIS: DyingStar ▸ Export ▸ POI (the plugin). From the Python console:
+    import export_poi; export_poi.run()
 """
 import os
 import json
 import sys
 
 from qgis.core import (
+    Qgis,
     QgsProject,
     QgsVectorLayer,
-    QgsWkbTypes,
-    QgsExpressionContextUtils,
 )
 
-# ── Make tools/planettech/qgis importable, then drop stale modules ─────────────
-# Same guard as export_biomes.py: the console interpreter outlives the session.
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
-for _name in list(sys.modules):
-    _mod = sys.modules.get(_name)
-    _file = getattr(_mod, "__file__", None) or ""
-    if _file and os.path.abspath(_file).startswith(_THIS_DIR + os.sep) \
-            and "export_poi" not in _name:
-        del sys.modules[_name]
 
 from export.planet import regions as regions_lib        # noqa: E402
+import ds_project                                       # noqa: E402
+import link_modifiers                                   # noqa: E402
 
 # ============================================================
 # CONFIGURATION — edit for your planet
 # ============================================================
-_project = QgsProject.instance()
-_proj_planet_name = QgsExpressionContextUtils.projectScope(_project).variable("planet_name")
-_proj_planet_radius = QgsExpressionContextUtils.projectScope(_project).variable("planet_radius_m")
-
-PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_4"
+# The planet of the open project, read by _configure() at each run (ds_project.py).
+PLANET_NAME = None
 # Planet radius in metres (sea-level surface). Only carried through to the JSON
 # as a sanity reference — Godot uses the radius from its own chunk manifest.
-PLANET_RADIUS = int(_proj_planet_radius) if _proj_planet_radius else 6_356_000
-
+PLANET_RADIUS = None
 # Same directory as export_elevation.py — both exports must land side by side.
-EXPORT_DIR = os.path.expanduser(
-    "/datas/developpement/sources/DyingStar-game/DyingStar/assets/qgis/export"
-)
+EXPORT_DIR = None
 
 # Fallback influence radius (metres) for a POI whose `radius` is NULL or <= 0.
 DEFAULT_RADIUS = 100.0
 
-# Layer name candidates, in priority order, before falling back to a substring
-# search. setup_planet_project.py names the PostGIS table plainly `poi`.
-_LAYER_NAMES = ("poi", f"{PLANET_NAME}_poi")
-# The named-region polygon layer (tools/planettech/qgis/layers/base.py).
-_REGION_LAYER_NAMES = ("region", f"{PLANET_NAME}_region")
+
+
+def _configure():
+    """Read the open project's planet and the export folder; at the start of every run."""
+    global PLANET_NAME, PLANET_RADIUS, EXPORT_DIR
+    planet = ds_project.planet()
+    PLANET_NAME = planet.name
+    PLANET_RADIUS = int(planet.radius_m)
+    EXPORT_DIR = link_modifiers.resolve_export_dir()
+
+
+def _layer_names():
+    """Layer name candidates, in priority order, before falling back to a substring
+    search. setup_planet_project.py names the PostGIS table plainly `poi`."""
+    return ("poi", f"{PLANET_NAME}_poi")
+
+
+def _region_layer_names():
+    """The named-region polygon layer (tools/planettech/qgis/layers/base.py)."""
+    return ("region", f"{PLANET_NAME}_region")
 
 
 # ============================================================
@@ -116,13 +116,13 @@ def find_layers_by_keyword(keyword):
 def _find_poi_layer():
     """Exact name match first, then any point vector layer named like a POI one."""
     layers = list(QgsProject.instance().mapLayers().values())
-    for wanted in _LAYER_NAMES:
+    for wanted in _layer_names():
         for l in layers:
             if l.name().lower() == wanted.lower() and isinstance(l, QgsVectorLayer):
                 return l
     for l in find_layers_by_keyword("poi"):
         if isinstance(l, QgsVectorLayer) \
-                and l.geometryType() == QgsWkbTypes.PointGeometry:
+                and l.geometryType() == Qgis.GeometryType.Point:
             return l
     return None
 
@@ -131,9 +131,9 @@ def _find_region_layer():
     """The `region` polygon layer, by exact name only (a substring would catch biomes)."""
     for l in QgsProject.instance().mapLayers().values():
         if not isinstance(l, QgsVectorLayer) \
-                or l.geometryType() != QgsWkbTypes.PolygonGeometry:
+                or l.geometryType() != Qgis.GeometryType.Polygon:
             continue
-        if l.name().lower() in [n.lower() for n in _REGION_LAYER_NAMES]:
+        if l.name().lower() in [n.lower() for n in _region_layer_names()]:
             return l
     return None
 
@@ -215,7 +215,9 @@ def _point_of(geom):
 # ============================================================
 # Export
 # ============================================================
-def run_export():
+def run():
+    """The whole export, on the main thread (it reads layers and writes one small JSON)."""
+    _configure()
     print("=" * 64)
     print(f"  POI export — planet '{PLANET_NAME}'")
     print("=" * 64)
@@ -305,4 +307,11 @@ def run_export():
     print("=" * 64)
 
 
-run_export()
+def prepare():
+    """The plugin's entry point: the export is quick and reads the layers, so it is done here."""
+    run()
+    return None
+
+
+if __name__ == "__main__":
+    run()

@@ -39,8 +39,9 @@ project is not saved yet):
     <planet>_mountain_preview_<stamp>.gpkg        the contours
     <planet>_mountain_relief_<stamp>_<n>.tif      the relief, metres, EPSG:4326
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/preview_mountain_contours.py').read())
+Run from QGIS: DyingStar ▸ Roads ▸ Mountain preview (the plugin asks the options and computes in
+a background task). From the Python console:
+    import preview_mountain_contours as p; p.run(spacing_m=50, add_ground=True)
 """
 
 import datetime
@@ -58,7 +59,6 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
-    QgsExpressionContextUtils,
     QgsHillshadeRenderer,
     QgsLineSymbol,
     QgsPalLayerSettings,
@@ -70,40 +70,29 @@ from qgis.core import (
     QgsTextFormat,
     QgsVectorLayer,
     QgsVectorLayerSimpleLabeling,
-    QgsWkbTypes,
 )
 from qgis.PyQt.QtGui import QColor
 
-# ── Make tools/planettech/qgis importable, then drop stale modules ─────────────
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
-for _name in list(sys.modules):
-    _mod = sys.modules.get(_name)
-    _file = getattr(_mod, "__file__", None) or ""
-    if _file and os.path.abspath(_file).startswith(_THIS_DIR + os.sep) \
-            and "preview_mountain_contours" not in _name:
-        del sys.modules[_name]
 
 import numpy as np                                        # noqa: E402
 from osgeo import gdal, ogr, osr                          # noqa: E402
 
+import ds_project                                         # noqa: E402
 import link_modifiers                                     # noqa: E402
 from export.planet import mountain_preview as mp          # noqa: E402
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
-_project = QgsProject.instance()
-_scope = QgsExpressionContextUtils.projectScope(_project)
-_proj_planet_name = _scope.variable("planet_name")
-_proj_planet_radius = _scope.variable("planet_radius_m")
+# The planet of the open project, read by _configure() at each run (ds_project.py).
+PLANET_NAME = None
+PLANET_RADIUS = None
 
-PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_4"
-PLANET_RADIUS = int(float(_proj_planet_radius)) if _proj_planet_radius else 6_356_000
-
+# The options below are the defaults; run(...) / prepare(...) take each of them as a keyword
+# (see OPTIONS).
 # Height between two contour lines (m).
 CONTOUR_INTERVAL_M = 50.0
 # Every INDEX_EVERY-th line is thicker and labelled (5 × 50 m = every 250 m).
@@ -126,6 +115,29 @@ ONLY_SELECTED = False
 
 GROUP_NAME = "Mountain preview"
 _PREVIEW_TAG = "ds_preview"
+
+#: keyword of run() / prepare() -> the module option it sets.
+OPTIONS = {
+    "interval_m": "CONTOUR_INTERVAL_M",
+    "index_every": "INDEX_EVERY",
+    "spacing_m": "SAMPLE_SPACING_M",
+    "only_canvas": "ONLY_CANVAS_EXTENT",
+    "max_samples": "MAX_SAMPLES",
+    "add_ground": "ADD_GROUND_ELEVATION",
+    "add_relief": "ADD_RELIEF_RASTER",
+    "only_selected": "ONLY_SELECTED",
+}
+
+
+def _configure(options):
+    global PLANET_NAME, PLANET_RADIUS
+    planet = ds_project.planet()
+    PLANET_NAME = planet.name
+    PLANET_RADIUS = int(planet.radius_m)
+    for key, value in options.items():
+        if key not in OPTIONS:
+            raise TypeError(f"unknown option {key!r} (one of {', '.join(OPTIONS)})")
+        globals()[OPTIONS[key]] = value
 
 
 # ============================================================
@@ -188,7 +200,7 @@ def _features(layer):
 
 def collect_features():
     feats = []
-    for layer in find_layers("mountain_range", QgsWkbTypes.PolygonGeometry):
+    for layer in find_layers("mountain_range", Qgis.GeometryType.Polygon):
         n = 0
         for feat in _features(layer):
             props = _fields_of(feat)
@@ -202,7 +214,7 @@ def collect_features():
                     feats.append(mp.prepare_zone(ring, props))
                     n += 1
         print(f"  {layer.name():<32} {n} range(s)")
-    for layer in find_layers("ridge", QgsWkbTypes.LineGeometry):
+    for layer in find_layers("ridge", Qgis.GeometryType.Line):
         n = 0
         for feat in _features(layer):
             props = _fields_of(feat)
@@ -410,7 +422,10 @@ def _style_relief(layer):
 # ============================================================
 # Run
 # ============================================================
-def run_preview():
+def prepare(**options):
+    """Main thread: read the features, clear the previous preview. Returns the computation
+    (any thread), which returns the step that adds the layers (main thread)."""
+    _configure(options)
     print("=" * 64)
     print(f"  Mountain preview — planet '{PLANET_NAME}' (R = {PLANET_RADIUS} m)")
     print("=" * 64)
@@ -419,7 +434,7 @@ def run_preview():
     if not feats:
         print("  ✗ No mountain_range / ridge feature"
               + (" selected." if ONLY_SELECTED else " (re-run setup_planet_project.py to create the layers)."))
-        return
+        return None
     pad_m = max(4.0 * SAMPLE_SPACING_M, 200.0)
     groups = mp.cluster_boxes(feats, PLANET_RADIUS, pad_m)
     view = _canvas_box() if ONLY_CANVAS_EXTENT else None
@@ -427,8 +442,8 @@ def run_preview():
         groups = [(b, m) for b, m in ((mp.intersect_boxes(box, view), m) for box, m in groups) if b]
         print(f"  Canvas extent only: lon {view[0]:.3f}…{view[1]:.3f}, lat {view[2]:.3f}…{view[3]:.3f}")
         if not groups:
-            print("  ✗ No mountain in the canvas extent — pan to a massif, or set ONLY_CANVAS_EXTENT = False.")
-            return
+            print("  ✗ No mountain in the canvas extent — pan to a massif, or untick \"canvas extent only\".")
+            return None
     ground = _load_ground() if ADD_GROUND_ELEVATION else None
 
     out_dir = _output_dir()
@@ -436,6 +451,14 @@ def run_preview():
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     gpkg = os.path.join(out_dir, f"{PLANET_NAME}_mountain_preview_{stamp}.gpkg")
 
+    def work():
+        rasters, n_lines = _compute(feats, groups, view, ground, out_dir, stamp, gpkg)
+        return lambda: _add_layers(gpkg, rasters, n_lines, t0)
+    return work
+
+
+def _compute(feats, groups, view, ground, out_dir, stamp, gpkg):
+    """The relief grids, their contours into [gpkg] and the hillshade GeoTIFFs; no QGIS layer."""
     ds = ogr.GetDriverByName("GPKG").CreateDataSource(gpkg)
     lyr = ds.CreateLayer("contours", _wgs84(), ogr.wkbLineString)
     lyr.CreateField(ogr.FieldDefn("id", ogr.OFTInteger))
@@ -463,13 +486,17 @@ def run_preview():
         src = None
         warn = ""
         if spacing > SAMPLE_SPACING_M:
-            warn = (f"\n      ! pitch raised to {spacing:.0f} m (MAX_SAMPLES): the contours lose the details"
+            warn = (f"\n      ! pitch raised to {spacing:.0f} m (max samples): the contours lose the details"
                     f" finer than {2 * spacing:.0f} m — zoom in"
-                    + (" (ONLY_CANVAS_EXTENT is off)" if view is None else "") + " or raise MAX_SAMPLES.")
+                    + (" (canvas extent only is off)" if view is None else "") + " or raise the max samples.")
         print(f"  [{gi}/{len(groups)}] {names[:40]:<40} {len(lons)}×{len(lats)} "
               f"{grid.min():7.0f}…{grid.max():5.0f} m  {added:4d} lines  {time.time() - t:5.1f} s{warn}")
     ds = None
+    return rasters, n_lines
 
+
+def _add_layers(gpkg, rasters, n_lines, t0):
+    """Main thread: the preview group at the top of the layer tree."""
     root = QgsProject.instance().layerTreeRoot()
     group = root.insertGroup(0, GROUP_NAME)
     contours = QgsVectorLayer(f"{gpkg}|layername=contours", "Mountain contours", "ogr")
@@ -492,4 +519,13 @@ def run_preview():
     print("=" * 64)
 
 
-run_preview()
+def run(**options):
+    """The whole preview, on the calling (main) thread."""
+    work = prepare(**options)
+    if work is not None:
+        finish = work()
+        finish()
+
+
+if __name__ == "__main__":
+    run()

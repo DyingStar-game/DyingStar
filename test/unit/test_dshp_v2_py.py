@@ -72,11 +72,9 @@ sys.modules["qgis"].core = sys.modules["qgis.core"]
 _EXPORTER = os.path.abspath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "planettech", "qgis",
     "export_elevation.py"))
-_SRC = open(_EXPORTER, encoding="utf-8").read().replace("\nrun_export()\n", "\n")
-# __file__ ABSOLU, impérativement : l'exporteur en déduit _tools_dir pour purger de
-# sys.modules ce qui vient de son répertoire (la console QGIS réutilise un interpréteur).
-# Un chemin relatif ferait pointer _tools_dir sur la racine du dépôt, et la purge
-# emporterait __main__ — c'est-à-dire ce fichier de test lui-même.
+_SRC = open(_EXPORTER, encoding="utf-8").read()
+# __file__ ABSOLU : l'exporteur en déduit _tools_dir (son dossier, mis dans sys.path). Un
+# __name__ autre que "__main__" : l'export ne se lance pas, on n'en teste que les fonctions.
 EXP = {"__name__": "export_elevation_under_test", "__file__": _EXPORTER}
 exec(compile(_SRC, _EXPORTER, "exec"), EXP)
 

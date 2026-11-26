@@ -1,0 +1,18 @@
+[general]
+name=DyingStar
+qgisMinimumVersion=4.0
+supportsQt6=True
+description=DyingStar planet pipeline: PostGIS planet projects, exports to the game's terrain packs, publication, road design tools.
+about=The planet design tools of the game DyingStar (https://github.com/DyingStar-game/DyingStar): creates a planet's PostGIS schema and QGIS layers, exports elevation, roads, regions, mountains, volcanoes, rocky terrain, POI and caves to the packs the game streams, publishes them to the tile service, and helps draw roads over the in-game relief. Needs a checkout of the DyingStar repository and the PostgreSQL connection "DyingStar".
+version=0.1.0
+author=DyingStar
+email=
+homepage=https://github.com/DyingStar-game/DyingStar/tree/develop/tools/planettech/qgis
+repository=https://github.com/DyingStar-game/DyingStar
+tracker=https://github.com/DyingStar-game/DyingStar/issues
+license=AGPL-3.0-or-later
+category=Plugins
+icon=icon.svg
+tags=dyingstar,planet,healpix,postgis,game,terrain
+experimental=False
+deprecated=False

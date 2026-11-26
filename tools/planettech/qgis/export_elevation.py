@@ -79,8 +79,9 @@ Round-trip with Godot
                               max_height    = ELEV_MAX - ELEV_MIN
     Set these on the PlanetData resource (or let it read manifest.json).
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_elevation.py').read())
+Run from QGIS: DyingStar ▸ Export ▸ Elevation (the plugin, in a background task: QGIS stays
+usable and the task can be cancelled). From the Python console:
+    import export_elevation; export_elevation.run()
 """
 import os
 import sys
@@ -91,39 +92,28 @@ import hashlib
 import struct
 import numpy as np
 
-# ── Make tools/ importable so we can reuse healpix_utils + the interpolator ──
-def _repo_root(start):
-    """Remonte jusqu'au dépôt, repéré par project.godot.
-
-    Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
-    d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas.
-    """
-    d = start
-    while d != os.path.dirname(d):
-        if os.path.exists(os.path.join(d, "project.godot")):
-            return d
-        d = os.path.dirname(d)
-    return start
-
 _tools_dir = os.path.dirname(os.path.abspath(__file__))
 if _tools_dir not in sys.path:
     sys.path.insert(0, _tools_dir)
 
-# The documented entry point is exec()-ing this file from the QGIS Python console,
-# which reuses ONE long-lived interpreter: any helper imported by an earlier run
-# stays in sys.modules and is never re-read from disk, so edits under
-# export/planet/ silently do nothing — and a newly ADDED function surfaces as an
-# ImportError from the import block right below. Drop the previously loaded
-# modules so every exec() picks up the current source. Matching on the file's
-# location (rather than on its name) keeps this from touching anything QGIS or
-# another plugin has loaded; namespace packages carry no __file__, hence the
-# second clause.
-for _name, _mod in list(sys.modules.items()):
-    _mod_file = getattr(_mod, "__file__", None)
-    if _mod_file and os.path.abspath(_mod_file).startswith(_tools_dir + os.sep):
-        del sys.modules[_name]
-    elif _mod_file is None and (_name == "export" or _name.startswith("export.")):
-        del sys.modules[_name]
+
+def _repo_root(start):
+    """Le dépôt de ce script : le premier parent qui porte project.godot, sinon $DS_REPO_DIR.
+
+    Compter les `dirname` marche jusqu'au jour où l'on déplace le fichier — ce qui vient
+    d'arriver en passant de tools/ à tools/planettech/. Un marqueur ne se décale pas. Le
+    chemin RÉEL : le plugin est chargé par un lien symbolique depuis le profil QGIS.
+    """
+    d = os.path.realpath(start)
+    while d != os.path.dirname(d):
+        if os.path.exists(os.path.join(d, "project.godot")):
+            return d
+        d = os.path.dirname(d)
+    env = os.environ.get("DS_REPO_DIR", "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    return start
+
 
 import healpix_utils as hpx
 # Le mapping de quadrant NESTED et l'upsample bilinéaire décalé d'une demi-cellule ne
@@ -141,23 +131,18 @@ from export.planet.spherical_tin import SphericalTIN
 from qgis.core import (
     QgsProject,
     QgsVectorLayer,
-    QgsExpressionContextUtils,
 )
+import ds_project
 
 # ============================================================
 # CONFIGURATION — edit for your planet
 # ============================================================
-_project = QgsProject.instance()
-_proj_planet_name = QgsExpressionContextUtils.projectScope(_project).variable("planet_name")
-_proj_planet_radius = QgsExpressionContextUtils.projectScope(_project).variable("planet_radius_m")
-
-PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_5"
-# Planet radius in metres (sea-level surface). New value: 6356 km.
-PLANET_RADIUS = int(_proj_planet_radius) if _proj_planet_radius else 6_356_000
-
-EXPORT_DIR = os.path.expanduser(
-    "/datas/developpement/sources/DyingStar-game/DyingStar/assets/qgis/export"
-)
+# The planet of the open project, read by _configure() at each run (ds_project.py).
+PLANET_NAME = None
+# Planet radius in metres (sea-level surface).
+PLANET_RADIUS = None
+# DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> <checkout>/assets/qgis/export.
+EXPORT_DIR = None
 
 # Découpage HEALPix, PAR CORPS. La clé est le planet_name lu du projet QGIS.
 #
@@ -184,7 +169,8 @@ PLANET_TILING = {
 # au lieu de 19 × 68 Go.
 DEFAULT_TILING = (64, 25)
 
-NSIDE, TILE_RES = PLANET_TILING.get(PLANET_NAME, DEFAULT_TILING)
+# The planet's tiling, set by _configure(); the default until then.
+NSIDE, TILE_RES = DEFAULT_TILING
 
 # Coarsest pyramid level to bake. 1 → the 12 HEALPix base faces (whole-planet view).
 # Levels baked: NSIDE, NSIDE/2, … , NSIDE_MIN (all powers of two).
@@ -237,6 +223,27 @@ ELEV_MAX = None
 
 # Contour field names accepted, in priority order.
 _ELEV_FIELDS = ("elev", "elevation", "height", "z", "alt")
+
+
+#: Set by the plugin: callable(fraction 0..1) called while the tiles are written; it may
+#: raise to cancel the export (the task was cancelled). None from the console.
+PROGRESS = None
+
+
+def _configure():
+    """Read the open project's planet and the export folder; at the start of every run."""
+    global PLANET_NAME, PLANET_RADIUS, EXPORT_DIR, NSIDE, TILE_RES, TILE_BATCH
+    global ELEV_MIN, ELEV_MAX
+    import link_modifiers
+    planet = ds_project.planet()
+    PLANET_NAME = planet.name
+    PLANET_RADIUS = int(planet.radius_m)
+    EXPORT_DIR = link_modifiers.resolve_export_dir()
+    NSIDE, TILE_RES = PLANET_TILING.get(PLANET_NAME, DEFAULT_TILING)
+    TILE_BATCH = max(1, 160_000 // (TILE_RES * TILE_RES))
+    # Auto-detected from the contours at each run (scan_elevation_range).
+    ELEV_MIN = None
+    ELEV_MAX = None
 
 
 # ============================================================
@@ -505,6 +512,8 @@ def write_pack(tmp_path, chunks_dir, manifest_bytes, levels, total_tiles,
                     written += 1
                     if written % 8192 == 0:
                         print(f"    {written}/{total_tiles} tiles…")
+                if PROGRESS is not None:
+                    PROGRESS(written / total_tiles)
         if needs_recon:
             recon.flush()
         bitmaps[level_nside] = bytes(bits)
@@ -589,11 +598,13 @@ def print_plan():
     print("=" * 64)
 
 
-def run_export():
+def prepare():
+    """Main thread: read the contours. Returns the export to run (any thread), or None."""
+    global ELEV_MIN, ELEV_MAX
+    _configure()
     # Annoncer le plan AVANT de calculer quoi que ce soit : à 198 m l'export dure
     # des dizaines d'heures, et s'en apercevoir en cours de route est désagréable.
     print_plan()
-    global ELEV_MIN, ELEV_MAX
     print("=" * 64)
     print(f"  export_elevation: planet='{PLANET_NAME}' radius={PLANET_RADIUS}m "
           f"nside={NSIDE} tile_res={TILE_RES}")
@@ -602,7 +613,7 @@ def run_export():
     layer = _find_contour_layer()
     if layer is None:
         print("  ✗ No contour/elevation vector layer found. Aborting.")
-        return
+        return None
     field = _elev_field(layer)
     if not field:
         # No elevation field yet → nothing to displace. Export a FLAT planet
@@ -621,18 +632,24 @@ def run_export():
         if ELEV_MAX is None:
             ELEV_MAX = 1000.0
         print(f"  Flat terrain range: [{ELEV_MIN}, {ELEV_MAX}]m")
-    elev_range = ELEV_MAX - ELEV_MIN
 
     # ── Step 1: global interpolated raster (reuse shared interpolator) ──
     # If the contour layer has no (or too few) lines yet, the interpolator
     # returns None; we then export a FLAT raster (elev = ELEV_MIN everywhere)
     # so the planet still builds as a smooth sea-level sphere.
     pts = None
-    tin = None
-    raster = None
     if field:
         print("  Reading contour vertices…")
         pts = extract_contour_points(HEIGHTMAP_SIZE, find_layers_by_keyword, _memlog)
+    # Everything below reads only `pts`: it may run on a worker thread.
+    return lambda: _build(pts)
+
+
+def _build(pts):
+    """The TIN, the fallback raster and the pyramid, from the contour vertices."""
+    elev_range = ELEV_MAX - ELEV_MIN
+    tin = None
+    raster = None
     if pts is not None and len(pts) >= 4:
         try:
             tin = SphericalTIN(pts[:, 0], pts[:, 1], pts[:, 2])
@@ -774,15 +791,21 @@ def run_export():
     print("=" * 64)
 
 
-# Chronométrer depuis l'appel plutôt que dans run_export() : la fonction a
-# plusieurs sorties anticipées (pas de couche, pas de points…) et on veut le
-# temps total dans tous les cas.
-_t0 = time.perf_counter()
-try:
-    run_export()
-finally:
-    _elapsed = time.perf_counter() - _t0
-    _h, _rem = divmod(int(_elapsed), 3600)
-    _m, _s = divmod(_rem, 60)
-    print(f"  Temps total d'exécution : {_h:02d}h{_m:02d}m{_s:02d}s "
-          f"({_elapsed:.1f} s)")
+def run():
+    """The whole export, on the calling thread, timed."""
+    # Chronométrer depuis l'appel : l'export a plusieurs sorties anticipées (pas de couche,
+    # pas de points…) et on veut le temps total dans tous les cas.
+    t0 = time.perf_counter()
+    try:
+        work = prepare()
+        if work is not None:
+            work()
+    finally:
+        elapsed = time.perf_counter() - t0
+        h, rem = divmod(int(elapsed), 3600)
+        m, sec = divmod(rem, 60)
+        print(f"  Temps total d'exécution : {h:02d}h{m:02d}m{sec:02d}s ({elapsed:.1f} s)")
+
+
+if __name__ == "__main__":
+    run()

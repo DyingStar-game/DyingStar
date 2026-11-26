@@ -18,8 +18,8 @@ Outputs
     <planet>_chunks/parts/ridges.dsmpart          then merged into
     <planet>_chunks/terrainmodifier.pack          by link_modifiers.link()
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_mountains.py').read())
+Run from QGIS: DyingStar ▸ Export (the plugin). From the Python console:
+    import export_mountains; export_mountains.run()
 """
 
 import datetime
@@ -28,26 +28,17 @@ import os
 import sys
 
 from qgis.core import (
+    Qgis,
     QgsProject,
     QgsVectorLayer,
-    QgsWkbTypes,
-    QgsExpressionContextUtils,
 )
 
-# ── Make tools/planettech/qgis importable, then drop stale modules ─────────────
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__)) \
-    if "__file__" in globals() else \
-    "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
-for _name in list(sys.modules):
-    _mod = sys.modules.get(_name)
-    _file = getattr(_mod, "__file__", None) or ""
-    if _file and os.path.abspath(_file).startswith(_THIS_DIR + os.sep) \
-            and "export_mountains" not in _name:
-        del sys.modules[_name]
 
 import link_modifiers                                   # noqa: E402
+import ds_project                                       # noqa: E402
 from export.planet import dsmp                          # noqa: E402
 from export.planet import mountains as mountains_lib    # noqa: E402
 from export.planet.dsmp_strings import StringTable      # noqa: E402
@@ -55,21 +46,27 @@ from export.planet.dsmp_strings import StringTable      # noqa: E402
 # ============================================================
 # CONFIGURATION
 # ============================================================
-_project = QgsProject.instance()
-_scope = QgsExpressionContextUtils.projectScope(_project)
-_proj_planet_name = _scope.variable("planet_name")
-_proj_planet_radius = _scope.variable("planet_radius_m")
-
-PLANET_NAME = str(_proj_planet_name) if _proj_planet_name else "tarsis_4"
-PLANET_RADIUS = int(float(_proj_planet_radius)) if _proj_planet_radius else 6_356_000
-
-EXPORT_DIR = link_modifiers.resolve_export_dir()
+# The planet of the open project, read by _configure() at each run (ds_project.py).
+PLANET_NAME = None
+PLANET_RADIUS = None
+# DS_EXPORT_DIR -> export_config.ini [paths] export_dir -> <checkout>/assets/qgis/export.
+EXPORT_DIR = None
 EXPORT_NSIDE_FALLBACK = 64
-_proj_depth = _scope.variable("max_quadtree_depth")
-MAX_QUADTREE_DEPTH = int(_proj_depth) if _proj_depth else 13
+MAX_QUADTREE_DEPTH = None
 
 # Set True to skip the relink (chain exporters, link once at the end).
 NO_LINK = False
+
+
+def _configure(no_link=False):
+    """Read the open project's planet and the export folder; at the start of every run."""
+    global PLANET_NAME, PLANET_RADIUS, EXPORT_DIR, MAX_QUADTREE_DEPTH, NO_LINK
+    planet = ds_project.planet()
+    PLANET_NAME = planet.name
+    PLANET_RADIUS = int(planet.radius_m)
+    MAX_QUADTREE_DEPTH = planet.max_quadtree_depth
+    EXPORT_DIR = link_modifiers.resolve_export_dir()
+    NO_LINK = bool(no_link)
 
 
 # ============================================================
@@ -239,24 +236,37 @@ def export_parts(zones, lines):
     link_modifiers.link(PLANET_NAME, EXPORT_DIR)
 
 
-def run_export():
+def prepare(no_link=False):
+    """Main thread: read the layers. Returns the export to run (any thread), or None."""
+    _configure(no_link)
     print("=" * 64)
     print(f"  Mountains export — planet '{PLANET_NAME}'")
     print("=" * 64)
-    range_layers = find_layers("mountain_range", QgsWkbTypes.PolygonGeometry)
-    ridge_layers = find_layers("ridge", QgsWkbTypes.LineGeometry)
+    range_layers = find_layers("mountain_range", Qgis.GeometryType.Polygon)
+    ridge_layers = find_layers("ridge", Qgis.GeometryType.Line)
     if not range_layers and not ridge_layers:
         print("  ✗ No mountain_range / ridge layer in the project (re-run "
               "setup_planet_project.py to create them).")
-        return
+        return None
     zones = collect_ranges(range_layers)
     lines = collect_ridges(ridge_layers)
     print("-" * 64)
     print(f"  {len(zones)} range(s), {len(lines)} ridge(s)")
-    export_parts(zones, lines)
-    print("=" * 64)
-    print("  ✓ Done. Reopen the planet scene: chunks read the pack directly.")
-    print("=" * 64)
+
+    def work():
+        export_parts(zones, lines)
+        print("=" * 64)
+        print("  ✓ Done. Reopen the planet scene: chunks read the pack directly.")
+        print("=" * 64)
+    return work
 
 
-run_export()
+def run(no_link=False):
+    """The whole export, on the calling thread."""
+    work = prepare(no_link)
+    if work is not None:
+        work()
+
+
+if __name__ == "__main__":
+    run()

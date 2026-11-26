@@ -32,8 +32,8 @@ The file is PRIVATE: it goes outside the repository, to
     $DS_CAVE_EXPORT_DIR, else export_config.ini [paths] cave_export_dir,
     else ~/dyingstar-private/caves/
 
-Run from the QGIS Python Console:
-    exec(open('/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis/export_cave_sites.py').read())
+Run from QGIS: DyingStar ▸ Export ▸ Caves (the plugin). From the Python console:
+    import export_cave_sites; export_cave_sites.run()
 """
 import configparser
 import json
@@ -41,10 +41,10 @@ import math
 import os
 import uuid
 
-from qgis.core import QgsExpressionContextUtils, QgsProject, QgsVectorLayer, QgsWkbTypes
+from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes
 
-# Only used when exec()'d from the console (no __file__): where export_config.ini lives.
-TOOLS_DIR = "/datas/developpement/sources/DyingStar-game/DyingStar/tools/planettech/qgis"
+import ds_project
+
 DEFAULT_EXPORT_DIR = os.path.expanduser("~/dyingstar-private/caves")
 # Columns that are not cave parameters.
 SKIPPED = {"fid", "geom", "last_updated"}
@@ -57,11 +57,18 @@ STABLE_UUID_NAMESPACE = uuid.UUID("a0affe13-815e-4162-b78b-e3988ca71339")
 PARENT_ALIASES = {"tarsis_3": "_planet_SandBox"}
 CAVE_SCENE = "scenes/planet/cave/cave_site.tscn"
 
-_project = QgsProject.instance()
-_scope = QgsExpressionContextUtils.projectScope(_project)
-PLANET_NAME = str(_scope.variable("planet_name") or "")
-PLANET_RADIUS = float(_scope.variable("planet_radius_m") or 6_356_000)
-PLANET_PARENT = str(_scope.variable("planet_parent_id") or PARENT_ALIASES.get(PLANET_NAME, ""))
+# The planet of the open project, read by _configure() at each run (ds_project.py).
+PLANET_NAME = None
+PLANET_RADIUS = None
+PLANET_PARENT = None
+
+
+def _configure():
+    global PLANET_NAME, PLANET_RADIUS, PLANET_PARENT
+    planet = ds_project.planet()
+    PLANET_NAME = planet.name
+    PLANET_RADIUS = planet.radius_m
+    PLANET_PARENT = planet.parent_id or PARENT_ALIASES.get(PLANET_NAME, "")
 
 
 def resolve_export_dir():
@@ -69,8 +76,7 @@ def resolve_export_dir():
     env = os.environ.get("DS_CAVE_EXPORT_DIR")
     if env:
         return env
-    here = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else TOOLS_DIR
-    ini = os.path.join(here, "export_config.ini")
+    ini = os.path.join(os.path.dirname(os.path.abspath(__file__)), "export_config.ini")
     if os.path.exists(ini):
         cp = configparser.ConfigParser()
         cp.read(ini)
@@ -80,7 +86,7 @@ def resolve_export_dir():
 
 
 def find_cave_layer():
-    for layer in _project.mapLayers().values():
+    for layer in QgsProject.instance().mapLayers().values():
         if isinstance(layer, QgsVectorLayer) and layer.customProperty("ds_kind") == "cave_site":
             return layer
     raise RuntimeError("No cave_site layer in this project: run setup_planet_project.py (category caves)")
@@ -158,8 +164,7 @@ def _write_json(path, payload):
 
 
 def export():
-    if not PLANET_NAME:
-        raise RuntimeError("The project has no planet_name variable (setup_planet_project.py sets it)")
+    _configure()
     if not PLANET_PARENT:
         raise RuntimeError("No Horizon parent known for %s: set the project variable planet_parent_id "
                            "(_planet_<name>, as the admin panel shows it)" % PLANET_NAME)
@@ -199,4 +204,16 @@ def export():
     return out_path
 
 
-export()
+def run():
+    """The whole export, on the main thread (it writes new placement ids back into the layer)."""
+    return export()
+
+
+def prepare():
+    """The plugin's entry point: everything happens here, on the main thread."""
+    export()
+    return None
+
+
+if __name__ == "__main__":
+    run()
