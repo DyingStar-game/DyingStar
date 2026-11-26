@@ -2,11 +2,11 @@
 import os
 
 from qgis.core import Qgis
-from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtCore import Qt, QUrl
 from qgis.PyQt.QtGui import QAction, QDesktopServices, QIcon
 from qgis.PyQt.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-    QLabel, QMenu, QMessageBox, QSpinBox, QVBoxLayout,
+    QHBoxLayout, QLabel, QMenu, QMessageBox, QSpinBox, QVBoxLayout,
 )
 
 from . import settings
@@ -85,10 +85,15 @@ class DyingStarPlugin:
 
         pub = self.menu.addMenu("Publication")
         from .publish_log import PublishWatch
-        self.publish_watch = PublishWatch(self.iface)
+        self.publish_watch = PublishWatch(self.iface, on_bake=self.bake_lines)
         self._add(pub, "Journal de publication", self.publish_watch.show,
                   tip="Le journal de la publication en arrière-plan (publish.log de la "
                       "planète), suivi en direct : elle continue après la fin de l'export.")
+        self._add(pub, "Recuire les profils des lignes", self.bake_lines,
+                  tip="Après chaque publication du pack de modificateurs : profils des voies "
+                      "ferrées et routes à pente, ponts sur crevasse (Godot headless, ~10 min), "
+                      "puis publication. Sans ça, le jeu les recalcule en jouant : routes "
+                      "coupées à un bord de chunk, trous le long des tranchées.")
         pub.addSeparator()
         self._add(pub, "Récupérer les parts du serveur", lambda: self._job(
             "Récupérer les parts", [Step(JOBS, "pull")]))
@@ -228,12 +233,20 @@ class DyingStarPlugin:
         channel, bodies = dlg.choice()
         if not bodies:
             return
+        if dlg.risky() and not self._ask(
+                "Profils des lignes", "Les modificateurs montent sans profils des lignes cuits "
+                                      "pour eux : le jeu les recalculera en jouant (routes "
+                                      "coupées, trous). Promouvoir quand même ?"):
+            return
         if channel == "prod" and not self._ask(
                 "Promouvoir en prod", f"{', '.join(bodies)} → prod : les joueurs le recevront. "
                                       f"Continuer ?"):
             return
         self._job(f"Promotion → {channel}", [Step(JOBS, "promote", channel=channel,
                                                   bodies=bodies)])
+
+    def bake_lines(self):
+        self._job("Profils des lignes", [Step("bake_lines")], busy_cursor=False)
 
     def open_log(self):
         if hasattr(self.iface, "openMessageLog"):
@@ -315,22 +328,35 @@ class MountainPreviewDialog(QDialog):
 
 
 class PromoteDialog(QDialog):
+    """Channel and bodies, with what each side serves: a body already up to date is left out,
+    and modifiers going up without the line profiles baked for them are flagged."""
     CHANNELS = ["dev", "preprod", "prod"]
 
     def __init__(self, planet, parent=None):
         super().__init__(parent)
+        self.planet = planet
         self.setWindowTitle(f"Promouvoir — {planet}")
         self.channel = QComboBox()
         self.channel.addItems(self.CHANNELS)
         self.bodies = []
+        self.states = []
         form = QFormLayout()
         form.addRow("Vers le canal", self.channel)
         for body, label in ((planet, "Élévation"), (f"{planet}.mod", "Modificateurs"),
                             (f"{planet}.lines", "Profils des lignes")):
             box = QCheckBox(body)
-            box.setChecked(body.endswith((".mod", ".lines")))
-            form.addRow(label, box)
+            state = QLabel()
+            state.setTextFormat(Qt.TextFormat.RichText)
+            row = QHBoxLayout()
+            row.addWidget(box)
+            row.addWidget(state, 1)
+            form.addRow(label, row)
             self.bodies.append(box)
+            self.states.append(state)
+            box.toggled.connect(lambda _on: self._check_lines())
+        self.warning = QLabel()
+        self.warning.setWordWrap(True)
+        self.warning.setTextFormat(Qt.TextFormat.RichText)
         note = QLabel("Chaque corps monte d'un cran : unstable → dev → preprod → prod.")
         note.setWordWrap(True)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
@@ -339,8 +365,86 @@ class PromoteDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(self.warning)
         layout.addWidget(note)
         layout.addWidget(buttons)
+        self.served = {}
+        self.src = "unstable"
+        self.lines_ok = None
+        self.channel.currentTextChanged.connect(self._refresh)
+        self._refresh()
+
+    def _refresh(self, *_):
+        """Read both channels (HTTP, as the game) and fill each body's line."""
+        import channels
+        import link_modifiers
+        to = self.channel.currentText()
+        src = self.src = channels.previous(to)
+        try:
+            self.served = {src: channels.read(src), to: channels.read(to)}
+        except Exception as exc:  # noqa: BLE001 — the promotion itself does not need it
+            self.served = {}
+            for box, state in zip(self.bodies, self.states):
+                box.setChecked(box.text().endswith((".mod", ".lines")))
+                state.setText("<i>versions illisibles</i>")
+            self.lines_ok = None
+            self.warning.setText(f"Canaux illisibles en HTTP ({exc}) : promotion à l'aveugle.")
+            return
+        for box, state in zip(self.bodies, self.states):
+            a = self.served[src].get(box.text(), "")
+            b = self.served[to].get(box.text(), "")
+            if not a:
+                box.setChecked(False)
+                box.setEnabled(False)
+                state.setText(f"<i>absent de {src}</i>")
+            elif a == b:
+                box.setEnabled(True)
+                box.setChecked(False)
+                state.setText(f"<span style='color:#3a9d23'>à jour</span> ({a[:8]})")
+            else:
+                box.setEnabled(True)
+                box.setChecked(box.text().endswith((".mod", ".lines")))
+                state.setText(f"{src} <b>{a[:8]}</b> → {to} {b[:8] or '—'}")
+        chunks = link_modifiers.chunks_dir_for(self.planet, link_modifiers.resolve_export_dir())
+        self.lines_ok = channels.lines_verdict(chunks, self.planet, self.served[src])
+        self._check_lines()
+
+    def _check_lines(self):
+        """The game reads the profiles only if they were baked for the modifiers it gets."""
+        if not self.served:
+            return
+        src = self.src
+        mod_box = self.bodies[1]
+        msgs = []
+        if mod_box.isChecked() and self.lines_ok is False:
+            msgs.append(f"<span style='color:#d7301f'><b>Les profils des lignes de {src} n'ont "
+                        f"pas été cuits pour ses modificateurs</b> : le jeu les recalculerait en "
+                        f"jouant (routes coupées aux bords de chunk, trous). Recuis-les d'abord "
+                        f"(Publication ▸ Recuire les profils des lignes).</span>")
+        elif self._lines_left_behind():
+            msgs.append("<span style='color:#d7301f'>Les modificateurs montent sans les profils "
+                        "des lignes cuits pour eux.</span>")
+        elif mod_box.isChecked() and self.lines_ok is None:
+            msgs.append("<i>Profils des lignes : cuits ailleurs qu'ici, leur accord avec les "
+                        "modificateurs n'est pas vérifiable.</i>")
+        elif self.lines_ok:
+            msgs.append(f"<span style='color:#3a9d23'>Profils des lignes cuits pour les "
+                        f"modificateurs de {src}.</span>")
+        self.warning.setText("<br>".join(msgs))
+
+    def _lines_left_behind(self):
+        """Modifiers checked, the line profiles differing between the channels but unchecked."""
+        mod_box, lines_box = self.bodies[1], self.bodies[2]
+        if not self.served or not mod_box.isChecked() or lines_box.isChecked():
+            return False
+        body, to = lines_box.text(), self.channel.currentText()
+        return bool(self.served[self.src].get(body)) \
+            and self.served[self.src].get(body) != self.served[to].get(body)
+
+    def risky(self):
+        """Modifiers going up while the profiles on the source channel are not theirs."""
+        return self.bodies[1].isChecked() and (self.lines_ok is False
+                                               or self._lines_left_behind())
 
     def choice(self):
         return self.channel.currentText(), [b.text() for b in self.bodies if b.isChecked()]

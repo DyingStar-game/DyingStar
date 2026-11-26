@@ -226,9 +226,11 @@ class PublishWatch:
     """Polls the open planet's publish.log (one stat every 2 s): a message when a publication
     starts and when it ends, with a button to the panel."""
 
-    def __init__(self, iface):
+    def __init__(self, iface, on_bake=None):
         from qgis.PyQt.QtCore import QTimer
         self.iface = iface
+        #: Offered once a modifier pack is published: its line profiles are stale from then on.
+        self.on_bake = on_bake
         self.dock = None
         self._last = None      # (cdir, header, state) seen at the previous tick
         self._sig = None
@@ -284,7 +286,11 @@ class PublishWatch:
             self._push(f"Publication de {planet} ({what}) en cours.", "info")
         elif state == DONE:
             done = published_line(body).partition(":")[2].strip()
-            self._push(f"Publication terminée : {done or what}.", "success")
+            if what == "terrainmodifier.pack" and self.on_bake is not None:
+                self._push(f"Publication terminée : {done or what}. Les profils des lignes "
+                           f"sont à recuire.", "success", bake=True)
+            else:
+                self._push(f"Publication terminée : {done or what}.", "success")
         elif state == NOTHING:
             self._push(f"{planet} ({what}) : déjà publié, rien à faire.", "info")
         elif state == FAILED:
@@ -293,7 +299,7 @@ class PublishWatch:
             self._push(f"La publication de {planet} ({what}) s'est arrêtée sans conclure.",
                        "warning")
 
-    def _push(self, text, level):
+    def _push(self, text, level, bake=False):
         from qgis.core import Qgis
         from qgis.PyQt.QtCore import QTimer
         from qgis.PyQt.QtWidgets import QPushButton
@@ -311,10 +317,16 @@ class PublishWatch:
         # Deferred: never act from inside a message-bar button's own clicked() (zone_route).
         btn.clicked.connect(lambda _=False: QTimer.singleShot(0, self.show))
         item.layout().addWidget(btn)
-        self._btn = btn
+        self._btn = (btn,)
+        if bake:
+            bake_btn = QPushButton("Recuire les profils des lignes")
+            bake_btn.clicked.connect(lambda _=False: QTimer.singleShot(0, self.on_bake))
+            item.layout().addWidget(bake_btn)
+            self._btn = (btn, bake_btn)
         if level == "info":
             self._item = item
-        bar.pushWidget(item, levels[level], 0 if level in ("critical", "warning", "info") else 30)
+        sticky = level in ("critical", "warning", "info") or bake
+        bar.pushWidget(item, levels[level], 0 if sticky else 30)
 
     def unload(self):
         self.timer.stop()

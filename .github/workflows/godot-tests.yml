@@ -299,6 +299,7 @@ jobs:
         run: |
           python3 test/unit/test_qgis_plugin_package_py.py
           python3 test/unit/test_publish_log_py.py
+          python3 test/unit/test_bake_lines_py.py
 
       # The shared material library: what a material.json may leave out (every map) and what it may
       # not (a base colour), and how the Blender add-on packs an opacity map. jsonschema and pillow
