@@ -293,6 +293,7 @@ jobs:
           pip3 install --quiet numpy
           python3 test/unit/test_healpix_utils_py.py
           python3 test/unit/test_modifier_pack_py.py
+          python3 test/unit/test_mountain_preview_py.py
 
       # The shared material library: what a material.json may leave out (every map) and what it may
       # not (a base colour), and how the Blender add-on packs an opacity map. jsonschema and pillow
