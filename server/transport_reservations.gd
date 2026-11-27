@@ -183,22 +183,27 @@ static func apply(depot: Node, wanted: Dictionary, checked: Dictionary, on_way: 
 ## The crates shelved in [param depot] (delivered there), in shelf-label order.
 static func crates_of(depot: Node) -> Array:
 	var depot_uuid := _uuid_of(depot)
-	var out: Array = []
+	# The SHELVES are sorted, once each, not the crates: sorting the crates asked ShelfLabels for two labels
+	# per comparison (a scan of the whole layout when the name is not a layout one), every 10 s and per good
+	# for every depot -- a freeze of the whole server, felt by every player (preprod 2026-11-26).
+	var shelves: Array = []  # [label, shelf]
 	for shelf: Node in depot.get_children():
-		if not (shelf is Shelf):
-			continue
-		for crate: Node in shelf.get_children():
-			var content: Variant = crate.get("content")
-			if content is Dictionary and str((content as Dictionary).get("delivered_to", "")) == depot_uuid:
-				out.append(crate)
+		if shelf is Shelf:
+			shelves.append([ShelfLabels.label_for(shelf as Node3D), shelf])
 	# The aisles first, the buffer rack (no label) last: a crate waiting there for a storekeeper is kept
 	# for a transport only when the aisles have none (playtest 2026-11-09).
-	out.sort_custom(func(a: Node, b: Node) -> bool:
-		var la := ShelfLabels.label_for(a.get_parent())
-		var lb := ShelfLabels.label_for(b.get_parent())
+	shelves.sort_custom(func(a: Array, b: Array) -> bool:
+		var la: String = a[0]
+		var lb: String = b[0]
 		if (la == "") != (lb == ""):
 			return lb == ""
 		return la < lb)
+	var out: Array = []
+	for entry: Array in shelves:
+		for crate: Node in (entry[1] as Node).get_children():
+			var content: Variant = crate.get("content")
+			if content is Dictionary and str((content as Dictionary).get("delivered_to", "")) == depot_uuid:
+				out.append(crate)
 	return out
 
 
