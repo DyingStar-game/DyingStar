@@ -3,27 +3,28 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cx08v3mt17wdm"
-path="res://.godot/imported/tex_gravel_slate_040_normal.png-d137b5d18082ae1dbdeadb5f1b490746.ctex"
+path.s3tc="res://.godot/imported/tex_gravel_slate_040_normal.png-d137b5d18082ae1dbdeadb5f1b490746.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/_universe/_shared/materials/mat_gravel_slate_040/tex_gravel_slate_040_normal.png"
-dest_files=["res://.godot/imported/tex_gravel_slate_040_normal.png-d137b5d18082ae1dbdeadb5f1b490746.ctex"]
+dest_files=["res://.godot/imported/tex_gravel_slate_040_normal.png-d137b5d18082ae1dbdeadb5f1b490746.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
