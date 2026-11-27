@@ -60,3 +60,4 @@ it names under **In the code** still exist.
 | [0027](0027-world-screens-work-only-when-seen.md) | A screen in the world animates or redraws only when the camera is near and has it in view; static faces are drawn once. |
 | [0028](0028-one-user-per-screen-the-others-watch.md) | One player uses a world screen at a time; the others watch it through the view contract. |
 | [0029](0029-four-hardware-tiers-each-mapped-to-a-preset.md) | Four hardware tiers (Minimum to Ultra, NVIDIA and AMD), each mapped to a `GpuTier` preset; a feature enters a tier with a bench figure. |
+| [0030](0030-tone-map-with-agx.md) | The game and every view of its assets tone map with AgX; brightness is tuned, the curve is not switched. |
