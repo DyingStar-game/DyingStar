@@ -633,6 +633,31 @@ public partial class HairGroomNative : RefCounted
     }
 
     /// <summary>
+    /// HairStrands.pack: CUSTOM0 of HairStrands.PACKED_FORMAT, per vertex the direction (tangent xyz) and the share
+    /// along the hair (uv.y), as signed bytes. Same rounding as the GDScript.
+    /// </summary>
+    public byte[] PackStrands(float[] tan, Vector2[] uv)
+    {
+        int n = uv.Length;
+        var c0 = new byte[n * 4];
+        for (int v = 0; v < n; v++)
+        {
+            int at = v * 4;
+            c0[at] = Snorm(tan[at]);
+            c0[at + 1] = Snorm(tan[at + 1]);
+            c0[at + 2] = Snorm(tan[at + 2]);
+            c0[at + 3] = Snorm(uv[v].Y);
+        }
+        return c0;
+    }
+
+    // -1..1 as a signed byte, rounded half away from zero like GDScript's roundi().
+    private static byte Snorm(double x)
+    {
+        return (byte)(sbyte)Math.Clamp(Math.Round(x * 127.0, MidpointRounding.AwayFromZero), -127.0, 127.0);
+    }
+
+    /// <summary>
     /// HairVolume.build: [origin (Vector3), size (Vector3), dims (Vector3I), cell (double), data (float[]: per cell,
     /// the extinction then the optical depth from outside)] of a strand mesh's hairs; empty without hairs. Same
     /// loops and order as the GDScript, which holds their reasons.

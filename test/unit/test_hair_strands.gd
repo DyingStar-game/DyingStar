@@ -31,13 +31,26 @@ func test_a_style_becomes_strips_of_hair() -> void:
 	var arrays: Array = mesh.surface_get_arrays(0)
 	var hairs: int = 10 * 3
 	var pos: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
 	assert_eq(pos.size(), hairs * 4 * 2, "two vertices per point of every hair")
 	assert_eq((arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size(), hairs * 3 * 6)
 	for v in range(0, pos.size(), 2):
 		assert_eq(pos[v], pos[v + 1], "a strip has no width: the shader gives it one")
-		assert_eq(uv[v].x, 0.0)
-		assert_eq(uv[v + 1].x, 1.0)
+	# PACKED_FORMAT: no UV nor tangent; CUSTOM0 = direction + share along; the normal compressed.
+	assert_eq(mesh.surface_get_format(0) & HairStrands.PACKED_FORMAT, HairStrands.PACKED_FORMAT, "packed")
+	assert_eq(mesh.surface_get_format(0) & Mesh.ARRAY_FORMAT_TEX_UV, 0, "no UV")
+	# What the GPU holds a vertex: position + normal 12 bytes (the tangent bit the engine sets takes none), colour 4,
+	# CUSTOM0 4 -- 20 where the plain layout took 32.
+	var held: Dictionary = RenderingServer.mesh_get_surface(mesh.get_rid(), 0)
+	assert_eq((held["vertex_data"] as PackedByteArray).size() + (held["attribute_data"] as PackedByteArray).size(),
+			pos.size() * 20, "20 bytes a vertex")
+	var c0: PackedByteArray = arrays[Mesh.ARRAY_CUSTOM0]
+	var nrm: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	for v in pos.size():
+		var share: float = c0.decode_s8(v * 4 + 3) / 127.0
+		assert_almost_eq(share, float((v % 8) / 2) / 3.0, 0.005, "how far along the hair, point after point")
+		var direction := Vector3(c0.decode_s8(v * 4), c0.decode_s8(v * 4 + 1), c0.decode_s8(v * 4 + 2)) / 127.0
+		assert_almost_eq(direction.length(), 1.0, 0.02, "a direction: the shader tells the layout by it")
+		assert_almost_eq(nrm[v].dot((pos[v] - Vector3(0.0, 1.63, 0.0)).normalized()), 1.0, 0.001, "away from the centre")
 	# The first hair of a guide follows the guide itself, straying a little towards its tip.
 	assert_true(pos[0].is_equal_approx(asset.strand_points[0]))
 	for i in 4:
@@ -106,4 +119,20 @@ func test_the_csharp_twin_makes_the_same_hairs() -> void:
 		worst = maxf(worst, pa[k].distance_to(pb[k]))
 	assert_lt(worst, 1e-5, "C# and GDScript place the hairs alike (worst %s m)" % String.num_scientific(worst))
 	assert_eq(a[Mesh.ARRAY_COLOR], b[Mesh.ARRAY_COLOR], "same colours")
+	assert_eq(a[Mesh.ARRAY_CUSTOM0], b[Mesh.ARRAY_CUSTOM0], "same directions, packed alike")
 	gut.p("hairs: C# %.0f ms, GDScript %.0f ms" % [fast_ms, slow_ms])
+
+
+func test_the_csharp_twin_packs_the_same_bytes() -> void:
+	HumanBuilder.prepare()  # makes the C# twin on this (main) thread
+	assert_true(HairGroom.native_twin() != null, "HairGroomNative.cs must load (rebuild the C#)")
+	var tan := PackedFloat32Array()
+	var uv := PackedVector2Array()
+	for v in 200:
+		var a := float(v) * 0.37
+		tan.append_array([sin(a), cos(a * 1.3), -0.5, 1.0])
+		uv.append(Vector2(float(v % 2), fmod(float(v) / 199.0, 1.0)))
+	# Halfway values too: both twins round them away from zero.
+	tan[0] = 0.5 / 127.0
+	tan[1] = -0.5 / 127.0
+	assert_eq(HairStrands.pack(tan, uv, true), HairStrands.pack(tan, uv, false), "CUSTOM0 alike")
