@@ -56,9 +56,16 @@ const DISTANCE_OPTION : String = "lamp_shadow_distance"
 ## lamp -> whether it was authored with a shadow.
 var _lamps : Dictionary = {}
 var _elapsed : float = INTERVAL  # evaluate on the first frame, then every INTERVAL
+## Measurement switch, client.ini `debug_no_vehicle_light_shadows`: no light of a vehicle casts a shadow,
+## the seated one's headlights included. It exists to bisect a GPU crash met in and around trucks (each
+## shadowed headlight is a depth pass, repeated in every camera feed that sees it).
+var no_vehicle_shadows : bool = false
 
 
 func _ready() -> void:
+	no_vehicle_shadows = ClientConfig.get_bool("debug_no_vehicle_light_shadows", false)
+	if no_vehicle_shadows:
+		print("[LampShadowBudget] !! debug_no_vehicle_light_shadows=true — no vehicle light casts a shadow.")
 	# Measurement switch: every lamp keeps the shadow it was authored with, as before this budget.
 	if ClientConfig.get_bool("debug_no_lamp_budget", false):
 		print("[LampShadowBudget] !! debug_no_lamp_budget=true — every lamp casts, the atlas may be full.")
@@ -106,6 +113,8 @@ func _consider(node: Node) -> void:
 		return  # a lamp of another world (a preview, a map): no distance to our camera means anything
 	light.set_meta(META_AUTHORED if authored else META_GIVEN, true)
 	_lamps[light] = authored
+	if no_vehicle_shadows and _on_a_vehicle(light):
+		light.shadow_enabled = false  # at once, not at the next evaluation: not one frame with it
 
 
 func _evaluate() -> void:
@@ -120,6 +129,9 @@ func _evaluate() -> void:
 			_lamps.erase(lamp)
 			continue
 		var light := lamp as Light3D
+		if no_vehicle_shadows and _on_a_vehicle(light):
+			light.shadow_enabled = false  # measurement switch, hidden or lit
+			continue
 		if not light.is_visible_in_tree():
 			continue  # off: it costs nothing whatever its flag; ranked again when it lights up
 		if max_distance <= 0.0:
@@ -149,6 +161,16 @@ func _seated_vehicle() -> Node:
 	while node != null and not node is VehicleBody3D:
 		node = node.get_parent()
 	return node
+
+
+## [param node] is part of a vehicle (under a VehicleBody3D): its headlights, its cab lights.
+static func _on_a_vehicle(node: Node) -> bool:
+	var parent : Node = node.get_parent()
+	while parent != null:
+		if parent is VehicleBody3D:
+			return true
+		parent = parent.get_parent()
+	return false
 
 
 static func _on_an_avatar(node: Node) -> bool:

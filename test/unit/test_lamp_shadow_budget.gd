@@ -142,3 +142,31 @@ func test_the_sun_is_not_a_lamp() -> void:
 	add_child_autofree(sun)
 	_budget._evaluate()
 	assert_true(sun.shadow_enabled, "directional lights are not budgeted")
+
+
+## A headlight as a truck brings it: a scene light authored with a shadow, under the VehicleBody3D.
+func _headlight(at: Vector3) -> SpotLight3D:
+	var truck := VehicleBody3D.new()
+	var light := SpotLight3D.new()
+	light.shadow_enabled = true
+	truck.add_child(light)
+	light.owner = truck
+	add_child_autofree(truck)
+	truck.global_position = at
+	return light
+
+
+func test_a_parked_truck_headlight_is_ranked_like_a_lamp() -> void:
+	var headlight := _headlight(Vector3(0, 0, -5))
+	_budget._evaluate()
+	assert_true(headlight.shadow_enabled, "the switch is off: the nearest light casts")
+
+
+func test_the_vehicle_shadow_switch_takes_every_vehicle_light_off() -> void:
+	_budget.no_vehicle_shadows = true  # client.ini debug_no_vehicle_light_shadows
+	var headlight := _headlight(Vector3(0, 0, -5))
+	assert_false(headlight.shadow_enabled, "off as it enters the tree, not one frame with it")
+	var lamp := _lamp(Vector3(0, 0, -10))
+	_budget._evaluate()
+	assert_false(headlight.shadow_enabled, "still off, though the nearest")
+	assert_true(lamp.shadow_enabled, "the other lamps are not touched")

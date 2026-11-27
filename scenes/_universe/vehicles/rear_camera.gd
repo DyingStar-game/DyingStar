@@ -72,6 +72,9 @@ var _offline_viewport: SubViewport = null   # switchable: "OFFLINE", the switche
 var _offline_mat: StandardMaterial3D = null
 var _reverse_left_s: float = 0.0            # switchable: how long the reversing feed still shows
 
+## Measurement switch, client.ini `debug_no_vehicle_feeds`: -1 not read yet, 0 off, 1 on (feeds_disabled).
+static var _feeds_switch: int = -1
+
 enum Shown { OFF, FEED, MAP, OFFLINE }
 
 @onready var _viewport: SubViewport = $SubViewport
@@ -149,7 +152,21 @@ func powered() -> bool:
 ## What the screen should show now: nothing without power, else the vehicle's mode (switchable only),
 ## or the feed while backing up.
 func _wanted() -> Shown:
-	return shown_for(powered(), mode(), reversing())
+	var what: Shown = shown_for(powered(), mode(), reversing())
+	if what == Shown.FEED and feeds_disabled():
+		return Shown.OFF  # measurement switch: dark, and the feed's 3D render never runs
+	return what
+
+
+## The measurement switch `debug_no_vehicle_feeds` of client.ini: no vehicle camera feed ever renders (each
+## is a whole extra 3D render of the world, three per truck); a screen that would show one stays dark.
+## It exists to bisect a GPU crash met in and around trucks. Read once, for every screen.
+static func feeds_disabled() -> bool:
+	if _feeds_switch < 0:
+		_feeds_switch = 1 if ClientConfig.get_bool("debug_no_vehicle_feeds", false) else 0
+		if _feeds_switch == 1:
+			print("[RearCamera] !! debug_no_vehicle_feeds=true — vehicle camera feeds never render, their screens stay dark")
+	return _feeds_switch == 1
 
 
 ## What a screen shows, [param powered] or not, in [param screen_mode], [param backing_up] or not.
