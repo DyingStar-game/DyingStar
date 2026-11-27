@@ -16,12 +16,13 @@
 [ext_resource type="PackedScene" uid="uid://cwhwra3b8ixvn" path="res://scenes/interactables/gui_3d.tscn" id="15_gui3d"]
 [ext_resource type="PackedScene" uid="uid://eymb64nygadx" path="res://scenes/_universe/vehicles/vehicle_dashboard.tscn" id="16_dash"]
 [ext_resource type="Script" path="res://scenes/_universe/vehicles/spaceship/ship_interior_rider.gd" id="17_rider"]
+[ext_resource type="Script" uid="uid://kbp6qag1idal" path="res://scenes/_universe/vehicles/vehicle_door_handle.gd" id="18_handle"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
-size = Vector3(3.61938, 0.5835, 5.396)
+size = Vector3(3.61938, 0.5835, 7.333)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_wall"]
-size = Vector3(0.30676, 2.5685, 2.723)
+size = Vector3(0.30676, 2.5685, 4.706)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cockpit_wall"]
 size = Vector3(0.30676, 1.0765, 2.673)
@@ -36,16 +37,19 @@ size = Vector3(3.00586, 0.9265, 0.297)
 size = Vector3(1, 0.812, 0.425)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ramp"]
-size = Vector3(2.5918, 0.1, 1.293)
+size = Vector3(2.98, 2.6, 0.04)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ramp_handle"]
+size = Vector3(2.8, 2.45, 0.3)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_seat"]
 size = Vector3(1.6, 1.4, 1.6)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_grid"]
-size = Vector3(3.00586, 3.09, 6.85)
+size = Vector3(3.00586, 3.09, 7.35)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_cabin"]
-size = Vector3(3.00586, 2.57, 5.55)
+size = Vector3(3.00586, 2.57, 6.93)
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(0.64, 0.16)
@@ -100,17 +104,18 @@ sfx_engine_stop_db = -2.0
 sfx_engine_idle = ExtResource("8_idle")
 sfx_engine_rev_pitch = 1.25
 sfx_engine_rev_db = 3.0
+door_swing_secs = 2.0
 
 [node name="HullFloor" type="CollisionShape3D" parent="." unique_id=212679118]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.21825, -1.255)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.21825, -0.2865)
 shape = SubResource("BoxShape3D_floor")
 
 [node name="HullWallLeft" type="CollisionShape3D" parent="." unique_id=212679119]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.65631, 1.35775, 0.0815)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.65631, 1.35775, 1.073)
 shape = SubResource("BoxShape3D_wall")
 
 [node name="HullWallRight" type="CollisionShape3D" parent="." unique_id=212679120]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.65631, 1.35775, 0.0815)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.65631, 1.35775, 1.073)
 shape = SubResource("BoxShape3D_wall")
 
 [node name="HullCockpitWallLeft" type="CollisionShape3D" parent="." unique_id=212679121]
@@ -134,7 +139,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.47925, -3.6045)
 shape = SubResource("BoxShape3D_console")
 
 [node name="HullRamp" type="CollisionShape3D" parent="." unique_id=212679126]
-transform = Transform3D(1, 0, 0, 0, 0.930507, -0.366274, 0, 0.366274, 0.930507, 0, -0.20984, 2.02625)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.325, 3.33)
 shape = SubResource("BoxShape3D_ramp")
 
 [node name="InteriorZone" type="Area3D" parent="." unique_id=212679127 groups=["active_monitor"]]
@@ -146,11 +151,24 @@ script = ExtResource("17_rider")
 metadata/monitor_reason = "Server only (ShipInteriorRider turns monitoring on there): polls the players in the cabin to make them ride the ship, like the vehicle lift's platform. Scans the player layer alone."
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="InteriorZone" unique_id=212679128]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.355, -0.875)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.355, -0.185)
 shape = SubResource("BoxShape3D_cabin")
 
 [node name="ExitPoint" type="Marker3D" parent="." unique_id=212679129]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, -1.5)
+
+[node name="RampHandle" type="Area3D" parent="." unique_id=1677588921]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.325, 3.33)
+script = ExtResource("18_handle")
+door_id = "ramp"
+open_angle_deg = 101.5
+hinge_axis = Vector3(1, 0, 0)
+prompt_open = "%%HUD_RAMP_OPEN"
+prompt_close = "%%HUD_RAMP_CLOSE"
+wind_area_m2 = 0.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="RampHandle" unique_id=1677588922]
+shape = SubResource("BoxShape3D_ramp_handle")
 
 [node name="SeatPilot" type="Area3D" parent="." unique_id=1598888004 node_paths=PackedStringArray("sit_point")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -2.7)
@@ -177,7 +195,7 @@ gravity_space_override = 3
 gravity = 7.77
 
 [node name="CollisionShape3D2" type="CollisionShape3D" parent="ShipPhysicsGrid" unique_id=249783493]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.095, -0.525)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.095, -0.275)
 shape = SubResource("BoxShape3D_grid")
 
 [node name="Hull" type="CSGBox3D" parent="." unique_id=292542460 groups=["vehicle_model"]]
@@ -202,19 +220,17 @@ operation = 2
 size = Vector3(5.47656, 1.98004, 4.65421)
 material = ExtResource("2_orange")
 
-[node name="RampCut" type="CSGBox3D" parent="Hull" unique_id=1387114488]
-transform = Transform3D(1, 0, 0, 0, 0.627025, 0.778999, 0, -0.778999, 0.627025, 0, -0.452029, 3.68998)
-operation = 2
-size = Vector3(5.47656, 1.98004, 4.65421)
-material = ExtResource("2_orange")
-
 [node name="Console" type="CSGBox3D" parent="Hull" unique_id=1941004259]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.02611, -3.34108)
 size = Vector3(1, 1, 0.424927)
 
-[node name="Ramp" type="CSGBox3D" parent="Hull" unique_id=1677588919]
-transform = Transform3D(1, 0, 0, 0, 0.930507, -0.366274, 0, 0.366274, 0.930507, 0, -1.621411, 2.289688)
-size = Vector3(2.5918, 0.1, 1.293)
+[node name="Ramp" type="Node3D" parent="Hull" unique_id=1677588919]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.386571, 3.593438)
+
+[node name="RampLeaf" type="CSGBox3D" parent="Hull/Ramp" unique_id=1677588920]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 0)
+size = Vector3(2.98, 2.6, 0.04)
+material = ExtResource("2_orange")
 
 [node name="HeadlightGlassLeft" type="MeshInstance3D" parent="Hull" unique_id=1630482917]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, -0.911571, -3.984562)

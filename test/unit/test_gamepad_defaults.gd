@@ -11,7 +11,10 @@ const KEYBOARD_ONLY : Array[String] = [
 	"screenshot_debug", "bug_report", "spawn_wheel", "god_mode", "god_mode_land", "zapette", "debug_time_forward", "debug_time_back",
 	"debug_toggle_moon_lights", "debug_isolate_light", "debug_light_probe", "toggle_debug", "walk_speed_up", "walk_speed_down",
 	"vehicle_reset", "vehicle_horn_special", "vehicle_speed_limiter", "vehicle_cruise_control", "vehicle_limiter_up",
-	"vehicle_limiter_down", "eva_stabilize", "star_map_menu", "star_map_tilt", "star_map_search",
+	"vehicle_limiter_down", "eva_stabilize", "star_map_menu",
+	# The ship's twins of the keyboard-only truck keys above, and its brake (the EVA's is keyboard-only too).
+	"ship_brake", "ship_reset", "ship_speed_limiter", "ship_cruise_control", "ship_limiter_up",
+	"ship_limiter_down", "ship_ramp", "star_map_tilt", "star_map_search",
 	# The UV torch: D-pad up is the torch and down the headlights, nothing left beside them.
 	"toggle_torch_uv",
 ]

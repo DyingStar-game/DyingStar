@@ -8,3 +8,4 @@ script = ExtResource("1_item")
 display_name = "%%ITEM_VEHICLE_SHIP"
 icon = ExtResource("2_icon")
 scene_path = "res://scenes/_universe/vehicles/spaceship/spaceship.tscn"
+spawn_offset = Vector3(0, 0, -2)

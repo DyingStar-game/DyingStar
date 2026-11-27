@@ -74,6 +74,25 @@ func test_each_action_has_a_keyboard_cell_and_a_gamepad_cell() -> void:
 	InputMap.load_from_project_settings()
 
 
+## The ship has a tab of its own, and every key in it is the ship's own action: none shared with the truck,
+## the walk or the EVA, so changing one moves no other (PlayerClient.SHIP_KEYS reads them in a ship).
+func test_the_ship_tab_has_only_keys_of_its_own() -> void:
+	var group : Dictionary = MenuConfig.ACTION_GROUPS["%%KM_GROUP_SHIP"]
+	assert_eq(MenuConfig.sections_of(group).map(func(s: Array) -> String: return s[0]),
+			["%%KM_SECTION_SHIP_FLIGHT", "%%KM_SECTION_SHIP_ON_BOARD"])
+	var ship : Dictionary = MenuConfig.labels_of(group)
+	for action: String in ship:
+		assert_true(action.begins_with("ship_"), "%s: a key of the ship's own" % action)
+		assert_true(InputMap.has_action(action), "%s is in the input map" % action)
+	for other: String in MenuConfig.ACTION_GROUPS:
+		if other == "%%KM_GROUP_SHIP":
+			continue
+		for action: String in MenuConfig.labels_of(MenuConfig.ACTION_GROUPS[other]):
+			assert_false(ship.has(action), "%s is not shared with %s" % [action, other])
+	for truck_key: String in PlayerClient.SHIP_KEYS:
+		assert_true(ship.has(PlayerClient.SHIP_KEYS[truck_key]), "%s has its ship twin listed" % truck_key)
+
+
 func _row_of(page: MenuConfig, label_key: String) -> HBoxContainer:
 	for group: Dictionary in page._groups:
 		for label: String in group["rows"]:

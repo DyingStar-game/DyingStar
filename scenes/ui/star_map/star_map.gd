@@ -2036,7 +2036,7 @@ func _aim_view_cone(at: Vector3, up: Vector3, host: int, host_sphere: MeshInstan
 	var to_drawn: Basis = host_sphere.basis.orthonormalized() * planet.global_basis.orthonormalized().inverse()
 	var player_up: Vector3 = (_player as Player).up_direction if _player is Player else Vector3.ZERO
 	var level_up: Vector3 = to_drawn * player_up if player_up != Vector3.ZERO else up
-	var ahead: Vector3 = StarMapViewCone.level_forward(to_drawn * -game_camera.global_basis.z, level_up)
+	var ahead: Vector3 = StarMapViewCone.level_forward(to_drawn * _facing(game_camera), level_up)
 	if ahead == Vector3.ZERO:
 		_view_cone.hide_cone()  # looking straight up or down: no heading to show
 		return
@@ -2045,6 +2045,17 @@ func _aim_view_cone(at: Vector3, up: Vector3, host: int, host_sphere: MeshInstan
 	var origin: Vector2 = _camera.unproject_position(at)
 	var toward: Vector2 = _camera.unproject_position(at + ahead * step) - origin
 	_view_cone.aim(origin, toward)
+
+
+## The way you face, in the world: the game camera's forward on foot; seated, the seat's (a vehicle's nose).
+## The chart is read on the DataPad, which aims the camera at your wrist: on foot that only pitches it down,
+## and its level part still says where you face; in a ship that rolled, "down at the wrist" leans sideways
+## with the hull, and the cone swung with the roll.
+func _facing(game_camera: Camera3D) -> Vector3:
+	var seat = _player.get("_seat_node") if is_instance_valid(_player) else null
+	if seat is Node3D and is_instance_valid(seat):
+		return -(seat as Node3D).global_basis.z
+	return -game_camera.global_basis.z
 
 
 ## Show the towns of the followed body once it is close enough for them to mean anything, and put them

@@ -20,19 +20,25 @@ ahead.
 
 | Control | Action (default key) |
 |---|---|
-| Engine on / off | `vehicle_ignition` (I) — engine off: no thrust, no hover, it falls and lands |
-| Forward / back | `vehicle_accelerate` / `vehicle_decelerate` (W / S) |
-| Strafe left / right | `move_left` / `move_right` (A / D) |
-| Up / down | `strafe_up` / `strafe_down` (Space / Ctrl) |
-| Roll | `roll_left` / `roll_right` (Q / E) |
-| Pitch / yaw | the mouse (or the right stick): it steers the ship |
-| Speed limiter on / off | `vehicle_speed_limiter` (T) — on: the keys push up to the set speed only (they ease off just under it, and a ship already faster is brought back down); off: up to `max_speed_ms` (512 m/s). Switches the cruise control off |
-| Cruise control on / off | `vehicle_cruise_control` (Ctrl+T) — holds the current FORWARD speed with the forward key released (strafe, lift and turns stay manual). Back, the brake, the forward key pressed again or the engine off switch it off. Switches the limiter off. Not under one notch (72 km/h) |
-| Set speed | mouse wheel (`vehicle_limiter_up` / `_down`): 20 m/s a notch (`limiter_step_kmh` 72), up to 1843 km/h — the cruise speed while it holds, else the limiter's (kept while the limiter is off, ready for T) |
-| Look around | hold right click (`aim`): the mouse looks around, the ship keeps its course; released, the view swings back ahead |
-| Brake (stop all motion and turns) | `eva_stabilize` (X) |
-| Head lights | `vehicle_lights` (L) |
-| Get up | `exit` (Y) — you stand up in the cabin behind the seat (`ExitPoint`), still aboard, even in flight |
+| Engine on / off | `ship_ignition` (I) — engine off: no thrust, no hover, it falls and lands |
+| Forward / back | `ship_forward` / `ship_back` (W / S, left stick) |
+| Strafe left / right | `ship_strafe_left` / `ship_strafe_right` (A / D, left stick) |
+| Up / down | `ship_up` / `ship_down` (Space / Ctrl, pad A / B) |
+| Roll | `ship_roll_left` / `ship_roll_right` (Q / E, LB / RB) |
+| Pitch / yaw | the mouse, or the right stick (`ship_pitch_up` / `_down`, `ship_yaw_left` / `_right`): it steers the ship |
+| Speed limiter on / off | `ship_speed_limiter` (T) — on: the keys push up to the set speed only (they ease off just under it, and a ship already faster is brought back down); off: up to `max_speed_ms` (512 m/s). Switches the cruise control off |
+| Cruise control on / off | `ship_cruise_control` (Ctrl+T) — holds the current FORWARD speed with the forward key released (strafe, lift and turns stay manual). Back, the brake, the forward key pressed again or the engine off switch it off. Switches the limiter off. Not under one notch (72 km/h) |
+| Set speed | mouse wheel (`ship_limiter_up` / `_down`): 20 m/s a notch (`limiter_step_kmh` 72), up to 1843 km/h — the cruise speed while it holds, else the limiter's (kept while the limiter is off, ready for T) |
+| Look around | hold right click (`ship_free_look`): the mouse looks around, the ship keeps its course; released, the view swings back ahead |
+| Brake (stop all motion and turns) | `ship_brake` (X) |
+| Head lights | `ship_lights` (L) |
+| Rear ramp open / shut | `ship_ramp` (O) — or `action` aimed at the ramp, on foot, inside or out |
+| Get up | `ship_exit` (Y) — you stand up in the cabin behind the seat (`ExitPoint`), still aboard, even in flight |
+
+Every key is the ship's own (`ship_*`), none shared with the truck, the walk or the EVA: Settings ▸
+Controls ▸ Ship changes them without moving any other (`MenuConfig.ACTION_GROUPS`, `%%KM_GROUP_SHIP`). In
+a ship, `PlayerClient` reads the ship's twin of each seat control a truck uses (`SHIP_KEYS`, `_seat_key`);
+there is no horn. Reset is `ship_reset` (R).
 
 A panel open at the controls (the DataPad on F3, its chart on F2, F4, the chat, the pause menu, the
 controls help, the bug report...) takes the controls whole: the flight input sent is neutral (every axis 0,
@@ -98,12 +104,32 @@ the manoeuvring thrusters when a translation starts or the hull starts to turn. 
 **The hollow hull.** The root `VehicleBody3D` carries a compound of boxes that follows the CSG hull: `HullFloor`
 (its top is the cabin floor, 0.07 m; its bottom stays 0.51 m under the origin, where the old solid box
 rested, so the garage bay and the ground clearance are unchanged), `HullWallLeft` / `Right` (full height, from
-behind the canopy to the ramp), `HullCockpitWallLeft` / `Right` (up to the canopy's sill, ~1.15 m: the canopy
-itself is open, as drawn), `HullRoof`, `HullDashboard`, `HullConsole` and `HullRamp`, a 21.5° plank from the
-cabin floor down to 0.1 m above the ground (the drawn `Hull/Ramp` has the same slope and length). The cabin
-inside is about 3.0 m wide, 2.57 m tall and 5.1 m long. The ship stays on the `vehicle` layer and never scans
+behind the canopy to the rear ramp), `HullCockpitWallLeft` / `Right` (up to the canopy's sill, ~1.15 m: the canopy
+itself is open, as drawn), `HullRoof`, `HullDashboard`, `HullConsole` and `HullRamp`, the rear ramp's box (below). The cabin
+inside is about 3.0 m wide, 2.57 m tall and 7 m long, the rear ramp shut: behind the pilot seat, a hold of
+~5.2 m takes a truck (4.6 m), driven in up the open ramp. The truck is not tied down yet: it does not ride the
+ship in flight. The ship stays on the `vehicle` layer and never scans
 the players (a character body inside a body that pushes it is thrown out). Mass and centre of mass are
 unchanged; the turns are rate commands, so the hollow inertia does not change the handling.
+
+The sky (sun, atmosphere, moons) is set on the planet's vertical (`PlayerSunLight.sky_up`, from the
+planet's centre to the eye), not on the ship's gravity that holds a walker to the floor: a ship that rolls
+or loops no longer swings the day, the night and the air for those aboard.
+
+### The rear ramp
+
+The ramp is the ship's one door (`Spaceship.RAMP_DOOR`, "ramp"), a door like the truck's: its state is
+`Vehicle._door_state`, replicated and saved with the ship, and `Vehicle._swing_door` swings it by code
+(`door_swing_secs` 2 s). Its pivot `Hull/Ramp` is hinged at the hull's rear end, on the floor (0.025 m, z 3.33)
+and carries the drawn leaf `RampLeaf` (2.98 × 2.6 × 0.04 m: thin, so its foot is no step). **Shut** (the default, as the scene stands), it
+stands up and closes the back of the cabin; **open** (`RampHandle.open_angle_deg` 101.5° about X), it lies
+down to an 11.5° ramp whose foot rests on the ground (its top 4 cm up: walked onto, no jump). A `CollisionShape3D` cannot ride a pivot, so
+`Spaceship._set_door_angle` puts `HullRamp` on the leaf at every step of the swing.
+
+- **On foot**, inside or outside: aim at the ramp and press `action` ("Open ramp" / "Close ramp": the
+  handle's `prompt_open` / `prompt_close`). `RampHandle` covers the whole leaf and rides it.
+- **From the pilot's seat**: `ship_ramp` (O), sent as "ship_ramp" (pilot only, `server_toggle_ramp`).
+- The weather's wind does not slam it (`wind_area_m2` 0). It has no sound yet (`sfx_door_open` / `_close`).
 
 **Riding.** `InteriorZone` (an `Area3D` over the cabin, script `ShipInteriorRider`, scanning the player layer,
 `monitoring` turned on by the server only) is the vehicle lift platform's rider, for a ship: polled every

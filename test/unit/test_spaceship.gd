@@ -321,24 +321,49 @@ func test_the_hull_is_hollow_and_walkable() -> void:
 	assert_almost_eq(bottom, -0.51, 0.02, "it still rests on the ground as it did (garage bay, clearance)")
 
 
-func test_the_ramp_climbs_into_the_cabin() -> void:
-	var ramp := _ship.get_node_or_null("HullRamp") as CollisionShape3D
-	assert_not_null(ramp, "a ramp at the rear")
-	if ramp == null:
-		return
-	var up: Vector3 = ramp.transform.basis.y.normalized()
-	var slope: float = rad_to_deg(up.angle_to(Vector3.UP))
-	assert_between(slope, 10.0, 30.0, "sloped, and gentler than a walkable floor's 45 degrees")
+## The rear ramp is a door (Spaceship.RAMP_DOOR): shut, it stands up and closes the cabin; open, it lies
+## down from the cabin floor to a step from the ground, and its collision follows the drawn leaf.
+func test_the_rear_ramp_closes_the_cabin_and_opens_down_to_the_ground() -> void:
+	assert_eq(_ship.door_ids(), PackedStringArray([Spaceship.RAMP_DOOR]), "the ramp is the ship's one door")
+	var handle := _ship.get_node("RampHandle") as VehicleDoorHandle
+	assert_eq(handle.prompt_open, "%%HUD_RAMP_OPEN", "it says ramp, not door")
+	assert_eq(handle.wind_area_m2, 0.0, "the wind does not slam it")
+	var ramp := _ship.get_node("HullRamp") as CollisionShape3D
+	var pivot := _ship.get_node("Hull/Ramp") as Node3D
+	var leaf := pivot.get_node(Spaceship.RAMP_LEAF) as CSGBox3D
 	var half: Vector3 = (ramp.shape as BoxShape3D).size * 0.5
-	var top_in: Vector3 = ramp.transform * Vector3(0.0, half.y, -half.z)
-	var top_out: Vector3 = ramp.transform * Vector3(0.0, half.y, half.z)
+	assert_almost_eq(leaf.size, half * 2.0, Vector3.ONE * 0.001, "the drawn leaf is the collision's size")
 	var floor_top: float = _box_top(_ship.get_node("HullFloor"))
-	assert_almost_eq(top_in.y, floor_top, 0.03, "its upper end meets the cabin floor")
-	assert_gt(top_out.z, top_in.z, "it goes down toward the rear (+Z)")
-	assert_lt(top_out.y - _ship._nav_footprint_get().position.y, 0.2, "its foot is a step from the ground")
-	var drawn := _ship.get_node("Hull/Ramp") as CSGBox3D
-	var drawn_up: Vector3 = drawn.transform.basis.y.normalized()
-	assert_almost_eq(rad_to_deg(drawn_up.angle_to(up)), 0.0, 0.5, "the drawn ramp has the collision's slope")
+	var ground: float = _ship._nav_footprint_get().position.y
+	# Shut, as the scene stands: upright, from the floor to under the roof.
+	assert_almost_eq(rad_to_deg(ramp.transform.basis.y.angle_to(Vector3.UP)), 0.0, 0.5, "shut: upright")
+	assert_lt(ramp.transform.origin.y - half.y, floor_top + 0.01, "shut: from the floor")
+	assert_gt(ramp.transform.origin.y + half.y, 2.5, "shut: up to the roof")
+	assert_true(_inside_hull(Vector3(0.0, 1.0, ramp.transform.origin.z)), "shut: a wall across the opening")
+	# Shut, the hold behind the pilot seat takes a truck (players drive one in), floor and walls all along.
+	var truck: Vehicle = load("res://scenes/_universe/vehicles/ground/trucks/truck.tscn").instantiate()
+	var seat_back: float = _ship.get_node("SeatPilot").transform.origin.z + 0.8
+	var hold: float = ramp.transform.origin.z - half.z - seat_back
+	assert_gt(hold, truck.body_length + 0.2, "the hold (%.2f m) takes the truck (%.2f m)" % [hold, truck.body_length])
+	truck.free()
+	for z: float in [seat_back + 0.2, 2.0, ramp.transform.origin.z - 0.2]:
+		assert_true(_inside_hull(Vector3(0.0, floor_top - 0.1, z)), "a floor at z %.1f" % z)
+		assert_true(_inside_hull(Vector3(1.6, 0.8, z)), "a wall at z %.1f" % z)  # under the cockpit's sill
+		assert_false(_inside_hull(Vector3(0.0, floor_top + 1.0, z)), "room at z %.1f" % z)
+	# Open, through the same path as a door swing (Vehicle._set_door_angle, from the rest _swing_door keeps).
+	pivot.set_meta("rest_basis", pivot.transform.basis)
+	_ship._set_door_angle(handle.open_angle_deg, pivot, handle.hinge_axis)
+	var along: Vector3 = ramp.transform.basis.y.normalized()
+	var slope: float = rad_to_deg(absf(asin(along.y)))
+	assert_between(slope, 3.0, 30.0, "open: a gentle slope, walkable")
+	var top_in: Vector3 = ramp.transform * Vector3(0.0, -half.y, -half.z)
+	var top_out: Vector3 = ramp.transform * Vector3(0.0, half.y, -half.z)
+	assert_almost_eq(top_in.y, floor_top, 0.06, "open: its upper end meets the cabin floor")
+	assert_gt(top_out.z, top_in.z + 2.0, "open: it reaches out behind (+Z)")
+	assert_between(top_out.y - ground, 0.0, 0.06, "open: its foot is walked onto, no step to jump")
+	var foot_under: Vector3 = ramp.transform * Vector3(0.0, half.y, half.z)
+	assert_gt(foot_under.y - ground, -0.01, "open: its foot does not dig into the ground (it would lift the hull)")
+	assert_false(_inside_hull(Vector3(0.0, 1.0, top_in.z)), "open: the way in is clear")
 
 
 func test_the_cabin_zone_makes_walkers_ride() -> void:

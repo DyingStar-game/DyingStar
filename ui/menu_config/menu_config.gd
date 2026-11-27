@@ -103,9 +103,38 @@ const ACTION_GROUPS : Dictionary = {
 		"vehicle_reset": "%%ACT_VEHICLE_RESET",
 		"exit": "%%ACT_EXIT",
 	},
-	# Weightless: out of a station's gravity, or the dev flight. These four were filed under "In flight"
-	# while only a long-gone test ship read them; they are how an astronaut moves now. A ship of its own
-	# would bring its own tab back, with its own keys — an action can only live in one family.
+	# At a ship's controls (Spaceship). Every key is the ship's own, none shared with the truck, the walk
+	# or the EVA: a ship's key changes without moving any other.
+	"%%KM_GROUP_SHIP": {
+		"%%KM_SECTION_SHIP_FLIGHT": {
+			"ship_forward": "%%ACT_SHIP_FORWARD",
+			"ship_back": "%%ACT_SHIP_BACK",
+			"ship_strafe_left": "%%ACT_SHIP_STRAFE_LEFT",
+			"ship_strafe_right": "%%ACT_SHIP_STRAFE_RIGHT",
+			"ship_up": "%%ACT_SHIP_UP",
+			"ship_down": "%%ACT_SHIP_DOWN",
+			"ship_roll_left": "%%ACT_SHIP_ROLL_LEFT",
+			"ship_roll_right": "%%ACT_SHIP_ROLL_RIGHT",
+			"ship_brake": "%%ACT_SHIP_BRAKE",
+			"ship_pitch_up": "%%ACT_SHIP_PITCH_UP",
+			"ship_pitch_down": "%%ACT_SHIP_PITCH_DOWN",
+			"ship_yaw_left": "%%ACT_SHIP_YAW_LEFT",
+			"ship_yaw_right": "%%ACT_SHIP_YAW_RIGHT",
+			"ship_free_look": "%%ACT_SHIP_FREE_LOOK",
+		},
+		"%%KM_SECTION_SHIP_ON_BOARD": {
+			"ship_ignition": "%%ACT_SHIP_IGNITION",
+			"ship_lights": "%%ACT_SHIP_LIGHTS",
+			"ship_ramp": "%%ACT_SHIP_RAMP",
+			"ship_speed_limiter": "%%ACT_SHIP_SPEED_LIMITER",
+			"ship_cruise_control": "%%ACT_SHIP_CRUISE_CONTROL",
+			"ship_limiter_up": "%%ACT_SHIP_LIMITER_UP",
+			"ship_limiter_down": "%%ACT_SHIP_LIMITER_DOWN",
+			"ship_reset": "%%ACT_SHIP_RESET",
+			"ship_exit": "%%ACT_SHIP_EXIT",
+		},
+	},
+	# Weightless: out of a station's gravity, or the dev flight: how an astronaut moves.
 	"%%KM_GROUP_EVA": {
 		"strafe_up": "%%ACT_STRAFE_UP",
 		"strafe_down": "%%ACT_STRAFE_DOWN",
@@ -130,6 +159,10 @@ const ACTION_GROUPS : Dictionary = {
 ## new action is therefore always rebindable, and shows the opened-out form of its name until
 ## someone files it.
 const GROUP_OTHER : String = "%%KM_GROUP_OTHER"
+## A family's tab when its full name is too long for the row: six tabs must fit the settings' column at the
+## largest interface size (600 px, test_settings_column_fit). The full name still heads the family's hits
+## while searching.
+const TAB_LABELS : Dictionary = {"%%KM_GROUP_EVA": "%%KM_TAB_EVA"}
 ## Tabs carry the navigation: the settings tabs' own look (TabStrip), a step smaller.
 const TAB_FONT_SIZE : int = 15
 
@@ -277,7 +310,7 @@ func _add_group(group_key: String, sections: Array) -> void:
 			rows[tr(label_key)] = _add_action_row(action, label_key)
 		if title != null:
 			titled.append({"header": title})
-	_groups.append({"header": header, "rows": rows, "sections": titled})
+	_groups.append({"key": group_key, "header": header, "rows": rows, "sections": titled})
 
 
 ## One action: its name, then a cell per device (keyboard and mouse, gamepad), each showing that
@@ -336,8 +369,8 @@ func _build_tabs() -> void:
 	holder.add_child(_tab_bar)
 	holder.move_child(_tab_bar, search_bar.get_index() + 1)
 	for i in _groups.size():
-		# The heading's text is already translated: tr() on it gives it back unchanged.
-		_tab_bar.add_entry(StringName(str(i)), str(_groups[i]["header"].text))
+		var group_key : String = str(_groups[i]["key"])
+		_tab_bar.add_entry(StringName(str(i)), str(TAB_LABELS.get(group_key, group_key)))
 	_tab_bar.selected.connect(func(key: StringName) -> void: _on_tab_pressed(int(String(key))))
 	_tab = clampi(_tab, 0, maxi(_groups.size() - 1, 0))
 

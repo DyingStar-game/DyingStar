@@ -774,6 +774,12 @@ func server_action_received(data: Dictionary) -> void:
 			var veh_l = _piloted_vehicle(data)
 			if veh_l != null and veh_l.has_method("toggle_headlights"):
 				veh_l.toggle_headlights()
+		"ship_ramp":
+			# The pilot opens or shuts the rear ramp from the seat (it is behind them): pilot only, like the
+			# lights. On foot, the ramp is a door handle like any other ("vehicle_door").
+			var veh_rp = _piloted_vehicle(data)
+			if veh_rp != null and veh_rp.has_method("server_toggle_ramp"):
+				veh_rp.server_toggle_ramp()
 		"vehicle_door":
 			# A door handle is operated on foot by anyone nearby - NOT gated on the driver. Server-
 			# authoritative: (1) the box it aimed at must match the player's side (outdoor on foot, indoor

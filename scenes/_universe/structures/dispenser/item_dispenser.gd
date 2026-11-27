@@ -218,6 +218,8 @@ func _serve_pending() -> void:
 		var at := Marker3D.new()
 		tray_marker.add_child(at)
 		at.position.x = batch_offset(i, count, batch_spacing_m)
+		if "spawn_offset" in spec:
+			at.position += spec.spawn_offset  # an item placed off the marker (DispenserItem.spawn_offset)
 		# Who ordered it: a vehicle writes their name on its plate (VehicleSpawnedBy); other props drop it.
 		MarkerSpawn.spawn(scene, str(_types[spec.scene_path]), at, "",
 				{VehicleSpawnedBy.KEY: _pending_for} if _pending_for != "" else {})

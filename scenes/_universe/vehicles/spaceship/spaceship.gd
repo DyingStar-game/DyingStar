@@ -25,7 +25,7 @@ extends Vehicle
 ## The air holds it back as it holds the truck (VehicleResistance, from the base class), without rolling.
 ##
 ## Walking inside, in flight too (docs/SPACESHIP.md): the hull's collision is hollow (a compound of boxes on
-## the root: floor, walls, roof, dashboard, console, rear ramp), the cabin's InteriorZone (ShipInteriorRider)
+## the root: floor, walls, roof, dashboard, console, the rear ramp that opens and shuts), the cabin's InteriorZone (ShipInteriorRider)
 ## makes whoever walks in a child of the ship on the server, the ShipPhysicsGrid holds them to its floor
 ## (priority over the planet: Player.pick_gravity_area), and the pilot leaving the seat stands up in the
 ## cabin, at ExitPoint, still aboard (_exit_frame, _exit_position_for_seat).
@@ -92,6 +92,45 @@ func toggle_engine() -> void:
 ## SERVER: the head light, which needs no battery here either (see toggle_engine).
 func toggle_headlights() -> void:
 	set_headlights(not _headlights_on)
+
+
+# --- The rear ramp ------------------------------------------------------------------------------------
+
+## The rear ramp's door id: its pivot under the hull (Hull/Ramp, hinged at the cabin floor's rear edge)
+## and its VehicleDoorHandle (RampHandle). Shut, it stands up and closes the cabin; open, it lies down to
+## the ground. A door like the truck's (Vehicle._door_state, replicated and saved), swung by code.
+const RAMP_DOOR := "ramp"
+## The ramp's drawn leaf, under its pivot; the collision box HullRamp follows it (_set_door_angle).
+const RAMP_LEAF := "RampLeaf"
+
+
+## SERVER: the pilot's ramp key (PlayerServer "ship_ramp"): open or shut it from the seat.
+func server_toggle_ramp() -> void:
+	server_toggle_door(RAMP_DOOR)
+
+
+## Vehicle swings the ramp's pivot; the hull's collision is the root's own boxes (a CollisionShape3D cannot
+## ride a pivot), so its ramp box is put where the drawn leaf now is, at every step of the swing.
+func _set_door_angle(deg: float, door: Node3D, axis: Vector3) -> void:
+	super._set_door_angle(deg, door, axis)
+	if is_instance_valid(door) and String(door.name) == "Ramp":
+		_fit_ramp_collision(door)
+
+
+## Put HullRamp on the ramp's leaf, through the transforms down from the root (no global: it runs out of
+## the tree in the tests and before the ship is placed).
+func _fit_ramp_collision(pivot: Node3D) -> void:
+	var leaf := pivot.get_node_or_null(RAMP_LEAF) as Node3D
+	var box := get_node_or_null("HullRamp") as CollisionShape3D
+	if leaf == null or box == null:
+		return
+	var t: Transform3D = leaf.transform
+	var n: Node = pivot
+	while n != null and n != self:
+		if n is Node3D:
+			t = (n as Node3D).transform * t
+		n = n.get_parent()
+	box.transform = t
 
 
 # --- What a truck has and a ship has not -------------------------------------------------------------
