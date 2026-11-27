@@ -144,6 +144,10 @@ var _frames: int = 0
 var _put_out_at: int = -1
 ## The marker task queued behind the pipelines of what was put out (-1: none).
 var _marker: int = -1
+## Whether the loads were asked for (_request_loads): not before a menu stage being built is up.
+var _requested: bool = false
+## Whether the wait for the menu stage was written to the log (BootTrace), once.
+var _said_waiting: bool = false
 
 
 ## A person's shaders (CharacterMaterials), put out on a stand-in too: a look met later may wear one the
@@ -282,6 +286,7 @@ func _ready() -> void:
 	primer.shader = SSS_PRIMER
 	_primer = _instance(_stand_in, primer)
 	_put_out_at = 0
+	BootTrace.step("warmup: SSS primer put out")
 
 
 func _exit_tree() -> void:
@@ -290,13 +295,23 @@ func _exit_tree() -> void:
 		_marker = -1
 
 
+## Whether the loads must wait: a menu stage is being built (MenuStage.BUILDING_GROUP). Its world and its
+## planet's biomes load on worker threads too, the biomes wearing the very water materials this loads first
+## (NOISE_MATERIALS), and the two together hung the start for good on some PCs, the warm-up at 1 % (RTX 4080 /
+## i7-13700, every launch, 2026-11-27; fine with the stage switched off). One after the other: the stage, then
+## the warm-up.
+static func waits_for_menu_stage(tree: SceneTree) -> bool:
+	return tree.get_first_node_in_group(MenuStage.BUILDING_GROUP) != null
+
+
 ## Load the scenes, one at a time (_request_next), and list the mines' meshes and a person's shaders: once
-## SSS_PRIMER was drawn.
+## SSS_PRIMER was drawn and no menu stage is being built (waits_for_menu_stage).
 func _request_loads() -> void:
 	for path in wanted():
 		if not _held.has(path) and ResourceLoader.exists(path):
 			_loading.append(path)
 	_wanted = _loading.size()
+	BootTrace.step("warmup: %d loads asked for, one at a time" % _wanted)
 	_request_next()
 	_to_draw.append_array(mine_meshes())
 	for shader in person_shaders():
@@ -317,13 +332,24 @@ func _process(_delta: float) -> void:
 	if _primer != null:
 		if not _primer.visible:
 			_primer.visible = true  # its pipelines are ready: drawn this frame, the SSS turned on
+			BootTrace.step("warmup: drawing the SSS primer")
 			return
 		_primer.queue_free()  # drawn: the shaders and pipelines it made Godot redo were queued in that render
 		_primer = null
 		_put_out_at = _frames - 1
+		BootTrace.step("warmup: SSS primer drawn, recompiling for it")
+		return
+	if not _requested:
+		if waits_for_menu_stage(get_tree()):
+			if not _said_waiting:
+				BootTrace.step("warmup: waits for the menu stage")
+				_said_waiting = true
+			return
+		_requested = true
 		_request_loads()
 		return
 	if _loading.is_empty() and _person_step < 6:
+		BootTrace.step("warmup: person, step %d" % _person_step, true)
 		_step_person()
 		return
 	if not _next.is_empty():
@@ -331,6 +357,7 @@ func _process(_delta: float) -> void:
 			for material: Variant in entry[1]:
 				_batch.append(_instance(entry[0], material))
 			_meshes_done += 1
+		BootTrace.step("warmup: pipelines of %d/%d meshes" % [_meshes_done, _meshes_done + _to_draw.size()], true)
 		_next.clear()
 		_put_out_at = _frames
 		return
@@ -348,6 +375,7 @@ func _process(_delta: float) -> void:
 	if _loading.is_empty() and _to_draw.is_empty() and _next.is_empty() and _batch.is_empty() \
 			and _signs.is_empty() and _put_out_at == -1:
 		print("[Warmup] %d scenes ready, their pipelines compiled" % _held.size())
+		BootTrace.finish(get_tree(), "warmup: done, %d scenes ready" % _held.size())
 		_viewport.queue_free()
 		if _label != null:
 			_label.get_parent().queue_free()
@@ -413,6 +441,8 @@ func _take_loaded() -> void:
 		if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			continue
 		_loading.erase(path)
+		if _loading.is_empty() and _wanted > 0:
+			BootTrace.step("warmup: all %d loaded, compiling their pipelines" % _wanted)
 		_request_next()
 		if status == ResourceLoader.THREAD_LOAD_LOADED:
 			var loaded: Resource = ResourceLoader.load_threaded_get(path)
@@ -435,6 +465,7 @@ func _take_loaded() -> void:
 func _request_next() -> void:
 	while not _loading.is_empty():
 		if ResourceLoader.load_threaded_request(_loading[0], "", false) == OK:
+			BootTrace.step("warmup: loading %d/%d %s" % [_wanted - _loading.size() + 1, _wanted, _loading[0]], true)
 			return
 		_loading.pop_front()  # cannot be loaded: skipped
 
@@ -522,6 +553,11 @@ func _show_progress() -> void:
 		_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 		_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_label.visible = get_tree().get_first_node_in_group(MenuStage.GROUP) != null
+	if not _requested:
+		# Waiting for the menu stage (waits_for_menu_stage): a line without a figure, "0 %" for a minute would read
+		# as a hang.
+		_label.text = tr("%%MENU_WARMUP_WAITING")
+		return
 	var line: String = tr("%%MENU_WARMUP")
 	if "%d" in line:  # a translation not imported yet comes back as its key, with nothing to fill
 		line = line % roundi(100.0 * progress(_wanted, _loading.size(), _meshes_done, _to_draw.size()))

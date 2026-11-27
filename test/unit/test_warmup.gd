@@ -150,3 +150,27 @@ func test_the_services_panels_are_compiled_before_the_places() -> void:
 	var listed: Array = (load("res://ui/services/terminal_ui.gd") as GDScript).get_script_constant_map().get("APPS", [])
 	for app: Dictionary in listed:
 		assert_true(str(app.get("path", "")) in wanted, "%s is compiled ahead" % app.get("path", ""))
+
+
+func test_the_loads_wait_for_a_menu_stage_being_built() -> void:
+	# The stage's world and biomes loading on workers with the warm-up's water materials hung the start at 1 %
+	# (2026-11-27): the warm-up loads nothing while a stage is being built.
+	var tree := get_tree()
+	assert_false(Warmup.waits_for_menu_stage(tree), "no stage being built: the loads start")
+	var stage := Node.new()
+	add_child_autofree(stage)
+	stage.add_to_group(MenuStage.BUILDING_GROUP)
+	assert_true(Warmup.waits_for_menu_stage(tree), "a stage being built: they wait")
+	stage.remove_from_group(MenuStage.BUILDING_GROUP)
+	assert_false(Warmup.waits_for_menu_stage(tree), "built (or given up): they start")
+
+
+func test_while_it_waits_the_line_says_so_without_a_figure() -> void:
+	# "0 %" while the menu stage is built (a minute on a slow PC) would read as a hang.
+	var warmup := Warmup.new()
+	add_child_autofree(warmup)  # _ready puts out the primer; nothing is asked for until the stage is up
+	warmup._show_progress()
+	assert_eq(warmup._label.text, tr("%%MENU_WARMUP_WAITING"), "the waiting line")
+	assert_false(warmup._label.text.contains("%"), "no figure: %s" % warmup._label.text)
+	var csv := FileAccess.get_file_as_string("res://tools/localization/localisation.csv")
+	assert_true(csv.contains("\n%%MENU_WARMUP_WAITING,"), "translated")
