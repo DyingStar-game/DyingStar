@@ -28,6 +28,9 @@ const READY_TIMEOUT_S : float = 10.0
 const RESNAP_FOR_S : float = 60.0
 ## The stage joins this group, so Settings > Graphics can find it for its hour slider.
 const GROUP : StringName = &"menu_stage"
+## The stage is in this group too while it is being built, from asking the tile service to live (or given
+## up): the menu's warm-up waits for it to leave (Warmup.waits_for_menu_stage).
+const BUILDING_GROUP : StringName = &"menu_stage_building"
 ## Development: enter the universe as soon as the stage is up, as a click on "Enter" would (a measured
 ## game start, the same every run). Command line only, after `--`.
 const AUTO_ENTER_ARG : String = "--auto-enter"
@@ -54,14 +57,18 @@ var _pending_task : int = -1
 func _ready() -> void:
 	add_to_group(GROUP)
 	_menu.screen_changed.connect(go_to)
+	BootTrace.start(get_tree())  # the start, step by step, in the log (BootTrace)
 	Warmup.start(get_tree())  # what the game needs first, loaded while the menu shows (stage on or off)
 	# The village bench is set on this stage: without it the bench never starts and the game idles on the menu.
 	if not SettingsManager.render.is_menu_stage_enabled() and not VillageBench.wanted():
 		print("[MenuStage] switched off in Settings > General%s: the menu keeps its still image."
 			% (" (off by default on this machine)" if SettingsManager.render.is_weak_machine() else ""))
+		BootTrace.step("menu stage off: still image")
 		return
 	# The splash first, over the menu: its buttons appear with the stage, not before it.
 	_splash(true)
+	add_to_group(BUILDING_GROUP)
+	BootTrace.step("menu stage: asking the tile service")
 	_probe = TileServiceProbe.new()
 	_probe.start(PLANET_NAME)
 
@@ -86,9 +93,11 @@ func _process(delta: float) -> void:
 		var reachable : bool = _probe.ok
 		_probe = null
 		_progress(0.1)
+		BootTrace.step("menu stage: tile service %s" % ("reachable" if reachable else "UNREACHABLE: still image"))
 		if reachable:
-			_build()
+			_build_then_release()
 		else:
+			remove_from_group(BUILDING_GROUP)
 			_splash(false)
 			print("[MenuStage] terrain tile service unreachable: the menu keeps its still image.")
 	if _live and _resnap_left > 0.0:
@@ -122,6 +131,12 @@ func set_hour(value: float) -> void:
 		StageClock.set_hour(_planet, _anchor, value)
 
 
+## Build the stage, then let the warm-up start (BUILDING_GROUP), whether the stage came up or not.
+func _build_then_release() -> void:
+	await _build()
+	remove_from_group(BUILDING_GROUP)
+
+
 func _build() -> void:
 	# Let the splash paint before the planet's set-up holds the main thread for a few seconds.
 	for i in 2:
@@ -134,13 +149,16 @@ func _build() -> void:
 	var scene : PackedScene = await _load_world()
 	if scene == null:
 		return  # left meanwhile, or the scene did not load (already said)
+	BootTrace.step("menu stage: instancing the world")
 	var world : Node3D = scene.instantiate()
 	# Before the world enters the tree: the planet places itself for the (frozen) clock in its _ready.
 	_session.begin(world)
 	# Hidden until its pipelines are compiled (_pipelines_compiled): drawn at once, its first frame waited for
 	# every one of them, 17 s on a cold cache (the first launch, a new driver).
 	world.visible = false
+	BootTrace.step("menu stage: world in the tree (planet set up on the main thread)")
 	add_child(world)
+	BootTrace.step("menu stage: waiting for the first ground")
 	_progress(0.5)  # the planet's set-up held the main thread: the bar jumps rather than crawls
 	_planet = world.get_node(NodePath(PLANET_NODE))
 	_outpost = _planet.get_node("Outpost")
@@ -170,8 +188,11 @@ func _build() -> void:
 		var built : float = 0.0
 		if terrain != null and terrain.desired_chunk_count() > 0:
 			built = float(terrain.active_chunk_count()) / terrain.desired_chunk_count()
+			BootTrace.step("menu stage: ground %d/%d chunks" % [terrain.active_chunk_count(),
+				terrain.desired_chunk_count()], true)
 		_progress(0.5 + 0.5 * maxf(built, waited / READY_TIMEOUT_S))
 	_outpost.start(_planet.planet_data.radius, _drawn_ground)
+	BootTrace.step("menu stage: ground %s, waiting for its pipelines" % ("ready" if ground_ready[0] else "late"))
 	await _pipelines_compiled()
 	if not is_inside_tree():
 		return
@@ -181,6 +202,7 @@ func _build() -> void:
 	_splash(false)
 	print("[MenuStage] live on %s after %.1f s (ground %s)" % [PLANET_NAME, waited,
 		"ready" if ground_ready[0] else "late"])
+	BootTrace.step("menu stage: live")
 	if AUTO_ENTER_ARG in OS.get_cmdline_user_args():
 		print("[MenuStage] %s: entering the universe" % AUTO_ENTER_ARG)
 		GameOrchestrator.change_game_state(GameOrchestrator.GameStates.PLAYING)
@@ -194,16 +216,23 @@ func _build() -> void:
 		add_child(bench)
 
 
-## The world scene, loaded on worker threads, then its planet's data prepared on another
+## The world scene, loaded on a worker thread, then its planet's data prepared on another
 ## (PlanetData.prepare_off_main_thread): frames go on meanwhile. Null when left before the end, or when
 ## the scene does not load.
+## One loading thread, without sub-threads: with them, on 2 or 4 worker threads, the load hung for good on
+## the mannequin's or the bust's materials (a worker waiting for shaders ran another sub-load, which waited
+## for a lock held below it -- the warm-up's deadlock of 2026-11-19), and the start stayed on its splash
+## (2026-11-27, reproduced with threading/worker_pool/max_threads=2 or 4; 8 and more went through).
 func _load_world() -> PackedScene:
-	if ResourceLoader.load_threaded_request(WORLD_SCENE, "", true) != OK:
+	BootTrace.step("menu stage: loading the world (%s)" % WORLD_SCENE)
+	if ResourceLoader.load_threaded_request(WORLD_SCENE, "", false) != OK:
 		push_error("[MenuStage] cannot load %s" % WORLD_SCENE)
 		return null
 	var done : Array = []
 	while ResourceLoader.load_threaded_get_status(WORLD_SCENE, done) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 		_progress(0.1 + 0.25 * float(done[0]) if not done.is_empty() else 0.1)
+		if not done.is_empty():
+			BootTrace.step("menu stage: loading the world, %d %%" % roundi(100.0 * float(done[0])), true)
 		await get_tree().process_frame
 		if not is_inside_tree():
 			return null  # the load goes on; the resource cache keeps what it made
@@ -212,6 +241,7 @@ func _load_world() -> PackedScene:
 		push_error("[MenuStage] %s did not load" % WORLD_SCENE)
 		return null
 	var data : PlanetData = planet_data_of(scene)
+	BootTrace.step("menu stage: world loaded, preparing the planet's data on a worker")
 	if data != null:
 		_pending_task = WorkerThreadPool.add_task(data.prepare_off_main_thread, true, "MenuStage planet data")
 		while not WorkerThreadPool.is_task_completed(_pending_task):
@@ -220,6 +250,7 @@ func _load_world() -> PackedScene:
 				return null  # _exit_tree waits for the task
 		WorkerThreadPool.wait_for_task_completion(_pending_task)
 		_pending_task = -1
+	BootTrace.step("menu stage: planet data ready")
 	_progress(0.4)
 	return scene
 
