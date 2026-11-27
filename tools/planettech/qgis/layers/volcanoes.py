@@ -26,6 +26,11 @@ flanks and in the crater — and its lava a darker crust of that same rock.
     ``flank_exponent``: 0.5 convex (dome, shield), 1 straight cone, 2 concave
     (strato).  Only 0.5 / 1 / 1.5 / 2 / 3 are kept — other values are snapped.
 
+``volcanic_region`` (Region)
+    The outline of a volcanic province — the area the volcanoes, flows and
+    fumaroles of one zone belong to.  Only drawn for now: no exporter reads
+    it yet.
+
 ``lava_flow`` (Lines)
     Drawn FROM THE SOURCE DOWNHILL: the drawing direction is the flow
     direction.  Lava never flows uphill: its surface follows the lowest ground
@@ -140,6 +145,20 @@ CATEGORY.add(Layer(
         Field("impurity_intensity", "double",
               "Ore / colour richness: NULL = from the position (0.6-1.4), 0 = sterile, 2 = twice",
               widget=_opt(0.0, 2.0, 0.05)),
+    ],
+))
+
+CATEGORY.add(Layer(
+    "volcanic_region", "Polygon",
+    color="#b0402a",
+    description="Volcanic zone — the area a volcanic province covers (see layers/volcanoes.py)",
+    properties={"ds_kind": "volcanic_region"},
+    # Drawn beside the volcanoes it encloses, in the massifs stage.
+    stage=STAGE_MASSIFS,
+    symbol={"color": "0,0,0,0", "outline_width": "0.8", "outline_color": "#b0402a",
+            "outline_style": "dash"},
+    fields=[
+        Field("name", "string", "(Optional) Volcanic region name"),
     ],
 ))
 
