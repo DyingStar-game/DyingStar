@@ -45,6 +45,8 @@ extends Node
 ##            900 ms stall, which no average ever will.
 ##   [CPerf$] memory on both sides of the wall, including how much RAM the MACHINE has left and the
 ##            drift since boot (a swapping client looks perfectly healthy in every other line).
+##   [CPerfV] where the video memory goes (VramCensus): 20 s after each state or player-frame change,
+##            then every 5 min — the biggest textures, by format / folder, and what the renderer keeps itself.
 ##   [CPerf~] engine counters and the game's custom monitors (network events/s), otherwise visible
 ##            only in the editor profiler.
 ##   [CPerf*] a class census of the scene tree: not "48213 nodes" but which 48213.
@@ -322,6 +324,15 @@ var _summarised: bool = false
 ## monitor would be the monitor changing the game.
 var _last_state: Variant = null
 var _last_frame_name: String = ""
+## When the next [CPerfV] VRAM census is due (uptime, s; 0 = none). VRAM_AFTER_STATE_S after every
+## state change, so the textures of the new state are loaded, then every VRAM_EVERY_S.
+var _vram_due: float = 0.0
+const VRAM_AFTER_STATE_S: float = 20.0
+const VRAM_EVERY_S: float = 300.0
+var _vram_every: float = VRAM_EVERY_S
+## The census under way, walked VRAM_BUDGET_US per frame (a world is tens of thousands of nodes).
+var _vram: VramCensus = null
+const VRAM_BUDGET_US: int = 4000
 ## What the previous heartbeat cost to produce, shown on the next [CPerf~] line.
 ##
 ## Expect ~1 ms in a real build and TEN TIMES that in a local editor run: this dev checkout has no
@@ -433,6 +444,7 @@ func _ready() -> void:
 
 	_interval = maxf(0.5, ClientConfig.get_float("debug_perf_interval", REPORT_INTERVAL))
 	_hitch_ms = maxf(8.0, ClientConfig.get_float("debug_perf_hitch_ms", HITCH_MS))
+	_vram_every = maxf(10.0, ClientConfig.get_float("debug_perf_vram_every", VRAM_EVERY_S))
 	_deep_every = maxi(1, ClientConfig.get_int("debug_perf_deep_every", DEEP_EVERY))
 	# Bisection switch, in the same family as the debug_rocks_* ones: run the simulation at a lower
 	# tick rate for one measurement. Nothing else in the client separates "the frame is long because of
@@ -671,6 +683,7 @@ func _check_state_change() -> void:
 		return
 	var from_name: String = _state_name(_last_state)
 	_last_state = st
+	_vram_due = _uptime() + VRAM_AFTER_STATE_S
 	print("[CPerf@] %s up=%.1fs state %s -> %s | frame=%d nodes=%d res=%d | mem=%s vram=%s" % [
 		_clock(), _uptime(), from_name, _state_name(st),
 		Engine.get_frames_drawn(),
@@ -710,6 +723,10 @@ func _process(_delta: float) -> void:
 	_frames += 1
 	if not _census_stack.is_empty():
 		_census_step()
+	if _vram != null and _vram.step(VRAM_BUDGET_US):
+		for line: String in _vram.lines():
+			print(line)
+		_vram = null
 	var proc_ms: float = Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var phys_ms: float = Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 	# Everything below reads the frame that just ENDED, like _frame_usec and `ms` itself: the tail
@@ -905,6 +922,10 @@ func _report() -> void:
 	_print_frame_signal_subs()
 	_print_bands()
 	_report_extras(fps)
+	if _vram_due > 0.0 and _uptime() >= _vram_due and _vram == null:
+		_vram_due = _uptime() + _vram_every
+		_vram = VramCensus.new()
+		_vram.start(get_tree())
 	_census_ready = false
 	if _census_due and _census_stack.is_empty():
 		_census_due = false
@@ -1179,6 +1200,8 @@ func _world_context() -> PackedStringArray:
 				frame_name, int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
 				dist / pow(10.0, mag), mag])
 			_last_frame_name = frame_name
+			# A planet or a zone streams in after the state change: census again once it is there.
+			_vram_due = _uptime() + VRAM_AFTER_STATE_S
 
 	# Deep counts only every DEEP_EVERY reports: ONE recursive walk of the whole tree, which is the
 	# same order of work as the 3 Hz spin refresh does anyway — but doing it 30x/min would not be.
