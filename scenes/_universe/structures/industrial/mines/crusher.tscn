@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://c3ma5g7nd8jwu"]
 
 [ext_resource type="Script" path="res://scenes/_universe/structures/industrial/mines/crusher.gd" id="1_7mukx"]
+[ext_resource type="Script" uid="uid://cly0t0h3ms4xx" path="res://scenes/_universe/structures/buildings/interior_probe.gd" id="interior_probe"]
 [ext_resource type="PackedScene" uid="uid://cqyfghsr1mby3" path="res://assets/_universe/structures/industrial/mines/miningdepot.glb" id="1_x63ok"]
 [ext_resource type="Material" uid="uid://b5h6r38he3bla" path="res://assets/_universe/_shared/materials/mat_metal_ares_decals/mat_metal_panel_trim.tres" id="2_8a0gq"]
 [ext_resource type="PackedScene" uid="uid://0nqpcxfh8upf" path="res://scenes/ui/rock_depot_ui.tscn" id="3_75ksl"]
@@ -383,6 +384,9 @@ transform = Transform3D(6.123233995736766e-17, 0, -1, 0, 1, 0, 1, 0, 6.123233995
 [node name="ReflectionProbe" type="ReflectionProbe" parent="." unique_id=717909799]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6792470740756318, 1.555064877614306, 0)
 size = Vector3(23.729201795573317, 20, 20)
+script = ExtResource("interior_probe")
+margin_m = 30.0
+release_m = 10.0
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=2132812851]
 libraries/ = SubResource("AnimationLibrary_n332y")
