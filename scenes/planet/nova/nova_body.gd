@@ -759,7 +759,7 @@ func build_material(base: Material) -> ShaderMaterial:
 func _refresh_textures_later() -> void:
 	join_textures()
 	var spec := _arrays_spec()
-	_textures_task = WorkerThreadPool.add_task(func() -> void:
+	_textures_task = PerfTasks.add_task("nova:textures", func() -> void:
 		_set_arrays.call_deferred(_texture_arrays(spec)), false, "nova textures")
 
 
@@ -904,7 +904,7 @@ static func _layer_images(paths: PackedStringArray, fallbacks: Array[Color]) -> 
 		if read[i]:
 			slots[i][0] = _fit_layer(slots[i][0])
 	if slots.size() > 1:
-		WorkerThreadPool.wait_for_group_task_completion(WorkerThreadPool.add_group_task(fit, slots.size()))
+		WorkerThreadPool.wait_for_group_task_completion(PerfTasks.add_group_task("nova:layer_fit", fit, slots.size()))
 	elif slots.size() == 1:
 		fit.call(0)
 	var images: Array[Image] = []

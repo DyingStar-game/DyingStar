@@ -430,7 +430,7 @@ func _process(delta: float) -> void:
 		_check_clock = LIVE_CHECK_EVERY
 		var frame: Image = _frame()
 		if frame != null:
-			_check_task = WorkerThreadPool.add_task(_check_frame.bind(frame, _role(_camera_slot)), false, "photo live check")
+			_check_task = PerfTasks.add_task("creator:photo_check", _check_frame.bind(frame, _role(_camera_slot)), false, "photo live check")
 
 
 ## The webcam's current frame (read back from its texture), or null before the first.

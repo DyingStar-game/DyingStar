@@ -109,7 +109,7 @@ func _ready() -> void:
 	cells.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
 	cells.frequency = 0.07
 	cells.fractal_octaves = 3
-	_noise_task = WorkerThreadPool.add_task(func() -> void: _noise_images = noise_images(grain, cells), false,
+	_noise_task = PerfTasks.add_task("weather:noise", func() -> void: _noise_images = noise_images(grain, cells), false,
 			"weather noise")
 	_wall_mesh = BoxMesh.new()
 

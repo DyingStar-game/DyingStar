@@ -168,7 +168,7 @@ static func warm() -> bool:
 		var native: Object = HumanMorph.native_instance()
 		HairGroom.adopt_native(HairGroom.native_instance())
 		HairMotionBinding.adopt_native(HairMotionBinding.native_instance())
-		_warm_task = WorkerThreadPool.add_task(_prepare_now.bind(native), false, "HumanBuilder.warm")
+		_warm_task = PerfTasks.add_task("human:warm", _prepare_now.bind(native), false, "HumanBuilder.warm")
 		return false
 	if _warm_task >= 0 and WorkerThreadPool.is_task_completed(_warm_task):
 		WorkerThreadPool.wait_for_task_completion(_warm_task)

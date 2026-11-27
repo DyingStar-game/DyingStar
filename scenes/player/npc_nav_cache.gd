@@ -809,7 +809,7 @@ func _collect_query(box: NavBox) -> Dictionary:
 	var entries: Array = collect_entries(box)
 	if entries.is_empty():
 		return {"src": src, "task_id": -1}
-	var task_id: int = WorkerThreadPool.add_task(_extract.bind(entries, src), false, "npc nav extract")
+	var task_id: int = PerfTasks.add_task("npc:nav_extract", _extract.bind(entries, src), false, "npc nav extract")
 	return {"src": src, "task_id": task_id}
 
 

@@ -387,7 +387,7 @@ func _process(_delta: float) -> void:
 ## so have they (the queue is first in, first out). False meanwhile.
 func _compiled() -> bool:
 	if _put_out_at != -1 and _frames > _put_out_at:
-		_marker = WorkerThreadPool.add_task(_mark, true, "Warmup pipelines")
+		_marker = PerfTasks.add_task("warmup:marker", _mark, true, "Warmup pipelines")
 		_put_out_at = -1
 		return false
 	if _marker != -1:

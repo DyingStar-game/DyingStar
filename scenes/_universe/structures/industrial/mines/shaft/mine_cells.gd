@@ -69,7 +69,7 @@ func _start_configure() -> void:
     var result: Array = [null, {}]
     var graph: Dictionary = job.graph
     job.result = result
-    job.id = WorkerThreadPool.add_task(func():
+    job.id = PerfTasks.add_task("mine:configure", func():
         result[0] = MineMesher.configure(graph)
         result[1] = MineLayout.cells(graph, CELL_M))
     _configuring = job
@@ -216,7 +216,7 @@ func _dispatch() -> void:
         var mesher := _mesher
         var result: Array = [{}]
         var step := step_m
-        var id := WorkerThreadPool.add_task(func(): result[0] = MineMesher.build_cell(mesher, cell, CELL_M, step))
+        var id := PerfTasks.add_task("mine:cell", func(): result[0] = MineMesher.build_cell(mesher, cell, CELL_M, step))
         _tasks[cell] = {"id": id, "result": result, "version": _version}
 
 

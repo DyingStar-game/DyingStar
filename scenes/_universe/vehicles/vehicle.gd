@@ -798,6 +798,12 @@ var _idle_still_ticks: int = 0
 ## SERVER: true while this vehicle is registered as a PARKED obstacle with the NPC navmesh cache (asleep
 ## with nobody at the wheel). A VehicleBody3D is a RigidBody: no navmesh bake ever sees it on its own.
 var _nav_parked: bool = false
+## SERVER, debug builds: the velocity of the last tick, for _log_knock (a sudden change of it is a knock).
+var _knock_last_velocity := Vector3.INF
+## A change of velocity in one tick, m/s, that _log_knock takes for a knock (a hard brake on gravel is ~0.3).
+const KNOCK_DV_MS := 2.5
+## How far round the vehicle's bounds _log_knock looks for what it hit, metres.
+const KNOCK_MARGIN_M := 0.4
 ## Latched once the vehicle has entered the game on the SERVER: only then does freeing it mean anything
 ## to Horizon (see _notification). Cached because the autoload may already be gone at that point.
 var _server_live: bool = false
@@ -2152,6 +2158,54 @@ func _track_suspension_shocks(delta: float) -> void:
 			_play_suspension_shock(shot.x, float(shot.y) / 100.0)
 
 
+## SERVER, debug builds: when the vehicle's velocity jumps by KNOCK_DV_MS in one tick (it ran into something),
+## prints what its bounds, grown by KNOCK_MARGIN_M, touch — and for a Nova rock (NovaRockCollision's
+## "<chunk>_rocks_col" bodies) its shape, its size and where it is, in its chunk's frame: the client's [NovaC] lines list the rocks it draws
+## in that same frame, so a collider hit where no rock is drawn shows at once.
+func _log_knock() -> void:
+	var v := linear_velocity
+	var before := _knock_last_velocity
+	_knock_last_velocity = v
+	if before == Vector3.INF or (v - before).length() < KNOCK_DV_MS:
+		return
+	var bounds := AABB()
+	var first := true
+	for c in get_children():
+		var cs := c as CollisionShape3D
+		if cs == null or cs.shape == null or cs.disabled:
+			continue
+		var b := cs.transform * cs.shape.get_debug_mesh().get_aabb()
+		bounds = b if first else bounds.merge(b)
+		first = false
+	if first:
+		return
+	var probe := BoxShape3D.new()
+	probe.size = bounds.size + Vector3.ONE * (KNOCK_MARGIN_M * 2.0)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = probe
+	q.transform = global_transform * Transform3D(Basis(), bounds.get_center())
+	q.exclude = [get_rid()]
+	var hits := get_world_3d().direct_space_state.intersect_shape(q, 32)
+	var parts := PackedStringArray()
+	for h: Dictionary in hits:
+		var body := h.get("collider") as CollisionObject3D
+		if body == null:
+			continue
+		var what := str(body.name)
+		if what.ends_with("_rocks_col"):
+			var owner_id := body.shape_find_owner(int(h.get("shape", 0)))
+			var shape := body.shape_owner_get_shape(owner_id, 0)
+			var at := body.shape_owner_get_transform(owner_id)
+			var bounds_size := shape.get_debug_mesh().get_aabb().size * at.basis.get_scale().x if shape != null \
+					else Vector3.ZERO
+			what = "Nova rock %s %s %s at %s (%.1f m from the vehicle)" % [what.trim_suffix("_rocks_col"),
+					shape.get_class() if shape != null else "?", str(bounds_size.snappedf(0.1)),
+					str(at.origin.snappedf(0.1)), (body.global_transform * at.origin).distance_to(global_position)]
+		parts.append(what)
+	print("[Vehicle knock] %s: %.1f -> %.1f m/s (dv %.1f), touching: %s" % [name, before.length(), v.length(),
+			(v - before).length(), ", ".join(parts) if not parts.is_empty() else "nothing"])
+
+
 ## CLIENT: one suspension knock of [param strength] (0..1), heard where the suspension is: at the top
 ## mount of wheel [param wheel_index] -- the wheel node itself, which a replica never moves. Harder =
 ## louder, lower and a heavier sample.
@@ -2890,6 +2944,8 @@ func _physics_process_impl(delta: float) -> void:
 		_release_vanished_occupants()  # free seats + bed slots whose player disconnected (node freed)
 		_apply_adopted_velocity()
 		_track_suspension_shocks(delta)  # before the parked early-return: a knock wakes nothing up
+		if OS.is_debug_build():
+			_log_knock()
 		# Parked (asleep, no pilot) <-> moving edge for the NPC navmesh. Detected HERE, on the actual
 		# `sleeping` state, rather than where the settle block below sets it: Jolt also sleeps a body
 		# on its own and wakes it on any collision, and neither passes through that block.

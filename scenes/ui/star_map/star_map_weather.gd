@@ -186,7 +186,7 @@ func _start(planet: Planet, source: WeatherSource, t: float, systems: int) -> vo
 	var find_extrema: bool = weather != null and marks_from.is_empty()
 	var out: Dictionary = {}
 	_pending = out
-	_task = WorkerThreadPool.add_task(func() -> void: out.merge(_build(sampler, find_extrema)))
+	_task = PerfTasks.add_task("starmap:weather", func() -> void: out.merge(_build(sampler, find_extrema)))
 	if not find_extrema:
 		_marks = _system_marks(marks_from)
 	_drawn_t = t

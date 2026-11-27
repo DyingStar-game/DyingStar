@@ -130,7 +130,7 @@ func pump() -> bool:
         var data := _terrain.planet_data
         var result: Array = [{}]
         var dressing := CavePreviewBuilder.decoration_request(site.profile.asset_library)
-        var task_id := WorkerThreadPool.add_task(func(): result[0] = CavePlanetRegistry.build_plan(data, site, dressing))
+        var task_id := PerfTasks.add_task("cave:plan", func(): result[0] = CavePlanetRegistry.build_plan(data, site, dressing))
         _tasks[id] = {"id": task_id, "result": result, "site": site}
     _owner.error_message = "" if _errors.is_empty() else str(_errors.values()[0])
     _ready = true

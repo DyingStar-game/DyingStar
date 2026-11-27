@@ -261,7 +261,7 @@ func _process(delta: float) -> void:
 			_light()
 			_light_elapsed = 0.0
 		# Puffs and their lighting on a worker; drawn from the next frame that finds it done.
-		_task = WorkerThreadPool.add_task(model.update.bind(t, _relight), false, "volcano plume")
+		_task = PerfTasks.add_task("volcano:plume", model.update.bind(t, _relight), false, "volcano plume")
 		_relight = 12
 		_model_elapsed = fmod(_model_elapsed, interval)
 	var changed := fresh

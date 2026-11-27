@@ -1073,7 +1073,7 @@ func _measure_limits() -> void:
     var cover := func(point: Vector3) -> float:
         var at := frame * point
         return CaveGround.surface_dist(data, at.normalized()) - at.length()
-    _measuring = WorkerThreadPool.add_task(func(): result[0] = CaveGround.run(data, func(): return MineLayout.limits(plan, cover)))
+    _measuring = PerfTasks.add_task("mine:limits", func(): result[0] = CaveGround.run(data, func(): return MineLayout.limits(plan, cover)))
     _await_limits.call_deferred()
 
 

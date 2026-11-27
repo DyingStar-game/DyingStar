@@ -25,7 +25,7 @@ static func check_now(planet_name: String, base_url: String = RemoteTileSource.c
 
 func start(planet_name: String) -> void:
 	var base_url : String = RemoteTileSource.configured_base_url()
-	_task = WorkerThreadPool.add_task(func() -> void: ok = check_now(planet_name, base_url))
+	_task = PerfTasks.add_task("tiles:probe", func() -> void: ok = check_now(planet_name, base_url))
 
 
 func is_done() -> bool:

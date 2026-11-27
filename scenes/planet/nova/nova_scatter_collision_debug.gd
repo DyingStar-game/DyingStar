@@ -1,10 +1,12 @@
 extends CanvasLayer
-## Settings > Debug > scatter rock collisions: the scattered rocks that collide, drawn as cyan boxes.
+## Settings > Debug > scatter rock collisions: the scattered rocks that collide, drawn as cyan wireframes of
+## their collision (NovaScatter.solid_shapes: the shapes their model's scene carries, else its convex hull).
 ##
 ## Which rocks collide is decided where they are laid (NovaScatter.is_solid, the sign of a row's last
-## float); the server lays the very same boxes (NovaRockCollision). Each scatter block node
+## float); the server lays the very same shapes (NovaRockCollision). Each scatter block node
 ## (NovaScatter.build_node) is remembered here with its rows; while the switch is on it gets one line mesh
-## child, the boxes of its colliding rocks, built once and freed with the block. A shader hides the lines
+## child, the shapes of its colliding rocks, built once and freed with the block. A model's hull is made the
+## first time it is drawn (tens of milliseconds, on the main thread: a debug view). A shader hides the lines
 ## beyond RANGE_M, so nothing runs per frame per rock.
 ## This node is the legend: once a second it counts the colliding rocks within RANGE_M of the camera, layer
 ## by layer, and prints a [ScatterSizes] line in the log.
@@ -32,11 +34,11 @@ void fragment() {
 	ALBEDO = colour;
 }
 """
-## The 12 edges of a box, as pairs of corner indices (corner i = bits x, y, z of i).
-const EDGES := [0, 1, 2, 3, 4, 5, 6, 7, 0, 2, 1, 3, 4, 6, 5, 7, 0, 4, 1, 5, 2, 6, 3, 7]
 
 static var _material: ShaderMaterial
 static var _legend: Node
+## The wireframe of each collision shape drawn so far, by shape (its debug mesh's lines, in its own frame).
+static var _lines_of: Dictionary = {}
 
 var _label: RichTextLabel
 var _wait := 0.0
@@ -68,16 +70,17 @@ static func add_boxes(mmi: MultiMeshInstance3D) -> void:
 	var centres := PackedVector3Array()
 	var slots := PackedByteArray()
 	var sizes := PackedFloat32Array()
-	var corners: Array[Vector3] = []
-	corners.resize(8)
+	var shapes: Array = []
 	for at in range(0, rows.size(), NovaScatter.ROW):
 		if rows[at + 15] <= 0.0:
 			continue
+		if shapes.is_empty():
+			shapes = NovaScatter.solid_shapes(mesh)
 		var t := NovaScatter.row_transform(rows, at)
-		for c in 8:
-			corners[c] = t * (aabb.position + aabb.size * Vector3(c & 1, (c >> 1) & 1, (c >> 2) & 1))
-		for e: int in EDGES:
-			verts.append(corners[e])
+		for part: Array in shapes:
+			var xform: Transform3D = t * (part[1] as Transform3D)
+			for v: Vector3 in shape_lines(part[0]):
+				verts.append(xform * v)
 		centres.append(t * aabb.get_center())
 		slots.append(int(rows[at + 15]))
 		sizes.append(aabb.get_longest_axis_size() * t.basis.x.length())
@@ -102,6 +105,28 @@ static func add_boxes(mmi: MultiMeshInstance3D) -> void:
 	mi.add_to_group(BOXES_GROUP)
 	mi.add_to_group(Globals.GROUP_DEBUG_OVERLAY)  # a photo (F7) must not show it
 	mmi.add_child(mi)
+
+
+## The wireframe of [param shape] in its own frame: the line pairs of its debug mesh (kept per shape).
+static func shape_lines(shape: Shape3D) -> PackedVector3Array:
+	var known: Variant = _lines_of.get(shape)
+	if known != null:
+		return known
+	var lines := PackedVector3Array()
+	var debug := shape.get_debug_mesh()
+	for surface in debug.get_surface_count():
+		if debug.surface_get_primitive_type(surface) != Mesh.PRIMITIVE_LINES:
+			continue
+		var arrays := debug.surface_get_arrays(surface)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var idx: Variant = arrays[Mesh.ARRAY_INDEX]
+		if idx is PackedInt32Array and not (idx as PackedInt32Array).is_empty():
+			for i: int in idx:
+				lines.append(v[i])
+		else:
+			lines.append_array(v)
+	_lines_of[shape] = lines
+	return lines
 
 
 static func _box_material() -> ShaderMaterial:

@@ -393,7 +393,7 @@ func _drive() -> void:
 				rebuild.interval_s = float(entry.interval_s)
 				entry.pending = PackedByteArray()
 				_jobs.append({"key": key, "job": rebuild,
-					"task": WorkerThreadPool.add_task(rebuild.run, false, "lava summary " + key)})
+					"task": PerfTasks.add_task("lava:summary", rebuild.run, false, "lava summary " + key)})
 			continue
 		if entry.plan.is_empty() or entry.diverged:
 			continue
@@ -412,7 +412,7 @@ func _drive() -> void:
 		if entry.get("summary") != null:
 			job.summary = entry.summary
 			job.encode_summary = bool(entry.want_summary)
-		_jobs.append({"key": key, "job": job, "task": WorkerThreadPool.add_task(job.run, false, "lava " + key)})
+		_jobs.append({"key": key, "job": job, "task": PerfTasks.add_task("lava:job", job.run, false, "lava " + key)})
 	physics_pending = not _jobs.is_empty()
 
 
