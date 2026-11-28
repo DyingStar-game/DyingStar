@@ -62,6 +62,7 @@ const MISSION_STATUS_KEYS: Dictionary = {
 	"available": "%%SVC_ENUM_STATUS_AVAILABLE",
 	"active": "%%SVC_ENUM_STATUS_ACTIVE",
 	"completed": "%%SVC_ENUM_STATUS_COMPLETED",
+	"partially_completed": "%%SVC_ENUM_STATUS_PARTIALLY_COMPLETED",
 	"cancelled": "%%SVC_ENUM_STATUS_CANCELLED",
 	"expired": "%%SVC_ENUM_STATUS_EXPIRED",
 }
@@ -716,30 +717,6 @@ static func _place_short(location: Variant) -> String:
 	return ""
 
 
-## Where a mission is to be shown on the chart: {"poi": a point of interest's id, "machine": the id of
-## the broken machine of a repair, "" when it has none}. The point is the one its step under way names
-## (`locationTo.poiUuid`, as the simulator writes a repair), else the mission's first poi zone. Both ""
-## when the mission names no place. Pure.
-static func mission_place(mission: Variant, objectives: Variant) -> Dictionary:
-	var place := {"poi": "", "machine": ""}
-	for objective: Variant in (objectives if objectives is Array else []):
-		if not (objective is Dictionary) or str(objective.get("status", "")) == "completed":
-			continue
-		var to: Variant = objective.get("locationTo")
-		if place["poi"] == "" and to is Dictionary and to.get("poiUuid") != null:
-			place["poi"] = str(to.get("poiUuid"))
-		var payload: Variant = objective.get("payload")
-		if place["machine"] == "" and payload is Dictionary and payload.get("machineId") != null:
-			place["machine"] = str(payload.get("machineId"))
-	var zones: Variant = mission.get("zones") if mission is Dictionary else null
-	if place["poi"] == "" and zones is Array:
-		for zone: Variant in zones:
-			if zone is Dictionary and str(zone.get("kind", "")) == "poi" and str(zone.get("poiId", "")) != "":
-				place["poi"] = str(zone.get("poiId"))
-				break
-	return place
-
-
 ## The rows of a mission service listing {missions: [{assignment, mission}]} ([param data], the
 ## answer's `data`): the dictionaries only, [] for anything else.
 static func mission_rows(data: Variant) -> Array:
@@ -756,6 +733,11 @@ static func is_active_assignment(assignment: Variant) -> bool:
 ## source warehouse, have them refined when the mission delivers another good than it loads (at the
 ## village the simulator names, `payload.refineAt`), deliver at the destination's warehouse. Empty for
 ## any other objective.
+##
+## The first is ticked once the whole quantity left the source warehouse (`state.loaded`, the mission
+## service's count), and says how much did until then: it used to be ticked at the first crate of ten
+## (playtest 2026-11-22). A service that does not count yet (no `state.loaded`) only says that a first
+## crate was taken, and the step is ticked on that, as it was.
 static func transport_steps(objective: Variant) -> PackedStringArray:
 	var lines := PackedStringArray()
 	if not (objective is Dictionary) or str(objective.get("type", "")) != "transport":
@@ -764,9 +746,15 @@ static func transport_steps(objective: Variant) -> PackedStringArray:
 	if not (params is Dictionary) or str(params.get("via", "")) != "warehouse":
 		return lines
 	var state: Variant = objective.get("state")
-	var loaded: bool = state is Dictionary and state.get("loadedAt") != null
-	var delivered: bool = num(objective.get("currentProgress"), 0) > 0
-	var steps: Array = [["%%MISSION_STEP_LOAD", _village_of(objective.get("locationFrom")), loaded or delivered]]
+	var target: int = num(objective.get("targetQuantity"), 0)
+	var progress: int = num(objective.get("currentProgress"), 0)
+	var delivered: bool = progress > 0
+	var counted: bool = state is Dictionary and state.get("loaded") != null
+	var taken: int = num(state.get("loaded"), 0) if counted else 0
+	var loaded: bool = delivered or (state is Dictionary and state.get("loadedAt") != null)
+	if counted:
+		loaded = taken >= target or progress >= target
+	var steps: Array = [["%%MISSION_STEP_LOAD", _village_of(objective.get("locationFrom")), loaded]]
 	var deliver_good := str(params.get("deliverGoodType", ""))
 	if deliver_good != "" and deliver_good != str(params.get("goodType", "")):
 		var payload: Variant = objective.get("payload")
@@ -778,6 +766,8 @@ static func transport_steps(objective: Variant) -> PackedStringArray:
 		var sentence := TranslationServer.translate(str(step[0]))
 		if sentence.contains("%s"):
 			sentence = sentence % str(step[1])
+		if i == 0 and counted and not loaded and taken > 0:
+			sentence += " (%d / %d)" % [taken, target]
 		lines.append("%s %d. %s" % ["✓" if bool(step[2]) else "•", i + 1, sentence])
 	return lines
 
@@ -926,6 +916,54 @@ static func settlement_text(settlement: Variant) -> String:
 	var s: Dictionary = settlement
 	return text("%%SVC_FMT_SETTLEMENT") % [str(bool(s.get("settled", false))),
 			str(bool(s.get("skipped", false))), dash(s.get("reason"))]
+
+
+## The mark a done step line begins with (transport_steps): what tells the screens to draw it as done.
+const STEP_DONE_MARK := "✓"
+
+
+## Whether [param line] (one of transport_steps) is a step already done.
+static func is_done_step(line: String) -> bool:
+	return line.begins_with(STEP_DONE_MARK)
+
+
+## What turning the mission in now would pay the reader, as the mission service previews it (`turnIn` of
+## its mission detail: shareBp, full, partial, penaltyBp, payoutBp, amount, currency); {} when it sent
+## none (not the reader's active mission, or a service from before the preview).
+static func turn_in_preview(data: Variant) -> Dictionary:
+	if not (data is Dictionary) or not ((data as Dictionary).get("turnIn") is Dictionary):
+		return {}
+	return (data as Dictionary)["turnIn"]
+
+
+## Whether [param preview] (turn_in_preview) offers a partial turn-in: something done, not everything.
+## The service decides: a mission of all-or-nothing objectives none of which is done has nothing to hand in.
+static func can_turn_in_partially(preview: Dictionary) -> bool:
+	return bool(preview.get("partial", false)) and not bool(preview.get("full", false))
+
+
+## The share done in [param preview], in whole percent (shareBp is in basis points: 10000 = all).
+static func turn_in_percent(preview: Dictionary) -> int:
+	return int(num(preview.get("shareBp"), 0) / 100.0)
+
+
+## What [param preview] would pay, as a player reads it: "375 credits".
+static func turn_in_amount(preview: Dictionary) -> String:
+	var currency: Variant = preview.get("currency")
+	return "%d %s" % [num(preview.get("amount"), 0), str(currency) if currency != null else "credits"]
+
+
+## The offer of a partial turn-in, from the service's own figures: "Turn in now (partial): 40 % done,
+## pays 300 credits". "" when [param preview] offers none.
+static func partial_turn_in_text(preview: Dictionary) -> String:
+	if not can_turn_in_partially(preview):
+		return ""
+	return text("%%MISSION_PARTIAL_TURN_IN_OFFER") % [turn_in_percent(preview), turn_in_amount(preview)]
+
+
+## The question asked before a partial turn-in goes: the mission ends there, for what it pays.
+static func partial_turn_in_confirm(preview: Dictionary) -> String:
+	return text("%%MISSION_PARTIAL_TURN_IN_CONFIRM") % [turn_in_percent(preview), turn_in_amount(preview)]
 
 
 # ---------------------------------------------------------------------------------------------

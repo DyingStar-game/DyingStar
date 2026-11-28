@@ -24,7 +24,7 @@ size = Vector3(6.1, 2.6, 0.06)
 [sub_resource type="BoxShape3D" id="Box_back"]
 size = Vector3(0.06, 2.6, 2.6)
 
-[node name="ContainerApartment" type="StaticBody3D" unique_id=995721029]
+[node name="ContainerApartment" type="StaticBody3D" unique_id=995721029 groups=["ground_fringe_box"]]
 collision_mask = 0
 
 [node name="habitat_container" parent="." unique_id=2142450369 instance=ExtResource("1_glb")]

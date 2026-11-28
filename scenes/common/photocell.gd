@@ -4,13 +4,15 @@ extends Node3D
 
 ## A twilight switch, like the photocell on a street lamp: it switches the lights it drives on when
 ## the daylight HERE fails, and off when it comes back. It reads the light that reaches the ground
-## (Planet.daylight_at), not the star's height: under the corundum veil the star can stand 30° up in
-## a dark sky, and a lamp there must be lit while the same star leaves a plateau village in full day.
+## (Planet.daylight_through_weather_at), not the star's height: under the corundum veil the star can
+## stand 30° up in a dark sky, and a lamp there must be lit while the same star leaves a plateau village
+## in full day; a dust storm or a dust wall over its village darkens it too.
 ## Opt-in: only the lights a Photocell drives react, so a building's ceiling lights stay as they are.
 ##
 ## Purely visual, worked out on every client from the shared clock (Globals.sim_time), the star's
-## geometry and the air it crosses — the way the orbits are — so no message travels and the server
-## takes no part. Every client checks on the same 2 s ticks of that clock and each lamp waits its own
+## geometry and the air it crosses — the way the orbits are — and the storm's dust over the village, the
+## one thing the server decides (the village's replicated dust_light). Every client checks on the same 2 s
+## ticks of that clock and each lamp waits its own
 ## delay, drawn from the uuid of the prop it belongs to: the lamps of a village come on one after the
 ## other, and the same lamp at the same moment on every screen.
 ##
@@ -25,8 +27,8 @@ extends Node3D
 @export var targets: Array[Node] = []
 ## When the lamps switch and how long each waits (lux, seconds): the resource every lamp shares,
 ## photocell_tuning.tres, tuned once in the Inspector for all of them. A lamp that needs its own takes
-## its own copy (Make Unique). The light read is Planet.daylight_at: the share of the star's full
-## overhead light reaching flat ground, under the veil as over the plateau.
+## its own copy (Make Unique). The light read is Planet.daylight_through_weather_at: the share of the
+## star's full overhead light reaching flat ground, under the veil as over the plateau, through a storm.
 @export var tuning: PhotocellTuning = DEFAULT_TUNING:
 	set(value):
 		tuning = value
@@ -155,10 +157,10 @@ func _read(now: float, tick: int) -> void:
 		return
 	var jumped := not is_nan(_last_read_s) and absf(now - _last_read_s) > JUMP_S
 	_last_read_s = now
-	update(planet.daylight_at(global_position), jumped)
+	update(planet.daylight_through_weather_at(global_position), jumped)
 
 
-## One reading of the daylight (Planet.daylight_at). [param at_once]: the clock jumped, switch
+## One reading of the daylight (Planet.daylight_through_weather_at). [param at_once]: the clock jumped, switch
 ## without the wait.
 func update(daylight: float, at_once: bool = false) -> void:
 	if not _known:

@@ -1,0 +1,31 @@
+{
+	"channels": [
+		{
+			"zone": 0,
+			"distance": 100000.0,
+			"frequency": 1.0,
+			"properties": [
+				"position",
+				"rotation",
+				"parent_id",
+				"origin_lon",
+				"origin_lat",
+				"east",
+				"north",
+				"speed_m_s",
+				"length_m",
+				"height_m",
+				"born_at",
+				"dies_at"
+			]
+		},
+		{
+			"zone": 6,
+			"distance": 100000.0,
+			"frequency": 1.0,
+			"properties": [
+				"scenename"
+			]
+		}
+	]
+}

@@ -792,9 +792,15 @@ func _show_segment(bar: HBoxContainer, holders: Array[ScrollContainer], index: i
 		var mounted: ServicePanel = mount.get("panel") as ServicePanel
 		if mounted != null:
 			mounted.visible = mounted_index == index
+	var changed: bool = _seg_index != index
 	_seg_index = index
 	var section := mounted_section()
 	if section != null:
+		# A section is loaded when it comes on show, not only when its app opens: the app opens on its
+		# first segment, and the others showed what they were built with -- "you are in no squad", to a
+		# player who was in one.
+		if changed and PlayerServices.is_available():
+			section.refresh()
 		# The section on show decides the split: its form-only segment is the whole card.
 		pane_layout.emit(section.has_main_content(), section.has_side_content())
 	else:

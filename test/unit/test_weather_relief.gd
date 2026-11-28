@@ -102,10 +102,13 @@ func test_a_dust_wall_falls_from_a_cliff_in_the_evening_and_runs_downhill() -> v
 	assert_eq(WeatherRelief.walls_near(profile, at, 0.0, at.x, cliff, {}, _still).size(), 0, "none at noon")
 	# Behind the front: its wind and its dust. Ahead of it: nothing yet.
 	var front := Vector2(wall.lon, wall.lat)
-	var behind: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(front, Vector2(200.0, 0.0), profile.radius_m), profile.radius_m)
+	var lead := _lead(wall)  # the drawn front leads its middle: it runs west, so it stands lead m west of it
+	var behind: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(front, Vector2(200.0 - lead, 0.0), profile.radius_m),
+			profile.radius_m)
 	assert_lt((behind[0] as Vector2).x, 0.0, "the wall's wind blows the way it runs")
 	assert_gt(float(behind[1]), 0.0, "and carries dust")
-	var ahead: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(front, Vector2(-200.0, 0.0), profile.radius_m), profile.radius_m)
+	var ahead: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(front, Vector2(-200.0 - lead, 0.0), profile.radius_m),
+			profile.radius_m)
 	assert_eq(ahead[1], 0.0)
 
 
@@ -174,7 +177,7 @@ func _test_wall() -> Dictionary:
 ## The wind (east, north) a wall leaves at [param ahead_m] metres ahead of its front (negative: behind)
 ## over a background wind [param background], as apply lays it.
 func _wind_across(wall: Dictionary, ahead_m: float, background: Vector2) -> Vector2:
-	var at := WeatherRelief.moved(Vector2(0.0, 0.0), Vector2(ahead_m, 0.0), profile.radius_m)
+	var at := WeatherRelief.moved(Vector2(0.0, 0.0), Vector2(ahead_m + _lead(wall), 0.0), profile.radius_m)
 	var effect: Array = WeatherRelief.wall_effect(wall, at, profile.radius_m)
 	return background * float(effect[2]) + (effect[0] as Vector2)
 
@@ -193,15 +196,38 @@ func test_a_wall_s_gust_front_is_a_ramp_not_a_step() -> void:
 		var now := _wind_across(wall, k * 10.0, background)
 		assert_lt((now - last).length(), 3.0, "no step at %d m" % (k * 10))
 		last = now
-		var effect: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO, Vector2(k * 10.0, 0.0),
+		var effect: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO, Vector2(k * 10.0 + _lead(wall), 0.0),
 				profile.radius_m), profile.radius_m)
 		peak = maxf(peak, (effect[0] as Vector2).x)
 	assert_gt(peak, 12.0, "a gust at the front, stronger than the wall's own wind")
-	var dust_front: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO, Vector2(-5.0, 0.0),
+	var dust_front: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO, Vector2(_lead(wall) - 5.0, 0.0),
 			profile.radius_m), profile.radius_m)
 	var dust_in: Array = WeatherRelief.wall_effect(wall, WeatherRelief.moved(Vector2.ZERO,
-			Vector2(-WeatherRelief.WALL_RAMP_M, 0.0), profile.radius_m), profile.radius_m)
-	assert_lt(float(dust_front[1]), float(dust_in[1]), "the dust rises over the same ramp")
+			Vector2(_lead(wall) - WeatherRelief.WALL_DUST_RAMP_M, 0.0), profile.radius_m), profile.radius_m)
+	assert_lt(float(dust_front[1]), float(dust_in[1]), "the dust rises over its ramp")
+
+
+## How far ahead of the wall's middle (lon, lat) its front stands there (WeatherRelief.front_lead_m).
+func _lead(wall: Dictionary) -> float:
+	return WeatherRelief.front_lead_m(0.0, float(wall["length_m"]) * 0.5, float(wall["depth_m"]))
+
+
+## The weather's front is the front drawn: along the whole wall, no dust just ahead of the drawn front's foot,
+## dust just behind it (it swallowed a village 500 m before its dust did, 2026-11-28).
+func test_the_wall_s_dust_follows_its_drawn_front() -> void:
+	var wall := _test_wall()
+	var deep := float(wall["depth_m"])
+	var size := Vector3(float(wall["length_m"]), 1000.0, deep * WeatherPhenomena.WALL_DEEPER)
+	for x: float in [-8000.0, -3000.0, 0.0, 1200.0, 6000.0]:
+		# The drawn front's foot, from the box's middle toward its leading face, back to the wall's middle.
+		var drawn := WeatherPhenomena.wall_front_m(x, size, deep) - size.z * 0.5 + deep * WeatherPhenomena.WALL_FRONT_MARGIN
+		assert_almost_eq(drawn, WeatherRelief.front_lead_m(x, size.x * 0.5, deep), 1e-6, "one front at %.0f m" % x)
+		# The wall runs east: "along" is north.
+		var ahead := WeatherRelief.moved(Vector2.ZERO, Vector2(drawn + 20.0, x), profile.radius_m)
+		var behind := WeatherRelief.moved(Vector2.ZERO, Vector2(drawn - 400.0, x), profile.radius_m)
+		assert_eq(float(WeatherRelief.wall_effect(wall, ahead, profile.radius_m)[1]), 0.0, "no dust ahead at %.0f m" % x)
+		assert_gt(float(WeatherRelief.wall_effect(wall, behind, profile.radius_m)[1]), 1.0, "dust behind at %.0f m" % x)
+	assert_gt(_lead(wall), 100.0, "at the middle the drawn front leads the line through it")
 
 
 func test_a_wall_s_wind_and_dust_stop_at_its_top() -> void:

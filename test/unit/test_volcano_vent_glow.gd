@@ -116,3 +116,23 @@ func test_first_explosion_flashes_brighter() -> void:
 	for i in 150:
 		glow.update(0.1, Vector3(3000.0, 1500.0, 0.0), true, 0.0, 1.0)
 	assert_false(_light(glow).visible, "dark again once spent: no floor")
+
+
+func test_the_halo_and_the_flows_are_handed_the_dust_sea() -> void:
+	# Both are drawn after the pass that paints the sea: their shaders fade them through it, given the sea
+	# as it is and their own altitude.
+	var glow: Node3D = VENT_GLOW.new()
+	glow.setup(_cone, VENT_R, 7, 1200.0)
+	add_child_autofree(glow)
+	var halo := glow.get_node("VentHalo") as MeshInstance3D
+	var halo_mat := halo.material_override as ShaderMaterial
+	assert_almost_eq(float(halo_mat.get_shader_parameter("halo_alt_m")), 1200.0 + halo.position.y, 1e-6,
+			"the halo's altitude: the vent's and its own height over it")
+	var flow_mat := _lay_all(glow).material_override as ShaderMaterial
+	assert_almost_eq(float(flow_mat.get_shader_parameter("vent_alt_m")), 1200.0, 1e-6, "the flows': the vent's")
+	var beta_before: float = DustSea.beta_now
+	DustSea.beta_now = 0.004
+	glow.sea()
+	DustSea.beta_now = beta_before
+	assert_almost_eq(float(halo_mat.get_shader_parameter("sea_beta")), 0.004, 1e-9, "the halo sees the sea")
+	assert_almost_eq(float(flow_mat.get_shader_parameter("sea_beta")), 0.004, 1e-9, "the flows see the sea")

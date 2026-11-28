@@ -64,8 +64,8 @@ const DEVIL_REACH := 4.0
 ## Dust walls: one may fall per cell of WALL_CELL_M and evening, WALL_SHARE of them do, between WALL_FROM_H
 ## and WALL_FROM_H + WALL_SPREAD_H (local solar hours), from the steepest of WALL_TRIES places of the cell
 ## when it is at least WALL_MIN_SLOPE. It lives WALL_LIFE_S, rising over WALL_RISE_S. Speed (m/s), length
-## along the front and height (m): from the smallest to the largest. The dusty air behind the front is
-## WALL_DEPTH_M deep, plus WALL_SPREAD of the way it has run.
+## along the front and height (m): from the smallest to the largest. The wall's depth is WALL_DEPTH_M, plus
+## WALL_SPREAD of the way it has run; its dusty air trails behind the front over WALL_TAIL_DEPTHS depths.
 const WALL_CELL_M := 30000.0
 const WALL_SHARE := 0.6
 const WALL_FROM_H := 16.5
@@ -86,18 +86,46 @@ const WALL_LENGTH_M := [15000.0, 50000.0]
 const WALL_HEIGHT_M := [500.0, 3000.0]
 const WALL_DEPTH_M := 1500.0
 const WALL_SPREAD := 0.05
-const WALL_TAU := 3.0
+## A whole wall's dust optical depth right behind its front (its tail thins out from there, WALL_TAIL_FALL).
+## 8: about 500 m of visibility inside, as in many real
+## haboobs, and 6.5 % of the clear light on flat ground with absorbing dust (DustLight.STORM_ALBEDO) -- dusk
+## at noon. It was 3 (1.3 km, 35 %): a wall that swallowed the player hardly darkened the day (2026-11-28).
+const WALL_TAU := 8.0
+## A wall's dusty air trails behind its front, as the drawn one does (dust_wall_volume.gdshader tail_fall): its
+## dust thins by e every WALL_TAIL_FALL wall depths, out to WALL_TAIL_DEPTHS depths behind the front, where the
+## drawn box ends (WeatherPhenomena.WALL_DEEPER less its WALL_FRONT_MARGIN). Real haboobs carry kilometres of
+## dust behind the gust front. Cut at the wall's own depth (1.5 km, thinning to nothing), a low sun shone in
+## through its back and the inside was brighter than the approach (2026-11-28).
+const WALL_TAIL_FALL := 0.9
+const WALL_TAIL_DEPTHS := 5.15
+## And as its dust thins the tail sinks, toward WALL_TAIL_CREST of the wall's height (the drawn one's
+## tail_crest), its column the same: the settling dust lies lower and denser. Kept at the front's height, the
+## tail's dust was spread over 3 km and a low sun shone through it (2026-11-28).
+const WALL_TAIL_CREST := 0.22
 ## A wall's gust front, over a few hundred metres instead of a step at the line (the compass flipped from E
 ## 7 m/s to SW 7 m/s in one stride, 2026-11-25). Ahead of it, over WALL_LULL_M: the wind there drops by up to
 ## WALL_LULL (a lull) and the air is drawn toward the front at up to WALL_INFLOW_M_S (strength 1). At it, the
 ## wall's wind rises over WALL_RAMP_M to a gust WALL_GUST stronger than the wall's own, fading back over
-## WALL_GUST_M, then thins out over the wall's depth as before. Its dust rises over the same WALL_RAMP_M.
+## WALL_GUST_M, then thins out over the wall's depth as before. Its dust rises over WALL_DUST_RAMP_M.
 const WALL_LULL_M := 250.0
 const WALL_LULL := 0.5
 const WALL_INFLOW_M_S := 1.5
 const WALL_RAMP_M := 120.0
 const WALL_GUST := 0.3
 const WALL_GUST_M := 150.0
+## The front as it is drawn (WeatherPhenomena.wall_front_m, dust_wall_volume.gdshader front_m): not the straight
+## line through the wall's middle (lon, lat) but bowed back toward its two ends by WALL_BOW of half its length,
+## and wandering ahead and back by WALL_WANDER wall depths (the short lobes, the long ones) in waves
+## WALL_WANDER_M metres to the radian. The wind, the dust, the light, the sound and the alarm read the same
+## front ([method front_lead_m]): along the straight line, the drawn wall swallowed a village up to 500 m (35 s)
+## before its dust, its sound and its dark reached it (2026-11-28).
+const WALL_BOW := 0.12
+const WALL_WANDER := Vector2(0.3, 0.4)
+const WALL_WANDER_M := Vector3(800.0, 1900.0, 4300.0)
+## Its dust rises behind the front over WALL_DUST_RAMP_M, as the drawn wall's edge softens (its edge: 0.22 of the
+## height, 330 m for a 1.5 km wall). Over WALL_RAMP_M (120 m, crossed in 8 s) the dark, the dust and the storm's
+## sound came all at once (2026-11-28).
+const WALL_DUST_RAMP_M := 300.0
 ## A wall's height now (wall_tall): at its birth WALL_BORN_TALL of its height, growing to the whole; thinning
 ## out, it sinks to WALL_SPENT_TALL of it (its dust spreads and settles). Over its top (the ground under the
 ## place plus that height) its wind and dust fade out within WALL_TOP_FADE_M (over_walls): a player flying
@@ -107,6 +135,14 @@ const WALL_SPENT_TALL := 0.45
 const WALL_TOP_FADE_M := 200.0
 ## Cells around a place a wall may have run in from.
 const WALL_REACH_CELLS := 2
+## A line of sight through a wall (wall_ray): its dust is summed over this many points of the stretch inside
+## the wall's volume (the tail's sinking top and its fade included: two points or so across the fade of a line
+## kilometres long), and the face it leaves by is blended with any other the line reaches within
+## WALL_EXIT_BLEND of that stretch further (a line through an edge does not switch faces at once).
+const WALL_RAY_STEPS := 24
+const WALL_EXIT_BLEND := 0.25
+## A called-in wall (forced_wall) fades out over its last this many seconds instead of vanishing at once.
+const FORCED_FADE_S := 30.0
 
 const _SEED_DEVIL := 0x44455649
 const _SEED_WALL := 0x57414C4C
@@ -214,14 +250,40 @@ static func wall_tall(wall: Dictionary) -> float:
 			* lerpf(1.0, WALL_SPENT_TALL, float(wall.get("spent", 0.0)))
 
 
+## How tall a wall's dust stands [param behind] metres behind its front, metres over the ground: its height
+## ([method wall_tall]) at the front, sinking along its tail toward WALL_TAIL_CREST of it as its dust thins.
+static func wall_tall_at(wall: Dictionary, behind: float) -> float:
+	return _tail_top(wall_tall(wall), float(wall["depth_m"]), behind)
+
+
+static func _tail_top(tall: float, depth: float, behind: float) -> float:
+	return tall * lerpf(WALL_TAIL_CREST, 1.0, exp(-maxf(behind, 0.0) / (WALL_TAIL_FALL * depth)))
+
+
+## How far behind [param wall]'s front (as drawn: [method front_lead_m]) a place [param at] is, metres
+## (negative: ahead of it).
+static func wall_behind_m(wall: Dictionary, at: Vector2, radius_m: float) -> float:
+	var d := offset_m(Vector2(wall["lon"], wall["lat"]), at, radius_m)
+	var way := Vector2(wall["east"], wall["north"])
+	return -d.dot(way) + front_lead_m(d.dot(Vector2(-way.y, way.x)), float(wall["length_m"]) * 0.5, float(wall["depth_m"]))
+
+
+## How far ahead of the straight line through a wall's middle its front stands [param along_m] metres along it
+## (toward (-north, east) of its way), metres (negative: behind); [param half_m] its half-length, [param depth_m]
+## its depth. See WALL_BOW. Between -(WALL_BOW x half_m + WALL_WANDER sum x depth_m) and WALL_WANDER sum x depth_m.
+static func front_lead_m(along_m: float, half_m: float, depth_m: float) -> float:
+	var along := along_m / maxf(half_m, 1.0)
+	return -WALL_BOW * half_m * along * along + depth_m * (WALL_WANDER.x * (0.6 * sin(along_m / WALL_WANDER_M.x + 1.3)
+			+ 0.4 * sin(along_m / WALL_WANDER_M.y + 4.1)) + WALL_WANDER.y * sin(along_m / WALL_WANDER_M.z + 0.7))
+
+
 ## [param sample] (apply's, at the ground) for a place [param altitude_m] over the reference sphere: the walls'
 ## wind, lull and dust faded out over their top (WALL_TOP_FADE_M), as apply recorded them ("wall_*" keys).
 ## The sample itself when no wall reaches it or the place is under their top.
 static func over_walls(sample: Dictionary, altitude_m: float) -> Dictionary:
 	if not sample.has("wall_top_m"):
 		return sample
-	var top := float(sample["wall_top_m"])
-	var f := 1.0 - smoothstep(top, top + WALL_TOP_FADE_M, altitude_m)
+	var f := under_walls(float(sample["wall_top_m"]), altitude_m)
 	if f >= 1.0:
 		return sample
 	var out := sample.duplicate()
@@ -244,6 +306,21 @@ static func over_walls(sample: Dictionary, altitude_m: float) -> Dictionary:
 			names.remove_at(at)
 		out["phenomena"] = names
 	return out
+
+
+## The share of the walls' wind and dust a place [param altitude_m] over the reference sphere still gets, their
+## top at [param top_m]: all of it under the top, none WALL_TOP_FADE_M over it.
+static func under_walls(top_m: float, altitude_m: float) -> float:
+	return 1.0 - smoothstep(top_m, top_m + WALL_TOP_FADE_M, altitude_m)
+
+
+## The walls' dust optical depth in [param sample] as Planet.weather_at hands it for a place [param altitude_m]
+## over the reference sphere (over_walls applied): 0 where no wall reaches. What the light takes out of the
+## sample's column to trace the walls along the sun's ray instead (DustLight.wall_light).
+static func walls_dust_in(sample: Dictionary, altitude_m: float) -> float:
+	if not sample.has("wall_top_m"):
+		return 0.0
+	return float(sample["wall_dust_tau"]) * under_walls(float(sample["wall_top_m"]), altitude_m)
 
 
 ## The dust devils alive at [param t] within [param range_m] of a place, each as {id, lon, lat, radius_m,
@@ -385,6 +462,27 @@ static func walls_near(profile: ClimateProfile, at: Vector2, t: float, substella
 	return out
 
 
+## A wall called in rather than drawn from the hashes (ForcedDustWall: an admin's test wall), as
+## [method walls_near] gives one, at [param t]: [param forced] is ForcedDustWall.data() — {id, origin_lon,
+## origin_lat (the middle of its front at born_at), east, north (the way it runs, unit), speed_m_s, length_m,
+## height_m, born_at, dies_at}. It is born already risen (it is called in to be seen at once: WALL_RISE_S of age
+## when born) and fades out over its last FORCED_FADE_S. {} before its birth or after its end.
+static func forced_wall(forced: Dictionary, t: float, radius_m: float) -> Dictionary:
+	var run := t - float(forced["born_at"])
+	var left := float(forced["dies_at"]) - t
+	if run < 0.0 or left <= 0.0:
+		return {}
+	var age := WALL_RISE_S + run
+	var way := Vector2(float(forced["east"]), float(forced["north"]))
+	var speed := float(forced["speed_m_s"])
+	var front := moved(Vector2(float(forced["origin_lon"]), float(forced["origin_lat"])), way * speed * run, radius_m)
+	return {"id": int(forced["id"]), "lon": front.x, "lat": front.y, "east": way.x, "north": way.y, "speed_m_s": speed,
+			"length_m": float(forced["length_m"]), "height_m": float(forced["height_m"]),
+			"depth_m": WALL_DEPTH_M + WALL_SPREAD * speed * run,
+			"strength": maxf(1.0 - age / WALL_LIFE_S, 0.0) * smoothstep(0.0, FORCED_FADE_S, left),
+			"grown": 1.0, "spent": smoothstep(WALL_SPENT_FROM, 1.0, age / WALL_LIFE_S)}
+
+
 ## Where a cell's wall falls from: [place, the way down (unit)] at the steepest of its tries, [] when
 ## none is steep enough.
 static func _wall_source(cell: Array, draws: PackedFloat64Array, terrain_of: Callable, radius_m: float) -> Array:
@@ -405,11 +503,12 @@ static func _wall_source(cell: Array, draws: PackedFloat64Array, terrain_of: Cal
 static func wall_effect(wall: Dictionary, at: Vector2, radius_m: float) -> Array:
 	var d := offset_m(Vector2(wall["lon"], wall["lat"]), at, radius_m)
 	var way := Vector2(wall["east"], wall["north"])
-	var behind := -d.dot(way)
-	var aside := absf(d.dot(Vector2(-way.y, way.x)))
 	var half: float = float(wall["length_m"]) * 0.5
 	var depth: float = float(wall["depth_m"])
-	if behind < -WALL_LULL_M or behind > depth or aside > half:
+	var signed_aside := d.dot(Vector2(-way.y, way.x))
+	var behind := -d.dot(way) + front_lead_m(signed_aside, half, depth)
+	var aside := absf(signed_aside)
+	if behind < -WALL_LULL_M or behind > wall_reach_m(depth) or aside > half:
 		return [Vector2.ZERO, 0.0, 1.0]
 	var strength: float = float(wall["strength"]) * (1.0 - smoothstep(half * 0.8, half, aside))
 	if behind < 0.0:
@@ -418,9 +517,111 @@ static func wall_effect(wall: Dictionary, at: Vector2, radius_m: float) -> Array
 		var inflow := -way * WALL_INFLOW_M_S * strength * 4.0 * near * (1.0 - near)
 		return [inflow, 0.0, 1.0 - WALL_LULL * strength * near]
 	var ramp := smoothstep(0.0, WALL_RAMP_M, behind)
-	var share := strength * ramp * (1.0 - behind / depth)
+	var share := wall_share(float(wall["strength"]), half, depth, behind, aside)
+	var blow := wall_share(float(wall["strength"]), half, depth, behind, aside, WALL_RAMP_M)
 	var gust := 1.0 + WALL_GUST * exp(-behind / WALL_GUST_M)
-	return [way * float(wall["speed_m_s"]) * share * gust, WALL_TAU * share, 1.0 - WALL_LULL * strength * (1.0 - ramp)]
+	return [way * float(wall["speed_m_s"]) * blow * gust, WALL_TAU * share, 1.0 - WALL_LULL * strength * (1.0 - ramp)]
+
+
+## The share of a wall's whole dust (WALL_TAU) [param behind] metres behind its front and [param aside] metres
+## from its middle along it, the wall [param strength] strong, [param half] its half-length and [param depth]
+## deep: thickest right behind the front once its dust has risen (WALL_DUST_RAMP_M), thinning along its tail
+## (WALL_TAIL_FALL) to nothing at its end ([method wall_reach_m]) and toward its two ends; 0 outside. Its wind
+## and dust ([method wall_effect]) and its light ([method wall_ray]) read the same.
+## [param ramp_m]: how far behind the front it rises, the dust's (its wind rises over WALL_RAMP_M: a gust front).
+static func wall_share(strength: float, half: float, depth: float, behind: float, aside: float,
+		ramp_m: float = WALL_DUST_RAMP_M) -> float:
+	if behind < 0.0 or behind > wall_reach_m(depth) or aside > half:
+		return 0.0
+	# The tail's exponential, lowered by what it still holds at its end so that it comes to nothing there
+	# without a step, and raised back to 1 at the front.
+	var end := exp(-WALL_TAIL_DEPTHS / WALL_TAIL_FALL)
+	var tail := (exp(-behind / (WALL_TAIL_FALL * depth)) - end) / (1.0 - end)
+	return strength * (1.0 - smoothstep(half * 0.8, half, aside)) * smoothstep(0.0, ramp_m, behind) * tail
+
+
+## How far behind its front a wall [param depth_m] deep carries dust, m: the end of its tail.
+static func wall_reach_m(depth_m: float) -> float:
+	return depth_m * WALL_TAIL_DEPTHS
+
+
+## A wall's dust along a line of sight from [param from] ((east, north) metres from the middle of its front,
+## as [method offset_m] gives it, and the height over the ground) along the unit [param dir] (east, north, up).
+## The dust stands evenly from the ground to the wall's top there ([method wall_tall_at]: sinking along the
+## tail) and fades out over WALL_TOP_FADE_M over it, as [method over_walls] has it: its column is
+## wall_effect's WALL_TAU x share whatever that height. The ground under the line is taken level, at the
+## height [param from] stands over (a few kilometres of the eye: the light's affair).
+## Returns Vector3(the optical depth along the line, the same measured across the face the line leaves the
+## wall by, the length inside the wall's volume, m). The second is the depth of the slab the light coming
+## along that line crosses (DustLight.total): straight up from deep inside a wide wall, the column over the
+## eye; through a wall seen side on, about the first.
+static func wall_ray(wall: Dictionary, from: Vector3, dir: Vector3) -> Vector3:
+	var tall := wall_tall(wall)
+	var strength := float(wall["strength"])
+	if tall <= 0.0 or strength <= 0.0 or from.z >= tall + WALL_TOP_FADE_M:
+		return Vector3.ZERO
+	var way := Vector2(float(wall["east"]), float(wall["north"]))
+	var side := Vector2(-way.y, way.x)
+	var at := Vector2(from.x, from.y)
+	var flat := Vector2(dir.x, dir.y)
+	var half := float(wall["length_m"]) * 0.5
+	var depth := float(wall["depth_m"])
+	# The line as distances t along it: behind the straight line through the wall's middle b0 + b1 t, along it
+	# s0 + s1 t, up z0 + z1 t. Inside the wall's box where all three are within it; the box behind that line is
+	# widened by how far the front wanders ahead of it and back (front_lead_m), the dust read point by point.
+	var b0 := -at.dot(way)
+	var b1 := -flat.dot(way)
+	var s0 := at.dot(side)
+	var s1 := flat.dot(side)
+	var wander := (WALL_WANDER.x + WALL_WANDER.y) * depth
+	var by_behind := _within(b0, b1, -wander, wall_reach_m(depth) + WALL_BOW * half + wander)
+	var by_side := _within(s0, s1, -half, half)
+	var by_up := _within(from.z, dir.z, 0.0, tall + WALL_TOP_FADE_M)
+	var enter := maxf(0.0, maxf(by_behind.x, maxf(by_side.x, by_up.x)))
+	var leave := minf(by_behind.y, minf(by_side.y, by_up.y))
+	if leave <= enter or is_inf(leave):
+		return Vector3.ZERO
+	var length := leave - enter
+	var tau := _dust_along(Vector4(strength, half, depth, tall), PackedFloat64Array([b0, b1, s0, s1, from.z, dir.z]),
+			enter, leave, WALL_RAY_STEPS)
+	# The face it leaves by: the cosine between the line and that face's normal, blended (WALL_EXIT_BLEND) with
+	# the faces it would reach a little further on.
+	var blend := WALL_EXIT_BLEND * length + 1.0
+	var weights := Vector3(maxf(1.0 - (by_behind.y - leave) / blend, 0.0), maxf(1.0 - (by_side.y - leave) / blend, 0.0),
+			maxf(1.0 - (by_up.y - leave) / blend, 0.0))
+	var across := (weights.x * absf(b1) + weights.y * absf(s1) + weights.z * absf(dir.z)) \
+			/ maxf(weights.x + weights.y + weights.z, 1e-9)
+	return Vector3(tau, tau * across, length)
+
+
+## A wall's dust optical depth over the stretch [param from_t] to [param to_t] of a line, at [param steps] even
+## points: [param shape] is (strength, half-length, depth, height at the front) as [method wall_share] and the
+## tail's top ([method wall_tall_at]) take them, [param line] (behind, its rate, aside, its rate, height, its
+## rate) along the line. At each point the column there (WALL_TAU x share) spread under its top, the column
+## under the faded top holding half its fade's worth more air than the top's height.
+static func _dust_along(shape: Vector4, line: PackedFloat64Array, from_t: float, to_t: float, steps: int) -> float:
+	if to_t <= from_t:
+		return 0.0
+	var step := (to_t - from_t) / steps
+	var sum := 0.0
+	for k in steps:
+		var t := from_t + (k + 0.5) * step
+		var aside := line[2] + line[3] * t
+		var behind := line[0] + line[1] * t + front_lead_m(aside, shape.y, shape.z)
+		var top := _tail_top(shape.w, shape.z, behind)
+		sum += wall_share(shape.x, shape.y, shape.z, behind, absf(aside)) \
+				* under_walls(top, line[4] + line[5] * t) / (top + WALL_TOP_FADE_M * 0.5)
+	return WALL_TAU * sum * step
+
+
+## Where v0 + v1 t lies between [param lo] and [param hi]: Vector2(from t, to t), empty (from > to) when it never
+## does, endless both ways when it always does.
+static func _within(v0: float, v1: float, lo: float, hi: float) -> Vector2:
+	if absf(v1) < 1e-9:
+		return Vector2(-INF, INF) if v0 >= lo and v0 <= hi else Vector2(INF, -INF)
+	var a := (lo - v0) / v1
+	var b := (hi - v0) / v1
+	return Vector2(minf(a, b), maxf(a, b))
 
 
 ## [param count] numbers in [0, 1) drawn after the hash [param h].
@@ -471,7 +672,7 @@ static func apply(sample: Dictionary, profile: ClimateProfile, terrain: Dictiona
 				if float(effect[2]) < 1.0 or float(effect[1]) > 0.0:
 					wall_added += effect[0]
 					wall_dust += effect[1]
-					wall_top = maxf(wall_top, height + wall_tall(one))
+					wall_top = maxf(wall_top, height + wall_tall_at(one, wall_behind_m(one, at, profile.radius_m)))
 			if float(effect[1]) > 0.05 and not names.has(group[2]):
 				names.append(group[2])
 	wind = wind * kept + added

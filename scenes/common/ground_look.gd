@@ -14,8 +14,9 @@ extends RefCounted
 const MATERIAL_PATH := "res://assets/_universe/_shared/materials/terrain_blend.tres"
 ## What the biome map gives where it has nothing (PlanetData.ground_albedo_at).
 const NO_SAMPLE := Color(0, 0, 0, 0)
-## The swing of the band's height on a Nova ground (terrain_blend.gdshader's blend_noise_strength; the template's
-## is 0.6): see nova_material_for.
+## The swing of the band's height on a Nova ground (terrain_blend.gdshader's blend_noise_strength): see
+## nova_material_for. The template's own value too since it came down from 0.6 (2026-11-28); kept apart so that
+## a template tuned again does not swell the band of a Nova ground.
 const NOVA_NOISE_STRENGTH := 0.3
 
 # ONE fringe material PER GROUND TEXTURE -- never per object. A texture cannot be a per-instance
@@ -222,7 +223,7 @@ static func nova_material_for(look: Dictionary, ground: ShaderMaterial) -> Shade
 	mat.set_shader_parameter(&"blend_nova_strength", float(look.strength))
 	mat.set_shader_parameter(&"blend_nova_contrast", float(look.contrast))
 	# A bright, contrasted ground made the band's ragged top read as round white blobs up the walls: a smaller
-	# swing of its height (the template's 0.6) keeps it a soft edge.
+	# swing of its height (0.3, against the 0.6 the template then had) keeps it a soft edge.
 	mat.set_shader_parameter(&"blend_noise_strength", NOVA_NOISE_STRENGTH)
 	# What a reader that cannot sample arrays takes (CaveGroundCover): the first material as a plain texture,
 	# its close-up tile, and the gain and mean occlusion folded into a tint.

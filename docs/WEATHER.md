@@ -134,6 +134,68 @@ prototype : `weather_forces.gd` (poussée du vent sur les véhicules), les nuage
 Coût : 83 images/s devant un mur de 49 km avec 26 systèmes (RTX 4080, 1600×900, vue jeu de Nova). Un relevé
 redemandé au même endroit dans le quart de seconde est rendu de mémoire avant tout calcul.
 
+## Sirène d'alerte des villages
+
+Chaque village a une sirène sur un mât (25 m au-dessus de son centre, entendue jusqu'à 3 km), la même avant
+et pendant, pour un mur comme pour une tempête (`village-storm-siren.ogg`).
+
+- **Qui décide** : le serveur de jeu, pour chaque village qu'il tient (`poi_villages.gd`), toutes les 10 s.
+  Il prévoit la météo au centre du village de maintenant à +10 min par pas de 30 s (`VillageAlarm`) : un mur
+  (`ClimateWeather.walls_at`, déterministe) dont la poussière y dépasse 0,5, ou les tempêtes du service
+  (`WeatherSystem.state_at`, leurs images clés) dont la poussière y dépasse 1,5 (le seuil où un mur ne tombe
+  plus). Le champ du modèle n'est pas lu pour les tempêtes : son épaisseur optique compte toute la colonne,
+  mer de poussière comprise, et la sirène hurlerait en permanence dans les bassins.
+- **Rythme** : arrivée prévue dans les 10 min = une sonnerie par minute (`warning`) ; sur le village = en
+  boucle (`during`) ; puis arrêt (`off`). Monter est immédiat, descendre attend 60 s (pas de clignotement).
+- **Réseau** : `alarm` et `alarm_since` (heure de référence du début) sur le canal zone 6 du village, écrits
+  seulement au changement. Le client ne fait que jouer (`VillageSiren`), calé sur `alarm_since` : tout le
+  monde l'entend au même moment, un joueur qui arrive en cours de route aussi.
+- **Outils admin** (roue Alt+T, catégorie Météo) : *Exercice d'alerte* (30 s d'alerte, 30 s de sirène,
+  arrêt) et *Mur de poussière sur le village* : un mur « appelé » (`ForcedDustWall`, prop `dust_wall`) posé
+  sous le vent pour que son front dessiné atteigne le centre au bout de 3 min (`LEAD_S`), qui court avec le
+  vent (vers le joueur s'il n'y en a pas). Comme `ClimateWeather.walls_at` l'ajoute aux murs du hachage, il
+  est dessiné, soufflé, entendu et prévu par l'alerte partout ; le serveur le supprime une fois passé.
+- **Un seul front** : le front dessiné ondule et se courbe vers ses bouts (`WeatherRelief.front_lead_m`) ;
+  vent, poussière, lumière, son et alerte lisent ce même front (pas la ligne droite par le milieu du mur, qui
+  laissait le mur dessiné avaler un village jusqu'à 500 m avant sa poussière). La poussière monte sur 300 m
+  derrière le front (`WALL_DUST_RAMP_M`, comme le bord adouci du dessin), le vent sur 120 m (rafale franche),
+  et le grondement de l'intérieur se lève dès 400 m avant le front (`DustWallSound.inside_lead_m`).
+- **Sirène** : bus `VillageSiren` sous SFX avec une réverbe légère (la fin d'une sirène résonne au lieu de
+  couper) ; quand l'alerte s'arrête en plein son, fondu de 1,2 s.
+
+## Lumière dans un mur de poussière, lampadaires
+
+- **La poussière d'une tempête absorbe** (`DustLight.STORM_ALBEDO` = 0,9 : albédo de diffusion simple des
+  poussières désertiques dans le visible, 0,90-0,97 mesuré par AERONET, le bas de la fourchette pour un haboob
+  sombre). Le faisceau direct du soleil suit Beer (`AtmosphereRenderer.transmittance_at`) ; le total direct +
+  diffus sur sol plat suit le modèle à deux flux d'Eddington avec absorption (`DustLight.total`, Meador &
+  Weaver 1980), qui redonne l'ancienne formule 1 / (1 + 0,225 τ) pour un albédo de 1. Dans un mur (τ = 8,
+  `WeatherRelief.WALL_TAU`, environ 500 m de visibilité comme beaucoup de vrais haboobs) : **6,5 %** de la
+  lumière du ciel clair (36 % sans absorption). La mer de corindon n'absorbe pas et ne change pas.
+- **Un mur est tracé dans son volume, pas lu au-dessus de l'œil** (`DustLight.wall_light`, 4 fois par seconde,
+  `WeatherSky.walls_light`) : sa poussière tient du sol à son sommet (`WeatherRelief.wall_ray`, même part que
+  `wall_effect`, colonne `WALL_TAU` × part, fondu `WALL_TOP_FADE_M` au-dessus). **Traîne** comme le mur dessiné :
+  derrière le front la poussière s'éclaircit d'un facteur e toutes les 0,9 profondeurs (`WALL_TAIL_FALL`) jusqu'à
+  5,15 profondeurs (`WALL_TAIL_DEPTHS`, la fin de la boîte dessinée, ~7,7 km) et la traîne s'abaisse vers 22 % de
+  la hauteur (`WALL_TAIL_CREST`, `wall_tall_at`) ; vent, poussière, sirène, lampadaires, son et lumière la
+  suivent. Le faisceau du soleil suit Beer le long de son rayon : il baisse dès que le mur est entre le joueur et
+  le soleil (3 km de haut, soleil à 15° : 61 % de la lumière au sol à 9 km du front, 24 % au front, 29 % 750 m
+  derrière, 60 % à 3 km, revenue vers 6 km). Mur appelé : sirène ~4 min 20 s, supprimé une fois sa traîne
+  passée (`ForcedDustWall.passed_after_s`, ~14,5 min). Le ciel est regardé selon 32 lignes (pondérées
+  par le cosinus) : chacune passe ce que laisse la tranche traversée (deux flux), le mur couvre jusqu'à la
+  moitié du ciel au front, et sa face rend diffuse la lumière du soleil qu'il a diffusée. Rien ne saute au
+  front ; au fond d'un mur large, c'est l'ancienne colonne. La part des murs est retirée de la colonne d'orage
+  lue dans l'échantillon (`WeatherRelief.walls_dust_in`) pour ne pas compter deux fois. Sonde Alt+J :
+  `eye.wall_beam_tau`, `wall_beam_share`, `wall_sky_through`, `wall_sky_covered`, `wall_sun_diffuse`.
+- **Lampadaires** : le serveur calcule, au même tic de 10 s que la sirène, la poussière d'orage au centre du
+  village (murs + tempêtes, `VillageAlarm.dust_tau_at`) et la part de lumière qu'elle laisse
+  (`VillageAlarm.dust_light`, au centième), répliquée en `dust_light` sur le canal zone 6. Les photocellules
+  lisent `Planet.daylight_through_weather_at` = lumière du ciel clair (`daylight_at`, inchangée) × `dust_light`
+  du village qui les contient ; la ligne « light » du panneau de dev montre la même valeur (« storm dust x… »).
+- **Seuils** : 1 900 / 3 100 lux. À 6,5 %, un mur allume les lampes tant que la lumière claire reste sous
+  ~29 000 lux (matin, après-midi, soir) ; autour de midi (environ 100 000 lux clairs) il reste ~6 500 lux et
+  elles restent éteintes : il faudrait τ ≈ 12 (1,7 %, ~330 m de visibilité).
+
 ## Mer de poussière (rendu) et sonde Alt+J
 
 Sur un corps dont le profil d'atmosphère a une couche de corindon (Sandbox), la passe de perspective aérienne

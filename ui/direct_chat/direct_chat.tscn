@@ -44,6 +44,11 @@ layout_mode = 2
 focus_mode = 0
 text = "✕"
 
+[node name="FilterTabs" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=551200005]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
 [node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer" unique_id=229911467]
 layout_mode = 2
 size_flags_vertical = 3

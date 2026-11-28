@@ -26,6 +26,8 @@ const SHADOW_MEASUREMENTS := {
 	"debug_sun_normal_bias": &"shadow_normal_bias",
 	"debug_sun_shadow_blur": &"shadow_blur",
 	"debug_sun_pancake_m": &"directional_shadow_pancake_size",
+	# Apparent size of the star in degrees: 0 = razor shadows, ~0.5 = the Sun seen from Earth (penumbra).
+	"debug_sun_angular_deg": &"light_angular_distance",
 }
 
 ## The owned player body this sun follows (set by PlayerClient right after instancing).
@@ -77,6 +79,9 @@ func _ready() -> void:
 	# roof -- ~28 000 lux at noon inside a container, 89 % of what lit its walls (measured 2026-10-23).
 	shadow_opacity = 1.0
 	shadow_blur = 1.649
+	# Cross-fade between cascades instead of a hard seam where one ends and the next begins (chosen in the
+	# render lab, 2026-11-28: the seam ran across the ground a few tens of metres ahead).
+	directional_shadow_blend_splits = true
 	_apply_shadow_measurements()
 	# Real-time shadows gated by the graphics settings (default on), reacting live to menu changes.
 	shadow_enabled = SettingsManager.is_shadows()
@@ -192,6 +197,10 @@ func _apply_shadow_measurements() -> void:
 			var value := ClientConfig.get_float(key, 0.0)
 			set(SHADOW_MEASUREMENTS[key], value)
 			print("[PlayerSunLight] !! %s=%s -- the sun's shadow is NOT the game's; a measurement." % [key, value])
+	# Cross-fade between cascades instead of a hard seam where one ends and the next begins.
+	if ClientConfig.has_key("debug_sun_blend_splits"):
+		directional_shadow_blend_splits = ClientConfig.get_bool("debug_sun_blend_splits", false)
+		print("[PlayerSunLight] !! debug_sun_blend_splits=%s -- a measurement." % directional_shadow_blend_splits)
 
 
 ## Orientation for a light shining FROM a celestial body TOWARD the player, given the unit vector

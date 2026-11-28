@@ -93,9 +93,19 @@ static func collect(renderer: AtmosphereRenderer) -> Dictionary:
 		out["eye"] = {"camera_altitude_m": altitude, "player_altitude_m": renderer.altitude_above_sphere(),
 			"over_ground_m": body.surface_altitude_of(camera.global_position),
 			"sea_tau_above": renderer.dust_sea.sea_tau_above(altitude), "tau_above": renderer.dust_sea.tau_above(altitude),
-			"under_share": renderer.dust_sea.under_share(altitude), "eye_gain": renderer.dust_sea.eye_gain(altitude)}
+			"under_share": renderer.dust_sea.under_share(altitude), "eye_gain": renderer.dust_sea.eye_gain(altitude),
+			"storm_tau_above": renderer.storm_tau_above}
 	if is_instance_valid(renderer.sun):
 		var sin_e: float = renderer.sun.star_direction.dot(renderer.sun.stable_up())
+		# The dust walls near the eye, traced (DustLight.wall_light): the beam's optical depth along the sun's ray
+		# and the share it leaves, the sky's share let through and covered, the beam's share given back diffuse.
+		var walls: Vector4 = renderer.wall_light
+		if out.has("eye"):
+			out["eye"]["wall_beam_tau"] = walls.x / maxf(sin_e, 0.02) if sin_e > 0.0 else 0.0
+			out["eye"]["wall_beam_share"] = exp(-walls.x / maxf(sin_e, 0.02))
+			out["eye"]["wall_sky_through"] = walls.y
+			out["eye"]["wall_sky_covered"] = walls.w
+			out["eye"]["wall_sun_diffuse"] = walls.z
 		out["sun"] = {"sin_elevation": sin_e, "sun_energy": renderer.sun.sun_energy,
 			"light_energy": renderer.sun.light_energy, "light_color": renderer.sun.light_color,
 			"visible": renderer.sun.visible, "transmittance_at": renderer.transmittance_at(sin_e),

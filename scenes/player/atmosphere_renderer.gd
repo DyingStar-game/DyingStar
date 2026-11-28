@@ -20,6 +20,13 @@ var sun: PlayerSunLight = null
 ## Size of the transmittance table, texels: the mu axis (star height) gets the resolution, the
 ## altitude axis much less. Must match TRANSMITTANCE_LUT_SIZE in atmosphere_common.gdshaderinc.
 const TRANSMITTANCE_LUT_SIZE := Vector2(256.0, 64.0)
+## The look of the frame (apply_look): exposure before the AgX tone mapper, then saturation and contrast after
+## it (1 = unchanged).
+const LOOK_EXPOSURE := 1.45
+const LOOK_SATURATION := 0.9
+const LOOK_CONTRAST := 1.12
+## The render lab (Alt+G), by path: a class added without a re-import is not known by its name yet.
+const RenderLabScript := preload("res://ui/render_lab/render_lab.gd")
 ## The pushed constants the table depends on. Everything else (the star, the camera, the exposure)
 ## changes every frame and never requires a refill.
 const LUT_KEYS : Array[String] = ["planet_radius", "atmosphere_top", "rayleigh_beta", "rayleigh_scale_height",
@@ -100,6 +107,20 @@ var _weather_sky: WeatherSky = WeatherSky.new()
 ## The corundum dust sea (DustSea, drawn by the aerial pass): while it is drawn it replaces the profile's
 ## slab, dims the star by the dust over the eye and lights the world with its overcast.
 var dust_sea: DustSea = DustSea.new()
+## The storm's dust over the eye (a dust wall passing over, a storm: DustSea.storm_light_tau), as an optical
+## depth, glided toward the last reading (set_storm, DustLight.glide_tau): it dims the star (transmittance_at)
+## and its diffuse light becomes the ambient (_push_overcast), like the sea's. Without it a wall swallowed the
+## player and the light did not change (2026-11-28).
+var storm_tau_above: float = 0.0
+var _storm_tau_target: float = 0.0
+## The dust walls near the eye, traced through their volumes (DustLight.wall_light: the beam's optical depth as
+## a vertical one, the sky's share let through, the beam's share given back diffuse, the covered sky), glided
+## toward the last reading (set_walls) like the storm. The storm's column above leaves the walls out: a wall
+## hides the sun as soon as it stands in its ray, kilometres before its front is overhead (2026-11-28).
+var wall_light: Vector4 = DustLight.NO_WALLS
+var _wall_light_target: Vector4 = DustLight.NO_WALLS
+## The hue of the light scattered in that dust (WeatherSky.dust_hue): brightest channel 1.
+var _storm_hue: Vector3 = Vector3.ONE
 ## The lamps that light that dust (DustLights), made with the renderer.
 var _dust_lights: DustLights = null
 
@@ -130,6 +151,8 @@ var _isolation: int = 0
 var _underground: float = 0.0
 ## The dust's cost probe (client.ini debug_dust_probe=true), null when off.
 var _dust_cost: DustCostProbe = DustCostProbe.new() if DustCostProbe.wanted() else null
+## The render lab's panel (Alt+G), built on its first opening.
+var _render_lab: OverlayPanel = null
 
 
 func _ready() -> void:
@@ -140,6 +163,7 @@ func _ready() -> void:
 	# previous one — otherwise the sky lags the light by a frame at sunrise and sunset.
 	process_priority = 110
 	DustSeaProbe.register_action()
+	RenderLabScript.register_action()
 	if _dust_cost != null:  # the probe reads the frame's GPU time, which Godot measures on demand
 		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	# Bisection switches, read from client.ini (client_config.gd) because a packaged build takes no
@@ -187,6 +211,7 @@ func _build_plain_environment() -> void:
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.glow_enabled = true
 	env.volumetric_fog_enabled = false
+	apply_look(env)
 	_attach(env)
 
 
@@ -209,7 +234,61 @@ func _build_environment() -> void:
 	# coefficients as the sky. Keeping the old 0.002 fog on top would count the air twice, and it is
 	# what the "visibility at ground level" figure of the model would be measured against.
 	env.volumetric_fog_enabled = false
+	apply_look(env)
+	_apply_look_measurements(env)
 	_attach(env)
+
+
+## The game's look of the frame, as the team chose it (2026-11-27/28, in the render lab, Alt+G): the AgX tone
+## mapper (natural highlights, Blender's default: an asset looks in game as it did in Blender), its own
+## contrast and white left at the engine's, lifted by LOOK_EXPOSURE, then a touch more contrast and a touch
+## less saturation after it (LOOK_CONTRAST, LOOK_SATURATION). Linear, the engine's default before, clipped every highlight at once.
+## The client.ini debug_tonemap* keys still override it, for a measurement.
+static func apply_look(env: Environment) -> void:
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = LOOK_EXPOSURE
+	env.adjustment_enabled = true
+	env.adjustment_saturation = LOOK_SATURATION
+	env.adjustment_contrast = LOOK_CONTRAST
+
+
+## client.ini measurement switches for the look of the frame: tone mapper, exposure, white point and
+## SDFGI. Absent, the engine defaults stand (Linear, 1.0, no GI), which is what the game ships today.
+## Each one present says so in the log, so a capture is never mistaken for the game's own picture.
+func _apply_look_measurements(env: Environment) -> void:
+	if ClientConfig.has_key("debug_tonemap"):
+		var mappers := {
+			"linear": Environment.TONE_MAPPER_LINEAR, "reinhard": Environment.TONE_MAPPER_REINHARDT,
+			"filmic": Environment.TONE_MAPPER_FILMIC, "aces": Environment.TONE_MAPPER_ACES,
+			"agx": Environment.TONE_MAPPER_AGX,
+		}
+		var mapper := ClientConfig.get_string("debug_tonemap", "linear").strip_edges().to_lower()
+		mapper = mapper.trim_prefix("\"").trim_suffix("\"")
+		if mappers.has(mapper):
+			env.tonemap_mode = mappers[mapper]
+			print("[Atmosphere] !! debug_tonemap=%s -- NOT the game's tone mapper; a measurement." % mapper)
+		else:
+			push_warning("[Atmosphere] debug_tonemap=%s unknown (linear, reinhard, filmic, aces, agx)" % mapper)
+	if ClientConfig.has_key("debug_tonemap_exposure"):
+		env.tonemap_exposure = ClientConfig.get_float("debug_tonemap_exposure", 1.0)
+		print("[Atmosphere] !! debug_tonemap_exposure=%s -- a measurement." % env.tonemap_exposure)
+	if ClientConfig.has_key("debug_tonemap_white"):
+		env.tonemap_white = ClientConfig.get_float("debug_tonemap_white", 1.0)
+		print("[Atmosphere] !! debug_tonemap_white=%s -- a measurement." % env.tonemap_white)
+	# SDFGI expects a still world near the origin; ours spins every 4 s at ~3e10 m. This switch exists
+	# to SEE how it behaves here, not because it is expected to work.
+	if ClientConfig.get_bool("debug_sdfgi", false):
+		env.sdfgi_cascades = clampi(ClientConfig.get_int("debug_sdfgi_cascades", 4), 1, 8)
+		# debug_sdfgi_delay_s: switch it on that long after the Environment is built, to tell a freeze caused
+		# by SDFGI itself from one caused by starting it while the first ground is being built.
+		var delay := ClientConfig.get_float("debug_sdfgi_delay_s", 0.0)
+		if delay > 0.0:
+			get_tree().create_timer(delay).timeout.connect(func() -> void:
+				env.sdfgi_enabled = true
+				print("[Atmosphere] !! SDFGI switched on now (debug_sdfgi_delay_s=%s)" % delay))
+		else:
+			env.sdfgi_enabled = true
+		print("[Atmosphere] !! debug_sdfgi=true (%d cascades, delay %s s) -- a measurement." % [env.sdfgi_cascades, delay])
 
 
 ## The transmittance table's render target. Half float: a transmittance through the dust storm at the
@@ -392,7 +471,18 @@ func _update_atmosphere(_delta: float) -> void:
 	_update_wind_dust(_delta)
 	var profile: AtmosphereProfile = current_profile()
 	_show_star_mesh(profile == null)
+	storm_tau_above = DustLight.glide_tau(storm_tau_above, _storm_tau_target, _delta)
+	for k in 4:
+		wall_light[k] = DustLight.glide_tau(wall_light[k], _wall_light_target[k], _delta)
+	if wall_light.is_equal_approx(_wall_light_target):
+		# Landed: once the walls are gone the light is left exactly as it was without them.
+		wall_light = _wall_light_target
 	if profile == null:
+		# No air, no weather: the last planet's storm must not greet the next one.
+		set_storm(0.0, Vector3.ONE)
+		storm_tau_above = 0.0
+		set_walls(DustLight.NO_WALLS)
+		wall_light = DustLight.NO_WALLS
 		dust_sea.off(self)
 		_push_overcast()
 		_push_airless(star_direction)
@@ -405,24 +495,59 @@ func _update_atmosphere(_delta: float) -> void:
 ## Under the dust sea the world is lit by its overcast, not by the sky dome: the dome is the profile's
 ## single scattering (a dark brown sky under the sea), and the sea that hides it from the eye is drawn by
 ## the aerial pass, which the engine's ambient never sees. The overcast (DustSea.overcast: the light the
-## sea lets through, all of it diffuse) takes the ambient over as the dust above the eye thickens.
+## sea lets through, all of it diffuse) takes the ambient over as the dust above the eye thickens. A storm's
+## dust over the eye (storm_tau_above: a dust wall passing) is laid over both (DustLight.through_storm).
 func _push_overcast() -> void:
 	var env: Environment = player.get_world_3d().environment if is_instance_valid(player) else null
 	if env == null:
 		return
 	var share: float = 0.0
 	var profile: AtmosphereProfile = current_profile()
-	if dust_sea.is_on() and profile != null and is_instance_valid(sun):
+	if profile != null and is_instance_valid(sun):
 		var altitude: float = altitude_above_sphere()
-		share = dust_sea.under_share(altitude)
+		var sin_e: float = sun.star_direction.dot(sun.stable_up())
+		var air: Color = profile.transmittance_to_star(altitude, sin_e, 0.0)
+		var colour: Vector3 = Vector3.ZERO
+		if dust_sea.is_on():
+			share = dust_sea.under_share(altitude)
+			if share > 0.0:
+				var sea: Color = dust_sea.overcast(altitude, sin_e,
+						DustLight.free_beam(DustSea.light_colour(profile.star_color), sun.sun_energy, air))
+				colour = Vector3(sea.r, sea.g, sea.b)
+		if storm_tau_above > 0.0:
+			# The beam that reaches the storm: the star through the air and the veil (or the sea) over the eye.
+			var beam: Vector3 = DustLight.free_beam(profile.star_color, sun.sun_energy, air) \
+					* exp(-veil_tau_above() / maxf(sin_e, 0.02)) * _storm_hue
+			var lit: Array = DustLight.through_storm(colour, share, beam, sin_e, storm_tau_above)
+			colour = lit[0]
+			share = lit[1]
+		if wall_light != DustLight.NO_WALLS:
+			# The walls near the eye: the sky they cover let through as their dust lets diffuse light through, and
+			# the sun's light they scattered from the beam that reaches them (through the storm's column too).
+			var reaching: Vector3 = DustLight.free_beam(profile.star_color, sun.sun_energy, air) * _storm_hue \
+					* exp(-(veil_tau_above() + storm_tau_above) / maxf(sin_e, 0.02))
+			var walled: Array = DustLight.dimmed_ambient(colour, share, reaching * (maxf(sin_e, 0.0) * wall_light.z),
+					wall_light.y)
+			colour = walled[0]
+			share = walled[1]
 		if share > 0.0:
-			var sin_e: float = sun.star_direction.dot(sun.stable_up())
-			var air: Color = profile.transmittance_to_star(altitude, sin_e, 0.0)
 			# The engine takes an Environment's colours as sRGB: handed back so it gets the linear light
 			# the shader lights the sea with.
-			env.ambient_light_color = dust_sea.overcast(altitude, sin_e,
-					DustLight.free_beam(DustSea.light_colour(profile.star_color), sun.sun_energy, air)).linear_to_srgb()
+			env.ambient_light_color = Color(colour.x, colour.y, colour.z).linear_to_srgb()
 	env.ambient_light_sky_contribution = 1.0 - share
+
+
+## The storm's dust over the eye as the weather reads it now ([param tau], DustSea.storm_light_tau) and the
+## hue of its light ([param hue], WeatherSky.dust_hue): glided to every frame (storm_tau_above).
+func set_storm(tau: float, hue: Vector3) -> void:
+	_storm_tau_target = maxf(tau, 0.0)
+	_storm_hue = hue
+
+
+## The dust walls' light as the weather reads it now ([param light], DustLight.wall_light): glided to every
+## frame (wall_light). Their diffuse light takes the storm's hue (set_storm).
+func set_walls(light: Vector4) -> void:
+	_wall_light_target = light
 
 
 ## Hand the star's disc to whichever of the two things that draw it is right here.
@@ -544,6 +669,11 @@ func current_profile() -> AtmosphereProfile:
 ## and the layer then goes out instead of keeping the last planet's.
 func _update_wind_dust(delta: float) -> void:
 	if not wind_dust_on():
+		# The layer is neither laid nor drawn, but the storm's dust over the eye still dims the light: the
+		# weather is read (set_storm), nothing more.
+		var under: Planet = current_body()
+		if under != null:
+			_weather_sky.update(self, under, player.global_position)
 		return
 	if weather_masks == null:
 		weather_masks = WeatherMasks.new(player)
@@ -594,13 +724,27 @@ func _clear_wind_dust() -> void:
 	_weather_sky = WeatherSky.new()
 
 
-## The dust sea's probe (DustSeaProbe, Alt+J): what the render is sent, written to user:// with captures.
+## The render lab (RenderLab, Alt+G) and the dust sea's probe (DustSeaProbe, Alt+J).
 func _unhandled_input(event: InputEvent) -> void:
+	if RenderLabScript.enabled() and InputMap.has_action(RenderLabScript.ACTION) \
+			and event.is_action_pressed(RenderLabScript.ACTION, false, true):
+		get_viewport().set_input_as_handled()
+		_toggle_render_lab()
+		return
 	if _aerial_material == null or not DustSeaProbe.enabled() or not InputMap.has_action(DustSeaProbe.ACTION):
 		return
 	if event.is_action_pressed(DustSeaProbe.ACTION, false, true):
 		get_viewport().set_input_as_handled()
 		DustSeaProbe.run(self)
+
+
+## Open or close the render lab; built on its first opening, so it reads the Environment as it is then.
+func _toggle_render_lab() -> void:
+	if _render_lab == null:
+		_render_lab = RenderLabScript.create(self, sun)
+		add_child(_render_lab)
+	RenderLabScript.open = not RenderLabScript.open
+	print("[RenderLab] %s" % ("open: hold AltGr to use the mouse" if RenderLabScript.open else "closed"))
 
 
 ## A uniform of the aerial pass as it holds it now (null without the pass), for the probe.
@@ -652,16 +796,23 @@ func transmittance_at(sin_elevation: float) -> Color:
 	var profile := current_profile()
 	if profile == null:
 		return Color.WHITE
+	# A storm's dust over the eye (a dust wall passing over): Beer's law along the slant, grey (grains far
+	# larger than the wavelength); what it scatters comes back as the ambient (_push_overcast). The dust walls'
+	# part is traced along the sun's ray (wall_light.x, as a vertical depth: exact for the sun; a moon, at night
+	# when no wall runs, is dimmed as if it stood where the sun is).
+	var storm_tau: float = storm_tau_above + wall_light.x
+	var storm: float = exp(-storm_tau / maxf(sin_elevation, 0.02)) if storm_tau > 0.0 else 1.0
 	# Under the dust sea: the air alone, then the sea and the thin dust over the eye (DustSea): a basin
 	# gets none of the beam straight, its light is the overcast's.
 	if dust_sea.is_on():
 		var altitude: float = altitude_above_sphere()
-		var dust: float = exp(-dust_sea.tau_above(altitude) / maxf(sin_elevation, 0.02))
+		var dust: float = exp(-dust_sea.tau_above(altitude) / maxf(sin_elevation, 0.02)) * storm
 		return profile.transmittance_to_star(altitude, sin_elevation, 0.0) * Color(dust, dust, dust, 1.0)
 	# The debug lift has to reach the LIGHT too, or the veil rises over your head while the star keeps
 	# shining at full plateau strength. Raising the ceiling for the shader and lowering the observer
 	# for the integral both mean the same thing: 3500 m of corundum overhead.
-	return profile.transmittance_to_star(altitude_above_sphere() - _haze_lift(), sin_elevation)
+	return profile.transmittance_to_star(altitude_above_sphere() - _haze_lift(), sin_elevation) \
+			* Color(storm, storm, storm, 1.0)
 
 
 ## Vector from the camera to the centre of the body the profile describes, or ZERO when it cannot be
@@ -725,12 +876,17 @@ func sky_bounce(profile: AtmosphereProfile) -> Vector3:
 
 ## What the dust sea over the eye leaves of the star's disc (0..1): the sky draws the disc through the air
 ## alone, and the aerial pass dimming it by the sea's 1e-8 left a bright dot through 12 optical depths of
-## sea, the disc's radiance being ~1e4 times its irradiance (2026-11-26). The same column as the light's.
+## sea, the disc's radiance being ~1e4 times its irradiance (2026-11-26). The same column as the light's,
+## a storm's dust over the eye included (storm_tau_above: the near dust layer holds its storm share within
+## its first tens of metres, and the disc shone through a dust wall).
 func star_disc_dust() -> float:
-	if not dust_sea.is_on() or not is_instance_valid(sun):
+	if not is_instance_valid(sun):
+		return 1.0
+	var tau: float = storm_tau_above + wall_light.x + (dust_sea.tau_above(altitude_above_sphere()) if dust_sea.is_on() else 0.0)
+	if tau <= 0.0:
 		return 1.0
 	var sin_e: float = sun.star_direction.dot(sun.stable_up())
-	return exp(-dust_sea.tau_above(altitude_above_sphere()) / maxf(sin_e, 0.02))
+	return exp(-tau / maxf(sin_e, 0.02))
 
 
 ## The profile's slab as the shaders get it: its own (raised by debug_pretend_lowlands), or, while the dust

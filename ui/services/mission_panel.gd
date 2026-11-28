@@ -1235,7 +1235,7 @@ func _contract_document(mission_id: String, mission: Dictionary, data: Dictionar
 
 	doc.add_child(_rule())
 	doc.add_child(_contract_actions(mission_id, mission, assignment, contract, clauses,
-			clauses[current] if current < clauses.size() else {}))
+			clauses[current] if current < clauses.size() else {}, ServiceTypes.turn_in_preview(data)))
 	card.add_child(doc)
 	return card
 
@@ -1276,26 +1276,21 @@ static func _objective_poi(objective: Dictionary) -> Dictionary:
 	return {}
 
 
-## Show [param poi] (an _objective_poi) on the chart: through the tablet for a point of interest (it
-## comes back to this form afterwards), through PlayerServices for a repair's machine.
-func _show_place(poi: Dictionary) -> void:
-	if str(poi.get("machine", "")) != "":
-		PlayerServices.locate_requested.emit(str(poi.get("id", "")), str(poi.get("machine", "")))
-	else:
-		focus_poi_requested.emit(str(poi.get("id", "")))
+## Show a mission's place on the chart ([param request], MissionLocate.request's): through PlayerServices,
+## the kiosk's own path, so both screens show the same place the same way. An inspection's zone is
+## previewed first (MissionSites), to be drawn on a mission not taken yet as on one held; a mission
+## without one leaves the preview alone (a kiosk's sheet may be showing its own).
+func _show_place(request: Dictionary) -> void:
+	if not MissionSites.sites_of(request.get("objectives")).is_empty():
+		MissionSites.preview(request.get("objectives"))
+	PlayerServices.locate_requested.emit(request)
 
 
 ## The name a mission's location carries ({village, name}, as the simulator writes it): "F0001 · CargoDepot_2",
 ## the village alone or the place alone when only one is known, "" when neither. A warehouse is no POI
 ## of the player's (MissionPoiCache), so this is the only name it has on the DataPad.
 static func location_name(location: Variant) -> String:
-	if not (location is Dictionary):
-		return ""
-	var village := str((location as Dictionary).get("village", "") if (location as Dictionary).get("village") != null else "")
-	var place := str((location as Dictionary).get("name", "") if (location as Dictionary).get("name") != null else "")
-	if village != "" and place != "" and village != place:
-		return "%s · %s" % [village, place]
-	return village if village != "" else place
+	return MissionLocate.place_name(location)
 
 
 static func _poi_name_of(poi_id: String) -> String:
@@ -1332,7 +1327,9 @@ func _poi_link(text: String, poi_id: String, machine_id: String = "") -> Button:
 	# The sentence's own size, so the word does not grow when it becomes a control.
 	ServiceStyle.font_of(button, 15)
 	button.tooltip_text = tr("%%SVC_TIP_SHOW_POI_ON_CHART")
-	button.pressed.connect(func() -> void: _show_place({"id": poi_id, "machine": machine_id}))
+	# This clause's own place, the one the word names -- not the mission's step under way.
+	var target := MissionLocate.make(MissionLocate.WHY_DELIVER, poi_id, machine_id, Vector3.ZERO, "", text, "")
+	button.pressed.connect(func() -> void: _show_place({"targets": [target]}))
 	return button
 
 
@@ -1370,7 +1367,7 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 
 	var top := _row(12)
 	var sentence := _label(ServiceTypes.dash(objective.get("title")),
-			ServiceStyle.TEXT if current else ServiceStyle.TEXT_2)
+			ServiceStyle.TEXT if current else ServiceStyle.done_colour(done, ServiceStyle.TEXT_2))
 	ServiceStyle.font_of(sentence, 17, true)
 	sentence.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sentence.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1406,7 +1403,7 @@ func _objective_clause(mission_id: String, contract: VBoxContainer, mission: Dic
 
 	if current:
 		for step: String in ServiceTypes.transport_steps(objective):
-			box.add_child(_label(step, ServiceStyle.ACCENT))
+			box.add_child(_label(step, ServiceStyle.step_colour(step, ServiceStyle.ACCENT)))
 	# The measure: on the step under way, over its bar; on the others, a quiet line.
 	var target: int = ServiceTypes.num(objective.get("targetQuantity"))
 	if current and target > 0:
@@ -1490,12 +1487,38 @@ func _confirm(mission_id: String, objective_id: String, contract: VBoxContainer)
 		await _open_contract(contract, mission_id)
 
 
+## "Show <place> on the chart" for [param mission] (with its [param objectives], the service's), added to
+## [param row]: the places the kiosk's Locate shows, in the same order (MissionLocate) -- the step under
+## way's first, so a hauling mission shows its source warehouse until the goods are loaded, its
+## destination after. null when the mission names no place, or only points gone with a contract that is
+## over (MissionPoiCache.is_closed).
+func _locate_button(row: Control, mission: Dictionary, objectives: Array) -> Button:
+	var request := MissionLocate.request(mission, objectives)
+	var targets: Array = (request["targets"] as Array).filter(func(t: Dictionary) -> bool:
+		return str(t["poi"]) == "" or not MissionPoiCache.is_closed(str(t["poi"])))
+	if targets.is_empty():
+		return null
+	request["targets"] = targets
+	var first: Dictionary = targets[0]
+	# A repair's place is a machine, not the village its mission names: "Show M0001" promised the village
+	# (playtest 2026-11-12).
+	var text: String = tr("%%MISSION_LOCATE")
+	if str(first["machine"]) == "":
+		var name: String = _poi_name_of(str(first["poi"]))
+		if name == "":
+			name = str(first["name"]) if str(first["name"]) != "" else tr("%%SVC_LBL_POI")
+		text = tr("%%SVC_FMT_MISSION_SHOW_ON_CHART") % name
+	return _action_button(row, text, func() -> void: _show_place(request))
+
+
 ## Footer: contextual lifecycle actions + the group share line.
 ##
-## [param current] is the objective under way ({} when none): its place is the one the primary button
-## shows on the chart.
+## [param objectives] are the mission's (the service's): where they send the player is what the locate
+## button shows on the chart, the step under way's place first (MissionLocate). [param _current] is the
+## objective under way ({} when none). [param turn_in] is what turning it in now would pay
+## (ServiceTypes.turn_in_preview).
 func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dictionary,
-		contract: VBoxContainer, _objectives: Array, current: Dictionary = {}) -> Control:
+		contract: VBoxContainer, objectives: Array, _current: Dictionary = {}, turn_in: Dictionary = {}) -> Control:
 	var actions := VBoxContainer.new()
 	actions.add_theme_constant_override("separation", 14)
 	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1506,6 +1529,9 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 	# completed, full), exactly like the panel before the rework.
 	if status == "available":
 		var accept := _row()
+		# Where it would send the player, before they take it: as the kiosk's sheet offers it.
+		if assignment_status != "active":
+			_locate_button(accept, mission, objectives)
 		var spacer := Control.new()
 		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		accept.add_child(spacer)
@@ -1526,15 +1552,8 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 		if mission.get("autoComplete") == false:
 			lifecycle.add_child(_label(tr("%%SVC_LBL_TURN_IN_AT_TOWN_HALL"), DIM))
 		# Where the step under way happens, on the chart: the way there.
-		var poi := _objective_poi(current) if not current.is_empty() else {}
-		if not poi.is_empty() and not MissionPoiCache.is_closed(str(poi["id"])):
-			var poi_id := str(poi["id"])
-			var poi_name: String = str(poi["name"]) if str(poi["name"]) != "" else tr("%%SVC_LBL_POI")
-			# A repair's place is a machine, not the village its mission names: "Show M0001" promised
-			# the village (playtest 2026-11-12).
-			var has_machine: bool = str(poi.get("machine", "")) != ""
-			var go_text: String = tr("%%MISSION_LOCATE") if has_machine else tr("%%SVC_FMT_MISSION_SHOW_ON_CHART") % poi_name
-			var go := _action_button(lifecycle, go_text, func() -> void: _show_place(poi))
+		var go := _locate_button(lifecycle, mission, objectives)
+		if go != null:
 			ServiceStyle.apply_button(go, mission.get("autoComplete") == false)
 		# Share the mission I took: my group may join it, or one player I pick. Their crates then
 		# count for it too, the reward is split equally, and any of us turns it in. The choice is a
@@ -1545,6 +1564,9 @@ func _contract_actions(mission_id: String, mission: Dictionary, assignment: Dict
 			ServiceStyle.apply_button(_action_button(lifecycle, tr("%%SVC_ACT_COMPLETE"),
 					func() -> void: _complete(mission_id, contract)), true)
 		actions.add_child(lifecycle)
+		var partial := _partial_turn_in_row(mission_id, mission, contract, turn_in)
+		if partial != null:
+			actions.add_child(partial)
 
 	# The share line is the CREATOR's business: handing a contract to a group is a decision about
 	# who may take it, and that is not the taker's to make. It also names the group rather than
@@ -1600,14 +1622,55 @@ func _abandon(mission_id: String, contract: VBoxContainer) -> void:
 		await _after_ended(mission_id, contract)
 
 
-func _complete(mission_id: String, contract: VBoxContainer) -> void:
-	var result: Dictionary = await PlayerServices.mission_complete(mission_id)
-	if _report(result, tr("%%SVC_MSG_MISSION_COMPLETED")):
-		if result.get("data") is Dictionary and (result.get("data") as Dictionary).get("settlement") != null:
-			_say(tr("%%SVC_MSG_MISSION_COMPLETED") + " " + ServiceTypes.settlement_text(
-					(result.get("data") as Dictionary).get("settlement")), GOOD)
-		_close_contract_pois(mission_id)
-		await _after_ended(mission_id, contract)
+## The partial turn-in of an unfinished mission, from the service's preview [param turn_in]: what it would
+## pay now and, on a mission turned in from here (autoComplete), "Turn in now (partial)" -- pressed once it
+## asks, pressed again it goes: the mission ends there for everyone on it. A mission turned in at a town hall
+## is turned in partially at the kiosk there, so here it only says what it would pay. null on a finished
+## mission (its own turn-in pays in full) or when the service sent no preview.
+func _partial_turn_in_row(mission_id: String, mission: Dictionary, contract: VBoxContainer,
+		turn_in: Dictionary) -> Control:
+	if turn_in.is_empty() or bool(turn_in.get("full", false)):
+		return null
+	var row := _row(12)
+	if not ServiceTypes.can_turn_in_partially(turn_in):
+		row.add_child(_label(tr("%%MISSION_PARTIAL_NOTHING_DONE"), DIM))
+		return row
+	var offer := _label(ServiceTypes.partial_turn_in_text(turn_in), DIM)
+	offer.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	offer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(offer)
+	if mission.get("autoComplete") == false:
+		return row
+	var label := tr("%%MISSION_TURN_IN_PARTIAL")
+	var sure := tr("%%MISSION_TURN_IN_PARTIAL_SURE")
+	var button := _button(label)
+	ServiceStyle.apply_button_kind(button, ServiceStyle.ButtonKind.DANGER)
+	button.pressed.connect(func() -> void:
+		if button.text != sure:
+			# The first press only asks: the mission would end here, for what it says.
+			button.text = sure
+			_say(ServiceTypes.partial_turn_in_confirm(turn_in), WARN)
+			return
+		button.disabled = true
+		await _complete(mission_id, contract, true)
+		# Refused (the service says why): the offer stands again; done, the contract is gone with it.
+		if is_instance_valid(button):
+			button.disabled = false
+			button.text = label)
+	row.add_child(button)
+	return row
+
+
+func _complete(mission_id: String, contract: VBoxContainer, partial: bool = false) -> void:
+	var result: Dictionary = await PlayerServices.mission_complete(mission_id, partial)
+	if not _report(result, tr("%%MISSION_TURNED_IN_PARTIAL") if partial else tr("%%SVC_MSG_MISSION_COMPLETED")):
+		return
+	if not partial and result.get("data") is Dictionary \
+			and (result.get("data") as Dictionary).get("settlement") != null:
+		_say(tr("%%SVC_MSG_MISSION_COMPLETED") + " " + ServiceTypes.settlement_text(
+				(result.get("data") as Dictionary).get("settlement")), GOOD)
+	_close_contract_pois(mission_id)
+	await _after_ended(mission_id, contract)
 
 
 ## A mission the player just gave up or finished: in My missions it leaves the sheet with the list, and the

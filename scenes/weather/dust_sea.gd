@@ -399,6 +399,16 @@ func storm_tau(sample: Dictionary) -> float:
 	return maxf(tau - sea_tau_above(_ground_m), 0.0)
 
 
+## The storm's dust over the eye that the light has still to cross (AtmosphereRenderer.storm_tau_above): a dust
+## wall's, a storm's. storm_tau less the thin dust over the sea when the field's column holds it: the light is
+## already dimmed by that dust (tau_above), and the field's plateau dust counted twice dimmed every clear day.
+func storm_light_tau(sample: Dictionary) -> float:
+	var tau: float = storm_tau(sample)
+	if not _on or not bool(sample.get("weather_field", false)):
+		return tau
+	return maxf(tau - (tau_above(_ground_m) - sea_tau_above(_ground_m)), 0.0)
+
+
 ## The ground under the eye, its dust's colour, the wind at the sea's top, and the weather's thickness factor.
 func _refresh(planet: Planet, camera: Camera3D, to_planet: Basis) -> void:
 	var data: PlanetData = planet.planet_data

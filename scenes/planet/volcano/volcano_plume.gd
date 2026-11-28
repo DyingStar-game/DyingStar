@@ -169,8 +169,12 @@ func _ready() -> void:
 	tok = ClientPerf.scope_begin()
 	_mat.set_shader_parameter("vent_y", clampf(model.vent_radius, VENT_GLOW.LIGHT_MIN_Y_M, VENT_GLOW.LIGHT_MAX_Y_M))
 	_mat.set_shader_parameter("lava_reach", clampf(model.vent_radius * 2.0, 400.0, 1200.0))
+	# The vent over the planet's reference sphere: what the dust sea's heights are counted from (DustSea).
+	var vent_alt := _origin.length() - data.radius
+	_mat.set_shader_parameter("vent_alt_m", vent_alt)
+	stones.trail_mat.set_shader_parameter("vent_alt_m", vent_alt)
 	vent_glow = VENT_GLOW.new()
-	vent_glow.setup(_relief, model.vent_radius, volcano.seed ^ int(model.volcano_key.hash()))
+	vent_glow.setup(_relief, model.vent_radius, volcano.seed ^ int(model.volcano_key.hash()), vent_alt)
 	add_child(vent_glow)
 	ClientPerf.scope_end("plume:glow", tok)
 
@@ -393,6 +397,11 @@ func _light() -> void:
 	# (a moonlit plume without an eruption keeps it toward the moon).
 	var erupting := model.eruption_activity(clock()) > 0.02
 	_mat.set_shader_parameter("vent_probe", day < 0.05 and (erupting or moon_color == Vector3.ZERO))
+	# Drawn after the aerial pass that paints the dust sea: the smoke, the trails and the vent's glow fade
+	# through the sea by themselves, as it is now.
+	DustSea.light_material(_mat)
+	DustSea.light_material(stones.trail_mat)
+	vent_glow.sea()
 
 
 ## The moons' light here, summed: [direction toward it in this frame (the brightest wins), colour × energy

@@ -8,7 +8,9 @@ extends RefCounted
 ##   - the player holds an active assignment of it;
 ##   - the kiosk stands in the village it delivers to: the cargo depot behind the warehouse of its
 ##     last warehouse objective (POI `metadata.persistence`) is within TURN_IN_RANGE_M of the kiosk.
-## The outcome goes back to the screen (ScreenTarget.announce): {state: "turn_in_result", ok, error}.
+## A partial turn-in (a mission handed in before it is done) goes the same way, with `partial`: the mission
+## service pays it for the share done, less its penalty -- this server only vouches for the place.
+## The outcome goes back to the screen (ScreenTarget.announce): {state: "turn_in_result", ok, error, partial}.
 
 ## How far (m) the delivery village's cargo depot may stand from the kiosk: a village is a few hundred
 ## metres across, two villages are kilometres apart.
@@ -17,19 +19,21 @@ const TURN_IN_RANGE_M := 900.0
 const DEPOTS_GROUP := &"cargo_depots"
 
 
-## Turn [param mission_id] in for [param player] at [param kiosk]; the screen hears the outcome.
-static func turn_in(kiosk: Node3D, player: Node, mission_id: String) -> void:
+## Turn [param mission_id] in for [param player] at [param kiosk] ([param partial]: before it is done); the
+## screen hears the outcome.
+static func turn_in(kiosk: Node3D, player: Node, mission_id: String, partial: bool = false) -> void:
 	var player_id := str(player.get("client_uuid"))
-	var error := await _turn_in(kiosk, player_id, mission_id)
-	print("[TurnIn] %s for %s: %s" % [mission_id, player_id, "ok" if error == "" else error])
+	var error := await _turn_in(kiosk, player_id, mission_id, partial)
+	print("[TurnIn] %s for %s%s: %s" % [mission_id, player_id, " (partial)" if partial else "",
+			"ok" if error == "" else error])
 	# The services answered seconds later: the player may have left, the kiosk streamed out.
 	if is_instance_valid(kiosk) and is_instance_valid(player):
 		ScreenTarget.announce(kiosk, player, {"state": "turn_in_result", "mission_id": mission_id,
-			"ok": error == "", "error": error})
+			"ok": error == "", "error": error, "partial": partial})
 
 
 ## "" when the mission was completed, else why not.
-static func _turn_in(kiosk: Node3D, player_id: String, mission_id: String) -> String:
+static func _turn_in(kiosk: Node3D, player_id: String, mission_id: String, partial: bool = false) -> String:
 	if mission_id == "" or player_id == "":
 		return "INVALID"
 	var detail := await MissionHeartbeat.mission_internal(HTTPClient.METHOD_GET, "/missions/%s" % mission_id.uri_encode(), null)
@@ -44,8 +48,17 @@ static func _turn_in(kiosk: Node3D, player_id: String, mission_id: String) -> St
 		if not is_instance_valid(kiosk) or not _depot_near(kiosk, depot_uuid):
 			return "WRONG_TOWN_HALL"
 	var done := await MissionHeartbeat.mission_internal(HTTPClient.METHOD_POST,
-			"/missions/%s/complete" % mission_id.uri_encode(), {"playerId": player_id})
+			"/missions/%s/complete" % mission_id.uri_encode(), complete_body(player_id, partial))
 	return "" if bool(done.get("ok", false)) else str(done.get("error", "ERROR"))
+
+
+## The internal "complete" request for [param player_id]: `partial` only when asked, so a finished mission's
+## turn-in stays the request it always was.
+static func complete_body(player_id: String, partial: bool) -> Dictionary:
+	var body := {"playerId": player_id}
+	if partial:
+		body["partial"] = true
+	return body
 
 
 ## Whether [param assignments] (the internal detail's) hold an active one of [param player_id].

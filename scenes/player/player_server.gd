@@ -49,7 +49,7 @@ const DEV_TOOL_OF_ACTION: Dictionary = {
 }
 ## Client actions only an admin may run (AdminRoles.grants_admin, on the realm roles Horizon verified in the
 ## player's token). Refused at the top of server_action_received, whatever the client shows or sends.
-const ADMIN_ACTIONS: Array[String] = ["admin_fill_shelves"]
+const ADMIN_ACTIONS: Array[String] = ["admin_fill_shelves", "admin_village_alarm", "admin_spawn_dust_wall"]
 ## How far (m) from a cargo depot's origin an admin may stand to fill its shelves.
 const _ADMIN_DEPOT_RANGE := 300.0
 ## Below the ground this close (m) to a village mine's dug air, a falling player is put back on the mine's floor
@@ -599,6 +599,12 @@ func server_action_received(data: Dictionary) -> void:
 		"admin_fill_shelves":
 			# Admin (refused at the top without an admin role): stock the shelves of the depot we stand in.
 			_admin_fill_shelves()
+		"admin_village_alarm":
+			# Admin: a drill of the storm alarm of the village we stand in (warning, siren, off).
+			_admin_village_alarm()
+		"admin_spawn_dust_wall":
+			# Admin: a dust wall called in upwind of the village we stand in, arriving in ForcedDustWall.LEAD_S.
+			_admin_spawn_dust_wall()
 		"stock_ore":
 			# Dev spawn wheel (refused at the top while it is off): crates of crushed ore shelved in the depot
 			# we stand in, as if delivered.
@@ -1167,6 +1173,46 @@ func _admin_fill_shelves() -> void:
 	rng.randomize()
 	var count: int = depot.server_fill_shelves(rng)
 	print("[Admin] %s filled the shelves of %s: %d hauling boxes" % [player.client_uuid, depot.name, count])
+
+
+## The village the player stands in (poi_villages.gd: its holds()), the nearest when two overlap, in their
+## world; null when none.
+func _admin_village() -> Node3D:
+	var village: Node3D = null
+	var best_d := INF
+	for node in get_tree().get_nodes_in_group(&"poi_villages"):
+		if not (node is Node3D) or not node.has_method("holds") or (node as Node3D).get_world_3d() != player.get_world_3d() \
+				or not node.holds(player.global_position):
+			continue
+		var d: float = (node as Node3D).global_position.distance_squared_to(player.global_position)
+		if d < best_d:
+			best_d = d
+			village = node
+	return village
+
+
+## Admin: a drill of the storm alarm of the village the player stands in, through the normal replication
+## (poi_villages.server_alarm_drill).
+func _admin_village_alarm() -> void:
+	var village: Node3D = _admin_village()
+	if village == null:
+		print("[Admin] %s: in no village, no alarm to drill" % player.client_uuid)
+		return
+	village.server_alarm_drill()
+	print("[Admin] %s drills the storm alarm of %s" % [player.client_uuid, village.name])
+
+
+## Admin: a dust wall called in upwind of the village the player stands in (poi_villages.server_call_dust_wall),
+## coming from where they look in a calm.
+func _admin_spawn_dust_wall() -> void:
+	var village: Node3D = _admin_village()
+	if village == null:
+		print("[Admin] %s: in no village, no dust wall called in" % player.client_uuid)
+		return
+	if village.server_call_dust_wall(-player.global_basis.z):
+		print("[Admin] %s called a dust wall on %s" % [player.client_uuid, village.name])
+	else:
+		print("[Admin] %s: no weather over %s, no dust wall" % [player.client_uuid, village.name])
 
 ## A WORLD orientation expressed in the parent's frame, as the euler angles the network carries.
 func _to_parent_rotation(net_parent: Node, world_basis: Basis) -> Vector3:

@@ -54,6 +54,12 @@ static var _frame_readers: Dictionary = {}
 ## loaded, prepared once. A null is looked at again after [constant NO_VERSION_RETRY_MS], like a missing
 ## version: the tiles it needs may not have landed yet.
 static var _offline: Dictionary = {}
+## Whether the chart's own copy of a body ([method offline_data]) reads the body's streamed modifiers —
+## the mountains, ridges, volcanoes and rock fields the relief is shaped by, and the zones the canyons
+## spare. Turned on by the chart while it is in the tree ([StarMap]) and off again when it leaves: off,
+## a copy has no modifier at all, which is what every unit test that takes a copy as its fixture has read
+## since the modifiers were streamed, and none of them then sees a tile land in the middle of it.
+static var stream_modifiers: bool = false
 
 ## What reading heights costs, against what building a tile costs: name -> count or microseconds.
 ## Kept only while [constant StarMapGround.DEBUG_GROUND] is on — off, a call pays one constant test.
@@ -241,16 +247,39 @@ static func cached_version(key: String) -> String:
 ## the chart samples the relief, it does not carve it.
 ##
 ## Null for a body with no PlanetData in its scene, no manifest, or nothing on disk yet.
+##
+## The modifiers come from the body's shared streamed pack ([RemoteModifierPack]) once something has
+## opened it — the chart's own roads and zones do, as soon as it shows the body — and are never opened
+## from here: opening one reads its manifest and floor over the network, and this runs on the main
+## thread at every frame. A copy made before the pack was open is made again once it is, as a NEW
+## object: the workers building tiles from the old one go on reading it unchanged, and the chart, which
+## remembers which planet each tile was read through, builds those tiles again
+## ([method StarMapGround._retry_outdated]). Before the modifiers were streamed (2026-11-18) the copy
+## read a terrainmodifier.pack beside its tiles; no such file is shipped any more, and the copy had no
+## mountain at all.
 static func offline_data(key: String) -> PlanetData:
 	if key == "":
 		return null
 	var now: int = Time.get_ticks_msec()
 	var memo: Dictionary = _offline.get(key, {})
-	if not memo.is_empty() and (memo["data"] != null or now < int(memo["at"]) + NO_VERSION_RETRY_MS):
-		return memo["data"]
+	if not memo.is_empty():
+		var held: PlanetData = memo["data"]
+		if held != null and _modifiers_current(held, key):
+			return held
+		if held == null and now < int(memo["at"]) + NO_VERSION_RETRY_MS:
+			return null
 	var made: PlanetData = _prepare_offline(key)
 	_offline[key] = {"data": made, "at": now}
 	return made
+
+
+## Does the copy [param held] of [param key] read the modifiers it should? A pack once open stays open
+## for the whole process (RemoteModifierPack.shared_for keeps it), so a copy that has one is never
+## outdated while [member stream_modifiers] holds; one without is, the moment the pack is open.
+static func _modifiers_current(held: PlanetData, key: String) -> bool:
+	if not stream_modifiers:
+		return held.remote_modifiers == null
+	return held.remote_modifiers != null or RemoteModifierPack.shared_if_open(key) == null
 
 
 static func _prepare_offline(key: String) -> PlanetData:
@@ -267,6 +296,10 @@ static func _prepare_offline(key: String) -> PlanetData:
 	if not made.apply_chunk_manifest():
 		return null
 	made.remote_source = source
+	# Set before warm_mountains, which opens the modifiers and decides from them whether this body has
+	# mountains at all. Never attach_remote_modifiers(): that one opens the pack, blocking.
+	if stream_modifiers:
+		made.remote_modifiers = RemoteModifierPack.shared_if_open(key)
 	made.warm_mountains()
 	# The canyons spare the towns of the body's POI file, as they do on the planet once loaded. The
 	# networked villages the chart (built offline) does not know.

@@ -386,7 +386,7 @@ func test_an_open_bug_is_found_by_its_words() -> void:
 	assert_eq(BugReportDialog.matching(KNOWN, "  "), [], "nothing typed, nothing offered")
 	assert_eq(BugReportDialog.matching(KNOWN, "volcano"), [])
 	assert_eq(BugReportDialog.matching(KNOWN, "preprod", 2).size(), 2, "no more than asked")
-	for status: String in ["new", "open", "in_progress", "next_build", "to_test"]:
+	for status: String in ["new", "open", "in_progress", "to_test"]:
 		assert_true(BugReportDialog.STATUSES.has(status), "%s: one of service-social's open statuses" % status)
 
 

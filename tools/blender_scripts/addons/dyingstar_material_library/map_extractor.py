@@ -8,6 +8,12 @@ Identification is by connection, not by file name. A file called
 "Rough_02_final.png" wired into the Roughness input is the roughness map,
 whatever the texturing tool decided to call it.
 
+Ambient occlusion is the one map the Principled BSDF has no input for. It is
+read where artists put it: multiplied over the base colour, or plugged into the
+Occlusion socket of the glTF exporter's own group node. Its name is only ever
+used to tell which side of that multiply it sits on, and to warn of an
+occlusion map left where the export does not read it.
+
 Only a wiring the manifest says in full is read as images and numbers. Any
 other -- a mask blending two paints, a map passed through a contrast node -- is
 node work, which exists nowhere but in the tree: the input is then left to the
@@ -16,6 +22,7 @@ baker (map_baker), named in ExtractionResult.bake.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 import bpy
@@ -31,11 +38,26 @@ _MAPPING = "ShaderNodeMapping"
 _PRINCIPLED = "ShaderNodeBsdfPrincipled"
 _MATH = "ShaderNodeMath"
 _RGB = "ShaderNodeRGB"
+_GROUP = "ShaderNodeGroup"
 
 # Channel each role occupies in a packed ORM map, per the manifest schema.
-# Occlusion sits in red, but it reaches the Principled through the base colour
-# mix rather than a direct link, so only these two can be checked.
+# Occlusion sits in red (_OCCLUSION_CHANNEL): it never reaches the Principled
+# by a direct link, so only these two can be checked there.
 _ORM_CHANNELS = {"roughness": "Green", "metallic": "Blue"}
+_OCCLUSION_CHANNEL = "Red"
+
+# The group node Blender's glTF exporter reads the occlusion from, under its
+# current name and its former one. Matched by prefix: an appended material
+# brings its own copy of the group, named with a ".001" suffix.
+_GLTF_OUTPUT_GROUPS = ("glTF Material Output", "glTF Settings")
+_GLTF_OCCLUSION = "Occlusion"
+
+# What texturing tools call an occlusion map, as a whole word of a file or node
+# name: "metal_ao.png", "Rust_AmbientOcclusion_2K", but not "chaos".
+_OCCLUSION_NAME = re.compile(
+    r"(?<![a-z0-9])(ao|ambient[ _-]?occlusion|occlusion)(?![a-z])", re.IGNORECASE
+)
+_PATH_SEPARATOR = re.compile(r"[\\/]")
 
 # How many nodes to traverse before giving up, in case of a cyclic or
 # pathological graph.
@@ -161,12 +183,58 @@ def _is_image(socket) -> bool:
     return node is not None and node.bl_idname == _IMAGE
 
 
-def _is_image_or_channel(socket) -> bool:
-    """An image wired as it is, or one of its channels split by a Separate Color node."""
+def _image_node_behind(socket) -> bpy.types.Node | None:
+    """The Image Texture node wired as it is, or through a Separate Color node, else None."""
     node = _linked_node(socket)
     if node is not None and node.bl_idname == _SEPARATE_COLOR:
-        return _is_image(node.inputs["Color"])
-    return _is_image(socket)
+        node = _linked_node(node.inputs["Color"])
+    return node if node is not None and node.bl_idname == _IMAGE else None
+
+
+def _is_image_or_channel(socket) -> bool:
+    """An image wired as it is, or one of its channels split by a Separate Color node."""
+    return _image_node_behind(socket) is not None
+
+
+def _named_occlusion(node: bpy.types.Node) -> bool:
+    """Whether an Image Texture node, or the image it holds, is called an occlusion map."""
+    names = [node.label, node.name]
+    if node.image is not None:
+        # The file's own name: a "textures/ao/" folder says nothing of one map.
+        names += [node.image.name, _PATH_SEPARATOR.split(node.image.filepath)[-1]]
+    return any(_OCCLUSION_NAME.search(name) for name in names)
+
+
+def _is_named_occlusion(socket) -> bool:
+    node = _image_node_behind(socket)
+    return node is not None and _named_occlusion(node)
+
+
+def _is_data(socket) -> bool:
+    """Whether a socket is fed by an image read as data (Non-Color), which a colour never is."""
+    node = _image_node_behind(socket)
+    return (
+        node is not None
+        and node.image is not None
+        and node.image.colorspace_settings.name == "Non-Color"
+    )
+
+
+def _occlusion_inputs(node: bpy.types.Node) -> tuple[str, str]:
+    """The names of a multiplying Mix node's inputs: the colour, then the occlusion over it.
+
+    A multiply gives the same picture whichever side the occlusion is on, so
+    artists wire it both ways. Read the wrong way round, the occlusion would be
+    published as the albedo. The side is told by what the image is called, then
+    by its colour space, and only when one side alone says so; otherwise the
+    convention of material_builder stands: the colour in A, the occlusion in B.
+    """
+    first, second = _mix_inputs(node)
+    for is_occlusion in (_is_named_occlusion, _is_data):
+        in_first = is_occlusion(node.inputs[first])
+        if in_first != is_occlusion(node.inputs[second]):
+            return (second, first) if in_first else (first, second)
+    return first, second
 
 
 def _is_tint(node: bpy.types.Node) -> bool:
@@ -193,15 +261,17 @@ def _base_colour_is_exact(socket) -> bool:
         return True
     if node.bl_idname not in (_MIX, _MIX_LEGACY) or getattr(node, "data_type", "RGBA") != "RGBA":
         return False
-    if _is_tint(node):
+    base_input, occlusion_input = _occlusion_inputs(node)
+    # An occlusion map in A over a flat colour in B is wired like a tint: it is
+    # not one, and must not be published as the albedo.
+    if base_input == _mix_inputs(node)[0] and _is_tint(node):
         return True
 
-    base_input, modulation_input = _mix_inputs(node)
     factor = node.inputs.get("Factor") or node.inputs.get("Fac")
     occluded = (
         getattr(node, "blend_type", "") == "MULTIPLY"
         and (factor is None or not factor.is_linked)
-        and _is_image_or_channel(node.inputs[modulation_input])
+        and _is_image_or_channel(node.inputs[occlusion_input])
     )
     if not occluded:
         return False
@@ -213,7 +283,7 @@ def _base_colour_is_exact(socket) -> bool:
 
 
 def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) -> None:
-    """Base Color may be a plain colour or an image, tinted or not, alone or under an AO multiply."""
+    """Base Color may be a plain colour or an image, tinted or not, alone or multiplied with an AO map."""
     socket = principled.inputs["Base Color"]
     if not _base_colour_is_exact(socket):
         result.bake["albedo"] = socket
@@ -235,20 +305,21 @@ def _extract_base_color(principled: bpy.types.Node, result: ExtractionResult) ->
         return
 
     if node.bl_idname in (_MIX, _MIX_LEGACY):
-        base_input, modulation_input = _mix_inputs(node)
-        occlusion = _walk_to_image(node.inputs[modulation_input])
+        base_input, occlusion_input = _occlusion_inputs(node)
+        occlusion = _walk_to_image(node.inputs[occlusion_input])
         if occlusion is None:
             # No occlusion map in B: the albedo in A, tinted or not by the colour in B.
             _extract_tinted_albedo(node, result)
             return
 
-        # Occlusion in B, multiplied over what is in A: the albedo, itself tinted
-        # or not (a Mix of its own, as material_builder wires it), or a plain colour.
-        base = _linked_node(node.inputs[base_input])
+        # Occlusion multiplied over the other input: the albedo, itself tinted or
+        # not (a Mix of its own, as material_builder wires it), or a plain colour.
+        base_socket = node.inputs[base_input]
+        base = _linked_node(base_socket)
         if base is not None and base.bl_idname in (_MIX, _MIX_LEGACY):
             _extract_tinted_albedo(base, result)
         else:
-            _extract_tinted_albedo(node, result, tinted=False)
+            _extract_untinted_base(base_socket, result)
         if occlusion.image != result.images.get("albedo"):
             result.images["ao"] = occlusion.image
 
@@ -270,27 +341,32 @@ def _is_full_multiply(node: bpy.types.Node) -> bool:
     )
 
 
-def _extract_tinted_albedo(mix: bpy.types.Node, result: ExtractionResult, tinted: bool = True) -> None:
+def _extract_untinted_base(socket, result: ExtractionResult) -> bool:
+    """Read the colour an occlusion map or a tint is laid over; whether it is an image.
+
+    The albedo image, or a plain colour when nothing is wired there: what
+    material_builder wires for a manifest with albedo_color, an ao map and no
+    albedo.
+    """
+    albedo = _walk_to_image(socket)
+    if albedo is None:
+        result.albedo_color = _plain_colour(socket.default_value)
+        return False
+    result.images["albedo"] = albedo.image
+    return True
+
+
+def _extract_tinted_albedo(mix: bpy.types.Node, result: ExtractionResult) -> None:
     """Read the base colour out of a Mix node: its first input, then its second as a tint.
 
-    A is the albedo image, or a plain colour when nothing is wired there. With
-    tinted, B is a flat colour laid over it: multiplied in full, it is published
-    as albedo_color, which Godot multiplies over the albedo map the same way --
+    A is the albedo image, or a plain colour when nothing is wired there. B is
+    a flat colour laid over the image: multiplied in full, it is published as
+    albedo_color, which Godot multiplies over the albedo map the same way --
     one grey texture then gives every colour of a surface, with no new image.
     Only the wirings _base_colour_is_exact accepts reach this point.
     """
     base_input, modulation_input = _mix_inputs(mix)
-    base_socket = mix.inputs[base_input]
-    albedo = _walk_to_image(base_socket)
-
-    if albedo is None:
-        # A plain colour under an occlusion map: what material_builder wires
-        # for a manifest with albedo_color, an ao map and no albedo.
-        result.albedo_color = _plain_colour(base_socket.default_value)
-        return
-
-    result.images["albedo"] = albedo.image
-    if not tinted:
+    if not _extract_untinted_base(mix.inputs[base_input], result):
         return
     tint_socket = mix.inputs[modulation_input]
     if not tint_socket.is_linked and not _is_white(tint_socket.default_value):
@@ -394,6 +470,104 @@ def _extract_alpha(principled: bpy.types.Node, result: ExtractionResult) -> None
         result.images["opacity"] = node.image
 
 
+def _gltf_occlusion_socket(material: bpy.types.Material):
+    """The linked Occlusion input of the glTF exporter's group node, or None.
+
+    The Principled BSDF has no occlusion input, so this group node is where
+    Blender itself has artists plug the map for a glTF export: it does nothing
+    in the viewport and exists to carry that one link.
+    """
+    for node in material.node_tree.nodes:
+        if node.bl_idname != _GROUP or node.node_tree is None:
+            continue
+        if not node.node_tree.name.startswith(_GLTF_OUTPUT_GROUPS):
+            continue
+        socket = node.inputs.get(_GLTF_OCCLUSION)
+        if socket is not None and socket.is_linked:
+            return socket
+    return None
+
+
+def _extract_gltf_occlusion(material: bpy.types.Material, result: ExtractionResult) -> None:
+    """The occlusion map plugged into the glTF group node: an image, or the red channel of one.
+
+    Read before the packed ORM is collapsed: a packed map usually feeds this
+    socket from its red channel, and is then one orm map, not an ao beside it.
+    """
+    socket = _gltf_occlusion_socket(material)
+    if socket is None:
+        return
+
+    image, channel = _separated_channel(socket)
+    if image is None:
+        if not _is_image(socket):
+            result.warnings.append(
+                "The glTF Occlusion socket goes through an unsupported node "
+                f"({_linked_node(socket).bl_idname}): plug the AO image straight in, "
+                "or its red channel through a Separate Color"
+            )
+            return
+        image = _linked_node(socket).image
+    elif channel != _OCCLUSION_CHANNEL:
+        # Godot reads the occlusion from red, as glTF does: another channel
+        # would be published as a map that shades the wrong places.
+        result.warnings.append(
+            f"The glTF Occlusion socket reads the {channel} channel of '{image.name}', "
+            f"expected {_OCCLUSION_CHANNEL}: no ao map is published from it"
+        )
+        return
+    if image is None:
+        return
+
+    multiplied = result.images.get("ao")
+    if multiplied is None:
+        result.images["ao"] = image
+    elif multiplied != image:
+        result.warnings.append(
+            f"Two AO maps: '{multiplied.name}', multiplied over Base Color, is published; "
+            f"'{image.name}', on the glTF Occlusion socket, is not"
+        )
+
+
+def _upstream_nodes(socket) -> list[bpy.types.Node]:
+    """Every node whose output ends up in a socket, however far back."""
+    found: list[bpy.types.Node] = []
+    pending = [socket]
+    while pending:
+        for link in pending.pop().links:
+            if link.from_node not in found:
+                found.append(link.from_node)
+                pending.extend(link.from_node.inputs)
+    return found
+
+
+def _warn_of_unpublished_occlusion(material: bpy.types.Material, result: ExtractionResult) -> None:
+    """Name the occlusion maps that will not come out of the export as an ao map.
+
+    The one place a file name is trusted on its own: an image called AO that
+    the walk did not reach is an artist expecting it in the library, and an
+    export that drops it without a word reads as a broken add-on.
+    """
+    baked_into_albedo = _upstream_nodes(result.bake["albedo"]) if "albedo" in result.bake else []
+    baked = [node for socket in result.bake.values() for node in _upstream_nodes(socket)]
+    for node in material.node_tree.nodes:
+        if node.bl_idname != _IMAGE or node.image is None or not _named_occlusion(node):
+            continue
+        if node in baked_into_albedo:
+            result.warnings.append(
+                f"AO map '{node.image.name}' is part of the Base Color nodes baked at export: "
+                "its shading goes into the albedo. For a separate ao map, plug it into the "
+                "glTF Material Output's Occlusion socket, or multiply it straight over the "
+                "albedo (Mix > Multiply, AO in B)"
+            )
+        elif node not in baked and node.image not in result.images.values():
+            result.warnings.append(
+                f"AO map '{node.image.name}' found but not wired: plug it into the glTF "
+                "Material Output's Occlusion socket, or multiply it over Base Color "
+                "(Mix > Multiply, AO in B)"
+            )
+
+
 def _collapse_packed_orm(principled: bpy.types.Node, result: ExtractionResult) -> None:
     """Record a packed ORM as one map instead of three.
 
@@ -464,6 +638,7 @@ def extract(material: bpy.types.Material) -> ExtractionResult:
     _extract_normal_and_height(principled, result)
     _extract_scalar(principled, "Roughness", "roughness", result)
     _extract_scalar(principled, "Metallic", "metallic", result)
+    _extract_gltf_occlusion(material, result)
     _collapse_packed_orm(principled, result)
 
     if "Emission Color" in principled.inputs:
@@ -471,6 +646,7 @@ def extract(material: bpy.types.Material) -> ExtractionResult:
     _extract_alpha(principled, result)
 
     _extract_physical_size(material, result)
+    _warn_of_unpublished_occlusion(material, result)
 
     # An image wired into several inputs is almost always a packed ORM the
     # artist split by hand, or a mistake. Either way the artist should know.

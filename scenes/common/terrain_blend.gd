@@ -14,12 +14,14 @@
 class_name TerrainBlend
 extends Node
 
-## Height of the fringe in metres, measured up from the ground.
-@export var height: float = 0.9
+## Height of the fringe in metres, measured up from the ground: its mean, the noise of the material
+## (blend_noise_strength, terrain_blend.tres) swings it by that share around it. Higher = the ground's
+## texture climbs further up the walls; at 0.9 it reached a third of a home's wall (2026-11-28).
+@export var height: float = 0.4
 
 ## Hard ceiling on the fringe as a FRACTION of the object's own height along the planetary up.
 ##
-## Without it, `height` swallows anything shorter than itself: a 0.9 m band on a 0.5 m crate covers
+## Without it, `height` swallows anything shorter than itself: a 0.4 m band on a 0.3 m crate covers
 ## the whole thing, and crates, pallets and small rocks came out as solid blocks of ground texture.
 ## A wall gets the full band; a crate gets one proportionate to it.
 @export var max_height_ratio: float = 0.3
@@ -92,7 +94,7 @@ func refresh() -> void:
 	var b: Dictionary = _bounds_along(up)
 	var low: Vector3 = b["point"]
 	# The band never swallows its object: whichever is smaller of the wanted height and a fraction
-	# of the object's own height. A 0.9 m band on a 0.5 m crate covers the whole thing.
+	# of the object's own height. A 0.4 m band on a 0.3 m crate covers the whole thing.
 	_band = minf(height, maxf(b["high"] - b["low"], 0.0) * max_height_ratio)
 
 	# Measured from the object's LOWEST point, never its origin: a rock's origin sits at its centre,
@@ -281,20 +283,19 @@ func _apply(planet: Planet, up: Vector3, ground: Vector3, look: GroundLook) -> v
 	if look.material == null:
 		_clear()
 		return
-	# The object's own box, in its root's frame: what tells an outer wall from an inner one (blend_box_x).
+	# The box each mesh is judged against, in its holder's frame (box_owner_of): what tells an outer wall
+	# from an inner one (blend_box_x).
 	var root := get_parent() as Node3D
-	var root_xf: Transform3D = root.global_transform
-	var box: AABB = _box_in(root_xf)
-	var center: Vector3 = root_xf * box.get_center()
-	var box_x: Vector3 = root_xf.basis.x
-	var box_z: Vector3 = root_xf.basis.z
-	var half_x: float = box.size.x * 0.5 * box_x.length()
-	var half_z: float = box.size.z * 0.5 * box_z.length()
+	var holders: Array[Node3D] = []
+	for gi in _targets:
+		holders.append(box_owner_of(gi, root) if is_instance_valid(gi) else null)
+	var boxes: Dictionary = _boxes(holders)
 	# The local frame the textures are read along, anchored to the planet (blend_tan1).
 	var bp: Basis = planet.global_basis.orthonormalized()
 	var up_p: Vector3 = (bp.inverse() * up).normalized()
 	var tangents: Array[Vector3] = local_tangents(up_p)
-	for gi in _targets:
+	for i in _targets.size():
+		var gi: GeometryInstance3D = _targets[i]
 		if not is_instance_valid(gi):
 			continue
 		# Expressed in this instance's MODEL space, where coordinates are small and float32 is
@@ -314,10 +315,14 @@ func _apply(planet: Planet, up: Vector3, ground: Vector3, look: GroundLook) -> v
 		gi.set_instance_shader_parameter(&"blend_height", _band)
 		gi.set_instance_shader_parameter(&"blend_detail_uv", look.detail)
 		gi.set_instance_shader_parameter(&"blend_nova_where", look.nova_where)
-		gi.set_instance_shader_parameter(&"blend_center", gi.to_local(center))
+		var holder_xf: Transform3D = holders[i].global_transform
+		var box: AABB = boxes[holders[i]]
+		var box_x: Vector3 = holder_xf.basis.x
+		var box_z: Vector3 = holder_xf.basis.z
+		gi.set_instance_shader_parameter(&"blend_center", gi.to_local(holder_xf * box.get_center()))
 		var inv: Basis = gi.global_basis.inverse()
-		gi.set_instance_shader_parameter(&"blend_box_x", box_axis(inv, box_x, half_x))
-		gi.set_instance_shader_parameter(&"blend_box_z", box_axis(inv, box_z, half_z))
+		gi.set_instance_shader_parameter(&"blend_box_x", box_axis(inv, box_x, box.size.x * 0.5 * box_x.length()))
+		gi.set_instance_shader_parameter(&"blend_box_z", box_axis(inv, box_z, box.size.z * 0.5 * box_z.length()))
 		var origin_p: Vector3 = bp.inverse() * (gi.global_position - planet.global_position)
 		gi.set_instance_shader_parameter(&"blend_tan1", anchor_row(gi.global_basis, bp * tangents[0], tangents[0], origin_p))
 		gi.set_instance_shader_parameter(&"blend_tan2", anchor_row(gi.global_basis, bp * tangents[1], tangents[1], origin_p))
@@ -351,24 +356,36 @@ static func box_axis(inv: Basis, axis_world: Vector3, half_m: float) -> Vector4:
 	return Vector4(a.x / l, a.y / l, a.z / l, half_m * l)
 
 
-## The bounds of every mesh of the object in the frame [param root_xf] (its root's), corners and all.
-func _box_in(root_xf: Transform3D) -> AABB:
-	var to_root: Transform3D = root_xf.affine_inverse()
-	var box := AABB()
-	var first := true
-	for gi in _targets:
+## The node whose box tells the outer walls of [param node] from its inner ones (blend_box_x): [param node]
+## or its nearest ancestor in BOX_GROUP, below [param root]; [param root] itself (the object's own root) when
+## there is none. A building made of a row of containers is ONE object: judged against the whole building's
+## box, the wall a container shares with its neighbour looked out of the building's nearest side, a facade's,
+## and wore the band inside the home (2026-11-28). Pure.
+static func box_owner_of(node: Node, root: Node3D) -> Node3D:
+	var walk: Node = node
+	while walk != null and walk != root:
+		if walk is Node3D and walk.is_in_group(BOX_GROUP):
+			return walk as Node3D
+		walk = walk.get_parent()
+	return root
+
+
+## The bounds of the meshes each holder owns ([param holders]: one per target, box_owner_of), corners and
+## all, in that holder's own frame: {holder: AABB}.
+func _boxes(holders: Array[Node3D]) -> Dictionary:
+	var boxes: Dictionary = {}
+	for i in _targets.size():
+		var gi: GeometryInstance3D = _targets[i]
 		if not is_instance_valid(gi):
 			continue
+		var holder: Node3D = holders[i]
 		var aabb: AABB = gi.get_aabb()
-		var xf: Transform3D = to_root * gi.global_transform
-		for i in 8:
-			var corner: Vector3 = xf * aabb.get_endpoint(i)
-			if first:
-				box = AABB(corner, Vector3.ZERO)
-				first = false
-			else:
-				box = box.expand(corner)
-	return box
+		var xf: Transform3D = holder.global_transform.affine_inverse() * gi.global_transform
+		var box: AABB = boxes.get(holder, AABB(xf * aabb.position, Vector3.ZERO))
+		for k in 8:
+			box = box.expand(xf * aabb.get_endpoint(k))
+		boxes[holder] = box
+	return boxes
 
 
 ## Height above the ground of the lowest corner of `gi`, in metres. The height is affine in the
@@ -447,6 +464,9 @@ const ANCHOR_WRAP_M: float = 8192.0
 ## uniform buffer, and a bed, a wardrobe and a bedside table in each of a village's 124 containers
 ## overflowed it ("Too many instances using shader instance variables", 2026-10-20).
 const NO_FRINGE_GROUP := &"no_ground_fringe"
+## A part of an object that is a box of its own -- one container of a row of homes -- is in this group: its
+## meshes tell their outer walls from their inner ones against ITS box, not the whole object's (box_owner_of).
+const BOX_GROUP := &"ground_fringe_box"
 
 
 func _collect_targets() -> void:
@@ -512,8 +532,3 @@ func _planet() -> Planet:
 			return walk as Planet
 		walk = walk.get_parent()
 	return null
-
-
-
-
-

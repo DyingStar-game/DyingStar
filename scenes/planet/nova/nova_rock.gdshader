@@ -57,7 +57,7 @@ uniform bool fringe_on = false;
 uniform float fringe_ground_y = 0.0;
 uniform float fringe_top_y = 1.0;
 uniform float fringe_ratio = 0.3;
-uniform float fringe_max_m = 0.9;
+uniform float fringe_max_m = 0.4;
 // Past fringe_far metres from the camera the band is gone (faded from 2/3 of it): nothing to see at that size.
 uniform float fringe_far = 150.0;
 uniform float fringe_opacity = 0.85;

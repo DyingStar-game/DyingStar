@@ -1,18 +1,23 @@
 shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+#include "res://scenes/planet/weather/dust_sea_light.gdshaderinc"
 
 // Incandescent flows on a volcano's flanks (VolcanoVentGlow): ribbons laid on the relief, UV.x along
 // the flow (0 at the source), UV.y across. Additive light only: the crust is the ground under the
 // ribbon, only its hot cracks and its hot core add their glow, so the flow needs no lighting of its own
 // and looks right by day and by night. Pulled a little towards the eye so the terrain's coarse LODs
-// never swallow it.
+// never swallow it. Drawn after the aerial pass, so it fades through the dust sea by itself (sea_fog).
 
 uniform float heat = 0.0;
 uniform float seed = 0.0;
 uniform vec3 hot_color = vec3(1.6, 0.42, 0.06);
 uniform vec3 dull_color = vec3(0.45, 0.05, 0.0);
+// The vent's altitude (m over the planet's reference sphere): the mesh is in the vent's frame, so a point
+// of a flow is that much plus its model height.
+uniform float vent_alt_m = 0.0;
 
 varying float v_dist;
+varying float v_height;
 
 float hash21(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -33,6 +38,7 @@ void vertex() {
 	vec3 vv = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float d = length(vv);
 	v_dist = d;
+	v_height = VERTEX.y;
 	float pull = 2.0 + d * 0.004;
 	vv *= max(d - pull, d * 0.5) / max(d, 0.001);
 	POSITION = PROJECTION_MATRIX * vec4(vv, 1.0);
@@ -55,5 +61,5 @@ void fragment() {
 	vec3 col = mix(dull_color, hot_color, clamp(heat * cooling * 1.2, 0.0, 1.0));
 	// Rag the edges and the toe so the ribbon never shows a straight border.
 	float edge = smoothstep(0.0, 0.25, across) * (1.0 - smoothstep(0.85, 1.0, u + (n - 0.5) * 0.2));
-	ALBEDO = col * glow * edge * heat * cooling;
+	ALBEDO = col * glow * edge * heat * cooling * sea_fog(v_dist, vent_alt_m + v_height);
 }

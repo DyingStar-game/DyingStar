@@ -116,7 +116,14 @@ const WHEEL := [
 ## Horizon verified.
 const ADMIN_ENTRIES := {
 	"admin_fill_shelves": {"label": "%%SPAWN_FILL_SHELVES", "action": "admin_fill_shelves"},
+	# The storm alarm of the village the admin stands in: a drill, and a dust wall called in to set it off.
+	"admin_village_alarm": {"label": "%%SPAWN_VILLAGE_ALARM", "action": "admin_village_alarm",
+			"category": "%%SPAWN_WEATHER"},
+	"admin_spawn_dust_wall": {"label": "%%SPAWN_DUST_WALL", "action": "admin_spawn_dust_wall",
+			"category": "%%SPAWN_WEATHER"},
 }
+## The wheel's category of an admin entry that names none.
+const ADMIN_CATEGORY := "%%SPAWN_ADMIN"
 ## How many crates of crushed ore the stock entry puts in a depot (CargoDepot.server_stock_ore).
 const STOCK_CRATES := 20
 
@@ -150,7 +157,8 @@ static func action_of(key: String) -> String:
 	return str(ADMIN_ENTRIES.get(key, ENTRIES.get(key, {})).get("action", ""))
 
 ## The options tree for the RadialMenu (see scenes/ui/radial_menu.gd), built from WHEEL + ENTRIES, plus
-## an Admin category of ADMIN_ENTRIES when [param admin].
+## the admin categories of ADMIN_ENTRIES when [param admin]: "Admin", and the one an entry names
+## ("Weather") -- each its own category, the wheel having a single level of submenus.
 static func build_wheel(admin: bool = false) -> Array:
 	var options: Array = []
 	for item in WHEEL:
@@ -162,8 +170,12 @@ static func build_wheel(admin: bool = false) -> Array:
 			children.append({"text": ENTRIES[key]["label"], "data": key})
 		options.append({"text": item["text"], "submenu": children})
 	if admin:
-		var admin_children: Array = []
+		var categories: Dictionary = {}  # label -> children, in the order the entries come
 		for key in ADMIN_ENTRIES:
-			admin_children.append({"text": ADMIN_ENTRIES[key]["label"], "data": key})
-		options.append({"text": "%%SPAWN_ADMIN", "submenu": admin_children})
+			var category: String = str(ADMIN_ENTRIES[key].get("category", ADMIN_CATEGORY))
+			if not categories.has(category):
+				categories[category] = []
+			(categories[category] as Array).append({"text": ADMIN_ENTRIES[key]["label"], "data": key})
+		for category: String in categories:
+			options.append({"text": category, "submenu": categories[category]})
 	return options
