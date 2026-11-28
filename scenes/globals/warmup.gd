@@ -60,6 +60,9 @@ const BODY_RESOURCES: Array[String] = [
 const SCRIPT_DIRS: Array[String] = ["res://ui/services/"]
 ## The scenes wanted with everything they are built of: the places the world spawns, the vehicles.
 const SCENES: Array[String] = [
+	# The railway's module (RailwayTrack.module_meshes): read from the disk on the main thread as a body with
+	# railways was made, 141-205 ms of that frame (tarsis_3, 2026-11-28).
+	"res://assets/_universe/structures/urban/railroad_01.glb",
 	# The player: its instancing cost 211 ms as it appeared (2026-11-28), 35 ms here on a warm machine --
 	# its meshes' materials, compiled when instanced.
 	"res://scenes/player/player.tscn",
@@ -112,6 +115,11 @@ const BY_USE_SHADERS: Array[String] = [
 	"res://scenes/_universe/environment/atmosphere_transmittance_lut.gdshader",
 	"res://scenes/_universe/environment/aerial_perspective.gdshader",
 	"res://scenes/_universe/environment/aerial_perspective_lut.gdshader",
+	# The Nova ground of a body (NovaBody.build_material): set on its material as the body is made, 139 ms of
+	# the frame tarsis_3 was made in (2026-11-28).
+	"res://assets/_universe/environment/terrain/terrain_biome_nova.gdshader",
+	# A body's atmosphere seen from afar (AtmosphereLod): its shell, made as the body is.
+	"res://scenes/_universe/environment/atmosphere_shell.gdshader",
 	# The star chart's backdrop and ecliptic grid, made as the player appears (StarMap, EclipticGrid).
 	"res://assets/shaders/starfield_sky.gdshader",
 	"res://assets/shaders/ecliptic_grid.gdshader",
