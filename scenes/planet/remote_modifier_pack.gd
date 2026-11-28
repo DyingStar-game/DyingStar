@@ -26,8 +26,8 @@ const SUFFIX := ".mod"
 ## How long an unreachable service is left alone before [method shared_for] tries again.
 const RETRY_MS := 60000
 
-## Planet name -> {"pack": RemoteModifierPack or null, "msec": int}. One source per planet per
-## process: the terrain and the star map read the same tiles through the same cache.
+## Body (planet name + suffix) -> {"pack": RemoteModifierPack or null, "msec": int}. One source per
+## body per process: the terrain and the star map read the same tiles through the same cache.
 static var _shared: Dictionary = {}
 static var _shared_mutex: Mutex = Mutex.new()
 
@@ -47,22 +47,31 @@ var _floor_ready: bool = false
 ## unreachable, or it publishes no modifiers for that planet. Shared and remembered; a failure is
 ## retried after [constant RETRY_MS]. Blocking on first use (see the class notes).
 static func shared_for(planet_name: String) -> RemoteModifierPack:
+	return shared_body(planet_name, SUFFIX, "modifiers")
+
+
+## The same, for any DSMP container streamed under body [param planet_name] + [param suffix]
+## whose channel entry says [param dataset] — the regional line bake ([LineBake], ".lines",
+## "lines") is one. Null as above, and also when the body is served as another dataset (an older
+## whole-file line bake): the caller then takes its own path.
+static func shared_body(planet_name: String, suffix: String, dataset: String) -> RemoteModifierPack:
 	if planet_name == "" or RemoteTileSource.configured_base_url() == "":
 		return null
+	var body := planet_name + suffix
 	_shared_mutex.lock()
-	var known: Dictionary = _shared.get(planet_name, {})
+	var known: Dictionary = _shared.get(body, {})
 	if not known.is_empty() and (known["pack"] != null
 			or Time.get_ticks_msec() - int(known["msec"]) < RETRY_MS):
 		_shared_mutex.unlock()
 		return known["pack"]
 	var pack: RemoteModifierPack = null
-	var src := RemoteTileSource.for_planet(planet_name + SUFFIX, false)
+	var src := RemoteTileSource.for_planet(body, false)
 	if src != null:
 		pack = RemoteModifierPack.new()
-		if not pack.open_source(src):
+		if not pack.open_source(src, dataset):
 			src.stop()
 			pack = null
-	_shared[planet_name] = {"pack": pack, "msec": Time.get_ticks_msec()}
+	_shared[body] = {"pack": pack, "msec": Time.get_ticks_msec()}
 	_shared_mutex.unlock()
 	return pack
 
@@ -75,16 +84,17 @@ static func shared_for(planet_name: String) -> RemoteModifierPack:
 static func shared_if_open(planet_name: String) -> RemoteModifierPack:
 	if planet_name == "" or not _shared_mutex.try_lock():
 		return null
-	var known: Dictionary = _shared.get(planet_name, {})
+	var known: Dictionary = _shared.get(planet_name + SUFFIX, {})
 	_shared_mutex.unlock()
 	return known.get("pack") as RemoteModifierPack
 
 
-## Bind to [param src] (already opened on a modifiers body): read the manifest and the floor.
-## False when either is unavailable — the planet then runs without modifiers, as with no pack.
-func open_source(src: RemoteTileSource) -> bool:
+## Bind to [param src] (already opened on a [param dataset] body): read the manifest and the
+## floor. False when either is unavailable — the planet then runs without modifiers, as with no
+## pack.
+func open_source(src: RemoteTileSource, dataset: String = "modifiers") -> bool:
 	close()
-	if src == null or src.dataset != "modifiers":
+	if src == null or src.dataset != dataset:
 		return false
 	source = src
 	var manifest := _load_manifest()

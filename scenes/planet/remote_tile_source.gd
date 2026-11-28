@@ -55,7 +55,8 @@ var shard_tiles: int = 4096
 var floor_nside_max: int = 0
 ## Ce que porte le corps : "" pour l'altitude (tuiles de tile_res² échantillons), "modifiers"
 ## pour un pack de modificateurs (corps <planète>.mod, blobs DSMP de taille variable, sans
-## tile_res), "file" pour un fichier entier (corps <planète>.lines : grade_profiles.pack, voir
+## tile_res), "lines" pour le bake des lignes découpé par région (corps <planète>.lines, même
+## conteneur, voir LineBake), "file" pour un fichier entier (le bake des lignes d'avant, voir
 ## [method fetch_file]). Lu dans l'entrée de canal, écrit par publish_tiles.py.
 var dataset: String = ""
 ## La version vient-elle du manifeste de canal, ou du pointeur par corps ?
@@ -318,7 +319,9 @@ func open_planet(p_base_url: String, p_planet: String) -> bool:
 	if dataset == "file":
 		return version != ""  # un fichier entier : ni niveaux ni tuiles
 	# Un pack de modificateurs n'a pas de tile_res : ses tuiles sont de taille variable.
-	return version != "" and (tile_res > 0 or dataset == "modifiers") and nside_max > 0
+	# Un pack de lignes (LineBake) non plus : un Dictionary par région.
+	return version != "" and (tile_res > 0 or dataset == "modifiers" or dataset == "lines") \
+			and nside_max > 0
 
 
 ## Objets d'une version déjà demandés et absents du service : demandés une fois par session.

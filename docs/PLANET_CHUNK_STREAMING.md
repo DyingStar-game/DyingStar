@@ -1532,9 +1532,21 @@ de biomes, pour deux raisons mesurées sur la part (`biomes.dsmpart`) :
   `tile_available` refuse une tuile dont les montagnes sont en route (`modifiers_pending_at`) —
   une hauteur sans relief serait la même erreur silencieuse qu'une tuile d'altitude absente.
   Profils de ligne, ponts et pads en héritent sans code propre.
-- `grade_profiles.pack` est publié en fichier entier sous son propre corps `<planète>.lines`
-  (`publish_tiles.py` mode fichier, `RemoteTileSource.fetch_file`) : il se cuit APRÈS la
-  publication des tuiles, qu'il lit en HTTP, et ne doit pas en changer la version. Le GeoJSON de
+- `grade_profiles.pack` est publié sous son propre corps `<planète>.lines` : il se cuit APRÈS la
+  publication des tuiles, qu'il lit en HTTP, et ne doit pas en changer la version.
+  **Découpé par région depuis le 2026-11-28** (`LineBake`, `scenes/planet/road/line_bake.gd`) :
+  entier, il pesait 7,9 Mio sur tarsis_3 et un joueur sous ~6 Mbit/s le perdait (213 s de gel au
+  démarrage). C'est un conteneur DSMP « dataset lines » : un **en-tête** dans le plancher (n1 :
+  clés, segments de chaque ligne, nœuds décimés tous les 5 km, une ligne par franchissement pour
+  la carte stellaire, ~390 Kio compressés) et des **régions n16** (nœuds exacts des lignes à
+  moins de 2 km, élargis au viaduc entier, franchissements et plans de tablier ; 140 régions,
+  ~51 Kio médian, 92 Kio max). Le bake calcule toujours les lignes ENTIÈRES (la marche des
+  nœuds est une récurrence), puis découpe. Un chunk n ≥ 16 attend sa région et ses 8 voisines
+  (`PlanetData.line_regions_ready`, appelée par `PlanetTerrain` avant la tâche de mesh, la lecture
+  du cache disque et la forme de collision du serveur) ; la fusion d'une région réinjecte ses
+  nœuds par indice et ses franchissements dans les tables copy-on-write. Un chunk plus grossier
+  (vue orbitale) lit les nœuds décimés sans attendre et reste hors du cache disque. Un ancien
+  bake encore servi en `dataset: "file"` est lu entier comme avant. Le GeoJSON de
   routes hérité (92 Mo, `*_roads_buffered.json`) n'est plus chargé ni embarqué.
 - **HTTP uniquement** : le jeu, le serveur, la carte stellaire et les outils ne lisent plus aucun
   pack local (`heights.pack`, `terrainmodifier.pack`, `grade_profiles.pack`), même présent sur

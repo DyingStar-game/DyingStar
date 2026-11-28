@@ -677,6 +677,25 @@ var _bake_read_task: int = -1
 ## planet (see bridge_bake_key), else {}. Decided once.
 var _bridge_baked: Dictionary = {}
 var _bridge_bake_checked: bool = false
+## The regional line bake (LineBake), when the bake read is one: its container — the local file
+## (the bake tool, the tests: every region merged at once) or the streamed body <planet>.lines
+## (the game: a region merged when a chunk first needs it, see line_regions_ready) — and its
+## header. Null / {} for a whole-file bake or none.
+var _line_pack: ModifierPack = null
+var _line_header: Dictionary = {}
+## feature_id → the line's segments, unpacked once from the header and shared by every merge.
+var _line_segments: Dictionary = {}
+## feature_id → the exact knot stretches received so far (LineBake.coalesce).
+var _line_parts: Dictionary = {}
+## Region ipix (LineBake.REGION_NSIDE) → true once merged, or known to hold nothing.
+var _line_regions_done: Dictionary = {}
+## Crossing keys already taken from a region: a crossing near a border is in several.
+var _line_span_keys: Dictionary = {}
+## feature_id → true for the lines registered from the bake: a region merged later re-registers
+## them on their finer knots. A line profiled at run time (stale hash) is not touched.
+var _line_from_bake: Dictionary = {}
+var _profiled_by_fid: Dictionary = {}
+var _line_star_spans: Array = []
 ## -1 unknown, 0 no, 1 yes — memoised because collision_detail_nside() asks
 ## on every residency pass.
 var _has_railways: int = -1
@@ -719,8 +738,9 @@ const GRADE_PREFETCH_BUDGET_MS := 5000
 ## The baked profiles, next to terrainmodifier.pack (".pack": the export
 ## presets already ship that extension).
 const GRADE_BAKE_FILE := "grade_profiles.pack"
-## Body the line bake is published under on the tile service (publish_tiles.py, file mode): its own
-## versions, so a re-bake republishes one file, not the modifier tiles it was computed from.
+## Body the line bake is published under on the tile service: its own versions, so a re-bake
+## republishes it alone, not the modifier tiles it was computed from. Cut per region (LineBake,
+## dataset "lines"), streamed a region at a time; an older bake is still read whole (dataset "file").
 const GRADE_BAKE_BODY_SUFFIX := ".lines"
 ## A bake read from THIS file instead of the published one: set by tools/bake_grade_profiles.gd to
 ## check the file it has just written. Empty in the game, which reads only what the service serves.
@@ -3009,10 +3029,16 @@ func _plan_one_span(s: Dictionary, profile: BridgeProfile, plans: Dictionary) ->
 ## Fusionnés avant que quiconque les voie : deux gorges assez proches pour que leurs rampes
 ## se recouvrent laisseraient sinon un ruban en écharpe entre deux tabliers, c'est-à-dire un
 ## trou dans lequel on roule.
-func _remerge_bridge_exclusions() -> void:
+## [param fids]: only those roads (the rest is copied as published); every road when empty.
+func _remerge_bridge_exclusions(fids: Dictionary = {}) -> void:
 	var excl := {}
-	for fid: int in _bridge_excl_raw:
-		excl[fid] = RoadCut.merge_intervals(_bridge_excl_raw[fid])
+	if fids.is_empty():
+		for fid: int in _bridge_excl_raw:
+			excl[fid] = RoadCut.merge_intervals(_bridge_excl_raw[fid])
+	else:
+		excl = _bridge_excl.duplicate()
+		for fid: int in fids:
+			excl[fid] = RoadCut.merge_intervals(_bridge_excl_raw.get(fid, []))
 	_bridge_pub_mutex.lock()
 	_bridge_excl = excl
 	_bridge_pub_mutex.unlock()
@@ -3671,6 +3697,8 @@ func clear_grade_profiles() -> void:
 	_carve_pieces_cache.clear()
 	_grade_baked.clear()
 	_grade_bake_tried = false
+	_line_from_bake.clear()
+	_profiled_by_fid.clear()
 	_lava_bake_exclusions = null
 	_grade_built = false
 	_has_railways = -1
@@ -3718,9 +3746,18 @@ func known_grade_profiles() -> Dictionary:
 ## RoadBridge's shape: the ones found when the planet has found them, the
 ## baked ones otherwise — see [method known_grade_profiles], same reader.
 func known_bridge_spans() -> Array:
-	if _bridge_spans_built:
+	# A streamed regional bake holds the crossings of the regions merged so far only: the chart
+	# reads every one from its header.
+	if _bridge_spans_built and not (_line_streamed() and not _bridge_baked.is_empty()):
 		return _bridge_spans
-	return _baked_bridges().get("spans", [])
+	var baked := _baked_bridges()
+	if baked.is_empty():
+		return []
+	if _line_streamed():
+		if _line_star_spans.is_empty():
+			_line_star_spans = LineBake.star_spans(_line_header)
+		return _line_star_spans
+	return baked.get("spans", [])
 
 
 ## Every viaduct span of every profiled line (kind railway / profiled_road),
@@ -3743,7 +3780,13 @@ func get_grade_spans() -> Array:
 func spans_owned_by_export_pixel(eipix: int) -> Array:
 	if not _span_owner_index_ok:
 		var idx := {}
+		var streamed := _line_streamed()
 		for s in get_bridge_spans() + get_grade_spans():
+			# A viaduct whose region is not merged stands on the header's decimated knots: its
+			# deck waits for the exact ones (the chunk that owns it waits for that region).
+			if streamed and not _line_regions_done.has(
+					HEALPix.vec2pix_nest(LineBake.REGION_NSIDE, s["mid_dir"])):
+				continue
 			var p := HEALPix.vec2pix_nest(export_nside, s["mid_dir"])
 			if not idx.has(p):
 				idx[p] = []
@@ -3952,6 +3995,8 @@ func _build_grade_profiles() -> void:
 		for e: Array in entries:
 			if (e[2] as Dictionary).is_empty():
 				to_lay.append(e[0])  # not usable as baked: laid as an unbaked line, as before
+			else:
+				_line_from_bake[int((e[0] as Dictionary).get("feature_id", -1))] = true
 	for road in to_lay:
 		# Every tile under the line must be readable: one missing tile would
 		# make sample_height_for_direction fall back to the flat global map
@@ -4122,8 +4167,22 @@ func _load_grade_bake_doc() -> Dictionary:
 		# grade_profiles.pack beside the export. Its key is checked below like any bake's: a stale
 		# one is only slow, never wrong.
 		var path := grade_bake_local_path
-		if path == "" and chunk_heightmaps_dir != "":
-			path = RemoteTileSource.fetch_file(planet_name + GRADE_BAKE_BODY_SUFFIX, GRADE_BAKE_FILE)
+		if path != "" and LineBake.is_container(path):
+			var local := ModifierPack.new()
+			if local.open(path):
+				_open_line_bake(local)
+			else:
+				push_warning("[PlanetData] '%s': %s unreadable as a line bake" % [planet_name, path])
+			path = ""
+		elif path == "" and chunk_heightmaps_dir != "":
+			var streamed := RemoteModifierPack.shared_body(planet_name, GRADE_BAKE_BODY_SUFFIX,
+					LineBake.DATASET)
+			if streamed != null:
+				_open_line_bake(streamed)
+			else:
+				# A body still served whole (the bake before LineBake), or none at all.
+				path = RemoteTileSource.fetch_file(planet_name + GRADE_BAKE_BODY_SUFFIX,
+						GRADE_BAKE_FILE)
 		if path != "" and FileAccess.file_exists(path):
 			var t0 := Time.get_ticks_msec()
 			var f := FileAccess.open_compressed(path, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
@@ -4141,6 +4200,225 @@ func _load_grade_bake_doc() -> Dictionary:
 					push_warning("[PlanetData] '%s': %s is not a line bake" % [planet_name, path])
 	_grade_bake_doc_mutex.unlock()
 	return _grade_bake_doc
+
+
+## Take the regional bake of [param pack]: its header becomes the bake document the warm-up
+## reads, each line on its decimated knots; a local pack has every region merged into it at once.
+## Under _grade_bake_doc_mutex (from _load_grade_bake_doc).
+func _open_line_bake(pack: ModifierPack) -> void:
+	var t0 := Time.get_ticks_msec()
+	var head := LineBake.decode(pack.read_tile(LineBake.HEADER_NSIDE, LineBake.HEADER_IPIX))
+	if head.is_empty():
+		push_warning("[PlanetData] '%s': the line bake (%s) has no readable header — "
+				% [planet_name, pack.get_path()] + "lines and crossings computed at run time")
+		return
+	_line_pack = pack
+	_line_header = head
+	_line_segments.clear()
+	_line_parts.clear()
+	_line_regions_done.clear()
+	_line_span_keys.clear()
+	_line_star_spans = []
+	var lines := {}
+	for fid: Variant in head.get("lines", {}):
+		var hl: Dictionary = head["lines"][fid]
+		_line_segments[int(fid)] = LineBake.unpack_rows(hl.get("seg", {}))
+		lines[int(fid)] = {"hash": str(hl.get("hash", "")),
+			"profile": LineBake.merged_profile(hl, _line_segments[int(fid)], [])}
+	var doc := {"key": str(head.get("key", "")), "lines": lines}
+	if head.has("bridges"):
+		doc["bridges"] = {"key": str((head["bridges"] as Dictionary).get("key", "")),
+			"spans": [], "plans": {}}
+	_grade_bake_doc = doc
+	var merged := 0
+	if not pack.is_streamed():
+		for r: int in pack.get_tile_ipix(LineBake.REGION_NSIDE):
+			_merge_line_region(r)
+			merged += 1
+	print("[PlanetData] line bake of '%s' by region: %d line(s), %d crossing(s), %s — %d ms"
+			% [planet_name, lines.size(), LineBake.star_spans(head).size(),
+			"streamed per region" if pack.is_streamed() else "%d region(s) merged" % merged,
+			Time.get_ticks_msec() - t0])
+
+
+func _line_streamed() -> bool:
+	return _line_pack != null and _line_pack.is_streamed()
+
+
+## Are the line-bake regions a chunk (nside, ipix) reads merged — its own and its eight
+## neighbours? Merges those just downloaded; queues the missing ones. Always true without a
+## streamed regional bake, and for a chunk coarser than the regions (it reads the header's
+## decimated knots and is kept out of the geometry cache, see chunk_cache_ineligible).
+##
+## Main thread: a merge republishes the tables the mesh workers read (copy-on-write). From any
+## other thread it only answers.
+func line_regions_ready(hp_nside: int, hp_ipix: int) -> bool:
+	if not _line_streamed() or hp_nside < LineBake.REGION_NSIDE or hp_ipix < 0:
+		return true
+	var ns := hp_nside
+	var ip := hp_ipix
+	while ns > LineBake.REGION_NSIDE:
+		ns >>= 1
+		ip >>= 2
+	var wanted: Array[int] = [ip]
+	for nb: int in HEALPix.get_neighbors_nest(LineBake.REGION_NSIDE, ip).values():
+		if nb >= 0:
+			wanted.append(nb)
+	var main := OS.get_thread_caller_id() == OS.get_main_thread_id()
+	var ready := true
+	for r: int in wanted:
+		if _line_regions_done.has(r):
+			continue
+		var st := _line_pack.tile_state(LineBake.REGION_NSIDE, r)
+		if st == ModifierPack.TILE_ABSENT:
+			if main:
+				_line_regions_done[r] = true
+			continue
+		if st == ModifierPack.TILE_READY and main:
+			_merge_line_region(r)
+			continue
+		ready = false
+	return ready
+
+
+## Merge region [param r] of the regional bake: the exact knots of its lines (each line then
+## re-registered when it came from the bake), and its crossings with their deck plans. Before the
+## warm-up it only feeds the bake document the warm-up reads. Main thread.
+func _merge_line_region(r: int) -> void:
+	if _line_regions_done.has(r) or _line_pack == null:
+		return
+	_line_regions_done[r] = true
+	var payload := LineBake.decode(_line_pack.read_tile(LineBake.REGION_NSIDE, r))
+	if payload.is_empty():
+		return
+	var head_lines: Dictionary = _line_header.get("lines", {})
+	var doc_lines: Dictionary = _grade_bake_doc.get("lines", {})
+	var lines_in: Dictionary = payload.get("lines", {})
+	# feature_id → [merged profile, along-range of the knots just received]
+	var refined := {}
+	for fid: Variant in lines_in:
+		var f := int(fid)
+		if not head_lines.has(f):
+			continue
+		var parts := LineBake.coalesce((_line_parts.get(f, []) as Array) + (lines_in[fid] as Array))
+		_line_parts[f] = parts
+		var prof := LineBake.merged_profile(head_lines[f], _line_segments[f], parts)
+		var entry: Dictionary = doc_lines.get(f, {})
+		if not entry.is_empty():
+			# _grade_baked holds these very entries (or a shallow copy of their table).
+			entry["profile"] = prof
+		if _line_from_bake.has(f):
+			var rng := Vector2(INF, -INF)
+			for p: Array in lines_in[fid]:
+				var ka: PackedFloat64Array = p[1]
+				if not ka.is_empty():
+					rng = Vector2(minf(rng.x, ka[0]), maxf(rng.y, ka[ka.size() - 1]))
+			refined[f] = [prof, rng]
+	if not refined.is_empty():
+		_grade_refine(refined)
+	_merge_line_crossings(payload)
+
+
+## The crossings of a region payload, the ones not taken yet.
+func _merge_line_crossings(payload: Dictionary) -> void:
+	var spans_in: Array = payload.get("spans", [])
+	var doc_b: Dictionary = _grade_bake_doc.get("bridges", {})
+	if spans_in.is_empty() or doc_b.is_empty():
+		return
+	# A stale bake, once the warm-up has judged it: the crossings were found and planned at run
+	# time, whole. (Before, the document is fed regardless: _baked_bridges judges it as a whole.)
+	if _bridge_plans_built and _bridge_baked.is_empty():
+		return
+	var plans_in: Dictionary = payload.get("plans", {})
+	var fresh: Array = []
+	for sp: Dictionary in spans_in:
+		var k := bridge_span_key(sp)
+		if not _line_span_keys.has(k):
+			_line_span_keys[k] = true
+			fresh.append(sp)
+	if fresh.is_empty():
+		return
+	if not _bridge_plans_built:
+		# Into the bake the warm-up reads — new Arrays, never edited in place: get_bridge_spans
+		# keeps a reference to the one it read.
+		var targets: Array = [doc_b]
+		if not _bridge_baked.is_empty() and not is_same(_bridge_baked, doc_b):
+			targets.append(_bridge_baked)
+		for b: Dictionary in targets:
+			b["spans"] = (b.get("spans", []) as Array) + fresh
+			var pl: Dictionary = (b.get("plans", {}) as Dictionary).duplicate()
+			for sp: Dictionary in fresh:
+				var k := bridge_span_key(sp)
+				if plans_in.has(k):
+					pl[k] = plans_in[k]
+			b["plans"] = pl
+		return
+	# Live: copies published like a late plan (retry_starved_bridge_plans).
+	_bridge_plans_mutex.lock()
+	var profile := get_bridge_profile()
+	var plans := _bridge_plans.duplicate()
+	var lava_rebuild := bool(_bridge_baked.get("lava_rebuild", false))
+	var touched := {}
+	for sp: Dictionary in fresh:
+		if sp.get("truncated", false):
+			continue
+		touched[int(sp.get("feature_id", -1))] = true
+		var k := bridge_span_key(sp)
+		if lava_rebuild and LavaTerrainCacheScript.span_affected(
+				sp, _lava_cache_exclusions().volcanoes, radius):
+			_plan_one_span(sp, profile, plans)
+			continue
+		var plan: Dictionary = plans_in.get(k, {})
+		if plan.is_empty():
+			continue
+		plans[k] = plan
+		var fid: int = int(sp.get("feature_id", -1))
+		if not _bridge_excl_raw.has(fid):
+			_bridge_excl_raw[fid] = []
+		(_bridge_excl_raw[fid] as Array).append(
+				Vector2(float(plan["excl_lo_along"]), float(plan["excl_hi_along"])))
+	_bridge_spans = _bridge_spans + fresh
+	_bridge_pub_mutex.lock()
+	_bridge_plans = plans
+	_bridge_pub_mutex.unlock()
+	_remerge_bridge_exclusions(touched)
+	_span_owner_index_ok = false
+	_bridge_plans_mutex.unlock()
+
+
+## Put the profiles of [param refined] (feature_id → [profile, along-range of the knots just
+## merged]) in place, and re-plan the viaduct decks over that range. Nothing else of a line
+## depends on its knots: its viaduct spans and their bed exclusions come from its segments and its
+## course, both whole in the header from the start, so they are already the bake's. One
+## copy-on-write publish for the whole region. Main thread.
+func _grade_refine(refined: Dictionary) -> void:
+	if _profiled_by_fid.is_empty():
+		for r: Dictionary in _whole_profiled_lines():
+			_profiled_by_fid[int(r.get("feature_id", -1))] = r
+	_grade_mutex.lock()
+	var profiles := _grade_profiles.duplicate()
+	var plans := _grade_plans.duplicate()
+	for f: int in refined:
+		profiles[f] = refined[f][0]
+	var reach := GradeSettings.VIADUCT_ABUTMENT_M + 1.0
+	for sp: Dictionary in _grade_spans:
+		var f := int(sp.get("feature_id", -1))
+		if not refined.has(f):
+			continue
+		var rng: Vector2 = refined[f][1]
+		if float(sp.get("along_end", 0.0)) + reach < rng.x \
+				or float(sp.get("along_start", 0.0)) - reach > rng.y:
+			continue
+		var key := bridge_span_key(sp)
+		# A span without a plan was refused on its length, never on its knots: still refused.
+		if not plans.has(key):
+			continue
+		plans[key] = GradeProfile.plan_of(refined[f][0], sp, _profiled_by_fid.get(f, {}), radius)
+	_grade_pub_mutex.lock()
+	_grade_profiles = profiles
+	_grade_plans = plans
+	_grade_pub_mutex.unlock()
+	_grade_mutex.unlock()
 
 
 ## What the baked chasm crossings were computed from: everything the grade
@@ -4181,6 +4459,8 @@ func _baked_bridges() -> Dictionary:
 				if LavaTerrainCacheScript.span_affected(span, _lava_cache_exclusions().volcanoes, radius):
 					rebuild[bridge_span_key(span)] = true
 			_bridge_baked["rebuild"] = rebuild
+			# A region merged later is tested crossing by crossing (_merge_line_crossings).
+			_bridge_baked["lava_rebuild"] = true
 			print("[LAVA CACHE] reusing bridge crossings; local deck invalidations=", rebuild.size())
 			return _bridge_baked
 		push_warning("[PlanetData] '%s': the baked chasm crossings (%s) were made for other data — "
@@ -4225,17 +4505,15 @@ func write_grade_bake(roads: Array, profiles: Dictionary, bridges: Dictionary = 
 		kept.erase("stations_along")
 		kept.erase("stations_terrain")
 		lines[fid] = {"hash": grade_line_hash(road), "profile": kept}
-	var path := grade_bake_path()
-	var f := FileAccess.open_compressed(path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
-	if f == null:
-		return FileAccess.get_open_error()
 	var doc := {"key": grade_bake_key(), "lines": lines}
 	if not bridges.is_empty():
 		doc["bridges"] = {"key": bridge_bake_key(), "spans": bridges.get("spans", []),
 				"plans": bridges.get("plans", {})}
-	f.store_var(doc, false)
-	f.close()
-	return OK
+	# Cut per region (LineBake): a client downloads the header and the regions it stands in.
+	var by_fid := {}
+	for road in roads:
+		by_fid[int(road.get("feature_id", -1))] = road
+	return LineBake.write(grade_bake_path(), planet_name, LineBake.split(doc, by_fid, radius))
 
 
 ## Register a computed profile: the profile itself, its viaduct spans and
@@ -4374,6 +4652,9 @@ func grade_chunk_provisional(nside: int, ipix: int) -> bool:
 ##     pad appears or goes.
 func chunk_cache_ineligible(nside: int, ipix: int) -> bool:
 	if grade_chunk_provisional(nside, ipix):
+		return true
+	# Coarser than the line-bake regions: its lines stand on whatever regions happen to be merged.
+	if nside < LineBake.REGION_NSIDE and _line_streamed() and has_profiled_lines():
 		return true
 	# A networked POI zone (a village) is not baked data either: it arrives at run time, so a chunk
 	# its crack exclusion reaches is never served from, nor written to, the planet-wide cache.

@@ -145,14 +145,21 @@ def identity(path):
     sys.path.insert(0, _REPO)
     from tools.planettech.publish import publish_tiles as pt
     name = os.path.basename(path)
-    if name in pt.FILE_BODY_SUFFIX:
+    if pt.is_whole_file(path):
         return planet_of(path) + pt.FILE_BODY_SUFFIX[name], pt.file_version(path)
     pack = pt.open_pack(path)
     if isinstance(pack, pt.DsmpPack):
-        out = pack.planet_name + pt.MODIFIER_SUFFIX, pack.data_version()
+        out = pack.planet_name + pack.body_suffix, pack.data_version()
         pack._fh.close()
         return out
     return pack.planet_name, str(pack.manifest.get("data_version", "")) or "nodataversion"
+
+
+def _whole_file(path):
+    """Publié en un objet (l'ancien bake des lignes, déjà compressé) plutôt qu'en tuiles ?"""
+    sys.path.insert(0, _REPO)
+    from tools.planettech.publish import publish_tiles as pt
+    return pt.is_whole_file(path)
 
 
 def _trace_path(path):
@@ -380,7 +387,7 @@ def publish(path, cfg, run=_run, force=False, verify=True, rsync=None):
     print("  éclatement sur le serveur")
     # Relative to the workdir publish_cmd cd's into, not to the remote $HOME.
     code, _ = run(ssh_cmd(cfg, publish_cmd(cfg, "%s_chunks/%s" % (planet, name),
-                                            compress=name != "grade_profiles.pack")))
+                                            compress=not _whole_file(path))))
     if code != 0:
         print("ERREUR : publish_tiles.py a échoué sur le serveur")
         return 1
@@ -482,7 +489,7 @@ def verify_http(path, cfg, body, version, samples=20):
     from tools.planettech.publish import publish_tiles as pt
     name = os.path.basename(path)
     print("  vérification en HTTP : %s" % cfg["http"])
-    if name in pt.FILE_BODY_SUFFIX:
+    if pt.is_whole_file(path):
         base = cfg["http"].rstrip("/")
         code, blob, _h = pt._http("%s/%s/%s/%s" % (base, body, version, name))
         if code != 200:

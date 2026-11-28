@@ -16,6 +16,8 @@ extends GutTest
 const KEY: String = "streamed_relief_test"
 ## A real body, for the one claim about the chart's copy of a scene's planet.
 const BODY: String = "tarsis_3"
+## Its key among the shared packs: the body, planet + ".mod" (RemoteModifierPack.shared_body).
+const SHARED: String = BODY + RemoteModifierPack.SUFFIX
 const RADIUS: float = 1000000.0
 const NSIDE: int = 8
 const TILE_RES: int = 16
@@ -58,7 +60,7 @@ var _stream_before: bool = false
 func before_each() -> void:
 	StarMapRelief._manifests[KEY] = {"radius": RADIUS, "nside_max": NSIDE, "max_height": 500.0,
 			"height_offset": 0.0}
-	_shared_before = RemoteModifierPack._shared.get(BODY)
+	_shared_before = RemoteModifierPack._shared.get(SHARED)
 	_stream_before = StarMapTiles.stream_modifiers
 
 
@@ -66,9 +68,9 @@ func after_each() -> void:
 	StarMapRelief._manifests.erase(KEY)
 	StarMapTiles._frame_readers.erase(KEY)
 	if _shared_before == null:
-		RemoteModifierPack._shared.erase(BODY)
+		RemoteModifierPack._shared.erase(SHARED)
 	else:
-		RemoteModifierPack._shared[BODY] = _shared_before
+		RemoteModifierPack._shared[SHARED] = _shared_before
 	StarMapTiles.stream_modifiers = _stream_before
 	StarMapTiles.forget(BODY)  # no copy made here outlives the test
 
@@ -205,13 +207,13 @@ func test_a_tile_with_no_reading_is_left_alone() -> void:
 
 ## The shared pack is looked up, never opened: a body nobody opened has none, and asking costs no network.
 func test_the_shared_pack_is_looked_up_and_never_opened() -> void:
-	RemoteModifierPack._shared.erase(BODY)
+	RemoteModifierPack._shared.erase(SHARED)
 	assert_null(RemoteModifierPack.shared_if_open(BODY), "nobody opened it: none, and nothing was asked of the service")
-	assert_false(RemoteModifierPack._shared.has(BODY), "and nothing was remembered as tried either")
+	assert_false(RemoteModifierPack._shared.has(SHARED), "and nothing was remembered as tried either")
 	var pack := _MountainPack.new()
-	RemoteModifierPack._shared[BODY] = {"pack": pack, "msec": Time.get_ticks_msec()}
+	RemoteModifierPack._shared[SHARED] = {"pack": pack, "msec": Time.get_ticks_msec()}
 	assert_true(RemoteModifierPack.shared_if_open(BODY) == pack, "opened by someone else: that one")
-	RemoteModifierPack._shared[BODY] = {"pack": null, "msec": Time.get_ticks_msec()}
+	RemoteModifierPack._shared[SHARED] = {"pack": null, "msec": Time.get_ticks_msec()}
 	assert_null(RemoteModifierPack.shared_if_open(BODY), "tried and failed: none")
 
 
@@ -219,7 +221,7 @@ func test_the_shared_pack_is_looked_up_and_never_opened() -> void:
 ## as a NEW copy, the one made before staying as it was for whatever is still reading it. Out of the
 ## chart it reads none, as every suite that takes a copy as its fixture expects.
 func test_the_offline_copy_has_its_mountains_once_the_pack_is_open() -> void:
-	RemoteModifierPack._shared.erase(BODY)
+	RemoteModifierPack._shared.erase(SHARED)
 	StarMapTiles.stream_modifiers = true
 	StarMapTiles.forget(BODY)
 	var early: PlanetData = StarMapTiles.offline_data(BODY)
@@ -229,7 +231,7 @@ func test_the_offline_copy_has_its_mountains_once_the_pack_is_open() -> void:
 	assert_null(early.remote_modifiers, "the pack is not open: the copy has none, and opened none")
 	assert_true(StarMapTiles.offline_data(BODY) == early, "and is kept while nothing changes")
 	var pack := _MountainPack.new()
-	RemoteModifierPack._shared[BODY] = {"pack": pack, "msec": Time.get_ticks_msec()}
+	RemoteModifierPack._shared[SHARED] = {"pack": pack, "msec": Time.get_ticks_msec()}
 	var late: PlanetData = StarMapTiles.offline_data(BODY)
 	assert_false(late == early, "made again once the pack is open")
 	assert_true(late.remote_modifiers == pack, "reading the body's shared streamed pack")

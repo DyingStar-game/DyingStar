@@ -148,6 +148,11 @@ MODIFIER_SUFFIX = ".mod"
 ## (biomes.py « full_inherit ») vivent surtout dans les niveaux grossiers. Le client le
 ## récupère d'un bloc à l'ouverture (RemoteModifierPack).
 MODIFIER_FLOOR_NSIDE_MAX = 16
+## Le bake des lignes découpé par région (scenes/planet/road/line_bake.gd) : un conteneur DSMP
+## dont le manifeste dit dataset "lines", publié sous <planète>.lines comme le fichier entier qu'il
+## remplace. Son plancher est l'en-tête seul (n1) ; les régions (n16) se téléchargent à la demande.
+LINES_DATASET = "lines"
+LINES_SUFFIX = ".lines"
 
 
 class DsmpPack:
@@ -192,7 +197,10 @@ class DsmpPack:
         self.nside_min = self.levels[0] if self.levels else 0
         self.nside_max = self.levels[-1] if self.levels else 0
         self.planet_name = str(self.manifest.get("planet_name", ""))
-        self.floor_nside_max = MODIFIER_FLOOR_NSIDE_MAX
+        #: "modifiers" (terrainmodifier.pack) ou "lines" (le bake des lignes par région).
+        self.dataset = str(self.manifest.get("dataset", "modifiers"))
+        self.body_suffix = LINES_SUFFIX if self.dataset == LINES_DATASET else MODIFIER_SUFFIX
+        self.floor_nside_max = int(self.manifest.get("floor_nside_max", MODIFIER_FLOOR_NSIDE_MAX))
         self._fh = open(path, "rb")
 
     def has_tile(self, nside, ipix):
@@ -224,6 +232,15 @@ class DsmpPack:
 ## ses propres octets : il se cuit APRÈS la publication des tuiles (l'outil de bake les lit en
 ## HTTP), et le ranger dans la version .mod republierait toutes les tuiles à chaque re-cuisson.
 FILE_BODY_SUFFIX = {"grade_profiles.pack": ".lines"}
+
+
+def is_whole_file(path):
+    """Un fichier publié entier (mode fichier) ? grade_profiles.pack l'était ; découpé par région
+    (conteneur DSMP), il part en tuiles sous le même nom et le même corps."""
+    if os.path.basename(path) not in FILE_BODY_SUFFIX:
+        return False
+    with open(path, "rb") as fh:
+        return fh.read(4) != b"DSMP"
 
 
 def file_version(path):
@@ -637,15 +654,16 @@ def main(argv=None):
                          % stream_channels.PUBLISH_CHANNEL)
     args = ap.parse_args(argv)
 
-    if os.path.basename(args.pack) in FILE_BODY_SUFFIX:
+    if is_whole_file(args.pack):
         return _main_file(args)
     pack = open_pack(args.pack)
     modifiers = isinstance(pack, DsmpPack)
     if modifiers:
-        planet = args.planet or (pack.planet_name + MODIFIER_SUFFIX)
+        planet = args.planet or (pack.planet_name + pack.body_suffix)
         version = pack.data_version()
-        print("%s — DSMP (modificateurs), niveaux n%d..n%d, %d tuiles, version %s"
-              % (planet, pack.nside_min, pack.nside_max,
+        print("%s — DSMP (%s), niveaux n%d..n%d, %d tuiles, version %s"
+              % (planet, "lignes par région" if pack.dataset == LINES_DATASET else "modificateurs",
+                 pack.nside_min, pack.nside_max,
                  sum(len(pack.tile_ipix(n)) for n in pack.levels), version))
     else:
         planet = args.planet or pack.planet_name
@@ -674,9 +692,9 @@ def main(argv=None):
              "shard_tiles": SHARD_TILES,
              "floor_nside_max": _floor_max(pack)}
     if modifiers:
-        # Pas de tile_res : une tuile de modificateurs est un blob de taille variable.
-        # RemoteTileSource ouvre un tel corps sur ce champ.
-        entry["dataset"] = "modifiers"
+        # Pas de tile_res : une tuile de modificateurs (ou une région du bake des lignes) est un
+        # blob de taille variable. RemoteTileSource ouvre un tel corps sur ce champ.
+        entry["dataset"] = pack.dataset
     else:
         entry["tile_res"] = pack.tile_res
     # Pointeur par corps : le repli quand aucun canal n'est en place, et ce que lisaient

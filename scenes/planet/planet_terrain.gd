@@ -1592,6 +1592,10 @@ func _server_continue_chunk_load(key: String, ipix: int, col_res: int,
 	if cached_shape == null \
 			and not TileResidency.request_chunk_tiles(planet_data, key_nside, ipix):
 		return false
+	# The line-bake regions, even under a cached shape: the chasm crossings of the chunk come from
+	# them, and a deck is the only collision over a gorge (see LineBake).
+	if not planet_data.line_regions_ready(key_nside, ipix):
+		return false
 
 	if planet_data.chunk_heightmaps_dir != "":
 		if cached_shape != null:
@@ -4565,7 +4569,12 @@ func _try_create_or_defer(info: Dictionary) -> void:
 		if is_server:
 			_create_chunk(info)
 			return
-		# Client: respect the mesh disk cache, otherwise mesh asynchronously.
+		# Client: respect the mesh disk cache, otherwise mesh asynchronously. A chunk whose
+		# line-bake regions are not merged yet waits for them in the mesh backlog: assembled from
+		# the cache now, it would spawn none of its decks (their crossings come from the regions).
+		if not planet_data.line_regions_ready(info.nside, info.ipix):
+			_queue_mesh_task(info)
+			return
 		if _request_cache_load(info):
 			return
 		_queue_mesh_task(info)
@@ -5098,8 +5107,11 @@ func _queue_mesh_task(info: Dictionary) -> void:
 
 	# Streaming : une tâche mesh ne peut pas attendre une socket, donc le chunk repart au
 	# backlog tant que ses tuiles manquent. Sans source distante, toujours true.
-	if not TileResidency.request_chunk_tiles(planet_data, info.nside, info.ipix,
-			int(info.get("stitch", 0)) != 0):
+	var tiles_ready := TileResidency.request_chunk_tiles(planet_data, info.nside, info.ipix,
+			int(info.get("stitch", 0)) != 0)
+	# Its line-bake regions too (LineBake): its rails, bed and decks read their exact knots.
+	var lines_ready := planet_data.line_regions_ready(info.nside, info.ipix)
+	if not tiles_ready or not lines_ready:
 		_backlog_push(info)  # never twice the same chunk waiting
 		_stat_tile_waits += 1
 		return

@@ -182,6 +182,20 @@ class PublishOverSsh(unittest.TestCase):
         line = [c for c in self.server.calls if c[0] == "ssh" and "publish_tiles.py" in c[-1]][-1]
         self.assertNotIn("--compress", line[-1], "the bake is zstd already")
 
+    def test_a_regional_line_bake_goes_out_as_tiles_under_the_same_body(self):
+        bake = os.path.join(self.chunks, "grade_profiles.pack")
+        dsmp.write_pack(bake, [(1, [(0, b"header")]), (16, [(9, b"region-9")])],
+                        {"planet_name": "modplanet", "dataset": "lines", "format": 1,
+                         "levels": [1, 16], "floor_nside_max": 1})
+        self.assertEqual(PR.identity(bake), ("modplanet.lines", PT.file_version(bake)))
+        self.assertEqual(PR.publish(bake, self.cfg, run=self.server.run, verify=False,
+                                    rsync=False), 0)
+        root = os.path.join(self.dist, "modplanet.lines", PT.file_version(bake))
+        self.assertTrue(os.path.exists(os.path.join(root, "floor.bin")))
+        self.assertTrue(os.path.exists(os.path.join(root, "n16", "f0", "f9.bin")))
+        line = [c for c in self.server.calls if c[0] == "ssh" and "publish_tiles.py" in c[-1]][-1]
+        self.assertIn("--compress", line[-1], "a region is a raw Dictionary: deflate it")
+
     def test_a_failing_server_stops_before_recording(self):
         def broken(cmd):
             return (1, "") if cmd[0] == "ssh" and "publish_tiles.py" in cmd[-1] \
