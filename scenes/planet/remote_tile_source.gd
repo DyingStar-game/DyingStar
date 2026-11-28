@@ -89,6 +89,12 @@ var _links: Dictionary = {}
 ## un service injoignable les fait tourner indéfiniment. open_planet est appelé depuis le
 ## thread principal — dans l'éditeur, cela gèle l'éditeur, et un service en panne ne doit
 ## jamais empêcher d'ouvrir une scène.
+##
+## Pour une tuile (~1,4 Kio), c'est une échéance TOTALE. Pour un objet entier (plancher,
+## bake des lignes : plusieurs Mio), c'est une échéance d'INACTIVITÉ sur le corps — voir
+## [method _request]. En total, 7,9 Mio en 10 s exigeaient 6,3 Mbit/s soutenus : un
+## joueur en dessous perdait le bake des lignes sans un mot, et recalculait au démarrage
+## 14 000 franchissements en plus de trois minutes (2026-11-28).
 var request_timeout_ms: int = 10000
 
 ## Code de la dernière requête d'ouverture, gardé pour le message d'indisponibilité.
@@ -332,10 +338,21 @@ func fetch_object(object_name: String) -> String:
 		return path
 	if _missing_objects.has(object_name):
 		return ""
-	var res: Array = _request("%s/%s/%s/%s" % [base_url, planet, version, object_name])
-	var payload := decode_envelope(res[1]) if int(res[0]) == 200 else PackedByteArray()
+	var url := "%s/%s/%s/%s" % [base_url, planet, version, object_name]
+	var res: Array = _request(url, true)
+	var code := int(res[0])
+	var payload := decode_envelope(res[1]) if code == 200 else PackedByteArray()
 	if payload.is_empty() or not AtomicFile.write_buffer(path, payload):
 		_missing_objects[object_name] = true
+		# Le corps est publié (open_planet l'a trouvé) : un objet qui n'arrive pas est une
+		# panne à voir, pas un cas normal. Une fois par objet et par session.
+		var why := "délai d'inactivité de %d ms dépassé, ou connexion coupée" % request_timeout_ms \
+				if code == 0 else ("objet invalide (enveloppe ou CRC)" if code == 200
+				else "réponse HTTP %d" % code)
+		if code == 200 and not payload.is_empty():
+			why = "écriture impossible dans %s" % path
+		push_warning("[RemoteTileSource] '%s' : %s non reçu — %s ; %s reçus en %d ms (%s)"
+				% [planet, object_name, why, human_bytes(int(res[2])), int(res[3]), url])
 		return ""
 	return path
 
@@ -349,7 +366,13 @@ static func fetch_file(body: String, object_name: String) -> String:
 	if url == "" or body == "":
 		return ""
 	var src := RemoteTileSource.new()
-	if not src.open_planet(url, body) or src.dataset != "file":
+	if not src.open_planet(url, body):
+		# Le cas normal d'un corps sans fichier publié (une lune sans ligne) : pas d'alerte.
+		return ""
+	if src.dataset != "file":
+		push_warning("[RemoteTileSource] '%s' est servi comme jeu « %s », pas comme fichier : "
+				% [body, src.dataset] + "%s ignoré (client et service de versions différentes ?)"
+				% object_name)
 		return ""
 	src.purge_other_versions()
 	return src.fetch_object(object_name)
@@ -554,7 +577,7 @@ func fetch_now(nside: int, ipix: int) -> bool:
 func fetch_floor() -> int:
 	if floor_nside_max <= 0 or FileAccess.file_exists(floor_marker_path()):
 		return 0
-	var res: Array = _request(floor_url())
+	var res: Array = _request(floor_url(), true)
 	if res[0] != 200:
 		_net_count(0, 0, 0, 0, 1)
 		return 0
@@ -899,10 +922,23 @@ func _worker() -> void:
 		_forget(item.z, item.y, item.x)
 
 
-func _request(url: String) -> Array:
+## Une requête : [code, corps, octets reçus, durée en ms]. Le corps est vide sur échec ; les
+## octets reçus comptent aussi ceux d'un corps abandonné, pour que l'appelant sache dire
+## « 3,1 Mio reçus en 10 s » plutôt que « absent ».
+##
+## [param whole] : un objet ENTIER (plancher, bake des lignes), de plusieurs Mio. L'échéance
+## du corps devient alors une échéance d'inactivité — elle repart à chaque bloc reçu — au lieu
+## d'une échéance totale : un réseau lent finit par tout recevoir, un réseau muet échoue
+## toujours en [member request_timeout_ms]. Une tuile garde l'échéance totale.
+func _request(url: String, whole: bool = false) -> Array:
+	var t0 := Time.get_ticks_msec()
+	var res: Array
 	if fetcher.is_valid():
-		return fetcher.call(url)
-	return _http_get(url)
+		res = fetcher.call(url)
+	else:
+		res = _http_get(url, request_timeout_ms if whole else 0)
+	var received: int = int(res[2]) if res.size() > 2 else (res[1] as PackedByteArray).size()
+	return [res[0], res[1], received, Time.get_ticks_msec() - t0]
 
 
 ## Chemin par défaut. Synchrone : réservé au fil de téléchargement, jamais au thread
@@ -915,7 +951,7 @@ func _request(url: String) -> Array:
 ## (davantage encore en TLS, où l'établissement coûte deux à trois RTT). Le prefetch en
 ## anneau demandant des dizaines de tuiles par déplacement, cela se voit sur un vrai
 ## réseau et jamais sur la machine de développement — d'où cette note.
-func _http_get(url: String) -> Array:
+func _http_get(url: String, idle_ms: int = 0) -> Array:
 	var u := split_url(url)
 	var host: String = u["host"]
 	var port: int = u["port"]
@@ -923,13 +959,15 @@ func _http_get(url: String) -> Array:
 	var tls: bool = u["tls"]
 	var link := _own_link()
 	if link == null:
-		return _http_fresh(host, port, path, tls)
+		return _http_fresh(host, port, path, tls, idle_ms)
 	# Une seule reprise : le serveur a le droit de fermer une connexion inactive, et cela
-	# ne doit pas se traduire par une tuile manquante.
-	var res := _http_once(link, host, port, path, tls)
-	if res[0] == 0:
+	# ne doit pas se traduire par une tuile manquante. Pas de reprise si des octets sont
+	# arrivés : la connexion marchait, c'est le transfert qui a calé — le refaire depuis zéro
+	# doublerait l'attente pour le même résultat.
+	var res := _http_once(link, host, port, path, tls, idle_ms)
+	if res[0] == 0 and int(res[2]) == 0:
 		link.http = null
-		res = _http_once(link, host, port, path, tls)
+		res = _http_once(link, host, port, path, tls, idle_ms)
 	return res
 
 
@@ -964,16 +1002,17 @@ static func split_url(url: String) -> Dictionary:
 
 
 ## Requête sur une connexion jetable, sans toucher à celle du fil de téléchargement.
-func _http_fresh(host: String, port: int, path: String, tls: bool = false) -> Array:
+func _http_fresh(host: String, port: int, path: String, tls: bool = false,
+		idle_ms: int = 0) -> Array:
 	var deadline := Time.get_ticks_msec() + request_timeout_ms
 	var http := HTTPClient.new()
 	if http.connect_to_host(host, port, _tls_options(tls)) != OK:
-		return [0, PackedByteArray()]
+		return [0, PackedByteArray(), 0]
 	if not _await(http, deadline, true):
-		return [0, PackedByteArray()]
+		return [0, PackedByteArray(), 0]
 	if http.request(HTTPClient.METHOD_GET, path, []) != OK:
-		return [0, PackedByteArray()]
-	return _drain(http, deadline)
+		return [0, PackedByteArray(), 0]
+	return _drain(http, deadline, idle_ms)
 
 
 ## Pause entre deux poll() sans nouvelle du réseau, en µs.
@@ -1000,33 +1039,42 @@ func _await(http: HTTPClient, deadline: int, connecting: bool) -> bool:
 	return http.get_status() == HTTPClient.STATUS_CONNECTED or not connecting
 
 
-## Envoie la requête au bout et rend [code, corps]. [0, vide] sur échéance ou rupture.
-func _drain(http: HTTPClient, deadline: int) -> Array:
+## Envoie la requête au bout et rend [code, corps, octets reçus]. [0, vide, n] sur échéance ou
+## rupture, n comptant les octets du corps abandonné.
+##
+## [param idle_ms] > 0 : l'échéance du CORPS repart à chaque bloc reçu (objet entier, voir
+## [method _request]). L'attente des en-têtes garde l'échéance totale [param deadline].
+func _drain(http: HTTPClient, deadline: int, idle_ms: int = 0) -> Array:
 	while http.get_status() == HTTPClient.STATUS_REQUESTING:
 		if _quit or Time.get_ticks_msec() > deadline:
-			return [0, PackedByteArray()]
+			return [0, PackedByteArray(), 0]
 		_poll(http)
 	var code := http.get_response_code()
 	if code == 0:
-		return [0, PackedByteArray()]
+		return [0, PackedByteArray(), 0]
 	var body := PackedByteArray()
+	if idle_ms > 0:
+		deadline = Time.get_ticks_msec() + idle_ms
 	while http.get_status() == HTTPClient.STATUS_BODY:
 		if _quit or Time.get_ticks_msec() > deadline:
-			return [0, PackedByteArray()]
+			return [0, PackedByteArray(), body.size()]
 		http.poll()
 		var chunk := http.read_response_body_chunk()
 		if chunk.is_empty():
 			OS.delay_usec(POLL_IDLE_USEC)
+		elif idle_ms > 0:
+			deadline = Time.get_ticks_msec() + idle_ms
 		body.append_array(chunk)
 	_net_lock().lock()
 	net_requests += 1
 	_net_mutex.unlock()
-	return [code, body]
+	return [code, body, body.size()]
 
 
 ## Une requête sur la connexion du fil, qu'elle rouvre si besoin. [0, vide] signale une
 ## connexion inutilisable — à l'appelant de réessayer une fois.
-func _http_once(link: Link, host: String, port: int, path: String, tls: bool = false) -> Array:
+func _http_once(link: Link, host: String, port: int, path: String, tls: bool = false,
+		idle_ms: int = 0) -> Array:
 	var deadline := Time.get_ticks_msec() + request_timeout_ms
 	if link.http == null or link.host != host or link.port != port or link.tls != tls \
 			or link.http.get_status() != HTTPClient.STATUS_CONNECTED:
@@ -1036,13 +1084,13 @@ func _http_once(link: Link, host: String, port: int, path: String, tls: bool = f
 		link.tls = tls
 		if link.http.connect_to_host(host, port, _tls_options(tls)) != OK:
 			link.http = null
-			return [0, PackedByteArray()]
+			return [0, PackedByteArray(), 0]
 		if not _await(link.http, deadline, true):
 			link.http = null
-			return [0, PackedByteArray()]
+			return [0, PackedByteArray(), 0]
 	if link.http.request(HTTPClient.METHOD_GET, path, []) != OK:
-		return [0, PackedByteArray()]
-	var res := _drain(link.http, deadline)
+		return [0, PackedByteArray(), 0]
+	var res := _drain(link.http, deadline, idle_ms)
 	if res[0] == 0:
 		link.http = null
 	return res

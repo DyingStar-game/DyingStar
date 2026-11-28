@@ -2780,8 +2780,12 @@ func get_bridge_spans() -> Array:
 		# Baked: the walk of every road against the crack field (38 s on
 		# tarsis_3's ring railway, 14 000 crossings) read from disk instead.
 		var baked := _baked_bridges()
+		var t0 := Time.get_ticks_msec()
 		var spans: Array = baked["spans"] if not baked.is_empty() \
 				else RoadBridge.find_all_spans(self, get_whole_roads())
+		if baked.is_empty() and not spans.is_empty():
+			_warn_no_line_bake("%d road/chasm crossing(s) found at run time in %d ms"
+					% [spans.size(), Time.get_ticks_msec() - t0])
 		_bridge_spans = spans
 		_bridge_spans_built = true
 		_span_owner_index_ok = false
@@ -3937,6 +3941,8 @@ func _build_grade_profiles() -> void:
 				skipped += 1
 			continue
 		_grade_submit(road, tiles)
+	if baked < lines.size():
+		_warn_no_line_bake("%d of %d profiled line(s) computed at run time" % [lines.size() - baked, lines.size()])
 	print("[PlanetData] %s — %d ms" % [_grade_summary(), Time.get_ticks_msec() - t0]
 			+ (" — %d baked" % baked if baked else "")
 			+ (" — %d skipped (terrain tiles not available)" % skipped if skipped else "")
@@ -4049,6 +4055,19 @@ func _ensure_grade_bake() -> void:
 	_grade_baked = doc.get("lines", {})
 	print("[PlanetData] %d profil(s) de ligne précalculé(s) chargé(s) pour '%s'"
 			% [_grade_baked.size(), planet_name])
+
+
+## Say that the line bake was not read, when work it would have saved runs instead.
+## Only when NO bake was read: a stale one already said so (_ensure_grade_bake,
+## _baked_bridges), and a body without lines (a moon) never gets here. Silent when the
+## bake was never even looked for: the bake tool skips it on purpose to compute afresh.
+func _warn_no_line_bake(what: String) -> void:
+	if not _grade_bake_doc_read or not _grade_bake_doc.is_empty():
+		return
+	push_warning("[PlanetData] '%s': %s — no line bake was read (body %s%s, %s). "
+			% [planet_name, what, planet_name, GRADE_BAKE_BODY_SUFFIX, GRADE_BAKE_FILE]
+			+ "Look above for the reason (download failed, body not on the channel); "
+			+ "on a slow machine this is minutes of start-up and chunks rebuilt as lines land.")
 
 
 ## grade_profiles.pack as read, once — {} when absent or unreadable.

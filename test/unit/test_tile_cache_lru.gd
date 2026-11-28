@@ -56,10 +56,10 @@ func _files_at(nside: int) -> int:
 # ===================================================================
 
 func test_default_budget_counts_files_not_data_bytes() -> void:
-	# 128 Mio de DISQUE, à un bloc de 4 Kio par tuile. Compter les ~1,4 Kio de données
+	# 512 Mio de DISQUE, à un bloc de 4 Kio par tuile. Compter les ~1,4 Kio de données
 	# réelles donnerait trois fois plus de fichiers que le disque n'en supporte.
 	var c := TileCacheLru.new()
-	assert_eq(c.budget_tiles, 32768, "128 Mo / 4 Kio")
+	assert_eq(c.budget_tiles, 131072, "512 Mo / 4 Kio")
 	c.set_budget_mb(64)
 	assert_eq(c.budget_tiles, 16384)
 

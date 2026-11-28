@@ -632,3 +632,133 @@ func test_an_unreachable_service_returns_instead_of_spinning() -> void:
 
 func test_the_timeout_has_a_sane_default() -> void:
 	assert_between(RemoteTileSource.new().request_timeout_ms, 1000, 60000)
+
+
+# ===================================================================
+# Objets entiers : échéance d'inactivité, pas échéance totale
+# ===================================================================
+
+## Serveur HTTP d'un seul coup, sur un fil : il sert [member pieces] blocs de
+## [member piece_bytes] octets, espacés de [member gap_ms], et peut se taire avant le
+## bloc [member stall_at]. C'est le réseau lent (ou muet) d'un joueur, sur loopback.
+class SlowServer:
+	var pieces: int = 5
+	var piece_bytes: int = 1000
+	var gap_ms: int = 250
+	var stall_at: int = -1
+	var stall_ms: int = 3000
+	var port: int = 0
+	var _tcp := TCPServer.new()
+	var _thread := Thread.new()
+
+	func start() -> bool:
+		if _tcp.listen(0, "127.0.0.1") != OK:
+			return false
+		port = _tcp.get_local_port()
+		_thread.start(_serve)
+		return true
+
+	func url() -> String:
+		return "http://127.0.0.1:%d/obj.bin" % port
+
+	func finish() -> void:
+		_thread.wait_to_finish()
+		_tcp.stop()
+
+	func _serve() -> void:
+		var t0 := Time.get_ticks_msec()
+		while not _tcp.is_connection_available():
+			if Time.get_ticks_msec() - t0 > 5000:
+				return
+			OS.delay_msec(5)
+		var peer := _tcp.take_connection()
+		var req := ""
+		while not req.contains("\r\n\r\n") and Time.get_ticks_msec() - t0 < 5000:
+			peer.poll()
+			var n := peer.get_available_bytes()
+			if n > 0:
+				req += (peer.get_data(n)[1] as PackedByteArray).get_string_from_ascii()
+			else:
+				OS.delay_msec(5)
+		var head := "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" \
+				% (pieces * piece_bytes)
+		peer.put_data(head.to_ascii_buffer())
+		var piece := PackedByteArray()
+		piece.resize(piece_bytes)
+		piece.fill(65)
+		for i in pieces:
+			if i == stall_at:
+				OS.delay_msec(stall_ms)
+				break
+			peer.put_data(piece)
+			OS.delay_msec(gap_ms)
+		peer.disconnect_from_host()
+
+
+func _slow(timeout_ms: int) -> RemoteTileSource:
+	var s := RemoteTileSource.new()
+	s.cache_root = CACHE
+	s.request_timeout_ms = timeout_ms
+	return s
+
+
+func test_a_whole_object_arrives_on_a_slow_but_steady_link() -> void:
+	# 5 blocs à 250 ms d'écart : 1,25 s en tout pour une échéance de 500 ms. Chaque bloc
+	# arrive avant l'échéance d'inactivité : l'objet doit arriver entier. C'est le bake des
+	# lignes (7,9 Mio) chez un joueur sous 6 Mbit/s, qui le perdait sans un mot.
+	var srv := SlowServer.new()
+	assert_true(srv.start(), "un port local")
+	var res: Array = _slow(500)._request(srv.url(), true)
+	srv.finish()
+	assert_eq(int(res[0]), 200)
+	assert_eq((res[1] as PackedByteArray).size(), 5000, "le corps entier")
+	assert_eq(int(res[2]), 5000)
+	assert_gt(int(res[3]), 500, "plus long que l'échéance : elle a bien été repoussée")
+
+
+func test_a_tile_keeps_the_total_deadline() -> void:
+	# Le même transfert, demandé comme une tuile : l'échéance reste totale. Les octets reçus
+	# avant l'abandon sont comptés, pour que l'échec puisse les dire.
+	var srv := SlowServer.new()
+	assert_true(srv.start(), "un port local")
+	var res: Array = _slow(500)._request(srv.url())
+	srv.finish()
+	assert_eq(int(res[0]), 0, "abandon à l'échéance totale")
+	assert_true((res[1] as PackedByteArray).is_empty(), "pas de corps partiel rendu")
+	assert_between(int(res[2]), 1000, 4000, "mais les octets reçus sont comptés")
+
+
+func test_a_silent_link_still_fails_after_the_idle_deadline() -> void:
+	# Un bloc, puis plus rien pendant 3 s : l'objet entier abandonne au bout de l'échéance
+	# d'inactivité, pas au bout des 3 s — un réseau muet ne gèle pas le démarrage.
+	var srv := SlowServer.new()
+	srv.stall_at = 1
+	assert_true(srv.start(), "un port local")
+	var res: Array = _slow(500)._request(srv.url(), true)
+	var ms := int(res[3])
+	srv.finish()
+	assert_eq(int(res[0]), 0)
+	assert_eq(int(res[2]), 1000, "le bloc reçu avant le silence")
+	assert_lt(ms, 2000, "rendu à l'échéance d'inactivité, pas à la fin du silence")
+
+
+func test_an_injected_fetcher_result_gets_the_counts() -> void:
+	# Le transport injecté des tests rend [code, corps] : _request complète toujours avec les
+	# octets reçus et la durée, que lisent les messages d'échec.
+	_served["https://tiles.example/x"] = _bytes([1, 2, 3])
+	var res: Array = _source()._request("https://tiles.example/x", true)
+	assert_eq(res.size(), 4)
+	assert_eq(int(res[2]), 3)
+
+
+func test_a_whole_object_that_fails_is_asked_for_once() -> void:
+	# Objet absent alors que le corps est publié : "" et un avertissement, puis plus de
+	# requête de la session (la panne est dite une fois, pas à chaque appel).
+	var s := _source()
+	s.base_url = "https://tiles.example"
+	s.planet = "tarsis_3.lines"
+	s.version = "v1"
+	_miss_code = 0
+	assert_eq(s.fetch_object("grade_profiles.pack"), "")
+	assert_eq(s.fetch_object("grade_profiles.pack"), "")
+	assert_eq(int(_hits.get("https://tiles.example/tarsis_3.lines/v1/grade_profiles.pack", 0)), 1)
