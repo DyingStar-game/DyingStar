@@ -21,14 +21,15 @@ const BLOCK_BYTES := 4096
 
 ## Budget par défaut, en mébioctets de disque (1 Mio = 1024 Kio).
 ##
-## C'est un plafond, pas une cible : une session de jeu réelle mesurée sur l'export n256
-## tient dans 2,2 Mio (535 tuiles), et la même session à la résolution visée n1024 en
-## demanderait 2 095, soit 8,2 Mio. Le budget vaut donc seize fois la session la plus
-## lourde qu'on ait mesurée. Il n'est jamais réservé — il ne coûte rien tant qu'il n'est
-## pas atteint — et n'existe que pour le cas pathologique du joueur qui survole la planète
-## des heures durant. Il reste sous un vingtième de la planète complète, si bien que le
-## cache ne peut pas dégénérer en « télécharger la planète ».
-const DEFAULT_BUDGET_MB := 128
+## C'est un plafond, pas une cible, et il vaut PAR CORPS (tarsis_3, tarsis_3.mod… ont
+## chacun le leur). Il n'est jamais réservé — il ne coûte rien tant qu'il n'est pas
+## atteint. Une session de relief n1024 tient dans ~8 Mio ; mais le corps de modificateurs
+## descend jusqu'à n8192, et un joueur en avait rempli 124,3 Mio sur 128 (31 829 fichiers,
+## 2026-11-28) : à ce train, chaque retour dans une région déjà visitée retéléchargeait ses
+## routes. 512 Mio laissent ce corps vivre sans évincer ce qui sert encore, et restent sous
+## le cinquième de la planète complète en n1024 : le cache ne dégénère pas en
+## « télécharger la planète ».
+const DEFAULT_BUDGET_MB := 512
 
 ## Dernier niveau épinglé, jamais évincé. n16 = 4095 tuiles = 16 Mio pour la planète entière.
 const PIN_NSIDE_MAX := 16

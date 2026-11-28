@@ -515,7 +515,7 @@ sur les tuiles :
 
 ---
 
-## 8. Cache client — ✅ FAIT (`TileCacheLru`, budget 128 Mio)
+## 8. Cache client — ✅ FAIT (`TileCacheLru`, budget 512 Mio par corps)
 
 Le budget de 400 Mio initialement retenu ici supposait deux tiers, tuiles **et** meshes, et
 disait explicitement que « en pratique les 400 Mio serviront aux meshes générés ». Le
@@ -537,7 +537,13 @@ fichiers : l'écart données/disque est de ×3,1, uniforme. Un budget exprimé e
 données consommerait trois fois ce qu'il annonce. `TileCacheLru` convertit une fois
 (`BLOCK_BYTES = 4096`) et raisonne ensuite en **nombre de fichiers**.
 
-### Pourquoi 128 Mio
+### Pourquoi 512 Mio (128 Mio jusqu'au 2026-11-28)
+
+> **Relevé à 512 Mio le 2026-11-28.** Le budget vaut **par corps**, et le corps de
+> modificateurs (`tarsis_3.mod`) descend jusqu'à n8192 : un joueur en avait rempli
+> 124,3 Mio sur 128 (31 829 fichiers), si bien que revenir dans une région déjà visitée
+> retéléchargeait ses routes. L'analyse ci-dessous, faite pour le relief seul, reste juste
+> pour ce corps-là ; 512 Mio restent sous le cinquième de la planète complète en n1024.
 
 | niveau | cumul tuiles | Mio disque | côté d'une tuile | par échantillon |
 |---|---|---|---|---|
@@ -1254,7 +1260,7 @@ a déjà :
 #### Cache LRU — ✅ FAIT (`TileCacheLru`)
 
 Le cache de tuiles grossissait sans limite, et le prefetch en anneau le remplit bien plus
-vite que les demandes à la carte qu'il a remplacées. Budget ramené de 400 à **128 Mo**,
+vite que les demandes à la carte qu'il a remplacées. Budget ramené de 400 à **128 Mo** (relevé à 512 Mio par corps le 2026-11-28, voir §8),
 compté en fichiers et non en octets, niveaux n1…n16 épinglés hors budget. Le détail et
 les mesures qui justifient ces chiffres sont en §8.
 
