@@ -222,6 +222,9 @@ func _bake(planet: String) -> bool:
 	data._grade_baked.clear()
 	data._bridge_bake_checked = false
 	data._bridge_baked = {}
+	# As before any warm-up: planned already, the regions' crossings would be taken for a
+	# stale bake's (PlanetData._merge_line_crossings) and none read back.
+	data._bridge_plans_built = false
 	# Every region merged back must give the very tables computed above, knot for knot: the game
 	# reads a region at a time, and a stretch missing from all of them would leave a line on the
 	# header's decimated knots for good.
