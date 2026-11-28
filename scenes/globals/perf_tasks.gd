@@ -42,6 +42,71 @@ static func add_group_task(site: String, action: Callable, elements: int, tasks_
 			elements, tasks_needed, high_priority, description)
 
 
+## WorkerThreadPool.wait_for_task_completion, the main thread's wait put to [param site] (the caller's file):
+## a task joined before it is done holds the frame -- and so does a pool kept full by long tasks, which the
+## physics step's own jobs (Jolt) then queue behind. Returns its Error.
+static func wait(task_id: int, site: String = "") -> Error:
+	if not on or OS.get_thread_caller_id() != OS.get_main_thread_id():
+		return WorkerThreadPool.wait_for_task_completion(task_id)
+	var start: int = Time.get_ticks_usec()
+	var err := WorkerThreadPool.wait_for_task_completion(task_id)
+	_add_wait(site, Time.get_ticks_usec() - start)
+	return err
+
+
+## WorkerThreadPool.wait_for_group_task_completion, timed as [method wait].
+static func wait_group(group_id: int, site: String = "") -> void:
+	if not on or OS.get_thread_caller_id() != OS.get_main_thread_id():
+		WorkerThreadPool.wait_for_group_task_completion(group_id)
+		return
+	var start: int = Time.get_ticks_usec()
+	WorkerThreadPool.wait_for_group_task_completion(group_id)
+	_add_wait(site, Time.get_ticks_usec() - start)
+
+
+## [param action] called on the main thread at its next message-queue flush (call_deferred), its time put to
+## [param site]: how a task hands its result over. Deferred from a worker while the main thread flushes, it runs
+## in that very flush -- after the physics step's, inside ClientPerf's `pengine` (2026-11-28).
+static func deferred(site: String, action: Callable) -> void:
+	_run_deferred.call_deferred(site, action)
+
+
+static func _run_deferred(site: String, action: Callable) -> void:
+	if not on:
+		action.call()
+		return
+	var start: int = Time.get_ticks_usec()
+	action.call()
+	var spent: int = Time.get_ticks_usec() - start
+	if spent >= 500:
+		_waits["defer:" + site] = int(_waits.get("defer:" + site, 0)) + spent
+
+
+## site -> usec the main thread waited on its tasks since take_waits (only waits of 0.5 ms or more); the
+## deferred hand-overs (deferred) as "defer:<site>".
+static var _waits: Dictionary = {}
+
+
+static func _add_wait(site: String, usec: int) -> void:
+	if usec >= 500:
+		_waits[site] = int(_waits.get(site, 0)) + usec
+
+
+## The main thread's waits since the last call, emptied (ClientPerf's `wait:<site>` scopes, per frame).
+static func take_waits() -> Dictionary:
+	var out := _waits
+	_waits = {}
+	return out
+
+
+## How many of the game's tasks are running now.
+static func running() -> int:
+	_mutex.lock()
+	var n: int = _running.size()
+	_mutex.unlock()
+	return n
+
+
 static func _timed(site: String, action: Callable, args: Array = []) -> void:
 	var start: int = Time.get_ticks_usec()
 	_mutex.lock()

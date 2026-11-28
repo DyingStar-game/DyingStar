@@ -344,7 +344,7 @@ static func _gust_noise() -> Texture3D:
 		return null
 	if not WorkerThreadPool.is_task_completed(_noise_task):
 		return null
-	WorkerThreadPool.wait_for_task_completion(_noise_task)
+	PerfTasks.wait(_noise_task, "weather_sky")
 	var layers: Array[Image] = []
 	layers.assign(_noise_layers)
 	var texture := ImageTexture3D.new()

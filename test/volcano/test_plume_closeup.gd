@@ -20,7 +20,8 @@ func _ready() -> void:
 	_model.update(1000.0, VolcanoPlumeModel.COUNT)
 	_material = ShaderMaterial.new()
 	_material.shader = load(VolcanoPlume.SHADER_DIR + "plume.gdshader")
-	_material.set_shader_parameter("billow_tex", VolcanoPlume._billow_texture())
+	VolcanoPlume._billow_texture().when_ready(func(tex: Texture3D) -> void:
+		_material.set_shader_parameter("billow_tex", tex))
 	_material.set_shader_parameter("puff_a", _model.a)
 	_material.set_shader_parameter("puff_b", _model.b)
 	_material.set_shader_parameter("puff_c", _model.c)

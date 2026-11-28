@@ -37,7 +37,7 @@ class JobResult extends RefCounted:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE and _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "dust_sea_map")
 
 
 ## The cache key of [param data]'s map (cache_path), "" when the planet has no look signature yet.
@@ -67,7 +67,7 @@ func update(colour: Callable, key: String = "") -> bool:
 		return false
 	if not WorkerThreadPool.is_task_completed(_task):
 		return false
-	WorkerThreadPool.wait_for_task_completion(_task)
+	PerfTasks.wait(_task, "dust_sea_map")
 	_task = -1
 	_write(_key, _job.texels)
 	_publish(_job.texels)

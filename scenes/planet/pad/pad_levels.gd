@@ -21,18 +21,24 @@ extends RefCounted
 ## one takes its level, or the mine's yard buried its own buildings (2026-11-04).
 
 
-## Re-level every pad connected to [param seeds] (the old and new records of the
-## pad that changed) in [param next], the unpublished index clone, from the
-## measured altitudes [param own] (uuid → {z, talus_m}). Returns the uuids whose
-## record now differs from [param published].
+## Re-level every pad whose level may follow [param seeds] (the old and new records of the pad that changed)
+## in [param next], the unpublished index clone, from the measured altitudes [param own] (uuid → {z, talus_m}).
+## Returns the uuids whose record now differs from [param published].
+##
+## A level only flows from a pad to a smaller one touching it (and, on a village's plane, only from an area
+## the layout levels: leans_on, the rule level() follows), so only the pads downstream of the seeds can move:
+## the others lean on pads that did not. The whole touching group was walked instead -- a village is one
+## (~180 pads), so each pad that arrived re-levelled all those before it: 0.77 s of a village arrival,
+## frames of 290 ms (2026-11-28). Registering them all at once (register_pads) still walks every pad.
 static func settle(next: PadIndex, published: PadIndex, seeds: Array, own: Dictionary,
 		finest: int, mpd: float, beds: Array = []) -> Array[String]:
 	var comp := {}
 	var queue: Array = []
-	# The neighbours of each pad of [param next], found once: the flood fill and level() both need them,
+	# The neighbours of each pad of [param next], found once: the walk and level() both need them,
 	# and a pad's neighbours depend on geometry only, which re-levelling never touches. Not for the
 	# seeds: the old record of the changed pad has its uuid but not its geometry.
 	var near := {}
+	var on_bed := {}
 	for s: Dictionary in seeds:
 		if s.is_empty():
 			continue
@@ -41,13 +47,14 @@ static func settle(next: PadIndex, published: PadIndex, seeds: Array, own: Dicti
 			comp[su] = true
 			queue.append(su)
 		for u: String in touching(next, s, finest, mpd):
-			if not comp.has(u):
+			if not comp.has(u) and leans_on(next.get_rec(u), s, mpd, beds, on_bed):
 				comp[u] = true
 				queue.append(u)
 	while not queue.is_empty():
 		var u: String = queue.pop_back()
+		var rec: Dictionary = next.get_rec(u)
 		for t: String in _touching_of(next, u, finest, mpd, near):
-			if not comp.has(t):
+			if not comp.has(t) and leans_on(next.get_rec(t), rec, mpd, beds, on_bed):
 				comp[t] = true
 				queue.append(t)
 	var memo := {}
@@ -66,6 +73,20 @@ static func settle(next: PadIndex, published: PadIndex, seeds: Array, own: Dicti
 				or float(pub["z"]) != float(cur["z"]) or float(pub["talus_m"]) != float(cur["talus_m"]):
 			changed.append(u)
 	return changed
+
+
+## Whether the level of pad [param rec] can follow the touching pad [param other]'s: [param other] is the
+## larger, and [param rec] stands off a village's plane or [param other] is an area the layout levels -- what
+## level() looks for. [param on_bed] remembers VillageBed.reaches by uuid.
+static func leans_on(rec: Dictionary, other: Dictionary, mpd: float, beds: Array, on_bed: Dictionary) -> bool:
+	if rec.is_empty() or float(other["hx"]) * float(other["hy"]) <= float(rec["hx"]) * float(rec["hy"]):
+		return false
+	if str(other["uuid"]).contains(LayoutPads.UUID_TAG):
+		return true
+	var u := str(rec["uuid"])
+	if not on_bed.has(u):
+		on_bed[u] = VillageBed.reaches(beds, rec, mpd)
+	return not on_bed[u]
 
 
 ## The uuids of the pads in [param idx] whose apron touches [param rec]'s. A pad

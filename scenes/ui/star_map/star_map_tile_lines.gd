@@ -236,7 +236,7 @@ func _take() -> void:
 
 func _wait() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "star_map_tile_lines")
 		_task = -1
 
 

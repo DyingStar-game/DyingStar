@@ -64,7 +64,7 @@ func refresh(data: PlanetData, middle: Vector3, across: Vector3, way: Vector3, s
 	if _task >= 0:
 		if not WorkerThreadPool.is_task_completed(_task):
 			return
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "wall_ground")
 		_task = -1
 	if now - _read_at < KEPT_S:
 		return
@@ -92,7 +92,7 @@ func refresh(data: PlanetData, middle: Vector3, across: Vector3, way: Vector3, s
 				colours[k] = dust.r
 				colours[k + 1] = dust.g
 				colours[k + 2] = dust.b
-		_use.call_deferred(heights, middle, across, way, over, colours))
+		PerfTasks.deferred("wall_ground:use", _use.bind(heights, middle, across, way, over, colours)))
 
 
 func _use(heights: PackedFloat32Array, middle: Vector3, across: Vector3, way: Vector3, over: Vector2,
@@ -140,5 +140,5 @@ func height_at(point: Vector3) -> float:
 ## Waits for the read under way, if any (before the planet goes).
 func finish() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "wall_ground")
 		_task = -1

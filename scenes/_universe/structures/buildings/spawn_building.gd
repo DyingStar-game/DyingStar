@@ -60,6 +60,12 @@ const PAD_MARGIN_M := 0.5
 ## How the apartments are copied from 0-0-0: as the template stands, not instanced again from its scene
 ## (DUPLICATE_USE_INSTANTIATION would bring back the interior a streamed template gave up).
 const COPY_AS_IS := Node.DUPLICATE_SIGNALS | Node.DUPLICATE_GROUPS | Node.DUPLICATE_SCRIPTS
+## Make the apartments from the template packed once as a scene (as_scene) instead of copying it for each:
+## Node.duplicate copies every stored property of every node, ~60 µs a node, where instancing is ~10 µs.
+## 24 apartments: 32 → 9 ms as shells (the client), 179 → 57 ms with their interiors (the server)
+## (test/perf/apartment_probe, 2026-11-28). The same nodes either way (test_spawn_building_copies). False:
+## copied, as before.
+static var copy_by_scene := true
 
 
 ## The TerrainPad footprint of a building of [param data]'s rows / cols / spacings, local to the
@@ -124,19 +130,23 @@ func _create_apartments():
 		if streamer != null:
 			streamer.loaded.connect(func(room: Node) -> void: _furniture.show_room(room))
 			add_child(streamer)
+	var tok: int = ClientPerf.scope_begin()
+	var copier := ApartmentCopier.new(%"0-0-0", copy_by_scene)
+	ClientPerf.scope_end("bld:pack", tok)
+	tok = ClientPerf.scope_begin()
 	for f in range(floors):
 		for i in range(cols):
 			# Don't duplicate on itself the apartment 001
 			if f == 0 and i == 0:
 				continue
-			var node_apart = %"0-0-0".duplicate(COPY_AS_IS)
+			var node_apart = copier.copy()
 			node_apart.name = slot_name({"row": 0, "col": i, "floor": f})
 			node_apart.position.z = i * z_spacing
 			node_apart.position.y = f * y_spacing
 			$MultiMeshInstance3D.add_child(node_apart)
 		if rows == 2:
 			for i in range(cols):
-				var node_apart = %"0-0-0".duplicate(COPY_AS_IS)
+				var node_apart = copier.copy()
 				node_apart.name = slot_name({"row": 1, "col": i, "floor": f})
 				node_apart.rotation.y = 3.14159
 				node_apart.position.x = (x_spacing * 2.0)
@@ -144,7 +154,10 @@ func _create_apartments():
 				node_apart.position.y = f * y_spacing
 				$MultiMeshInstance3D.add_child(node_apart)
 
+	ClientPerf.scope_end("bld:copies", tok)
+	tok = ClientPerf.scope_begin()
 	BuildingWalkways.build(self, rows, cols, floors, x_spacing, z_spacing, y_spacing)
+	ClientPerf.scope_end("bld:walkways", tok)
 
 	# update Area3D for reparent the player
 	var shape_area = %CollisionShape3D as CollisionShape3D
@@ -285,13 +298,67 @@ func apply_prop_data(data: Dictionary) -> void:
 
 	_fit_terrain_pad()
 
+	# `bld:*` on the [CPerf+] heartbeat (debug_perf): where a building's data costs the client.
+	var tok: int = ClientPerf.scope_begin()
 	if data.has("apartments"):
 		apartments = data["apartments"]
 		_create_apartments()
+		ClientPerf.scope_end("bld:apartments", tok)
+		tok = ClientPerf.scope_begin()
 		if not GameOrchestrator.is_server():
 			ApartmentPlates.show($MultiMeshInstance3D, apartments, uuid, Player.own_horizon_id())
+		ClientPerf.scope_end("bld:plates", tok)
 
+	tok = ClientPerf.scope_begin()
 	if data.get("furniture") is Dictionary:
 		_furniture.receive(data["furniture"], _rooms())
 	elif data.has("apartments"):
 		_furniture.show_once(_rooms())
+	ClientPerf.scope_end("bld:furniture", tok)
+
+
+## Copies of an apartment template, as Node.duplicate(COPY_AS_IS) gives them — the same nodes, properties,
+## groups and connections — made by packing the template once and instancing it: see copy_by_scene.
+class ApartmentCopier:
+	var _template: Node
+	var _scene: PackedScene = null
+	## [path from the copy's root, scene file] of the nodes that were instances in the template: packing as
+	## plain nodes drops it, a copy keeps it.
+	var _instances: Array = []
+
+	func _init(template: Node, by_scene: bool) -> void:
+		_template = template
+		if by_scene:
+			_scene = _pack(template)
+
+	## A copy of the template (not in the tree).
+	func copy() -> Node:
+		if _scene == null:
+			return _template.duplicate(COPY_AS_IS)
+		var node := _scene.instantiate()
+		for entry: Array in _instances:
+			var at := node.get_node_or_null(entry[0] as NodePath) if not (entry[0] as NodePath).is_empty() else node
+			if at != null:
+				at.scene_file_path = entry[1]
+		return node
+
+	## The template as one scene of plain nodes: a copy of it, every node owned by its root (a node of an
+	## instanced scene belongs to that scene's root and would be left out), not an instance (its interior,
+	## taken out for streaming, would come back), its groups made persistent (pack keeps no others: the draw
+	## range groups the building's dressing gave it). Null when it does not pack.
+	func _pack(template: Node) -> PackedScene:
+		var one := template.duplicate(COPY_AS_IS)
+		for node: Node in [one] + one.find_children("*", "", true, false):
+			if node.scene_file_path != "":
+				_instances.append([one.get_path_to(node), node.scene_file_path])
+				node.scene_file_path = ""
+			if node != one:
+				node.owner = one
+			for g: StringName in node.get_groups():
+				if not str(g).begins_with("_"):
+					node.remove_from_group(g)
+					node.add_to_group(g, true)
+		var scene := PackedScene.new()
+		var ok := scene.pack(one) == OK
+		one.free()
+		return scene if ok else null

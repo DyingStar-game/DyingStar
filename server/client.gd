@@ -1356,10 +1356,19 @@ func create_generic_object(event: Dictionary) -> void:
 					return
 
 			var prop_scene: PackedScene
+			# And by scene (`spawn:<file>`, `spawn_load:<file>` the first time it is read): which buildings
+			# a village arrival pays for — 5 s of spawning over 44 s of arrival, by kind (2026-11-28).
+			var _spawn_kind: String = str(object_data["scenename"]).get_file().get_basename()
 			if props_scene.has(object_data["scenename"]):
 				prop_scene = props_scene[object_data["scenename"]]
 			else:
+				var _load_tok: int = ClientPerf.scope_begin()
 				prop_scene = load("res://" + object_data["scenename"])
+				ClientPerf.scope_end("spawn_load:" + _spawn_kind, _load_tok)
+				# Kept: nothing else holds a PackedScene once it is instanced, so the engine dropped it and the
+				# next one was read from disk again — 114 shelves of a village, 114 reads, 0.66 s (2026-11-28).
+				if prop_scene != null:
+					props_scene[object_data["scenename"]] = prop_scene
 			# A persisted prop can reference a scene that no longer exists at that path (moved/renamed
 			# by the asset-taxonomy migration). Skip it instead of crashing the whole loader.
 			if prop_scene == null:
@@ -1390,14 +1399,20 @@ func create_generic_object(event: Dictionary) -> void:
 			net.uuid = object_id
 
 			# client_channel_data_update must be called before parent for the position
+			# (`spawn_data:<file>`: the data applied out of the tree; `spawn_enter:<file>`: entering it.)
+			var _step_tok: int = ClientPerf.scope_begin()
 			net.client_channel_data_update(object_data)
+			ClientPerf.scope_end("spawn_data:" + _spawn_kind, _step_tok)
 
+			_step_tok = ClientPerf.scope_begin()
 			if parent != null:
 				parent.add_child(prop_instance)
 			else:
 				# parent_id == "" -> root-level object, attach to the universe.
 				universe_scene.add_child(prop_instance)
+			ClientPerf.scope_end("spawn_enter:" + _spawn_kind, _step_tok)
 			ClientPerf.scope_end(_spawn_scope, _spawn_tok)
+			ClientPerf.scope_end("spawn:" + _spawn_kind, _spawn_tok)
 
 			props_list[object_type][object_id] = prop_instance
 

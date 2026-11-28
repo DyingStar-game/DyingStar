@@ -90,7 +90,7 @@ static func poll() -> void:
 		var task: Array = _running[key]
 		if not WorkerThreadPool.is_task_completed(task[0]):
 			continue
-		WorkerThreadPool.wait_for_task_completion(task[0])
+		PerfTasks.wait(task[0], "human_mesh_cache")
 		_running.erase(key)
 		var result: HumanBuilder.Baked = task[1][0] if not (task[1] as Array).is_empty() else null
 		if result != null:
@@ -125,7 +125,7 @@ static func busy() -> bool:
 
 static func clear() -> void:
 	for h: int in _running.keys():
-		WorkerThreadPool.wait_for_task_completion(_running[h][0])
+		PerfTasks.wait(_running[h][0], "human_mesh_cache")
 	_running.clear()
 	_queue.clear()
 	_done.clear()

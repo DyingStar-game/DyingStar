@@ -77,7 +77,7 @@ func _exit_tree() -> void:
 	if _probe != null:
 		_probe.wait()
 	if _pending_task != -1:
-		WorkerThreadPool.wait_for_task_completion(_pending_task)
+		PerfTasks.wait(_pending_task, "menu_stage")
 		_pending_task = -1
 	_session.end()
 
@@ -248,7 +248,7 @@ func _load_world() -> PackedScene:
 			await get_tree().process_frame
 			if not is_inside_tree():
 				return null  # _exit_tree waits for the task
-		WorkerThreadPool.wait_for_task_completion(_pending_task)
+		PerfTasks.wait(_pending_task, "menu_stage")
 		_pending_task = -1
 	BootTrace.step("menu stage: planet data ready")
 	_progress(0.4)
@@ -267,7 +267,7 @@ func _pipelines_compiled() -> void:
 		await get_tree().process_frame
 		if not is_inside_tree():
 			return  # _exit_tree waits for the task
-	WorkerThreadPool.wait_for_task_completion(_pending_task)
+	PerfTasks.wait(_pending_task, "menu_stage")
 	_pending_task = -1
 
 

@@ -625,7 +625,7 @@ func _poll_extractions(now: float) -> void:
 			if not WorkerThreadPool.is_task_completed(task_id):
 				i += 1
 				continue
-			WorkerThreadPool.wait_for_task_completion(task_id)  # releases the task; it is already done
+			PerfTasks.wait(task_id, "npc_nav_cache")  # releases the task; it is already done
 		_extracting.remove_at(i)
 		var box: NavBox = e["box"]
 		box.extracting = false

@@ -500,7 +500,7 @@ func _noises_ready(renderer: AtmosphereRenderer) -> bool:
 			return false
 		if not WorkerThreadPool.is_task_completed(_noise_task):
 			return false
-		WorkerThreadPool.wait_for_task_completion(_noise_task)
+		PerfTasks.wait(_noise_task, "dust_sea")
 		for layers: Array in _noise_layers:
 			var images: Array[Image] = []
 			images.assign(layers)

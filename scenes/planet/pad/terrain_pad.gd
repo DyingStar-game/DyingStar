@@ -253,7 +253,10 @@ func _apply() -> void:
 	# announce this very pad.
 	if terrain.has_signal("pads_caught_up") and not terrain.pads_caught_up.is_connected(_on_pads_caught_up):
 		terrain.pads_caught_up.connect(_on_pads_caught_up)
+	var _tk := ClientPerf.scope_begin() if not Engine.is_editor_hint() else 0
 	terrain.register_terrain_pad(rec)
+	if _tk != 0:
+		ClientPerf.scope_end("pad:register", _tk)
 	var z: float = terrain.terrain_pad_altitude(rec)
 	var what := "emprise %.1f × %.1f m + %.0f m de tablier" % [
 			2.0 * float(rec["hx"]), 2.0 * float(rec["hy"]), float(rec["apron_m"])]

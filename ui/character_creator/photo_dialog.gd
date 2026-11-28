@@ -401,7 +401,7 @@ func _close_camera() -> void:
 
 func _stop_camera() -> void:
 	if _check_task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_check_task)
+		PerfTasks.wait(_check_task, "photo_dialog")
 		_check_task = -1
 	if _camera_feed != null:
 		_camera_feed.feed_is_active = false
@@ -416,7 +416,7 @@ func _process(delta: float) -> void:
 	if _camera_feed == null:
 		return
 	if _check_task >= 0 and WorkerThreadPool.is_task_completed(_check_task):
-		WorkerThreadPool.wait_for_task_completion(_check_task)
+		PerfTasks.wait(_check_task, "photo_dialog")
 		_check_task = -1
 		_show_live(_live_result)
 	if _countdown >= 0.0:

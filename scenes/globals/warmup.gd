@@ -87,6 +87,15 @@ const MINE_DUST_SHADER := preload("res://scenes/_universe/structures/industrial/
 ## (MiningRock, rock_vein), which no scene names: the first rock met froze the game 2.7 s to compile it.
 const ROCK_SCENE := "res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn"
 const ROCK_SHADER := preload("res://assets/_universe/environment/terrain/rocks/rock_vein.gdshader")
+## Scripts that build surfaces at run time in materials no scene names, loaded here like the scenes: each lists
+## them through its static warm_surfaces() ([mesh, [materials]], as meshes_of). A spawn building's walkways
+## (BuildingWalkways): the first one built waited 212 ms for their shaders on arrival (2026-11-28).
+const RUNTIME_SURFACES: Array[String] = [
+	"res://scenes/_universe/structures/buildings/walkways/building_walkways.gd",
+	# Nothing to draw: starts the smoke's and stones' noise volumes on workers (NoiseVolume), ~1 s at once on
+	# the main thread at the first volcano met otherwise (2026-11-28).
+	"res://scenes/planet/volcano/volcano_plume.gd",
+]
 ## Those of SCENES whose LayoutData is read ahead too.
 const LAYOUTS: Array[String] = [
 	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
@@ -178,6 +187,7 @@ static func wanted() -> Array[String]:
 	for dir: String in SCRIPT_DIRS:
 		paths.append_array(folder_resources(dir, ".gd"))
 	paths.append_array(SCENES)
+	paths.append_array(RUNTIME_SURFACES)
 	for dir: String in CATALOGUES:
 		for item: Resource in DispenserCatalog.all(dir):
 			var path: String = str(item.scene_path)
@@ -291,7 +301,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	if _marker != -1:
-		WorkerThreadPool.wait_for_task_completion(_marker)
+		PerfTasks.wait(_marker, "warmup")
 		_marker = -1
 
 
@@ -393,7 +403,7 @@ func _compiled() -> bool:
 	if _marker != -1:
 		if not WorkerThreadPool.is_task_completed(_marker):
 			return false
-		WorkerThreadPool.wait_for_task_completion(_marker)
+		PerfTasks.wait(_marker, "warmup")
 		_marker = -1
 	return _put_out_at == -1
 
@@ -454,6 +464,8 @@ func _take_loaded() -> void:
 				if path == ROCK_SCENE:
 					with_rock_shader(meshes)
 				_to_draw.append_array(meshes)
+			elif RUNTIME_SURFACES.has(path):
+				_to_draw.append_array((loaded as Script).call("warm_surfaces"))
 		return
 
 

@@ -244,7 +244,7 @@ func _exit_tree() -> void:
     _live.erase(self)
     _fracture_jobs.clear()  # the builds are shared (MineFracture): they finish for whoever asks next
     if _measuring >= 0:
-        WorkerThreadPool.wait_for_task_completion(_measuring)
+        PerfTasks.wait(_measuring, "mine_site")
         _measuring = -1
 
 
@@ -1084,7 +1084,7 @@ func _await_limits() -> void:
             return
     if _measuring < 0:
         return
-    WorkerThreadPool.wait_for_task_completion(_measuring)
+    PerfTasks.wait(_measuring, "mine_site")
     _measuring = -1
     var limits: Variant = _measure_result[0]
     if not (limits is Dictionary) or (limits as Dictionary).is_empty():

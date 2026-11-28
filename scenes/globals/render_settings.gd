@@ -99,6 +99,13 @@ func effective(key: String) -> Variant:
 	return value
 
 
+## effective() as of the last write, the one `changed` reported (already up to date for its listeners): a
+## dictionary read for what reads an option once per node, where effective() walks the option table and
+## the settings file (20 us; a spawn building tracks hundreds of meshes, 2026-11-28).
+func applied(key: String) -> Variant:
+	return _effective[key] if _effective.has(key) else effective(key)
+
+
 ## "" when the option can be changed, else the translation key of why not (for the tooltip).
 func availability(key: String) -> String:
 	var option : Dictionary = GraphicsOptions.find(key)
