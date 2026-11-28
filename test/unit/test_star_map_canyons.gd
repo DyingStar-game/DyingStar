@@ -17,12 +17,97 @@ const RES: int = StarMapGround.GRID_RES
 ## both changed under these tests once already.
 const TOWN_LON_LAT := Vector2(-39.4094, 24.7776)
 
+## The made-up plateau ([method _plateau]): a million metres across, its tiles published down to n8,
+## and the tile of it the tests trace — well inside an equatorial face (HEALPix.xy2nest(4, 5) of face
+## 4), 128 km a side, a dozen blocks of the network across.
+const PLATEAU_RADIUS: float = 1000000.0
+const PLATEAU_NSIDE: int = 8
+const PLATEAU_TILE_RES: int = 16
+const PLATEAU_IPIX: int = 4 * PLATEAU_NSIDE * PLATEAU_NSIDE + 50
+
 var _data: PlanetData = null
 
 
+## A streamed modifier pack holding nothing, the tiles of ONE level of which are still on their way.
+class _StreamingPack extends RemoteModifierPack:
+	## The level whose tiles are published and not downloaded yet; none when negative.
+	var waiting_nside: int = -1
+
+	func tile_state(nside: int, _ipix: int) -> int:
+		return ModifierPack.TILE_PENDING if nside == waiting_nside else ModifierPack.TILE_ABSENT
+
+	func read_tile(_nside: int, _ipix: int) -> PackedByteArray:
+		return PackedByteArray()
+
+
 ## Prepared once, before any test: see test_star_map_tiles.gd.
+##
+## WITHOUT the body's streamed modifiers, said here rather than left to the default: these tests trace
+## the network of the plateau and compare two readings of the same ground, and a streamed massif landing
+## between the two — the pack may have been opened by an earlier suite of the same run — would make
+## them disagree by a mountain. The massifs are pinned on the made-up plateau below instead.
 func before_all() -> void:
+	StarMapTiles.stream_modifiers = false  # a copy an earlier suite left with modifiers is made again
 	_data = StarMapTiles.offline_data(BODY)
+
+
+## What makes a body one the canyons are drawn on: corundum ground and a network to cut it.
+func _with_network(data: PlanetData) -> PlanetData:
+	data.planet_name = "canyons_test"
+	data.radius = PLATEAU_RADIUS
+	data.corundum_default_biome = true
+	data.crack_spacing_m = 12000.0
+	data.crack_width_m = 1500.0
+	data.crack_depth_m = 150.0
+	return data
+
+
+## A corundum plateau with nothing on it, flat, which needs no tile on this machine: every level down
+## to the export's is in memory. No massif and no modifier pack until a test gives it one.
+func _plateau() -> PlanetData:
+	var data: PlanetData = _with_network(PlanetData.new())
+	data.max_height = 500.0
+	data.height_offset = 0.0
+	data.terrain_exaggeration = 1.0
+	data.chunk_heightmap_res = PLATEAU_TILE_RES
+	data.chunk_resolution = 32
+	data.max_quadtree_depth = 6
+	data.export_nside = PLATEAU_NSIDE
+	data.export_nside_min = 1
+	data.chunk_is_pyramid = true
+	data.chunk_heightmaps_dir = ""
+	var nside: int = 1
+	while nside <= PLATEAU_NSIDE:
+		for ipix: int in range(12 * nside * nside):
+			var flat := Image.create_empty(PLATEAU_TILE_RES, PLATEAU_TILE_RES, false, Image.FORMAT_RF)
+			flat.fill(Color(0.5, 0.0, 0.0))
+			data.store_chunk_image("hp_n%d_p%d" % [nside, ipix], flat, [])
+		nside *= 2
+	# Warms what a tracing reads (the noise, the HEALPix tables), with no mountain.
+	data.set_mountain_overrides([], [])
+	return data
+
+
+## A square massif of half-side [param half_m] around [param centre], as the pack decodes one.
+func _massif(centre: Vector3, half_m: float) -> Dictionary:
+	var at: Vector2 = HEALPix.vec2lonlat(centre)
+	var north: float = half_m / (PLATEAU_RADIUS * PI / 180.0)
+	var east: float = north / cos(deg_to_rad(at.y))
+	return {"coverage": "partial", "amplitude_m": 400.0, "wavelength_m": 8000.0, "octaves": 5,
+			"feather_m": 2000.0, "seed": 11, "polygon": PackedVector2Array([
+			at + Vector2(-east, -north), at + Vector2(east, -north),
+			at + Vector2(east, north), at + Vector2(-east, north)])}
+
+
+## How many of the stretches of [param points] (two ends each, as [method StarMapCanyons.trace_tile]
+## lays them) have an end within [param within_m] of [param centre] on the plateau.
+func _stretches_near(points: PackedVector3Array, centre: Vector3, within_m: float) -> int:
+	var found: int = 0
+	for n: int in range(0, points.size(), 2):
+		if minf(points[n].normalized().angle_to(centre), points[n + 1].normalized().angle_to(centre)) \
+				* PLATEAU_RADIUS < within_m:
+			found += 1
+	return found
 
 
 func _no_planet() -> bool:
@@ -120,6 +205,12 @@ func test_a_fine_tile_carries_the_game_s_canyons() -> void:
 					rim_at = at
 		if floor_at < 0 or rim_at < 0 or deepest > -0.5 * _data.crack_depth_m:
 			continue  # solid block, a town's sphere, no canyon under this one: the next tile along
+		# Nor one whose deepest canyon is on the slope up to a massif or to a town, where the game keeps
+		# part of the depth only: the walk leaves the massif the town stands in.
+		@warning_ignore("integer_division")
+		var floor_dir: Vector3 = grid[floor_at / (RES + 1)][floor_at % (RES + 1)]
+		if CrackCarve.depth_factor(_data, floor_dir, null) < 1.0:
+			continue
 		assert_almost_eq(deepest, -_data.crack_depth_m, 1.0, "the floor stands a full canyon's depth down")
 		# Final once the published tile under it is on this machine; until then it is drawn from a
 		# coarser one and says so (built again when the published one arrives), cache or no cache.
@@ -330,3 +421,95 @@ func test_a_canyon_pales_as_it_comes_up() -> void:
 	assert_gt(StarMapCanyons.shade(0.6).a, StarMapCanyons.shade(0.2).a, "the deeper, the more of it")
 	assert_eq(StarMapCanyons.shade(7.0), StarMapCanyons.COLOUR, "never more than its colour")
 	assert_lt(StarMapCanyons.DESCENT_FROM, 0.1, "drawn from a step's depth, not from half of it")
+
+
+# ---------------------------------------------------------------------------
+# Where the game carves none: the massifs, and what says where they are
+# ---------------------------------------------------------------------------
+
+## A massif is not cut by the plateau's canyons (PlanetData.crack_factor), and the chart draws none
+## across it: canyons were drawn over the mountains of Tarsis III (25.1 N 39.5 W, 2026-11-28).
+func test_no_line_across_a_massif() -> void:
+	var data: PlanetData = _plateau()
+	var centre: Vector3 = HEALPix.pix2vec_nest(PLATEAU_NSIDE, PLATEAU_IPIX)
+	var open: PackedVector3Array = StarMapCanyons.trace_tile(data, PLATEAU_NSIDE, PLATEAU_IPIX)[0]
+	assert_gt(_stretches_near(open, centre, 20000.0), 0, "on the open plateau the network crosses the middle")
+	# 30 km either side of the middle: what is within 20 km of it is 10 km inside, past the 600 m over
+	# which the network fades out (crack_mountain_fade_m).
+	data.set_mountain_overrides([_massif(centre, 30000.0)], [])
+	var laid: PackedVector3Array = StarMapCanyons.trace_tile(data, PLATEAU_NSIDE, PLATEAU_IPIX)[0]
+	assert_eq(_stretches_near(laid, centre, 20000.0), 0, "under a massif, not one stretch of it")
+	assert_gt(laid.size(), 0, "and it is still drawn around the massif")
+	assert_lt(laid.size(), open.size(), "less of it than on the open plateau")
+
+
+## The massifs and the zones are streamed. A tile of them on its way reads as empty, and lines traced
+## then show a canyon at full depth across a range — for good, a tile's lines being laid once. Such a
+## tile answers "not yet" and is asked again, as the roads' are.
+func test_a_tile_whose_modifiers_are_on_their_way_is_asked_again() -> void:
+	var data: PlanetData = _plateau()
+	var pack := _StreamingPack.new()
+	data.remote_modifiers = pack
+	data._modifier_pack = pack
+	data._modifier_pack_tried = true
+	assert_false(StarMapCanyons.awaits_modifiers(data, PLATEAU_NSIDE, PLATEAU_IPIX), "nothing on its way")
+	pack.waiting_nside = PLATEAU_NSIDE
+	assert_true(StarMapCanyons.awaits_modifiers(data, PLATEAU_NSIDE, PLATEAU_IPIX),
+			"its own tile, where its massifs are")
+	assert_false(StarMapCanyons.awaits_modifiers(data, PLATEAU_NSIDE >> 1, PLATEAU_IPIX >> 2),
+			"a coarser tile's relief reads its own level, not the export tiles under it")
+	assert_true(StarMapCanyons.awaits_zones(data, PLATEAU_NSIDE, PLATEAU_IPIX), "the canyons wait for their tile")
+	var lines := StarMapCanyons.new()
+	add_child_autofree(lines)
+	lines._data = data
+	var id: int = StarMapGround.tile_id(PLATEAU_NSIDE, PLATEAU_IPIX)
+	var view: Dictionary = {id: true}
+	lines.refresh(view)
+	lines._take()  # the worker's answer, as the next refresh takes it in
+	assert_false(lines._segments.has(id), "not yet: nothing is kept for the tile")
+	assert_null(lines.mesh, "and nothing is drawn of it")
+	assert_gt(lines._retry_at_ms, 0, "asked again in a moment, not at every frame")
+	lines.refresh(view)
+	assert_eq(lines._task, -1, "and not before: no worker started for a tile still waiting")
+	pack.waiting_nside = -1
+	lines._retry_at_ms = 0  # the wait over
+	lines.refresh(view)
+	lines.finish()
+	assert_true(lines._segments.has(id), "asked again once the wait is over, and laid now its tiles are in")
+	assert_not_null(lines.mesh, "its canyons are drawn")
+
+
+## A planet whose modifiers are not streamed has nothing on its way, whatever its tiles.
+func test_nothing_is_waited_for_without_streamed_modifiers() -> void:
+	assert_false(StarMapCanyons.awaits_modifiers(_with_network(PlanetData.new()), PLATEAU_NSIDE, PLATEAU_IPIX))
+
+
+## The planet a body is read through changes: the chart's own copy while it is not loaded, the planet
+## in the tree once it is. Lines traced through the copy are laid again through the planet — a chart
+## opened before landing kept those of a copy that knew no mountain.
+func test_a_change_of_planet_lays_the_lines_again() -> void:
+	var key: String = "canyons_test"
+	var reader := StarMapTiles.new()
+	reader.body_key = key
+	reader.data = _with_network(PlanetData.new())
+	# The reader the chart resolves for this body, this frame ([method StarMapTiles.for_body]).
+	StarMapTiles._frame = Engine.get_process_frames()
+	StarMapTiles._frame_readers[key] = reader
+	var lines := StarMapCanyons.new()
+	add_child_autofree(lines)
+	lines.body_key = key
+	assert_true(lines._available(), "a corundum body with a network")
+	assert_true(lines._data == reader.data, "read through the planet the chart reads the body through")
+	var id: int = StarMapGround.tile_id(PLATEAU_NSIDE, PLATEAU_IPIX)
+	lines._segments[id] = [PackedVector3Array(), PackedColorArray()]
+	assert_true(lines._available())
+	assert_true(lines._segments.has(id), "the same planet: what is laid is kept")
+	var loaded: PlanetData = _with_network(PlanetData.new())
+	reader.data = loaded
+	assert_true(lines._available())
+	assert_true(lines._data == loaded, "the loaded planet is the one read from now on")
+	assert_false(lines._segments.has(id), "what the copy traced is to be laid again")
+	assert_true(lines._outdated.has(id), "and stays on screen until it is")
+	reader.data = null
+	assert_false(lines._available(), "no planet to read, no network")
+	StarMapTiles._frame_readers.erase(key)

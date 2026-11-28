@@ -51,3 +51,24 @@ func test_a_zone_lies_flat_on_the_ground() -> void:
 		assert_almost_eq(frame.basis.y.dot(position.normalized()), 1.0, 1.0e-6, "its Y is the planet's up")
 		assert_almost_eq(frame.basis.determinant(), 1.0, 1.0e-6, "a plain rotation")
 	assert_eq(MissionSites.ground_frame(Vector3.ZERO), Transform3D.IDENTITY)
+
+
+## "Locate on the chart" at a kiosk, on a mission not taken yet: its zone is known from the sheet being
+## read, where its point of interest, private to the holder, could not be asked for (playtest 2026-11-26).
+func test_the_zone_of_a_mission_being_read_is_found_by_its_point() -> void:
+	var place := {"name": "M0001-A", "scene": "tarsis_3", "poiUuid": "zone-1", "position": {"x": 1.0, "y": 2.0, "z": 3.0}}
+	assert_true(MissionSites.site_of_poi("zone-1").is_empty(), "not held, not read: unknown")
+	MissionSites.preview([_visit(place)])
+	assert_eq(MissionSites.site_of_poi("zone-1").get("name"), "M0001-A")
+	assert_eq(MissionSites.known().size(), 1)
+	MissionSites.preview([])
+	assert_true(MissionSites.site_of_poi("zone-1").is_empty(), "the sheet was closed")
+
+
+func test_reading_a_mission_changes_what_the_chart_draws() -> void:
+	var before: int = MissionSites._version
+	MissionSites.preview([])
+	assert_eq(MissionSites._version, before, "nothing read, nothing to redraw")
+	MissionSites.preview([_visit({"name": "A", "position": {"x": 1.0, "y": 2.0, "z": 3.0}})])
+	assert_gt(MissionSites._version, before, "the planets rebuild their zones")
+	MissionSites.preview([])

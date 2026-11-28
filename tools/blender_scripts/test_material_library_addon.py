@@ -1,7 +1,8 @@
 """The dyingstar_material_library addon end to end, in Blender without a window: enable it from this repository,
 publish materials an artist could have made -- a plain colour with no map at all, an albedo alone, a normal map
 alone, a colour picked in an RGB node, a colour under an occlusion map, a tinted texture, a colour made by nodes
-(baked) -- and read every export back; then link one of them, as a model does, and read what the panel says of it.
+(baked), an occlusion map on the glTF Occlusion socket or on the other side of its multiply -- and read every
+export back; then link one of them, as a model does, and read what the panel says of it.
 
 usage: blender -b --factory-startup --python tools/blender_scripts/test_material_library_addon.py -- \
            [<scratch folder>]
@@ -73,6 +74,15 @@ def _multiply(tree):
     node.blend_type = "MULTIPLY"
     node.inputs["Factor"].default_value = 1.0
     return node
+
+
+def _gltf_occlusion(tree):
+    """The Occlusion socket of a new "glTF Material Output" group node, as the glTF exporter's panel creates it."""
+    group = bpy.data.node_groups.new("glTF Material Output", "ShaderNodeTree")
+    group.interface.new_socket("Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+    node = tree.nodes.new("ShaderNodeGroup")
+    node.node_tree = group
+    return node.inputs["Occlusion"]
 
 
 def _export(name):
@@ -343,6 +353,100 @@ def main():
     assert "roughness" not in manifest and "roughness" in manifest["maps"], manifest
     assert manifest["metallic"] == 0.0, "the other one is still a value"
     _round_trip(manifest, extractor, builder)
+
+    # 9d. The Principled BSDF has no occlusion input: the map is also read from the Occlusion socket of the glTF
+    # exporter's group node, which is where Blender has artists plug it.
+    name = "mat_metal_gltf_ao"
+    material, tree, principled = _material(obj, name)
+    tree.links.new(_texture(tree, _image("panel_albedo", True)).outputs["Color"], principled.inputs["Base Color"])
+    shading = _image("panel_shading", False)
+    tree.links.new(_texture(tree, shading).outputs["Color"], _gltf_occlusion(tree))
+    found = extractor.extract(material)
+    assert found.images.get("ao") == shading and not found.warnings, (found.images, found.warnings)
+    manifest, files = _export(name)
+    assert manifest["maps"] == {"albedo": "tex_metal_gltf_ao_albedo.png", "ao": "tex_metal_gltf_ao_ao.png"}, \
+        manifest["maps"]
+    assert np.allclose(_published(name, "ao"), _pixels(shading), atol=0.01), "the ao map is the image plugged in"
+    _round_trip(manifest, extractor, builder)
+
+    # 9e. A packed ORM usually feeds that socket from its red channel: one orm map, not an ao beside it. The group
+    # is a second copy, named as an appended material brings it.
+    name = "mat_metal_gltf_orm"
+    material, tree, principled = _material(obj, name)
+    packed = _image("panel_packed", False)
+    split = tree.nodes.new("ShaderNodeSeparateColor")
+    tree.links.new(_texture(tree, packed).outputs["Color"], split.inputs["Color"])
+    tree.links.new(split.outputs["Green"], principled.inputs["Roughness"])
+    tree.links.new(split.outputs["Blue"], principled.inputs["Metallic"])
+    occlusion_socket = _gltf_occlusion(tree)
+    assert occlusion_socket.node.node_tree.name != "glTF Material Output", "a copy of the group, with a suffix"
+    tree.links.new(split.outputs["Red"], occlusion_socket)
+    found = extractor.extract(material)
+    assert found.images == {"orm": packed} and not found.warnings, (found.images, found.warnings)
+    manifest, files = _export(name)
+    assert manifest["maps"] == {"orm": "tex_metal_gltf_orm_orm.png"}, manifest["maps"]
+    _round_trip(manifest, extractor, builder)
+    # Godot reads the occlusion from red: another channel is not published as an ao map, and said.
+    tree.links.new(split.outputs["Green"], occlusion_socket)
+    found = extractor.extract(material)
+    assert "ao" not in found.images and any("Green channel" in warning for warning in found.warnings), found.warnings
+
+    # 9f. A multiply shows the same whichever side the occlusion is on: with it in A and the albedo in B, the
+    # image read as data is the occlusion, not the albedo.
+    name = "mat_metal_swapped_ao"
+    material, tree, principled = _material(obj, name)
+    colour, shading = _image("hull_albedo", True), _image("hull_shading", False)
+    shade = _multiply(tree)
+    shading_node = _texture(tree, shading)
+    tree.links.new(shading_node.outputs["Color"], shade.inputs["A"])
+    tree.links.new(_texture(tree, colour).outputs["Color"], shade.inputs["B"])
+    tree.links.new(shade.outputs["Result"], principled.inputs["Base Color"])
+    found = extractor.extract(material)
+    assert found.images == {"albedo": colour, "ao": shading} and not found.bake, (found.images, found.bake)
+    manifest, files = _export(name)
+    assert sorted(manifest["maps"]) == ["albedo", "ao"], manifest["maps"]
+    assert np.allclose(_published(name, "ao"), _pixels(shading), atol=0.01), "the occlusion is not the albedo"
+    _round_trip(manifest, extractor, builder)
+    # Both left as colour, as images come when dropped into Blender: the node's name tells them apart.
+    shading.colorspace_settings.name = "sRGB"
+    assert extractor.extract(material).images == {"albedo": shading, "ao": colour}, "nothing says: A is the colour"
+    shading_node.label = "Hull_AmbientOcclusion"
+    assert extractor.extract(material).images == {"albedo": colour, "ao": shading}, "named, it is the occlusion"
+    # The same occlusion in A over a flat colour in B is not a tinted albedo.
+    tree.links.remove(shade.inputs["B"].links[0])
+    shade.inputs["B"].default_value = (0.0, 0.0, 1.0, 1.0)
+    found = extractor.extract(material)
+    assert found.images == {"ao": shading} and found.albedo_color == (0.0, 0.0, 1.0), (found.images, found.albedo_color)
+
+    # 9g. Packing into an ORM puts the red channel where the occlusion was, on whichever side: the albedo stays.
+    name = "mat_metal_swapped_packed"
+    material, tree, principled = _material(obj, name)
+    colour, shading = _image("deck_albedo", True), _image("deck_shading", False)
+    shade = _multiply(tree)
+    tree.links.new(_texture(tree, shading).outputs["Color"], shade.inputs["A"])
+    tree.links.new(_texture(tree, colour).outputs["Color"], shade.inputs["B"])
+    tree.links.new(shade.outputs["Result"], principled.inputs["Base Color"])
+    for role, input_name in (("roughness", "Roughness"), ("metallic", "Metallic")):
+        tree.links.new(_texture(tree, _image("deck_" + role, False)).outputs["Color"], principled.inputs[input_name])
+    import dyingstar_material_library.orm_packer as packer  # noqa: E402
+    packed = packer.pack(material, extractor.extract(material).images,
+                         pathlib.Path(scratch, "sources", name, "tex_metal_swapped_packed_orm.png"))
+    found = extractor.extract(material)
+    assert found.images == {"albedo": colour, "orm": packed} and not found.warnings, (found.images, found.warnings)
+
+    # 9h. An image called an occlusion map that feeds nothing the export reads is named, not dropped in silence;
+    # so is one caught in node work that is baked into the albedo (9c).
+    name = "mat_metal_stray_ao"
+    material, tree, principled = _material(obj, name)
+    tree.links.new(_texture(tree, _image("crate_albedo", True)).outputs["Color"], principled.inputs["Base Color"])
+    _texture(tree, _image("Crate_AO", False))
+    _texture(tree, _image("chaos", False))  # "ao" inside a word: not an occlusion map
+    warnings = extractor.extract(material).warnings
+    assert len(warnings) == 1 and "'Crate_AO' found but not wired" in warnings[0], warnings
+    manifest, files = _export(name)
+    assert sorted(manifest["maps"]) == ["albedo"], manifest["maps"]
+    warnings = extractor.extract(bpy.data.materials["mat_metal_painted_worn"]).warnings
+    assert len(warnings) == 1 and "'occlusion_3'" in warnings[0] and "goes into the albedo" in warnings[0], warnings
 
     # 10. A material linked from the library is read-only: the panel shows what the library says of it,
     # and the buttons that would write to it are off.

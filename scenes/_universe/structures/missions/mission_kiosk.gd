@@ -30,10 +30,11 @@ func set_screen_actor(player: Player) -> void:
 	_actor = player
 
 
-## SERVER: the ScreenTarget contract. The one action sent here is the turn-in of a finished mission.
+## SERVER: the ScreenTarget contract. The one action sent here is the turn-in of a mission: finished, or
+## (`partial`) handed in before, paid by the mission service for the share done.
 func update_screen(data: Dictionary) -> void:
 	if str(data.get("state", "")) == "turn_in" and _actor != null:
-		MissionTurnIn.turn_in(self, _actor, str(data.get("mission_id", "")))
+		MissionTurnIn.turn_in(self, _actor, str(data.get("mission_id", "")), bool(data.get("partial", false)))
 
 
 ## CLIENT: what the server announced about this screen (ScreenTarget.receive): a turn-in's outcome.

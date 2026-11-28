@@ -82,6 +82,7 @@ var _screen: ColorRect = null
 var _relief: Callable
 var _vent_radius := 300.0
 var _seed := 0
+var _vent_alt_m := 0.0
 var _light: OmniLight3D
 var _halo: MeshInstance3D
 var _halo_mat := ShaderMaterial.new()
@@ -98,11 +99,13 @@ var _laid := false
 
 
 ## [param relief]: Callable(x, z) -> ground height in the plume's frame. [param seed_v]: the volcano's
-## seed, so every client draws the same flows.
-func setup(relief: Callable, vent_radius: float, seed_v: int) -> void:
+## seed, so every client draws the same flows. [param vent_alt_m]: the vent's altitude (m over the planet's
+## reference sphere), for the dust sea the halo and the flows are seen through.
+func setup(relief: Callable, vent_radius: float, seed_v: int, vent_alt_m: float = 0.0) -> void:
 	_relief = relief
 	_vent_radius = vent_radius
 	_seed = seed_v
+	_vent_alt_m = vent_alt_m
 
 
 func _ready() -> void:
@@ -132,6 +135,15 @@ func _ready() -> void:
 	_halo.position = Vector3(0.0, y * 0.5, 0.0)
 	_halo.visible = false
 	add_child(_halo)
+	_halo_mat.set_shader_parameter("halo_alt_m", _vent_alt_m + _halo.position.y)
+
+
+## The dust sea as it is drawn now (DustSea.light_material), for the halo and the flows: both are drawn after
+## the pass that paints the sea and fade through it by themselves. Called by the plume when it reads its light.
+func sea() -> void:
+	DustSea.light_material(_halo_mat)
+	if _flow_mat != null:
+		DustSea.light_material(_flow_mat)
 
 
 ## Strength (0..1) of a flash [param age_s] after its explosion, in two beats: a white burst of time
@@ -323,6 +335,8 @@ func _build_flows() -> void:
 	_flow_mat = ShaderMaterial.new()
 	_flow_mat.shader = load(SHADER_DIR + "flank_lava.gdshader")
 	_flow_mat.set_shader_parameter("seed", float(_seed % 997) * 0.13)
+	_flow_mat.set_shader_parameter("vent_alt_m", _vent_alt_m)
+	DustSea.light_material(_flow_mat)
 	_flows = MeshInstance3D.new()
 	_flows.name = "FlankFlows"
 	_flows.mesh = mesh

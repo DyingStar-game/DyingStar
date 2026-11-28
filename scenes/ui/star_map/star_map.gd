@@ -471,6 +471,9 @@ var _view_cone: StarMapViewCone = null
 var _cursor_readout: StarMapCursorReadout = null
 ## False until the chart is first opened: that first opening lands on you (see _open_on_player).
 var _opened_before: bool = false
+## Whether the bodies have been placed and turned (_dress_bodies) since they were last built (_rebuild):
+## until then each sphere stands at the origin, unturned, and a place framed through it is framed wrong.
+var _dressed: bool = false
 ## Where you were when the chart was last closed: the body you belonged to (null in open space) and your
 ## place in its own frame, in metres. Reopening after you have travelled comes back to you (see open).
 var _left_body: Planet = null
@@ -594,9 +597,16 @@ func close() -> void:
 	open_changed.emit(false)
 
 
+## The chart's copies of the bodies that are not loaded read their streamed modifiers — their mountains —
+## for as long as the chart is in the tree, and only then (StarMapTiles.stream_modifiers).
+func _enter_tree() -> void:
+	StarMapTiles.stream_modifiers = true
+
+
 func _exit_tree() -> void:
 	# The one place the ground's life really ends with the chart: its tile service owns a thread.
 	_drop_ground()
+	StarMapTiles.stream_modifiers = false
 
 
 func is_open() -> bool:
@@ -1183,6 +1193,7 @@ static func _sm_mark(scope_name: String, tok: int) -> int:
 
 
 func _rebuild() -> void:
+	_dressed = false
 	# Taken off its sphere first, or freeing the spheres below would free the ground with them.
 	_park_ground()
 	# Everything EXCEPT the two fixtures built once with the world. Forgetting the light here is what
@@ -1696,6 +1707,7 @@ func _process(delta: float) -> void:
 	_place_bodies()
 	_place_camera()
 	_dress_bodies(t)
+	_dressed = true
 	_hide_occluded_labels()
 	_place_player_marker()
 	_refresh_ground()
@@ -2118,8 +2130,10 @@ func _refresh_points_of_interest() -> void:
 	_poi_layer.player_poi = _player_poi_index(index)
 	# The camera itself rather than pieces of it: the layer sizes each badge on its own distance and
 	# projects the names to screen to keep them from piling up, and both need the real thing.
+	var tok: int = ClientPerf.scope_begin()
 	_poi_layer.refresh(key, sphere.position, sphere.basis.orthonormalized(),
 			sphere.scale.x * MESH_RADIUS, _camera, _poi_focus, _poi_hover, _poi_cluster_hover)
+	ClientPerf.scope_end("map:pois", tok)
 
 
 ## Index, in the layer's entries, of the place the player stands at on body [param host]; -1 when the
@@ -2277,19 +2291,27 @@ func _refresh_ground() -> void:
 	# now, and only now: the reading the guard is built from no longer depends on the level being drawn
 	# — see StarMapRelief.finest_nside() — so the altitude can no longer be moved by the very level it
 	# chooses. That cycle is what this rewrite exists to remove.
+	# Each layer on the [CPerf+] heartbeat under its own name: the chart's frame was once 60 ms that no
+	# scope covered ("unbanded"), and finding which layer took it meant reading code (playtest 2026-11-28).
+	var tok: int = ClientPerf.scope_begin()
 	_ground.refresh(_local_under_camera(index), _altitude_m(index), _view_half_angle(index))
+	ClientPerf.scope_end("map:ground", tok)
 	var shown: Dictionary = _ground.wanted()
 	# What is drawn over the ground, and what is asked of the tile service, goes by the tiles as the
 	# body PUBLISHES them: near the ground the chart cuts finer than that to hold the canyons, and
 	# neither a pack nor the service has anything at a level nobody exported.
 	# The streets inside the villages are not in a pack: they are the loaded planet's, when it is loaded.
+	tok = ClientPerf.scope_begin()
 	if _roads != null:
 		_roads.show_over(StarMapRelief.published(key, shown), _ground_scale(), float(_bodies[index]["radius_m"]),
 				StarMapRoads.village_roads_of(_live_planet(key)))
+	ClientPerf.scope_end("map:roads", tok)
 	# The ground's OWN tiles here, not the published ones: a tile cut fine enough to carve the canyons
 	# needs no line over them, and only the ground's set says which those are.
+	tok = ClientPerf.scope_begin()
 	if _canyons != null:
 		_canyons.show_over(shown, _ground_scale())
+	ClientPerf.scope_end("map:canyons", tok)
 	if _markers != null:
 		_markers.refresh(_live_planet(key), _camera, _gap() / UNITS_PER_METRE)
 	# The lines float LIFT over the ground (190 m on Tarsis III) so that a fold between two facets never
@@ -2301,9 +2323,11 @@ func _refresh_ground() -> void:
 	for lines: StarMapTileLines in [_roads, _canyons]:
 		if lines != null:
 			lines.set_lift(lift)
+	tok = ClientPerf.scope_begin()
 	if _weather != null:
 		_weather.refresh(_live_planet(key), _weather_debug_on(), _ground_scale(), sphere_m, _local_under_camera(index),
 				_surface_at(index, _cam.direction()) + lift, _camera)
+	ClientPerf.scope_end("map:weather", tok)
 	# And ask for what is wanted but has never been downloaded.
 	var published: Dictionary = StarMapRelief.published(key, shown)
 	_stream.want(key, published)
@@ -3455,13 +3479,18 @@ func _focus_mission_site(poi_id: String) -> bool:
 		site = MissionSites.site_of_poi(poi_id)
 	if site.is_empty():
 		return false
-	var key := str(site.get("scene", ""))
-	var body := _index_of_key(key)
-	var at: Vector3 = site["position"]
-	if body < 0 or at.is_zero_approx():
+	return _focus_local_place(_index_of_key(str(site.get("scene", ""))), site["position"], PLACE_FOCUS_ALTITUDE_M)
+
+
+## Go to [param at] on [param body]: a place in metres from the body's centre, in the body's OWN frame
+## (Planet.to_local) -- the frame every service place is written in, and the one [method _frame_on_surface]
+## turns onto the drawn sphere. Framed from [param altitude_m] above the ground there; 0 frames it as a town.
+## False when the body is not on the chart or the place is its very centre.
+func _focus_local_place(body: int, at: Vector3, altitude_m: float) -> bool:
+	if body < 0 or body >= _bodies.size() or at.is_zero_approx():
 		return false
-	_cam.select(body, key)
-	_frame_on_surface(body, at.normalized(), PLACE_FOCUS_ALTITUDE_M)
+	_cam.select(body, str(_bodies[body]["key"]))
+	_frame_on_surface(body, at.normalized(), altitude_m)
 	return true
 
 
@@ -3484,11 +3513,148 @@ func focus_machine(machine_id: String) -> bool:
 			var key := str(_bodies[body]["key"])
 			if _live_planet(key) != planet:
 				continue
-			_cam.select(body, key)
-			_frame_on_surface(body, planet.local_dir_of(machine_host.global_position), MACHINE_FOCUS_ALTITUDE_M)
-			return true
+			return _focus_local_place(body, planet.local_dir_of(machine_host.global_position), MACHINE_FOCUS_ALTITUDE_M)
 		return false
 	return false
+
+
+## Show a mission's place: the first of [param targets] (MissionLocate.targets, the step under way's
+## place first) the chart can show, whatever it is. False when none could be: the caller says so.
+## A coroutine -- a point of interest may have to be fetched.
+##
+## The town selected before is dropped first. The follow (_follow_place) knows a town by its INDEX in the
+## layer, and the layer is rebuilt when a fetched point joins it: the same index then named another town,
+## and the next frame "followed" the camera by the angle between the two -- up to half the planet.
+func focus_mission_targets(targets: Array) -> bool:
+	if not is_instance_valid(_camera):
+		return false
+	_poi_focus = -1
+	for target: Variant in targets:
+		if not (target is Dictionary):
+			continue
+		var via: String = await _focus_mission_target(target)
+		if via != "":
+			if LocateProbe.enabled():
+				LocateProbe.note_try(_locate_try_facts(target, via))
+				_probe_after_travel(target)
+			return true
+		LocateProbe.note_try({"target": target, "shown": false})
+	return false
+
+
+## Frame [param target] (a MissionLocate target) and answer how ("machine", "position", "poi",
+## "position_on_player_body", "village"), or "" when the chart could not. In this order: the broken
+## machine itself when it is loaded here; the position the mission carries, on the body it names -- no
+## lookup, no fetch, the exact spot; its point of interest (an inspection's zone, or a point the service
+## hands out, which names its body); the position again on the body the player stands on, for a place
+## whose body the mission does not name (a warehouse); the town of its village's name.
+func _focus_mission_target(target: Dictionary) -> String:
+	var at: Vector3 = target.get("position", Vector3.ZERO)
+	var scene := str(target.get("scene", ""))
+	if focus_machine(str(target.get("machine", ""))):
+		return "machine"
+	if scene != "" and _focus_local_place(_index_of_key(scene), at, PLACE_FOCUS_ALTITUDE_M):
+		return "position"
+	var poi := str(target.get("poi", ""))
+	if poi != "":
+		if await focus_service_poi(poi):
+			return "poi"
+	if scene == "" and _focus_local_place(_nearest_body_to_player(), at, PLACE_FOCUS_ALTITUDE_M):
+		return "position_on_player_body"
+	if _focus_village(str(target.get("village", "")), scene):
+		return "village"
+	return ""
+
+
+## Go to the town called [param village] on the body [param scene] names (the player's when ""): the
+## chart's own towns and the service's points, matched on their name or their label, case aside. Framed
+## as a double click on the town frames it. False when the body holds no such town.
+func _focus_village(village: String, scene: String) -> bool:
+	if village == "":
+		return false
+	var body: int = _index_of_key(scene) if scene != "" else _nearest_body_to_player()
+	if body < 0:
+		return false
+	var wanted := village.to_lower()
+	for entry: Dictionary in StarMapPoi.merged_for(str(_bodies[body]["key"]), _service_pois):
+		if str(entry.get("name", "")).to_lower() == wanted or str(entry.get("label", "")).to_lower() == wanted:
+			return _focus_local_place(body, entry["dir"], 0.0)
+	return false
+
+
+## Where the camera is heading (its target yaw and pitch, not the blend under way), in the drawn frame.
+func _camera_aim() -> Vector3:
+	return Vector3(cos(_cam.pitch) * sin(_cam.yaw), sin(_cam.pitch), cos(_cam.pitch) * cos(_cam.yaw))
+
+
+## The locate probe's facts on [param target] once framed ([param via], _focus_mission_target): the body
+## the camera went to, the direction the mission gave and the one the camera aims at, each in every frame.
+func _locate_try_facts(target: Dictionary, via: String) -> Dictionary:
+	var body: int = _cam.anchor_body
+	var facts := {"target": target, "shown": true, "via": via, "body_index": body}
+	if body < 0 or body >= _bodies.size() or not is_instance_valid(_bodies[body]["sphere"]):
+		return facts
+	var drawn: Basis = (_bodies[body]["sphere"] as MeshInstance3D).basis
+	var planet_basis: Variant = _live_planet_basis(body)
+	var given: Vector3 = target.get("position", Vector3.ZERO)
+	facts["body_key"] = str(_bodies[body]["key"])
+	facts["given_position_m"] = given
+	facts["given"] = LocateProbe.direction_facts(given, drawn, planet_basis)
+	facts["aimed"] = LocateProbe.direction_facts(body_local_offset(drawn, _camera_aim()), drawn, planet_basis)
+	facts["drawn_basis"] = LocateProbe.basis_facts(drawn)
+	facts["chart_spin_basis"] = LocateProbe.basis_facts(_spin_basis(_bodies[body], Globals.sim_time()))
+	if planet_basis is Basis:
+		facts["planet_global_basis"] = LocateProbe.basis_facts(planet_basis)
+	return facts
+
+
+## The live planet's global_basis for [param body] (the world turn of its own frame), null when it is not
+## loaded: what the locate probe compares the drawn sphere's basis with.
+func _live_planet_basis(body: int) -> Variant:
+	var planet: Planet = _live_planet(str(_bodies[body]["key"]))
+	if planet == null:
+		return null
+	return planet.global_basis
+
+
+## The camera once its travel to [param target] is over (two seconds at 60 fps, or the chart closed), for
+## the locate probe, with the angle between where it looks from and the place the mission gave.
+func _probe_after_travel(target: Dictionary) -> void:
+	for step: int in range(2 * FOCUS_WAIT_FRAMES):
+		if not is_inside_tree() or not is_open():
+			break
+		await get_tree().process_frame
+	if not is_instance_valid(self):
+		return
+	var after := locate_probe_facts()
+	var camera: Dictionary = after.get("camera", {})
+	if camera.has("local"):
+		after["camera_to_given_deg"] = LocateProbe.arc_deg(camera["local"], target.get("position", Vector3.ZERO))
+	LocateProbe.note("after", after)
+
+
+## What the locate probe reads of the chart now: the body the camera watches, where the camera is and
+## looks from, in every frame, and where the player stands on that body. Only the camera's distance and
+## position when the chart watches no body.
+func locate_probe_facts() -> Dictionary:
+	var body: int = _cam.anchor_body
+	var facts := {"chart_open": is_open(), "body_index": body, "camera_distance_units": _cam.distance(),
+		"camera_global_position": _camera.global_position if is_instance_valid(_camera) else Vector3.ZERO}
+	if body < 0 or body >= _bodies.size() or not is_instance_valid(_bodies[body]["sphere"]):
+		return facts
+	var drawn: Basis = (_bodies[body]["sphere"] as MeshInstance3D).basis
+	var planet_basis: Variant = _live_planet_basis(body)
+	var camera_local: Vector3 = body_local_offset(drawn, _cam.direction())
+	var player_local: Vector3 = _player_local_dir(body)
+	facts["body_key"] = str(_bodies[body]["key"])
+	facts["camera"] = LocateProbe.direction_facts(camera_local, drawn, planet_basis)
+	facts["camera_aim"] = LocateProbe.direction_facts(body_local_offset(drawn, _camera_aim()), drawn, planet_basis)
+	facts["player"] = LocateProbe.direction_facts(player_local, drawn, planet_basis)
+	facts["camera_to_player_deg"] = LocateProbe.arc_deg(camera_local, player_local)
+	facts["drawn_basis"] = LocateProbe.basis_facts(drawn)
+	if planet_basis is Basis:
+		facts["planet_global_basis"] = LocateProbe.basis_facts(planet_basis)
+	return facts
 
 
 ## How many frames [method focus_service_poi] waits for the camera's travel to bring its body big
@@ -3582,6 +3748,13 @@ func _open_poi_cluster(first: int) -> void:
 func _frame_on_surface(body: int, local_dir: Vector3, altitude_m: float = 0.0) -> void:
 	if body < 0 or body >= _bodies.size() or float(_bodies[body]["radius_m"]) <= 0.0:
 		return
+	# The place is turned onto the screen through the sphere's basis, and the sphere is turned only once a
+	# frame has dressed it. Opening the chart builds it afresh: framed in the same breath (a kiosk's
+	# "Locate", the chart reopened where you left it), the place went through an UNTURNED sphere, and once
+	# the body took its tilt and spin the camera stood 15 degrees away (playtest 2026-11-28: M0001-A,
+	# 39.43 W 25.15 N, framed at 26.30 W 13.29 N -- exactly Tarsis III's 15 degree tilt and its turn then).
+	if not _dressed:
+		_process(0.0)
 	var radius_units: float = float(_bodies[body]["radius_m"]) * UNITS_PER_METRE
 	var sphere: MeshInstance3D = _bodies[body]["sphere"]
 	var world_up: Vector3 = Vector3.ZERO

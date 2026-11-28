@@ -60,3 +60,17 @@ func test_state_reports_the_centre_as_longitude_and_latitude() -> void:
 	assert_almost_eq(s["sigma_m"], 300000.0, 1e-6, "sigma is half the radius")
 	assert_eq(s["kind"], &"depression")
 	assert_almost_eq(s["wind_peak"], 12.0, 1e-9)
+
+
+func test_state_at_forecasts_where_the_system_will_stand_without_moving_it() -> void:
+	var node := _system()
+	var a := HEALPix.lonlat2vec(10.0, 0.0) * 6356000.0
+	var b := HEALPix.lonlat2vec(20.0, 0.0) * 6356000.0
+	node.position = a
+	node.apply_prop_data({"from_timestamp": 1000.0, "keyframe_dt_s": 600.0, "intensity": 0.3,
+		"track": [{"x": a.x, "y": a.y, "z": a.z}, {"x": b.x, "y": b.y, "z": b.z}], "intensity_track": [0.3, 0.9]})
+	var later: Dictionary = node.state_at(1600.0)
+	assert_almost_eq(float(later["lon"]), 20.0, 1e-6, "on the second keyframe ten minutes on")
+	assert_almost_eq(float(later["intensity"]), 0.9, 1e-9)
+	assert_eq(node.position, a, "the node itself stays where it was received (the server's)")
+	assert_almost_eq(float(node.state()["lon"]), 10.0, 1e-6)

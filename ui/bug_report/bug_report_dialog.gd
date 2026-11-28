@@ -44,13 +44,12 @@ const SEVERITIES: Array[Dictionary] = [
 	{"key": "cosmetic", "label": "%%BUG_REPORT_SEVERITY_COSMETIC", "colour": Color("9c27b0")},
 ]
 ## Where a bug already posted stands (service-social's BUG_STATUSES, the closed ones are not listed):
-## its name and the colour of its square -- the one the QA team puts under its post in Discord.
+## its name and the colour of its square -- that of the tag the QA team puts on its post in Discord.
 const STATUSES: Dictionary = {
 	"new": {"label": "%%BUG_REPORT_STATUS_NEW", "colour": Color("9aa3b5")},
 	"open": {"label": "%%BUG_REPORT_STATUS_OPEN", "colour": Color("d32f2f")},
 	"in_progress": {"label": "%%BUG_REPORT_STATUS_IN_PROGRESS", "colour": Color("f57c00")},
-	"next_build": {"label": "%%BUG_REPORT_STATUS_NEXT_BUILD", "colour": Color("1e88e5")},
-	"to_test": {"label": "%%BUG_REPORT_STATUS_TO_TEST", "colour": Color("9c27b0")},
+	"to_test": {"label": "%%BUG_REPORT_STATUS_TO_TEST", "colour": Color("1e88e5")},
 }
 ## Bugs offered at most for what was typed, and the height (px) of their list.
 const MATCHES_MAX := 6
@@ -216,7 +215,8 @@ func _show_matches(typed: String) -> void:
 	for bug: Dictionary in matching(_known, typed):
 		var status: Dictionary = STATUSES.get(str(bug.get("status", "new")), STATUSES["new"])
 		var at: int = _matches.add_item(str(bug.get("title", "")), square_of(status["colour"]))
-		_matches.set_item_tooltip(at, str(status["label"]))
+		# The whole title too: the list cuts a long one, and a duplicate is told by its last words.
+		_matches.set_item_tooltip(at, "\n".join([str(bug.get("title", "")), tr(str(status["label"]))]))
 		_matches.set_item_metadata(at, bug)
 	_matches.visible = _matches.item_count > 0
 

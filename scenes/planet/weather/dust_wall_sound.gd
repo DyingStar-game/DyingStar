@@ -49,6 +49,9 @@ const SILENT := 0.001
 @export var front_again_s: float = 20.0
 ## Loudness (dB) of the storm all round inside a full-strength wall, right behind its front.
 @export var inside_db: float = 0.0
+## How far ahead of the front (m) the storm all round starts to be heard, rising to full at the front:
+## higher = a longer swell as the wall comes on, 0 = it starts at the line.
+@export var inside_lead_m: float = 400.0
 ## How fast (per second, share of full level) the beds glide to their level: higher = quicker changes.
 @export var glide_per_s: float = 0.8
 ## Crossfade (s) between two takes of a bed.
@@ -163,21 +166,26 @@ func advance(delta: float, wall: Dictionary, eye: Vector3, radius_m: float, over
 	var d := WeatherRelief.offset_m(Vector2(wall["lon"], wall["lat"]), at, radius_m)
 	var way := Vector2(wall["east"], wall["north"])
 	var across := Vector2(-way.y, way.x)
-	var behind := -d.dot(way)
 	var along := d.dot(across)
+	var behind := WeatherRelief.wall_behind_m(wall, at, radius_m)  # from the front as drawn, not the straight line
 	var half: float = float(wall["length_m"]) * 0.5
 	var strength: float = float(wall["strength"])
 	var inside_front := absf(along) <= half
-	var tall := WeatherRelief.wall_tall(wall)
+	var tall := WeatherRelief.wall_tall_at(wall, behind)  # its tail sinks as it thins
 	var within := 1.0 - smoothstep(tall, tall + WeatherRelief.WALL_TOP_FADE_M, over_ground_m)  # within its height
 	var gap := maxf(over_ground_m - tall, 0.0)  # how far over its top
-	var in_box := behind >= 0.0 and behind <= float(wall["depth_m"]) and inside_front
+	var in_box := behind >= 0.0 and behind <= WeatherRelief.wall_reach_m(float(wall["depth_m"])) and inside_front
 	# The nearest point of the front (along the ground) and how far the wall is (m, its top's height included).
 	var to_front := across * clampf(along, -half, half) - d
 	var flat := 0.0 if in_box else to_front.length()
 	var distance := sqrt(flat * flat + gap * gap)
 	var approach := strength * (1.0 - smoothstep(0.0, approach_far_m, distance)) * (1.0 - within if in_box else 1.0)
 	var share := float(WeatherRelief.wall_effect(wall, at, radius_m)[1]) / WeatherRelief.WALL_TAU * within
+	# The storm's roar is heard from inside_lead_m ahead of the front, full at it: it swells as the wall comes
+	# on instead of starting at the line (heard 2026-11-28).
+	if inside_front and behind < WeatherRelief.WALL_DUST_RAMP_M:
+		share = maxf(share, strength * within * smoothstep(-inside_lead_m, 0.0, behind)
+				* (1.0 - smoothstep(half * 0.8, half, absf(along))))
 	# The approach from the nearest point of the front, the inside all round.
 	var axes: Array = Planet.local_axes(up)
 	var toward: Vector3 = (axes[0] as Vector3) * to_front.x + (axes[1] as Vector3) * to_front.y

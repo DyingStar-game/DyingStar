@@ -22,11 +22,11 @@ signal changed(area: String)
 ## The player took mission [param mission_id] ([param title], "" when the caller did not say).
 ## Whoever shows the player's missions can point at it (the wrist DataPad, after a kiosk).
 signal mission_accepted(mission_id: String, title: String)
-## A screen asks for a place to be shown on the player's chart (a mission kiosk's sheet, the DataPad's
-## mission): the point of interest [param poi_id], and the broken machine [param machine_id] of a repair
-## when there is one ("" otherwise) -- the chart frames the machine itself when it is loaded around the
-## player, the point otherwise. PlayerClient raises the wrist and opens the chart there.
-signal locate_requested(poi_id: String, machine_id: String)
+## A screen asks for a mission's place to be shown on the player's chart (a mission kiosk's sheet, the
+## DataPad's mission): [param request] is MissionLocate.request's, its `targets` the places to try in
+## order (the step under way's first). PlayerClient raises the wrist and opens the chart on the first one
+## the chart can show (StarMap.focus_mission_targets).
+signal locate_requested(request: Dictionary)
 
 const HTTP_CLIENT := preload("res://ui/services/http_client.gd")
 
@@ -606,8 +606,11 @@ func mission_abandon(mission_id: String) -> Dictionary:
 	if _ok(r): changed.emit("missions")
 	return r
 
-func mission_complete(mission_id: String) -> Dictionary:
-	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/%s/complete" % mission_id)
+## Turn in a mission completed from the DataPad (autoComplete); [param partial]: now, before it is done,
+## paid by the service for the share done less its penalty.
+func mission_complete(mission_id: String, partial: bool = false) -> Dictionary:
+	var r: Dictionary = await _http_post(SERVICE_MISSION, "/api/missions/%s/complete" % mission_id,
+			{"partial": true} if partial else null)
 	if _ok(r): changed.emit("missions")
 	return r
 

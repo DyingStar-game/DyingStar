@@ -155,7 +155,7 @@ instance uniform float blend_height : instance_index(15);
 // PlanetData.ground_detail_at -- the same pair PlanetChunk writes into UV2. y == 0 means this
 // biome has no detail texture, and the band falls back to flat colour, as the terrain does.
 instance uniform vec2 blend_detail_uv : instance_index(12);
-// Centre of the WHOLE object (not of this mesh), in this mesh's model space. Lets a face tell
+// Centre of the WHOLE object's box (not of this mesh; see blend_box_x), in this mesh's model space. Lets a face tell
 // outward from inward: a mesh's own centre would say nothing, since an inner wall is perfectly
 // centred on itself.
 instance uniform vec3 blend_center : instance_index(11);
@@ -174,7 +174,8 @@ instance uniform vec2 blend_nova_where : instance_index(10);
 instance uniform vec4 blend_tan1 : instance_index(8);
 instance uniform vec4 blend_tan2 : instance_index(9);
 instance uniform float blend_up_anchor : instance_index(7);
-// The object's own box (TerrainBlend: its bounds in its root's frame), its horizontal axes in this mesh's model
+// The object's own box (TerrainBlend: its bounds in its root's frame; for a part that is a box of its own, one
+// container of a row of homes, that part's: TerrainBlend.box_owner_of), its horizontal axes in this mesh's model
 // space (unit) with their half extents (w), centred on blend_center. A face looking OUT of the box's nearest
 // side is an outer wall; one looking into it is an inner wall, which keeps no sand. The test before (away from
 // the centre or not) let half the corrugations of a container's inner walls wear the band: near its doors they

@@ -53,9 +53,11 @@ const SMOOTH_PASSES: int = 3
 ## The canyons' own drawing: unshaded and see-through like every line here, and painted once a pixel.
 const SHADER: Shader = preload("res://scenes/ui/star_map/star_map_canyons.gdshader")
 
-## Set by [method _available], once per body: the planet the network is read from, or null.
+## The planet the network is read from, or null for a body that has none: see [method _available].
 var _data: PlanetData = null
-var _looked: bool = false
+## The planet the chart read this body through when that was settled, network or not
+## ([member StarMapTiles.data]): what tells a change of planet from one frame to the next.
+var _read_through: PlanetData = null
 
 
 ## The canyons float UNDER_THE_ROADS, not LIFT (see StarMapTileLines.own_lift).
@@ -119,13 +121,24 @@ static func _grid_for(data: PlanetData, nside: int) -> int:
 	return maxi(GRID_MIN, ceili(side_m * SAMPLES_PER_BLOCK / data.crack_spacing_m))
 
 
+## Asked of the body's reader at every call, and not once per body: the planet a body is read through
+## CHANGES. It is the chart's own copy while the body is not loaded and the planet in the tree once it
+## is ([method StarMapTiles.for_body]), and the copy is made afresh when its tile service opens. The
+## lines are the depth rule of the planet they were traced through: looked up once, a chart opened
+## before landing went on drawing what its copy knew — canyons across a massif the copy had no
+## mountains for — for as long as it stayed open. So when the planet changes, everything is laid again.
+## Costs a lookup: the reader is resolved once a frame, and the chart asks for it anyway.
 func _available() -> bool:
-	if not _looked:
-		_looked = true
-		var data: PlanetData = StarMapTiles.for_body(body_key).data if body_key != "" else null
+	var data: PlanetData = StarMapTiles.for_body(body_key).data if body_key != "" else null
+	if data != _read_through:
+		_read_through = data
+		var network: PlanetData = null
 		if data != null and data.corundum_default_biome and data.radius > 0.0 \
 				and data.crack_spacing_m > 0.0 and data.crack_width_m > 0.0:
-			_data = data
+			network = data
+		if network != _data:
+			_data = network
+			lay_again()
 	return _data != null
 
 
@@ -133,13 +146,59 @@ func _laying() -> Array:
 	var data: PlanetData = _data
 	# Built on first use, and this is the main thread: the worker must find it made.
 	data.crack_noise()
-	return [func(id: int) -> Array:
-		return trace_tile(data, StarMapGround.id_nside(id), StarMapGround.id_ipix(id)), true]
+	var lay: Callable = func(id: int) -> Array:
+		var nside: int = StarMapGround.id_nside(id)
+		var ipix: int = StarMapGround.id_ipix(id)
+		# Streaming in: laid again on a later refresh (StarMapTileLines._laying). Asked before the
+		# tracing, which is the expensive half and would be thrown away.
+		if awaits_zones(data, nside, ipix):
+			return []
+		return trace_tile(data, nside, ipix)
+	return [lay, true]
 
 
 func _release() -> void:
 	_data = null
-	_looked = false
+	_read_through = null
+
+
+## Is anything the ground of the tile ([param nside], [param ipix]) is shaped by still streaming in
+## (RemoteModifierPack)? The massifs are in the modifier tiles of the tile's own level (the export level
+## for a finer tile) and its neighbours — the set a chunk waits for (TileResidency.request_chunk_tiles)
+## — and a tile on its way reads as EMPTY: bare ground under a mountain range. What the relief and the
+## roads ask before they are drawn; the canyons ask [method awaits_zones].
+##
+## Every tile is asked, one found pending or not: asking is what puts a tile on the download queue.
+## Never true for a planet whose modifiers are not streamed. Static, and safe on a worker.
+static func awaits_modifiers(data: PlanetData, nside: int, ipix: int) -> bool:
+	if data.remote_modifiers == null:
+		return false
+	return not TileResidency.modifiers_ready(data, TileResidency.modifier_tile_set(data, nside, ipix))
+
+
+## [method awaits_modifiers], and the zones the canyons' depth rule reads: a canyon is cut where the
+## ground is corundum, which the export-level tiles say direction by direction
+## (PlanetData.first_zone_at) — under a tile coarser than the export level, every export tile UNDER it,
+## which no chunk's set holds. A zone tile on its way reads as no zone, hence a canyon at full depth
+## across a massif, and a tile's lines are laid once (Tarsis III, 25.1 N 39.5 W).
+##
+## Only for a tile the canyons trace ([method traces]): the walk is 4 tiles per level above the export
+## one, a million under a whole face. Asked of every relief and road tile, it put every published zone
+## tile of Tarsis III on the download queue — thirty thousand in four minutes — and held the chart's
+## workers for minutes on the globe's tiles (playtest 2026-11-28: one relief tile drawn, 8 FPS).
+static func awaits_zones(data: PlanetData, nside: int, ipix: int) -> bool:
+	var waiting: bool = awaits_modifiers(data, nside, ipix)
+	if data.remote_modifiers == null or nside >= data.export_nside or not traces(data, nside):
+		return waiting
+	var under: int = 1
+	var level: int = nside
+	while level < data.export_nside:
+		level <<= 1
+		under <<= 2
+	for sub: int in range(under):
+		if data.modifiers_pending_at(ipix * under + sub, data.export_nside):
+			waiting = true
+	return waiting
 
 
 # ---------------------------------------------------------------------------

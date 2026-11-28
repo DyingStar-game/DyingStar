@@ -141,6 +141,23 @@ func test_a_standalone_opacity_map_asks_for_a_re_export() -> void:
 	assert_string_contains(report.warnings[0], "Re-export")
 
 
+## An "ao" map is the material's occlusion texture, read from red, and shades direct light too: the
+## Blender add-on shows it multiplied over the base colour, and the game must not look brighter.
+func test_an_ao_map_is_the_occlusion_texture() -> void:
+	var builder := SharedMaterialBuilder.new()
+	var report := SharedMaterialBuilder.Report.new()
+	var material := StandardMaterial3D.new()
+	var occlusion := ImageTexture.new()
+	assert_false(material.ao_enabled, "off without a map")
+	builder._assign_map(material, "ao", occlusion, "mat_test", report)
+	assert_true(material.ao_enabled)
+	assert_eq(material.ao_texture, occlusion)
+	assert_eq(material.ao_texture_channel, BaseMaterial3D.TEXTURE_CHANNEL_RED)
+	assert_almost_eq(material.ao_light_affect, 1.0, 0.0001)
+	assert_null(material.albedo_texture, "and not the albedo")
+	assert_eq(report.warnings, PackedStringArray())
+
+
 ## The roughness and metallic set by hand in Blender are the surface's value where no map gives it: a
 ## polished screen stays polished. Under a map, the map decides and the value is said to be unread.
 func test_roughness_and_metallic_values_apply_where_no_map_gives_them() -> void:

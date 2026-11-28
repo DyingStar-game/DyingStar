@@ -37,6 +37,14 @@ const GRID_RES: int = 24
 ## is some forty kilobytes of mesh, so two full views of [constant StarMapRelief.PATCH_TILES_MAX] cost
 ## about thirty megabytes, and buy an instant return.
 const RETIRED_KEPT: int = 768
+## How many tiles whose relief is out of date ([method _retry_outdated]) one decision may queue again. A
+## body whose modifiers open while the chart is up has every tile on screen to redo: some fifty a second
+## brings a view of a hundred and fifty tiles to its mountains in three seconds, and still leaves the
+## builders ([constant MAX_IN_FLIGHT], a tile in 10 to 30 ms) to the tiles that come into view.
+const OUTDATED_RETRY_PER_DECISION: int = 12
+## How many tiles still flagged as waiting on their modifiers one decision may ask about. Each asks the
+## pack for a dozen tile states, and the view can hold a few hundred such tiles.
+const OUTDATED_ASKED_PER_DECISION: int = 32
 
 ## Which body this ground belongs to. Set once by the chart; everything else about the body — its
 ## radius, how fine its tiles go — is read from its manifest by [StarMapRelief], so there is one
@@ -66,6 +74,8 @@ var _built_from: Dictionary = {}
 ## Tiles being built again over one that is already up. The difference matters in exactly one place:
 ## the pump refuses a tile it has already drawn, and a rebuild is the one case where it must not.
 var _redo: Dictionary = {}
+## Where in the wanted set [method _retry_outdated] takes up its round at the next decision.
+var _outdated_from: int = 0
 ## The level of the wanted tile under the camera — the finest of a mixed set — and when the next
 ## decision is allowed.
 var _level: int = 0
@@ -226,6 +236,53 @@ func retry_provisional(budget: int) -> int:
 	return taken
 
 
+## Queue again, up to [param budget] of them, the tiles on screen whose RELIEF is out of date: drawn while
+## the streamed modifier tiles that shape them were still on their way (their massifs missing), or
+## sampled through another planet than the one the body is read through now — the chart's copy of a body
+## it then found loaded, or a copy made before the body's modifiers were open, which knew no mountain
+## ([method StarMapTiles.offline_data]). Asked at every decision, four times a second.
+##
+## The provisional tiles' question ([method retry_provisional]) cannot be this one: it is asked when the
+## HEIGHT tiles land, and the modifiers come down another stream. Without it a tile built a second before
+## its massifs arrived stayed flat for as long as the chart was open (playtest, 2026-11-28: "the
+## mountains no longer show on the chart"). A tile still waiting is NOT queued: rebuilt now it would come
+## back just as flat, and asking again is what the next decision is for. Queued at the back: a hole in the
+## view is worse than a flat stretch, and what is missing goes first.
+func _retry_outdated(budget: int) -> int:
+	var taken: int = 0
+	var asked: int = 0
+	var reader: StarMapTiles = null
+	var ids: Array = _desired.keys()
+	var count: int = ids.size()
+	var step: int = 0
+	while step < count and taken < budget and asked < OUTDATED_ASKED_PER_DECISION:
+		# Round the wanted set from where the last decision stopped: a tile whose modifiers take long to
+		# come must not keep the ones after it from ever being asked.
+		var id: int = ids[(_outdated_from + step) % count]
+		step += 1
+		if _in_flight.has(id) or _redo.has(id):
+			continue
+		var shown: MeshInstance3D = _active.get(id) as MeshInstance3D
+		if shown == null or shown.mesh == null or not shown.mesh.has_meta(StarMapRelief.META_READ_THROUGH):
+			continue  # not a built tile: nothing to say how it was read
+		if reader == null:
+			reader = StarMapTiles.for_body(body_key)  # only once a built tile is there to compare
+		var outdated: bool = int(shown.mesh.get_meta(StarMapRelief.META_READ_THROUGH)) \
+				!= StarMapRelief.reading_id(reader.data)
+		# Same planet: the meta was written with a planet, so reader.data is one. Asking reads the pack's
+		# tile states — a file test each for those not in — hence the cap on how many are asked.
+		if not outdated and bool(shown.mesh.get_meta(StarMapRelief.META_MODIFIERS_PENDING, false)):
+			asked += 1
+			outdated = not StarMapCanyons.awaits_modifiers(reader.data, id_nside(id), id_ipix(id))
+		if not outdated:
+			continue
+		_redo[id] = true
+		_pending.push_back(id)
+		taken += 1
+	_outdated_from = (_outdated_from + step) % maxi(count, 1)
+	return taken
+
+
 ## Drive the ground: harvest what is finished, then — at most four times a second — decide again.
 ##
 ## [param centre_dir] is where the camera is, as a direction in the BODY's own frame; [param altitude_m]
@@ -326,6 +383,7 @@ func _decide(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 		if _desired.has(id):
 			keep.append(id)
 	_pending = keep
+	_retry_outdated(OUTDATED_RETRY_PER_DECISION)
 
 
 ## May this tile, which nothing wants any more, be taken off screen yet?

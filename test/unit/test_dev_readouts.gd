@@ -228,3 +228,5 @@ func test_the_daylight_line_reads_in_lux_against_the_photocell_thresholds() -> v
 	assert_string_contains(text, "1100 lux", "a daylight of 0.011 is about 1100 lux")
 	assert_string_contains(text, "on < %.0f lux" % Photocell.DEFAULT_TUNING.on_below_lux, "the shared tuning, in lux")
 	assert_eq(DevReadouts.daylight_line(null), "light: --", "no body: nothing to read")
+	assert_false(text.contains("storm"), "clear: no storm named")
+	assert_string_contains(DevReadouts.daylight_text(0.011, 0.35), "storm dust x0.35", "a storm's share is named")

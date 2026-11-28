@@ -13,6 +13,18 @@ const CHANNEL_LABELS : Dictionary = {
 	"UNSPECIFIED": "%%CHAT_UNSPECIFIED",
 	"SAY": "%%CHAT_SAY",
 }
+## The log's tabs, in the order they are shown: the first shows every channel, each of the others one
+## channel only (ChatChannel.ChannelE), so a busy channel does not bury the one the player follows.
+## Private messages have their own pinned bar (DmHeader) and no tab.
+const FILTER_ALL: int = -1
+const FILTERS: Array[int] = [FILTER_ALL, ChatChannel.ChannelE.GENERAL, ChatChannel.ChannelE.SAY,
+		ChatChannel.ChannelE.GROUP, ChatChannel.ChannelE.CORPORATION]
+## How see-through the tabs are at rest (0..1), when a filter is on: the mouse drives the camera then, so
+## they only remind which channel the log is narrowed to.
+const TABS_REST_ALPHA: float = 0.55
+## The keys that answer wherever the player is, typing included: the captures and the bug report. A bug
+## in the chat is reported with the chat open.
+const PASS_THROUGH_ACTIONS: Array[StringName] = [&"bug_report", &"screenshot", &"screenshot_debug"]
 
 ## Line where the player types a message; Enter sends it on the selected channel, then closes write mode.
 @export var input_field: LineEdit
@@ -54,6 +66,16 @@ var _empty_bg: StyleBoxEmpty
 
 @onready var channel_selector: OptionButton = $MarginContainer/VBoxContainer/HBoxContainer/ChannelSelector
 @onready var input_bar: HBoxContainer = $MarginContainer/VBoxContainer/HBoxContainer
+## The tabs that narrow the log to one channel (FILTERS). Clicked while writing, the only time the mouse
+## is free.
+@onready var filter_tabs: HBoxContainer = $MarginContainer/VBoxContainer/FilterTabs
+## The tabs, one flat toggle button per filter (FILTERS order): a button, and not a TabBar, because a
+## TabBar cannot give one tab its own text colour -- each channel's tab is written in its colour.
+var _tab_buttons: Array[Button] = []
+## The filters (FILTERS values) that received a message not shown since: their tab carries a mark.
+var _unread: Dictionary = {}
+## The channel the log is narrowed to, FILTER_ALL for every channel.
+var _filter: int = FILTER_ALL
 ## The pinned private conversation: who we are talking to. Its OWN bar rather than an entry in
 ## the channel selector — there is one private thread at a time, and listing every correspondent
 ## in the selector is what this bar replaces.
@@ -103,6 +125,10 @@ func _ready():
 	# The log's scrollbar is for write mode only: at rest the mouse drives the camera, so the bar
 	# could never be used and only stood over the end of the lines.
 	_set_scrollbar_shown(false)
+
+	_build_filter_tabs()
+	channel_selector.item_selected.connect(func(_at: int) -> void: _tint_selector())
+	_show_filter_tabs()
 
 	# Populate the channel selector (inactive channels are greyed — see _refresh_channels).
 	_refresh_channels()
@@ -175,7 +201,7 @@ func _refresh_channels() -> void:
 		# The enum name is an identifier ("CORPORATION"), not something to show a player. Falls
 		# back to the raw name so a new channel is visible straight away rather than blank.
 		var name : String = str(ChatChannel.ChannelE.keys()[channel])
-		channel_selector.add_item(str(CHANNEL_LABELS.get(name, name)), channel)
+		channel_selector.add_icon_item(channel_mark(channel), str(CHANNEL_LABELS.get(name, name)), channel)
 		if not (channel in active):
 			channel_selector.set_item_disabled(index, true)
 			channel_selector.set_item_tooltip(index, tr("%%CHAT_SOON"))
@@ -185,6 +211,7 @@ func _refresh_channels() -> void:
 		wanted_index = channel_selector.get_item_index(ChatChannel.ChannelE.GENERAL)
 	if wanted_index != -1:
 		channel_selector.select(wanted_index)
+	_tint_selector()
 	_refresh_dm_header()
 
 
@@ -322,6 +349,144 @@ func show_say_rejected(error: String) -> void:
 	receive_message_from_server(ChatMessage.new(
 			"[color=#FF6B6B]%s[/color]" % reason, ChatChannel.ChannelE.UNSPECIFIED, tr("%%CHAT_SAY_NOTICE")))
 
+## What a tab is called: "All", or its channel's name.
+static func filter_label(filter: int) -> String:
+	if filter == FILTER_ALL:
+		return "%%CHAT_TAB_ALL"
+	return str(CHANNEL_LABELS.get(str(ChatChannel.ChannelE.keys()[filter]), ""))
+
+
+## Whether a message of [param channel] is shown while the log is narrowed to [param filter]. The chat's
+## own notices (UNSPECIFIED: a line refused, and why) show on every tab: they answer what the player just
+## did there. Static and pure.
+static func passes_filter(channel: int, filter: int) -> bool:
+	return filter == FILTER_ALL or channel == filter or channel == ChatChannel.ChannelE.UNSPECIFIED
+
+
+## Whether [param event] is one of the keys that answer everywhere (PASS_THROUGH_ACTIONS). Static.
+static func passes_through(event: InputEvent) -> bool:
+	for action: StringName in PASS_THROUGH_ACTIONS:
+		if InputMap.has_action(action) and event.is_action(action):
+			return true
+	return false
+
+
+## One flat toggle button per filter, written in its channel's colour ("All" in white), the picked one
+## on a dark backing. Focus none: Tab cycles the channel while typing, it must not walk the buttons.
+func _build_filter_tabs() -> void:
+	var group := ButtonGroup.new()
+	var picked := StyleBoxFlat.new()
+	picked.bg_color = Color(0.0, 0.0, 0.0, 0.55)
+	picked.set_content_margin_all(4.0)
+	picked.set_corner_radius_all(3)
+	var plain := StyleBoxEmpty.new()
+	plain.set_content_margin_all(4.0)
+	for i: int in FILTERS.size():
+		var tab := Button.new()
+		tab.text = filter_label(FILTERS[i])
+		tab.toggle_mode = true
+		tab.button_group = group
+		tab.focus_mode = Control.FOCUS_NONE
+		tab.expand_icon = false
+		tab.add_theme_stylebox_override("normal", plain)
+		tab.add_theme_stylebox_override("hover", plain)
+		tab.add_theme_stylebox_override("pressed", picked)
+		tab.add_theme_stylebox_override("hover_pressed", picked)
+		var colour: Color = tab_colour(FILTERS[i])
+		for state: String in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+			tab.add_theme_color_override(state, colour)
+		tab.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+		tab.add_theme_constant_override("outline_size", 4)
+		tab.pressed.connect(_on_filter_tab_changed.bind(i))
+		filter_tabs.add_child(tab)
+		_tab_buttons.append(tab)
+	_tab_buttons[0].button_pressed = true
+
+
+## The colour a tab is written in: its channel's (forced_colors), white for "All".
+func tab_colour(filter: int) -> Color:
+	return Color.WHITE if filter == FILTER_ALL else Color(get_hexa_color_from_hash(str(filter)))
+
+
+## Show the log through the filter at [param index] in FILTERS, as a click on its tab does.
+func select_filter(index: int) -> void:
+	_tab_buttons[clampi(index, 0, _tab_buttons.size() - 1)].button_pressed = true
+	_on_filter_tab_changed(index)
+
+
+## Which tabs a message of [param channel] marks unread while the log shows [param filter]: none when
+## it is shown; else its own channel's tab (when it has one) and "All", which would have shown it.
+## Static and pure.
+static func tabs_marked_by(channel: int, filter: int) -> Array[int]:
+	var marked: Array[int] = []
+	if passes_filter(channel, filter):
+		return marked
+	if FILTERS.has(channel):
+		marked.append(channel)
+	marked.append(FILTER_ALL)
+	return marked
+
+
+## The mark on the tabs whose channel received a message not shown since: the tab's own colour, so
+## it reads as "something new on this channel", not as a decoration.
+func _show_unread() -> void:
+	for i: int in _tab_buttons.size():
+		var filter: int = FILTERS[i]
+		_tab_buttons[i].icon = BugReportDialog.mark_of(tab_colour(filter)) if _unread.has(filter) else null
+
+
+## A tab was picked: the log shows that channel only, and what is typed next goes there too when the
+## channel can be written to -- following a channel and answering on another is never what is meant.
+## What it held unread is seen now ("All" shows everything: nothing stays unread).
+func _on_filter_tab_changed(tab: int) -> void:
+	_filter = FILTERS[clampi(tab, 0, FILTERS.size() - 1)]
+	if _filter == FILTER_ALL:
+		_unread.clear()
+	else:
+		_unread.erase(_filter)
+	_show_unread()
+	_rebuild_log()
+	_show_filter_tabs()
+	var at: int = channel_selector.get_item_index(_filter) if _filter != FILTER_ALL else -1
+	if at != -1 and not channel_selector.is_item_disabled(at):
+		channel_selector.select(at)
+		_tint_selector()
+	if can_write:
+		input_field.grab_focus()  # the click on the tab took it
+
+
+## The round mark of [param channel]'s colour (forced_colors), for its tab and its entry in the
+## selector: the same colour its lines' time takes, so a tab, a line and the channel written to match.
+func channel_mark(channel: int) -> Texture2D:
+	return BugReportDialog.mark_of(Color(get_hexa_color_from_hash(str(channel))))
+
+
+## The selector's text in the colour of the channel it will send to.
+func _tint_selector() -> void:
+	var channel: int = channel_selector.get_selected_id()
+	if channel < 0:
+		channel_selector.remove_theme_color_override("font_color")
+		return
+	var colour := Color(get_hexa_color_from_hash(str(channel)))
+	for state: String in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
+		channel_selector.add_theme_color_override(state, colour)
+
+
+## The tabs are there while writing, and stay, faded, while the log is narrowed: a log that hides
+## channels must say so.
+func _show_filter_tabs() -> void:
+	filter_tabs.visible = can_write or _filter != FILTER_ALL
+	filter_tabs.modulate.a = 1.0 if can_write else TABS_REST_ALPHA
+
+
+## The log again from the messages kept, each with its own time, the tab's channel only.
+func _rebuild_log() -> void:
+	output_field.clear()
+	for message: ChatMessage in messages_list:
+		if passes_filter(message.channel, _filter):
+			parse_message(message)
+
+
 ## While typing, TAB cycles the channel and Escape closes the input. Both are caught
 ## here (in _input, before the GUI focus system) — otherwise the focused input field
 ## consumes TAB (focus change) and Escape before _unhandled_input sees them. TAB is a
@@ -374,6 +539,11 @@ func _unhandled_input(event):
 	else:
 		# While writing, Enter is consumed by the LineEdit (-> _on_input_text_text_submitted,
 		# which sends and closes). A mouse click cancels writing without sending.
+		# Everything else is swallowed, so no key of the game answers under the text -- but for the
+		# capture and bug report keys, which this node (deep in the tree) is asked about before the
+		# autoload that holds them: swallowed here, F9 did nothing while the chat was being typed in.
+		if passes_through(event):
+			return
 		if event is InputEventMouseButton:
 			_stop_writing()
 		get_viewport().set_input_as_handled()
@@ -398,6 +568,7 @@ func _start_writing() -> void:
 	# Show the backdrop only while typing, for comfort when composing a message.
 	add_theme_stylebox_override("panel", _write_bg)
 	_set_scrollbar_shown(true)
+	_show_filter_tabs()
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	input_field.grab_focus()
 
@@ -411,6 +582,7 @@ func _stop_writing() -> void:
 	# sent or the input closes (re-apply, don't remove — see _ready).
 	add_theme_stylebox_override("panel", _empty_bg)
 	_set_scrollbar_shown(false)
+	_show_filter_tabs()
 	# Back to the newest line: with the bar gone, a log left scrolled up would just look frozen.
 	# Reaching the bottom also resumes scroll_following for the next messages.
 	output_field.scroll_to_line(maxi(output_field.get_line_count() - 1, 0))
@@ -434,11 +606,14 @@ func receive_message_from_server(receveid_message: ChatMessage) -> void:
 	if messages_list.size() > _LOG_MAX:
 		# Rebuilt from the newest _LOG_KEEP only, each line with its own time (see parse_message).
 		messages_list = messages_list.slice(-_LOG_KEEP)
-		output_field.clear()
-		for message in messages_list:
-			parse_message(message)
-	else:
+		_rebuild_log()
+	elif passes_filter(receveid_message.channel, _filter):
 		parse_message(receveid_message)
+	var marked: Array[int] = tabs_marked_by(receveid_message.channel, _filter)
+	if not marked.is_empty():
+		for filter: int in marked:
+			_unread[filter] = true
+		_show_unread()
 
 
 ## True for a private message — one that belongs to a thread of its own.
@@ -459,7 +634,10 @@ func _channel_tag(message: ChatMessage) -> String:
 		return tr("%%CHAT_DM_TO") % peer_name
 	if message.channel == ChatChannel.ChannelE.SAY:
 		return "(" + tr(CHANNEL_LABELS["SAY"]) + ") "
-	return "(" + ChatChannel.ChannelE.keys()[message.channel] + ") "
+	# The shared channels say nothing more: the tabs name them, and the time takes the channel's
+	# colour, which tells them apart on "All" ("(GENERAL)" on every line was noise, playtest 2026-11-28).
+	# Said lines keep theirs: they are heard around the speaker, not read on a channel.
+	return ""
 
 
 ## Append one message to the log.
@@ -468,13 +646,16 @@ func parse_message(message_to_parse: ChatMessage) -> void:
 	# prints every line again, and each must keep the time it came in at.
 	var at: Dictionary = Time.get_datetime_dict_from_unix_time(
 			int(message_to_parse.creation_schedule) + Time.get_time_zone_from_system().bias * 60)
-	var gdh: String = "%02d:%02d:%02d" % [at.hour, at.minute, at.second]
+	# To the minute: the seconds made every line longer and said nothing a reader uses.
+	var gdh: String = "%02d:%02d" % [at.hour, at.minute]
+	var channel_colour: String = get_hexa_color_from_hash(str(message_to_parse.channel))
 
-	# Order: [time] (channel) name: message — channel first, then the player name, then the text.
+	# Order: [time] (channel) name: message — the channel's tag only where it still says something.
 	output_field.append_text(
-		"[%s] [color=#%s]%s[/color][color=#%s]%s[/color]: %s\n" % [
+		"[color=#%s][%s][/color] [color=#%s]%s[/color][color=#%s]%s[/color]: %s\n" % [
+			channel_colour,
 			gdh,
-			get_hexa_color_from_hash(str(message_to_parse.channel)),
+			channel_colour,
 			(_channel_tag(message_to_parse)),
 			get_hexa_color_from_hash(message_to_parse.author),
 			message_to_parse.author,

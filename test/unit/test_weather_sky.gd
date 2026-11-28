@@ -58,3 +58,11 @@ func test_the_far_dust_fades_out_high_up() -> void:
 	assert_eq(WeatherSky.far_layer_share(WeatherSky.DUST_CEILING_M), 0.0, "at the ceiling: none, nothing is drawn")
 	var mid: float = WeatherSky.far_layer_share((WeatherSky.DUST_FADE_FROM_M + WeatherSky.DUST_CEILING_M) * 0.5)
 	assert_almost_eq(mid, 0.5, 1e-6, "halfway: half")
+
+
+func test_the_light_in_the_dust_takes_its_hue_and_never_brightens() -> void:
+	var ochre: Vector3 = WeatherSky.dust_hue(WeatherSky.blow_albedo_of(Color(0.8, 0.6, 0.4)))
+	assert_almost_eq(ochre.x, 1.0, 1e-6, "the brightest channel kept whole")
+	assert_lt(ochre.z, ochre.x, "an ochre dust takes more blue than red: a warmer light")
+	assert_eq(WeatherSky.dust_hue(Vector3(0.5, 0.5, 0.5)), Vector3.ONE, "a grey dust leaves the light's colour")
+	assert_eq(WeatherSky.dust_hue(Vector3.ZERO), Vector3.ONE, "no colour to give: none taken")

@@ -145,6 +145,18 @@ static func label(text: String, colour: Color = TEXT, size: int = SIZE_BODY, bol
 	return made
 
 
+## The ink of a step or an objective in a list: GOOD once [param done], so what is behind the player reads
+## at a glance; [param pending] otherwise (the screen's own colour for the rest). One rule for the DataPad's
+## mission sheet and the kiosks'.
+static func done_colour(done: bool, pending: Color) -> Color:
+	return GOOD if done else pending
+
+
+## The ink of one line of ServiceTypes.transport_steps: GOOD when it is ticked, [param pending] otherwise.
+static func step_colour(line: String, pending: Color) -> Color:
+	return done_colour(ServiceTypes.is_done_step(line), pending)
+
+
 ## A ready label in the ARES face: a title, a big figure.
 static func ares_label(text: String, colour: Color = TEXT, size: int = SIZE_BIG) -> Label:
 	var made := Label.new()

@@ -48,7 +48,7 @@ const FADE_CELL_M := 1024.0
 ## The rocks' ground fringe (set_fringe): the band climbs this share of a rock's height above the ground, and
 ## never more than FRINGE_MAX_M metres — TerrainBlend's max_height_ratio and height, for placed objects.
 const FRINGE_RATIO := 0.3
-const FRINGE_MAX_M := 0.9
+const FRINGE_MAX_M := 0.4
 ## Floats per laid object: a MultiMesh transform (12) and its custom data (4) — the object's place in the
 ## chunk again, which the fade in needs and a shader cannot read back from the transform — and, last, the
 ## object's layer slot (1, 2…), positive when the object collides ([method is_solid]), negative when not.

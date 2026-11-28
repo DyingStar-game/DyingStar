@@ -459,6 +459,32 @@ static func has_data(body_key: String) -> bool:
 	return body_key != "" and StarMapTiles.for_body(body_key).usable()
 
 
+## Meta of a tile's mesh ([method build_tile]): true when streamed modifier tiles it is shaped by were
+## still on their way, so its massifs are missing and it is to be built again once they are in.
+const META_MODIFIERS_PENDING: StringName = &"modifiers_pending"
+## Meta of a tile's mesh: [method reading_id] of the planet its ground was sampled through.
+const META_READ_THROUGH: StringName = &"read_through"
+
+
+## Which planet a ground was sampled through, as a number a mesh can keep: the chart reads a body
+## through its own copy while it is not loaded, through the planet in the tree once it is, and through a
+## fresh copy once the body's streamed modifiers are open ([method StarMapTiles.offline_data]) — three
+## grounds that differ by every massif. 0 for none (the disk alone).
+static func reading_id(data: PlanetData) -> int:
+	return data.get_instance_id() if data != null else 0
+
+
+## Is the relief under [param dir] of [param body_key] still waiting on a streamed modifier tile — its
+## massifs then missing from every height read there? What a height that is REMEMBERED (a town's, a
+## region's) asks before it is kept. Main thread, like everything that resolves a reader.
+static func relief_pending(body_key: String, dir: Vector3) -> bool:
+	var data: PlanetData = StarMapTiles.for_body(body_key).data if body_key != "" else null
+	if data == null or data.export_nside <= 0 or dir.length_squared() <= 0.0:
+		return false
+	return data.modifiers_pending_at(HEALPix.vec2pix_nest(data.export_nside, dir.normalized()),
+			data.export_nside)
+
+
 # ---------------------------------------------------------------------------
 # Building one tile
 # ---------------------------------------------------------------------------
@@ -536,6 +562,12 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	# sample_height_boundary so two tiles agree along the edge they share.
 	var data: PlanetData = reader.data
 	var frame: PlanetData.TileFrame = null
+	# The massifs this tile is shaped by, and the zones that say where its canyons are cut, are streamed
+	# tiles (RemoteModifierPack); one still on its way reads as EMPTY, and the tile comes out as bare
+	# ground under a mountain range. It is drawn all the same — a flat stretch is better than a hole — and
+	# says so ([constant META_MODIFIERS_PENDING]), so that the ground builds it again once they are in.
+	# Asked before the frame is prepared: asking is what puts the missing tiles on the download queue.
+	var modifiers_pending: bool = data != null and StarMapCanyons.awaits_modifiers(data, nside, ipix)
 	if data != null:
 		frame = data.make_tile_frame()
 		data.prepare_mountain_frame(frame, nside, ipix)
@@ -626,6 +658,8 @@ static func build_tile(body_key: String, nside: int, ipix: int, grid_res: int,
 	var published: int = maxi(int(manifest.get("nside_max", TILE_NSIDE)), TILE_NSIDE)
 	mesh.set_meta("source_nside", nside if int(from[0]) >= published else int(from[0]))
 	mesh.set_meta("origin", origin)
+	mesh.set_meta(META_MODIFIERS_PENDING, modifiers_pending)
+	mesh.set_meta(META_READ_THROUGH, reading_id(data))
 	if StarMapGround.DEBUG_GROUND:
 		StarMapTiles.stat_add("tiles", 1)
 		StarMapTiles.stat_add("provisional", 1 if int(from[0]) < nside else 0)

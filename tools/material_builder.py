@@ -186,10 +186,12 @@ def _connect_base_color(
     """Wire albedo (tinted by albedo_color, or that colour alone), multiplying ambient occlusion
     into it when available.
 
-    Trade-off worth knowing: Godot applies AO to ambient light only, while
-    multiplying it into base colour darkens direct light too. It is the usual
-    look-dev approximation, not a physically exact match. Set the Mix factor to
-    0 in the shader graph to compare.
+    Worth knowing: the game builds library materials with ao_light_affect at 1.0
+    (_assign_occlusion in addons/dyingstar/shared_material_builder.gd), so the AO
+    map darkens direct light there too, not ambient light alone as Godot does by
+    default. Multiplying it into the base colour is the closest Blender shows of
+    that; it is a look-dev approximation, not an exact match. Set the Mix factor
+    to 0 in the shader graph to compare.
     """
     base = _base_color_source(node_tree, principled, albedo_node, albedo_color)
     if ao_source is None:

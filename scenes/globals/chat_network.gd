@@ -30,12 +30,24 @@ const NOTIFICATION_UNKNOWN_NAME: String = "%%NOTIF_UNKNOWN_NAME"
 
 ## The notification types that are good news of a job: a mission done and ready to hand in, a mission
 ## paid, goods sold. They chime once (WristDatapadModel.chime) where the others beep until read.
-const GAIN_TYPES: Array[String] = ["mission.ready", "mission.completed", "warehouse.sale"]
+const GAIN_TYPES: Array[String] = ["mission.ready", "mission.completed", "mission.partially_completed",
+		"warehouse.sale"]
+
+
+## The notification types that are no news to the player: the mission service counted a crate for a
+## mission without completing a step of it. They refresh what shows the mission (PlayerServices.changed:
+## the DataPad, a kiosk's "In progress") and show nothing -- a toast per crate buried the steps that matter.
+const SILENT_TYPES: Array[String] = ["mission.updated"]
 
 
 ## Whether a notification of [param type] is good news of a job (GAIN_TYPES). Pure.
 static func is_gain(type: String) -> bool:
 	return GAIN_TYPES.has(type)
+
+
+## Whether a notification of [param type] only refreshes, with nothing shown (SILENT_TYPES). Pure.
+static func is_silent(type: String) -> bool:
+	return SILENT_TYPES.has(type)
 
 
 ## The one-line text for [param envelope], ready to show.
@@ -75,7 +87,11 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 		"mission.ready":
 			return TranslationServer.translate("%%NOTIF_MISSION_READY") % str(data.get("title", ""))
 		"mission.progress":
-			return TranslationServer.translate("%%NOTIF_MISSION_PROGRESS") % str(data.get("title", ""))
+			return mission_step_text(data)
+		"mission.partially_completed":
+			# Turned in before it was done: the share done (basis points) and what it paid this player.
+			return TranslationServer.translate("%%NOTIF_MISSION_PARTIAL") % [str(data.get("title", "")),
+					int(float(data.get("ratioBp", 0)) / 100.0), int(float(data.get("amount", 0)))]
 		"mission.invited":
 			return TranslationServer.translate("%%NOTIF_MISSION_INVITED") % [who, str(data.get("title", ""))]
 		"mission.completed":
@@ -96,6 +112,18 @@ static func notification_text(envelope: Dictionary, names: Dictionary = {}) -> S
 			if type == "":
 				return TranslationServer.translate("%%NOTIF_GENERIC_BARE")
 			return TranslationServer.translate("%%NOTIF_GENERIC") % type
+
+
+## A step of a mission done (`data.step`, the mission service's): everything loaded, a delivery complete;
+## any other step, or none named, the plain "mission progress". Pure.
+static func mission_step_text(data: Dictionary) -> String:
+	var title := str(data.get("title", ""))
+	match str(data.get("step", "")):
+		"loaded":
+			return TranslationServer.translate("%%NOTIF_MISSION_STEP_LOADED") % title
+		"delivered":
+			return TranslationServer.translate("%%NOTIF_MISSION_STEP_DELIVERED") % title
+	return TranslationServer.translate("%%NOTIF_MISSION_PROGRESS") % title
 
 
 ## "Sold at M0001: 120 kg of Crushed gold ore, +1500 credits", in the player's language. A warehouse
@@ -678,7 +706,10 @@ func _on_broker_message(topic: String, payload: String) -> void:
 		print("[Notify] message on %s (%d chars), for us: %s" % [topic, payload.length(), str(is_my_notify_topic(topic, me))])
 	if is_my_notify_topic(topic, me):
 		var envelope := parse_notification(payload)
-		if not envelope.is_empty():
+		if not envelope.is_empty() and is_silent(str(envelope.get("type", ""))):
+			# No news, only a refresh: whatever shows the mission reads it again, nothing is shown.
+			PlayerServices.changed.emit("missions")
+		elif not envelope.is_empty():
 			notification_received.emit(envelope)
 		else:
 			push_warning("[Notify] unreadable notification: %s" % payload.left(200))

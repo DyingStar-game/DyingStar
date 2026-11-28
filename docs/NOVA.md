@@ -382,7 +382,9 @@ Tout ce qui copie « l'aspect du sol » demande d'abord à Nova sur un corps hab
   fois au pied de l'objet (`NovaBody.patch_where` → `blend_nova_where`, donnée d'instance n° 10). Teinte (couleur
   de biome × multiplicateur d'albédo × taches) par instance. Pas de matériau tant que le travailleur n'a pas fait
   les tableaux (TerrainBlend remesure à 2 s et 10 s). Bord haut de la bande moins bruité sur Nova
-  (`blend_noise_strength` 0,3 au lieu de 0,6 : sur un sol clair, le bord bruité faisait des boules blanches). La
+  (`blend_noise_strength` 0,3 au lieu de 0,6 : sur un sol clair, le bord bruité faisait des boules blanches ;
+  depuis le 28/11 c'est aussi la valeur du gabarit `terrain_blend.tres`, et la bande fait 0,4 m au lieu de 0,9 —
+  `TerrainBlend.height` — : elle montait au tiers du mur d'une habitation). La
   triplanaire est **ancrée à la planète** (tous sols confondus) : position dans le repère de la planète,
   ramenée modulo 8 192 m (la grille de tuilage, précise au millimètre en float32), mais lue le long des axes
   LOCAUX — deux tangentes et le haut (`TerrainBlend.local_tangents`, `anchor_row` → `blend_tan1`, `blend_tan2`,
@@ -394,7 +396,12 @@ Tout ce qui copie « l'aspect du sol » demande d'abord à Nova sur un corps hab
   boîte de l'objet (ses limites dans le repère de sa racine), par rapport à son côté le plus proche
   (`blend_box_x` / `blend_box_z`). L'ancien test (face tournée à l'opposé du centre de l'objet, déjà sur develop)
   laissait la bande sur la moitié des ondulations des parois intérieures d'un conteneur près de ses portes, où
-  elles regardent dans la longueur.
+  elles regardent dans la longueur. Un bâtiment d'habitation est UN objet fait d'une rangée (ou deux, dos à dos)
+  de conteneurs : jugé contre la boîte du bâtiment entier, le mur mitoyen de deux logements et le mur du fond
+  d'un bâtiment à deux rangées « regardaient dehors » et portaient la bande à l'intérieur. Chaque conteneur est
+  donc jugé contre SA boîte : la racine de `container_apartment.tscn` est dans le groupe `ground_fringe_box`
+  (`TerrainBlend.BOX_GROUP`, `box_owner_of` ; test `test_terrain_blend_box.gd`). Limite connue : une porte
+  ouverte au moment de la mesure agrandit la boîte de son conteneur.
   Première version (25/11 matin, retirée) : une texture 2D par matière, moyenne linéaire pour le contraste,
   occlusion moyenne et matière dominante choisie sans les creux : bande plus claire et plus contrastée que le sol
   (le shader prend la moyenne sur la mipmap sRGB, et le gravier n'avait pas de mipmaps), roche craquelée devant
@@ -402,7 +409,7 @@ Tout ce qui copie « l'aspect du sol » demande d'abord à Nova sur un corps hab
 - **Poussière** (`GroundLook.colour_at` : roues, pas, vent, murs de poussière) : la couleur montrée, plages
   moyennées.
 - **Rochers du scatter** (`nova_rock.gdshader`, `NovaScatter.set_fringe`) : frange dans le shader, pas de nœud
-  par rocher ni d'appel de dessin de plus. Bande = 30 % de la hauteur du rocher au-dessus du sol, 0,9 m au plus
+  par rocher ni d'appel de dessin de plus. Bande = 30 % de la hauteur du rocher au-dessus du sol, 0,4 m au plus
   (comme `TerrainBlend`), depuis le sol du modèle enfoncé (`sink`). Les plages sous le rocher sont lues dans le
   vertex shader à sa place (`fade_cell` modulo `WRAP` + `fade_rest` + donnée d'instance), seulement à moins de
   200 m de la caméra ; la frange s'efface de 100 à 150 m.

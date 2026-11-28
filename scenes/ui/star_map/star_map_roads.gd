@@ -116,6 +116,9 @@ var _spans_shown: bool = false
 var _village_roads_laid: Array = NO_VILLAGE_ROADS
 ## The body's radius as that view gave it, in metres: what turns a street's width into an angle.
 var _radius_m: float = 0.0
+## The planet the lines on screen were laid through ([member StarMapTiles.data]), as the last view
+## found it: a change lays them all again on the new ground.
+var _laid_through: PlanetData = null
 
 
 
@@ -150,6 +153,10 @@ func _laying() -> Array:
 	return [func(id: int) -> Array:
 		# The ground THAT TILE draws, which costs nothing until a way asks where it stands.
 		var tile := StarMapDrawnTile.new(data, StarMapGround.id_nside(id), StarMapGround.id_ipix(id))
+		# Its massifs still streaming in, the ground under the way reads flat and the way would be laid
+		# under the mountain the relief draws once they land: "not yet", laid again on a later refresh.
+		if StarMapCanyons.awaits_modifiers(data, tile.nside, tile.ipix):
+			return []
 		return _lay_tile(pack, tile.nside, tile.ipix, func(dir: Vector3) -> Vector3:
 			return tile.place(dir, LIFT), signs), true]
 
@@ -163,6 +170,7 @@ func _release() -> void:
 	_drawn_spans = {}
 	_drawn_spans_for = -1.0
 	_village_roads_laid = NO_VILLAGE_ROADS
+	_laid_through = null
 	_radius_m = 0.0
 
 
@@ -198,10 +206,16 @@ func show_over(tiles: Dictionary, metres_per_pixel: float, radius_m: float,
 	var same_village: bool = is_same(village_roads, _village_roads_laid) \
 			or (village_roads.is_empty() and _village_roads_laid.is_empty())
 	_radius_m = radius_m
-	if not is_equal_approx(step, _sign_step) or spans_shown != _spans_shown or not same_village:
+	# The ways stand on the ground of the planet they were laid through: the chart's copy of the body,
+	# the planet in the tree once it is loaded, a fresh copy once its modifiers are open. Laid through a
+	# copy that knew no mountain, a road ran under a massif the ground now draws.
+	var through: PlanetData = StarMapTiles.for_body(body_key).data if body_key != "" else null
+	if not is_equal_approx(step, _sign_step) or spans_shown != _spans_shown or not same_village \
+			or through != _laid_through:
 		_sign_step = step
 		_spans_shown = spans_shown
 		_village_roads_laid = village_roads
+		_laid_through = through
 		lay_again()
 	refresh(tiles)
 
