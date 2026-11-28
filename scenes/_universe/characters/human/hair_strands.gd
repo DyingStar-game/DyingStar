@@ -19,6 +19,16 @@ const HAIR_WIDTH: float = 0.0008
 ## the level the engine draws and widens those left by as much, so the hair covers as much at any level.
 const LODS: Array = [[0.0015, 0.5], [0.004, 0.25], [0.009, 0.12], [0.02, 0.05]]
 
+## How a head of hair's vertices are stored: 20 bytes where the plain layout took 32 (video memory: 9 to 23 MiB a
+## head of hair, one per avatar met, 2026-11-27). The engine's compression: the position in 16 bits over the hair's
+## box (under 0.01 mm), the normal (away from the skull) in 32. No UV nor tangent: CUSTOM0 = the hair's direction
+## (xyz, 8 bits a component: under half a degree) and how far along it (w, 0 root .. 1 tip); the side of the strip
+## is the vertex's parity. human_hair_strands.gdshader knows the layout by its CUSTOM0 (0 in the head's eyebrows,
+## lashes and beard). Not the tangent slot: the compression keeps a tangent as an angle about the normal, and a
+## hair's direction is not at right angles to the skull.
+const PACKED_FORMAT: int = (Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+		| (Mesh.ARRAY_CUSTOM_RGBA8_SNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT))
+
 static var _meshes: Dictionary = {}  # asset instance id -> ArrayMesh
 static var _lock := Mutex.new()
 
@@ -233,6 +243,28 @@ static func build(asset: HumanAssetData, native: bool = true) -> ArrayMesh:
 	return _mesh(asset, guides, children, pos, nrm, tan, uv, col, index)
 
 
+## CUSTOM0 of PACKED_FORMAT from the plain arrays: per vertex, the direction (tangent xyz) and the share along the
+## hair (uv.y), as signed bytes. Any thread; the C# twin when there is one.
+static func pack(tan: PackedFloat32Array, uv: PackedVector2Array, native: bool = true) -> PackedByteArray:
+	var twin: Object = HairGroom.native_twin() if native else null
+	if twin != null:
+		return twin.call("PackStrands", tan, uv)
+	var c0 := PackedByteArray()
+	c0.resize(uv.size() * 4)
+	for v in uv.size():
+		var at: int = v * 4
+		c0.encode_s8(at, _snorm(tan[at]))
+		c0.encode_s8(at + 1, _snorm(tan[at + 1]))
+		c0.encode_s8(at + 2, _snorm(tan[at + 2]))
+		c0.encode_s8(at + 3, _snorm(uv[v].y))
+	return c0
+
+
+## -1..1 as a signed byte (the engine's RGBA8_SNORM reads it back as x / 127).
+static func _snorm(x: float) -> int:
+	return clampi(roundi(x * 127.0), -127, 127)
+
+
 static func _mesh(asset: HumanAssetData, guides: int, children: int, pos: PackedVector3Array, nrm: PackedVector3Array,
 		tan: PackedFloat32Array, uv: PackedVector2Array, col: PackedColorArray, index: PackedInt32Array) -> ArrayMesh:
 	var size: int = asset.strand_size
@@ -240,9 +272,8 @@ static func _mesh(asset: HumanAssetData, guides: int, children: int, pos: Packed
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = pos
 	arrays[Mesh.ARRAY_NORMAL] = nrm
-	arrays[Mesh.ARRAY_TANGENT] = tan
-	arrays[Mesh.ARRAY_TEX_UV] = uv
 	arrays[Mesh.ARRAY_COLOR] = col
+	arrays[Mesh.ARRAY_CUSTOM0] = pack(tan, uv)
 	arrays[Mesh.ARRAY_INDEX] = index
 	var lods: Dictionary = {}
 	var per_child: int = guides * (size - 1) * 6
@@ -251,7 +282,7 @@ static func _mesh(asset: HumanAssetData, guides: int, children: int, pos: Packed
 		if kept < index.size() and per_child > 0:
 			lods[float(lod[0])] = index.slice(0, kept)
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], lods)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], lods, PACKED_FORMAT)
 	mesh.surface_set_name(0, "hair:%s" % asset.id)
 	# What the shader needs to keep the hair's coverage whatever level of detail is drawn (lod_of()).
 	mesh.set_meta(&"hair_lod", {"hairs": guides * children, "guides": guides, "vertices_per_hair": size * 2,

@@ -5,7 +5,11 @@
 // says how much), as a real one does: from afar, many of them add up to the mass of the hair.
 //
 // UV.x = the side of the strip (0 or 1), UV.y = along the hair (0 root .. 1 tip). TANGENT = the hair's
-// direction. NORMAL = away from the skull: the hair is lit as the volume it makes. COLOR: R = how far
+// direction. NORMAL = away from the skull: the hair is lit as the volume it makes. A head of hair's own mesh
+// (HairStrands.PACKED_FORMAT, 20 bytes a vertex instead of 32) has no UV nor tangent: CUSTOM0 = the direction
+// and how far along (that is how it is told from the head's eyebrows, lashes and beard, whose CUSTOM0 reads 0),
+// the side is the vertex's parity; vertex() puts them back where the rest reads them (strip_uv for UV).
+// COLOR: R = how far
 // along the style's longest strand (a shorter cut clips there), G = a random value per hair, B = the layer
 // (0 against the head .. 1 outermost), A = the hair's density at the root.
 //
@@ -128,6 +132,8 @@ varying vec3 model_pos;
 varying mat3 view_to_model;
 // The hair's direction, in view space, for light().
 varying vec3 hair_direction;
+// UV, or what stands for it in a packed head of hair (read in place of UV everywhere).
+varying vec2 strip_uv;
 // The hair's true half width and its drawn half width (true + soft edge), in pixels.
 varying float true_half;
 varying float drawn_half;
@@ -180,13 +186,19 @@ vec3 hair_moved(vec3 rest, inout vec3 tangent, int vertex_id, int vertices, floa
 
 void vertex() {
 	model_pos = VERTEX;
+	if (dot(CUSTOM0.xyz, CUSTOM0.xyz) > 0.25) {
+		TANGENT = CUSTOM0.xyz;
+		strip_uv = vec2(float(VERTEX_ID % 2), CUSTOM0.w);
+	} else {
+		strip_uv = UV;
+	}
 	if (has_motion > 0.5 && hair_motion.x > 0.5) {
-		VERTEX = hair_moved(VERTEX, TANGENT, VERTEX_ID, vertices_per_hair, UV.y, int(hair_motion.x + 0.5) - 1);
+		VERTEX = hair_moved(VERTEX, TANGENT, VERTEX_ID, vertices_per_hair, strip_uv.y, int(hair_motion.x + 0.5) - 1);
 	} else if (has_motion > 0.5 && dot(hair_motion.yzw, hair_motion.yzw) > 0.0) {
 		// Farther off, the hair swings as one (HairMotion's pendulum: yzw, m at 10 cm past the fixed length).
 		int guide = (VERTEX_ID / vertices_per_hair) % guide_count;
 		vec4 b = texelFetch(motion_binding, ivec2(guide % 256, guide / 256), 0);
-		float past = max(UV.y * b.x - (b.y < 0.0 ? fixed_length * -b.y : b.y), 0.0);
+		float past = max(strip_uv.y * b.x - (b.y < 0.0 ? fixed_length * -b.y : b.y), 0.0);
 		VERTEX += hair_motion.yzw * smoothstep(0.0, free_blend, past) * (past / 0.1);
 	} else if (is_beard > 0.5 && hair_motion.w > 0.0) {
 		// A long beard's end swings: past beard_fixed, as much as it is past it.
@@ -223,10 +235,10 @@ void vertex() {
 	}
 	// Where the hair thins out (the hairline: COLOR.a, the density at the root) its hairs are finer too.
 	float fine = mix(hairline_width, 1.0, smoothstep(0.2, 0.9, COLOR.a));
-	true_half = 0.5 * hair_width * fine * widen * mix(1.0, tip_width, UV.y) / pixel;
+	true_half = 0.5 * hair_width * fine * widen * mix(1.0, tip_width, strip_uv.y) / pixel;
 	// A hair under a pixel is drawn a pixel wide and covers it partly (fragment()).
 	drawn_half = max(true_half, 0.5) + expand_pixels;
-	at += across * (UV.x - 0.5) * 2.0 * drawn_half * pixel;
+	at += across * (strip_uv.x - 0.5) * 2.0 * drawn_half * pixel;
 	// A dropped hair: all its vertices on one point, nothing drawn.
 	POSITION = dropped ? vec4(0.0, 0.0, 2.0, 1.0) : PROJECTION_MATRIX * vec4(at, 1.0);
 }
@@ -243,7 +255,7 @@ void fragment() {
 	// Coverage across the strip: 1 inside the hair, fading out over the soft edge. A hair under a pixel is
 	// drawn a pixel wide (plus the edge) and covers only its share of that: summed across the strip, as
 	// much as its true width.
-	float dist = abs(UV.x - 0.5) * 2.0 * drawn_half;
+	float dist = abs(strip_uv.x - 0.5) * 2.0 * drawn_half;
 	float cover = clamp((drawn_half - dist) / expand_pixels, 0.0, 1.0);
 	if (true_half < 0.5) {
 		// Where the hair thins out (the hairline) its hairs are finer, the floor lower: the skin shows through.
@@ -251,7 +263,7 @@ void fragment() {
 		cover *= max(2.0 * true_half / (1.0 + expand_pixels), floor_cover);
 	}
 	// The tip fades, and so does the end of a cut hair.
-	float tip = tip_fade > 0.0 ? 1.0 - smoothstep(1.0 - tip_fade, 1.0, UV.y) : 1.0;
+	float tip = tip_fade > 0.0 ? 1.0 - smoothstep(1.0 - tip_fade, 1.0, strip_uv.y) : 1.0;
 	float cut = length_kept >= 0.999 ? 1.0 : 1.0 - smoothstep(kept - 0.03, kept, COLOR.r);
 	ALPHA = cover * tip * cut;
 	// Even black hair is not black: its hairs catch light, each a little differently.
@@ -264,7 +276,7 @@ void fragment() {
 		ALBEDO = base;
 	} else {
 		// Darker against the head and at the roots, where light does not reach between the hairs.
-		float lit = mix(1.0 - inner_shadow, 1.0, COLOR.b) * mix(1.0 - inner_shadow, 1.05, smoothstep(0.0, 0.5, UV.y));
+		float lit = mix(1.0 - inner_shadow, 1.0, COLOR.b) * mix(1.0 - inner_shadow, 1.05, smoothstep(0.0, 0.5, strip_uv.y));
 		ALBEDO = base * lit;
 	}
 	// Lit as the volume the hair makes, whichever side of a strip is seen.
