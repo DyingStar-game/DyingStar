@@ -152,7 +152,7 @@ func entrance_error(data: PlanetData, site: CavePlacement, cave: Dictionary) -> 
 		var to := points.size() * (batch + 1) / batches
 		out[batch][0] = CaveGround.run(data, func(): return CaveEntrance.roof_out(data, site, points, from, to))
 	assert(_group < 0)
-	_group = WorkerThreadPool.add_group_task(check, batches)
+	_group = PerfTasks.add_group_task("cave:entrance_check", check, batches)
 	while not WorkerThreadPool.is_group_task_completed(_group):
 		await get_tree().process_frame
 	WorkerThreadPool.wait_for_group_task_completion(_group)
@@ -172,7 +172,7 @@ func _run_cpu(job: Callable, data: PlanetData = null) -> Dictionary:
 	assert(_task < 0)
 	_result = [{}]
 	var scoped := job if data == null else func(): return CaveGround.run(data, job)
-	_task = WorkerThreadPool.add_task(func(): _result[0] = scoped.call())
+	_task = PerfTasks.add_task("cave:fit", func(): _result[0] = scoped.call())
 	while not WorkerThreadPool.is_task_completed(_task):
 		await get_tree().process_frame
 	WorkerThreadPool.wait_for_task_completion(_task)

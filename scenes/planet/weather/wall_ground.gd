@@ -70,7 +70,7 @@ func refresh(data: PlanetData, middle: Vector3, across: Vector3, way: Vector3, s
 		return
 	_read_at = now
 	var over := size * MARGIN
-	_task = WorkerThreadPool.add_task(func() -> void:
+	_task = PerfTasks.add_task("weather:wall_ground", func() -> void:
 		var heights := PackedFloat32Array()
 		heights.resize(SIZE.x * SIZE.y)
 		var nside := data.sample_nside_for(NSIDE)

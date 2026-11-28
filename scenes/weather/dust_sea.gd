@@ -216,7 +216,7 @@ func animate(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D, del
 		_refresh_at = -INF
 		renderer.set_dust_param(&"sea_map_on", 0)
 	var colour: Callable = func(d: Vector3) -> Color: return GroundLook.colour_at(data, d, WeatherSky.BLOW_FALLBACK_COLOUR)
-	if _map.update(colour):
+	if _map.update(colour, DustSeaMap.cache_key(data)):
 		renderer.set_dust_param(&"sea_map", _map.texture)
 		renderer.set_dust_param(&"sea_map_on", 1)
 	var to_planet: Basis = planet.global_basis.orthonormalized().inverse()
@@ -496,7 +496,7 @@ func _move_billows(renderer: AtmosphereRenderer, delta: float) -> void:
 func _noises_ready(renderer: AtmosphereRenderer) -> bool:
 	if _noises.is_empty():
 		if _noise_task < 0:
-			_noise_task = WorkerThreadPool.add_task(func() -> void: _noise_layers = noise_layers(), false, "dust sea noise")
+			_noise_task = PerfTasks.add_task("weather:dust_sea_noise", func() -> void: _noise_layers = noise_layers(), false, "dust sea noise")
 			return false
 		if not WorkerThreadPool.is_task_completed(_noise_task):
 			return false

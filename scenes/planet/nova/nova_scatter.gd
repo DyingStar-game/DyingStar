@@ -25,11 +25,14 @@ const CLUMP_SOFT := 0.07
 const ROCK_ALBEDO_MULT := 0.4
 const ROCK_TRIPLANAR_SHARPNESS := 14.0
 const ROCK_SHADER := preload("res://scenes/planet/nova/nova_rock.gdshader")
-## Settings > Debug > scatter rock collisions: the rocks that collide, drawn as boxes (client only).
+## Settings > Debug > scatter rock collisions: the rocks that collide, drawn as their shapes (client only).
 const COLLISION_DEBUG := preload("res://scenes/planet/nova/nova_scatter_collision_debug.gd")
 ## load_mesh's meshes by path, in the game ([mesh or null]); guarded: the scatter's layers are read on a worker.
 static var _meshes_read: Dictionary = {}
 static var _meshes_mutex := Mutex.new()
+## solid_shapes' answers by model file (or mesh id), guarded like _meshes_read: the server lays on workers.
+static var _shapes_made: Dictionary = {}
+static var _shapes_mutex := Mutex.new()
 ## How far an object is drawn, in times its own size: a 2 m stone to 240 m, a 15 m outcrop to 1.8 km. Beyond,
 ## it is a few pixels and only costs. Measured on tarsis_3 without it: 1.2 million objects drawn, 13 fps.
 const VIEW_PER_SIZE := 120.0
@@ -60,6 +63,11 @@ const GROUND_RATIO_RANGE := Vector2(0.2, 4.0)
 ## gravel patch 6 cm thick is long, and nothing anyone bumps into.
 const SOLID_MIN_SIZE_M := 1.0
 const SOLID_MIN_PROUD_M := 0.5
+## Which laid objects cast a shadow: those standing at least this high above the ground at their layer's
+## largest scale (proud_height). Every block of a model is one more draw in each shadow pass; gravel, pebbles
+## and flat rubble cast a shadow no one sees, and with them a drive drew 4 200 draws a frame instead of
+## 2 500 (16 fps instead of 30, 2026-11-28).
+const SHADOW_MIN_PROUD_M := 0.3
 
 
 ## How far a model of bounds [param aabb], scaled by [param scale] and sunk by [param sink] of its height
@@ -163,6 +171,68 @@ static func clump_weight(layer_seed: int, face: int, fx: float, fy: float, cells
 	# share of ground the clumps hold.
 	noise = clampf((noise - 0.5) * 1.8 + 0.5, 0.0, 1.0)
 	return smoothstep(1.0 - share - CLUMP_SOFT, 1.0 - share + CLUMP_SOFT, noise)
+
+
+## The Graphics option a scatter layer's view distance follows (DrawRange): its blocks are drawn, and laid
+## (PlanetTerrain), that much farther or nearer.
+const VIEW_OPTION := "terrain_distance"
+## Every block of a layer (masks of lay_chunk, cell_survivors): at most MAX_BLOCKS² = 64 bits.
+const ALL_BLOCKS := -1
+## Doubles per cell in cell_survivors' answer: [cx, cy, fx, fy, u_mesh, u_yaw, u_scale, u_edge, u_spill_turn,
+## u_spill_far, u_keep].
+const CELL_ROW := 11
+## False: lay_chunk asks the GDScript twin even when the C# one is there (tests compare the two).
+static var native_cells := true
+static var _cells_native: Object = null
+static var _cells_native_tried := false
+static var _cells_native_mutex := Mutex.new()
+
+
+## The cells (cx, cy) of the [param r] × [param r] block at face position ([param x0], [param y0]) that hold
+## an object of the layer — cell_object, then clump_weight when [param clump_cells] > 1 — row by row,
+## CELL_ROW doubles each, within the blocks of [param mask] ([param blocks] × [param blocks] of them, bit
+## bx + by × blocks; ALL_BLOCKS: all). The reference of NovaCellsNative.CellsInBlocks, which returns the same numbers
+## bit for bit.
+static func cell_survivors(layer_seed: int, density: float, face: int, x0: int, y0: int, r: int,
+		clump_cells: int, clump_share: float, blocks: int = 1, mask: int = ALL_BLOCKS) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	for cy in r:
+		@warning_ignore("integer_division")
+		var row_block := (cy * blocks / r) * blocks
+		for cx in r:
+			@warning_ignore("integer_division")
+			var bit := row_block + cx * blocks / r
+			if (mask >> bit) & 1 == 0:
+				continue
+			var ix := x0 + cx
+			var iy := y0 + cy
+			var h := cell_hash(layer_seed, face, ix, iy)
+			if unit(h, 0) >= density:
+				continue
+			var fx := float(ix) + unit(h, 1)
+			var fy := float(iy) + unit(h, 2)
+			var u_edge := unit(h, 6)
+			if clump_cells > 1 and u_edge >= clump_weight(layer_seed, face, fx, fy, clump_cells, clump_share):
+				continue
+			out.append_array([cx, cy, fx, fy, unit(h, 3), unit(h, 4), unit(h, 5), u_edge, unit(h, 7), unit(h, 8),
+					unit(h, 9)])
+	return out
+
+
+## cell_survivors, from the C# twin when it is there (NativeScript: a stale assembly falls back).
+static func _survivors(layer_seed: int, density: float, face: int, x0: int, y0: int, r: int, clump_cells: int,
+		clump_share: float, blocks: int = 1, mask: int = ALL_BLOCKS) -> PackedFloat64Array:
+	if native_cells:
+		_cells_native_mutex.lock()
+		if not _cells_native_tried:
+			_cells_native_tried = true
+			var script := NativeScript.load_usable("res://scenes/planet/native/NovaCellsNative.cs", ["CellsInBlocks"])
+			_cells_native = script.new() if script != null else null
+		var native: Object = _cells_native
+		_cells_native_mutex.unlock()
+		if native != null:
+			return native.CellsInBlocks(layer_seed, density, face, x0, y0, r, clump_cells, clump_share, blocks, mask)
+	return cell_survivors(layer_seed, density, face, x0, y0, r, clump_cells, clump_share, blocks, mask)
 
 
 ## The colour of variant [param id]'s rock as the ground wears it: towards the light tint of the rock
@@ -389,6 +459,7 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "", bare 
 			var heights := PackedFloat32Array()
 			var reaches := PackedFloat32Array()  # how far each model reaches from its middle, along the ground
 			var solid_scales := PackedFloat32Array()  # from which scale each model collides (solid_scale)
+			var shadows := PackedByteArray()  # whether each model casts a shadow (SHADOW_MIN_PROUD_M)
 			var view := 0.0
 			# Dressed in the ground's look: this variant's own copy of each model, so the same model stands
 			# on two corundums in two colours.
@@ -405,6 +476,8 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "", bare 
 				heights.append(maxf(m.get_aabb().size.y, 0.01))
 				reaches.append(maxf(m.get_aabb().size.x, m.get_aabb().size.z) * 0.5)
 				solid_scales.append(solid_scale(m.get_aabb(), float(of.call("sink"))))
+				shadows.append(int(proud_height(m.get_aabb(), float(of.call("scale_max")), float(of.call("sink")))
+						>= SHADOW_MIN_PROUD_M))
 				if not Engine.is_editor_hint():
 					m.set_meta("nova_path", str(p))  # its file, named by the collision debug view's legend
 				view = maxf(view, view_of(m, view_limit))
@@ -439,6 +512,7 @@ static func layer_descs(body: NovaBody, radius: float, default_rock := "", bare 
 				"heights": heights,
 				"reaches": reaches,
 				"solid_scales": solid_scales,
+				"shadows": shadows,
 			})
 	return out
 
@@ -496,16 +570,19 @@ static func _read_mesh(path: String) -> Mesh:
 
 
 ## Lays every layer on one chunk. Pure, thread-safe: returns {[mesh, block of the chunk, the layer's view
-## limit]: PackedFloat32Array of MultiMesh rows (ROW floats each)}.
+## limit, the layer's index in [param descs]]: PackedFloat32Array of MultiMesh rows (ROW floats each)}.
 ## [param grid]: the chunk-local surface positions of its (res+1)² grid, row-major (yi * (res+1) + xi).
 ## [param vid]: the variant id of each grid vertex. [param center]: chunk centre, planet-local.
 ## [param zones]: from zone_context — the variant at an exact direction and the variants the chunk's
 ## export tile can hold. Without it the grid answers, which depends on the LOD (tests only).
 ## [param cancel]: [false] the caller sets to true to stop the laying where it is (an empty answer then).
 ## [param solid_only]: only the objects that collide (the server's colliders), the same rows as the full laying.
+## [param masks]: per layer, the blocks to lay (bit bx + by × blocks, layer_blocks): the client lays the blocks
+## it draws, and more as the camera nears the others; 0 lays nothing of the layer. Empty: every block. A block
+## comes out the same whether laid alone or with the whole chunk.
 static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: PackedVector3Array,
 		vid: PackedInt32Array, center: Vector3, zones: Dictionary = {}, cancel: Array = [],
-		solid_only := false) -> Dictionary:
+		solid_only := false, masks := PackedInt64Array()) -> Dictionary:
 	var out := {}
 	if grid.size() != (res + 1) * (res + 1) or vid.size() != grid.size():
 		return out
@@ -517,8 +594,10 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 	if present.is_empty():
 		for i in vid.size():
 			present[vid[i]] = true
-	for d: Dictionary in descs:
-		if not present.has(d.variant):
+	for layer in descs.size():
+		var d: Dictionary = descs[layer]
+		var mask: int = masks[layer] if layer < masks.size() else ALL_BLOCKS
+		if mask == 0 or not present.has(d.variant):
 			continue
 		var cells := chunk_cells(nside, ipix, d.nside)
 		if cells.is_empty():
@@ -526,93 +605,105 @@ static func lay_chunk(descs: Array, nside: int, ipix: int, res: int, grid: Packe
 		var r: int = cells.r
 		var x0: int = cells.x0
 		var y0: int = cells.y0
-		var blocks := clampi(ceili(r * float(d.cell_side_m) / maxf(float(d.view_m) * 0.5, BLOCK_M)), 1, MAX_BLOCKS)
+		var blocks := layer_blocks(d, nside, ipix)
 		var slot := float(d.get("slot", 0))
 		var solid_from: PackedFloat32Array = d.get("solid_scales", PackedFloat32Array())
 		var model_count := (d.get("meshes", []) as Array).size()
 		if solid_from.size() != model_count:
 			solid_from.resize(model_count)
 			solid_from.fill(INF)
-		for cy in r:
-			if not cancel.is_empty() and cancel[0]:
-				return {}
-			for cx in r:
-				var o := cell_object(d.seed, d.density, face, x0 + cx, y0 + cy)
-				if o.is_empty():
+		if not cancel.is_empty() and cancel[0]:
+			return {}
+		# The cells that hold an object at all (the layer's density, then its clumps: the open ground between
+		# two clumps is empty), in C# when it is there — the hash of every cell was most of the laying.
+		var cell_rows := _survivors(d.seed, d.density, face, x0, y0, r, int(d.clump_cells), float(d.clump_share),
+				blocks, mask)
+		var last_cy := -1
+		for at in range(0, cell_rows.size(), CELL_ROW):
+			var cx := int(cell_rows[at])
+			var cy := int(cell_rows[at + 1])
+			if cy != last_cy:
+				last_cy = cy
+				if not cancel.is_empty() and cancel[0]:
+					return {}
+			var fx := cell_rows[at + 2]
+			var fy := cell_rows[at + 3]
+			var u_mesh := cell_rows[at + 4]
+			var u_scale := cell_rows[at + 6]
+			var u_edge := cell_rows[at + 7]
+			var u_keep := cell_rows[at + 10]
+			# In a solid-only laying, the model and its scale: most cells end here, before the clearance
+			# and the zones are asked.
+			if solid_only and lerpf(d.scale_min, d.scale_max, u_scale) \
+					< solid_from[mini(int(u_mesh * d.meshes.size()), d.meshes.size() - 1)]:
+				continue
+			# Grid coordinates of the object inside this chunk.
+			var gx: float = (fx / float(r) - float(fxy.ix)) * res
+			var gy: float = (fy / float(r) - float(fxy.iy)) * res
+			var xi := clampi(int(gx), 0, res - 1)
+			var yi := clampi(int(gy), 0, res - 1)
+			var tx := gx - xi
+			var ty := gy - yi
+			var i00 := yi * (res + 1) + xi
+			var i10 := i00 + 1
+			var i01 := i00 + res + 1
+			var i11 := i01 + 1
+			# Where: the cell's direction, a pure function of the cell (never the grid, whose vertices
+			# the crack rims slide sideways). How high: the ground the chunk shows, its radial
+			# distance interpolated on the grid. Both in doubles; only the small local result is float32.
+			var up := HEALPix._face_xy_to_vec(face, fx, fy, d.nside)
+			var mi := mini(int(u_mesh * d.meshes.size()), d.meshes.size() - 1)
+			var sc: float = lerpf(d.scale_min, d.scale_max, u_scale)
+			# Too steep: the grid's slope there, first — a few vector operations, where the clearance and the
+			# zone below are the dear part of an object (the same objects come out in any order of the tests).
+			var n := (grid[i10] - grid[i00] + grid[i11] - grid[i01]).cross(
+					grid[i01] - grid[i00] + grid[i11] - grid[i10]).normalized()
+			if n.dot(up) < 0.0:
+				n = -n
+			if n.dot(up) < d.cos_slope:
+				continue
+			# Nothing on a road, under a building or in a village, and fewer and fewer objects toward them.
+			if clearance != null and u_keep >= clearance.share_for(up, float(d.reaches[mi]) * sc, u_keep):
+				continue
+			if variant_at.is_valid():
+				# The zone at a point drawn within the layer's spill of the object: the same answer at
+				# every LOD, and the share of objects kept is the share of their variant around them —
+				# the layer thins out across the frontier as the ground's textures do, instead of
+				# stopping on the line.
+				if int(variant_at.call(_spilled(up, cell_rows[at + 8], cell_rows[at + 9], d.spill))) != d.variant:
 					continue
-				# The model and its scale come first in a solid-only laying: most cells end here, before the
-				# clumps, the clearance and the zones are asked.
-				if solid_only and lerpf(d.scale_min, d.scale_max, o.u_scale) \
-						< solid_from[mini(int(o.u_mesh * d.meshes.size()), d.meshes.size() - 1)]:
+			else:
+				# Soft variant edge: the share of the cell's corners in this variant.
+				var w := (1.0 - tx) * (1.0 - ty) * float(vid[i00] == d.variant) \
+						+ tx * (1.0 - ty) * float(vid[i10] == d.variant) \
+						+ (1.0 - tx) * ty * float(vid[i01] == d.variant) \
+						+ tx * ty * float(vid[i11] == d.variant)
+				if w <= 0.0 or u_edge >= w:
 					continue
-				if d.clump_cells > 1 and float(o.u_edge) >= clump_weight(d.seed, face, float(o.fx), float(o.fy),
-						d.clump_cells, d.clump_share):
-					continue  # on the open ground between two clumps
-				# Grid coordinates of the object inside this chunk.
-				var gx: float = (float(o.fx) / float(r) - float(fxy.ix)) * res
-				var gy: float = (float(o.fy) / float(r) - float(fxy.iy)) * res
-				var xi := clampi(int(gx), 0, res - 1)
-				var yi := clampi(int(gy), 0, res - 1)
-				var tx := gx - xi
-				var ty := gy - yi
-				var i00 := yi * (res + 1) + xi
-				var i10 := i00 + 1
-				var i01 := i00 + res + 1
-				var i11 := i01 + 1
-				# Where: the cell's direction, a pure function of the cell (never the grid, whose vertices
-				# the crack rims slide sideways). How high: the ground the chunk shows, its radial
-				# distance interpolated on the grid. Both in doubles; only the small local result is float32.
-				var up := HEALPix._face_xy_to_vec(face, float(o.fx), float(o.fy), d.nside)
-				var mi := mini(int(o.u_mesh * d.meshes.size()), d.meshes.size() - 1)
-				var sc: float = lerpf(d.scale_min, d.scale_max, o.u_scale)
-				# Nothing on a road, under a building or in a village, and fewer and fewer objects toward them.
-				if clearance != null and float(o.u_keep) >= clearance.share_for(up, float(d.reaches[mi]) * sc, float(o.u_keep)):
-					continue
-				if variant_at.is_valid():
-					# The zone at a point drawn within the layer's spill of the object: the same answer at
-					# every LOD, and the share of objects kept is the share of their variant around them —
-					# the layer thins out across the frontier as the ground's textures do, instead of
-					# stopping on the line.
-					if int(variant_at.call(_spilled(up, o, d.spill))) != d.variant:
-						continue
-				else:
-					# Soft variant edge: the share of the cell's corners in this variant.
-					var w := (1.0 - tx) * (1.0 - ty) * float(vid[i00] == d.variant) \
-							+ tx * (1.0 - ty) * float(vid[i10] == d.variant) \
-							+ (1.0 - tx) * ty * float(vid[i01] == d.variant) \
-							+ tx * ty * float(vid[i11] == d.variant)
-					if w <= 0.0 or o.u_edge >= w:
-						continue
-				# On the triangle the mesh draws there (a cell is two flat triangles split along its
-				# i10 - i01 diagonal), not a smooth blend of the four corners: over a rolling ground the two
-				# differ by the cell's twist — 0.6 m on a 25 m cell of the red corundum's relief, more on
-				# the coarser levels — and the rocks stood in the air or in the ground.
-				var r00 := _radial(center, grid[i00])
-				var r10 := _radial(center, grid[i10])
-				var r01 := _radial(center, grid[i01])
-				var r11 := _radial(center, grid[i11])
-				var rad: float = r00 + tx * (r10 - r00) + ty * (r01 - r00) if tx + ty <= 1.0 \
-						else r11 + (1.0 - tx) * (r01 - r11) + (1.0 - ty) * (r10 - r11)
-				var p := Vector3(float(up.x) * rad - float(center.x), float(up.y) * rad - float(center.y),
-						float(up.z) * rad - float(center.z))
-				var n := (grid[i10] - grid[i00] + grid[i11] - grid[i01]).cross(
-						grid[i01] - grid[i00] + grid[i11] - grid[i10]).normalized()
-				if n.dot(up) < 0.0:
-					n = -n
-				if n.dot(up) < d.cos_slope:
-					continue
-				var axis := up.slerp(n, d.align).normalized()
-				var mesh: Mesh = d.meshes[mi]
-				var basis := _basis_on(axis, o.u_yaw * TAU).scaled(Vector3.ONE * sc)
-				var origin: Vector3 = p - axis * (float(d.sink) * float(d.heights[mi]) * sc)
-				@warning_ignore("integer_division")
-				var key := [mesh, cx * blocks / r + (cy * blocks / r) * blocks, float(d.view_limit)]
-				var rows: PackedFloat32Array = out.get(key, PackedFloat32Array())
-				rows.append_array([basis.x.x, basis.y.x, basis.z.x, origin.x,
-						basis.x.y, basis.y.y, basis.z.y, origin.y,
-						basis.x.z, basis.y.z, basis.z.z, origin.z,
-						origin.x, origin.y, origin.z, slot if sc >= solid_from[mi] else -slot])
-				out[key] = rows
+			# On the triangle the mesh draws there (a cell is two flat triangles split along its
+			# i10 - i01 diagonal), not a smooth blend of the four corners: over a rolling ground the two
+			# differ by the cell's twist — 0.6 m on a 25 m cell of the red corundum's relief, more on
+			# the coarser levels — and the rocks stood in the air or in the ground.
+			var r00 := _radial(center, grid[i00])
+			var r10 := _radial(center, grid[i10])
+			var r01 := _radial(center, grid[i01])
+			var r11 := _radial(center, grid[i11])
+			var rad: float = r00 + tx * (r10 - r00) + ty * (r01 - r00) if tx + ty <= 1.0 \
+					else r11 + (1.0 - tx) * (r01 - r11) + (1.0 - ty) * (r10 - r11)
+			var p := Vector3(float(up.x) * rad - float(center.x), float(up.y) * rad - float(center.y),
+					float(up.z) * rad - float(center.z))
+			var axis := up.slerp(n, d.align).normalized()
+			var mesh: Mesh = d.meshes[mi]
+			var basis := _basis_on(axis, cell_rows[at + 5] * TAU).scaled(Vector3.ONE * sc)
+			var origin: Vector3 = p - axis * (float(d.sink) * float(d.heights[mi]) * sc)
+			@warning_ignore("integer_division")
+			var key := [mesh, cx * blocks / r + (cy * blocks / r) * blocks, float(d.view_limit), layer]
+			var rows: PackedFloat32Array = out.get(key, PackedFloat32Array())
+			rows.append_array([basis.x.x, basis.y.x, basis.z.x, origin.x,
+					basis.x.y, basis.y.y, basis.z.y, origin.y,
+					basis.x.z, basis.y.z, basis.z.z, origin.z,
+					origin.x, origin.y, origin.z, slot if sc >= solid_from[mi] else -slot])
+			out[key] = rows
 	return out
 
 
@@ -622,37 +713,93 @@ static func row_transform(rows: PackedFloat32Array, at: int) -> Transform3D:
 			Vector3(rows[at + 2], rows[at + 6], rows[at + 10])), Vector3(rows[at + 3], rows[at + 7], rows[at + 11]))
 
 
-## The box that stands for a colliding object of model bounds [param aabb] placed by [param xform] (a row of
-## lay_chunk, uniformly scaled): [its transform, unscaled, at the box's middle; its size].
-static func solid_box(aabb: AABB, xform: Transform3D) -> Array:
-	var sc := xform.basis.x.length()
-	return [Transform3D(xform.basis.orthonormalized(), xform * aabb.get_center()), aabb.size * sc]
+## What a colliding object of [param mesh] collides with: [[shape, its transform in the model's frame], …].
+## The shapes its scene carries when it has some — CollisionShape3D nodes, from the import's Physics (Advanced
+## Import Settings: the mesh node, Physics > Generate) or from Blender objects named "-colonly" / "-convcolonly"
+## — else one convex hull of the model, simplified (Mesh.create_convex_shape, at most 32 points). The box of
+## the model's bounds it replaces was mostly air: a terrace fills a fifth of its box above the ground, a slab
+## an eighth, and a truck ran into the empty corners (2026-11-28). Made once per model file (a hull is a
+## convex decomposition, 20 to 150 ms) and shared by every rock of it; thread-safe. The bounds' box when the
+## model has no geometry to hull.
+static func solid_shapes(mesh: Mesh) -> Array:
+	var path := str(mesh.get_meta("nova_path", ""))
+	var id: Variant = path if path != "" else mesh.get_instance_id()
+	_shapes_mutex.lock()
+	var known: Variant = _shapes_made.get(id)
+	_shapes_mutex.unlock()
+	if known != null:
+		return known
+	var made := scene_shapes(path) if path != "" else []
+	if made.is_empty():
+		var hull := mesh.create_convex_shape(true, true) as ConvexPolygonShape3D
+		if hull != null and hull.points.size() >= 4:
+			made = [[hull, Transform3D.IDENTITY]]
+		else:
+			var box := BoxShape3D.new()
+			box.size = mesh.get_aabb().size
+			made = [[box, Transform3D(Basis.IDENTITY, mesh.get_aabb().get_center())]]
+	_shapes_mutex.lock()
+	if _shapes_made.has(id):
+		made = _shapes_made[id]
+	else:
+		_shapes_made[id] = made
+	_shapes_mutex.unlock()
+	return made
 
 
-## The boxes of every colliding object of a lay_chunk result, in the chunk's frame: [[transform, size, slot,
-## model], …] (solid_box, the slot of its layer, its model).
-static func solid_boxes(laid: Dictionary) -> Array:
+## The collision shapes the scene at [param path] carries (CollisionShape3D nodes, enabled, with a shape), each
+## with its transform from the scene's root — the frame its model is read in (load_mesh). [] for a mesh file
+## or a scene without any.
+static func scene_shapes(path: String) -> Array:
+	if path == "" or not ResourceLoader.exists(path):
+		return []
+	var scene := load(path) as PackedScene
+	if scene == null:
+		return []
+	var root := scene.instantiate()
 	var out: Array = []
-	for key: Array in laid:
-		var mesh: Mesh = key[0]
-		var aabb := mesh.get_aabb()
-		var rows: PackedFloat32Array = laid[key]
-		for at in range(0, rows.size(), ROW):
-			if rows[at + 15] > 0.0:
-				var box := solid_box(aabb, row_transform(rows, at))
-				box.append_array([int(rows[at + 15]), mesh])
-				out.append(box)
+	for node in root.find_children("*", "CollisionShape3D", true, false):
+		var cs := node as CollisionShape3D
+		if cs.disabled or cs.shape == null:
+			continue
+		var xform := cs.transform
+		var up := cs.get_parent() as Node3D
+		while up != null and up != root:
+			xform = up.transform * xform
+			up = up.get_parent() as Node3D
+		out.append([cs.shape, xform])
+	root.free()
 	return out
 
 
-## The direction object [param o] of a cell at [param up] asks its variant at: a point of the disc of
+## The colliding objects of a lay_chunk result, in the chunk's frame: one entry a shape of each
+## ([method solid_shapes]): [[transform (the object's, scaled like it, times the shape's), shape, slot of its
+## layer, model], …].
+static func solid_parts(laid: Dictionary) -> Array:
+	var out: Array = []
+	for key: Array in laid:
+		var mesh: Mesh = key[0]
+		var rows: PackedFloat32Array = laid[key]
+		var shapes: Array = []
+		for at in range(0, rows.size(), ROW):
+			if rows[at + 15] <= 0.0:
+				continue
+			if shapes.is_empty():
+				shapes = solid_shapes(mesh)
+			var xform := row_transform(rows, at)
+			for part: Array in shapes:
+				out.append([xform * (part[1] as Transform3D), part[0], int(rows[at + 15]), mesh])
+	return out
+
+
+## The direction a cell's object at [param up] asks its variant at: a point of the disc of
 ## [param spill] (an angle) around it, drawn evenly from the cell's hash.
-static func _spilled(up: Vector3, o: Dictionary, spill: float) -> Vector3:
+static func _spilled(up: Vector3, u_spill_turn: float, u_spill_far: float, spill: float) -> Vector3:
 	if spill <= 0.0:
 		return up
 	var t1 := up.cross(Vector3.UP if absf(up.y) < 0.9 else Vector3.RIGHT).normalized()
-	var turn := float(o.u_spill_turn) * TAU
-	return (up + (t1 * cos(turn) + up.cross(t1) * sin(turn)) * (spill * sqrt(float(o.u_spill_far)))).normalized()
+	var turn := u_spill_turn * TAU
+	return (up + (t1 * cos(turn) + up.cross(t1) * sin(turn)) * (spill * sqrt(u_spill_far))).normalized()
 
 
 ## Distance from the planet centre of a chunk-local vertex, in doubles (a float32 sum would be 0.5 m off).
@@ -673,7 +820,10 @@ static func _basis_on(up: Vector3, yaw: float) -> Basis:
 
 ## The MultiMesh node of one entry of lay_chunk's result (one model on one block of the chunk), to add under
 ## the chunk's MeshInstance3D. [param center]: the chunk's centre in the planet's frame, for the rocks' fade in.
-static func build_node(key: Array, rows: PackedFloat32Array, layers: int, center := Vector3.ZERO) -> MultiMeshInstance3D:
+## Drawn as far as Graphics > Terrain distance says (DrawRange, VIEW_OPTION): [param mult] is its multiplier
+## now, for the fade in, which set_view_mult moves when the option does.
+static func build_node(key: Array, rows: PackedFloat32Array, layers: int, center := Vector3.ZERO,
+		mult := 1.0, shadow := true) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
@@ -685,12 +835,17 @@ static func build_node(key: Array, rows: PackedFloat32Array, layers: int, center
 	mmi.layers = layers
 	# Drawn while it is worth it, measured from the block's middle.
 	var view := view_of(key[0], key[2])
-	mmi.visibility_range_end = view + mm.get_aabb().size.length() * 0.5
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	if Engine.is_editor_hint():
+		mmi.visibility_range_end = view + mm.get_aabb().size.length() * 0.5
+	else:
+		DrawRange.track(mmi, VIEW_OPTION, 0.0, view + mm.get_aabb().size.length() * 0.5)
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadow \
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var parts := fade_parts(center)
 	mmi.set_instance_shader_parameter("fade_cell", parts[0])
 	mmi.set_instance_shader_parameter("fade_rest", parts[1])
-	mmi.set_instance_shader_parameter("fade_end_m", view)
+	mmi.set_meta(&"nova_view", view)
+	set_view_mult(mmi, mult)
 	if not Engine.is_editor_hint():
 		COLLISION_DEBUG.on_block(mmi, rows)
 	if (key[0] as Mesh).has_meta(BASE_TINT_META):
@@ -721,12 +876,66 @@ static func ground_ratio(here: Color, base: Color) -> Vector3:
 			clampf(here.b / maxf(base.b, 1e-4), GROUND_RATIO_RANGE.x, GROUND_RATIO_RANGE.y))
 
 
-## True when the block of an entry of lay_chunk's result is worth a node for a camera at [param cam] (the
-## chunk's frame): always for a layer with no limit of its own (large rocks, seen from afar), else within
-## the layer's limit × [param keep] of the block.
-static func block_near(key: Array, rows: PackedFloat32Array, cam: Vector3, keep: float) -> bool:
-	var limit := float(key[2])
-	return limit <= 0.0 or cam.distance_to(block_at(rows)) < limit * keep + BLOCK_M
+## How many blocks a side layer [param d] cuts chunk ([param nside], [param ipix]) into (lay_chunk's keys and
+## masks): about half its view distance each, at least BLOCK_M, at most MAX_BLOCKS a side.
+static func layer_blocks(d: Dictionary, nside: int, ipix: int) -> int:
+	var cells := chunk_cells(nside, ipix, int(d.nside))
+	if cells.is_empty():
+		return 1
+	return clampi(ceili(int(cells.r) * float(d.cell_side_m) / maxf(float(d.view_m) * 0.5, BLOCK_M)), 1, MAX_BLOCKS)
+
+
+## The box (chunk frame) of each of the [param blocks] × [param blocks] blocks of a chunk: its
+## [param grid]'s vertices ((res+1)², row-major) over the block's span, index bx + by × blocks. What a block
+## of objects can be measured by before it is laid: the objects stand on that ground.
+static func block_boxes(grid: PackedVector3Array, res: int, blocks: int) -> Array[AABB]:
+	var out: Array[AABB] = []
+	for by in blocks:
+		for bx in blocks:
+			@warning_ignore("integer_division")
+			var x_from := bx * res / blocks
+			@warning_ignore("integer_division")
+			var y_from := by * res / blocks
+			var x_to := ceili(float((bx + 1) * res) / blocks)
+			var y_to := ceili(float((by + 1) * res) / blocks)
+			var box := AABB(grid[y_from * (res + 1) + x_from], Vector3.ZERO)
+			for yi in range(y_from, y_to + 1):
+				for xi in range(x_from, x_to + 1):
+					box = box.expand(grid[yi * (res + 1) + xi])
+			out.append(box)
+	return out
+
+
+## The middle of the block of [param mask] (bits of [param boxes], block_boxes) nearest [param cam] (chunk frame).
+static func nearest_block(boxes: Array[AABB], mask: int, cam: Vector3) -> Vector3:
+	var best := Vector3.ZERO
+	var best_d := INF
+	for b in boxes.size():
+		if (mask >> b) & 1 == 0:
+			continue
+		var box: AABB = boxes[b]
+		var d := cam.distance_to(cam.clamp(box.position, box.end))
+		if d < best_d:
+			best_d = d
+			best = box.get_center()
+	return best
+
+
+## The blocks among [param boxes] (block_boxes) with ground within [param reach] metres of [param cam] (chunk
+## frame), as a mask (bit = index).
+static func blocks_within(boxes: Array[AABB], cam: Vector3, reach: float) -> int:
+	var mask := 0
+	for b in boxes.size():
+		var box: AABB = boxes[b]
+		if cam.distance_to(cam.clamp(box.position, box.end)) <= reach:
+			mask |= 1 << b
+	return mask
+
+
+## The fade in of block node [param mmi] (build_node) for the view distance option's multiplier [param mult]:
+## the rocks grow in over the same distance their node is drawn to.
+static func set_view_mult(mmi: GeometryInstance3D, mult: float) -> void:
+	mmi.set_instance_shader_parameter("fade_end_m", float(mmi.get_meta(&"nova_view", 0.0)) * mult)
 
 
 ## [param at] (planet frame) as [whole cells of FADE_CELL_M, the rest]: see FADE_CELL_M.
@@ -734,8 +943,3 @@ static func fade_parts(at: Vector3) -> Array[Vector3]:
 	var cell := (at / FADE_CELL_M).floor() * FADE_CELL_M
 	return [cell, at - cell]
 
-
-## Where an entry of lay_chunk's result stands, in the chunk's frame: its first object (a block is
-## BLOCK_M wide, so any of its objects places it to that).
-static func block_at(rows: PackedFloat32Array) -> Vector3:
-	return Vector3(rows[3], rows[7], rows[11]) if rows.size() >= ROW else Vector3.ZERO

@@ -3964,7 +3964,7 @@ func _grade_submit(road: Dictionary, tiles: Dictionary) -> void:
 		return
 	# [profile, compute time in ms], printed once when the profile is born.
 	var result_ref: Array = [null, 0]
-	var task_id := WorkerThreadPool.add_task(
+	var task_id := PerfTasks.add_task("terrain:grade",
 		func():
 			var t0 := Time.get_ticks_msec()
 			result_ref[0] = GradeProfile.compute(road, grade_height_sampler())
@@ -6288,6 +6288,10 @@ var _pad_mutex: Mutex = Mutex.new()
 ## are only trusted while it still matches. Empty until PlanetTerrain sets it:
 ## nothing persisted is trusted then, and nothing is published.
 var relief_signature: String = ""
+## The whole chunk cache key (relief AND look: rock tints, Nova, the build) hashed, set with it by
+## PlanetTerrain: what a cache of something drawn from this planet's ground is keyed by (DustSeaMap).
+## Empty until then: nothing is read from or written to such a cache.
+var look_signature: String = ""
 
 
 ## The {z, span, talus_m} a building persisted for the pad [param rec] in its
@@ -6597,7 +6601,7 @@ func submit_village_bed(rec_in: Dictionary) -> bool:
 	var pixels := _ensure_pads().pixels_of(rec)
 	if not old.is_empty():
 		pixels.merge(_ensure_pads().pixels_of(old))
-	var task_id := WorkerThreadPool.add_task(func() -> void:
+	var task_id := PerfTasks.add_task("terrain:village_bed", func() -> void:
 		result[0] = _prepare_village_bed(rec, beds, old, pads))
 	_bed_jobs[uuid] = {"task_id": task_id, "result": result, "rec": rec, "pixels": pixels, "again": {}}
 	return true

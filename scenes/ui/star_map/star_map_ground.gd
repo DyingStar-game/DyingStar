@@ -414,7 +414,7 @@ func _pump() -> void:
 		var paint_id: int = StarMapRelief.published_id(key, id)
 		var paint: Dictionary = zones.tile_of(id_nside(paint_id), id_ipix(paint_id)) \
 				if zones != null else {}
-		var task: int = WorkerThreadPool.add_task(func() -> void:
+		var task: int = PerfTasks.add_task("starmap:ground", func() -> void:
 			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint, reader, true))
 		_in_flight[id] = {"task": task, "slot": slot}
 

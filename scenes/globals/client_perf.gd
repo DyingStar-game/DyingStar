@@ -52,6 +52,12 @@ extends Node
 ##   [CPerf*] a class census of the scene tree: not "48213 nodes" but which 48213.
 ##   [CPerf!] one line per frame over HITCH_MS, capped per window, with what ran in that frame.
 ##   [CPerf!!] a marker whenever a window drops under LOW_FPS, which also schedules the deep census.
+##   [CPerfP] the physics burst of the window cut in four (steps, _physics_process scripts, the physics_frame
+##            signal + 3D mouse picking, the engine: sync, collision callbacks, timers, Jolt) and its scripts.
+##   [CPerfT] CPU per thread group (Linux): main, WorkerThread, .NET, tokio… — who burns the other cores.
+##   [CPerfW] what the WorkerThreadPool tasks were, by site (PerfTasks): the names behind [CPerfT].
+##   [CPerfG] GPU per render pass and per viewport — only with `--gpu-profile` on the command line, the
+##            one switch that makes the renderer capture its timestamps (not reachable from a script).
 ##   [CPerf=] a one-paragraph session summary at exit.
 ##
 ## Client only. `dedicated_server` has its own richer [Perf] line in server.gd.
@@ -293,6 +299,57 @@ var _band_max: Dictionary = {}
 ## each node is given its band the frame after it enters (_band_new).
 var _band_frame: Dictionary = {}
 var _band_new: Array[Node] = []
+## Right after this autoload's own _process: from the frame's start to here is what ClientPerf itself cost
+## (census slices, VramCensus steps, the heartbeat's prints) — `cperf` in the bands, no longer `unbanded`.
+var _band_self_probe: Node = null
+var _band_self_usec: int = 0
+## After the last band: from here to the -1 probe are the game's nodes at a small negative priority, which
+## used to be counted in the last band's time. With the self probe's span to the first band, `prio-`.
+var _band_end_probe: Node = null
+var _band_end_usec: int = 0
+## The previous frame's start, for the self band read a frame late like every other band.
+var _prev_frame_start_usec: int = 0
+
+## The physics burst, step by step (see _on_physics_frame). Per frame, then summed per window.
+## In one step, in the 4.7 order (main.cpp iteration, scene_tree.cpp physics_process): PhysicsServer sync and
+## flush_queries (body/area callbacks), then `physics_frame` (its subscribers, then 3D mouse picking: physics
+## raycasts), then every _physics_process, then message queue, timers, tweens, transform flush, navigation,
+## and the Jolt step. The last step's Jolt is after the last tail: it is in `pf=`, added to `engine`.
+var _phys_head_probe: Node = null
+var _pfs_usec: int = 0
+var _phead_usec: int = 0
+var _pf_steps: int = 0
+var _pf_engine_usec: int = 0
+var _pf_idle_usec: int = 0
+var _pf_sig_usec: int = 0
+var _pf_scripts_usec: int = 0
+var _pw_steps: int = 0
+var _pw_engine_usec: int = 0
+var _pw_idle_usec: int = 0
+var _pw_sig_usec: int = 0
+var _pw_scripts_usec: int = 0
+## Physics bands: the _process bands' trick on process_physics_priority, summed over the frame's steps.
+var _pband_scripts: Array[String] = []
+var _pband_t: PackedInt64Array = PackedInt64Array()
+var _pband_end_probe: Node = null
+var _pband_end_usec: int = 0
+var _pband_rest_usec: int = 0
+var _pband_pos_usec: int = 0
+var _pband_frame: Dictionary = {}
+var _pband_max: Dictionary = {}
+var _pband_sum: Dictionary = {}
+
+## CPU ticks per thread id at the last [CPerfT], to turn /proc's totals into a window's share.
+var _thread_prev: Dictionary = {}
+
+## GPU passes ([CPerfG]): name -> ms summed over the frames read this window, and how many frames.
+var _gpu_sum: Dictionary = {}
+var _gpu_frames: int = 0
+var _gpu_last_frame: int = -1
+
+## The local player's place at the last heartbeat, in its planet's frame, to say whether it moved.
+var _speed_ref: Node3D = null
+var _speed_prev: Vector3 = Vector3.ZERO
 ## Area ablation (debug_no_area_monitoring): how many Area3D this session has silenced, and how many
 ## are left monitoring. An Area3D costs a broadphase query on EVERY physics step whether or not
 ## anything moved — which is the shape of cost measured here (53 ms/tick with act=0 pairs=0).
@@ -479,13 +536,25 @@ func _ready() -> void:
 	_tail.phys_tick = _phys_tail_tick
 	_tail.process_physics_priority = 1_000_000
 	add_child(_tail)
+	# The other end of each physics step's scripts: the first _physics_process of the step.
+	_phys_head_probe = _phys_probe(-1_000_000, _phys_head_tick)
+	# First subscriber (an autoload's _ready): its stamp is the start of the signal, before the game's own
+	# handlers and the mouse picking, which then fall in `sig+pick`.
+	get_tree().physics_frame.connect(_on_physics_frame)
+	PerfTasks.on = true
+	PerfTasks.take_window(Time.get_ticks_usec())
 	_bands_on = ClientConfig.get_bool("debug_perf_by_script", true)
 	if _bands_on:
+		_band_self_probe = _band_probe(-999_999, func() -> void: _band_self_usec = Time.get_ticks_usec())
+		_band_end_probe = _band_probe(_BAND_BASE, func() -> void: _band_end_usec = Time.get_ticks_usec())
 		_band_rest_probe = _band_probe(-1, _band_rest_tick)
 		_band_pos_probe = _band_probe(1, _band_pos_tick)
+		_pband_end_probe = _phys_probe(_BAND_BASE, func() -> void: _pband_end_usec = Time.get_ticks_usec())
+		_phys_probe(-1, func() -> void: _pband_rest_usec = Time.get_ticks_usec())
+		_phys_probe(1, func() -> void: _pband_pos_usec = Time.get_ticks_usec())
 		get_tree().node_added.connect(_on_node_added_band)
-		print("[CPerf] !! debug_perf_by_script=true — _process order among priority-0 nodes is"
-			+ " regrouped by script so each script's _process cost can be timed ([CPerf%] line).")
+		print("[CPerf] !! debug_perf_by_script=true — _process and _physics_process order among priority-0"
+			+ " nodes is regrouped by script so each script's cost can be timed ([CPerf%] / [CPerfP] lines).")
 	# Connected from an autoload's _ready, so this handler runs near the FRONT of the signal's
 	# subscriber list: `tf=` then contains the game's own `process_frame` work rather than hiding it.
 	get_tree().process_frame.connect(_on_tree_process_frame)
@@ -715,6 +784,7 @@ func _process(_delta: float) -> void:
 	var prev: int = _last_frame_usec
 	_last_frame_usec = now
 	# Start of THIS frame's callbacks, for the tail probe at the other end of them.
+	_prev_frame_start_usec = _frame_start_usec
 	_frame_start_usec = now
 	if prev == 0:
 		return
@@ -774,6 +844,28 @@ func _process(_delta: float) -> void:
 	_tf_max = maxf(_tf_max, tf_ms)
 	_mq_max = maxf(_mq_max, mq_ms)
 	_xf_max = maxf(_xf_max, xf_ms)
+	# The physics burst just gone, step by step. The last step's Jolt sits in `pf=` (after its tail).
+	var psteps: int = _pf_steps
+	var pscripts_ms: float = float(_pf_scripts_usec) / 1000.0
+	var psig_ms: float = float(_pf_sig_usec) / 1000.0
+	var pengine_ms: float = float(_pf_engine_usec) / 1000.0 + (pf_ms if psteps > 0 else 0.0)
+	var pidle_ms: float = float(_pf_idle_usec) / 1000.0
+	_pw_idle_usec += _pf_idle_usec
+	_pf_idle_usec = 0
+	_pw_steps += psteps
+	_pw_scripts_usec += _pf_scripts_usec
+	_pw_sig_usec += _pf_sig_usec
+	_pw_engine_usec += int(pengine_ms * 1000.0)
+	_pf_steps = 0
+	_pf_scripts_usec = 0
+	_pf_sig_usec = 0
+	_pf_engine_usec = 0
+	var pbands: String = bands_line(_pband_frame, 1.0)
+	for name_k: String in _pband_frame:
+		_pband_max[name_k] = maxf(float(_pband_max.get(name_k, 0.0)), float(_pband_frame[name_k]))
+		_pband_sum[name_k] = float(_pband_sum.get(name_k, 0.0)) + float(_pband_frame[name_k])
+	_pband_frame.clear()
+	_gpu_collect()
 	if _bands_on:
 		_band_collect()
 	if ms > _worst_ms:
@@ -802,12 +894,14 @@ func _process(_delta: float) -> void:
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
 				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
 				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f mq=%.0f xf=%.0f) ms"
+				+ " | idle=%.1f steps=%d pscripts=%.1f sig+pick=%.1f pengine=%.1f ms pbands: %s"
 				+ " | nodes=%d%+d | %s | bands: %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms, gap_ms, pre_ms,
 				pf_ms, tf_ms, mq_ms, xf_ms,
+				pidle_ms, psteps, pscripts_ms, psig_ms, pengine_ms, pbands,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				_bands_of_frame(scripts_ms),
@@ -846,6 +940,15 @@ func _process(_delta: float) -> void:
 	_mq_max = 0.0
 	_xf_max = 0.0
 	_band_max.clear()
+	_pband_max.clear()
+	_pband_sum.clear()
+	_pw_steps = 0
+	_pw_scripts_usec = 0
+	_pw_sig_usec = 0
+	_pw_engine_usec = 0
+	_pw_idle_usec = 0
+	_gpu_sum.clear()
+	_gpu_frames = 0
 	_scope_usec.clear()
 	_scope_hits.clear()
 	_samples.clear()
@@ -915,12 +1018,17 @@ func _report() -> void:
 	for k: String in _gauges.keys():
 		parts.append("%s=%s" % [k, str(_gauges[k])])
 	parts.append_array(_world_context())
+	parts.append_array(_motion_context(window))
 	parts.append_array(_host_cpu_context(window))
 	if not parts.is_empty():
 		print("[CPerf+] %s | %s" % [_clock(), " | ".join(parts)])
 
 	_print_frame_signal_subs()
 	_print_bands()
+	_print_physics(window)
+	_print_threads(window)
+	print("[CPerfW] %s workers %s" % [_clock(), PerfTasks.line(PerfTasks.take_window(Time.get_ticks_usec()), window)])
+	_print_gpu()
 	_report_extras(fps)
 	if _vram_due > 0.0 and _uptime() >= _vram_due and _vram == null:
 		_vram_due = _uptime() + _vram_every
@@ -1160,6 +1268,107 @@ func _host_cpu_context(window: float) -> PackedStringArray:
 		out.append("load=%s/%d" % [load.get_line().get_slice(" ", 0), OS.get_processor_count()])
 	return out
 
+## Whether the local player moved this window, and how fast (m/s, in its planet's frame: the planet spins,
+## so a global position would move with it). "It drops when I walk" is a claim about these windows.
+func _motion_context(window: float) -> PackedStringArray:
+	var out: PackedStringArray = []
+	var agent: Node = NetworkOrchestrator.network_agent if agent_valid() else null
+	var me_ref: Variant = agent.player_entity if agent != null and "player_entity" in agent else null
+	var me: Node3D = me_ref as Node3D if is_instance_valid(me_ref) and me_ref is Node3D else null
+	if me == null or not me.is_inside_tree():
+		_speed_ref = null
+		return out
+	var ref: Node3D = me.get_parent() as Node3D
+	var up: Node = me.get_parent()
+	while up != null:
+		if up.is_in_group(PLANET_GROUP) and up is Node3D:
+			ref = up as Node3D
+			break
+		up = up.get_parent()
+	var here: Vector3 = ref.to_local(me.global_position) if ref != null else me.global_position
+	if ref != null and ref == _speed_ref:
+		out.append("speed=%.1fm/s" % (here.distance_to(_speed_prev) / maxf(window, 0.001)))
+	_speed_ref = ref
+	_speed_prev = here
+	return out
+
+
+## The group a thread of this process belongs to, from its /proc name: `main` for the main thread, the
+## name without its number otherwise ("WorkerThread 3" -> "WorkerThread"); a thread the engine did not
+## name carries the executable's name, [param main_comm], and is `unnamed`.
+static func thread_group(comm: String, tid: int, pid: int, main_comm: String) -> String:
+	if tid == pid:
+		return "main"
+	if comm == main_comm:
+		return "unnamed"
+	var name_k: String = comm.strip_edges()
+	while not name_k.is_empty() and (name_k[-1] in "0123456789#"):
+		name_k = name_k.left(-1)
+	return name_k.strip_edges() if not name_k.strip_edges().is_empty() else comm
+
+
+## CPU per thread group over the window, a share of ONE core (Linux, /proc/self/task). `cpu=` on [CPerf+]
+## said 6.5-7.8 cores at the village (2026-11-27) and nothing said whose; this says which threads,
+## [CPerfW] which tasks on the WorkerThread ones.
+func _print_threads(window: float) -> void:
+	if not OS.has_feature("linuxbsd"):
+		return
+	var pid: int = OS.get_process_id()
+	var main_comm: String = ""
+	var rows: Array = []  # [tid, comm, ticks]
+	for tid_s: String in DirAccess.get_directories_at("/proc/self/task"):
+		var f: FileAccess = FileAccess.open("/proc/self/task/%s/stat" % tid_s, FileAccess.READ)
+		if f == null:
+			continue
+		var stat: String = f.get_line()
+		var open_at: int = stat.find("(")
+		var close_at: int = stat.rfind(")")
+		if open_at < 0 or close_at < open_at:
+			continue
+		var fields: PackedStringArray = stat.substr(close_at + 2).split(" ", false)
+		if fields.size() < 13:
+			continue
+		var comm: String = stat.substr(open_at + 1, close_at - open_at - 1)
+		if int(tid_s) == pid:
+			main_comm = comm
+		rows.append([int(tid_s), comm, int(fields[11]) + int(fields[12])])
+	var first: bool = _thread_prev.is_empty()
+	var now_prev: Dictionary = {}
+	var groups: Dictionary = {}
+	var counts: Dictionary = {}
+	var singles: Array = []
+	for row: Array in rows:
+		var tid: int = row[0]
+		var ticks: int = row[2]
+		now_prev[tid] = ticks
+		if first:
+			continue
+		# A thread born in the window counts all it ran: it ran it in the window.
+		var pct: float = float(ticks - int(_thread_prev.get(tid, 0))) / maxf(window, 0.001)
+		var group: String = thread_group(row[1], tid, pid, main_comm)
+		groups[group] = float(groups.get(group, 0.0)) + pct
+		counts[group] = int(counts.get(group, 0)) + 1
+		singles.append([pct, "%s(%d)" % [row[1], tid]])
+	_thread_prev = now_prev
+	if first:
+		return
+	var names: Array = groups.keys()
+	names.sort_custom(func(a: String, b: String) -> bool: return float(groups[a]) > float(groups[b]))
+	var total: float = 0.0
+	var parts: PackedStringArray = []
+	for g: String in names:
+		total += float(groups[g])
+		if float(groups[g]) >= 1.0:
+			parts.append("%s=%.0f%%(%d)" % [g, float(groups[g]), int(counts[g])])
+	singles.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) > float(b[0]))
+	var top: PackedStringArray = []
+	for s: Array in singles.slice(0, 5):
+		if float(s[0]) >= 5.0:
+			top.append("%s=%.0f%%" % [s[1], float(s[0])])
+	print("[CPerfT] %s threads cpu=%.0f%% | %s | busiest: %s" % [
+		_clock(), total, " ".join(parts), " ".join(top) if not top.is_empty() else "none"])
+
+
 func _world_context() -> PackedStringArray:
 	var out: PackedStringArray = []
 	var tree: SceneTree = get_tree()
@@ -1369,6 +1578,153 @@ func _tail_tick() -> void:
 ## physics burst itself, and what SceneTree does before it calls a single _process.
 func _phys_tail_tick() -> void:
 	_phys_tail_usec = Time.get_ticks_usec()
+	_pf_steps += 1
+	if _phead_usec > 0:
+		_pf_scripts_usec += _phys_tail_usec - _phead_usec
+	if _bands_on:
+		_pband_collect_step()
+
+
+## `physics_frame`, first subscriber. From the previous step's tail to here is the engine's part: that step's
+## flushes, timers, navigation and Jolt step, then this step's sync and collision callbacks. For a frame's
+## first step the span starts at the last draw and holds what is not physics at all — the frame cap's sleep,
+## the OS events, the input callbacks — so it is `idle`, not `engine` (with that step's sync, small).
+func _on_physics_frame() -> void:
+	var now: int = Time.get_ticks_usec()
+	# The frame's end: the draw, or the last _process where nothing draws (headless emits no post_draw).
+	var frame_end: int = maxi(_postdraw_usec, _tail_usec)
+	if _phys_tail_usec > frame_end:
+		_pf_engine_usec += now - _phys_tail_usec
+	elif frame_end > 0 and now > frame_end:
+		_pf_idle_usec += now - frame_end
+	_pfs_usec = now
+
+
+## First _physics_process of the step: the signal's other subscribers and the 3D picking lie before it.
+func _phys_head_tick() -> void:
+	_phead_usec = Time.get_ticks_usec()
+	if _pfs_usec > 0 and _phead_usec > _pfs_usec:
+		_pf_sig_usec += _phead_usec - _pfs_usec
+
+
+## A probe on the physics side only, at physics priority [param priority].
+func _phys_probe(priority: int, tick: Callable) -> Node:
+	var probe: _TailProbe = _TailProbe.new()
+	probe.name = "CPerfPhys%d" % priority
+	probe.phys_tick = tick
+	probe.process_physics_priority = priority
+	add_child(probe)
+	probe.set_process(false)
+	return probe
+
+
+## One step's physics bands, added to the frame's (_pband_frame, ms). Same layout as _band_collect:
+## band k ends where band k+1 starts, the last at the end probe; `prio-` is head -> first band plus end ->
+## -1 probe; `rest0`, `prio+` as there.
+func _pband_collect_step() -> void:
+	var n: int = _pband_scripts.size()
+	var add := func(key: String, t0: int, t1: int) -> void:
+		if t0 > 0 and t1 >= t0:
+			_pband_frame[key] = float(_pband_frame.get(key, 0.0)) + float(t1 - t0) / 1000.0
+	for k: int in n:
+		add.call(_pband_scripts[k], _pband_t[k], _pband_t[k + 1] if k + 1 < n else _pband_end_usec)
+	var first: int = _pband_t[0] if n > 0 else _pband_end_usec
+	var neg: float = 0.0
+	if _phead_usec > 0 and first >= _phead_usec:
+		neg += float(first - _phead_usec) / 1000.0
+	if _pband_end_usec > 0 and _pband_rest_usec >= _pband_end_usec:
+		neg += float(_pband_rest_usec - _pband_end_usec) / 1000.0
+	if neg > 0.0:
+		_pband_frame["prio-"] = float(_pband_frame.get("prio-", 0.0)) + neg
+	add.call("rest0", _pband_rest_usec, _pband_pos_usec)
+	add.call("prio+", _pband_pos_usec, _phys_tail_usec)
+
+
+## The GPU time of the renderer's passes in one captured frame, from its timestamps ([param names], their
+## GPU times in ns): pass name -> ms, the time from a stamp to the next put to the first one's name, as the
+## engine's own GPU PROFILE does ("> " / "< " stamps are markers, not passes). Each viewport's span from
+## "> Render Viewport i" to "< Render Viewport i" as "viewport i", and the whole frame as "total". Pure.
+static func gpu_passes(names: PackedStringArray, times_ns: PackedInt64Array) -> Dictionary:
+	var out: Dictionary = {}
+	var n: int = mini(names.size(), times_ns.size())
+	if n < 2:
+		return out
+	var opened: Dictionary = {}
+	for i: int in n:
+		var stamp: String = names[i]
+		if stamp.begins_with("> Render Viewport "):
+			opened[stamp.trim_prefix("> Render Viewport ")] = times_ns[i]
+		elif stamp.begins_with("< Render Viewport "):
+			var vp: String = stamp.trim_prefix("< Render Viewport ")
+			if opened.has(vp):
+				var key: String = "viewport " + vp
+				out[key] = float(out.get(key, 0.0)) + float(times_ns[i] - int(opened[vp])) / 1_000_000.0
+		if i + 1 < n and not stamp.begins_with(">") and not stamp.begins_with("<"):
+			out[stamp] = float(out.get(stamp, 0.0)) + float(times_ns[i + 1] - times_ns[i]) / 1_000_000.0
+	out["total"] = float(times_ns[n - 1] - times_ns[0]) / 1_000_000.0
+	return out
+
+
+## Reads the renderer's captured timestamps once per new frame (only there with --gpu-profile).
+func _gpu_collect() -> void:
+	var rd: RenderingDevice = RenderingServer.get_rendering_device()
+	if rd == null:
+		return
+	var n: int = rd.get_captured_timestamps_count()
+	if n < 2:
+		return
+	var frame: int = rd.get_captured_timestamps_frame()
+	if frame == _gpu_last_frame:
+		return
+	if _gpu_last_frame < 0:
+		# The engine eats its own options: --gpu-profile is not in get_cmdline_args, the timestamps say it.
+		print("[CPerf] !! --gpu-profile — the renderer captures its pass timestamps ([CPerfG]); the engine"
+			+ " also prints its own GPU PROFILE block every second.")
+	_gpu_last_frame = frame
+	var names := PackedStringArray()
+	var times := PackedInt64Array()
+	for i: int in n:
+		names.append(rd.get_captured_timestamp_name(i))
+		times.append(rd.get_captured_timestamp_gpu_time(i))
+	var passes: Dictionary = gpu_passes(names, times)
+	for k: String in passes:
+		_gpu_sum[k] = float(_gpu_sum.get(k, 0.0)) + float(passes[k])
+	_gpu_frames += 1
+
+
+## GPU per pass and per viewport, mean ms a frame over the window ([CPerfG]).
+func _print_gpu() -> void:
+	if _gpu_frames == 0:
+		return
+	var mean: Dictionary = {}
+	var viewports: Dictionary = {}
+	for k: String in _gpu_sum:
+		var v: float = float(_gpu_sum[k]) / float(_gpu_frames)
+		if k.begins_with("viewport "):
+			viewports[k.trim_prefix("viewport ")] = v
+		elif k != "total":
+			mean[k] = v
+	print("[CPerfG] %s gpu total=%.1f ms/frame over %d frames | passes: %s | viewports (%d): %s" % [
+		_clock(), float(_gpu_sum.get("total", 0.0)) / float(_gpu_frames), _gpu_frames,
+		bands_line(mean, 0.1), viewports.size(), bands_line(viewports, 0.1)])
+
+
+## The physics burst of the window ([CPerfP]): steps per frame, then ms/s of each part, then the scripts
+## by total over the window and by worst frame. `sig+pick` is the physics_frame signal's other subscribers
+## and the mouse picking (physics raycasts); `engine` is sync, collision callbacks, flushes, timers,
+## navigation and the Jolt steps; `idle` (not physics) the frame cap's sleep, OS events and input.
+func _print_physics(window: float) -> void:
+	var frames: int = maxi(_frames, 1)
+	var w: float = maxf(window, 0.001)
+	var total: Dictionary = {}
+	for k: String in _pband_sum:
+		total[k] = float(_pband_sum[k]) / w
+	print(("[CPerfP] %s steps=%d (%.2f/frame) | scripts=%.1f sig+pick=%.1f engine=%.1f idle=%.1f ms/s"
+			+ " | by script ms/s: %s | worst frame: %s") % [
+		_clock(), _pw_steps, float(_pw_steps) / float(frames),
+		float(_pw_scripts_usec) / 1000.0 / w, float(_pw_sig_usec) / 1000.0 / w, float(_pw_engine_usec) / 1000.0 / w,
+		float(_pw_idle_usec) / 1000.0 / w,
+		bands_line(total, 0.5), bands_line(_pband_max, 1.0)])
 
 
 ## SceneTree::process(), after the multiplayer poll and before the message queue, the transform
@@ -1436,13 +1792,21 @@ func _print_frame_signal_subs() -> void:
 ## Give [param node] the band of its script (or of its class, for the engine's own internal process),
 ## if it processes at the default priority. A viewport keeps its place: it is not ours to order.
 func _band_node(node: Node) -> void:
-	if not _bands_on or node.process_priority != 0 or node == self or node is Viewport:
+	# Our own probes keep their places (a _process probe sits at physics priority 0, and the other way round).
+	if not _bands_on or node == self or node is Viewport or node.get_parent() == self:
 		return
-	if node.is_processing():
-		var scr: Script = node.get_script()
-		node.process_priority = _band_priority(scr.resource_path.get_file() if scr != null else "<no script>") + 1
-	elif node.is_processing_internal():
-		node.process_priority = _band_priority("int:" + node.get_class()) + 1
+	var scr: Script = node.get_script()
+	var sname: String = scr.resource_path.get_file() if scr != null else "<no script>"
+	if node.process_priority == 0:
+		if node.is_processing():
+			node.process_priority = _band_priority(sname) + 1
+		elif node.is_processing_internal():
+			node.process_priority = _band_priority("int:" + node.get_class()) + 1
+	if node.process_physics_priority == 0:
+		if node.is_physics_processing():
+			node.process_physics_priority = _pband_priority(sname) + 1
+		elif node.is_physics_processing_internal():
+			node.process_physics_priority = _pband_priority("int:" + node.get_class()) + 1
 
 
 func _on_node_added_band(node: Node) -> void:
@@ -1457,6 +1821,20 @@ func _band_priority(script_name: String) -> int:
 		_band_scripts.append(script_name)
 		_band_t.append(0)
 		_band_probes.append(_band_probe(_BAND_BASE + k * _BAND_STEP, _band_tick.bind(k)))
+		# The end probe follows the last band, so the nodes between it and -1 are not that band's.
+		_band_end_probe.process_priority = _BAND_BASE + (k + 1) * _BAND_STEP
+	return _BAND_BASE + k * _BAND_STEP
+
+
+## The physics band for a script, created on first sight (see _band_priority).
+func _pband_priority(script_name: String) -> int:
+	var k: int = _pband_scripts.find(script_name)
+	if k < 0:
+		k = _pband_scripts.size()
+		_pband_scripts.append(script_name)
+		_pband_t.append(0)
+		_phys_probe(_BAND_BASE + k * _BAND_STEP, func() -> void: _pband_t[k] = Time.get_ticks_usec())
+		_pband_end_probe.process_physics_priority = _BAND_BASE + (k + 1) * _BAND_STEP
 	return _BAND_BASE + k * _BAND_STEP
 
 
@@ -1466,6 +1844,7 @@ func _band_probe(priority: int, tick: Callable) -> Node:
 	probe.tick = tick
 	probe.process_priority = priority
 	add_child(probe)
+	probe.set_physics_process(false)
 	return probe
 
 
@@ -1489,9 +1868,20 @@ func _band_collect() -> void:
 	_band_frame.clear()
 	for k: int in n:
 		var t0: int = _band_t[k]
-		var t1: int = _band_t[k + 1] if k + 1 < n else _band_rest_usec
+		var t1: int = _band_t[k + 1] if k + 1 < n else _band_end_usec
 		if t0 > 0 and t1 >= t0:
 			_band_frame[_band_scripts[k]] = float(t1 - t0) / 1000.0
+	# ClientPerf's own _process (the frame's first), then the game's nodes at a negative priority.
+	if _prev_frame_start_usec > 0 and _band_self_usec >= _prev_frame_start_usec:
+		_band_frame["cperf"] = float(_band_self_usec - _prev_frame_start_usec) / 1000.0
+	var first: int = _band_t[0] if n > 0 else _band_end_usec
+	var neg: float = 0.0
+	if _band_self_usec > 0 and first >= _band_self_usec:
+		neg += float(first - _band_self_usec) / 1000.0
+	if _band_end_usec > 0 and _band_rest_usec >= _band_end_usec:
+		neg += float(_band_rest_usec - _band_end_usec) / 1000.0
+	if neg > 0.0:
+		_band_frame["prio-"] = neg
 	if _band_rest_usec > 0 and _band_pos_usec >= _band_rest_usec:
 		_band_frame["rest0"] = float(_band_pos_usec - _band_rest_usec) / 1000.0
 	if _band_pos_usec > 0 and _tail_usec >= _band_pos_usec:

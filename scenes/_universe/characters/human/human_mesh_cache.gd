@@ -102,7 +102,7 @@ static func poll() -> void:
 			continue
 		var holder: Array = []
 		var template: Array[Transform3D] = _bases()
-		var id: int = WorkerThreadPool.add_task(func() -> void: holder.append(HumanBuilder.build(order, template)),
+		var id: int = PerfTasks.add_task("human:build", func() -> void: holder.append(HumanBuilder.build(order, template)),
 				false, "HumanBuilder")
 		_running[key] = [id, holder]
 
