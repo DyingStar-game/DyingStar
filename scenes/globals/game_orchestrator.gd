@@ -35,6 +35,9 @@ const VOICE_NATIVE_LIBRARY := "livekit_ffi.dll"
 ## be resolving the server's name when Godot unloads it at exit.
 const NETWORK_NATIVE_LIBRARY := "ds_godot_net.windows.x86_64.dll"
 const NATIVE_LIBRARY_PIN_SCRIPT := "res://tools/native/NativeLibraryPin.cs"
+## CLIENT: holds the physics catch-up low while the player arrives (loaded by path: an autoload names no
+## gameplay class).
+const ARRIVAL_PHYSICS_SCRIPT := "res://scenes/globals/arrival_physics.gd"
 
 
 var current_network_role = null
@@ -254,6 +257,9 @@ func _on_scene_changed(changed_scene: Node) -> void:
 				# Here the menu stage is already gone (it restores on leaving the tree).
 				Globals.debug_time_offset = 0.0
 				NetworkOrchestrator.start_client(changed_scene)
+				# The physics catch-up held low until the arrival's frames settle (ArrivalPhysics), under the
+				# game scene: a session left early takes it along.
+				changed_scene.add_child((load(ARRIVAL_PHYSICS_SCRIPT) as GDScript).new())
 	elif scene_path == GAME_STATES_SCENES_PATHS[GameStates.SERVER_UNIVERS_CREATION]:
 		changed_scene.connect("universe_data_retrieved", _on_universe_data_retrieved)
 		changed_scene.retrieve_universe_datas()

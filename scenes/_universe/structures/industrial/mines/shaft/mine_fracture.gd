@@ -211,7 +211,7 @@ static func blocks_for(ref: Dictionary, gap: float) -> Variant:
         return null
     if not WorkerThreadPool.is_task_completed(job.task):
         return null
-    WorkerThreadPool.wait_for_task_completion(job.task)
+    PerfTasks.wait(job.task, "mine_fracture")
     _jobs.erase(k)
     var blocks: Array = job.result[0]
     _blocks[k] = blocks

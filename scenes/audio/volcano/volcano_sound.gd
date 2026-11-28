@@ -357,13 +357,19 @@ static func ensure_bus(voice: int) -> StringName:
 
 
 func _ready() -> void:
+	var tok_head: int = ClientPerf.scope_begin()
 	_alive.append(self)
 	_planet = SurfaceProbe.planet_of(self)
+	ClientPerf.scope_end("snd:head", tok_head)
 	_proxy.name = "Proxy"
 	add_child(_proxy)
+	# snd:* (debug_perf): a volcano's sounds entering the tree (vol:enter less plume:* and these: its lake).
+	var tok: int = ClientPerf.scope_begin()
 	_steam = _loop(sounds.steam)
 	_rumble = _loop(sounds.rumble)
 	_cracks = _loop(sounds.cracks)
+	ClientPerf.scope_end("snd:loops", tok)
+	tok = ClientPerf.scope_begin()
 	_impacts = ImpactSounds.new()
 	_impacts.name = "Impacts"
 	_impacts.sounds = sounds
@@ -371,13 +377,18 @@ func _ready() -> void:
 	if _plume.stones != null:
 		_impacts.frame = _plume.stones
 		_plume.stones.impacted.connect(_impacts.on_impact)
+	ClientPerf.scope_end("snd:impacts", tok)
+	tok = ClientPerf.scope_begin()
 	_ash = AshFall.new()
 	_ash.name = "AshFall"
 	_ash.sounds = sounds
 	add_child(_ash)
+	ClientPerf.scope_end("snd:ash", tok)
+	tok = ClientPerf.scope_begin()
 	# In the plume's frame (+Y up), so the flakes fall down.
 	_ash_visual = AshVisual.new()
 	_plume.add_child(_ash_visual)
+	ClientPerf.scope_end("snd:ash_visual", tok)
 
 
 func _exit_tree() -> void:

@@ -135,3 +135,41 @@ func _building(rows: int, cols: int, floors: int) -> SpawnBuilding:
 	building.cols = cols
 	building.floors = floors
 	return building
+
+
+## Whether the triangles of [param arrays] face along their normals (+1), against them (-1), or both (0).
+func _winding(arrays: Array) -> int:
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var signs := {}
+	for t in range(0, idx.size(), 3):
+		var face: Vector3 = (v[idx[t + 1]] - v[idx[t]]).cross(v[idx[t + 2]] - v[idx[t]])
+		signs[signf(face.dot(n[idx[t]]))] = true
+	return int(signs.keys()[0]) if signs.size() == 1 else 0
+
+
+func test_a_batched_box_is_the_engine_s_box() -> void:
+	var batch := BuildingWalkways.BoxBatch.new()
+	batch.add(Vector3(0.04, 1.0, 2.0), Vector3(1.0, 0.5, 3.0))
+	var mesh := batch.commit(StandardMaterial3D.new())
+	var box := BoxMesh.new()
+	box.size = Vector3(0.04, 1.0, 2.0)
+	var mine := mesh.surface_get_arrays(0)
+	assert_eq(_winding(mine), _winding(box.surface_get_arrays(0)), "the same faces are the front ones")
+	assert_ne(_winding(mine), 0)
+	assert_true(mesh.get_aabb().position.is_equal_approx(Vector3(0.98, 0.0, 2.0)), str(mesh.get_aabb()))
+	assert_true(mesh.get_aabb().size.is_equal_approx(Vector3(0.04, 1.0, 2.0)), str(mesh.get_aabb()))
+	for k in (mine[Mesh.ARRAY_VERTEX] as PackedVector3Array).size():
+		var out: Vector3 = (mine[Mesh.ARRAY_VERTEX][k] as Vector3) - Vector3(1.0, 0.5, 3.0)
+		assert_gt(out.dot(mine[Mesh.ARRAY_NORMAL][k]), 0.0, "normal %d points out of the box" % k)
+
+
+func test_a_facade_s_railings_are_one_mesh() -> void:
+	var facade: StaticBody3D = autofree(StaticBody3D.new())
+	BuildingWalkways._build_facade(facade, 6 * 2.6, 2, 2.6)
+	var railings := facade.get_node(NodePath(BuildingWalkways.RAILINGS_NAME)) as MeshInstance3D
+	assert_eq(railings.mesh.get_surface_count(), 1)
+	assert_gt((railings.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(), 24 * 40,
+			"rails, posts and columns")
+	assert_eq(facade.find_children("*", "MeshInstance3D", false, false).size(), 1 + 2, "railings and two decks")

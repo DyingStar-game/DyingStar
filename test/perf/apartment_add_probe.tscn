@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://test/perf/apartment_add_probe.gd" id="1"]
+
+[node name="ApartmentAddProbe" type="Node3D"]
+script = ExtResource("1")

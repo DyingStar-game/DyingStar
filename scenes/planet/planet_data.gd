@@ -3642,7 +3642,7 @@ func warm_grade_profiles() -> void:
 func clear_grade_profiles() -> void:
 	# A task in flight cannot be cancelled: let it finish, then forget it.
 	for fid: int in _grade_pending.keys():
-		WorkerThreadPool.wait_for_task_completion(int((_grade_pending[fid] as Dictionary)["task_id"]))
+		PerfTasks.wait(int((_grade_pending[fid] as Dictionary)["task_id"]), "planet_data")
 	_grade_pending.clear()
 	_grade_mutex.lock()
 	# New tables, not cleared ones: a worker may still hold the published references.
@@ -4318,7 +4318,7 @@ func retry_starved_grade_profiles(block: bool = false) -> PackedInt32Array:
 		var entry: Dictionary = _grade_pending[fid]
 		if not block and not WorkerThreadPool.is_task_completed(int(entry["task_id"])):
 			continue
-		WorkerThreadPool.wait_for_task_completion(int(entry["task_id"]))
+		PerfTasks.wait(int(entry["task_id"]), "planet_data")
 		_grade_pending.erase(fid)
 		settled = true
 		var profile: Dictionary = entry["result_ref"][0] if entry["result_ref"][0] != null else {}
@@ -6279,6 +6279,8 @@ var _pad_road_cuts: Dictionary = {}
 ## See take_moved_pads. Main thread only.
 var _moved_pads: Array = []
 var _pad_mutex: Mutex = Mutex.new()
+## Where register_pads spent its time (µs) by phase since take_pad_phases: measure, clone, settle, cuts.
+var _pad_phase_usec: Dictionary = {}
 
 
 ## Fingerprint of everything the pad sampler's heights depend on (elevation
@@ -6617,7 +6619,7 @@ func collect_village_beds() -> Array:
 		var job: Dictionary = _bed_jobs[uuid]
 		if not WorkerThreadPool.is_task_completed(int(job["task_id"])):
 			continue
-		WorkerThreadPool.wait_for_task_completion(int(job["task_id"]))
+		PerfTasks.wait(int(job["task_id"]), "planet_data")
 		_bed_jobs.erase(uuid)
 		var again: Dictionary = job["again"]
 		if not again.is_empty():
@@ -6654,7 +6656,7 @@ func village_bed_in_flight(uuid: String) -> bool:
 ## Wait for every village bed job (the terrain going away): they read this body.
 func join_village_bed_jobs() -> void:
 	for job: Dictionary in _bed_jobs.values():
-		WorkerThreadPool.wait_for_task_completion(int(job["task_id"]))
+		PerfTasks.wait(int(job["task_id"]), "planet_data")
 	_bed_jobs.clear()
 
 
@@ -6820,7 +6822,9 @@ func register_pads(recs_in: Array) -> Dictionary:
 			# A notch's floor is authored (PadBed.notch_record): nothing to measure, no tile to wait for.
 			stats = {"z": float(rec["z"]), "span": 0.0, "talus_m": 0.0}
 		else:
+			var t_measure := Time.get_ticks_usec()
 			stats = settled if not settled.is_empty() else _pad_stats_if_readable(rec, missing)
+			_pad_phase("measure", t_measure)
 		if stats.is_empty():
 			# Not readable yet: drop whatever was registered under this uuid rather
 			# than leave a stale platform, and wait for the catch-up.
@@ -6834,7 +6838,9 @@ func register_pads(recs_in: Array) -> Dictionary:
 		# Copy-on-write: the workers read the published index, so it is the CLONE
 		# that is edited and the reference that is swapped, in one assignment.
 		if next == null:
+			var t_clone := Time.get_ticks_usec()
 			next = idx.clone()
+			_pad_phase("clone", t_clone)
 		if not old.is_empty():
 			dirty.merge(idx.pixels_of(old))
 		if stats.is_empty():
@@ -6853,7 +6859,9 @@ func register_pads(recs_in: Array) -> Dictionary:
 		cuts[uuid] = rec
 	var changed: Array[String] = []
 	if not seeds.is_empty():
+		var t_settle := Time.get_ticks_usec()
 		changed = _settle_pad_levels(next, idx, seeds)
+		_pad_phase("settle", t_settle)
 	if changed.is_empty() and not dropped:
 		_pad_mutex.unlock()
 		return {}
@@ -6868,9 +6876,25 @@ func register_pads(recs_in: Array) -> Dictionary:
 		if (cuts[uuid] as Dictionary).is_empty():
 			_moved_pads.append(idx.get_rec(uuid))
 	_pads = next
+	var t_cuts := Time.get_ticks_usec()
 	_set_pads_road_cuts(cuts)
+	_pad_phase("cuts", t_cuts)
 	_pad_mutex.unlock()
 	return dirty
+
+
+func _pad_phase(phase: String, since_usec: int) -> void:
+	_pad_phase_usec[phase] = int(_pad_phase_usec.get(phase, 0)) + Time.get_ticks_usec() - since_usec
+
+
+## Where register_pads spent its time (µs) by phase since the last call, emptied by the call (the client's
+## pad:* scopes, debug_perf).
+func take_pad_phases() -> Dictionary:
+	_pad_mutex.lock()
+	var out := _pad_phase_usec
+	_pad_phase_usec = {}
+	_pad_mutex.unlock()
+	return out
 
 
 ## What [param rec] persisted of its measure, unless it stands on a village's ground (VillageBed.reaches):

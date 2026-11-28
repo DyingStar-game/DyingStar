@@ -221,11 +221,10 @@ var _tf_max: float = 0.0
 var _mq_usec: int = 0
 var _mq_max: float = 0.0
 var _xf_max: float = 0.0
-## Physics steps actually achieved per second, against the configured target. The one number that
-## says whether a big `phys=` is a PROBLEM: this project runs `physics/3d/run_on_separate_thread`,
-## so the physics step does not sit inside the render frame and a fat physics figure next to a
-## healthy fps is not a contradiction. If this stays at the target while fps sags, physics is not
-## what is holding the frame; if it collapses, it is (and the game is running in slow motion).
+## Physics steps actually achieved per second, against the configured target: if this stays at the
+## target while fps sags, physics is not what is holding the frame; if it collapses, it is (and the
+## game is running in slow motion). The physics run on the main thread, inside the frame
+## (`physics/3d/run_on_separate_thread` is off: separate_thread=false on the boot line, 2026-11-28).
 var _phys_frames_prev: int = 0
 var _reports: int = 0
 var _boot_ms: int = 0
@@ -320,6 +319,19 @@ var _pfs_usec: int = 0
 var _phead_usec: int = 0
 var _pf_steps: int = 0
 var _pf_engine_usec: int = 0
+## Of `engine`: the message queue flushed after each step's _physics_process, the calls deferred during the
+## step (a NoiseTexture3D's first image is made there, at once: 1 s for a volcano's two, 2026-11-28). Timed
+## by a call deferred from the step's tail, which runs after them (_pflush_mark).
+var _pf_flush_usec: int = 0
+## The rest of `engine` cut by two more marks planted each step (SceneTree::physics_process, Godot 4.7): `timers`
+## = the physics SceneTreeTimers (one of 0 s made in the flush fires last of them); `xform` = the tweens, the
+## flush of every transform the step dirtied (each CollisionObject3D pushed back into Jolt) and the delete queue
+## (a probe node freed with queue_free notes its PREDELETE there). What is left, `jolt`, is the navigation, the
+## Jolt step itself and the next step's sync and queries (area / body signals). The physics run on the main
+## thread here (separate_thread=false on the boot line).
+var _pf_timers_usec: int = 0
+var _pf_xform_usec: int = 0
+var _pmark_usec: int = 0
 var _pf_idle_usec: int = 0
 var _pf_sig_usec: int = 0
 var _pf_scripts_usec: int = 0
@@ -541,6 +553,7 @@ func _ready() -> void:
 	# First subscriber (an autoload's _ready): its stamp is the start of the signal, before the game's own
 	# handlers and the mouse picking, which then fall in `sig+pick`.
 	get_tree().physics_frame.connect(_on_physics_frame)
+	get_tree().node_added.connect(_on_node_added_physics)
 	PerfTasks.on = true
 	PerfTasks.take_window(Time.get_ticks_usec())
 	_bands_on = ClientConfig.get_bool("debug_perf_by_script", true)
@@ -722,12 +735,48 @@ func scope_end(scope_name: String, token: int) -> void:
 ## What the instrumented scopes cost in the frame just gone. Empty means the hitch happened in code
 ## that carries no scope at all — which is itself the finding: keep adding scopes until it is not.
 func _frame_breakdown() -> String:
-	if _frame_usec.is_empty():
-		return "no instrumented scope ran"
 	var parts: PackedStringArray = []
+	if _frame_bodies_n > 0 or _frame_shapes_n > 0:
+		var kinds: Array = []
+		for k: String in _frame_bodies:
+			kinds.append([int(_frame_bodies[k]), k])
+		kinds.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
+		var top := PackedStringArray()
+		for e: Array in kinds.slice(0, 4):
+			top.append("%s=%d" % [e[1], e[0]])
+		parts.append("bodies+=%d shapes+=%d (%s)" % [_frame_bodies_n, _frame_shapes_n, " ".join(top)])
+	if _frame_wtp_max > 0:
+		parts.append("wtp=%d" % _frame_wtp_max)
+	for site: String in _frame_waits:
+		parts.append("%s%s=%.1fms" % ["" if site.begins_with("defer:") else "wait:", site,
+				float(_frame_waits[site]) / 1000.0])
+	if _frame_usec.is_empty():
+		parts.append("no instrumented scope ran")
 	for k: String in _frame_usec.keys():
 		parts.append("%s=%.1fms" % [k, float(_frame_usec[k]) / 1000.0])
 	return " ".join(parts)
+
+
+## Physics bodies and shapes entering the tree this frame, by kind (script file, else class): Jolt takes them
+## into its broadphase at the next step, inside `jolt=`.
+var _frame_bodies: Dictionary = {}
+## The main thread's waits on the game's tasks this frame (PerfTasks.wait), by caller file.
+var _frame_waits: Dictionary = {}
+## The most game tasks seen running at a physics step's ends this frame (PerfTasks.running): a full pool
+## makes the step's Jolt jobs queue (they run on the same WorkerThreadPool), inside `jolt=`.
+var _frame_wtp_max: int = 0
+var _frame_bodies_n: int = 0
+var _frame_shapes_n: int = 0
+
+
+func _on_node_added_physics(node: Node) -> void:
+	if node is CollisionShape3D:
+		_frame_shapes_n += 1
+	elif node is CollisionObject3D:
+		_frame_bodies_n += 1
+		var sc := node.get_script() as Script
+		var kind: String = sc.resource_path.get_file() if sc != null else node.get_class()
+		_frame_bodies[kind] = int(_frame_bodies.get(kind, 0)) + 1
 
 
 ## Record a plain number to show in the next heartbeat (last value wins). For counts that no timer
@@ -849,6 +898,14 @@ func _process(_delta: float) -> void:
 	var pscripts_ms: float = float(_pf_scripts_usec) / 1000.0
 	var psig_ms: float = float(_pf_sig_usec) / 1000.0
 	var pengine_ms: float = float(_pf_engine_usec) / 1000.0 + (pf_ms if psteps > 0 else 0.0)
+	_frame_waits = PerfTasks.take_waits()
+	var pflush_ms: float = float(_pf_flush_usec) / 1000.0
+	var ptimers_ms: float = float(_pf_timers_usec) / 1000.0
+	var pxform_ms: float = float(_pf_xform_usec) / 1000.0
+	var pjolt_ms: float = maxf(pengine_ms - pflush_ms - ptimers_ms - pxform_ms, 0.0)
+	_pf_flush_usec = 0
+	_pf_timers_usec = 0
+	_pf_xform_usec = 0
 	var pidle_ms: float = float(_pf_idle_usec) / 1000.0
 	_pw_idle_usec += _pf_idle_usec
 	_pf_idle_usec = 0
@@ -894,14 +951,14 @@ func _process(_delta: float) -> void:
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
 				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
 				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f mq=%.0f xf=%.0f) ms"
-				+ " | idle=%.1f steps=%d pscripts=%.1f sig+pick=%.1f pengine=%.1f ms pbands: %s"
+				+ " | idle=%.1f steps=%d pscripts=%.1f sig+pick=%.1f pengine=%.1f (flush=%.1f timers=%.1f xform=%.1f jolt=%.1f) ms pbands: %s"
 				+ " | nodes=%d%+d | %s | bands: %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms, gap_ms, pre_ms,
 				pf_ms, tf_ms, mq_ms, xf_ms,
-				pidle_ms, psteps, pscripts_ms, psig_ms, pengine_ms, pbands,
+				pidle_ms, psteps, pscripts_ms, psig_ms, pengine_ms, pflush_ms, ptimers_ms, pxform_ms, pjolt_ms, pbands,
 				nodes, nodes - _prev_nodes,
 				_frame_breakdown(),
 				_bands_of_frame(scripts_ms),
@@ -916,6 +973,10 @@ func _process(_delta: float) -> void:
 			_hitch_suppressed += 1
 	_prev_nodes = nodes
 	_frame_usec.clear()
+	_frame_bodies.clear()
+	_frame_wtp_max = 0
+	_frame_bodies_n = 0
+	_frame_shapes_n = 0
 	# Real seconds, so the window this heartbeat divides by is the window that actually elapsed.
 	_t += ms / 1000.0
 	if _t < _interval:
@@ -1578,11 +1639,51 @@ func _tail_tick() -> void:
 ## physics burst itself, and what SceneTree does before it calls a single _process.
 func _phys_tail_tick() -> void:
 	_phys_tail_usec = Time.get_ticks_usec()
+	_frame_wtp_max = maxi(_frame_wtp_max, PerfTasks.running())
+	_pflush_mark.call_deferred(_phys_tail_usec)
 	_pf_steps += 1
 	if _phead_usec > 0:
 		_pf_scripts_usec += _phys_tail_usec - _phead_usec
 	if _bands_on:
 		_pband_collect_step()
+
+
+## Runs in the message queue flush after a step's _physics_process, after the calls deferred during the step.
+## The flush also runs the calls deferred DURING it, after this mark: a second mark, deferred from here, comes
+## after those queued so far (_pflush_end).
+func _pflush_mark(tail_usec: int) -> void:
+	_pflush_end.call_deferred(tail_usec)
+
+
+func _pflush_end(tail_usec: int) -> void:
+	_pmark_usec = Time.get_ticks_usec()
+	_pf_flush_usec += _pmark_usec - tail_usec
+	# 0 s, in physics, made before process_timers walks its list: it fires in this very step, last.
+	get_tree().create_timer(0.0, true, true, true).timeout.connect(_ptimers_mark)
+
+
+## The step's physics timers are through: plant the delete-queue probe, freed after the transform flush.
+func _ptimers_mark() -> void:
+	var now := Time.get_ticks_usec()
+	_pf_timers_usec += now - _pmark_usec
+	_pmark_usec = now
+	var probe := _FreeProbe.new()
+	probe.freed = _pxform_mark
+	probe.queue_free()
+
+
+func _pxform_mark() -> void:
+	_pf_xform_usec += Time.get_ticks_usec() - _pmark_usec
+
+
+## A node that only says when the delete queue frees it (SceneTree::_flush_delete_queue, after the step's
+## transform flush).
+class _FreeProbe extends Node:
+	var freed: Callable = Callable()
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_PREDELETE and not freed.is_null():
+			freed.call()
 
 
 ## `physics_frame`, first subscriber. From the previous step's tail to here is the engine's part: that step's
@@ -1591,6 +1692,7 @@ func _phys_tail_tick() -> void:
 ## the OS events, the input callbacks — so it is `idle`, not `engine` (with that step's sync, small).
 func _on_physics_frame() -> void:
 	var now: int = Time.get_ticks_usec()
+	_frame_wtp_max = maxi(_frame_wtp_max, PerfTasks.running())
 	# The frame's end: the draw, or the last _process where nothing draws (headless emits no post_draw).
 	var frame_end: int = maxi(_postdraw_usec, _tail_usec)
 	if _phys_tail_usec > frame_end:

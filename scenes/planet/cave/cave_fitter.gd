@@ -16,9 +16,9 @@ var _result: Array = [{}]
 
 func _exit_tree() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "cave_fitter")
 	if _group >= 0:
-		WorkerThreadPool.wait_for_group_task_completion(_group)
+		PerfTasks.wait_group(_group, "cave_fitter")
 
 
 
@@ -155,7 +155,7 @@ func entrance_error(data: PlanetData, site: CavePlacement, cave: Dictionary) -> 
 	_group = PerfTasks.add_group_task("cave:entrance_check", check, batches)
 	while not WorkerThreadPool.is_group_task_completed(_group):
 		await get_tree().process_frame
-	WorkerThreadPool.wait_for_group_task_completion(_group)
+	PerfTasks.wait_group(_group, "cave_fitter")
 	_group = -1
 	for result: Array in out:
 		if result[0]:
@@ -175,7 +175,7 @@ func _run_cpu(job: Callable, data: PlanetData = null) -> Dictionary:
 	_task = PerfTasks.add_task("cave:fit", func(): _result[0] = scoped.call())
 	while not WorkerThreadPool.is_task_completed(_task):
 		await get_tree().process_frame
-	WorkerThreadPool.wait_for_task_completion(_task)
+	PerfTasks.wait(_task, "cave_fitter")
 	_task = -1
 	return _result[0]
 

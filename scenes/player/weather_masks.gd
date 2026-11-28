@@ -27,6 +27,10 @@ const META: StringName = &"weather_mask_aabb"
 ## the next (props streamed, a result list cut short), and a mask that came and went every few seconds
 ## made the dust in that building pop in and out (DustProbe: "masks 4 -> 6" every 4 s).
 const FORGET_M: float = 400.0
+## Time a scan gives to boxing buildings it has not boxed yet (ms); the others wait for the next scan. The
+## first scan after a village arrived boxed all of its buildings at once: one physics step of 858 ms
+## (2026-11-28).
+const BOX_BUDGET_MS: float = 2.0
 
 var _player: Node3D = null
 ## The prop roots in reach, with their box (root-local AABB).
@@ -94,6 +98,7 @@ func _scan() -> void:
 		if is_instance_valid(root) and root.is_inside_tree() \
 				and root.global_position.distance_to(here) < FORGET_M:
 			found[root] = true
+	var box_until: int = Time.get_ticks_usec() + int(BOX_BUDGET_MS * 1000.0)
 	for hit: Dictionary in hits:
 		var body := hit.get("collider") as StaticBody3D
 		if body == null:
@@ -102,6 +107,8 @@ func _scan() -> void:
 		if root == null or found.has(root):
 			continue
 		if not root.has_meta(META):
+			if Time.get_ticks_usec() > box_until:
+				continue  # boxed by a later scan
 			_box(root)
 		if (root.get_meta(META) as AABB).size != Vector3.ZERO:
 			found[root] = true

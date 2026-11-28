@@ -309,3 +309,13 @@ func test_the_applier_follows_a_transient_value_and_puts_it_back() -> void:
 	assert_almost_eq(vp.scaling_3d_scale, 0.5, 0.001, "the measurement's scale")
 	s.set_transient({})
 	assert_almost_eq(vp.scaling_3d_scale, 1.0, 0.001, "back to the player's")
+
+
+func test_applied_is_the_effective_value_after_each_write() -> void:
+	var s := _settings()
+	for option in GraphicsOptions.OPTIONS:
+		assert_eq(s.applied(option["key"]), s.effective(option["key"]), "%s at start" % option["key"])
+	s.set_value("structures_distance", 1.5)
+	assert_eq(s.applied("structures_distance"), 1.5, "a write is seen at once")
+	s.set_transient({"structures_distance": 0.5})
+	assert_eq(s.applied("structures_distance"), 0.5, "a transient value too")

@@ -104,7 +104,7 @@ func pump() -> bool:
         var task: Dictionary = _tasks[id]
         if not WorkerThreadPool.is_task_completed(task.id):
             continue
-        WorkerThreadPool.wait_for_task_completion(task.id)
+        PerfTasks.wait(task.id, "cave_resident_set")
         _tasks.erase(id)
         if not _wanted.has(id) or task.site != _sites.get(id):
             continue  # unwanted now, or built from a definition replaced since
@@ -152,7 +152,7 @@ func shutdown() -> void:
     if is_instance_valid(_terrain) and _terrain.residency_changed.is_connected(_changed):
         _terrain.residency_changed.disconnect(_changed)
     for task: Dictionary in _tasks.values():
-        WorkerThreadPool.wait_for_task_completion(task.id)
+        PerfTasks.wait(task.id, "cave_resident_set")
     _tasks.clear()
 
 

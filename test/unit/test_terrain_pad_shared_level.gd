@@ -102,3 +102,64 @@ func test_the_level_follows_a_chain_of_sizes() -> void:
 	data.register_pad(_mining())
 	data.register_pad(_depot())
 	assert_eq(data.pad_altitude(PadBed.quantise(_pad("prop:small", 75.0, 4.0, 4.0, 0.0))), 100.0)
+
+
+## Random pads in a 160 m square, most of them touching, of many sizes, some in an area the layout levels.
+func _crowd(seed_value: int, n: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var out: Array = []
+	for k in n:
+		var uuid := ("prop:p%d" % k) if k % 7 != 3 else "prop:%sp%d" % [LayoutPads.UUID_TAG, k]
+		var rec := PadBed.record(uuid, rng.randf_range(0.0, 160.0) / MPD, rng.randf_range(0.0, 160.0) / MPD, 0.0,
+				rng.randf_range(1.0, 25.0), rng.randf_range(1.0, 25.0), rng.randf_range(1.0, 8.0), 0.0)
+		rec["settled"] = {"z": rng.randf_range(90.0, 110.0), "span": 0.0, "talus_m": 6.0}
+		out.append(rec)
+	return out
+
+
+func _levels(data: PlanetData, recs: Array) -> Dictionary:
+	var out := {}
+	for r: Dictionary in recs:
+		out[str(r["uuid"])] = data.pad_altitude(PadBed.quantise(r))
+	return out
+
+
+## A pad re-levels only the pads downstream of it (PadLevels.settle): registered one at a time in any order,
+## moved, grown and removed, the pads end on the very levels all of them registered at once get.
+func test_one_at_a_time_gives_the_levels_of_all_at_once() -> void:
+	for seed_value in [1, 2, 3]:
+		var recs := _crowd(seed_value, 40)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed_value * 31
+		var one := _data()
+		var order := recs.duplicate()
+		order.shuffle()
+		for r: Dictionary in order:
+			one.register_pad(r)
+		# Grow one, move another, drop a third: their neighbours must follow.
+		var grown: Dictionary = recs[5].duplicate(true)
+		grown["hx"] = 40.0
+		var moved: Dictionary = recs[11].duplicate(true)
+		moved["lat"] = float(moved["lat"]) + 30.0 / MPD
+		one.register_pad(grown)
+		one.register_pad(moved)
+		one.unregister_pad(str(recs[17]["uuid"]))
+		var final: Array = recs.duplicate()
+		final[5] = grown
+		final[11] = moved
+		final.remove_at(17)
+		var all := _data()
+		all.register_pads(final)
+		var a := _levels(one, final)
+		var b := _levels(all, final)
+		var diff := ""
+		for u: String in b:
+			if not is_equal_approx(float(a[u]), float(b[u])):
+				diff = "%s: one at a time %.3f, all at once %.3f" % [u, a[u], b[u]]
+				break
+		assert_eq(diff, "", "seed %d" % seed_value)
+		var distinct := {}
+		for u: String in b:
+			distinct[snappedf(float(b[u]), 0.001)] = true
+		assert_lt(distinct.size(), final.size(), "some pads share a level (seed %d)" % seed_value)

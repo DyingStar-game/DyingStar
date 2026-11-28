@@ -36,5 +36,5 @@ func is_done() -> bool:
 ## task to be waited for, and one left unwaited crashed the engine on exit.
 func wait() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "tile_service_probe")
 		_task = -1
