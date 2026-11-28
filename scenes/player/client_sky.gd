@@ -10,6 +10,8 @@ extends RefCounted
 ## The observer must stand under its Planet (Planet.of), expose `camera` (the aerial perspective is
 ## drawn in front of it) and, if it is a CharacterBody3D, keep its `up_direction` radial.
 
+## By path, not by class name: a class added without a re-import is not known by its name yet.
+const InteriorGiDirectorScript := preload("res://scenes/common/interior_gi_director.gd")
 
 static func attach(observer: Node3D) -> PlayerSunLight:
 	# A DirectionalLight aimed from the real system star toward the observer, for crisp shadows and
@@ -34,4 +36,8 @@ static func attach(observer: Node3D) -> PlayerSunLight:
 	moons.sun = sun
 	moons.atmosphere = atmosphere
 	observer.add_child(moons)
+	# Bounce light inside the buildings the camera comes near (prototype, off unless switched on).
+	var interior_gi : Node = InteriorGiDirectorScript.new()
+	interior_gi.name = "InteriorGiDirector"
+	observer.add_child(interior_gi)
 	return sun

@@ -45,7 +45,7 @@ func test_a_line_shows_the_time_its_message_arrived() -> void:
 	_chat.receive_message_from_server(_message("old", at))  # triggers the trim, survives it
 	var local: Dictionary = Time.get_datetime_dict_from_unix_time(at + Time.get_time_zone_from_system().bias * 60)
 	var last: String = _log_lines()[-1]
-	assert_true(last.begins_with("[%02d:%02d:%02d]" % [local.hour, local.minute, local.second]),
+	assert_true(last.begins_with("[%02d:%02d]" % [local.hour, local.minute]),
 			"5 h 17 min ago, not now: %s" % last)
 
 

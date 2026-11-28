@@ -1,5 +1,6 @@
 shader_type spatial;
 render_mode unshaded, blend_premul_alpha, cull_front, depth_test_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+#include "res://scenes/planet/weather/dust_sea_light.gdshaderinc"
 
 // Plume ray-marched through a pool of puffs (PlumeModel). Everything is in the plume's LOCAL frame, the
 // vent at the origin: the camera position comes from a uniform computed in double precision by the
@@ -10,6 +11,11 @@ render_mode unshaded, blend_premul_alpha, cull_front, depth_test_disabled, depth
 // The march uses long strides with the cheap field until smoke is met, short steps once inside. It is
 // thick, so a ray stops within a few short steps: the costly lighting (probes toward the sun and the
 // sky) is only paid at the visible surface. That is what draws lit lobes and dark creases.
+//
+// Drawn after the aerial pass, which paints the dust sea: each step of the march is seen through the sea
+// lying between it and the eye (sea_fog, dust_sea_light.gdshaderinc), or the plume showed at full strength
+// through a fog that hides the volcano itself. The whole of the sea's extinction (sea_fog_share is left at
+// 1): the smoke sinks into the fog as the cone under it does.
 
 const int COUNT = 220;
 // Side of billow_tex in texels (VolcanoPlume._billow_texture).
@@ -21,6 +27,10 @@ uniform vec4 puff_c[220];
 uniform int puff_count = 220;
 uniform vec3 cam_local;
 uniform vec3 box_center;
+// The vent's altitude (m over the planet's reference sphere): a point of the plume is that much plus its
+// local height (the planet's curve over the plume's reach is left out: under 200 m at 50 km, against a sea
+// 2 800 m thick).
+uniform float vent_alt_m = 0.0;
 uniform vec3 sun_dir;
 uniform vec3 sun_color;
 uniform vec3 sky_color;
@@ -190,6 +200,8 @@ void fragment() {
 	float phase = min(mix(phase_hg(mu, 0.55), phase_hg(mu, -0.2), 0.35) * 12.566, 1.9);
 	vec3 col = vec3(0.0);
 	float trans = 1.0;
+	// What the eye gets of the smoke through the dust sea: 1 - trans when no sea lies on the way.
+	float shown = 0.0;
 	float first_t = -1.0;
 
 	for (int st = 0; st < max_steps; st++) {
@@ -311,14 +323,18 @@ void fragment() {
 
 		float stride = fine * mix(5.0, 1.0, clamp(rho * 3.0, 0.0, 1.0));
 		float step_t = exp(-rho * sigma * stride);
-		col += trans * (1.0 - step_t) * src;
+		// The sea hides this step's light and its hold on what is behind alike: the frame under it already
+		// shows the fog. The smoke's own shading of the steps behind (trans) stays the smoke's, sea or not.
+		float taken = trans * (1.0 - step_t) * sea_fog(t, vent_alt_m + p.y);
+		col += taken * src;
+		shown += taken;
 		trans *= step_t;
 		if (first_t < 0.0) {
 			first_t = t;
 		}
 		t += stride;
 	}
-	float alpha = 1.0 - trans;
+	float alpha = shown;
 	if (alpha < 0.002) {
 		discard;
 	}

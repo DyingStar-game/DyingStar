@@ -28,6 +28,10 @@ const SUN_ARG := "--bench-sun="
 const PERF_ARG := "--bench-perf"
 ## Pictures only, from fixed poses (VIEWS), then quit: to show what a model change looks like up close.
 const VIEWS_ARG := "--bench-views"
+## Bounce light inside the furnished places: a VoxelGI baked for each building of PLACES (InteriorGi).
+const VOXELGI_ARG := "--bench-voxelgi"
+## By path, not by class name: a class added without a re-import is not known by its name yet.
+const InteriorGiScript := preload("res://scenes/common/interior_gi.gd")
 ## Name -> [eye, look], in the village's frame: over the roofs of tarsis_4-1001, its home 0-0-0's ceiling,
 ## and its doors' ID plates from afar.
 const VIEWS := {
@@ -63,14 +67,23 @@ const LIGHTS := [["day", 35.0], ["night", -25.0]]
 ## A frame longer than this (ms) is listed with what came with it.
 const SPIKE_MS := 40.0
 
-## The shots, in the village's frame (its origin is building tarsis_4-1001's corner): where the eye is
-## and what it looks at, as a function of t in 0..1 along the shot.
+## The shots, in the frame of building ANCHOR (its corner): where the eye is and what it looks at, as a
+## function of t in 0..1 along the shot. Read from the building rather than the village's origin, so a
+## village rearranged around it does not leave the camera inside whatever stands there now.
+const ANCHOR := "tarsis_4-1001"
 const STREET_EYE := Vector3(-4.0, 1.7, -3.0)
 const FLY_CENTRE := Vector3(5.0, 0.0, 12.0)
 const FLY_RADIUS_M := 90.0
 const FLY_HEIGHT_M := 60.0
 ## Inside apartment 0-0-0 of tarsis_4-1001 (x -6.1..0, z 0..2.6), at eye height over its floor.
 const HOME_EYE := Vector3(-3.0, 1.6, 1.3)
+## The furnished places, each in its own building's frame: [node in the village, eye, first look]. The
+## camera turns once on the spot from the first look. The town hall's front is its -Z side.
+const PLACES := {
+	"townhall": ["CivilAdmin", Vector3(6.0, 1.7, -26.0), Vector3(0.0, 6.0, 0.0)],
+	"hall": ["CivilAdmin", Vector3(0.0, 1.7, -4.0), Vector3(0.0, 2.5, 10.6)],
+	"garage": ["Garage", Vector3(-7.5, 1.7, -14.0), Vector3(-10.8, 1.2, -31.0)],
+}
 
 ## The report's columns: one window a line.
 const ROW_HEAD := "%-14s %7s %7s %7s %7s %7s %7s %7s %5s %7s %7s %7s %7s %6s %7s %9s %6s %6s %5s"
@@ -80,6 +93,9 @@ var _stage: MenuStage
 var _planet: Planet
 var _rig: StageRig
 var _village: Node3D
+## The frame the shots are written in (ANCHOR's, in the village); the frame of each place in PLACES.
+var _frame := Transform3D.IDENTITY
+var _readback: ScreenReadback = null
 var _results: Array = []
 var _stats: BenchmarkStats
 var _last_usec: int = 0
@@ -155,8 +171,15 @@ func _ready() -> void:
 
 
 func _run() -> void:
+	var anchor := _village.get_node_or_null(ANCHOR) as Node3D
+	if anchor != null:
+		_frame = anchor.transform
+	else:
+		push_warning("[VillageBench] no %s in the village: the shots fall back to its origin" % ANCHOR)
 	_frame_at(STREET_EYE, STREET_EYE + Vector3.LEFT)
 	await _wait(SETTLE_S)
+	if VOXELGI_ARG in OS.get_cmdline_user_args():
+		_bake_interior_gi()
 	if VIEWS_ARG in OS.get_cmdline_user_args():
 		await _views()
 		get_tree().quit()
@@ -167,8 +190,11 @@ func _run() -> void:
 		var elevation: float = float(sun[0]) if not sun.is_empty() and light[0] == "day" else float(light[1])
 		StageClock.set_sun_elevation(_planet, _village.position, elevation)
 		await _shot("%s street" % light[0], _street)
+		await _place_shot("%s townhall" % light[0], "townhall")
 		await _shot("%s flyover" % light[0], _flyover)
 		if not quick:
+			await _place_shot("%s hall" % light[0], "hall")
+			await _place_shot("%s garage" % light[0], "garage")
 			await _shot("%s home" % light[0], _home)
 	_write_report()
 	get_tree().quit()
@@ -178,12 +204,22 @@ func _run() -> void:
 func _views() -> void:
 	StageClock.set_sun_elevation(_planet, _village.position, float(LIGHTS[0][1]))
 	_hide_families()
-	DirAccess.make_dir_recursive_absolute("user://benchmarks/shots")
 	for view: String in VIEWS:
 		_frame_at(VIEWS[view][0], VIEWS[view][1])
 		await _wait(SHOT_SETTLE_S)
-		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("user://benchmarks/shots/view_%s.png" % view)
+		await _save_shot("view_%s" % view)
+
+
+## The frame on screen, saved as user://benchmarks/shots/<file_name>.png with the colours the player
+## sees: through ScreenReadback, as F7 does, since the window holds LINEAR colour (hdr_2d) and a raw
+## read of it comes out far darker than the screen.
+func _save_shot(file_name: String) -> void:
+	if _readback == null:
+		_readback = ScreenReadback.new()
+		add_child(_readback)
+	DirAccess.make_dir_recursive_absolute("user://benchmarks/shots")
+	var image: Image = await _readback.capture(get_viewport())
+	image.save_png("user://benchmarks/shots/%s.png" % file_name)
 
 
 ## A turn on the spot in the street between the rows.
@@ -205,6 +241,38 @@ func _home(t: float) -> Array:
 	return [HOME_EYE, HOME_EYE + Vector3(cos(a), -0.1, sin(a))]
 
 
+## A VoxelGI in each building PLACES visits, baked once before the first window.
+func _bake_interior_gi() -> void:
+	var done: Array[String] = []
+	for place: String in PLACES:
+		var building_name: String = PLACES[place][0]
+		var building := _village.get_node_or_null(building_name) as Node3D
+		if building == null or building_name in done:
+			continue
+		done.append(building_name)
+		InteriorGiScript.ensure(building)
+
+
+## One window at a place of PLACES: a turn on the spot from its first look, in its building's frame
+## (the anchor's frame is put back after). A place whose building is missing is skipped and said.
+func _place_shot(label: String, place: String) -> void:
+	var spec: Array = PLACES[place]
+	var building := _village.get_node_or_null(spec[0]) as Node3D
+	if building == null:
+		push_warning("[VillageBench] no %s in the village: window %s skipped" % [spec[0], label])
+		return
+	var eye: Vector3 = spec[1]
+	var toward: Vector3 = spec[2] - eye
+	var start: float = atan2(toward.z, toward.x)
+	var pitch: float = toward.y / Vector2(toward.x, toward.z).length()
+	var anchor_frame := _frame
+	_frame = building.transform
+	await _shot(label, func(t: float) -> Array:
+		var a: float = start + TAU * t
+		return [eye, eye + Vector3(cos(a), pitch, sin(a))])
+	_frame = anchor_frame
+
+
 ## One window: settle at the shot's first pose, then measure every frame along it.
 func _shot(label: String, path: Callable) -> void:
 	var pose: Array = path.call(0.0)
@@ -212,9 +280,7 @@ func _shot(label: String, path: Callable) -> void:
 	await _wait(SHOT_SETTLE_S)
 	_hide_families()
 	if SHOTS_ARG in OS.get_cmdline_user_args():
-		await RenderingServer.frame_post_draw
-		DirAccess.make_dir_recursive_absolute("user://benchmarks/shots")
-		get_viewport().get_texture().get_image().save_png("user://benchmarks/shots/%s.png" % label.replace(" ", "_"))
+		await _save_shot(label.replace(" ", "_"))
 	_stats = BenchmarkStats.new()
 	var pipe_at: int = PerfMath.pipeline_total()
 	var elapsed: float = 0.0
@@ -281,9 +347,9 @@ func _sample(frame_ms: float) -> void:
 	})
 
 
-## The rig at [param eye] looking at [param look], both in the village's frame.
+## The rig at [param eye] looking at [param look], both in the current shot frame (_frame).
 func _frame_at(eye: Vector3, look: Vector3) -> void:
-	_rig.frame(_village.transform * eye, _village.transform * look)
+	_rig.frame(_village.transform * _frame * eye, _village.transform * _frame * look)
 
 
 ## The world around the village: the whole village, the stage's outpost, the terrain, the sky's passes,

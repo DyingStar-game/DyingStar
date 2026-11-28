@@ -34,7 +34,19 @@ func test_admin_category_only_for_an_admin() -> void:
 	var texts := func(options: Array) -> Array:
 		return options.map(func(o): return o["text"])
 	assert_false(texts.call(SpawnCatalog.build_wheel()).has("%%SPAWN_ADMIN"))
+	assert_false(texts.call(SpawnCatalog.build_wheel()).has("%%SPAWN_WEATHER"))
 	assert_true(texts.call(SpawnCatalog.build_wheel(true)).has("%%SPAWN_ADMIN"))
+
+
+## The weather tools have a category of their own beside Admin: the wheel has one level of submenus.
+func test_the_weather_tools_are_their_own_category() -> void:
+	var weather: Array = SpawnCatalog.build_wheel(true).filter(func(o): return o["text"] == "%%SPAWN_WEATHER")
+	assert_eq(weather.size(), 1)
+	var keys: Array = (weather[0]["submenu"] as Array).map(func(c): return c["data"])
+	assert_eq(keys, ["admin_village_alarm", "admin_spawn_dust_wall"])
+	for option: Dictionary in SpawnCatalog.build_wheel(true):
+		for child: Dictionary in option.get("submenu", []):
+			assert_false(child.has("submenu"), "one level of submenus only: %s" % child["text"])
 
 
 func test_the_fill_stocks_a_catalogued_box() -> void:

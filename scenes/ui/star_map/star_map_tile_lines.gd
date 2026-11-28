@@ -25,6 +25,10 @@ const SEGMENTS_KEPT: int = 1024
 ## buildings and the vehicles stand on. At the default priority the streets of a village, as wide
 ## as they are, were drawn across its homes and the trucks parked on them (playtest 2026-11-20).
 const UNDER_THE_MARKERS: int = StarMapMarkers.RECT_PRIORITY - 2
+## How long a tile that answered "not yet" ([method _laying]) waits before it is asked again, in ms. Its
+## streamed tiles come down in a second or so; asked at every frame, a view with one such tile started a
+## worker and put the whole mesh together again at every frame for as long as it waited.
+const WAITING_RETRY_MS: int = 500
 
 var body_key: String = ""
 
@@ -66,6 +70,9 @@ var _dirty: bool = false
 var _outdated: Dictionary = {}
 ## The worker in flight was started before the last [method lay_again]: what it brings is not kept.
 var _job_outdated: bool = false
+## When the tiles that answered "not yet" are asked again ([constant WAITING_RETRY_MS]), or -1 when none
+## is waiting.
+var _retry_at_ms: int = -1
 
 
 func _ready() -> void:
@@ -100,11 +107,16 @@ func _new_material() -> Material:
 ## keys them.
 ##
 ## Does nothing at all when the set has not changed, which is most frames: the tiles come from a
-## decision taken four times a second at most.
+## decision taken four times a second at most. Tiles still waiting on their streamed data are asked
+## again every [constant WAITING_RETRY_MS].
 func refresh(tiles: Dictionary) -> void:
 	_harvest()
-	if tiles == _drawn and not _dirty:
+	var changed: bool = _dirty or tiles != _drawn
+	var retry: bool = _retry_at_ms >= 0 and Time.get_ticks_msec() >= _retry_at_ms
+	if not changed and not retry:
 		return
+	if retry:
+		_retry_at_ms = -1
 	_drawn = tiles.duplicate()
 	if not _available():
 		mesh = null
@@ -113,7 +125,9 @@ func refresh(tiles: Dictionary) -> void:
 		_segments.clear()  # crude, and rare: one refresh pays for its whole view again
 		_outdated.clear()
 	_start_missing()
-	_assemble()
+	# A retry alone changes nothing on screen until a waiting tile is laid (then _dirty says so).
+	if changed or _dirty:
+		_assemble()
 
 
 ## Wait for the lines still being laid and draw them. For a caller that needs the mesh NOW — a test;
@@ -141,6 +155,7 @@ func clear() -> void:
 	_job = {}
 	_job_outdated = false
 	_dirty = false
+	_retry_at_ms = -1
 	_drawn.clear()
 	_segments.clear()
 	_outdated.clear()
@@ -201,7 +216,9 @@ func _start_missing() -> void:
 	if not bool(how[1]):
 		for id: int in missing:
 			var laid: Array = lay.call(id)
-			if not laid.is_empty():
+			if laid.is_empty():
+				_wait_for_data()
+			else:
 				_segments[id] = laid
 		_dirty = true
 		return
@@ -222,16 +239,33 @@ func _harvest() -> void:
 ## so nothing may ask about it again: is_task_completed on a spent id does not answer "done".
 func _take() -> void:
 	_wait()
-	# Laid the old way while [method lay_again] was being asked for: not kept, so it is laid afresh.
-	if not _job_outdated:
+	# Laid the old way while [method lay_again] was being asked for: not kept, so it is laid afresh — at
+	# the next refresh, which _dirty brings.
+	if _job_outdated:
+		_dirty = true
+	else:
 		for id: int in _job:
 			if (_job[id] as Array).is_empty():
-				continue  # still streaming in: asked again on a later refresh
+				_wait_for_data()  # still streaming in: asked again in a moment
+				continue
 			_segments[id] = _job[id]
 			_outdated.erase(id)
+			_dirty = true
+		# The view moved on while the worker ran: its new tiles were left for this moment.
+		if not _dirty:
+			for id: int in _drawn:
+				if not _segments.has(id) and not _job.has(id):
+					_dirty = true
+					break
 	_job_outdated = false
 	_job = {}
-	_dirty = true
+
+
+## A tile answered "not yet": ask the waiting ones again in [constant WAITING_RETRY_MS], not at the next
+## frame. Marking the lines dirty for it started a worker and rebuilt the mesh at every frame.
+func _wait_for_data() -> void:
+	if _retry_at_ms < 0:
+		_retry_at_ms = Time.get_ticks_msec() + WAITING_RETRY_MS
 
 
 func _wait() -> void:

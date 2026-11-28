@@ -127,8 +127,9 @@ func _build_squad_page(page: VBoxContainer) -> void:
 
 
 ## The no-squad panel: [param title] over [param text] (the reason, or an error), with the two ways
-## out — the invitations received and the create form.
-func _show_no_squad(title: String, text: String) -> void:
+## out — the invitations received and the create form. [param failed]: the squad could not be read, so
+## nothing says the player has none: the one way out is to ask again, not to create a second one.
+func _show_no_squad(title: String, text: String, failed: bool = false) -> void:
 	_clear(_none_card.body)
 	var empty: Control = _empty_state(title, text)
 	var box := empty.get_child(0) as VBoxContainer
@@ -141,8 +142,11 @@ func _show_no_squad(title: String, text: String) -> void:
 	box.move_child(icon, 0)
 	var ways := _row(12)
 	ways.alignment = BoxContainer.ALIGNMENT_CENTER
-	_action_button(ways, tr("%%SVC_SQ_SEE_INVITES"), func() -> void: goto_segment(1))
-	_primary_button(ways, tr("%%SVC_SQ_CREATE_ONE"), func() -> void: goto_segment(2))
+	if failed:
+		_primary_button(ways, tr("%%SVC_ACT_REFRESH"), func() -> void: refresh())
+	else:
+		_action_button(ways, tr("%%SVC_SQ_SEE_INVITES"), func() -> void: goto_segment(1))
+		_primary_button(ways, tr("%%SVC_SQ_CREATE_ONE"), func() -> void: goto_segment(2))
 	box.add_child(ways)
 	_none_card.body.add_child(empty)
 	# No squad: only this panel shows, never the squad's own columns beside it.
@@ -240,7 +244,7 @@ func _apply_group(result: Dictionary) -> void:
 	_group_id = ""
 	_is_owner = false
 	if not bool(result.get("ok", false)):
-		_show_no_squad(tr("%%SVC_MSG_ERROR_PREFIX") + " " + HttpClient.describe_error(result), "")
+		_show_no_squad(tr("%%SVC_MSG_ERROR_PREFIX") + " " + HttpClient.describe_error(result), "", true)
 		_set_group_ui(false, false)
 		return
 	var data: Variant = result.get("data")
@@ -347,11 +351,24 @@ func _create_group() -> void:
 	var max_members: int = _max_value(_create_max)
 	if max_members > 0:
 		body["maxMembers"] = max_members
-	if _report(await PlayerServices.group_create(body), tr("%%SVC_MSG_GROUP_CREATED")):
+	var result: Dictionary = await PlayerServices.group_create(body)
+	if already_in_group(result):
+		# The service knows of a squad this panel does not show (never loaded, or made elsewhere): show
+		# it, with its way out, instead of leaving the player with an error and no squad to leave.
+		await refresh()
+		goto_segment(0)
+		_say(tr("%%SVC_SQ_ALREADY_IN"), WARN)
+		return
+	if _report(result, tr("%%SVC_MSG_GROUP_CREATED")):
 		_create_name.text = ""
 		_create_description.text = ""
 		_create_max.text = ""
 		refresh()
+
+
+## Whether [param result] (a failed creation) says the player is in a squad already. Static and pure.
+static func already_in_group(result: Dictionary) -> bool:
+	return not bool(result.get("ok", false)) and str(result.get("error", "")) == "ALREADY_IN_GROUP"
 
 
 func _save_group() -> void:

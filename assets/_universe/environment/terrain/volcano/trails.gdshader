@@ -1,11 +1,13 @@
 shader_type spatial;
 render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
+#include "res://scenes/planet/weather/dust_sea_light.gdshaderinc"
 
 // Smoke left by a stone: one ribbon per instance, every point of it computed from the stone's row in
 // stone_tex. A point of the ribbon is the smoke the stone left tau seconds ago: where the arc was at
 // (age - tau), drifted since by the wind and swollen with time. So the trail hangs in the air while the
 // stone flies on, with no history kept anywhere. A promoted stone (w = 2) keeps its trail: the prop
-// follows the same arc down to the impact.
+// follows the same arc down to the impact. Drawn after the aerial pass, so it fades through the dust sea by
+// itself (sea_fog, per vertex: the fog changes slowly along a ribbon).
 
 uniform sampler2D stone_tex : filter_nearest;
 uniform float t_mod = 0.0;
@@ -16,6 +18,9 @@ uniform float trail_s = 7.0;
 uniform vec3 cam_local;
 uniform vec3 wind = vec3(-6.0, 0.0, 1.0);
 uniform vec3 smoke_color = vec3(0.26, 0.25, 0.245);
+// The vent's altitude (m over the planet's reference sphere): the stones fly in the vent's frame, so a point
+// of a trail is that much plus its local height.
+uniform float vent_alt_m = 0.0;
 
 varying float v_u;
 varying float v_fade;
@@ -56,6 +61,7 @@ void vertex() {
 		v_fade = 1.0 - smoothstep(0.0, trail_s, age - b.y);
 		// Older than the stone: nothing was emitted yet at that point of the ribbon.
 		v_fade *= smoothstep(0.0, 0.3, age - tau);
+		v_fade *= sea_fog(dist, vent_alt_m + p.y);
 	}
 }
 

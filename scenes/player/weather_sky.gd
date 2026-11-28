@@ -11,6 +11,9 @@ extends RefCounted
 
 ## How often the weather is read, seconds.
 const REFRESH_S: float = 0.5
+## How often the dust walls' light is traced (DustLight.wall_light), seconds: a front at 10-30 m/s moves the
+## sun's share by a few percent between two readings, which the renderer's glide (DustLight.STORM_EASE_S) smooths.
+const WALL_REFRESH_S: float = 0.25
 ## The near layer's density: the visibility (m) a full blow (twice the ground's lift threshold) brings
 ## the plains down to — Koschmieder, β = 3.912 / V — and how the density rises to it with the lift.
 const BLOW_VISIBILITY_FULL_M: float = 400.0
@@ -79,6 +82,7 @@ const NOISE_TEXELS: int = 128
 const NOISE_CELLS: float = 14.0
 
 var _last_read_at: float = -INF
+var _walls_read_at: float = -INF
 ## The dust's colour at the eye (the lamps' beams, and the layer before its grids are laid): the ground's
 ## under the eye, read every REFRESH_S and glided to every frame (ColourGlide). Along the rays the layer
 ## takes the colour of the ground under each point, from the grids (DustGround.colour_texture).
@@ -120,7 +124,16 @@ var _no_dust_layer: bool = ClientConfig.get_bool("debug_no_dust_layer", false)
 ## layer's density, colour and start on [param renderer].
 func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Vector3) -> void:
 	var now: float = Time.get_ticks_msec() * 0.001
-	if now - _last_read_at < REFRESH_S or _eye_height_m > DUST_CEILING_M:
+	if now - _walls_read_at >= WALL_REFRESH_S:
+		_walls_read_at = now
+		renderer.set_walls(walls_light(renderer, planet, observer_world_pos, _eye_height_m)
+				if _eye_height_m <= DUST_CEILING_M else DustLight.NO_WALLS)
+	if now - _last_read_at < REFRESH_S:
+		return
+	if _eye_height_m > DUST_CEILING_M:
+		# Kilometres over any wall's top and a storm's column (STORM_COLUMN_M): no dust over the eye. Left at its
+		# last reading, the light stayed dimmed in flight.
+		renderer.set_storm(0.0, Vector3.ONE)
 		return
 	_last_read_at = now
 	var sample: Dictionary = planet.weather_at(observer_world_pos)
@@ -136,6 +149,12 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	var ground_dir: Vector3 = planet.local_dir_of(observer_world_pos)
 	_dust_colour_target = GroundLook.colour_at(planet.planet_data, ground_dir, BLOW_FALLBACK_COLOUR) \
 			if not ground_dir.is_zero_approx() else BLOW_FALLBACK_COLOUR
+	# The storm's dust over the eye dims the sun and becomes the ambient (AtmosphereRenderer.set_storm), its
+	# diffuse light in the hue of the dust drawn round the eye. Less the dust walls' part: they are traced
+	# through their volumes instead (walls_light), and counted in both they would dim the light twice.
+	var walls_in: float = WeatherRelief.walls_dust_in(sample, planet.elevation_of(observer_world_pos))
+	renderer.set_storm(maxf(renderer.dust_sea.storm_light_tau(sample) - walls_in, 0.0),
+			dust_hue(blow_albedo_of(_dust_colour_target)))
 	# Inside a building the masks keep the room clear; seated, the march starts past the cab.
 	var boxed: bool = renderer.weather_masks != null and renderer.weather_masks.inside(observer_world_pos)
 	var seated: bool = is_instance_valid(renderer.player) and is_instance_valid(renderer.player.get("_seat_node"))
@@ -145,6 +164,30 @@ func update(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Ve
 	renderer.set_dust_param(&"dust_far_height", FAR_HEIGHT_M)
 	renderer.set_dust_param(&"dust_lamp_gain", LAMP_GAIN)
 	renderer.set_dust_param(&"dust_far_noise_scale", FAR_NOISE_SCALE)
+
+
+## The light the dust walls near [param observer_world_pos] leave (DustLight.wall_light), the eye
+## [param eye_height_m] over the ground: the walls the weather runs there (ClimateWeather.walls_near, the
+## called-in ones at the server's time) traced along the sun's ray and over the sky. NO_WALLS without the local
+## weather or a sun.
+static func walls_light(renderer: AtmosphereRenderer, planet: Planet, observer_world_pos: Vector3,
+		eye_height_m: float) -> Vector4:
+	var weather := planet.current_weather_source() as ClimateWeather
+	if weather == null or not weather.local_enabled or weather.profile == null or planet.planet_data == null \
+			or not is_instance_valid(renderer.sun):
+		return DustLight.NO_WALLS
+	var dir: Vector3 = planet.local_dir_of(observer_world_pos)
+	if dir.is_zero_approx():
+		return DustLight.NO_WALLS
+	var lonlat: Vector2 = HEALPix.vec2lonlat(dir)
+	var walls: Array = weather.walls_near(planet, lonlat)
+	if walls.is_empty():
+		return DustLight.NO_WALLS
+	# The sun in the eye's east, north and up: the frame the walls' offsets are in (WeatherRelief.offset_m).
+	var axes: Array = Planet.local_axes(dir)
+	var star: Vector3 = planet.global_basis.orthonormalized().inverse() * renderer.sun.star_direction
+	var sun := Vector3(star.dot(axes[0]), star.dot(axes[1]), star.dot(dir))
+	return DustLight.wall_light(walls, lonlat, maxf(eye_height_m, 0.0), sun.normalized(), weather.profile.radius_m)
 
 
 ## Every frame: carry the noise with the wind, keep its frame the planet's, and hand the layer the
@@ -219,7 +262,7 @@ func animate_dust(renderer: AtmosphereRenderer, planet: Planet, camera: Camera3D
 	renderer.set_dust_param(&"dust_mask_count", masks.size())
 	if not masks.is_empty():
 		renderer.set_dust_param(&"dust_mask", masks)
-	DustLight.push(renderer, up)
+	DustLight.push(renderer, up, renderer.storm_tau_above)
 
 
 ## The far dust: its density whatever the eye's height, its reach (longer by the eye's height, so the
@@ -383,3 +426,11 @@ static func blow_albedo_of(ground: Color) -> Vector3:
 		return blow_albedo_of(BLOW_FALLBACK_COLOUR)
 	var full: Vector3 = Vector3(ground.r, ground.g, ground.b) / top * BLOW_ALBEDO_MAX
 	return (Vector3.ONE * BLOW_ALBEDO_MAX).lerp(full, BLOW_SATURATION)
+
+
+## The hue the light scattered inside a dust of [param albedo] takes: the albedo over its brightest channel,
+## so it only takes light away. One scattering's worth: the light inside a thick dust has scattered several
+## times and is redder still, a simplification on the side of too little colour.
+static func dust_hue(albedo: Vector3) -> Vector3:
+	var top: float = maxf(albedo.x, maxf(albedo.y, albedo.z))
+	return albedo / top if top > 1e-6 else Vector3.ONE

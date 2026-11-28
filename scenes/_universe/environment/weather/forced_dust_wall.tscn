@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/_universe/environment/weather/forced_dust_wall.gd" id="1_wall"]
+[ext_resource type="Script" path="res://scenes/globals/prop_sync.gd" id="2_propsync"]
+
+[node name="ForcedDustWall" type="Node3D"]
+script = ExtResource("1_wall")
+
+[node name="PropSync" type="Node" parent="."]
+script = ExtResource("2_propsync")
+type_name = "dust_wall"

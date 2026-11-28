@@ -105,23 +105,44 @@ func _process(_delta: float) -> void:
 ## Place the node between the keyframes for time `t`: linear between two centres, the intensity
 ## likewise. Before the first keyframe or without any, the received centre holds.
 func _walk_keyframes(t: float) -> void:
+	var at := _keyframe(t)
+	if not at.is_empty():
+		position = at[0]
+		intensity = at[1]
+
+
+## [centre, intensity] between the keyframes at time [param t], or [] without a track to walk. Between two
+## keyframes the intensity in effect stays when the track carries none for them.
+func _keyframe(t: float) -> Array:
 	if track.size() < 2:
-		return
+		return []
 	var u: float = (t - from_timestamp) / keyframe_dt_s
 	if u <= 0.0:
-		position = track[0]
-		intensity = intensity_track[0] if intensity_track.size() > 0 else _received_intensity
-		return
+		return [track[0], intensity_track[0] if intensity_track.size() > 0 else _received_intensity]
 	var last: int = track.size() - 1
 	if u >= float(last):
-		position = track[last]
-		intensity = intensity_track[last] if intensity_track.size() > last else 0.0
-		return
+		return [track[last], intensity_track[last] if intensity_track.size() > last else 0.0]
 	var i: int = int(floor(u))
 	var f: float = u - float(i)
-	position = track[i].lerp(track[i + 1], f)
-	if intensity_track.size() > i + 1:
-		intensity = lerpf(intensity_track[i], intensity_track[i + 1], f)
+	var level := lerpf(intensity_track[i], intensity_track[i + 1], f) if intensity_track.size() > i + 1 else intensity
+	return [track[i].lerp(track[i + 1], f), level]
+
+
+## [method state] where the system will stand at time [param t] (Globals.sim_time() scale), walked on its
+## keyframes without moving the node: what the village alarm asks of the storms ten minutes ahead, on the
+## server, which keeps the last received centre. Without a track, the state now.
+func state_at(t: float) -> Dictionary:
+	var out := state()
+	var at := _keyframe(t)
+	if at.is_empty():
+		return out
+	var dir: Vector3 = (at[0] as Vector3).normalized()
+	if dir.length() > 0.0:
+		var ll: Vector2 = HEALPix.vec2lonlat(dir)
+		out["lon"] = ll.x
+		out["lat"] = ll.y
+	out["intensity"] = at[1]
+	return out
 
 
 ## What the sampler needs, in one Dictionary: centre as lon/lat on the parent body, σ, intensity,

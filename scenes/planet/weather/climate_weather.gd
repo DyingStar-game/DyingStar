@@ -76,6 +76,7 @@ var _systems_at_ms := -1
 var _systems_of := 0
 var _field: Array = []  # WeatherField.frames() of the planet's field, read with the systems
 var _fed_field: Array = []
+var _forced: Array = []  # ForcedDustWall.data() of the walls called in over the planet, read with the systems
 var _mutex := Mutex.new()
 
 
@@ -141,6 +142,7 @@ func systems(planet: Planet) -> Array:
 		return out
 	out = fed.duplicate()
 	var held: Array = _fed_field
+	var forced: Array = []
 	if planet != null and planet.is_inside_tree():
 		for node: Node in planet.get_tree().get_nodes_in_group(WeatherSystem.GROUP):
 			if node is WeatherSystem and node.get_parent() == planet:
@@ -149,9 +151,13 @@ func systems(planet: Planet) -> Array:
 			if node is WeatherField and node.get_parent() == planet:
 				held = (node as WeatherField).frames()
 				break
+		for node: Node in planet.get_tree().get_nodes_in_group(ForcedDustWall.GROUP):
+			if node is ForcedDustWall and node.get_parent() == planet:
+				forced.append((node as ForcedDustWall).data())
 	_mutex.lock()
 	_systems = out
 	_field = held
+	_forced = forced
 	_systems_at_ms = ms
 	_systems_of = id
 	_mutex.unlock()
@@ -370,15 +376,51 @@ func _devils(lonlat: Vector2, range_m: float, t: float, sun: Vector2, live: Arra
 
 ## The dust walls running now that may reach a place of [param planet] (WeatherRelief.walls_near).
 func walls_near(planet: Planet, lonlat: Vector2) -> Array:
+	return walls_at(planet, lonlat, now())
+
+
+## The dust walls running at [param t] (this machine's clock, [method now]) that may reach a place of
+## [param planet]: the ones the relief and the day draw (WeatherRelief.walls_near) and the ones called in over
+## the planet (ForcedDustWall, WeatherRelief.forced_wall), so that every presenter and the village alarm see
+## both. A later [param t] is a forecast: the walls are deterministic, only the service's air they run in is
+## taken as it is now.
+func walls_at(planet: Planet, lonlat: Vector2, t: float) -> Array:
 	var data: PlanetData = planet.planet_data
 	var sun := sun_over(planet)
 	var air := _air_of(systems(planet), fresh_field(planet, now()))
 	_mutex.lock()
 	if _wall_sources.size() >= KEPT_MAX:
 		_wall_sources.clear()
-	var out := WeatherRelief.walls_near(profile, lonlat, now(), sun.x,
+	var out := WeatherRelief.walls_near(profile, lonlat, t, sun.x,
 			func(lon: float, lat: float) -> Dictionary: return relief_at(data, lon, lat), _wall_sources, air)
+	var forced := _forced
 	_mutex.unlock()
+	var reach := WeatherRelief.WALL_CELL_M * WeatherRelief.WALL_REACH_CELLS
+	# A called-in wall is an event timed by the server (born_at, dies_at: its clock, which has no dev offset)
+	# and lives a few minutes; the dev clock (+ / -) moves this client's sky by hours, which put the wall
+	# before its birth or past its end and none was drawn (playtest 2026-11-28). It is placed at the server's
+	# time: where the server, its village alarm and every other client have it. The drawn walls above keep
+	# the shifted time: they follow the sky, as the dev clock is there to show.
+	var server_t := t - dev_clock_offset()
+	for one: Dictionary in forced:
+		var wall := WeatherRelief.forced_wall(one, server_t, profile.radius_m)
+		if not wall.is_empty() and WeatherRelief.offset_m(lonlat, Vector2(wall["lon"], wall["lat"]), profile.radius_m).length() \
+				<= reach + float(wall["length_m"]) * 0.5:
+			out.append(wall)
+	return out
+
+
+## The weather systems over [param planet] as they will stand at [param t] (WeatherSystem.state_at: walked
+## on their keyframes), with what a tool handed in ([method feed]) as it is. Main thread only: it reads the
+## nodes. What the village alarm forecasts the storms from.
+func systems_at(planet: Planet, t: float) -> Array:
+	_mutex.lock()
+	var out := _fed.duplicate()
+	_mutex.unlock()
+	if planet != null and planet.is_inside_tree():
+		for node: Node in planet.get_tree().get_nodes_in_group(WeatherSystem.GROUP):
+			if node is WeatherSystem and node.get_parent() == planet:
+				out.append((node as WeatherSystem).state_at(t))
 	return out
 
 
@@ -395,6 +437,14 @@ static func now() -> float:
 	var loop := Engine.get_main_loop() as SceneTree
 	var globals: Node = loop.root.get_node_or_null("Globals") if loop != null else null
 	return float(globals.call("sim_time")) if globals != null and globals.has_method("sim_time") else 0.0
+
+
+## How far the client-only dev clock (Globals.debug_time_offset, the + / - keys) moves [method now] from the
+## server's clock, seconds: 0 on the server, in tests and in the editor.
+static func dev_clock_offset() -> float:
+	var loop := Engine.get_main_loop() as SceneTree
+	var globals: Node = loop.root.get_node_or_null("Globals") if loop != null else null
+	return float(globals.get("debug_time_offset")) if globals != null and "debug_time_offset" in globals else 0.0
 
 
 ## Where [param planet]'s star stands overhead, (longitude, latitude) in degrees; the latitude is the

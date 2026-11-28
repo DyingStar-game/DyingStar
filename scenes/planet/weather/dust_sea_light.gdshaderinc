@@ -46,9 +46,9 @@ const float SEA_LIGHT_DIRECT_GAIN = 0.45;
 // The light on dust at [param alt] m (over the reference sphere): [param above] (the material's own light,
 // as in the open) over the sea, the sea's light under it: the star's beam through the sea over the place
 // ([param mu]: the sun's height there; [param shade]: the material's own self-shading toward the sun;
-// [param glow]: its forward scattering), and the overcast's diffuse light through [param sky] (the
+// [param forward]: its forward scattering), and the overcast's diffuse light through [param sky] (the
 // material's own occlusion of the sky).
-vec3 sea_light(float alt, float mu, float shade, float glow, float sky, vec3 above) {
+vec3 sea_light(float alt, float mu, float shade, float forward, float sky, vec3 above) {
 	if (sea_beta <= 0.0) {
 		return above;
 	}
@@ -60,7 +60,7 @@ vec3 sea_light(float alt, float mu, float shade, float glow, float sky, vec3 abo
 	float m = max(mu, 0.0);
 	float below = sea_beta * sea_light_depth(sea_ground, alt);
 	float multi = m * (1.0 + SEA_LIGHT_TWO_STREAM * below) / (1.0 + SEA_LIGHT_TWO_STREAM * (below + column));
-	float direct = exp(-column / max(m, 0.05)) * shade * glow;
+	float direct = exp(-column / max(m, 0.05)) * shade * forward;
 	vec3 lit = sea_gain * sea_sun * (SEA_LIGHT_MS_GAIN * multi * sky + SEA_LIGHT_DIRECT_GAIN * direct);
 	return mix(above, lit, under);
 }

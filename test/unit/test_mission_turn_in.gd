@@ -77,8 +77,28 @@ func test_a_warehouse_transport_lists_its_steps_and_ticks_them() -> void:
 	assert_string_contains(steps[1], "F0001")
 	assert_true(steps[0].begins_with("•"), "not loaded yet")
 	objective["state"] = {"loadedAt": "2026-11-06T20:00:00Z"}
-	assert_true(ServiceTypes.transport_steps(objective)[0].begins_with("✓"), "once loaded, ticked")
+	assert_true(ServiceTypes.transport_steps(objective)[0].begins_with("✓"),
+			"a service that does not count the loads: ticked at the first, as it was")
 	assert_eq(ServiceTypes.transport_steps({"type": "deliver_material", "params": {"via": "warehouse"}}).size(), 0)
+
+
+## One crate of several off the shelf ticked the step (playtest 2026-11-22): it is ticked once the whole
+## quantity left the source warehouse, and says how much did until then.
+func test_the_load_step_is_ticked_once_everything_is_loaded() -> void:
+	var objective := {"type": "transport", "params": {"via": "warehouse", "goodType": "ore.gold"},
+			"targetQuantity": 240, "currentProgress": 0,
+			"locationFrom": {"village": "M0001"}, "locationTo": {"village": "F0001"},
+			"state": {"loadedAt": "2026-11-22T11:30:00Z", "loaded": 24}}
+	var first: String = ServiceTypes.transport_steps(objective)[0]
+	assert_true(first.begins_with("•"), "one crate of ten: not done")
+	assert_string_contains(first, "(24 / 240)", "and how far it is")
+	objective["state"]["loaded"] = 240
+	first = ServiceTypes.transport_steps(objective)[0]
+	assert_true(first.begins_with("✓"), "everything left the warehouse")
+	assert_false(first.contains("/ 240"), "a done step counts nothing")
+	objective["state"]["loaded"] = 24
+	objective["currentProgress"] = 240
+	assert_true(ServiceTypes.transport_steps(objective)[0].begins_with("✓"), "everything delivered was loaded")
 
 
 func test_a_refining_transport_names_its_refinery_between_the_two() -> void:

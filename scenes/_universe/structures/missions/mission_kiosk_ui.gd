@@ -25,6 +25,8 @@ const BODY_PX: int = 22
 const BUTTON_PX: int = 30
 const LOGO_PX: float = 48.0
 const TILE_ZOOM: float = 1.08
+## The partial turn-in button once pressed: a second press sends it.
+const PARTIAL_SURE_KEY := "%%MISSION_TURN_IN_PARTIAL_SURE"
 
 var _accent: Color = Color.WHITE
 var _feed: MissionFeed
@@ -56,10 +58,15 @@ var _mine_missions: Array = []
 var _sheet_data: Dictionary = {}
 var _tab_chips: HBoxContainer
 var _turn_in: Button
-## "Locate on the chart": shown when the open mission names a place (its village, a repair's machine).
+## "Turn in now (partial)": shown on the player's unfinished town-hall mission with something done.
+var _turn_in_partial: Button
+## What turning the open mission in now would pay (ServiceTypes.turn_in_preview), {} when nothing.
+var _turn_in_preview: Dictionary = {}
+## "Locate on the chart": shown when the open mission names a place (a warehouse, a zone, a repair's machine,
+## its village).
 var _locate: Button
-## The place the open sheet's mission names (ServiceTypes.mission_place).
-var _place: Dictionary = {}
+## What the button hands the chart for the open sheet's mission (MissionLocate.request).
+var _locate_request: Dictionary = {}
 ## Whether what is on show is another player's (apply_view_state): theirs to read, ours to drop when the
 ## screen is free or ours again (watch_ended).
 var _watched: bool = false
@@ -273,6 +280,7 @@ func _show_sheet(mission: Dictionary) -> void:
 	_accept.disabled = false
 	_accept.visible = true
 	_turn_in.visible = false
+	_turn_in_partial.visible = false
 	_offer_locate(mission, [])
 	_fill_sheet(mission, [])
 
@@ -294,21 +302,25 @@ func _show_sheet_data(mission: Dictionary, data: Dictionary) -> void:
 		_sheet.add_child(_text(TranslationServer.translate("%%SVC_FMT_MISSION_PARTICIPANTS") % participants, DIM))
 	if assignment is Dictionary:
 		_accept.visible = false  # already the player's
-		_show_turn_in(full, objectives, assignment)
+		_show_turn_in(full, objectives, assignment, ServiceTypes.turn_in_preview(data))
 
 
-## Offer "Locate on the chart" when [param mission] names a place: its village's point, and for a
-## repair the broken machine itself.
+## Offer "Locate on the chart" when [param mission] names a place (MissionLocate: the step under way's
+## first -- a hauling mission's source warehouse until its goods are loaded).
 func _offer_locate(mission: Dictionary, objectives: Array) -> void:
-	_place = ServiceTypes.mission_place(mission, objectives)
-	_locate.visible = str(_place.get("poi", "")) != "" or str(_place.get("machine", "")) != ""
+	_locate_request = MissionLocate.request(mission, objectives)
+	# An inspection's zone is DRAWN from what the mission itself says of it (MissionSites): its point cannot
+	# be asked for by a player who has not taken the mission yet.
+	MissionSites.preview(objectives)
+	_locate.visible = not (_locate_request["targets"] as Array).is_empty()
 
 
 func _on_locate_pressed() -> void:
-	PlayerServices.locate_requested.emit(str(_place.get("poi", "")), str(_place.get("machine", "")))
+	PlayerServices.locate_requested.emit(_locate_request)
 
 
 func _close_sheet() -> void:
+	MissionSites.preview([])
 	_open = {}
 	_sheet_view.visible = false
 	_list_view.visible = true
@@ -342,9 +354,12 @@ func _fill_sheet(mission: Dictionary, objectives: Array, assignment: Variant = n
 		_sheet.add_child(_text("%%MISSION_OBJECTIVES", _accent))
 		for objective: Variant in objectives:
 			if objective is Dictionary:
-				_sheet.add_child(_text("•  " + objective_line(objective) + progress_suffix(objective), TEXT))
+				# What is done reads green (ServiceStyle.done_colour), the rest as it was.
+				var done: bool = str(objective.get("status", "")) == "completed"
+				_sheet.add_child(_text("•  " + objective_line(objective) + progress_suffix(objective),
+						ServiceStyle.done_colour(done, TEXT)))
 				for step: String in ServiceTypes.transport_steps(objective):
-					_sheet.add_child(_text("     " + step, _accent))
+					_sheet.add_child(_text("     " + step, ServiceStyle.step_colour(step, _accent)))
 	var now: float = Time.get_unix_time_from_system()
 	_sheet.add_child(_text(TranslationServer.translate("%%MISSION_REWARD")
 			% MissionTile.reward_line(mission), TEXT))
@@ -396,39 +411,77 @@ static func ready_to_turn_in(objectives: Array) -> bool:
 
 
 ## The player's mission: TURN IN when it waits for a town hall and its objectives are done, else
-## where it stands.
-func _show_turn_in(mission: Dictionary, objectives: Array, assignment: Dictionary) -> void:
+## where it stands -- and, when something of it is done but not all, "Turn in now (partial)" with what the
+## service says it would pay ([param preview], ServiceTypes.turn_in_preview).
+func _show_turn_in(mission: Dictionary, objectives: Array, assignment: Dictionary, preview: Dictionary = {}) -> void:
 	var turned_at_kiosk: bool = mission.get("autoComplete") == false
+	_turn_in_preview = preview
 	if str(assignment.get("status", "")) != "active":
 		_say("%%MISSION_ALREADY_YOURS", _accent)
 	elif turned_at_kiosk and ready_to_turn_in(objectives):
 		_turn_in.visible = true
 		_turn_in.disabled = false
 		_say("%%MISSION_READY_TO_TURN_IN", _accent)
+	elif turned_at_kiosk and ServiceTypes.can_turn_in_partially(preview):
+		_turn_in_partial.text = "%%MISSION_TURN_IN_PARTIAL"
+		_turn_in_partial.visible = true
+		_turn_in_partial.disabled = false
+		_say(ServiceTypes.partial_turn_in_text(preview), DIM)
+	elif turned_at_kiosk and not preview.is_empty():
+		_say("%%MISSION_PARTIAL_NOTHING_DONE", DIM)
 	else:
 		_say("%%MISSION_IN_PROGRESS", DIM)
 
 
 func _on_turn_in_pressed() -> void:
+	_send_turn_in(_turn_in, false)
+
+
+## "Turn in now (partial)": the first press asks (the mission ends there, for what it pays), the second sends.
+func _on_turn_in_partial_pressed() -> void:
+	if _turn_in_partial.text != PARTIAL_SURE_KEY:
+		_turn_in_partial.text = PARTIAL_SURE_KEY
+		_say(ServiceTypes.partial_turn_in_confirm(_turn_in_preview), WARN)
+		return
+	_send_turn_in(_turn_in_partial, true)
+
+
+## Ask the game server to turn the open mission in ([param partial]: now, before it is done); [param button]
+## waits for its answer (turn_in_result).
+func _send_turn_in(button: Button, partial: bool) -> void:
 	if _open.is_empty():
 		return
-	_turn_in.disabled = true
+	button.disabled = true
 	_say("%%MISSION_TURNING_IN", DIM)
-	ScreenTarget.send(ScreenTarget.owner_of(self), {"state": "turn_in", "mission_id": str(_open.get("id", ""))})
+	ScreenTarget.send(ScreenTarget.owner_of(self), {"state": "turn_in", "mission_id": str(_open.get("id", "")),
+			"partial": partial})
 
 
 ## The game server's answer to a TURN IN (MissionKiosk.screen_event).
 func turn_in_result(event: Dictionary) -> void:
 	if str(event.get("mission_id", "")) != str(_open.get("id", "")):
 		return
+	var partial := bool(event.get("partial", false))
 	if bool(event.get("ok", false)):
 		_turn_in.visible = false
-		_say("%%MISSION_TURNED_IN", _accent)
+		_turn_in_partial.visible = false
+		_say("%%MISSION_TURNED_IN_PARTIAL" if partial else "%%MISSION_TURNED_IN", _accent)
 		PlayerServices.changed.emit("missions")
 	else:
 		_turn_in.disabled = false
-		var error := str(event.get("error", ""))
-		_say("%%MISSION_TURN_IN_ELSEWHERE" if error == "WRONG_TOWN_HALL" else "%%MISSION_TURN_IN_FAILED", WARN)
+		_turn_in_partial.disabled = false
+		_turn_in_partial.text = "%%MISSION_TURN_IN_PARTIAL"
+		_say(turn_in_error_key(str(event.get("error", ""))), WARN)
+
+
+## What the screen says of a refused turn-in, from the error the game server passed on.
+static func turn_in_error_key(error: String) -> String:
+	match error:
+		"WRONG_TOWN_HALL":
+			return "%%MISSION_TURN_IN_ELSEWHERE"
+		"PARTIAL_NO_PROGRESS":
+			return "%%MISSION_PARTIAL_NOTHING_DONE"
+	return "%%MISSION_TURN_IN_FAILED"
 
 
 # -- Tabs: offers / in progress ---------------------------------------------------------------------
@@ -596,6 +649,16 @@ func _build(subsidiary: AresBrand.Subsidiary) -> void:
 	AresBrand.style_button(_turn_in, _accent, BG_COLOR, BUTTON_PX)
 	_turn_in.pressed.connect(_on_turn_in_pressed)
 	buttons.add_child(_turn_in)
+	# Not in the kiosk's colour: it ends the mission for less than it pays done.
+	_turn_in_partial = Button.new()
+	_turn_in_partial.text = "%%MISSION_TURN_IN_PARTIAL"
+	_turn_in_partial.custom_minimum_size = Vector2(0, 72)
+	_turn_in_partial.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_turn_in_partial.focus_mode = Control.FOCUS_NONE
+	_turn_in_partial.visible = false
+	AresBrand.style_button(_turn_in_partial, Color(1, 1, 1, 0.08), TEXT, BUTTON_PX)
+	_turn_in_partial.pressed.connect(_on_turn_in_partial_pressed)
+	buttons.add_child(_turn_in_partial)
 	_set_tab(false)
 
 

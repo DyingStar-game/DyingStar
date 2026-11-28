@@ -67,6 +67,19 @@ static func shared_for(planet_name: String) -> RemoteModifierPack:
 	return pack
 
 
+## The streamed pack of [param planet_name] if [method shared_for] has ALREADY opened it, else null —
+## never a network call, never a wait: while another thread holds the lock (it is opening a pack, which
+## can take an HTTP timeout) the answer is null, and asking again later is the caller's business. For
+## what must not stall a frame but should pick the pack up once someone else has opened it (the star
+## map's copy of a body that is not loaded, StarMapTiles.offline_data).
+static func shared_if_open(planet_name: String) -> RemoteModifierPack:
+	if planet_name == "" or not _shared_mutex.try_lock():
+		return null
+	var known: Dictionary = _shared.get(planet_name, {})
+	_shared_mutex.unlock()
+	return known.get("pack") as RemoteModifierPack
+
+
 ## Bind to [param src] (already opened on a modifiers body): read the manifest and the floor.
 ## False when either is unavailable — the planet then runs without modifiers, as with no pack.
 func open_source(src: RemoteTileSource) -> bool:

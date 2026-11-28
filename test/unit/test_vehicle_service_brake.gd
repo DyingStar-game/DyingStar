@@ -57,3 +57,26 @@ func test_coast_brake_adds_the_engine_brake_and_grows_with_speed() -> void:
 			VEHICLE.coast_brake_impulse(6.0, 0.1, 10.0, 1600.0, dt, 4), "faster: harder")
 	assert_eq(VEHICLE.coast_brake_impulse(6.0, 0.1, -10.0, 1600.0, dt, 4),
 			VEHICLE.coast_brake_impulse(6.0, 0.1, 10.0, 1600.0, dt, 4), "rolling back brakes the same")
+
+
+## The torque builds on a ramp, and is cut at once: a truck that kept pushing for a second with the pedal
+## up could not brake all that time, a driven wheel ignoring its brake (playtest 2026-11-21, "2 s").
+func test_the_torque_builds_on_a_ramp() -> void:
+	assert_almost_eq(VEHICLE.ramped_throttle(0.0, 1.0, 0.1, false), 0.1, 1e-6, "from rest: a step at a time")
+	assert_almost_eq(VEHICLE.ramped_throttle(0.95, 1.0, 0.1, false), 1.0, 1e-6, "never past the pedal")
+	assert_almost_eq(VEHICLE.ramped_throttle(0.0, -1.0, 0.1, false), -0.1, 1e-6, "backwards as forwards")
+
+
+func test_the_torque_is_cut_at_once_when_the_pedal_comes_up() -> void:
+	assert_eq(VEHICLE.ramped_throttle(1.0, 0.0, 0.1, false), 0.0, "released: nothing pushes any more")
+	assert_eq(VEHICLE.ramped_throttle(1.0, 0.4, 0.1, false), 0.4, "eased: the pedal's own value")
+	assert_eq(VEHICLE.ramped_throttle(-1.0, 0.0, 0.1, false), 0.0)
+
+
+func test_the_brake_cuts_the_torque_whatever_the_pedal() -> void:
+	assert_eq(VEHICLE.ramped_throttle(1.0, 1.0, 0.1, true), 0.0, "a driven wheel does not brake")
+
+
+func test_a_reversed_pedal_builds_from_rest() -> void:
+	assert_almost_eq(VEHICLE.ramped_throttle(1.0, -1.0, 0.1, false), -0.1, 1e-6,
+			"not from full ahead, not at full astern")

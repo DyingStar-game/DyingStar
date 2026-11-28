@@ -22,7 +22,10 @@
 				"population",
 				"type",
 				"name",
-				"scenename"
+				"scenename",
+				"alarm",
+				"alarm_since",
+				"dust_light"
 			]
 		}
 	]

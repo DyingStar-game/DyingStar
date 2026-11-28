@@ -3958,6 +3958,24 @@ func set_drive_input(throttle: float, steer: float, braking: bool) -> void:
 	_net_steer = clampf(steer, -1.0, 1.0)
 	_net_brake = braking
 
+## The torque applied this step, on its way from [param applied] to the pedal ([param wanted], both in
+## [-1, 1]): it BUILDS by [param step] at most, which tempers the launch on any powertrain, and it is
+## cut at once when the pedal is eased, released or reversed, and under the brake ([param braking]).
+##
+## The ramp used to play both ways: after a full throttle, a truck (1 s of ramp) kept pushing for a
+## second with the pedal up -- and a wheel that is driven ignores its brake (VehicleBody3D), so neither
+## the brake nor the coasting drag held it back all that time ("2 s before it brakes", playtest
+## 2026-11-21). Static and pure.
+static func ramped_throttle(applied: float, wanted: float, step: float, braking: bool) -> float:
+	if braking:
+		return 0.0
+	var building: bool = signf(wanted) == signf(applied) and absf(wanted) > absf(applied)
+	if building:
+		return move_toward(applied, wanted, step)
+	# Eased or released: the pedal's own value. Reversed: from rest, so the other way builds too.
+	return wanted if signf(wanted) == signf(applied) or wanted == 0.0 else move_toward(0.0, wanted, step)
+
+
 func _apply_drive(delta: float) -> void:
 	# The axes always come off the wire: driving belongs to the server, and a seated player is the
 	# only way to take the wheel. (There used to be a local-keyboard branch here for the test
@@ -3983,8 +4001,7 @@ func _apply_drive(delta: float) -> void:
 	var service: float = _service_brake(throttle_in, _forward_speed_kmh())
 	if service > 0.0:
 		throttle_in = 0.0
-	# Ramp the applied torque toward the throttle (tempers the launch on any powertrain).
-	_throttle = move_toward(_throttle, throttle_in, torque_response * delta)
+	_throttle = ramped_throttle(_throttle, throttle_in, torque_response * delta, braking)
 	var forward_kmh: float = _forward_speed_kmh()
 
 	_sync_powertrain()  # pick up any live inspector tweak (bench tuning)

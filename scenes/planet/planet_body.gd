@@ -897,8 +897,8 @@ func sun_elevation_at(world_pos: Vector3) -> float:
 
 ## Share of the star's full overhead light that reaches flat ground at `world_pos`, 0..1: the sine
 ## of its height (the slant it falls at) times the air it crossed (AtmosphereProfile
-## .transmittance_to_star, the integral the star's light is dimmed by on screen). One place for "how
-## bright is it here", read by the Photocell; weather, when there is some, multiplies in here.
+## .transmittance_to_star, the integral the star's light is dimmed by on screen). The clear sky's: a
+## storm's dust multiplies in in daylight_through_weather_at, what the Photocell reads.
 ##
 ## The DIRECT beam only: the light the haze scatters down from the rest of the sky is left out, the
 ## sky shader alone integrates it. That reads darker than the screen under a thick haze, and the
@@ -924,6 +924,26 @@ func daylight_at(world_pos: Vector3) -> float:
 	var light := daylight(profile, key.x * DAYLIGHT_ALT_STEP_M, key.y * DAYLIGHT_ELEV_STEP_DEG)
 	_daylight_memo[key] = light
 	return light
+
+
+## daylight_at under the weather's dust: times the share of the light the storm's dust over the village
+## holding [param world_pos] leaves (dust_light_at). What the Photocells read and the dev readout shows.
+func daylight_through_weather_at(world_pos: Vector3) -> float:
+	var light := daylight_at(world_pos)
+	return light * dust_light_at(world_pos) if light > 0.0 else light
+
+
+## The share of the daylight the storm's dust leaves at [param world_pos] (0..1): the dust_light of the
+## village of this planet holding it (poi_villages.gd, decided by the game server, so every client reads
+## the same), 1 out of any village. Sampled per village, not per lamp: the server forecasts each village's
+## weather already (VillageAlarm), and its lamps stand within its holds().
+func dust_light_at(world_pos: Vector3) -> float:
+	if not is_inside_tree():
+		return 1.0
+	for node: Node in get_tree().get_nodes_in_group(&"poi_villages"):
+		if node.has_method("holds") and is_ancestor_of(node) and node.holds(world_pos):
+			return clampf(float(node.get("dust_light")), 0.0, 1.0)
+	return 1.0
 
 
 ## daylight_at's formula, from an [param altitude_m] over the reference sphere and the star's

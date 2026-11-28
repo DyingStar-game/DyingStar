@@ -54,6 +54,22 @@ func test_the_storm_share_leaves_the_sea_out_of_the_fields_dust() -> void:
 	assert_eq(sea.storm_tau({"dust_tau": 2.0}), 2.0, "without the field, the systems' dust is all storm")
 
 
+func test_the_light_leaves_out_the_thin_dust_it_already_crossed() -> void:
+	var plateau := _sea(3600.0)
+	var thin := plateau.tau_above(3600.0)
+	assert_gt(thin, 0.0, "the thin dust over the sea is over a plateau")
+	assert_almost_eq(plateau.storm_light_tau({"dust_tau": thin, "weather_field": true}), 0.0, 1e-6,
+			"a clear day on a plateau: the field's column is the thin dust the light is already dimmed by")
+	assert_almost_eq(plateau.storm_light_tau({"dust_tau": thin + 3.0, "weather_field": true}), 3.0, 1e-4,
+			"a dust wall over it is all storm")
+	assert_eq(plateau.storm_light_tau({"dust_tau": 3.0}), 3.0, "without the field, the systems' dust is all storm")
+	var basin := _sea(-550.0)
+	assert_almost_eq(basin.storm_light_tau({"dust_tau": basin.tau_above(-550.0) + 1.0, "weather_field": true}),
+			1.0, 1e-4, "in a basin the sea and the thin dust over it are left out")
+	assert_eq(DustSea.new().storm_light_tau({"dust_tau": 2.0, "weather_field": true}), 2.0,
+			"no sea drawn: nothing to leave out")
+
+
 func test_the_readout_sees_the_sea_and_no_more_of_the_old_veil() -> void:
 	assert_eq(DustSea.visibility_at(2000.0, {"dust_tau": 0.5, "haze_tau": 0.5}), DustSea.VISIBILITY_M,
 			"under the top: the sea's fog")

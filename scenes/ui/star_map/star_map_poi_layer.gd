@@ -76,6 +76,9 @@ const CLUSTER_TINT: Color = Color(0.82, 0.86, 0.92, 1.0)
 const REGION_MAX_RATIO: float = 1.2
 ## The regions' ink: paler and smaller than a town, the way an atlas prints a plain under its cities.
 const REGION_TINT: Color = Color(0.78, 0.84, 0.95, 0.75)
+## How often a town or a region whose ground was read over a streamed massif still on its way is asked
+## whether it has landed, in ms: each ask is a tile lookup, and the answer takes a second or so to change.
+const HEIGHTS_RETRY_MS: int = 500
 
 ## Records currently drawn, in the order the picker and the search index use.
 var entries: Array[Dictionary] = []
@@ -114,6 +117,40 @@ var _cluster_names: Array[Label3D] = []
 var player_poi: int = -1
 ## Last frame's grouping, index → seed: what keeps a group from flickering (StarMapPoiCluster.KEEP).
 var _grouped_before: Dictionary = {}
+## The planet the towns' heights were read through ([method StarMapRelief.reading_id]), and whether
+## some were read over relief still streaming in: either way they are read again ([method _read_heights]).
+var _heights_through: int = 0
+var _heights_waiting: bool = false
+## When the towns and the regions whose ground was still streaming in are asked again
+## ([constant HEIGHTS_RETRY_MS]).
+var _heights_retry_at_ms: int = 0
+var _regions_retry_at_ms: int = 0
+
+
+## How high the ground stands under each town. Read ONCE, not every frame: a town does not move, so its
+## elevation is a constant, and asking every frame is twenty-seven height lookups for the same answer.
+## Except where it was read over a massif whose streamed tile had not landed — the town then sat on the
+## bare plateau, inside the mountain the ground draws a moment later — or through another planet than
+## the body is read through now: those are read again once their tile is in, asked every
+## [constant HEIGHTS_RETRY_MS] meanwhile. [param every] reads all of them, as for a new list.
+func _read_heights(body_key: String, every: bool) -> void:
+	var through: int = StarMapRelief.reading_id(StarMapTiles.for_body(body_key).data)
+	every = every or through != _heights_through
+	_heights_through = through
+	_heights_waiting = false
+	for poi: Dictionary in entries:
+		if not every and not bool(poi.get("ground_pending", false)):
+			continue
+		var waiting: bool = StarMapRelief.relief_pending(body_key, poi["dir"])
+		poi["ground_pending"] = waiting
+		_heights_waiting = _heights_waiting or waiting
+		# Read already and still waiting: sampled again it is the same bare ground, two full height
+		# samples a town — at every frame, they were most of the chart's frame (playtest 2026-11-28).
+		if waiting and not every and poi.has("surface"):
+			continue
+		poi["surface"] = StarMapRelief.surface_factor(body_key, poi["dir"])
+		poi["altitude_m"] = StarMapRelief.ground_altitude_m(body_key, poi["dir"])
+	_heights_retry_at_ms = Time.get_ticks_msec() + HEIGHTS_RETRY_MS
 
 
 ## Is [param radius] big enough on screen, at [param view] units away, to be worth marking up?
@@ -147,12 +184,7 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 		var body_changed: bool = body_key != _loaded_key
 		_loaded_key = body_key
 		entries = _merged_for(body_key)
-		# How high the ground stands under each town. Computed ONCE, here: a town does not move, so its
-		# own elevation is a constant, and asking for it every frame would be twenty-seven height
-		# lookups a frame for an answer that never changes.
-		for poi: Dictionary in entries:
-			poi["surface"] = StarMapRelief.surface_factor(body_key, poi["dir"])
-			poi["altitude_m"] = StarMapRelief.ground_altitude_m(body_key, poi["dir"])
+		_read_heights(body_key, true)
 		_grouped_before = {}
 		# Only a CHANGE OF BODY may throw the nodes away: they are a pool, and rebuilding a pool on
 		# every new POI would free and reallocate badges each time one was placed. What the pool
@@ -160,6 +192,9 @@ func refresh(body_key: String, centre: Vector3, rotation: Basis, radius: float,
 		# [method _hide_tail].
 		if body_changed or entries.is_empty():
 			_release_pool()
+	elif (_heights_waiting and Time.get_ticks_msec() >= _heights_retry_at_ms) \
+			or StarMapRelief.reading_id(StarMapTiles.for_body(body_key).data) != _heights_through:
+		_read_heights(body_key, false)
 	_place_regions(body_key, centre, rotation, radius, camera)
 	if entries.is_empty():
 		# The pick index has to go with them. Left behind, it still answers with the PREVIOUS body's
@@ -427,6 +462,11 @@ func _place_regions(body_key: String, centre: Vector3, rotation: Basis, radius: 
 	var view: float = eye.distance_to(centre)
 	var shown: bool = view > 0.0 and radius / view <= REGION_MAX_RATIO
 	var taken := PackedVector2Array()
+	var now: int = Time.get_ticks_msec()
+	# The regions read over relief still streaming in are asked again at the towns' pace, not each frame.
+	var retry: bool = now >= _regions_retry_at_ms
+	if retry:
+		_regions_retry_at_ms = now + HEIGHTS_RETRY_MS
 	for i: int in range(regions.size()):
 		while _region_labels.size() <= i:
 			var made: Label3D = _new_text(0.0005)
@@ -437,9 +477,16 @@ func _place_regions(body_key: String, centre: Vector3, rotation: Basis, radius: 
 		if not shown:
 			label.hide()
 			continue
-		if not region.has("surface"):
-			# Once per region and process: the ground under a region's middle does not move.
-			region["surface"] = StarMapRelief.surface_factor(body_key, region["dir"])
+		var known: bool = region.has("surface") and int(region.get("read_through", 0)) == _heights_through
+		if not known or (retry and bool(region.get("ground_pending", false))):
+			# Once per region and planet read through: the ground under a region's middle does not move —
+			# unless it was read over a massif still streaming in (see _read_heights), and then again only
+			# once that has landed.
+			var waiting: bool = StarMapRelief.relief_pending(body_key, region["dir"])
+			region["ground_pending"] = waiting
+			region["read_through"] = _heights_through
+			if not (waiting and known):
+				region["surface"] = StarMapRelief.surface_factor(body_key, region["dir"])
 		var normal: Vector3 = (rotation * (region["dir"] as Vector3)).normalized()
 		var world: Vector3 = centre + normal * (radius * float(region["surface"]))
 		if not StarMapPoi.faces_camera(world, normal, eye) or camera.is_position_behind(world):

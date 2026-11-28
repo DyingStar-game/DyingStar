@@ -50,20 +50,23 @@ static func universe_lines(body: Node3D, cache: ServerInfoCache) -> PackedString
 	return out
 
 
-## The daylight here as a photocell reads it (Planet.daylight_at), in lux, against the photocells'
-## default thresholds: to tune them by eye, the value read at the moment a lamp should come on.
+## The daylight here as a photocell reads it (Planet.daylight_through_weather_at), in lux, against the
+## photocells' default thresholds: to tune them by eye, the value read at the moment a lamp should come on.
 static func daylight_line(body: Node3D) -> String:
 	var planet : Planet = Planet.of(body) if is_instance_valid(body) else null
 	if planet == null:
 		return "light: --"
-	return daylight_text(planet.daylight_at(body.global_position))
+	return daylight_text(planet.daylight_through_weather_at(body.global_position),
+			planet.dust_light_at(body.global_position))
 
 
-## [param daylight] (0..1) as the readout's text.
-static func daylight_text(daylight: float) -> String:
+## [param daylight] (0..1) as the readout's text, [param dust] the share a storm's dust over the village
+## left of it (Planet.dust_light_at), named when there is some.
+static func daylight_text(daylight: float, dust: float = 1.0) -> String:
 	var tuning: PhotocellTuning = Photocell.DEFAULT_TUNING
-	return "light: daylight %.4f (~%.0f lux)  photocell on < %.0f lux, off > %.0f lux" % [daylight,
-		PhotocellTuning.lux_of(daylight), tuning.on_below_lux, tuning.off_above_lux]
+	var storm := "" if dust >= 1.0 else ", storm dust x%.2f" % dust
+	return "light: daylight %.4f (~%.0f lux%s)  photocell on < %.0f lux, off > %.0f lux" % [daylight,
+		PhotocellTuning.lux_of(daylight), storm, tuning.on_below_lux, tuning.off_above_lux]
 
 
 ## Local solar time on the body we belong to — so it follows you from planet to moon, and says

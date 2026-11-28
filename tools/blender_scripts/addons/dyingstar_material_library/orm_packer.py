@@ -24,7 +24,6 @@ from . import map_extractor
 # Role to channel index, in the order the rest of the pipeline expects.
 CHANNELS = {"ao": 0, "roughness": 1, "metallic": 2}
 
-_MIX_NODES = ("ShaderNodeMix", "ShaderNodeMixRGB")
 _COLUMN_WIDTH = 300.0
 
 
@@ -63,7 +62,7 @@ def pack(material: bpy.types.Material, images: dict, target: Path) -> bpy.types.
     target.parent.mkdir(parents=True, exist_ok=True)
     packed = _build_image(target.stem, width, height, channels)
     _save(packed, target)
-    _rewire(material, packed, _source_nodes(material, images))
+    _rewire(material, packed, _source_nodes(material, images), images["ao"])
 
     return packed
 
@@ -130,6 +129,7 @@ def _rewire(
     material: bpy.types.Material,
     packed: bpy.types.Image,
     source_nodes: list[bpy.types.Node],
+    occlusion: bpy.types.Image,
 ) -> None:
     """Replace the three maps with the packed one, split back into channels."""
     tree = material.node_tree
@@ -155,32 +155,24 @@ def _rewire(
     tree.links.new(separate.outputs["Green"], principled.inputs["Roughness"])
     tree.links.new(separate.outputs["Blue"], principled.inputs["Metallic"])
 
-    occlusion = _occlusion_socket(principled)
-    if occlusion is not None:
-        tree.links.new(separate.outputs["Red"], occlusion)
+    for socket in _occlusion_sockets(source_nodes, occlusion):
+        tree.links.new(separate.outputs["Red"], socket)
 
     for node in source_nodes:
         tree.nodes.remove(node)
 
 
-def _occlusion_socket(principled: bpy.types.Node):
-    """The Mix input the occlusion map feeds, when the graph has one.
+def _occlusion_sockets(source_nodes: list[bpy.types.Node], occlusion: bpy.types.Image) -> list:
+    """The inputs the occlusion map feeds, which the packed red channel takes over.
 
-    material_builder wires albedo into A and occlusion into B, and
-    map_extractor reads it back the same way. A material whose base colour
-    comes straight from an image has nowhere to put occlusion, and the packed
-    red channel is simply left unconnected rather than inventing a Mix node the
-    artist did not ask for.
+    Found by following the map's own links rather than by a convention:
+    map_extractor reads it on either side of the multiply over the base colour
+    and on the glTF group node's Occlusion socket, and a red channel wired into
+    the other side of that multiply would replace the albedo.
     """
-    socket = principled.inputs["Base Color"]
-    if not socket.is_linked:
-        return None
-
-    node = socket.links[0].from_node
-    if node.bl_idname not in _MIX_NODES:
-        return None
-
-    for name in ("B", "Color2"):
-        if name in node.inputs:
-            return node.inputs[name]
-    return None
+    return [
+        link.to_socket
+        for node in source_nodes
+        if node.image == occlusion
+        for link in node.outputs["Color"].links
+    ]

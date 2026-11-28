@@ -14,6 +14,26 @@ extends Node3D
 @export var population: int = 0
 ## Kind of POI, from the POI data (e.g. "mining village"). Informational: replicated, not read by the game code.
 @export var type: String = ""
+## The storm alarm as the server replicates it (VillageAlarm: "off", "warning", "during"), and the
+## Globals.reference_time() it began at (the siren's rhythm counts from it). Written only on change.
+var alarm: String = "off"
+var alarm_since: float = 0.0
+## The share of the daylight the storm's dust over the village leaves (0..1, VillageAlarm.dust_light; 1 =
+## clear), as the server replicates it with the alarm's tick: the street lamps' photocells multiply it into
+## the daylight they read (Planet.daylight_through_weather_at), the same on every client.
+var dust_light: float = 1.0
+
+## The group the villages are in: the admin tools find the one a player stands in (PlayerServer).
+const GROUP := &"poi_villages"
+## How often the server forecasts the weather of its village for the alarm (s): a wall takes minutes to cross
+## its 10 min lookahead, a beat of 10 s is heard as on time.
+const ALARM_TICK_S := 10.0
+## How far past radius_m a player still counts as in the village for the admin tools (m): its edge is drawn
+## loosely, and a small village's radius is a few hundred metres.
+const ADMIN_REACH_M := 300.0
+## Wait before forecasting again after calling in a wall (s): ClimateWeather reads the walls called in with the
+## systems, kept SYSTEMS_KEPT_MS.
+const CALLED_WALL_SEEN_S := ClimateWeather.SYSTEMS_KEPT_MS / 1000.0 + 0.5
 
 ## How long the server waits for the elevation tile under the village before spawning its items at
 ## the stored pose anyway (ms): a village whose habs Horizon asked for must not wait forever.
@@ -41,6 +61,28 @@ var _spawn_holds_stream: bool = false
 var _ground_wait_since_ms: int = 0
 var _ground_retry_pending: bool = false
 
+## SERVER: the alarm's state machine, and whether its state was told since this node was made (a village
+## waking from the streaming does not know what Horizon holds for it: it tells its own once).
+var _alarm := VillageAlarm.new()
+var _alarm_told: bool = false
+## SERVER: whether dust_light was told since this node was made (the same reason as _alarm_told).
+var _dust_light_told: bool = false
+## CLIENT: the loudspeaker, made the first time the alarm sounds.
+var _siren: VillageSiren = null
+
+
+func _ready() -> void:
+	add_to_group(GROUP)
+	if not GameOrchestrator.is_server():
+		return
+	var timer := Timer.new()
+	timer.name = "AlarmTimer"
+	timer.wait_time = ALARM_TICK_S
+	timer.autostart = true
+	timer.timeout.connect(server_alarm_tick)
+	add_child(timer)
+	server_alarm_tick.call_deferred()
+
 
 func apply_prop_data(data: Dictionary) -> void:
 	if data.has("is_spawned"):
@@ -57,6 +99,12 @@ func apply_prop_data(data: Dictionary) -> void:
 		type = data["type"]
 	if data.has("name"):
 		name = data["name"]
+	if data.has("alarm") or data.has("alarm_since"):
+		alarm = str(data.get("alarm", alarm))
+		alarm_since = float(data.get("alarm_since", alarm_since))  # float(): Horizon's JSON may hand an int back
+		_show_alarm()
+	if data.has("dust_light"):
+		dust_light = float(data["dust_light"])  # 1 and 0 come back from Horizon's JSON as ints
 
 	# A client registers the villages it receives. The server already knows them all from their data
 	# (server.gd), but one awake has a body around: registered from the node too, as the client does, its
@@ -370,14 +418,117 @@ func _register_zone() -> void:
 		terrain.want_village_fences(s.uuid)
 
 
-## The terrain of the body this village stands on: its nearest Planet ancestor's.
-func _planet_terrain() -> PlanetTerrain:
+## CLIENT: hand the replicated alarm to the loudspeaker, made the first time the alarm is not off. Nothing on
+## the server (no audio there) nor in the editor.
+func _show_alarm() -> void:
+	if Sfx3D.muted() or (_siren == null and alarm == String(VillageAlarm.OFF)):
+		return
+	if _siren == null:
+		_siren = VillageSiren.new()
+		_siren.name = "VillageSiren"
+		add_child(_siren)
+	_siren.show_alarm(StringName(alarm), alarm_since)
+
+
+## SERVER: forecast the weather at the village's centre (VillageAlarm.danger_at over LOOKAHEAD_S) and step its
+## alarm; the state is replicated only when it changes, and once after the node is made. The dust there now
+## gives the village's dust_light on the same tick (a wall's front crosses a village in 4-12 s; the lamps
+## wait up to PhotocellTuning.max_delay_s after it anyway).
+func server_alarm_tick() -> void:
+	if not is_inside_tree():
+		return
+	var planet := _planet()
+	var weather := planet.current_weather_source() as ClimateWeather if planet != null else null
+	if weather == null or weather.profile == null or not weather.profile.has_atmosphere:
+		return
+	var dir := planet.local_dir_of(global_position)
+	if dir.is_zero_approx():
+		return
+	var lonlat := HEALPix.vec2lonlat(dir)
+	var t := ClimateWeather.now()
+	_server_dust_light(VillageAlarm.dust_light(VillageAlarm.dust_tau_at(weather, planet, lonlat, t)))
+	var eta := VillageAlarm.eta(func(offset: float) -> bool:
+		return VillageAlarm.danger_at(weather, planet, lonlat, t + offset))
+	if not _alarm.step(Globals.reference_time(), eta) and _alarm_told:
+		return
+	var s := PropSync.of(self)
+	if s == null or s.uuid == "":
+		return  # told at the next tick, once networked
+	_alarm_told = true
+	alarm = String(_alarm.state)
+	alarm_since = _alarm.since
+	s.server_prop_update({"alarm": alarm, "alarm_since": alarm_since})
+	print("[PoiVillages] %s: storm alarm %s (arrival %s)" % [name, alarm, "none in sight" if eta < 0.0 else "in %d s" % int(eta)])
+
+
+## SERVER: replicate [param light] (VillageAlarm.dust_light) as dust_light when it changed, and once after
+## the node is made.
+func _server_dust_light(light: float) -> void:
+	if is_equal_approx(light, dust_light) and _dust_light_told:
+		return
+	var s := PropSync.of(self)
+	if s == null or s.uuid == "":
+		return  # told at the next tick, once networked
+	_dust_light_told = true
+	dust_light = light
+	s.server_prop_update({"dust_light": dust_light})
+
+
+## SERVER, admin: a drill of the alarm through the normal replication: VillageAlarm.DRILL_WARNING_S of warning,
+## DRILL_DURING_S of siren, then the weather's say. Stepped at once and at each phase's end, not at the tick.
+func server_alarm_drill() -> void:
+	_alarm.drill(Globals.reference_time())
+	server_alarm_tick()
+	for at: float in [VillageAlarm.DRILL_WARNING_S, VillageAlarm.DRILL_WARNING_S + VillageAlarm.DRILL_DURING_S]:
+		get_tree().create_timer(at + 0.1).timeout.connect(server_alarm_tick)
+
+
+## SERVER, admin: call in a dust wall that reaches the village's centre ForcedDustWall.LEAD_S from now, running
+## with the wind there (from upwind), or toward [param facing_world] (where the admin looks, world frame) in a
+## calm. The alarm then forecasts it like any wall: warning at once, siren when it arrives. False when the
+## village stands on no planet with weather.
+func server_call_dust_wall(facing_world: Vector3) -> bool:
+	var planet := _planet()
+	var weather := planet.current_weather_source() as ClimateWeather if planet != null else null
+	if weather == null or weather.profile == null or planet.uuid == "":
+		return false
+	var dir := planet.local_dir_of(global_position)
+	if dir.is_zero_approx():
+		return false
+	var sample := weather.sample(planet, dir)
+	var way := Vector2(float(sample.get("wind_east_m_s", 0.0)), float(sample.get("wind_north_m_s", 0.0)))
+	if way.length() < ForcedDustWall.CALM_M_S:
+		# It comes at the admin from where they look, so they see it coming.
+		var axes: Array = Planet.local_axes(dir)
+		var facing: Vector3 = planet.global_basis.orthonormalized().inverse() * facing_world
+		way = -Vector2(facing.dot(axes[0]), facing.dot(axes[1]))
+	var at_local: Vector3 = planet.global_transform.affine_inverse() * global_position
+	NetworkOrchestrator.spawn_prop_authoritative(ForcedDustWall.spawn_data(planet.uuid, NetworkOrchestrator.UUID_UTIL.v4(),
+			at_local, HEALPix.vec2lonlat(dir), way, ClimateWeather.now(), weather.profile.radius_m))
+	get_tree().create_timer(CALLED_WALL_SEEN_S).timeout.connect(server_alarm_tick)
+	return true
+
+
+## Whether [param world_pos] stands in this village for the admin tools: within radius_m + ADMIN_REACH_M of
+## its centre, in the same world.
+func holds(world_pos: Vector3) -> bool:
+	return global_position.distance_to(world_pos) <= float(radius_m) + ADMIN_REACH_M
+
+
+## The body this village stands on: its nearest Planet ancestor.
+func _planet() -> Planet:
 	var n: Node = get_parent()
 	while n != null:
 		if n is Planet:
-			return (n as Planet).planet_terrain
+			return n as Planet
 		n = n.get_parent()
 	return null
+
+
+## The terrain of the body this village stands on: its nearest Planet ancestor's.
+func _planet_terrain() -> PlanetTerrain:
+	var planet := _planet()
+	return planet.planet_terrain if planet != null else null
 
 
 ## {type_name: [property names]} read from items_def/<type>_def.json, shared by every village.

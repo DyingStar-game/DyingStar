@@ -29,7 +29,11 @@ const LIST_LIMIT := 50
 ## The zones of the player's active missions: [{"name", "scene", "poi", "position": Vector3, "radius":
 ## float}], "poi" the id of the zone's point of interest ("" when it has none).
 static var _sites: Array = []
-## Bumped each time _sites changes: a planet whose markers were built from an older list rebuilds them.
+## The zones of the mission the player is reading at a kiosk, not theirs yet (preview): same shape. A
+## zone's point is its holder's alone to ask for, so "Locate on the chart" on a mission not taken yet
+## found nothing and left the chart where it was (playtest 2026-11-26).
+static var _previewed: Array = []
+## Bumped each time the zones change: a planet whose markers were built from an older list rebuilds them.
 static var _version: int = 0
 
 
@@ -59,6 +63,28 @@ static func sites_of(objectives: Variant) -> Array:
 	return sites
 
 
+## CLIENT: the zones of the mission being read ([param objectives], the mission service's; anything
+## else for none): found and drawn like those of the missions held, until another is read or the sheet
+## is closed.
+static func preview(objectives: Variant) -> void:
+	var sites: Array = sites_of(objectives)
+	if sites.is_empty() and _previewed.is_empty():
+		return
+	_previewed = sites
+	_version += 1
+
+
+## Every zone known: those of the missions held, then those of the mission being read that are not
+## among them (a mission read at a kiosk may be one the player holds).
+static func known() -> Array:
+	var all: Array = _sites.duplicate()
+	for site: Dictionary in _previewed:
+		var held: bool = _sites.any(func(mine: Dictionary) -> bool: return mine["position"] == site["position"])
+		if not held:
+			all.append(site)
+	return all
+
+
 ## CLIENT: read the zones of the player's active missions from the mission service. An unanswered call
 ## keeps what was known.
 static func refresh() -> void:
@@ -84,7 +110,7 @@ static func refresh() -> void:
 static func site_of_poi(poi_id: String) -> Dictionary:
 	if poi_id == "":
 		return {}
-	for site: Dictionary in _sites:
+	for site: Dictionary in known():
 		if str(site.get("poi", "")) == poi_id:
 			return site
 	return {}
@@ -107,7 +133,7 @@ static func ensure(planet: Planet) -> void:
 		anchor.remove_child(child)
 		child.queue_free()
 	var here := str(planet.planet_data.planet_name)
-	for site: Dictionary in _sites:
+	for site: Dictionary in known():
 		if site["scene"] == "" or site["scene"] == here:
 			anchor.add_child(_zone(site))
 

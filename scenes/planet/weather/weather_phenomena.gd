@@ -31,10 +31,11 @@ const WALL_BORN := Vector2(0.2, 0.45)
 ## The wall's front, seen from above (the same numbers go to dust_wall_volume.gdshader, see wall_front_m): its
 ## two ends trail its middle by WALL_BOW of half its length; it wanders back and forth by WALL_WANDER (wall
 ## depths: the short lobes, the long ones), in waves WALL_WANDER_M metres to the radian (three of them, whose
-## lengths never fall in step along a wall); WALL_FRONT_MARGIN wall depths are left ahead of it in the box.
-const WALL_BOW := 0.12
-const WALL_WANDER := Vector2(0.3, 0.4)
-const WALL_WANDER_M := Vector3(800.0, 1900.0, 4300.0)
+## lengths never fall in step along a wall). The weather's numbers (WeatherRelief.front_lead_m): its wind, dust,
+## light and sound follow the front drawn. WALL_FRONT_MARGIN wall depths are left ahead of it in the box.
+const WALL_BOW := WeatherRelief.WALL_BOW
+const WALL_WANDER := WeatherRelief.WALL_WANDER
+const WALL_WANDER_M := WeatherRelief.WALL_WANDER_M
 const WALL_FRONT_MARGIN := 0.85
 ## A devil is this many shells one inside the other.
 const DEVIL_SHELLS := 3
@@ -340,10 +341,7 @@ static func wall_tall(wall: Dictionary) -> float:
 ## box (of [param size]) toward the box's leading face; [param deep_m]: the wall's own depth. The numbers
 ## dust_wall_volume.gdshader draws the front by (its front_m).
 static func wall_front_m(x_m: float, size: Vector3, deep_m: float) -> float:
-	var along := x_m / (size.x * 0.5)
-	return size.z * 0.5 - deep_m * WALL_FRONT_MARGIN - WALL_BOW * size.x * 0.5 * along * along \
-			+ deep_m * (WALL_WANDER.x * (0.6 * sin(x_m / WALL_WANDER_M.x + 1.3) + 0.4 * sin(x_m / WALL_WANDER_M.y + 4.1)) \
-			+ WALL_WANDER.y * sin(x_m / WALL_WANDER_M.z + 0.7))
+	return size.z * 0.5 - deep_m * WALL_FRONT_MARGIN + WeatherRelief.front_lead_m(x_m, size.x * 0.5, deep_m)
 
 
 ## A wall's box: x along the front, y up, z the way it runs, the front WALL_FRONT_MARGIN wall depths behind
@@ -397,6 +395,10 @@ func _make_wall(wall: Dictionary) -> Node3D:
 	material.set_shader_parameter("bow", WALL_BOW)
 	material.set_shader_parameter("wander", WALL_WANDER)
 	material.set_shader_parameter("wander_m", WALL_WANDER_M)
+	# The tail thins and sinks as the weather's does (WeatherRelief.wall_share, wall_tall_at): the drawing, the
+	# dust, the wind and the light agree on where the dusty air lies.
+	material.set_shader_parameter("tail_fall", WeatherRelief.WALL_TAIL_FALL)
+	material.set_shader_parameter("tail_crest", WeatherRelief.WALL_TAIL_CREST)
 	_part(node, _wall_mesh, material, _tints_of(wall), 0.0)
 	return node
 

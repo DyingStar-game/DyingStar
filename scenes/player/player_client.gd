@@ -360,6 +360,8 @@ func setup() -> void:
 	_light_probe.name = "LightProbe"
 	_light_probe.show_line = _flash_prompt
 	player.add_child(_light_probe)
+	# Dev: what "Locate on the chart" was given and where the chart went (debug_locate_probe, Alt+B).
+	LocateProbe.register_action()
 
 	# Emote wheel: hold the emote key (T) to pick an emote (the spawn wheel moved to Alt+T).
 	player._emote_wheel = RadialMenu.new()
@@ -1478,6 +1480,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if InputCombo.pressed(event, "datapad_missions") and _wrist != null:
 		_wrist.toggle_missions()  # F4: the DataPad straight on My missions (playtest 2026-11-09)
+		return
+	# Writes what the last "Locate on the chart" was given and where the chart went (LocateProbe). Above
+	# the chart's guard, unlike the other dev keys: a locate ends ON the chart, the DataPad up, and that
+	# is when the key is pressed -- below the guard it did nothing and wrote no file (playtest 2026-11-28).
+	if (LocateProbe.enabled() and InputMap.has_action(LocateProbe.ACTION)
+			and InputCombo.pressed(event, LocateProbe.ACTION) and _star_map != null):
+		var written: String = LocateProbe.write(_star_map.locate_probe_facts())
+		if written != "":
+			_flash_prompt(written)
 		return
 	if _star_map_open() or _services_open(): return
 	# Leave the seat we occupy (driver or passenger) with Y. We only ASK: the server owns the gate
@@ -3299,17 +3310,22 @@ func _watch_debug_notification() -> void:
 		follow.call(true)
 
 
-## A screen asked for a place on the chart (a kiosk's mission sheet, the DataPad): the wrist comes up on
-## the chart, framed on the broken machine itself when it is loaded around here, on the point of
-## interest otherwise.
-func _on_locate_requested(poi_id: String, machine_id: String) -> void:
+## A screen asked for a mission's place on the chart (a kiosk's mission sheet, the DataPad):
+## [param request] is MissionLocate.request's. The wrist comes up on the chart, framed on the first of its
+## targets the chart can show (StarMap.focus_mission_targets); a line says so when none could be.
+func _on_locate_requested(request: Dictionary) -> void:
 	if _star_map == null or _services == null or _wrist == null:
 		return
-	_wrist.open_with(func() -> void:
-		_services.open_navigation()
-		if machine_id != "" and _star_map.focus_machine(machine_id):
-			return
-		_show_poi(poi_id))
+	LocateProbe.begin(request)
+	var targets: Array = request.get("targets") if request.get("targets") is Array else []
+	_wrist.open_with(func() -> void: _locate_on_chart(targets))
+
+
+func _locate_on_chart(targets: Array) -> void:
+	_services.open_navigation()
+	var shown: bool = await _star_map.focus_mission_targets(targets)
+	if not shown and _notifications != null:
+		_notifications.push(tr("%%SVC_MSG_POI_NOT_SHOWN"))
 
 
 ## A mission was taken somewhere else than on the tablet (a kiosk): a line says so, the wrist blinks,

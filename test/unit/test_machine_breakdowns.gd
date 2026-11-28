@@ -159,11 +159,12 @@ func test_a_lift_s_part_says_which_lift_it_is() -> void:
 
 func test_a_repair_names_its_place_and_its_machine() -> void:
 	var objectives := [{"status": "pending", "locationTo": {"poiUuid": "poi-1"}, "payload": {"machineId": "m-1"}}]
-	assert_eq(ServiceTypes.mission_place({}, objectives), {"poi": "poi-1", "machine": "m-1"})
+	var first: Dictionary = MissionLocate.targets({}, objectives)[0]
+	assert_eq([first["poi"], first["machine"]], ["poi-1", "m-1"])
 	# No objective read yet (a list row): the mission's own poi zone.
-	assert_eq(ServiceTypes.mission_place({"zones": [{"kind": "poi", "poiId": "poi-2"}]}, []),
-			{"poi": "poi-2", "machine": ""})
-	assert_eq(ServiceTypes.mission_place({}, []), {"poi": "", "machine": ""}, "a mission that names no place")
+	var zone: Dictionary = MissionLocate.targets({"zones": [{"kind": "poi", "poiId": "poi-2"}]}, [])[0]
+	assert_eq([zone["poi"], zone["machine"]], ["poi-2", ""])
+	assert_true(MissionLocate.targets({}, []).is_empty(), "a mission that names no place")
 
 
 ## A broken part of a mine's lift is down its shaft; marked there, its pictogram sat in the middle of
