@@ -403,8 +403,57 @@ class LineBakeFile(unittest.TestCase):
         self.assertEqual(PT.verify_file(self.path, self.out, "lineplanet.lines", v1), 1)
 
 
+class LineBakeRegions(unittest.TestCase):
+    """grade_profiles.pack découpé par région (LineBake) : un conteneur DSMP « lines », publié en
+    tuiles sous le même corps <planète>.lines, l'en-tête seul dans le plancher."""
+
+    TILES = {(1, 0): b"header", (16, 5): b"region-5", (16, 3071): b"region-last"}
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        chunks = os.path.join(self.dir, "lineplanet_chunks")
+        os.makedirs(chunks)
+        self.path = os.path.join(chunks, "grade_profiles.pack")
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                                        "tools", "planettech", "qgis"))
+        from export.planet import dsmp
+        levels = {}
+        for (nside, ipix), payload in self.TILES.items():
+            levels.setdefault(nside, []).append((ipix, payload))
+        dsmp.write_pack(self.path, [(n, sorted(levels[n])) for n in sorted(levels)],
+                        {"planet_name": "lineplanet", "dataset": "lines", "format": 1,
+                         "levels": [1, 16], "floor_nside_max": 1})
+        self.out = os.path.join(self.dir, "dist")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_a_regional_bake_is_not_a_whole_file(self):
+        self.assertFalse(PT.is_whole_file(self.path))
+        pack = PT.open_pack(self.path)
+        self.assertEqual((pack.dataset, pack.body_suffix, pack.floor_nside_max), ("lines", ".lines", 1))
+        self.assertEqual(pack.data_version(), PT.file_version(self.path),
+                         "named by its bytes, like the whole-file bake: the QGIS records still match")
+
+    def test_main_publishes_tiles_under_the_lines_body(self):
+        self.assertEqual(PT.main([self.path, "--out", self.out, "--compress"]), 0)
+        with open(os.path.join(self.out, "lineplanet.lines", "latest.json")) as fh:
+            entry = json.load(fh)
+        self.assertEqual(entry["dataset"], "lines")
+        self.assertEqual(entry["floor_nside_max"], 1)
+        self.assertEqual((entry["nside_min"], entry["nside_max"]), (1, 16))
+        self.assertNotIn("tile_res", entry)
+        bundle = PT.read_floor_bundle(PT.floor_bundle(PT.open_pack(self.path), False))
+        self.assertEqual([(n, i) for n, i, _b in bundle], [(1, 0)], "the floor is the header alone")
+        from tools.planettech.publish import stream_channels as SC
+        self.assertEqual(SC.tree_problems(self.out, "lineplanet.lines", entry), [])
+        self.assertEqual(PT.main([self.path, "--out", self.out, "--verify"]), 0)
+
+
 if __name__ == "__main__":
     suite = unittest.TestSuite()
-    for cls in (TileEnvelope, PublishTree, FloorBundle, ModifierPackTree, LineBakeFile):
+    for cls in (TileEnvelope, PublishTree, FloorBundle, ModifierPackTree, LineBakeFile,
+                LineBakeRegions):
         suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
     sys.exit(0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1)

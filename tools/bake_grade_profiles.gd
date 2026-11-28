@@ -222,15 +222,37 @@ func _bake(planet: String) -> bool:
 	data._grade_baked.clear()
 	data._bridge_bake_checked = false
 	data._bridge_baked = {}
+	# Every region merged back must give the very tables computed above, knot for knot: the game
+	# reads a region at a time, and a stretch missing from all of them would leave a line on the
+	# header's decimated knots for good.
 	var readable := 0
 	for road in baked_lines:
-		if not data._grade_baked_profile(road).is_empty():
-			readable += 1
-	var bridges_read := not data._baked_bridges().is_empty()
+		var back := data._grade_baked_profile(road)
+		var fid := int(road.get("feature_id", -1))
+		var want: Dictionary = profiles.get(fid, {})
+		if back.is_empty():
+			continue
+		if back["knots_along"] != want["knots_along"] or back["knots_z"] != want["knots_z"] \
+				or str(back["segments"]) != str(want["segments"]) or back["seg_lo"] != want["seg_lo"]:
+			_err("[GradeBake] %s: line fid %d read back from its regions differs from the computed one"
+					% [planet, fid])
+			continue
+		readable += 1
+	var back_b := data._baked_bridges()
+	var bridges_read := not back_b.is_empty()
+	if bridges_read and not bridges.is_empty() and (
+			(back_b.get("spans", []) as Array).size() != (bridges["spans"] as Array).size()
+			or (back_b.get("plans", {}) as Dictionary).size() != (bridges["plans"] as Dictionary).size()):
+		_err("[GradeBake] %s: crossings read back from the regions: %d span(s) / %d plan(s), baked %d / %d"
+				% [planet, (back_b.get("spans", []) as Array).size(),
+				(back_b.get("plans", {}) as Dictionary).size(), (bridges["spans"] as Array).size(),
+				(bridges["plans"] as Dictionary).size()])
+		bridges_read = false
 	_say("[GradeBake] %s: %s — %d/%d line(s) baked, crossings %s, %.1f MB, %d s in all"
 			% [planet, data.grade_bake_path(), readable, lines.size(),
 			"baked" if bridges_read else "NOT baked",
 			float(size) / 1048576.0, (Time.get_ticks_msec() - t_start) / 1000])
+	_say_regions(planet, data.grade_bake_path())
 	if data.remote_source != null:
 		data.remote_source.stop()
 	var complete := readable == baked_lines.size() and baked_lines.size() == lines.size() \
@@ -239,6 +261,26 @@ func _bake(planet: String) -> bool:
 	if complete and _publish_bake:
 		_publish(data.grade_bake_path())
 	return complete
+
+
+## What a client downloads of the bake at [param path]: the header, and the regions (count,
+## median, largest), before the tile envelope's deflate.
+func _say_regions(planet: String, path: String) -> void:
+	var pack := ModifierPack.new()
+	if not pack.open(path):
+		return
+	var head := pack.read_tile(LineBake.HEADER_NSIDE, LineBake.HEADER_IPIX).size()
+	var sizes: Array[int] = []
+	for r: int in pack.get_tile_ipix(LineBake.REGION_NSIDE):
+		sizes.append(pack.read_tile(LineBake.REGION_NSIDE, r).size())
+	pack.close()
+	sizes.sort()
+	if sizes.is_empty():
+		_say("[GradeBake] %s: header %.1f KiB, no region" % [planet, head / 1024.0])
+		return
+	_say("[GradeBake] %s: header %.1f KiB; %d region(s), median %.1f KiB, largest %.1f KiB (raw)"
+			% [planet, head / 1024.0, sizes.size(), sizes[sizes.size() >> 1] / 1024.0,
+			sizes[-1] / 1024.0])
 
 
 ## Hand the fresh bake to the tile service (tools/planettech/publish/publish_remote.py, in the
