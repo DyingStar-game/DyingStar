@@ -671,6 +671,8 @@ var _lava_bake_exclusions: Variant = null
 var _grade_bake_doc: Dictionary = {}
 var _grade_bake_doc_read: bool = false
 var _grade_bake_doc_mutex := Mutex.new()
+## The worker reading the line bake ahead (start_reading_line_bake), -1 when none was started or it is joined.
+var _bake_read_task: int = -1
 ## The baked chasm crossings {spans, plans} when their key matches this
 ## planet (see bridge_bake_key), else {}. Decided once.
 var _bridge_baked: Dictionary = {}
@@ -3060,23 +3062,29 @@ func _build_bridge_plans() -> void:
 	if not baked.is_empty():
 		# Baked with every tile at hand: no span waits for one here.
 		var plans: Dictionary = baked.get("plans", {})
+		# Read once, the key made once a span: 14 107 crossings on tarsis_3, each key formatted three times
+		# and the rebuild set looked up again, were 224 ms of the frame the planet was made in (2026-11-28).
+		var rebuild: Dictionary = baked.get("rebuild", {})
+		var any_rebuild := not rebuild.is_empty()
 		for s in spans:
 			if s.get("truncated", false):
 				continue
-			var plan: Dictionary = plans.get(bridge_span_key(s), {})
-			if (baked.get("rebuild", {}) as Dictionary).has(bridge_span_key(s)):
+			var key := bridge_span_key(s)
+			if any_rebuild and rebuild.has(key):
 				if not _plan_one_span(s, profile, built):
 					skipped += 1
 				continue
+			var plan: Dictionary = plans.get(key, {})
 			if plan.is_empty():
 				skipped += 1
 				continue
-			built[bridge_span_key(s)] = plan
+			built[key] = plan
 			var fid: int = int(s.get("feature_id", -1))
-			if not _bridge_excl_raw.has(fid):
-				_bridge_excl_raw[fid] = []
-			(_bridge_excl_raw[fid] as Array).append(
-					Vector2(float(plan["excl_lo_along"]), float(plan["excl_hi_along"])))
+			var raw: Variant = _bridge_excl_raw.get(fid)
+			if raw == null:
+				raw = []
+				_bridge_excl_raw[fid] = raw
+			(raw as Array).append(Vector2(float(plan["excl_lo_along"]), float(plan["excl_hi_along"])))
 	else:
 		for s in spans:
 			if not _plan_one_span(s, profile, built):
@@ -3913,13 +3921,34 @@ func _build_grade_profiles() -> void:
 	var skipped := 0
 	var baked := 0
 	var t0 := Time.get_ticks_msec()
+	# Baked: the profile the game would compute, read from disk — no tile under the line to wait for, no chunk
+	# left provisional. Their spans and plans made on the workers, side by side (_grade_parts, pure: 281 ms for
+	# tarsis_3's 133 lines on the main thread, 2026-11-28), then published at once (_grade_register_all).
+	var to_lay: Array = []
+	var entries: Array = []
 	for road in lines:
-		# Baked: the profile the game would compute, read from disk — no
-		# tile under the line to wait for, no chunk left provisional.
 		var bp := _grade_baked_profile(road)
-		if not bp.is_empty() and _grade_register(road, bp):
-			baked += 1
+		if bp.is_empty():
+			to_lay.append(road)
 			continue
+		_grade_trim(bp)
+		entries.append([road, bp, {}])
+	if not entries.is_empty():
+		var slots: Array = []
+		for e: Array in entries:
+			slots.append([])  # one per line: each worker writes its own
+		var r := radius
+		var group := PerfTasks.add_group_task("terrain:grade_parts", func(i: int) -> void:
+			(slots[i] as Array).append(_grade_parts(entries[i][0], entries[i][1], r)), entries.size(), -1, true,
+			"grade parts %s" % planet_name)
+		PerfTasks.wait_group(group, "planet_data")
+		for i in entries.size():
+			entries[i][2] = (slots[i] as Array)[0] if not (slots[i] as Array).is_empty() else {}
+		baked = _grade_register_all(entries)
+		for e: Array in entries:
+			if (e[2] as Dictionary).is_empty():
+				to_lay.append(e[0])  # not usable as baked: laid as an unbaked line, as before
+	for road in to_lay:
 		# Every tile under the line must be readable: one missing tile would
 		# make sample_height_for_direction fall back to the flat global map
 		# for that stretch, and the client and the server would then lay the
@@ -4052,7 +4081,21 @@ func _ensure_grade_bake() -> void:
 
 
 ## grade_profiles.pack as read, once — {} when absent or unreadable.
+## Starts reading the line bake (<planet>.lines: the baked railway profiles and chasm crossings) on a worker,
+## as the body enters: decompressed and decoded at once by the first bridge asked for, it was ~500 ms of the
+## frame a planet was made in (tarsis_3, 2026-11-28), while the body has ~700 ms of other work before that.
+## Nothing else changes: the first reader on the main thread waits for it, then finds it read.
+func start_reading_line_bake() -> void:
+	if _bake_read_task >= 0 or _grade_bake_doc_read or chunk_heightmaps_dir == "":
+		return
+	_bake_read_task = PerfTasks.add_task("planet:line_bake", func() -> void: _load_grade_bake_doc(), false,
+			"line bake")
+
+
 func _load_grade_bake_doc() -> Dictionary:
+	if _bake_read_task >= 0 and OS.get_thread_caller_id() == OS.get_main_thread_id():
+		PerfTasks.wait(_bake_read_task, "planet_data")
+		_bake_read_task = -1
 	_grade_bake_doc_mutex.lock()
 	if not _grade_bake_doc_read:
 		_grade_bake_doc_read = true
@@ -4180,43 +4223,73 @@ func write_grade_bake(roads: Array, profiles: Dictionary, bridges: Dictionary = 
 ## deck plans, and the bed exclusions under the decks. Returns false when
 ## GradeProfile itself said no (a definitive refusal).
 func _grade_register(road: Dictionary, profile: Dictionary) -> bool:
-	if not bool(profile.get("ok", false)):
-		return false
-	var fid := int(road.get("feature_id", -1))
-	# The terrain read every 5 m only served to classify the segments: 8.5 M
-	# stations × 2 doubles on a line round the planet (~140 MB) nobody reads.
+	_grade_trim(profile)
+	return _grade_register_all([[road, profile, _grade_parts(road, profile, radius)]]) == 1
+
+
+## The terrain read every 5 m only served to classify the segments: 8.5 M stations × 2 doubles on a line round
+## the planet (~140 MB) nobody reads. Dropped from [param profile] before it is kept.
+static func _grade_trim(profile: Dictionary) -> void:
 	profile.erase("stations_along")
 	profile.erase("stations_terrain")
-	# Copy-on-write (see _grade_pub_mutex): edited copies, published together at the end.
+
+
+## What registering [param profile] of [param road] adds: {spans, plans (by bridge_span_key), excl}, from them
+## alone -- pure, so on any thread; {} when the profile is not usable.
+static func _grade_parts(road: Dictionary, profile: Dictionary, radius_m: float) -> Dictionary:
+	if not bool(profile.get("ok", false)):
+		return {}
+	var spans: Array = []
+	var plans_by_key := {}
+	var plans: Array = []
+	for span in GradeProfile.spans_of(profile, road):
+		var plan := GradeProfile.plan_of(profile, span, road, radius_m)
+		if not bool(plan.get("ok", false)):
+			continue
+		spans.append(span)
+		plans_by_key[bridge_span_key(span)] = plan
+		plans.append(plan)
+	return {"spans": spans, "plans": plans_by_key, "excl": GradeProfile.exclusions_of(plans)}
+
+
+## Publishes [param entries] ([road, profile, _grade_parts]) together, in one copy-on-write (see
+## _grade_pub_mutex): copied once per line, the tables grew with every line -- 102 ms of copies for tarsis_3's
+## 133 lines (2026-11-28). Returns how many were registered (those whose parts are not empty).
+func _grade_register_all(entries: Array) -> int:
 	var profiles := _grade_profiles.duplicate()
 	var spans := _grade_spans.duplicate()
 	var plans_by_key := _grade_plans.duplicate()
 	var excl := _grade_excl.duplicate()
-	profiles[fid] = profile
-	# The authoritative "lava never climbs" report, from the real relief (the
-	# exporter only guessed it): the flow is built anyway, its channel cut.
-	if float(profile.get("uphill_m", 0.0)) > 0.0:
-		push_warning("[PlanetData] '%s': lava flow '%s' (fid %d) ends %.0f m ABOVE its source — "
-				% [planet_name, str(road.get("name", "")), fid, float(profile["uphill_m"])]
-				+ "lava never flows uphill: its channel is cut through the rise. "
-				+ "Draw it from the source downhill in QGIS.")
-	var plans: Array = []
-	for span in GradeProfile.spans_of(profile, road):
-		var plan := GradeProfile.plan_of(profile, span, road, radius)
-		if not bool(plan.get("ok", false)):
+	var n := 0
+	for e: Array in entries:
+		var parts: Dictionary = e[2]
+		if parts.is_empty():
 			continue
-		spans.append(span)
-		_span_owner_index_ok = false
-		plans_by_key[bridge_span_key(span)] = plan
-		plans.append(plan)
-	excl[fid] = GradeProfile.exclusions_of(plans)
+		var road: Dictionary = e[0]
+		var profile: Dictionary = e[1]
+		var fid := int(road.get("feature_id", -1))
+		profiles[fid] = profile
+		# The authoritative "lava never climbs" report, from the real relief (the
+		# exporter only guessed it): the flow is built anyway, its channel cut.
+		if float(profile.get("uphill_m", 0.0)) > 0.0:
+			push_warning("[PlanetData] '%s': lava flow '%s' (fid %d) ends %.0f m ABOVE its source — "
+					% [planet_name, str(road.get("name", "")), fid, float(profile["uphill_m"])]
+					+ "lava never flows uphill: its channel is cut through the rise. "
+					+ "Draw it from the source downhill in QGIS.")
+		spans.append_array(parts["spans"])
+		plans_by_key.merge(parts["plans"], true)
+		excl[fid] = parts["excl"]
+		n += 1
+	if n == 0:
+		return 0
+	_span_owner_index_ok = false
 	_grade_pub_mutex.lock()
 	_grade_profiles = profiles
 	_grade_spans = spans
 	_grade_plans = plans_by_key
 	_grade_excl = excl
 	_grade_pub_mutex.unlock()
-	return true
+	return n
 
 
 func _grade_summary() -> String:

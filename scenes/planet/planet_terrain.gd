@@ -630,6 +630,8 @@ var _server_chunk_queue: Array[Dictionary] = []
 # ------------------------------------------------------------------
 
 func initialize(data: PlanetData, server_mode: bool) -> void:
+	# pl:* (debug_perf): a body's terrain made, step by step (_pl_mark) -- 3.3 s in one frame for tarsis_3.
+	var _pl := _perf_begin()
 	planet_data = data
 	is_server = server_mode
 	if data.cave_catalog != null:
@@ -643,17 +645,22 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# and modifiers (roads, biomes, mountains…) alike; no local pack is read. Attached before
 		# anything samples a height or opens the modifiers (the cache key below reads their
 		# fingerprints). Null without a reachable service: the planet then runs on the global map.
+		_pl = _pl_mark("start_manifest", _pl)
 		data.remote_source = RemoteTileSource.for_planet(data.planet_name)
+		_pl = _pl_mark("start_tile_source", _pl)
 		_warn_version_mismatch(data)
 		data.attach_remote_modifiers()
+		_pl = _pl_mark("start_modifiers", _pl)
 	# The visual mesh only: the server's collision keeps the tiers, probes and shape it always had.
 	data.far_tier_res = 0 if server_mode else data.chunk_resolution
 	data.normal_probe_m = 0.0 if server_mode else NORMAL_PROBE_M
 	data.lod_morph = not server_mode and lod_morph_enabled
 	if not _pending_village_beds.is_empty():
 		_replay_pending_village_beds.call_deferred()
+	_pl = _pl_mark("start", _pl)
 	# Nova: before any chunk is built or keyed, the body's variants and its ground material.
 	_nova_setup(data, server_mode)
+	_pl = _pl_mark("nova", _pl)
 	# The POIs the crack network keeps whole. Those listed in the planet's <planet>_poi.json are given to
 	# the sampler here, before the key (they are baked geometry), before the bridge spans walk the chasms
 	# and before any chunk carves — in the editor too: without them the editor's ground differed from the
@@ -663,6 +670,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# the disk cache.
 	_static_pois = StarMapPoi.load_for(data.planet_name)
 	data.set_crack_exclusions(poi_crack_exclusions(data.planet_name))
+	_pl = _pl_mark("pois", _pl)
 
 	# Initialize chunk disk cache (skipped in editor mode)
 	if not Engine.is_editor_hint():
@@ -977,6 +985,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	# The rail modules, loaded here on the main thread: the mesh tasks lay them (RailwayTrack.stamp_rails).
+	_pl = _pl_mark("cache_key", _pl)
 	if not server_mode and planet_data.has_railways():
 		RailwayTrack.module_meshes()
 	if not data.cave_placements.is_empty():
@@ -985,6 +994,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# The geometry version is what a client and a server must SHARE for their
 	# terrains to agree (the sampler, the carve, the stitch are all in it):
 	# grep it in both logs before hunting a client/server height mismatch.
+	_pl = _pl_mark("rails_caves", _pl)
 	print("[PlanetTerrain] initialize: planet=%s radius=%.0f export_nside=%d server=%s geometry=%s" % [
 		data.planet_name, data.radius, data.export_nside, server_mode,
 		_chunk_cache.version if _chunk_cache else "no-cache"])
@@ -1061,28 +1071,34 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		else:
 			push_warning("[PlanetTerrain] no safety-net mesh available for '%s'" % planet_data.planet_name)
 
+	_pl = _pl_mark("atmo_collision", _pl)
 	# Procedural mountains: resolve the planet gate and the debug features on
 	# THIS thread, before the bridge spans and grade profiles below read the
 	# sampler — they must stand on the mountains too.
 	planet_data.warm_mountains()
+	_pl = _pl_mark("mountains", _pl)
 	# Fumarole fields and lava flows: same reason (the workers only read the
 	# gates and the debug records built here).
 	planet_data.warm_fumaroles()
 	planet_data.has_lava()
+	_pl = _pl_mark("fumaroles_lava", _pl)
 
 	# Find the road/chasm crossings now rather than on the first chunk that
 	# needs a bridge: the walk costs ~200 ms on tarsis_3 and would otherwise
 	# land as a visible stall in the middle of flight. Memoised afterwards.
 	planet_data.get_bridge_spans()
+	_pl = _pl_mark("bridge_spans", _pl)
 	# Plan the decks and ramps in the same breath, on THIS thread. The mesh
 	# workers cut the road ribbon out from under those ramps, so they must read
 	# a table that is already complete; building it lazily would let a worker
 	# and the main thread disagree about where a bridge starts, and the ribbon
 	# would be cut open where nothing spans it.
 	planet_data.warm_bridge_plans()
+	_pl = _pl_mark("bridge_plans", _pl)
 	# Same reason, same place: the railway profiles feed the bed builders on
 	# the mesh workers and the viaduct spawner on the main thread.
 	planet_data.warm_grade_profiles()
+	_pl = _pl_mark("grade_profiles", _pl)
 	# Same reason again, one step further: a building placed in the editor
 	# carries a TerrainPad that levels the ground under it, and the pad has to
 	# be in the index BEFORE the first mesh task reads it — a chunk built
@@ -1090,6 +1106,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# later. Buildings that arrive afterwards (spawned by the server, received
 	# by the client on entering GORC range) register themselves.
 	warm_terrain_pads()
+	_pl = _pl_mark("pads", _pl)
 
 	_initialized = true
 	if LavaSettings.simulated_craters and not Engine.is_editor_hint() and lava_runtime == null:
@@ -2362,6 +2379,12 @@ func _physics_process(_delta: float) -> void:
 	_tk = _perf_begin()
 	_update_terrain()
 	_perf_end("terrain_update", _tk)
+
+
+## Ends the pl:<[param scope_name]> scope begun at [param tok] and begins the next (initialize, debug_perf).
+func _pl_mark(scope_name: String, tok: int) -> int:
+	_perf_end("pl:" + scope_name, tok)
+	return _perf_begin()
 
 
 ## ClientPerf scopes, editor-safe: the autoload is not @tool, so its members
@@ -5485,7 +5508,9 @@ func _nova_setup(data: PlanetData, server_mode: bool) -> void:
 	_nova_descs = []
 	if not NovaBody.is_enabled_for(data.planet_name) or data.chunk_heightmaps_dir == "":
 		return
+	var tk := _perf_begin()
 	var body := NovaBody.open_body(data.planet_name)
+	tk = _pl_mark("nova_open", tk)
 	data.nova_relief = body
 	if server_mode:
 		# The shape of the ground, and the colliders of the rocks big enough to bump into: no material, no
@@ -5493,8 +5518,10 @@ func _nova_setup(data: PlanetData, server_mode: bool) -> void:
 		_nova_read_rock_descs(data, body)
 		return
 	body.build_material(data.terrain_material)
+	tk = _pl_mark("nova_material", tk)
 	data.nova = body
 	_nova_read_descs(data)
+	_pl_mark("nova_descs", tk)
 	# A game the editor runs listens to the Nova dock (NovaLink). One body at a time: the first on the line.
 	if EngineDebugger.is_active() and not Engine.is_editor_hint() \
 			and not EngineDebugger.has_capture(NovaLink.CHANNEL):

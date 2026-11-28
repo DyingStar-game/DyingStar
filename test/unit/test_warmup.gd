@@ -199,6 +199,12 @@ func test_the_sky_shaders_are_loaded_and_compiled_ahead() -> void:
 		assert_true(load(path) is Shader, "%s is a shader" % path)
 	var users := FileAccess.get_file_as_string("res://scenes/player/atmosphere_renderer.gd") \
 			+ FileAccess.get_file_as_string("res://scenes/ui/star_map/star_map.gd") \
-			+ FileAccess.get_file_as_string("res://scenes/ui/star_map/ecliptic_grid.gd")
+			+ FileAccess.get_file_as_string("res://scenes/ui/star_map/ecliptic_grid.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/planet/nova/nova_body.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/planet/atmosphere_lod.gd")
 	for path: String in Warmup.BY_USE_SHADERS:
 		assert_string_contains(users, path, "%s is what the sky or the chart loads" % path.get_file())
+
+
+func test_the_railway_module_is_loaded_ahead() -> void:
+	assert_has(Warmup.SCENES, RailwaySettings.MODULE_PATH, "the module RailwayTrack reads as a body is made")
