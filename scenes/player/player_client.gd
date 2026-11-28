@@ -296,7 +296,15 @@ static func keep_out_of_torch_shadow(body: Node, torch: Light3D) -> void:
 	torch.shadow_caster_mask &= ~Globals.RENDER_MASK_OWN_BODY
 
 
+## Ends the me:<[param name]> scope begun at [param tok] and begins the next (ClientPerf, debug_perf).
+func _me_mark(scope_name: String, tok: int) -> int:
+	ClientPerf.scope_end("me:" + scope_name, tok)
+	return ClientPerf.scope_begin()
+
+
 func setup() -> void:
+	# me:* (debug_perf): what our own player's setup costs as it appears, block by block (_me_mark).
+	var _me: int = ClientPerf.scope_begin()
 	# The animated puppet is the visible body now — for the owner (first person) and remotes alike.
 	player.astronaut.visible = false
 	var animator = player.puppet.get_node_or_null("CharacterAnimator")
@@ -310,6 +318,7 @@ func setup() -> void:
 	_wear_default_look.call_deferred()  # deferred: a remote's uuid is set right after it enters the tree
 	_mount_torch()  # every avatar, owner and remote alike: the beam belongs on the head, not on a camera
 	_mount_wrist_datapad(animator)  # every avatar too, before our own body moves to its render layer
+	_me = _me_mark("body", _me)
 	if player.remote_player:
 		player.camera.current = false
 		# No shadow until the owner's TorchShadowBudget hands one out (the nearest few only).
@@ -336,6 +345,7 @@ func setup() -> void:
 	_god_mode_speed = GOD_MODE.clamp_speed(player.god_mode_speed)
 	_build_god_mode_label()
 
+	_me = _me_mark("start", _me)
 	# Dev spawn wheel: hold the spawn key (Alt+T) to pick what to spawn. Switched off in every build (see
 	# Globals.ENABLED_DEV_TOOLS) but for an admin (AdminRoles.DEV_TOOLS, on our own token: the server
 	# checks the verified roles again). Not built otherwise, and everything downstream already handles a
@@ -375,6 +385,7 @@ func setup() -> void:
 		player.add_child(player.admin_cleanup_tool)
 		player.admin_cleanup_tool.setup(player.camera, player)
 
+	_me = _me_mark("wheels_budgets", _me)
 	# Hauling: the white disc on the aim ray showing where E will put the carried crate down. Hides
 	# itself whenever we carry nothing, so it costs a flag test the rest of the time.
 	_placement_marker = CarryPlacementMarker.new()
@@ -382,16 +393,22 @@ func setup() -> void:
 	_placement_marker.setup(player)
 	# System chart (F2): every body as a plain sphere, with its orbit and current spin.
 	_star_map = StarMap.new()
+	# The tablet first, unbuilt: the chart builds its face in the tablet's NAVIGATION slot (StarMap.build_in).
+	_services = TerminalUI.new()
+	_star_map.build_in = _services.navigation_slot()
+	_me = _me_mark("star_map_new", _me)
 	_screens_root().add_child(_star_map)
+	_me = _me_mark("star_map_enter", _me)
 	_star_map.setup(player)  # so the chart can mark where you are
+	_me = _me_mark("star_map", _me)
 	_help = ControlsHelp.new()
 	player.add_child(_help)
+	_me = _me_mark("help", _me)
 	# Services terminal (F3): social / mission / economie, a modal. Its NAVIGATION tab hosts
 	# the chart's face: the tablet shows the tab and asks, the chart opens there (F2 opens that tab);
 	# the tab left, the chart closes. The tablet never reaches for the chart on its own.
 	# It is read on the wrist: it draws on the DataPad's screen, not over the game, so it lives in that
 	# screen's viewport from the start (TerminalUI drops its autoload signals when it leaves the tree).
-	_services = TerminalUI.new()
 	var tablet_host: Node = _screens_root()
 	if _wrist_model != null:
 		# Read on the wrist, but its viewport hangs with the owner's other screens, OUT of the body: the
@@ -400,8 +417,11 @@ func setup() -> void:
 		# the viewport itself, not a path to it.
 		_wrist_model.viewport.reparent(tablet_host, false)
 		tablet_host = _wrist_model.viewport
+	_me = _me_mark("tablet_viewport", _me)
 	tablet_host.add_child(_services)
+	_me = _me_mark("tablet_enter", _me)
 	_star_map.host_in(_services.navigation_slot())
+	_me = _me_mark("tablet_host", _me)
 	_cab = CabScreenPointer.new(_star_map, _services.navigation_slot(), _send_vehicle_action)
 	_services.navigation_requested.connect(_open_navigation)
 	_services.navigation_closed.connect(_close_navigation)
@@ -412,6 +432,7 @@ func setup() -> void:
 	# chart but to LOOK, so nothing is armed and nothing comes back.
 	_services.focus_poi_requested.connect(_show_poi)
 	_star_map.poi_placed.connect(_on_poi_placed)
+	_me = _me_mark("tablet", _me)
 	# F3 and F2 open it through the wrist: arm up, view in, tablet on, pointed with the crosshair
 	# (WristDatapad).
 	_wrist = WRIST_DATAPAD.new()
@@ -427,6 +448,7 @@ func setup() -> void:
 	_services.pending_changed.connect(func(any: bool) -> void:
 		if not any:
 			_wrist_model.set_notified(false))
+	_me = _me_mark("wrist", _me)
 	# Social notifications (friend requests, a friend accepting, a corporation admitting us): a
 	# stack of lines at the top of the screen, clickable through to where they can be acted on.
 	_notifications = NotificationStack.new()
@@ -437,6 +459,7 @@ func setup() -> void:
 	ChatNetwork.notification_received.connect(_on_notification)
 	PlayerServices.mission_accepted.connect(_on_mission_accepted)
 	PlayerServices.locate_requested.connect(_on_locate_requested)
+	_me = _me_mark("notifications", _me)
 	_places = PlaceWatcher.new()
 	_places.name = "PlaceWatcher"
 	add_child(_places)
@@ -449,6 +472,7 @@ func setup() -> void:
 	_repairs.name = "MachineRepair"
 	add_child(_repairs)
 	_repairs.setup(_push_notice)
+	_me = _me_mark("places_repairs", _me)
 	# The two panels over the running game: graphics options (left) and debug readouts (right). AltGr
 	# may take the pointer unless something already holds the input (typing in the chat, a menu); the
 	# pause menu hides them.
@@ -458,6 +482,7 @@ func setup() -> void:
 			player.puppet.get_node_or_null("CharacterAnimator"), func() -> Dictionary: return _surface_info,
 			_driven_vehicle, _star_map)]:
 		_screens_root().add_child(panel.setup(can_take_pointer, _menu_open))
+	_me = _me_mark("overlays", _me)
 	# Play hints (left, under the chat): the keys of the moment, each gone once learnt. Steps aside for
 	# the graphics panel.
 	var hints := PlayHintsPanel.new()
@@ -467,6 +492,7 @@ func setup() -> void:
 		hints.place_under(player.direct_chat)
 	hints.avoid(graphics, GraphicsOverlay.WIDTH_PX)
 	_offer_play_hints()
+	_me = _me_mark("hints", _me)
 	# The interaction prompt in a frame beside the crosshair, a line drawn to it from what it is about;
 	# Settings > General can turn the frame off: the plain prompt, on a dark patch fitted to its width
 	# so it reads over a bright ground.
@@ -481,6 +507,7 @@ func setup() -> void:
 	leader.follow(player.interact_label, player.camera, player.interact_ray, shade)
 	leader.target_rule = _prompt_target
 
+	_me = _me_mark("prompt", _me)
 	player.global_position = player.spawn_position
 	player.look_at(player.global_transform.origin + Vector3.FORWARD, player.spawn_up)
 
@@ -496,6 +523,7 @@ func setup() -> void:
 	player.camera.make_current()
 	# Client-only sun, atmosphere and moons around the player (see ClientSky).
 	var sun := ClientSky.attach(player)
+	_me = _me_mark("sky", _me)
 	# Client-only orientation gizmos: labelled markers pointing at the star and each planet/moon,
 	# toggled from Settings > General (off by default). Parented UNDER the camera so the markers live
 	# in camera-local coordinates and don't swim at astronomic distances.
@@ -506,6 +534,7 @@ func setup() -> void:
 	# Apply the saved field of view, and follow live changes from the settings menu.
 	player.camera.fov = SettingsManager.get_fov()
 	SettingsManager.fov_changed.connect(_on_fov_changed)
+	_me = _me_mark("gizmos", _me)
 	# our own name tag is never created (only remote players get one)
 	player.astronaut.visible = false
 	player.interact_label.hide()
@@ -514,6 +543,7 @@ func setup() -> void:
 	# only refreshed by _process (which runs once active), and the gravity up steadies over a few frames
 	# after spawn — the body orientation + day/night follow it. The splash (a CanvasLayer at layer 100)
 	# covers that settle, so there's no visible day->night + camera-tilt snap once it lifts.
+	_me = _me_mark("tail", _me)
 	var loading := get_tree().root.get_node_or_null("Loading")
 	LoadingSplash.say(get_tree(), "%%HUD_SPAWNING")
 	LoadingSplash.progress(get_tree(), 0.6)

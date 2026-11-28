@@ -109,7 +109,7 @@ func _ready() -> void:
 	cells.cellular_return_type = FastNoiseLite.RETURN_DISTANCE
 	cells.frequency = 0.07
 	cells.fractal_octaves = 3
-	_noise_task = WorkerThreadPool.add_task(func() -> void: _noise_images = noise_images(grain, cells), false,
+	_noise_task = PerfTasks.add_task("weather:noise", func() -> void: _noise_images = noise_images(grain, cells), false,
 			"weather noise")
 	_wall_mesh = BoxMesh.new()
 
@@ -129,7 +129,7 @@ func _noise_ready() -> bool:
 		return true
 	if _noise_task < 0 or not WorkerThreadPool.is_task_completed(_noise_task):
 		return false
-	WorkerThreadPool.wait_for_task_completion(_noise_task)
+	PerfTasks.wait(_noise_task, "weather_phenomena")
 	_noise_task = -1
 	_noise = ImageTexture.create_from_image(_noise_images[0])
 	var layers: Array[Image] = []
@@ -201,7 +201,7 @@ func _exit_tree() -> void:
 	for under: WallGround in _wall_grounds.values():
 		under.finish()
 	if _noise_task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_noise_task)
+		PerfTasks.wait(_noise_task, "weather_phenomena")
 		_noise_task = -1
 
 

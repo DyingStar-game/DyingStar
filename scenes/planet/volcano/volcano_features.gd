@@ -44,7 +44,10 @@ static func build(data: PlanetData, v: VolcanoRelief.Volcano) -> Node3D:
 		return null
 	var root := Node3D.new()
 	root.name = "Volcano_%s" % (v.name if v.name != "" else str(v.seed))
+	var tok: int = 0 if Engine.is_editor_hint() else ClientPerf.scope_begin()
 	var crust := data.ground_albedo_at(v.c).darkened(CRUST_DARKEN)
+	if tok != 0:
+		ClientPerf.scope_end("vol:albedo", tok)
 	var level := data.volcano_lake_level(v)
 	if v.lake:
 		# Never over the rim: the lake stays inside the crater it fills.
@@ -58,7 +61,10 @@ static func build(data: PlanetData, v: VolcanoRelief.Volcano) -> Node3D:
 		var plume := VolcanoPlume.create(data, v, centre)
 		root.add_child(plume)
 		# Not in the editor: this script is a tool, the sounds are not.
+		var tok_sound: int = 0 if Engine.is_editor_hint() else ClientPerf.scope_begin()
 		var sound: Node3D = null if Engine.is_editor_hint() else VOLCANO_SOUND.create(plume)
+		if tok_sound != 0:
+			ClientPerf.scope_end("vol:sound", tok_sound)
 		if sound != null:
 			root.add_child(sound)
 		if v.activity == "active" and v.lake and not LavaSettings.simulated_craters:

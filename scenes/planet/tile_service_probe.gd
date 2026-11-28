@@ -25,7 +25,7 @@ static func check_now(planet_name: String, base_url: String = RemoteTileSource.c
 
 func start(planet_name: String) -> void:
 	var base_url : String = RemoteTileSource.configured_base_url()
-	_task = WorkerThreadPool.add_task(func() -> void: ok = check_now(planet_name, base_url))
+	_task = PerfTasks.add_task("tiles:probe", func() -> void: ok = check_now(planet_name, base_url))
 
 
 func is_done() -> bool:
@@ -36,5 +36,5 @@ func is_done() -> bool:
 ## task to be waited for, and one left unwaited crashed the engine on exit.
 func wait() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "tile_service_probe")
 		_task = -1

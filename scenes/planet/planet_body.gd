@@ -206,6 +206,8 @@ func _ready() -> void:
 			position = spawn_position
 
 	if planet_data:
+		# pb:* (debug_perf): the body's own steps before and around its terrain (PlanetTerrain's pl:*).
+		var tk := _pb_begin()
 		# Load runtime overrides from the QGIS-exported planet JSON (if set).
 		if not planet_data.planet_json.is_empty():
 			planet_data.load_from_planet_json()
@@ -218,8 +220,12 @@ func _ready() -> void:
 		# calls it.
 		if not planet_data.chunk_heightmaps_dir.is_empty():
 			planet_data.apply_chunk_manifest()
+			# On a worker while the steps below run: the bridges and the railway profiles read it.
+			planet_data.start_reading_line_bake()
+		tk = _pb_mark("manifest", tk)
 		# Pre-build the detail texture array so it's ready for chunk generation.
 		planet_data.get_detail_texture_array()
+		tk = _pb_mark("detail_textures", tk)
 		# Warm the biome cache on the MAIN thread before any chunk mesh task
 		# runs.  Chunk meshes are generated on WorkerThreadPool threads, which
 		# all call get_biome_by_type() concurrently; that lazily runs
@@ -229,9 +235,11 @@ func _ready() -> void:
 		# (non-deterministic patches, different every launch).  Building it
 		# here once, single-threaded, makes the later worker access read-only.
 		planet_data.warm_biome_cache()
+		tk = _pb_mark("biomes", tk)
 		if Engine.is_editor_hint() and not planet_data.changed.is_connected(_on_planet_data_changed):
 			planet_data.changed.connect(_on_planet_data_changed)
 		_setup_planet()
+		_pb_mark("setup", tk)
 	else:
 		print("[Planet] _ready: planet_data is NULL — terrain will not initialize")
 
@@ -608,9 +616,24 @@ func get_local_solar_time(world_pos: Vector3) -> float:
 # Setup
 # ------------------------------------------------------------------
 
+## A ClientPerf token, 0 in the editor (the autoload is not @tool) and when it is off.
+func _pb_begin() -> int:
+	return 0 if Engine.is_editor_hint() else ClientPerf.scope_begin()
+
+
+## Ends the pb:<[param scope_name]> scope begun at [param tok] and begins the next.
+func _pb_mark(scope_name: String, tok: int) -> int:
+	if tok != 0:
+		ClientPerf.scope_end("pb:" + scope_name, tok)
+	return _pb_begin()
+
+
 func _setup_planet() -> void:
+	var tk := _pb_begin()
 	_setup_water_sphere()
+	tk = _pb_mark("water", tk)
 	_setup_gravity()
+	_pb_mark("gravity", tk)
 
 	if planet_terrain:
 		print("[Planet] _setup_planet: initializing terrain (server=%s)" % _is_server())

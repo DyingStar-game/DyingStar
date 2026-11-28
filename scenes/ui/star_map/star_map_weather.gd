@@ -131,7 +131,7 @@ func cursor_line(local: Vector3) -> String:
 ## Let the worker finish and take the labels off the chart: the layer is going.
 func clear() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "star_map_weather")
 		_task = -1
 	_pending = {}
 	if is_instance_valid(labels):
@@ -186,7 +186,7 @@ func _start(planet: Planet, source: WeatherSource, t: float, systems: int) -> vo
 	var find_extrema: bool = weather != null and marks_from.is_empty()
 	var out: Dictionary = {}
 	_pending = out
-	_task = WorkerThreadPool.add_task(func() -> void: out.merge(_build(sampler, find_extrema)))
+	_task = PerfTasks.add_task("starmap:weather", func() -> void: out.merge(_build(sampler, find_extrema)))
 	if not find_extrema:
 		_marks = _system_marks(marks_from)
 	_drawn_t = t
@@ -210,7 +210,7 @@ static func _build(sampler: Callable, find_extrema: bool) -> Dictionary:
 func _collect() -> void:
 	if not WorkerThreadPool.is_task_completed(_task):
 		return
-	WorkerThreadPool.wait_for_task_completion(_task)
+	PerfTasks.wait(_task, "star_map_weather")
 	_task = -1
 	if not _pending.has("grid"):
 		return

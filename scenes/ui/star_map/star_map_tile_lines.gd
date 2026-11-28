@@ -207,7 +207,7 @@ func _start_missing() -> void:
 		return
 	var slot: Dictionary = {}
 	_job = slot
-	_task = WorkerThreadPool.add_task(func() -> void:
+	_task = PerfTasks.add_task("starmap:lines", func() -> void:
 		for id: int in missing:
 			slot[id] = lay.call(id))
 
@@ -236,7 +236,7 @@ func _take() -> void:
 
 func _wait() -> void:
 	if _task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_task)
+		PerfTasks.wait(_task, "star_map_tile_lines")
 		_task = -1
 
 

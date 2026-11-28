@@ -174,3 +174,37 @@ func test_while_it_waits_the_line_says_so_without_a_figure() -> void:
 	assert_false(warmup._label.text.contains("%"), "no figure: %s" % warmup._label.text)
 	var csv := FileAccess.get_file_as_string("res://tools/localization/localisation.csv")
 	assert_true(csv.contains("\n%%MENU_WARMUP_WAITING,"), "translated")
+
+
+func test_the_surfaces_built_at_run_time_are_warmed() -> void:
+	for path: String in Warmup.RUNTIME_SURFACES:
+		assert_has(Warmup.wanted(), path, "%s is loaded by the warm-up" % path)
+	var surfaces: Array = (load(Warmup.RUNTIME_SURFACES[0]) as Script).call("warm_surfaces")
+	var materials: Array = []
+	for entry: Array in surfaces:
+		assert_true(entry[0] is Mesh, "a mesh to draw")
+		materials.append_array(entry[1])
+	assert_has(materials, BuildingWalkways._rail_mat(), "the railings' metal")
+	assert_has(materials, BuildingWalkways._plate(), "the decks' plate")
+	var batch_format: int = (surfaces[0][0] as Mesh).surface_get_format(0)
+	var facade: StaticBody3D = autofree(StaticBody3D.new())
+	BuildingWalkways._build_facade(facade, 10.0, 2, 2.6)
+	var railings := facade.get_node(NodePath(BuildingWalkways.RAILINGS_NAME)) as MeshInstance3D
+	assert_eq(batch_format, railings.mesh.surface_get_format(0), "drawn on the railings' own vertex format")
+
+
+func test_the_sky_shaders_are_loaded_and_compiled_ahead() -> void:
+	for path: String in Warmup.BY_USE_SHADERS:
+		assert_has(Warmup.wanted(), path, "%s is loaded by the warm-up" % path)
+		assert_true(load(path) is Shader, "%s is a shader" % path)
+	var users := FileAccess.get_file_as_string("res://scenes/player/atmosphere_renderer.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/ui/star_map/star_map.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/ui/star_map/ecliptic_grid.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/planet/nova/nova_body.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/planet/atmosphere_lod.gd")
+	for path: String in Warmup.BY_USE_SHADERS:
+		assert_string_contains(users, path, "%s is what the sky or the chart loads" % path.get_file())
+
+
+func test_the_railway_module_is_loaded_ahead() -> void:
+	assert_has(Warmup.SCENES, RailwaySettings.MODULE_PATH, "the module RailwayTrack reads as a body is made")

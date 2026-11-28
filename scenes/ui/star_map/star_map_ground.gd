@@ -247,7 +247,7 @@ func refresh(centre_dir: Vector3, altitude_m: float, view_angle: float = -1.0) -
 ## Throw everything away — the body changed, or the chart closed.
 func clear() -> void:
 	for id: int in _in_flight:
-		WorkerThreadPool.wait_for_task_completion(int((_in_flight[id] as Dictionary)["task"]))
+		PerfTasks.wait(int((_in_flight[id] as Dictionary)["task"]), "star_map_ground")
 	_in_flight.clear()
 	_pending.clear()
 	_desired.clear()
@@ -414,7 +414,7 @@ func _pump() -> void:
 		var paint_id: int = StarMapRelief.published_id(key, id)
 		var paint: Dictionary = zones.tile_of(id_nside(paint_id), id_ipix(paint_id)) \
 				if zones != null else {}
-		var task: int = WorkerThreadPool.add_task(func() -> void:
+		var task: int = PerfTasks.add_task("starmap:ground", func() -> void:
 			slot[0] = StarMapRelief.build_tile(key, nside, ipix, GRID_RES, paint, reader, true))
 		_in_flight[id] = {"task": task, "slot": slot}
 
@@ -433,7 +433,7 @@ func _harvest() -> void:
 		if not WorkerThreadPool.is_task_completed(task):
 			continue
 		# Waited on although it is finished: that is what publishes the worker's writes to this thread.
-		WorkerThreadPool.wait_for_task_completion(task)
+		PerfTasks.wait(task, "star_map_ground")
 		_in_flight.erase(id)
 		taken += 1
 		var mesh: ArrayMesh = (job["slot"] as Array)[0] as ArrayMesh

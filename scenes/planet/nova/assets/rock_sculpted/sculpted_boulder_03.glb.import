@@ -39,7 +39,16 @@ import_script/path="uid://kgqqvfi5nd42"
 materials/extract=0
 materials/extract_format=0
 materials/extract_path=""
-_subresources={}
+_subresources={
+"nodes": {
+"PATH:sculpted_boulder_03": {
+"generate/physics": true,
+"physics/shape_type": 3,
+"primitive/position": Vector3(0, 0.22, 0),
+"primitive/size": Vector3(0.95, 0.82, 1)
+}
+}
+}
 gltf/naming_version=2
 gltf/embedded_image_handling=1
 gltf/texture_map_mode=1

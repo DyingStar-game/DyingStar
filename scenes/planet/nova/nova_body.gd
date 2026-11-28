@@ -759,8 +759,8 @@ func build_material(base: Material) -> ShaderMaterial:
 func _refresh_textures_later() -> void:
 	join_textures()
 	var spec := _arrays_spec()
-	_textures_task = WorkerThreadPool.add_task(func() -> void:
-		_set_arrays.call_deferred(_texture_arrays(spec)), false, "nova textures")
+	_textures_task = PerfTasks.add_task("nova:textures", func() -> void:
+		PerfTasks.deferred("nova:set_arrays", _set_arrays.bind(_texture_arrays(spec))), false, "nova textures")
 
 
 ## Wait for the texture arrays still being made, from the main thread (PlanetTerrain._exit_tree, before the body
@@ -772,7 +772,7 @@ func join_textures() -> void:
 	while not WorkerThreadPool.is_task_completed(_textures_task):
 		RenderingServer.force_sync()
 		OS.delay_usec(500)
-	WorkerThreadPool.wait_for_task_completion(_textures_task)
+	PerfTasks.wait(_textures_task, "nova_body")
 	_textures_task = -1
 
 
@@ -904,7 +904,7 @@ static func _layer_images(paths: PackedStringArray, fallbacks: Array[Color]) -> 
 		if read[i]:
 			slots[i][0] = _fit_layer(slots[i][0])
 	if slots.size() > 1:
-		WorkerThreadPool.wait_for_group_task_completion(WorkerThreadPool.add_group_task(fit, slots.size()))
+		PerfTasks.wait_group(PerfTasks.add_group_task("nova:layer_fit", fit, slots.size()), "nova_body")
 	elif slots.size() == 1:
 		fit.call(0)
 	var images: Array[Image] = []

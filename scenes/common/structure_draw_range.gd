@@ -46,13 +46,16 @@ static func is_building(node: Node) -> bool:
 
 ## Track every mesh of a building — including those built after it spawned (a spawn building's
 ## apartments arrive with its data): each node reports the children that enter it later.
+## A node already listening is covered with all it holds: what it gained since reports itself as it enters
+## (its own child_entered_tree). Walking it again made a subtree entering the tree cost once per level of
+## depth — each node reports its children, which were walked from every node above: 23 apartments entering
+## a spawn building 12.6 ms instead of 3, its walkways 16 ms instead of 3.4 (2026-11-28).
 static func _cover(node: Node) -> void:
-	if _moves(node):
+	if _moves(node) or node.child_entered_tree.is_connected(_cover):
 		return
 	if node is GeometryInstance3D:
 		_track(node)
-	if not node.child_entered_tree.is_connected(_cover):
-		node.child_entered_tree.connect(_cover)
+	node.child_entered_tree.connect(_cover)
 	for child in node.get_children():
 		_cover(child)
 

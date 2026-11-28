@@ -625,7 +625,7 @@ func _poll_extractions(now: float) -> void:
 			if not WorkerThreadPool.is_task_completed(task_id):
 				i += 1
 				continue
-			WorkerThreadPool.wait_for_task_completion(task_id)  # releases the task; it is already done
+			PerfTasks.wait(task_id, "npc_nav_cache")  # releases the task; it is already done
 		_extracting.remove_at(i)
 		var box: NavBox = e["box"]
 		box.extracting = false
@@ -809,7 +809,7 @@ func _collect_query(box: NavBox) -> Dictionary:
 	var entries: Array = collect_entries(box)
 	if entries.is_empty():
 		return {"src": src, "task_id": -1}
-	var task_id: int = WorkerThreadPool.add_task(_extract.bind(entries, src), false, "npc nav extract")
+	var task_id: int = PerfTasks.add_task("npc:nav_extract", _extract.bind(entries, src), false, "npc nav extract")
 	return {"src": src, "task_id": task_id}
 
 

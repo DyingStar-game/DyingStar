@@ -416,6 +416,30 @@ static var lod_morph_enabled := true
 ## Nova scatter tasks still running (task id → true, or a chunk's stop flag: NovaScatter.lay_chunk's cancel),
 ## stopped and joined before the terrain goes (_exit_tree).
 var _nova_scatter_tasks := {}
+## Laying tasks (lay_chunk) running at once, at most. Each holds a core for seconds — a village's chunk for tens
+## of seconds — and four of them for two minutes after an arrival left the main thread 23 → 32 ms a frame
+## beside them (2026-11-27: session logs, [CPerfW] nova:scatter_chunk=400%). The nearest chunk goes first.
+const NOVA_SCATTER_MAX_TASKS := 2
+## How old (s) the urgency order of the waiting layings may be before it is made again (_nova_pick_order).
+const NOVA_PICK_REFRESH_S := 0.25
+## How many of the most urgent waiting layings the order keeps: two run at a time, a few start in a refresh.
+const NOVA_PICK_KEEP := 32
+## Layings waiting for a task: job number → [the job that starts it, its stop flag, the chunk's MeshInstance3D id,
+## its layer, its blocks, the nearest of them (chunk frame)]. One a layer: the big rocks of a chunk (few cells, seen
+## from afar, the ones that collide) do not wait behind its pebbles.
+var _nova_scatter_waiting := {}
+## The waiting layings by urgency, the most urgent LAST (pop_back), made at most every NOVA_PICK_REFRESH_S
+## (nova_job_order): each laying started scanned all the waiting ones -- 4.7 ms with the 1 200 of a village
+## arrival, ~190 times a frame as layings ended (cancelled ones end at once): 885 ms frames, 7.4 s of an
+## arrival (2026-11-28). The urgency moves with the camera, slowly: a quarter of a second old is as good.
+var _nova_pick_order: Array[int] = []
+var _nova_pick_at_usec: int = 0
+## _nova_job_seq when the order was made: a used-up order is made again only when layings came since.
+var _nova_pick_seq: int = 0
+## Layings running, the same entries: stopped as soon as their chunk is gone or their blocks are no longer wanted.
+var _nova_scatter_started := {}
+var _nova_scatter_running := 0
+var _nova_job_seq := 0
 ## Camera position (planet frame) the scatter was last laid around, and how far it moves before the chunks'
 ## layers are looked at again; a laid layer is kept out to NOVA_KEEP times its view distance.
 var _nova_laid_from := Vector3.INF
@@ -435,6 +459,11 @@ var _nova_node_budget := 0
 var _nova_node_deadline := 0  # ticks (usec) the frame's nodes are made until
 ## The chunks still to look at since the camera last moved a step (their info dictionaries).
 var _nova_relay: Array = []
+## client.ini debug_perf: how often the [NovaC] lines say what the scatter holds round the camera (_nova_diag),
+## milliseconds, and how far round it.
+const NOVA_DIAG_MS := 2000
+const NOVA_DIAG_NEAR_M := 30.0
+var _nova_diag_msec := 0
 
 ## World-space direction from THIS planet to the system star, computed in double precision (exact at
 ## ~3e10, unlike a float32 world_pos). Fed per-chunk to the terrain shader so distant chunks — which get
@@ -601,6 +630,8 @@ var _server_chunk_queue: Array[Dictionary] = []
 # ------------------------------------------------------------------
 
 func initialize(data: PlanetData, server_mode: bool) -> void:
+	# pl:* (debug_perf): a body's terrain made, step by step (_pl_mark) -- 3.3 s in one frame for tarsis_3.
+	var _pl := _perf_begin()
 	planet_data = data
 	is_server = server_mode
 	if data.cave_catalog != null:
@@ -614,17 +645,22 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# and modifiers (roads, biomes, mountains…) alike; no local pack is read. Attached before
 		# anything samples a height or opens the modifiers (the cache key below reads their
 		# fingerprints). Null without a reachable service: the planet then runs on the global map.
+		_pl = _pl_mark("start_manifest", _pl)
 		data.remote_source = RemoteTileSource.for_planet(data.planet_name)
+		_pl = _pl_mark("start_tile_source", _pl)
 		_warn_version_mismatch(data)
 		data.attach_remote_modifiers()
+		_pl = _pl_mark("start_modifiers", _pl)
 	# The visual mesh only: the server's collision keeps the tiers, probes and shape it always had.
 	data.far_tier_res = 0 if server_mode else data.chunk_resolution
 	data.normal_probe_m = 0.0 if server_mode else NORMAL_PROBE_M
 	data.lod_morph = not server_mode and lod_morph_enabled
 	if not _pending_village_beds.is_empty():
 		_replay_pending_village_beds.call_deferred()
+	_pl = _pl_mark("start", _pl)
 	# Nova: before any chunk is built or keyed, the body's variants and its ground material.
 	_nova_setup(data, server_mode)
+	_pl = _pl_mark("nova", _pl)
 	# The POIs the crack network keeps whole. Those listed in the planet's <planet>_poi.json are given to
 	# the sampler here, before the key (they are baked geometry), before the bridge spans walk the chasms
 	# and before any chunk carves — in the editor too: without them the editor's ground differed from the
@@ -634,6 +670,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# the disk cache.
 	_static_pois = StarMapPoi.load_for(data.planet_name)
 	data.set_crack_exclusions(poi_crack_exclusions(data.planet_name))
+	_pl = _pl_mark("pois", _pl)
 
 	# Initialize chunk disk cache (skipped in editor mode)
 	if not Engine.is_editor_hint():
@@ -944,9 +981,11 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		# constant and rule they are drawn with (PadSettings.signature, LEVEL_RULE included) re-keys the
 		# cache. Not in relief_signature: the persisted pad measures carry their own rule (talus_rule).
 		_cache_version += "_pd" + PadSettings.signature()
+		data.look_signature = _cache_version.md5_text().substr(0, 16)
 		_chunk_cache = ChunkDiskCache.new(data.planet_name, _cache_version, _cache_base)
 
 	# The rail modules, loaded here on the main thread: the mesh tasks lay them (RailwayTrack.stamp_rails).
+	_pl = _pl_mark("cache_key", _pl)
 	if not server_mode and planet_data.has_railways():
 		RailwayTrack.module_meshes()
 	if not data.cave_placements.is_empty():
@@ -955,6 +994,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# The geometry version is what a client and a server must SHARE for their
 	# terrains to agree (the sampler, the carve, the stitch are all in it):
 	# grep it in both logs before hunting a client/server height mismatch.
+	_pl = _pl_mark("rails_caves", _pl)
 	print("[PlanetTerrain] initialize: planet=%s radius=%.0f export_nside=%d server=%s geometry=%s" % [
 		data.planet_name, data.radius, data.export_nside, server_mode,
 		_chunk_cache.version if _chunk_cache else "no-cache"])
@@ -1031,28 +1071,34 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 		else:
 			push_warning("[PlanetTerrain] no safety-net mesh available for '%s'" % planet_data.planet_name)
 
+	_pl = _pl_mark("atmo_collision", _pl)
 	# Procedural mountains: resolve the planet gate and the debug features on
 	# THIS thread, before the bridge spans and grade profiles below read the
 	# sampler — they must stand on the mountains too.
 	planet_data.warm_mountains()
+	_pl = _pl_mark("mountains", _pl)
 	# Fumarole fields and lava flows: same reason (the workers only read the
 	# gates and the debug records built here).
 	planet_data.warm_fumaroles()
 	planet_data.has_lava()
+	_pl = _pl_mark("fumaroles_lava", _pl)
 
 	# Find the road/chasm crossings now rather than on the first chunk that
 	# needs a bridge: the walk costs ~200 ms on tarsis_3 and would otherwise
 	# land as a visible stall in the middle of flight. Memoised afterwards.
 	planet_data.get_bridge_spans()
+	_pl = _pl_mark("bridge_spans", _pl)
 	# Plan the decks and ramps in the same breath, on THIS thread. The mesh
 	# workers cut the road ribbon out from under those ramps, so they must read
 	# a table that is already complete; building it lazily would let a worker
 	# and the main thread disagree about where a bridge starts, and the ribbon
 	# would be cut open where nothing spans it.
 	planet_data.warm_bridge_plans()
+	_pl = _pl_mark("bridge_plans", _pl)
 	# Same reason, same place: the railway profiles feed the bed builders on
 	# the mesh workers and the viaduct spawner on the main thread.
 	planet_data.warm_grade_profiles()
+	_pl = _pl_mark("grade_profiles", _pl)
 	# Same reason again, one step further: a building placed in the editor
 	# carries a TerrainPad that levels the ground under it, and the pad has to
 	# be in the index BEFORE the first mesh task reads it — a chunk built
@@ -1060,6 +1106,7 @@ func initialize(data: PlanetData, server_mode: bool) -> void:
 	# later. Buildings that arrive afterwards (spawned by the server, received
 	# by the client on entering GORC range) register themselves.
 	warm_terrain_pads()
+	_pl = _pl_mark("pads", _pl)
 
 	_initialized = true
 	if LavaSettings.simulated_craters and not Engine.is_editor_hint() and lava_runtime == null:
@@ -1506,7 +1553,7 @@ func _server_submit_cache_read(key: String, ipix: int, col_res: int) -> void:
 		"ipix": ipix, "col_res": col_res, "evicted": false,
 	}
 	_server_chunk_tasks[key] = task_entry
-	task_entry["task_id"] = WorkerThreadPool.add_task(func():
+	task_entry["task_id"] = PerfTasks.add_task("terrain:srv_cache_read", func():
 		var _t0 := Time.get_ticks_usec()
 		var cs := ChunkDiskCache.read_collision(path)
 		result_ref[1] = Time.get_ticks_usec() - _t0
@@ -1586,7 +1633,7 @@ func _server_continue_chunk_load(key: String, ipix: int, col_res: int,
 	}
 	_server_chunk_tasks[key] = task_entry
 
-	var task_id := WorkerThreadPool.add_task(func():
+	var task_id := PerfTasks.add_task("terrain:srv_chunk_load", func():
 		var gen_result := ChunkRecipeGenerator.generate_heightmap(
 			recipe_data, resolution, planet_radius, elev_min, elev_range)
 		var populate_zones := ChunkRecipeGenerator.get_populate_zones(recipe_data)
@@ -1619,7 +1666,7 @@ func _server_submit_jolt_build(key: String, ipix: int, col_res: int, shape: Conc
 		"ipix": ipix, "col_res": col_res, "evicted": false,
 	}
 	_server_chunk_tasks[key] = task_entry
-	task_entry["task_id"] = WorkerThreadPool.add_task(func():
+	task_entry["task_id"] = PerfTasks.add_task("terrain:srv_jolt", func():
 		_prebuild_jolt_shape(shape, state)
 	)
 
@@ -1642,7 +1689,7 @@ func _server_submit_shape_task(key: String, ipix: int, col_res: int) -> void:
 		"cached_shape": null, "evicted": false,
 	}
 	_server_chunk_tasks[key] = task_entry
-	var task_id := WorkerThreadPool.add_task(func():
+	var task_id := PerfTasks.add_task("terrain:srv_shape", func():
 		var _t0 := Time.get_ticks_usec() if PropNet.prof_on else 0
 		var shape := PlanetChunk.generate_collision_shape_healpix(pd, nside, ipix, col_res)
 		if _t0 != 0:
@@ -1681,7 +1728,7 @@ func _server_poll_chunk_tasks() -> void:
 			break
 		_server_assemble_spent = true
 		var entry: Dictionary = _server_chunk_tasks[key]
-		WorkerThreadPool.wait_for_task_completion(entry["task_id"])
+		PerfTasks.wait(entry["task_id"], "planet_terrain")
 		_server_chunk_tasks.erase(key)
 
 		if entry.get("evicted", false):
@@ -2143,11 +2190,11 @@ func _editor_measure_ground(dir: Vector3) -> void:
 	if _editor_ground_task >= 0:
 		if not WorkerThreadPool.is_task_completed(_editor_ground_task):
 			return
-		WorkerThreadPool.wait_for_task_completion(_editor_ground_task)
+		PerfTasks.wait(_editor_ground_task, "planet_terrain")
 	if _editor_ground_r <= 0.0:
 		_editor_ground_r = planet_data.radius
 	var data := planet_data
-	_editor_ground_task = WorkerThreadPool.add_task(func() -> void:
+	_editor_ground_task = PerfTasks.add_task("terrain:editor_ground", func() -> void:
 		set_deferred("_editor_ground_r", data.crack_aware_surface_dist(dir)), false, "editor_ground")
 
 
@@ -2166,6 +2213,9 @@ func _exit_tree() -> void:
 	for task_id: int in _nova_scatter_tasks:
 		join_task(task_id)
 	_nova_scatter_tasks.clear()
+	_nova_scatter_waiting.clear()
+	_nova_scatter_started.clear()
+	_nova_scatter_running = 0
 	if planet_data != null and planet_data.nova != null:
 		planet_data.nova.join_textures()
 	if stargrot_registry != null:
@@ -2216,7 +2266,7 @@ static func join_task(task_id: int) -> void:
 	while not WorkerThreadPool.is_task_completed(task_id):
 		RenderingServer.force_sync()
 		OS.delay_usec(500)
-	WorkerThreadPool.wait_for_task_completion(task_id)
+	PerfTasks.wait(task_id, "planet_terrain")
 
 
 # ------------------------------------------------------------------
@@ -2236,13 +2286,25 @@ func _physics_process(_delta: float) -> void:
 	TerrainProfiler.maybe_report(_mesh_task_backlog.size(), _mesh_tasks.size())
 
 	# A line profile born late changes the chunks under it, on both sides.
+	# Each timed (`pre:*` on the heartbeat): an unnamed 881 ms of this script in one physics step at a village
+	# arrival came from somewhere in these (2026-11-28).
+	var _tp := _perf_begin()
 	_poll_starved_grade_profiles()
+	_perf_end("pre:grade_profiles", _tp)
 	# So does a pad whose elevation tiles have only just arrived.
+	_tp = _perf_begin()
 	_poll_starved_pads()
+	_perf_end("pre:starved_pads", _tp)
 	# And a village's ground, prepared on a worker.
+	_tp = _perf_begin()
 	_collect_village_beds()
+	_perf_end("pre:village_beds", _tp)
+	_tp = _perf_begin()
 	_flush_pad_rebuild()
+	_perf_end("pre:pad_rebuild", _tp)
+	_tp = _perf_begin()
 	_step_fence_sampling()
+	_perf_end("pre:fence_sampling", _tp)
 
 	# ── Server: poll async collision chunk loading ────────────────
 	if is_server:
@@ -2291,6 +2353,13 @@ func _physics_process(_delta: float) -> void:
 	_tk = _perf_begin()
 	_drain_bridge_spawn_queue()
 	_perf_end("bridge_queue", _tk)
+	# Nova's scatter, every frame: its node and relay budgets are a frame's. Called from the 4 Hz update
+	# below, they made 3 to 4 nodes every 0.25 s — a chunk's few hundred took a minute, and a truck ran into
+	# a boulder laid 3 m ahead and still without its node (2026-11-28).
+	if not is_server and _last_local_cam != Vector3.ZERO:
+		_tk = _perf_begin()
+		_nova_follow_camera()
+		_perf_end("nova_follow", _tk)
 
 	# ── Emit initial_chunks_ready once the pipeline drains ───────────
 	# Every wanted chunk must be on screen too: the queues run dry between two handovers, which said
@@ -2314,6 +2383,12 @@ func _physics_process(_delta: float) -> void:
 	_tk = _perf_begin()
 	_update_terrain()
 	_perf_end("terrain_update", _tk)
+
+
+## Ends the pl:<[param scope_name]> scope begun at [param tok] and begins the next (initialize, debug_perf).
+func _pl_mark(scope_name: String, tok: int) -> int:
+	_perf_end("pl:" + scope_name, tok)
+	return _perf_begin()
 
 
 ## ClientPerf scopes, editor-safe: the autoload is not @tool, so its members
@@ -2669,8 +2744,6 @@ func _update_terrain() -> void:
 
 	# Look-ahead: prefetch chunks along the predicted camera trajectory so
 	# they're ready before the player reaches them.
-	if not is_server:
-		_nova_follow_camera()
 	_tk = _perf_begin()
 	_prefetch_look_ahead(local_cam, horizon_dot)
 	TileResidency.prefetch(planet_data, local_cam, _cam_history)
@@ -3200,10 +3273,19 @@ var _village_bed_after: Dictionary = {}
 func _collect_village_beds() -> void:
 	if planet_data == null:
 		return
-	for done: Array in planet_data.collect_village_beds():
+	var _tk := _perf_begin()
+	var beds := planet_data.collect_village_beds()
+	_perf_end("bed:collect", _tk)
+	for done: Array in beds:
+		_tk = _perf_begin()
 		_pads_changed(done[1], {}, "a village's ground")
+		_perf_end("bed:pads_changed", _tk)
+		_tk = _perf_begin()
 		_announce_caught_up_pads()
+		_perf_end("bed:caught_up", _tk)
+		_tk = _perf_begin()
 		_village_bed_laid(str(done[0]))
+		_perf_end("bed:laid", _tk)
 
 
 ## The half of _register_village_bed that stands on the village's ground: its report, the roads, the
@@ -3947,7 +4029,10 @@ func desired_chunk_count() -> int:
 func _sync_distance_options() -> void:
 	if Engine.is_editor_hint():
 		return  # no SettingsManager in the editor: the preview keeps 1.0
+	var was := _terrain_mult
 	_terrain_mult = DrawRange.multiplier("terrain_distance")
+	if _terrain_mult != was:
+		_nova_view_changed()
 
 
 ## The mult a traversal runs with: Graphics > Terrain distance, coarsened in fast flight.
@@ -4040,7 +4125,7 @@ func _start_lod_task(local_cam: Vector3, horizon_dot: float, with_desired: bool 
 	if _pending_prefetch_cam != Vector3.INF:
 		prefetch_pass = _new_pass(_pending_prefetch_cam, _pending_prefetch_dot, _node_geom_prefetch, false)
 	_pending_prefetch_cam = Vector3.INF
-	_lod_task = WorkerThreadPool.add_task(_lod_work.bind(desired_pass, prefetch_pass), false, "terrain_lod")
+	_lod_task = PerfTasks.add_task("terrain:lod", _lod_work.bind(desired_pass, prefetch_pass), false, "terrain_lod")
 
 
 ## Worker: the leaf set and/or the look-ahead traversal, from the passes _start_lod_task froze.
@@ -4057,7 +4142,7 @@ func _lod_work(desired_pass: LodPass, prefetch_pass: LodPass) -> void:
 func _collect_lod_task() -> void:
 	if _lod_task < 0 or not WorkerThreadPool.is_task_completed(_lod_task):
 		return
-	WorkerThreadPool.wait_for_task_completion(_lod_task)
+	PerfTasks.wait(_lod_task, "planet_terrain")
 	_lod_task = -1
 	if _lod_task_desired:
 		_adopt_lod_result()
@@ -4083,7 +4168,7 @@ func _adopt_lod_result() -> void:
 ## Wait for the leaf-set worker, if one runs: before the state it writes is cleared, and before exit.
 func _join_lod_task() -> void:
 	if _lod_task >= 0:
-		WorkerThreadPool.wait_for_task_completion(_lod_task)
+		PerfTasks.wait(_lod_task, "planet_terrain")
 		_lod_task = -1
 		_lod_result = {}
 		_prefetch_result = {}
@@ -4819,7 +4904,7 @@ func _submit_recipe_task(export_key: String, export_ipix: int) -> void:
 	var elev_range: float = planet_data.max_height
 
 	# ── Slow async part (worker thread): pure CPU — no object lock ──
-	var task_id := WorkerThreadPool.add_task(
+	var task_id := PerfTasks.add_task("terrain:recipe",
 		func():
 			var t0 := Time.get_ticks_usec()
 			var gen_result := ChunkRecipeGenerator.generate_heightmap(
@@ -4858,7 +4943,7 @@ func _poll_pending_recipes() -> void:
 			continue
 
 		if WorkerThreadPool.is_task_completed(task_id):
-			WorkerThreadPool.wait_for_task_completion(task_id)
+			PerfTasks.wait(task_id, "planet_terrain")
 		completed_keys.append(export_key)
 
 		var result: Array = entry.get("result", [null, []]) as Array
@@ -5058,7 +5143,7 @@ func _queue_mesh_task(info: Dictionary) -> void:
 	_mesh_tasks[key] = task_entry
 
 	var stitch: int = int(info.get("stitch", 0))
-	var task_id := WorkerThreadPool.add_task(
+	var task_id := PerfTasks.add_task("terrain:mesh",
 		func():
 			var mesh: ArrayMesh = PlanetChunk.generate_mesh_healpix(
 				pd, nside, ipix, res, chunk_center, prof, stitch)
@@ -5211,7 +5296,7 @@ func _poll_mesh_tasks() -> void:
 			continue
 		if not WorkerThreadPool.is_task_completed(task_id):
 			continue
-		WorkerThreadPool.wait_for_task_completion(task_id)
+		PerfTasks.wait(task_id, "planet_terrain")
 		# Out of the table at once: a task id can be waited for only once. Left in until the end of this loop,
 		# an error below kept a spent id there for good — its slot never freed, and _exit_tree's join_task
 		# waited for it forever (is_task_completed never says true for an id the pool no longer knows).
@@ -5435,7 +5520,9 @@ func _nova_setup(data: PlanetData, server_mode: bool) -> void:
 	_nova_descs = []
 	if not NovaBody.is_enabled_for(data.planet_name) or data.chunk_heightmaps_dir == "":
 		return
+	var tk := _perf_begin()
 	var body := NovaBody.open_body(data.planet_name)
+	tk = _pl_mark("nova_open", tk)
 	data.nova_relief = body
 	if server_mode:
 		# The shape of the ground, and the colliders of the rocks big enough to bump into: no material, no
@@ -5443,8 +5530,10 @@ func _nova_setup(data: PlanetData, server_mode: bool) -> void:
 		_nova_read_rock_descs(data, body)
 		return
 	body.build_material(data.terrain_material)
+	tk = _pl_mark("nova_material", tk)
 	data.nova = body
 	_nova_read_descs(data)
+	_pl_mark("nova_descs", tk)
 	# A game the editor runs listens to the Nova dock (NovaLink). One body at a time: the first on the line.
 	if EngineDebugger.is_active() and not Engine.is_editor_hint() \
 			and not EngineDebugger.has_capture(NovaLink.CHANNEL):
@@ -5465,19 +5554,18 @@ func _nova_read_descs(data: PlanetData) -> void:
 	var radius := data.radius
 	var rock := data.default_rock()
 	var slot := [-1]  # the task's id, known only once it is added
-	slot[0] = WorkerThreadPool.add_task(func() -> void:
-		_nova_descs_read.call_deferred(slot, gen, NovaScatter.layer_descs(body, radius, rock)))
+	slot[0] = PerfTasks.add_task("nova:read_descs", func() -> void:
+		PerfTasks.deferred("nova:descs_read", _nova_descs_read.bind(slot, gen, NovaScatter.layer_descs(body, radius, rock))))
 	_nova_scatter_tasks[slot[0]] = true
 
 
 func _nova_descs_read(slot: Array, gen: int, descs: Array) -> void:
-	WorkerThreadPool.wait_for_task_completion(slot[0])
+	PerfTasks.wait(slot[0], "planet_terrain")
 	_nova_scatter_tasks.erase(slot[0])
 	if gen != _nova_scatter_gen:
 		return
 	_nova_descs = descs
 	for info: Dictionary in _active_chunks.values():
-		info.erase("nova_layers")  # other layers now: nothing is "already laid"
 		var mi = info.get("mesh_instance")
 		if mi is MeshInstance3D and is_instance_valid(mi):
 			_nova_clear_scatter(mi)
@@ -5492,13 +5580,13 @@ func _nova_read_rock_descs(data: PlanetData, body: NovaBody) -> void:
 	var radius := data.radius
 	var rock := data.default_rock()
 	var slot := [-1]
-	slot[0] = WorkerThreadPool.add_task(func() -> void:
-		_nova_rock_descs_read.call_deferred(slot, NOVA_ROCKS.layer_descs(body, radius, rock)))
+	slot[0] = PerfTasks.add_task("nova:read_rock_descs", func() -> void:
+		PerfTasks.deferred("nova:rock_descs_read", _nova_rock_descs_read.bind(slot, NOVA_ROCKS.layer_descs(body, radius, rock))))
 	_nova_scatter_tasks[slot[0]] = true
 
 
 func _nova_rock_descs_read(slot: Array, descs: Array) -> void:
-	WorkerThreadPool.wait_for_task_completion(slot[0])
+	PerfTasks.wait(slot[0], "planet_terrain")
 	_nova_scatter_tasks.erase(slot[0])
 	_nova_rock_descs = descs
 	print("[NovaRocks] %d scatter layer(s) can collide" % descs.size())
@@ -5530,7 +5618,7 @@ func _nova_lay_rocks(key: String, nside: int, ipix: int, shape: ConcavePolygonSh
 	var data := planet_data
 	var origin := _chunk_collision_origin(nside, ipix)
 	var slot := [-1]
-	slot[0] = WorkerThreadPool.add_task(func() -> void:
+	slot[0] = PerfTasks.add_task("nova:lay_rocks", func() -> void:
 		var t0 := Time.get_ticks_usec()
 		var grid := NOVA_ROCKS.chunk_grid(data, nside, ipix, shape)
 		var t1 := Time.get_ticks_usec()
@@ -5538,13 +5626,13 @@ func _nova_lay_rocks(key: String, nside: int, ipix: int, shape: ConcavePolygonSh
 		var t2 := Time.get_ticks_usec()
 		var body: StaticBody3D = NOVA_ROCKS.make_body(boxes, key, origin)
 		var times := Vector3(t1 - t0, t2 - t1, Time.get_ticks_usec() - t2) / 1000.0
-		_nova_rocks_done.call_deferred(slot, key, chunk_id, cancel, body, boxes.size(), times))
+		PerfTasks.deferred("nova:rocks_done", _nova_rocks_done.bind(slot, key, chunk_id, cancel, body, boxes.size(), times)))
 	_nova_scatter_tasks[slot[0]] = cancel
 
 
 func _nova_rocks_done(slot: Array, key: String, chunk_id: int, cancel: Array, body: StaticBody3D, count: int,
 		times: Vector3) -> void:
-	WorkerThreadPool.wait_for_task_completion(slot[0])
+	PerfTasks.wait(slot[0], "planet_terrain")
 	_nova_scatter_tasks.erase(slot[0])
 	if _nova_rock_jobs.get(key) == cancel:
 		_nova_rock_jobs.erase(key)
@@ -5574,33 +5662,117 @@ func _nova_dress_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> void
 	_nova_scatter_chunk(info, mesh, mi)
 
 
-## Which scatter layers a chunk carries now, as a byte (0 / 1) per layer of _nova_descs: those whose objects can be
-## seen from the camera — the chunk's nearest point within the layer's view distance. A layer already laid
-## (the chunk's "nova_layers") stays a little further out (NOVA_KEEP), so standing on the limit does not lay
-## and clear it over and over.
-func _nova_layers_near(info: Dictionary) -> PackedByteArray:
-	var had: PackedByteArray = info.get("nova_layers", PackedByteArray())
+## The blocks of each scatter layer a chunk should carry now (_nova_descs order; bit bx + by × blocks,
+## NovaScatter.layer_blocks): those the layer is drawn on — their ground within its view distance times
+## Graphics > Terrain distance (NovaScatter.VIEW_OPTION), one look ahead (the blocks are looked at every
+## NOVA_RELAY_STEP_M). A block already asked for ([param asked]) stays a little further out (NOVA_KEEP), so
+## standing on the limit does not lay and drop it over and over. A layer with no limit of its own (large rocks
+## seen from afar) is laid whole, on the chunks it reaches. A small layer seen from 60 m used to be laid on the
+## whole of every chunk near the camera, 16 blocks of 200 m each, for the handful it is drawn on: most of a
+## village's minute of laying (2026-11-27).
+func _nova_wanted_blocks(info: Dictionary, mi: MeshInstance3D, asked: PackedInt64Array) -> PackedInt64Array:
 	var reach := HEALPix.pixel_side_length(int(info.nside), planet_data.radius) * 0.75
 	# Along the ground, then up to the camera: a chunk's centre is on the reference sphere, kilometres
 	# under a high plateau, so the straight line to it says nothing of how near the chunk is.
 	var along := _last_local_cam.length() * (info.center as Vector3).normalized().angle_to(_last_local_cam.normalized())
 	var away := maxf(Vector2(along, _cam_alt_above_surface).length() - reach, 0.0)
-	# One byte a layer, not one bit of an integer: a body has as many layers as zone types × slots (78 on
-	# tarsis_3), and a mask of 64 bits wrapped — chunks kilometres away were laid with every small layer,
-	# 35 000 objects each (2026-11-20).
-	var near := PackedByteArray()
-	near.resize(_nova_descs.size())
+	var cam := Vector3(_last_local_cam - Vector3(mi.position))
+	var wanted := PackedInt64Array()
+	wanted.resize(_nova_descs.size())
 	for i in _nova_descs.size():
-		var view := float(_nova_descs[i].view_m)
-		# Laid one look ahead (the layers are looked at every NOVA_RELAY_STEP_M): laid right at its view
-		# distance, a layer came in up to a step late, its rocks already part grown (their fade in).
-		if away <= (maxf(view * NOVA_KEEP, view + NOVA_RELAY_STEP_M * 2.0) if i < had.size() and had[i] == 1
-				else view + NOVA_RELAY_STEP_M):
-			near[i] = 1
-	return near
+		var d: Dictionary = _nova_descs[i]
+		var view := float(d.view_m) * _terrain_mult
+		var had: int = asked[i] if i < asked.size() else 0
+		var lay_reach := view + NOVA_RELAY_STEP_M
+		var keep_reach := maxf(view * NOVA_KEEP, view + NOVA_RELAY_STEP_M * 2.0)
+		if away > (keep_reach if had != 0 else lay_reach):
+			continue
+		if float(d.view_limit) <= 0.0:
+			wanted[i] = NovaScatter.ALL_BLOCKS
+			continue
+		var boxes := _nova_block_boxes(mi, NovaScatter.layer_blocks(d, int(info.nside), int(info.ipix)))
+		wanted[i] = NovaScatter.blocks_within(boxes, cam, lay_reach) \
+				| (had & NovaScatter.blocks_within(boxes, cam, keep_reach))
+	return wanted
 
 
-## Lay or clear the layers of the chunks the camera has come near to or gone away from. The scatter is laid
+## The blocks' boxes of [param mi]'s ground cut [param blocks] a side (NovaScatter.block_boxes), kept on the
+## chunk for its mesh.
+func _nova_block_boxes(mi: MeshInstance3D, blocks: int) -> Array[AABB]:
+	var all: Dictionary = mi.get_meta("nova_boxes", {})
+	if not all.has(blocks):
+		all[blocks] = NovaScatter.block_boxes(mi.mesh.get_meta("nova_grid"), int(mi.mesh.get_meta("nova_res")), blocks)
+		mi.set_meta("nova_boxes", all)
+	return all[blocks]
+
+
+## CLIENT, client.ini debug_perf: a [NovaC] line every NOVA_DIAG_MS per chunk within NOVA_DIAG_NEAR_M of the
+## camera — the colliding rocks laid near it, chunk-local, and whether their node is there (the server's
+## "[NovaRocks] knock" lines name the collider a vehicle hit, in the same chunk frame), the layers whose blocks
+## are not all laid yet (wanted / asked / laid masks, in hex) and the layings on their way to the chunk.
+func _nova_diag() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _nova_diag_msec < NOVA_DIAG_MS:
+		return
+	_nova_diag_msec = now
+	for info: Dictionary in _active_chunks.values():
+		var mi = info.get("mesh_instance")
+		if not (mi is MeshInstance3D and is_instance_valid(mi) and mi.mesh != null and mi.mesh.has_meta("nova_grid")):
+			continue
+		var cam := Vector3(_last_local_cam - Vector3(mi.position))
+		var whole: AABB = _nova_block_boxes(mi, 1)[0]
+		if cam.distance_to(cam.clamp(whole.position, whole.end)) > NOVA_DIAG_NEAR_M:
+			continue
+		var laid: Dictionary = mi.get_meta("nova_laid", {})
+		var nodes: Dictionary = mi.get_meta("nova_nodes", {})
+		var near: Array = []  # [distance, text]
+		var solid := 0
+		var drawn := 0
+		for key: Array in laid:
+			# Only the layers that can collide: a pebble layer holds tens of thousands of rows a chunk.
+			if int(key[3]) >= _nova_descs.size() or not NovaScatter.layer_can_collide(_nova_descs[int(key[3])]):
+				continue
+			var rows: PackedFloat32Array = laid[key]
+			var node := nodes.get(key) as GeometryInstance3D
+			for at in range(0, rows.size(), NovaScatter.ROW):
+				if rows[at + 15] <= 0.0:
+					continue
+				var o := Vector3(rows[at + 3], rows[at + 7], rows[at + 11])
+				var d := o.distance_to(cam)
+				if d > NOVA_DIAG_NEAR_M:
+					continue
+				solid += 1
+				var shown := node != null and is_instance_valid(node) and node.is_visible_in_tree()
+				drawn += int(shown)
+				near.append([d, "%.1fm %s@%s%s" % [d, str((key[0] as Mesh).get_meta("nova_path", "?")).get_file().get_basename(),
+						str(o.snappedf(0.1)), "" if shown else " NO-NODE"]])
+		near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+		var asked: PackedInt64Array = mi.get_meta("nova_asked", PackedInt64Array())
+		var laid_masks: PackedInt64Array = mi.get_meta("nova_laid_masks", PackedInt64Array())
+		var wanted := _nova_wanted_blocks(info, mi, asked)
+		var open := PackedStringArray()
+		for i in _nova_descs.size():
+			var a: int = asked[i] if i < asked.size() else 0
+			var l: int = laid_masks[i] if i < laid_masks.size() else 0
+			if wanted[i] != l or a != l:
+				open.append("L%d(s%d v%d) w=%x a=%x l=%x" % [i, int(_nova_descs[i].slot), int(_nova_descs[i].variant),
+						wanted[i], a, l])
+		var waiting := 0
+		var running := 0
+		var id: int = mi.get_instance_id()
+		for e: Array in _nova_scatter_waiting.values():
+			waiting += int(int(e[2]) == id)
+		for e: Array in _nova_scatter_started.values():
+			running += int(int(e[2]) == id)
+		print(("[NovaC] %s res %d cam %s | solid rocks within %.0f m: %d laid, %d drawn | jobs %d waiting %d running"
+				+ " | relay %d left, %.0f m from its start | open: %s | nearest: %s") % [
+				mi.name, int(mi.mesh.get_meta("nova_res")), str(cam.snappedf(0.1)), NOVA_DIAG_NEAR_M, solid, drawn,
+				waiting, running, _nova_relay.size(), _last_local_cam.distance_to(_nova_laid_from),
+				", ".join(open) if not open.is_empty() else "none",
+				", ".join(PackedStringArray(near.slice(0, 6).map(func(n: Array) -> String: return str(n[1]))))])
+
+
+## Lay or clear the blocks of the chunks the camera has come near to or gone away from. The scatter is laid
 ## around the camera only: laid on every loaded chunk it was 1.2 million objects in 125 000 nodes on
 ## tarsis_3, 9 to 20 frames a second and stalls of seconds.
 func _nova_follow_camera() -> void:
@@ -5611,10 +5783,20 @@ func _nova_follow_camera() -> void:
 	var cam_parts := NovaScatter.fade_parts(_last_local_cam)
 	RenderingServer.global_shader_parameter_set("nova_cam_cell", cam_parts[0])
 	RenderingServer.global_shader_parameter_set("nova_cam_rest", cam_parts[1])
+	_nova_stop_unwanted()
+	if not Engine.is_editor_hint() and ClientPerf.enabled:
+		_nova_diag()
 	# And the nodes still owed, within the frame's budget.
 	_nova_node_budget = NOVA_NODES_MIN
 	_nova_node_deadline = Time.get_ticks_usec() + int(NOVA_NODES_MS * 1000.0)
 	if not _nova_show_queue.is_empty():
+		if _nova_show_queue.size() > 1:
+			var cam := _last_local_cam
+			_nova_show_queue.sort_custom(func(a: int, b: int) -> bool:
+				var ma := instance_from_id(a) as Node3D
+				var mb := instance_from_id(b) as Node3D
+				return ma != null and (mb == null
+						or cam.distance_squared_to(ma.position) < cam.distance_squared_to(mb.position)))
 		var owed: Array[int] = []
 		for id in _nova_show_queue:
 			var waiting := instance_from_id(id) as MeshInstance3D
@@ -5628,7 +5810,11 @@ func _nova_follow_camera() -> void:
 	# never reach the chunks at the end of the list.
 	if _nova_relay.is_empty() and _last_local_cam.distance_to(_nova_laid_from) >= NOVA_RELAY_STEP_M:
 		_nova_laid_from = _last_local_cam
+		# Nearest last: the list is taken from its end, the chunks under the camera first.
+		var cam := _last_local_cam
 		_nova_relay = _active_chunks.values()
+		_nova_relay.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return cam.distance_squared_to(a.center) > cam.distance_squared_to(b.center))
 	var until := Time.get_ticks_usec() + int(NOVA_RELAY_MS * 1000.0)
 	while not _nova_relay.is_empty() and Time.get_ticks_usec() < until:
 		var info: Dictionary = _nova_relay.pop_back()
@@ -5637,86 +5823,128 @@ func _nova_follow_camera() -> void:
 		if not (is_instance_valid(mi) and mi is MeshInstance3D and mi.is_inside_tree() and mi.mesh != null
 				and mi.mesh.has_meta("nova_grid")):
 			continue
-		if _nova_layers_near(info) != (info.get("nova_layers", PackedByteArray()) as PackedByteArray):
-			_nova_scatter_chunk(info, mi.mesh, mi)
-		elif mi.has_meta("nova_laid"):
-			_nova_queue_blocks(mi)
+		_nova_scatter_chunk(info, mi.mesh, mi)
 
 
-## Shows the blocks of [param mi]'s scatter that are near the camera now, and queues what the frame's
-## budget left out.
+## Shows the blocks laid on [param mi], and queues what the frame's budget left out.
 func _nova_queue_blocks(mi: MeshInstance3D) -> void:
 	if not _nova_show_blocks(mi) and not _nova_show_queue.has(mi.get_instance_id()):
 		_nova_show_queue.append(mi.get_instance_id())
 
 
-## Makes the nodes of the scatter blocks of chunk [param mi] the camera can see, and frees those it left
-## behind. A layer seen from 60 m covers a 800 m chunk with blocks of each of its models: only the few
-## around the camera are worth a node (and a draw call). The laid objects stay on the chunk (its
-## "nova_laid"); a layer with no limit of its own (large rocks, seen from afar) has all its blocks.
-## The blocks are looked at layer by layer ("nova_by_limit"): a layer whose view distance does not reach
-## the chunk at all is skipped whole — looking at every block of every chunk each time the camera moved
-## 30 m was thousands of tests, and frames lost in flight (2026-11-20).
-## False when the frame's budget ran out before the end.
+## Makes the nodes of the scatter blocks laid on chunk [param mi] (only those the camera can see are laid:
+## _nova_wanted_blocks), and frees those of the blocks dropped since. False when the frame's budget ran out
+## before the end.
 func _nova_show_blocks(mi: MeshInstance3D) -> bool:
 	var laid: Dictionary = mi.get_meta("nova_laid", {})
-	var by_limit: Dictionary = mi.get_meta("nova_by_limit", {})
 	var nodes: Dictionary = mi.get_meta("nova_nodes", {})
-	var cam := Vector3(_last_local_cam - Vector3(mi.position))
-	# How far the camera is from the chunk's box: no object of the chunk is nearer.
-	var box: AABB = mi.get_meta("nova_box", AABB())
-	var gap := cam.distance_to(cam.clamp(box.position, box.end))
 	var done := true
-	for limit: float in by_limit:
-		var keys: Array = by_limit[limit]
-		if limit > 0.0 and gap > limit * NOVA_KEEP + NovaScatter.BLOCK_M:
-			if not nodes.is_empty():
-				for key: Array in keys:
-					var gone: Node = nodes.get(key)
-					if gone != null:
-						gone.queue_free()
-						nodes.erase(key)
+	for key: Array in nodes.keys():
+		if not laid.has(key):
+			(nodes[key] as Node).queue_free()
+			nodes.erase(key)
+	if _nova_node_budget <= 0 and Time.get_ticks_usec() > _nova_node_deadline:
+		mi.set_meta("nova_nodes", nodes)
+		return nodes.size() >= laid.size()
+	# The most urgent first, as the layings (_nova_pump_scatter): the block nearest to coming into view —
+	# the rocks one is about to drive into before the pebbles a block away.
+	var _tk := _perf_begin()
+	var owed: Array = []  # [urgency, key]
+	var cam := Vector3(_last_local_cam - Vector3(mi.position))
+	var cuts := {}  # layer -> its blocks a side
+	for key: Array in laid:
+		if nodes.has(key):
 			continue
-		for key: Array in keys:
-			var near := NovaScatter.block_near(key, laid[key], cam, NOVA_KEEP)
-			var node: Node = nodes.get(key)
-			if near and node == null:
-				if _nova_node_budget <= 0 and Time.get_ticks_usec() > _nova_node_deadline:
-					done = false
-					continue
-				_nova_node_budget -= 1
-				node = NovaScatter.build_node(key, laid[key], mi.layers, mi.position)
-				mi.add_child(node)
-				nodes[key] = node
-			elif not near and node != null:
-				node.queue_free()
-				nodes.erase(key)
+		var layer := int(key[3])
+		var urgency := 0.0
+		if layer < _nova_descs.size() and mi.has_meta("nova_ipix"):
+			if not cuts.has(layer):
+				cuts[layer] = NovaScatter.layer_blocks(_nova_descs[layer], int(mi.get_meta("nova_nside")),
+						int(mi.get_meta("nova_ipix")))
+			var boxes := _nova_block_boxes(mi, int(cuts[layer]))
+			var box: AABB = boxes[clampi(int(key[1]), 0, boxes.size() - 1)]
+			urgency = cam.distance_to(cam.clamp(box.position, box.end)) \
+					- NovaScatter.view_of(key[0], float(key[2])) * _terrain_mult
+		owed.append([urgency, key])
+	owed.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	_perf_end("nshow:owed", _tk)
+	_tk = _perf_begin()
+	for entry: Array in owed:
+		var key: Array = entry[1]
+		if _nova_node_budget <= 0 and Time.get_ticks_usec() > _nova_node_deadline:
+			done = false
+			break
+		_nova_node_budget -= 1
+		var node := NovaScatter.build_node(key, laid[key], mi.layers, mi.position, _terrain_mult, _nova_casts_shadow(key))
+		mi.add_child(node)
+		nodes[key] = node
 	mi.set_meta("nova_nodes", nodes)
+	_perf_end("nshow:build", _tk)
 	return done
 
 
+## Whether the objects of scatter block [param key] (lay_chunk's) cast a shadow: their model's, in its layer
+## (NovaScatter.SHADOW_MIN_PROUD_M).
+func _nova_casts_shadow(key: Array) -> bool:
+	var layer := int(key[3])
+	if layer >= _nova_descs.size():
+		return true
+	var d: Dictionary = _nova_descs[layer]
+	var shadows: PackedByteArray = d.get("shadows", PackedByteArray())
+	var model := (d.meshes as Array).find(key[0])
+	return model < 0 or model >= shadows.size() or shadows[model] == 1
+
+
+## Lays the blocks chunk [param mi] (of [param mesh]) should carry and has not been given yet, and drops those
+## it no longer should (_nova_wanted_blocks). A laying adds blocks to the chunk's: each block is laid whole and
+## alone, so the blocks laid one walk after another are those a laying of the whole chunk would have given.
+## A new mesh (another grid under the objects) or other layers start the chunk over: what was on its way
+## is stopped and its answer dropped (a chunk rebuilt when a village's pads level its ground was laid twice).
 func _nova_scatter_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> void:
 	if _nova_descs.is_empty() or not mesh.has_meta("nova_grid"):
 		return
-	var layers := _nova_layers_near(info)
-	info["nova_layers"] = layers
-	# The latest request for this chunk wins: an older answer still on its way is dropped, and the older task is
-	# stopped where it is (a chunk rebuilt when a village's pads level its ground laid it twice: 20-60 s each).
-	var turn := int(mi.get_meta("nova_turn", 0)) + 1
-	mi.set_meta("nova_turn", turn)
-	var older: Array = mi.get_meta("nova_cancel", [])
-	if not older.is_empty():
-		older[0] = true
-	var cancel := [false]
-	mi.set_meta("nova_cancel", cancel)
-	if not layers.has(1):
+	if int(mi.get_meta("nova_mesh_id", 0)) != mesh.get_instance_id() \
+			or int(mi.get_meta("nova_gen", -1)) != _nova_scatter_gen:
 		_nova_clear_scatter(mi)
-		return
-	var descs: Array = []
+		mi.set_meta("nova_mesh_id", mesh.get_instance_id())
+		mi.set_meta("nova_gen", _nova_scatter_gen)
+		mi.set_meta("nova_nside", int(info.nside))
+		mi.set_meta("nova_ipix", int(info.ipix))
+	var laid_masks: PackedInt64Array = mi.get_meta("nova_laid_masks", PackedInt64Array())
+	var asked: PackedInt64Array = mi.get_meta("nova_asked", PackedInt64Array())
+	laid_masks.resize(_nova_descs.size())
+	asked.resize(_nova_descs.size())
+	var wanted := _nova_wanted_blocks(info, mi, asked)
+	# Blocks gone out of reach: their objects and nodes go, a later look lays them again.
+	var dropped := false
 	for i in _nova_descs.size():
-		if layers[i] == 1:
-			descs.append(_nova_descs[i])
+		if asked[i] & ~wanted[i] != 0:
+			laid_masks[i] &= wanted[i]
+			asked[i] &= wanted[i]
+			dropped = true
+	if dropped:
+		var laid: Dictionary = mi.get_meta("nova_laid", {})
+		for key: Array in laid.keys():
+			if (asked[int(key[3])] >> int(key[1])) & 1 == 0:
+				laid.erase(key)
+	# Blocks come into reach: one laying for all of them.
+	var missing := PackedInt64Array()
+	missing.resize(_nova_descs.size())
+	var any := false
+	for i in _nova_descs.size():
+		missing[i] = wanted[i] & ~asked[i]
+		if missing[i] != 0:
+			asked[i] |= missing[i]
+			any = true
+	mi.set_meta("nova_laid_masks", laid_masks)
+	mi.set_meta("nova_asked", asked)
+	if dropped or mi.has_meta("nova_laid"):
+		_nova_queue_blocks(mi)
+	if not any:
+		return
+	var descs := _nova_descs
 	var gen := _nova_scatter_gen
+	var epoch := int(mi.get_meta("nova_epoch", 0))
 	var nside := int(info.nside)
 	var ipix := int(info.ipix)
 	var res := int(mesh.get_meta("nova_res"))
@@ -5725,44 +5953,195 @@ func _nova_scatter_chunk(info: Dictionary, mesh: Mesh, mi: MeshInstance3D) -> vo
 	var center: Vector3 = info.center
 	var data := planet_data
 	var mi_id := mi.get_instance_id()
-	var slot := [-1]  # the task's id, known only once it is added
-	slot[0] = WorkerThreadPool.add_task(func() -> void:
-		# The zones and the ground kept clear round the chunk, read here and not on the main thread: their
-		# modifier tiles may be decoded, the roads, pads and village beds gathered (as the chunk builders do).
-		var zones := NovaScatter.zone_context(data, nside, ipix)
-		var laid := NovaScatter.lay_chunk(descs, nside, ipix, res, grid, vid, center, zones, cancel)
-		_nova_scatter_done.call_deferred(slot, mi_id, gen, turn, laid))
-	_nova_scatter_tasks[slot[0]] = cancel
+	var cancels: Array = mi.get_meta("nova_cancels", [])
+	for i in _nova_descs.size():
+		if missing[i] == 0:
+			continue
+		var masks := PackedInt64Array()
+		masks.resize(_nova_descs.size())
+		masks[i] = missing[i]
+		var cancel := [false]
+		cancels.append(cancel)
+		_nova_job_seq += 1
+		var job_id := _nova_job_seq
+		var slot := [-1]  # the task's id, known only once it is added
+		var job := func() -> void:
+			slot[0] = PerfTasks.add_task("nova:scatter_chunk", func() -> void:
+				# The zones and the ground kept clear round the chunk, read here and not on the main thread: their
+				# modifier tiles may be decoded, the roads, pads and village beds gathered (as the chunk builders do).
+				var zones := NovaScatter.zone_context(data, nside, ipix)
+				var laid := NovaScatter.lay_chunk(descs, nside, ipix, res, grid, vid, center, zones, cancel, false, masks)
+				PerfTasks.deferred("nova:scatter_done", _nova_scatter_done.bind(slot, job_id, mi_id, gen, epoch, cancel, masks,
+						laid)))
+			_nova_scatter_tasks[slot[0]] = cancel
+		var boxes := _nova_block_boxes(mi, NovaScatter.layer_blocks(_nova_descs[i], nside, ipix))
+		_nova_scatter_waiting[job_id] = [job, cancel, mi_id, i, missing[i],
+				NovaScatter.nearest_block(boxes, missing[i], Vector3(_last_local_cam - mi.position))]
+	mi.set_meta("nova_cancels", cancels)
+	_nova_pump_scatter()
 
 
-func _nova_scatter_done(slot: Array, mi_id: int, gen: int, turn: int, laid: Dictionary) -> void:
-	WorkerThreadPool.wait_for_task_completion(slot[0])
+## The most urgent waiting laying still wanted, taken off the urgency order (made again when it is older than
+## NOVA_PICK_REFRESH_S or used up); -1 when none is. The unwanted ones met are dropped.
+func _nova_next_job() -> int:
+	var now := Time.get_ticks_usec()
+	for attempt in 2:
+		if attempt == 1 or _nova_pick_order.is_empty() \
+				or now - _nova_pick_at_usec > int(NOVA_PICK_REFRESH_S * 1_000_000.0):
+			# Used up: made again only for the layings that came since (the order held the most urgent of the
+			# others, and a fresh one is due at NOVA_PICK_REFRESH_S anyway).
+			if attempt == 1 and (now == _nova_pick_at_usec or _nova_job_seq == _nova_pick_seq):
+				return -1
+			for id: int in _nova_scatter_waiting.keys():
+				if not _nova_job_wanted(_nova_scatter_waiting[id]):
+					_nova_scatter_waiting.erase(id)
+			_nova_pick_order = nova_job_order(_nova_scatter_waiting, _nova_job_urgency, NOVA_PICK_KEEP)
+			_nova_pick_at_usec = now
+			_nova_pick_seq = _nova_job_seq
+		while not _nova_pick_order.is_empty():
+			var id: int = _nova_pick_order.pop_back()
+			if not _nova_scatter_waiting.has(id):
+				continue
+			if _nova_job_wanted(_nova_scatter_waiting[id]):
+				return id
+			_nova_scatter_waiting.erase(id)
+	return -1
+
+
+## How urgent waiting laying [param entry] is (lower is sooner): its nearest block's distance to the camera
+## minus its layer's view distance -- the rocks seen from afar before the pebbles at one's feet.
+func _nova_job_urgency(entry: Array) -> float:
+	var mi := instance_from_id(int(entry[2])) as MeshInstance3D
+	if mi == null:
+		return INF
+	return _last_local_cam.distance_to(mi.position + (entry[5] as Vector3)) \
+			- float(_nova_descs[int(entry[3])].view_m) * _terrain_mult
+
+
+## The ids of the [param keep] most urgent of [param waiting] (id -> entry) by [param urgency] (entry -> float,
+## lower is sooner; 0 = all of them), the most urgent LAST; ties by id, the oldest last. One pass that keeps
+## the best few in order, not a sort of all: 1 200 sorted with a script comparator cost 20 ms. Pure.
+static func nova_job_order(waiting: Dictionary, urgency: Callable, keep: int = 0) -> Array[int]:
+	var us := PackedFloat64Array()  # the kept, most urgent first
+	var ids: Array[int] = []
+	for id: int in waiting:
+		var u := float(urgency.call(waiting[id]))
+		if keep > 0 and ids.size() >= keep and not (u < us[us.size() - 1] or (u == us[us.size() - 1]
+				and id < ids[ids.size() - 1])):
+			continue
+		var at := us.bsearch(u, true)  # among the equal ones, after the older ids
+		while at < ids.size() and us[at] == u and ids[at] < id:
+			at += 1
+		us.insert(at, u)
+		ids.insert(at, id)
+		if keep > 0 and ids.size() > keep:
+			us.remove_at(us.size() - 1)
+			ids.pop_back()
+	ids.reverse()
+	return ids
+
+
+## Whether laying [param entry] (_nova_scatter_waiting's) is still worth it: its chunk is there and still wants
+## some of its blocks.
+func _nova_job_wanted(entry: Array) -> bool:
+	var mi := instance_from_id(int(entry[2])) as MeshInstance3D
+	if (entry[1] as Array)[0] or mi == null or not mi.is_inside_tree():
+		return false
+	var asked: PackedInt64Array = mi.get_meta("nova_asked", PackedInt64Array())
+	var layer := int(entry[3])
+	return layer < asked.size() and asked[layer] & int(entry[4]) != 0
+
+
+## Stops the layings running for nothing: their chunk gone (a finer mesh took its place as the camera came
+## near), or their blocks left behind. They held one of the NOVA_SCATTER_MAX_TASKS for tens of seconds.
+func _nova_stop_unwanted() -> void:
+	for job_id: int in _nova_scatter_started:
+		var entry: Array = _nova_scatter_started[job_id]
+		if not _nova_job_wanted(entry):
+			(entry[1] as Array)[0] = true
+
+
+## Starts the waiting layings while fewer than NOVA_SCATTER_MAX_TASKS run, the most urgent first: the one whose
+## nearest block is the nearest to coming into view (its distance minus its layer's view distance) — the rocks
+## seen from afar before the pebbles at one's feet, and in front before behind. A laying no longer wanted is
+## dropped.
+func _nova_pump_scatter() -> void:
+	if not Engine.is_editor_hint():
+		ClientPerf.gauge("nova_waiting", _nova_scatter_waiting.size())
+	while _nova_scatter_running < NOVA_SCATTER_MAX_TASKS and not _nova_scatter_waiting.is_empty():
+		var _tk := _perf_begin()
+		var best := _nova_next_job()
+		_perf_end("npump:pick", _tk)
+		if best < 0:
+			return
+		var entry: Array = _nova_scatter_waiting[best]
+		_nova_scatter_waiting.erase(best)
+		_nova_scatter_started[best] = entry
+		_nova_scatter_running += 1
+		_tk = _perf_begin()
+		(entry[0] as Callable).call()
+		_perf_end("npump:start", _tk)
+
+
+## A laying's answer: the blocks of [param masks] it laid join the chunk's, those still wanted.
+func _nova_scatter_done(slot: Array, job_id: int, mi_id: int, gen: int, epoch: int, cancel: Array,
+		masks: PackedInt64Array, laid: Dictionary) -> void:
+	PerfTasks.wait(slot[0], "planet_terrain")
 	_nova_scatter_tasks.erase(slot[0])
-	if gen != _nova_scatter_gen:
-		return
+	_nova_scatter_started.erase(job_id)
+	_nova_scatter_running = maxi(_nova_scatter_running - 1, 0)
+	# nscat:* (debug_perf): the parts of a laying's hand-over (PerfTasks defer:nova:scatter_done).
+	var _tk := _perf_begin()
+	_nova_pump_scatter()
+	_perf_end("nscat:pump", _tk)
 	var mi := instance_from_id(mi_id) as MeshInstance3D
-	if mi == null or not is_instance_valid(mi) or not mi.is_inside_tree() or int(mi.get_meta("nova_turn", 0)) != turn:
+	if mi == null or not mi.is_inside_tree():
 		return
-	_nova_clear_scatter(mi)
-	mi.set_meta("nova_laid", laid)
-	# The blocks by their layer's view limit (0: no limit), and the chunk's box: see _nova_show_blocks.
-	var by_limit := {}
+	var cancels: Array = mi.get_meta("nova_cancels", [])
+	for k in cancels.size():
+		if is_same(cancels[k], cancel):  # by identity: every flag reads [false]
+			cancels.remove_at(k)
+			break
+	if cancel[0] or gen != _nova_scatter_gen or int(mi.get_meta("nova_epoch", 0)) != epoch:
+		return
+	_tk = _perf_begin()
+	var asked: PackedInt64Array = mi.get_meta("nova_asked", PackedInt64Array())
+	var laid_masks: PackedInt64Array = mi.get_meta("nova_laid_masks", PackedInt64Array())
+	var have: Dictionary = mi.get_meta("nova_laid", {})
 	for key: Array in laid:
-		var limit := float(key[2])
-		if not by_limit.has(limit):
-			by_limit[limit] = []
-		(by_limit[limit] as Array).append(key)
-	mi.set_meta("nova_by_limit", by_limit)
-	mi.set_meta("nova_box", mi.mesh.get_aabb())
+		if (asked[int(key[3])] >> int(key[1])) & 1 == 1:
+			have[key] = laid[key]
+	for i in mini(masks.size(), laid_masks.size()):
+		laid_masks[i] |= masks[i] & asked[i]
+	mi.set_meta("nova_laid", have)
+	mi.set_meta("nova_laid_masks", laid_masks)
+	_perf_end("nscat:merge", _tk)
+	_tk = _perf_begin()
 	_nova_queue_blocks(mi)
+	_perf_end("nscat:show", _tk)
 
 
+## Takes every scatter object off chunk [param mi] and stops the layings on their way to it.
 func _nova_clear_scatter(mi: MeshInstance3D) -> void:
 	for node: Node in (mi.get_meta("nova_nodes", {}) as Dictionary).values():
 		node.queue_free()
-	mi.remove_meta("nova_laid")
-	mi.remove_meta("nova_by_limit")
-	mi.remove_meta("nova_nodes")
+	for stop: Array in mi.get_meta("nova_cancels", []):
+		stop[0] = true
+	mi.set_meta("nova_epoch", int(mi.get_meta("nova_epoch", 0)) + 1)
+	for meta: StringName in [&"nova_laid", &"nova_nodes", &"nova_laid_masks", &"nova_asked", &"nova_boxes",
+			&"nova_cancels"]:
+		mi.remove_meta(meta)
+
+
+## Graphics > Terrain distance moved: the blocks are looked at again at once (more laid, or dropped), and the
+## rocks already drawn fade in over their new distance (their nodes' range follows by itself: DrawRange).
+func _nova_view_changed() -> void:
+	_nova_laid_from = Vector3.INF
+	for info: Dictionary in _active_chunks.values():
+		var mi = info.get("mesh_instance")
+		if mi is MeshInstance3D and is_instance_valid(mi):
+			for node: Node in ((mi as MeshInstance3D).get_meta("nova_nodes", {}) as Dictionary).values():
+				NovaScatter.set_view_mult(node as GeometryInstance3D, _terrain_mult)
 
 
 ## Re-lays the scatter of every shown chunk from the current settings (Nova dock). The ground
@@ -5973,6 +6352,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 
 	_perf_end("asm:rails", _tk)
 	_tk = _perf_begin()
+	# asm:zones split (debug_perf): asm:caves, asm:volcano, asm:fumaroles, asm:scree.
+	var _ztk := _perf_begin()
 	# ---------- Point-biome 3D instances at close LODs ----------
 	if decor and lod <= 2:
 		var _pz_point := _get_chunk_populate_zones(info)
@@ -6000,8 +6381,11 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 				if cave_node:
 					_chunks_node.add_child(cave_node)
 					info["cave"] = cave_node
-
+	_perf_end("asm:caves", _ztk)
+	_ztk = _perf_begin()
 	_acquire_volcano_nodes(info)
+	_perf_end("asm:volcano", _ztk)
+	_ztk = _perf_begin()
 	# Fumarole vents: decoration of the finest LOD (FumaroleSpawner).
 	if decor and lod == 0 and not is_server and planet_data.has_fumaroles():
 		var fum := FumaroleSpawner.build(planet_data, int(info.nside), int(info.ipix),
@@ -6009,6 +6393,8 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		if fum:
 			_chunks_node.add_child(fum)
 			info["fumaroles"] = fum
+	_perf_end("asm:fumaroles", _ztk)
+	_ztk = _perf_begin()
 	# Rocky terrain scree: decoration of the finest LOD (RockFieldScree), placed
 	# by the chunk worker into the mesh's "rock_scree" meta.
 	if decor and lod == 0 and not is_server and info.has("mesh_instance") and info.mesh_instance:
@@ -6016,6 +6402,7 @@ func _assemble_visual_chunk(info: Dictionary, mesh: ArrayMesh) -> void:
 		if _scree:
 			_chunks_node.add_child(_scree)
 			info["rock_scree"] = _scree
+	_perf_end("asm:scree", _ztk)
 	_perf_end("asm:zones", _tk)
 	# Its own scope: road bridges AND railway viaducts are built here, on the
 	# main thread, and asm:zones alone could not tell them from the point-biome
@@ -6361,9 +6748,21 @@ func register_terrain_pad(rec: Dictionary) -> void:
 	if _pad_batch_open:
 		_pad_batch.append(planet_data.pad_with_measure(rec))
 		return
-	_pads_changed(planet_data.register_pad(rec))
+	# pad:* on the [CPerf+] heartbeat (debug_perf): the phases of a pad's registration.
+	var tok := _perf_begin()
+	var dirty := planet_data.register_pad(rec)
+	if tok != 0:
+		_perf_end("pad:data", tok)
+		var phases := planet_data.take_pad_phases()
+		for phase: String in phases:
+			_perf_end("pad:" + phase, Time.get_ticks_usec() - int(phases[phase]))
+	tok = _perf_begin()
+	_pads_changed(dirty)
+	_perf_end("pad:changed", tok)
 	# Touching pads it pulled onto its level (or released): their buildings must sit on it.
+	tok = _perf_begin()
 	_announce_caught_up_pads()
+	_perf_end("pad:announce", tok)
 
 
 ## Until [method end_terrain_pad_batch], add the pads registered to [param recs], measured, instead of
@@ -6755,7 +7154,7 @@ func _drain_bridge_spawn_queue() -> void:
 		var t: Dictionary = _bridge_tasks[sk]
 		if not WorkerThreadPool.is_task_completed(int(t["task_id"])):
 			continue
-		WorkerThreadPool.wait_for_task_completion(int(t["task_id"]))
+		PerfTasks.wait(int(t["task_id"]), "planet_terrain")
 		_bridge_tasks.erase(sk)
 		if (_bridge_owners.get(sk, {}) as Dictionary).is_empty() or _bridge_nodes.has(sk):
 			continue
@@ -6786,7 +7185,7 @@ func _drain_bridge_spawn_queue() -> void:
 			continue
 		var result: Array = [{}]
 		var pd := planet_data
-		var tid := WorkerThreadPool.add_task(func() -> void:
+		var tid := PerfTasks.add_task("terrain:bridge_geo", func() -> void:
 			result[0] = BridgeSpawner.build_geo(pd, prep))
 		_bridge_tasks[sk] = {"task_id": tid, "prep": prep, "result": result}
 
@@ -6982,10 +7381,15 @@ func _acquire_volcano_nodes(info: Dictionary) -> void:
 		var vkey := VolcanoFeatures.key_of(vol)
 		var entry: Dictionary = _volcano_nodes.get(vkey, {})
 		if entry.is_empty():
+			# vol:build / vol:enter (debug_perf): its nodes made, then entering the tree (the plume's _ready).
+			var _vtk := _perf_begin()
 			var node := VolcanoFeatures.build(planet_data, vol)
+			_perf_end("vol:build", _vtk)
 			if node == null:
 				continue
+			_vtk = _perf_begin()
 			_chunks_node.add_child(node)
+			_perf_end("vol:enter", _vtk)
 			entry = {"node": node, "chunks": {}}
 			_volcano_nodes[vkey] = entry
 		(entry["chunks"] as Dictionary)[info.key] = true

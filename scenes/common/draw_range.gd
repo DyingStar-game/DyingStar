@@ -52,7 +52,7 @@ static func rescale(node: Variant, mult: float) -> void:
 static func multiplier(option_key: String) -> float:
 	if Engine.is_editor_hint() or OS.has_feature("dedicated_server"):
 		return 1.0
-	return float(SettingsManager.render.effective(option_key))
+	return float(SettingsManager.render.applied(option_key))
 
 
 ## Rescale every node in the tree tracked under `option_key`.

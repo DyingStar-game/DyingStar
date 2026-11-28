@@ -142,3 +142,20 @@ func test_only_a_button_coming_up_on_a_hosted_face_is_passed_on() -> void:
 	assert_false(StarMap.releases_pass_on(up, false), "full screen, the chart's viewport is the window's: kept")
 	assert_false(StarMap.releases_pass_on(down, true), "a press is never the chart's here")
 	assert_false(StarMap.releases_pass_on(InputEventMouseMotion.new(), true), "a drag's motion stays the chart's")
+
+
+## The player's chart is built in the tablet's NAVIGATION slot, out of the tree (StarMap.build_in): never
+## under the chart then moved out, which made it enter and leave the tree as the player appeared.
+func test_a_chart_built_in_a_slot_is_built_there_and_stays() -> void:
+	var slot := Control.new()  # out of the tree, as the unbuilt tablet's slot is
+	var chart := StarMap.new()
+	chart.build_in = slot
+	add_child_autofree(chart)
+	var face: Control = chart._surface
+	assert_not_null(face)
+	assert_eq(face.get_parent(), slot, "built in the slot")
+	assert_false(face.is_inside_tree(), "out of the tree with it")
+	chart.host_in(slot)
+	assert_same(chart._surface, face)
+	assert_eq(face.get_parent(), slot, "hosted where it already is: not moved")
+	slot.free()

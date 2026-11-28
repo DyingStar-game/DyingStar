@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://test/perf/player_instance_probe.gd" id="1"]
+
+[node name="PlayerInstanceProbe" type="Node"]
+script = ExtResource("1")

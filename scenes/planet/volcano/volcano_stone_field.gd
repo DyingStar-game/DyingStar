@@ -66,7 +66,7 @@ const NO_READ_LIMIT := 1 << 30
 const NO_DEADLINE := 1 << 62
 static var _shared_meshes: Array[ArrayMesh] = []
 static var _shared_flying_mesh: ArrayMesh
-static var _shared_cracks: NoiseTexture3D
+static var _shared_cracks: NoiseVolume
 static var _shared_dust_mesh: QuadMesh
 static var _shared_dust_fade: Gradient
 static var _shared_dust_growth: Curve
@@ -160,14 +160,12 @@ func _init(plume: VolcanoPlumeModel, relief_height: Callable, ground_albedo := C
 	_radius.resize(COUNT)
 	_img = Image.create_empty(COUNT, 2, false, Image.FORMAT_RGBAF)
 	_tex = ImageTexture.create_from_image(_img)
-	var cracks := _make_crack_texture()
 	mat.shader = load(SHADER_DIR + "stones.gdshader")
 	mat.set_shader_parameter("stone_tex", _tex)
-	mat.set_shader_parameter("crack_tex", cracks)
 	mat.set_shader_parameter("period", PERIOD)
 	mat.set_shader_parameter("gravity", GRAVITY)
 	rock_mat.shader = load(SHADER_DIR + "rock.gdshader")
-	rock_mat.set_shader_parameter("crack_tex", cracks)
+	crack_texture().when_ready(_set_cracks)
 	if _shared_meshes.is_empty():
 		for variant in ROCK_VARIANTS:
 			_shared_meshes.append(make_rock(28, 14, variant))
@@ -235,34 +233,28 @@ static func _remove_node(node: Node3D) -> void:
 	node.queue_free()
 
 
-static func _make_crack_texture() -> NoiseTexture3D:
-	if _shared_cracks != null:
-		return _shared_cracks
-	var noise := FastNoiseLite.new()
-	noise.noise_type = FastNoiseLite.TYPE_CELLULAR
-	noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
-	noise.frequency = 0.09
-	noise.fractal_type = FastNoiseLite.FRACTAL_NONE
-	var tex := NoiseTexture3D.new()
-	tex.width = 64
-	tex.height = 64
-	tex.depth = 64
-	tex.seamless = true
-	tex.normalize = true
-	tex.noise = noise
-	_shared_cracks = tex
-	return tex
+## The stones' cracks, made once on a worker (NoiseVolume: a NoiseTexture3D made its first image on the main
+## thread at once).
+static func crack_texture() -> NoiseVolume:
+	if _shared_cracks == null:
+		var noise := FastNoiseLite.new()
+		noise.noise_type = FastNoiseLite.TYPE_CELLULAR
+		noise.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB
+		noise.frequency = 0.09
+		noise.fractal_type = FastNoiseLite.FRACTAL_NONE
+		_shared_cracks = NoiseVolume.new(noise, Vector3i(64, 64, 64), false, true)
+	return _shared_cracks
+
+
+func _set_cracks(tex: Texture3D) -> void:
+	mat.set_shader_parameter("crack_tex", tex)
+	rock_mat.set_shader_parameter("crack_tex", tex)
 
 
 ## A broken block of radius about 1: a ball cut by a few planes, so it has faces and edges rather than
 ## the look of a dented sphere. Deterministic from [param variant].
 static func make_rock(radial: int, rings: int, variant: int) -> ArrayMesh:
-	var sphere := SphereMesh.new()
-	sphere.radius = 1.0
-	sphere.height = 2.0
-	sphere.radial_segments = radial
-	sphere.rings = rings
-	var arrays := sphere.get_mesh_arrays()
+	var arrays := sphere_arrays(radial, rings)
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var cuts: Array[Vector4] = []
 	for k in 9:
@@ -292,6 +284,47 @@ static func make_rock(radial: int, rings: int, variant: int) -> ArrayMesh:
 	st.create_from_arrays(arrays)
 	st.generate_normals()
 	return st.commit()
+
+
+## The arrays of a SphereMesh of radius 1 (height 2) with [param radial] segments and [param rings] rings, made
+## here as the engine makes them (SphereMesh::create_mesh_array): reading a SphereMesh's back
+## (get_mesh_arrays) asks the GPU for them, which waits until every frame in flight is done -- the 7 rocks of the
+## first volcano met made its chunk 701 ms in game (2026-11-28).
+static func sphere_arrays(radial: int, rings: int) -> Array:
+	var points := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var tangents := PackedFloat32Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var point := 0
+	var thisrow := 0
+	var prevrow := 0
+	for j in rings + 2:
+		var v := float(j) / float(rings + 1)
+		var w := 0.0 if j == rings + 1 else sin(PI * v)
+		var y := -1.0 if j == rings + 1 else cos(PI * v)
+		for i in radial + 1:
+			var u := float(i) / float(radial)
+			var x := 0.0 if i == radial else sin(u * TAU)
+			var z := 1.0 if i == radial else cos(u * TAU)
+			points.append(Vector3(x * w, y, z * w))
+			normals.append(Vector3(x * w, y, z * w).normalized())
+			tangents.append_array([z, 0.0, -x, 1.0])
+			uvs.append(Vector2(u, v))
+			point += 1
+			if i > 0 and j > 0:
+				indices.append_array([prevrow + i - 1, prevrow + i, thisrow + i - 1,
+						prevrow + i, thisrow + i, thisrow + i - 1])
+		prevrow = thisrow
+		thisrow = point
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = points
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TANGENT] = tangents
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	return arrays
 
 
 ## From gravel to a house-sized block, the small ones by far the most common.

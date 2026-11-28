@@ -60,6 +60,12 @@ const BODY_RESOURCES: Array[String] = [
 const SCRIPT_DIRS: Array[String] = ["res://ui/services/"]
 ## The scenes wanted with everything they are built of: the places the world spawns, the vehicles.
 const SCENES: Array[String] = [
+	# The railway's module (RailwayTrack.module_meshes): read from the disk on the main thread as a body with
+	# railways was made, 141-205 ms of that frame (tarsis_3, 2026-11-28).
+	"res://assets/_universe/structures/urban/railroad_01.glb",
+	# The player: its instancing cost 211 ms as it appeared (2026-11-28), 35 ms here on a warm machine --
+	# its meshes' materials, compiled when instanced.
+	"res://scenes/player/player.tscn",
 	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
 	"res://scenes/_universe/structures/urban/cities/ares_city_factory.tscn",
 	"res://scenes/_universe/vehicles/ground/trucks/truck.tscn",
@@ -87,6 +93,37 @@ const MINE_DUST_SHADER := preload("res://scenes/_universe/structures/industrial/
 ## (MiningRock, rock_vein), which no scene names: the first rock met froze the game 2.7 s to compile it.
 const ROCK_SCENE := "res://scenes/_universe/environment/terrain/rocks/rock_mining_md.tscn"
 const ROCK_SHADER := preload("res://assets/_universe/environment/terrain/rocks/rock_vein.gdshader")
+## Scripts that build surfaces at run time in materials no scene names, loaded here like the scenes: each lists
+## them through its static warm_surfaces() ([mesh, [materials]], as meshes_of). A spawn building's walkways
+## (BuildingWalkways): the first one built waited 212 ms for their shaders on arrival (2026-11-28).
+const RUNTIME_SURFACES: Array[String] = [
+	"res://scenes/_universe/structures/buildings/walkways/building_walkways.gd",
+	# Nothing to draw: starts the smoke's and stones' noise volumes on workers (NoiseVolume), ~1 s at once on
+	# the main thread at the first volcano met otherwise (2026-11-28).
+	"res://scenes/planet/volcano/volcano_plume.gd",
+	# The carried crate's landing disc (CarryPlacementMarker): its materials, made as the player appears.
+	"res://scenes/player/carry_placement_marker.gd",
+	# The star chart's flat materials (StarMap), made with its face as the player appears.
+	"res://scenes/ui/star_map/star_map.gd",
+]
+## Shaders compiled on the main thread when a material first uses them, on no mesh the warm-up draws: the
+## sky and the aerial perspective, with their tables. The first player in the world paid them as it appeared,
+## 106 ms in that frame (2026-11-28; the menu stage off, nothing had drawn a sky). Loaded here and kept, each
+## gets a material on a hidden ColorRect once: that compiles it, and the game's own materials then cost 0.4 ms.
+const BY_USE_SHADERS: Array[String] = [
+	"res://scenes/_universe/environment/sky.gdshader",
+	"res://scenes/_universe/environment/atmosphere_transmittance_lut.gdshader",
+	"res://scenes/_universe/environment/aerial_perspective.gdshader",
+	"res://scenes/_universe/environment/aerial_perspective_lut.gdshader",
+	# The Nova ground of a body (NovaBody.build_material): set on its material as the body is made, 139 ms of
+	# the frame tarsis_3 was made in (2026-11-28).
+	"res://assets/_universe/environment/terrain/terrain_biome_nova.gdshader",
+	# A body's atmosphere seen from afar (AtmosphereLod): its shell, made as the body is.
+	"res://scenes/_universe/environment/atmosphere_shell.gdshader",
+	# The star chart's backdrop and ecliptic grid, made as the player appears (StarMap, EclipticGrid).
+	"res://assets/shaders/starfield_sky.gdshader",
+	"res://assets/shaders/ecliptic_grid.gdshader",
+]
 ## Those of SCENES whose LayoutData is read ahead too.
 const LAYOUTS: Array[String] = [
 	"res://scenes/_universe/structures/urban/villages/ares_village_mining.tscn",
@@ -178,6 +215,8 @@ static func wanted() -> Array[String]:
 	for dir: String in SCRIPT_DIRS:
 		paths.append_array(folder_resources(dir, ".gd"))
 	paths.append_array(SCENES)
+	paths.append_array(RUNTIME_SURFACES)
+	paths.append_array(BY_USE_SHADERS)
 	for dir: String in CATALOGUES:
 		for item: Resource in DispenserCatalog.all(dir):
 			var path: String = str(item.scene_path)
@@ -291,7 +330,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	if _marker != -1:
-		WorkerThreadPool.wait_for_task_completion(_marker)
+		PerfTasks.wait(_marker, "warmup")
 		_marker = -1
 
 
@@ -387,13 +426,13 @@ func _process(_delta: float) -> void:
 ## so have they (the queue is first in, first out). False meanwhile.
 func _compiled() -> bool:
 	if _put_out_at != -1 and _frames > _put_out_at:
-		_marker = WorkerThreadPool.add_task(_mark, true, "Warmup pipelines")
+		_marker = PerfTasks.add_task("warmup:marker", _mark, true, "Warmup pipelines")
 		_put_out_at = -1
 		return false
 	if _marker != -1:
 		if not WorkerThreadPool.is_task_completed(_marker):
 			return false
-		WorkerThreadPool.wait_for_task_completion(_marker)
+		PerfTasks.wait(_marker, "warmup")
 		_marker = -1
 	return _put_out_at == -1
 
@@ -422,6 +461,18 @@ static func _compile(material: Material) -> void:
 		if not material is ShaderMaterial:
 			material.inspect_native_shader_code()
 		material = material.next_pass
+
+
+## Compiles [param shader] the way a first material using it does, on a hidden ColorRect freed at once: the
+## shader is held (_held), and its compiled data with it.
+func _compile_by_use(shader: Shader) -> void:
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	var rect := ColorRect.new()
+	rect.visible = false
+	rect.material = material
+	add_child(rect)
+	rect.queue_free()
 
 
 ## A shader put out on its own gets its material here, when put out: making it translates the shader.
@@ -454,6 +505,10 @@ func _take_loaded() -> void:
 				if path == ROCK_SCENE:
 					with_rock_shader(meshes)
 				_to_draw.append_array(meshes)
+			elif RUNTIME_SURFACES.has(path):
+				_to_draw.append_array((loaded as Script).call("warm_surfaces"))
+			elif BY_USE_SHADERS.has(path) and loaded is Shader:
+				_compile_by_use(loaded as Shader)
 		return
 
 

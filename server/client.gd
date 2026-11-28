@@ -1179,7 +1179,17 @@ func create_player(event: Dictionary) -> void:
 		# name — chat author, labels, HOME plates, future character screens.
 		Globals.player_name = str(player_data.get("name", Globals.player_name))
 		# await get_tree().create_timer(1).timeout
+		# me:instantiate / me:enter / me:after (debug_perf): our own player made, then entering the tree
+		# (its _ready: PlayerClient.setup, me:*), then what is done to it after.
+		# me:rs_pending first: the first RenderingServer call of the main thread runs what the worker threads
+		# queued (their meshes); a getter does it, so me:instantiate is the scene's own cost.
+		var _me_tok: int = ClientPerf.scope_begin()
+		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)
+		ClientPerf.scope_end("me:rs_pending", _me_tok)
+		_me_tok = ClientPerf.scope_begin()
 		var spawned_entity_instance = player_scene.instantiate()
+		ClientPerf.scope_end("me:instantiate", _me_tok)
+		_me_tok = ClientPerf.scope_begin()
 		spawned_entity_instance.spawn_position = Vector3(
 			player_data["position"]["x"], player_data["position"]["y"], player_data["position"]["z"]
 		)
@@ -1189,6 +1199,8 @@ func create_player(event: Dictionary) -> void:
 			spawned_entity_instance.owner = get_tree().current_scene
 		)
 		spawned_entity_instance.set_physics_process(false)
+		ClientPerf.scope_end("me:prepare", _me_tok)
+		_me_tok = ClientPerf.scope_begin()
 
 		var parented = false
 		if player_data["parent_id"] != "":
@@ -1199,6 +1211,8 @@ func create_player(event: Dictionary) -> void:
 
 		if not parented:
 			universe_scene.add_child(spawned_entity_instance)
+		ClientPerf.scope_end("me:enter", _me_tok)
+		_me_tok = ClientPerf.scope_begin()
 
 		spawned_entity_instance.client_uuid = my_player_uuid
 		spawned_entity_instance.connect("client_action_requested", _on_client_action_requested)
@@ -1208,6 +1222,7 @@ func create_player(event: Dictionary) -> void:
 		my_player_spawn_due_since = -1  # spawned: the watchdog has nothing left to watch
 		# Record the uuid of each of my ancestors.
 		my_parents_uuids = _collect_parents_uuids(spawned_entity_instance)
+		ClientPerf.scope_end("me:after", _me_tok)
 	else:
 		# create remote player
 		if not players_list.has(event["object_id"]):
@@ -1256,11 +1271,14 @@ func create_player(event: Dictionary) -> void:
 	# Late-join: apply the player's CURRENT full state right after creating it (torch on, tool out,
 	# helmet off, …), not just position/name/parent — the whole state rides the gorc_zone_enter
 	# snapshot. Same path as the live deltas below, so future properties are covered for free.
+	# `player:props` (debug_perf): that state applied, the appearance with it (the body built again).
+	var _props_tok: int = ClientPerf.scope_begin()
 	_apply_player_gameplay_props(players_list.get(event["object_id"], null), player_data)
 	# Its other channels, if they came first (the appearance).
 	if _player_side_channels.has(event["object_id"]):
 		_apply_player_gameplay_props(players_list.get(event["object_id"], null), _player_side_channels[event["object_id"]])
 		_player_side_channels.erase(event["object_id"])
+	ClientPerf.scope_end("player:props", _props_tok)
 
 	NetworkOrchestrator.set_gameserver_number_players.emit(players_list.size() + 1)
 
@@ -1356,10 +1374,19 @@ func create_generic_object(event: Dictionary) -> void:
 					return
 
 			var prop_scene: PackedScene
+			# And by scene (`spawn:<file>`, `spawn_load:<file>` the first time it is read): which buildings
+			# a village arrival pays for — 5 s of spawning over 44 s of arrival, by kind (2026-11-28).
+			var _spawn_kind: String = str(object_data["scenename"]).get_file().get_basename()
 			if props_scene.has(object_data["scenename"]):
 				prop_scene = props_scene[object_data["scenename"]]
 			else:
+				var _load_tok: int = ClientPerf.scope_begin()
 				prop_scene = load("res://" + object_data["scenename"])
+				ClientPerf.scope_end("spawn_load:" + _spawn_kind, _load_tok)
+				# Kept: nothing else holds a PackedScene once it is instanced, so the engine dropped it and the
+				# next one was read from disk again — 114 shelves of a village, 114 reads, 0.66 s (2026-11-28).
+				if prop_scene != null:
+					props_scene[object_data["scenename"]] = prop_scene
 			# A persisted prop can reference a scene that no longer exists at that path (moved/renamed
 			# by the asset-taxonomy migration). Skip it instead of crashing the whole loader.
 			if prop_scene == null:
@@ -1390,14 +1417,20 @@ func create_generic_object(event: Dictionary) -> void:
 			net.uuid = object_id
 
 			# client_channel_data_update must be called before parent for the position
+			# (`spawn_data:<file>`: the data applied out of the tree; `spawn_enter:<file>`: entering it.)
+			var _step_tok: int = ClientPerf.scope_begin()
 			net.client_channel_data_update(object_data)
+			ClientPerf.scope_end("spawn_data:" + _spawn_kind, _step_tok)
 
+			_step_tok = ClientPerf.scope_begin()
 			if parent != null:
 				parent.add_child(prop_instance)
 			else:
 				# parent_id == "" -> root-level object, attach to the universe.
 				universe_scene.add_child(prop_instance)
+			ClientPerf.scope_end("spawn_enter:" + _spawn_kind, _step_tok)
 			ClientPerf.scope_end(_spawn_scope, _spawn_tok)
+			ClientPerf.scope_end("spawn:" + _spawn_kind, _spawn_tok)
 
 			props_list[object_type][object_id] = prop_instance
 

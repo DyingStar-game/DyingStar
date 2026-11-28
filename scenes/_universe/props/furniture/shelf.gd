@@ -159,7 +159,7 @@ func _ready() -> void:
 		child_entered_tree.connect(_client_on_child_entered_tree)
 		limit_draw_distance()
 		child_exiting_tree.connect(_client_on_child_exiting_tree)
-		_add_label.call_deferred()  # once its spawn data (name, place) is applied
+		PerfTasks.deferred("shelf:add_label", _add_label)  # once its spawn data (name, place) is applied
 
 ## Client: a stored crate is out of the physics space — body and interact area — unless the camera
 ## is within _REACH_M of it. The server owns every collision it takes part in; the client only needs
@@ -176,11 +176,11 @@ func _client_on_child_entered_tree(node: Node) -> void:
 	var body := node as CollisionObject3D
 	_client_stored.append(body)
 	body.set_meta(_META_IN_SPACE, true)  # entering the tree just put it there
-	_client_set_in_space.call_deferred(body, false)  # deferred: its Area3D enters after this signal
+	PerfTasks.deferred("shelf:client_set_in_space", _client_set_in_space.bind(body, false))  # deferred: its Area3D enters after this signal
 	_client_dress(body, false, Vector3.ZERO)
 	if not _client_reach_running:
 		_client_reach_running = true
-		_client_reach_loop.call_deferred()
+		PerfTasks.deferred("shelf:client_reach_loop", _client_reach_loop)
 
 func _client_on_child_exiting_tree(node: Node) -> void:
 	if node is CollisionObject3D:
@@ -472,7 +472,7 @@ func _watch_stored() -> void:
 
 func _on_child_entered_tree(node: Node) -> void:
 	if node is RigidBody3D:
-		_bind_arrived.call_deferred(node)  # deferred: its position and its _ready come after this signal
+		PerfTasks.deferred("shelf:bind_arrived", _bind_arrived.bind(node))  # deferred: its position and its _ready come after this signal
 
 ## Server: a crate created under the shelf (restart, hand-over, the shelf waking up with its chunk)
 ## takes the slot it stands on, and settles there if nothing keeps it frozen.

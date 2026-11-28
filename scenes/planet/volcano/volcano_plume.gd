@@ -38,7 +38,7 @@ static var debug_time_shift := 0.0
 ## Stones that have hit the player since the start.
 static var hits_total := 0
 static var _alive: Array[VolcanoPlume] = []
-static var _billow: NoiseTexture3D = null
+static var _billow: NoiseVolume = null
 
 var model := VolcanoPlumeModel.new()
 var stones: VolcanoStoneField
@@ -124,14 +124,21 @@ static func nearest() -> VolcanoPlume:
 
 
 func _ready() -> void:
+	var tok_head: int = ClientPerf.scope_begin()
 	_alive.append(self)
 	_planet = SurfaceProbe.planet_of(self)
 	_update_wind(clock())
+	ClientPerf.scope_end("plume:head", tok_head)
 	_a.resize(VolcanoPlumeModel.COUNT)
 	_b.resize(VolcanoPlumeModel.COUNT)
 	_c.resize(VolcanoPlumeModel.COUNT)
+	# plume:* (debug_perf): where a volcano's first frame in the tree goes.
+	var tok: int = ClientPerf.scope_begin()
 	_mat.shader = load(SHADER_DIR + "plume.gdshader")
-	_mat.set_shader_parameter("billow_tex", _billow_texture())
+	ClientPerf.scope_end("plume:shader", tok)
+	tok = ClientPerf.scope_begin()
+	_billow_texture().when_ready(_set_billow)
+	ClientPerf.scope_end("plume:billow", tok)
 	_mat.set_shader_parameter("box_center", BOX_CENTER)
 	_mat.set_shader_parameter("sigma", model.sigma)
 	_mat.set_shader_parameter("ash_dark", Vector3(0.075, 0.075, 0.08) * model.ash_brightness)
@@ -147,7 +154,10 @@ func _ready() -> void:
 	_box.position = BOX_CENTER
 	_box.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_box.extra_cull_margin = 16384.0
+	tok = ClientPerf.scope_begin()
 	add_child(_box)
+	ClientPerf.scope_end("plume:smoke", tok)
+	tok = ClientPerf.scope_begin()
 	stones = VolcanoStoneField.new(model, _relief, _impact_ground_albedo)
 	stones.rebuild_on_jump = false
 	var scale_h := clampf(volcano.h / REFERENCE_HEIGHT_M, 0.12, 1.4)
@@ -155,11 +165,14 @@ func _ready() -> void:
 	stones.throw_rate = scale_h
 	stones.player_hit.connect(_on_player_hit)
 	add_child(stones)
+	ClientPerf.scope_end("plume:stones", tok)
+	tok = ClientPerf.scope_begin()
 	_mat.set_shader_parameter("vent_y", clampf(model.vent_radius, VENT_GLOW.LIGHT_MIN_Y_M, VENT_GLOW.LIGHT_MAX_Y_M))
 	_mat.set_shader_parameter("lava_reach", clampf(model.vent_radius * 2.0, 400.0, 1200.0))
 	vent_glow = VENT_GLOW.new()
 	vent_glow.setup(_relief, model.vent_radius, volcano.seed ^ int(model.volcano_key.hash()))
 	add_child(vent_glow)
+	ClientPerf.scope_end("plume:glow", tok)
 
 
 func _exit_tree() -> void:
@@ -172,7 +185,7 @@ func _exit_tree() -> void:
 func _join_model(wait: bool) -> bool:
 	if _task < 0 or (not wait and not WorkerThreadPool.is_task_completed(_task)):
 		return false
-	WorkerThreadPool.wait_for_task_completion(_task)
+	PerfTasks.wait(_task, "volcano_plume")
 	_task = -1
 	# Copy on write: the next worker update writes its own buffers, these stay as they are.
 	_snap_a = model.a
@@ -182,7 +195,9 @@ func _join_model(wait: bool) -> bool:
 	return true
 
 
-static func _billow_texture() -> NoiseTexture3D:
+## The smoke's billows, made once on a worker (NoiseVolume: a NoiseTexture3D made its first image on the main
+## thread at once, ~1 s with the stones' cracks).
+static func _billow_texture() -> NoiseVolume:
 	if _billow == null:
 		var noise := FastNoiseLite.new()
 		noise.noise_type = FastNoiseLite.TYPE_CELLULAR
@@ -191,15 +206,20 @@ static func _billow_texture() -> NoiseTexture3D:
 		noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 		noise.fractal_octaves = 3
 		noise.fractal_gain = 0.5
-		_billow = NoiseTexture3D.new()
-		_billow.width = 96
-		_billow.height = 96
-		_billow.depth = 96
-		_billow.seamless = true
-		_billow.invert = true
-		_billow.normalize = true
-		_billow.noise = noise
+		_billow = NoiseVolume.new(noise, Vector3i(96, 96, 96), true, true)
 	return _billow
+
+
+func _set_billow(tex: Texture3D) -> void:
+	_mat.set_shader_parameter("billow_tex", tex)
+
+
+## What the warm-up (Warmup.RUNTIME_SURFACES) starts while the menu shows: the noise volumes of the smoke and
+## of the stones, made on workers, ready before the first volcano. Nothing to draw.
+static func warm_surfaces() -> Array:
+	_billow_texture()
+	VolcanoStoneField.crack_texture()
+	return []
 
 
 ## The ground height in this node's frame at (x, z) of its tangent plane. Reads the same heights the
@@ -261,7 +281,7 @@ func _process(delta: float) -> void:
 			_light()
 			_light_elapsed = 0.0
 		# Puffs and their lighting on a worker; drawn from the next frame that finds it done.
-		_task = WorkerThreadPool.add_task(model.update.bind(t, _relight), false, "volcano plume")
+		_task = PerfTasks.add_task("volcano:plume", model.update.bind(t, _relight), false, "volcano plume")
 		_relight = 12
 		_model_elapsed = fmod(_model_elapsed, interval)
 	var changed := fresh

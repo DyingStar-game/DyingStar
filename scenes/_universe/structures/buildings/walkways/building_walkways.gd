@@ -40,6 +40,8 @@ const RAIL_BAR := 0.04
 const FLIGHT_POST_PREFIX := "Post"
 ## What the walls at the sides of a half flight are named, under it (SideWall1, SideWall2).
 const FLIGHT_WALL_PREFIX := "SideWall"
+## What the one mesh of a façade's railings, posts and columns is named, under it.
+const RAILINGS_NAME := &"Railings"
 ## Thickness (m) of the wall a railing is for the bodies.
 const RAIL_WALL_T := 0.05
 ## Side (m) of a column the decks stand on, and the most (m) between two along a walkway.
@@ -79,6 +81,23 @@ static func build(building: Node3D, rows: int, cols: int, floors: int, x_spacing
 	building.add_child(root)
 
 
+## What the warm-up draws (Warmup.RUNTIME_SURFACES) so the walkways' shaders are compiled before the first
+## building: [mesh, [materials]] for each vertex format and material they are drawn with -- the railings' batch,
+## the decks' and posts' boxes, and a half flight's meshes, its treads in the plate. No scene names these
+## materials: the first building waited 212 ms for them in game (2026-11-28).
+static func warm_surfaces() -> Array:
+	var batch := BoxBatch.new()
+	batch.add(Vector3.ONE, Vector3.ZERO)
+	var out: Array = [[batch.commit(_rail_mat()), [_rail_mat()]], [_mesh(Vector3.ONE, null), [_plate(), _rail_mat()]]]
+	var flight: Node = STAIR_SCENE.instantiate()
+	for node in flight.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		var tread: bool = str(mi.name).begins_with("Tread")
+		out.append([mi.mesh, [_plate()] if tread else ([mi.material_override] if mi.material_override else [])])
+	flight.free()
+	return out
+
+
 ## The frame of the façade of row [param row]: the second row is turned to face the other way, its doors
 ## at x = 2 x_spacing.
 static func facade_transform(row: int, cols: int, x_spacing: float, z_spacing: float) -> Transform3D:
@@ -92,7 +111,21 @@ static func level_y(floor_index: int, y_spacing: float) -> float:
 	return floor_index * y_spacing + FLOOR_Y
 
 
+## The railings, posts and columns of a façade are one mesh (RAILINGS_NAME), not a node each: they were 150
+## of a building's 220 walkway nodes, each a draw, and each walked when it entered the building (its draw
+## distance, StructureDrawRange) — 10 ms of the 13 its walkways took to build (2026-11-28). The decks stay
+## nodes of their own: the footsteps read the plate's material from the smallest mesh under the foot.
 static func _build_facade(facade: StaticBody3D, length: float, floors: int, y_spacing: float) -> void:
+	var rails := BoxBatch.new()
+	_add_facade(facade, rails, length, floors, y_spacing)
+	var railings := MeshInstance3D.new()
+	railings.name = RAILINGS_NAME
+	railings.mesh = rails.commit(_rail_mat())
+	facade.add_child(railings)
+
+
+static func _add_facade(facade: StaticBody3D, rails: BoxBatch, length: float, floors: int,
+		y_spacing: float) -> void:
 	var outer: float = length + STAIR_ZONE  # the far edge of the lanes, past the end of the façade
 	var back: float = -HALF_RUN  # where the flights meet the half landing, along the side
 	for f in range(1, floors):
@@ -100,15 +133,15 @@ static func _build_facade(facade: StaticBody3D, length: float, floors: int, y_sp
 		var half: float = level_y(f - 1, y_spacing) + HALF_RISE
 		# The walkway, going on past the end as the landing the flights leave from and come back to.
 		_deck(facade, Vector3(0.0, y, 0.0), Vector3(WALKWAY_W, y, outer))
-		_rail(facade, Vector3(WALKWAY_W, y, 0.0), Vector3(WALKWAY_W, y, outer))
-		_rail(facade, Vector3(0.0, y, 0.0), Vector3(WALKWAY_W, y, 0.0))
-		_rail(facade, Vector3(0.0, y, outer), Vector3(WALKWAY_W, y, outer))
+		_rail(facade, rails, Vector3(WALKWAY_W, y, 0.0), Vector3(WALKWAY_W, y, outer))
+		_rail(facade, rails, Vector3(0.0, y, 0.0), Vector3(WALKWAY_W, y, 0.0))
+		_rail(facade, rails, Vector3(0.0, y, outer), Vector3(WALKWAY_W, y, outer))
 		if f == floors - 1:
-			_rail(facade, Vector3(0.0, y, length), Vector3(0.0, y, length + LANE_W))  # no flight goes on up
+			_rail(facade, rails, Vector3(0.0, y, length), Vector3(0.0, y, length + LANE_W))  # no flight goes on up
 		# The half landing at the back, against the container's side.
 		_deck(facade, Vector3(back - LANDING_D, half, length), Vector3(back, half, outer))
-		_rail(facade, Vector3(back - LANDING_D, half, length), Vector3(back - LANDING_D, half, outer))
-		_rail(facade, Vector3(back - LANDING_D, half, outer), Vector3(back, half, outer))
+		_rail(facade, rails, Vector3(back - LANDING_D, half, length), Vector3(back - LANDING_D, half, outer))
+		_rail(facade, rails, Vector3(back - LANDING_D, half, outer), Vector3(back, half, outer))
 		# Up from the storey below on the lane by the wall, away from the façade; then back towards it on
 		# the outer lane, to this storey's landing.
 		_flight(facade, Transform3D(Basis(Vector3.UP, -PI / 2.0), Vector3(0.0, level_y(f - 1, y_spacing), length)))
@@ -119,9 +152,9 @@ static func _build_facade(facade: StaticBody3D, length: float, floors: int, y_sp
 	var half_top: float = level_y(floors - 2, y_spacing) + HALF_RISE - DECK_T
 	var edge: float = COLUMN_W * 0.5
 	for z in column_stations(outer, COLUMN_STEP):
-		_column(facade, Vector3(WALKWAY_W - edge, 0.0, z), top)
-	_column(facade, Vector3(back - LANDING_D + edge, 0.0, length + edge), half_top)
-	_column(facade, Vector3(back - LANDING_D + edge, 0.0, outer - edge), half_top)
+		_column(facade, rails, Vector3(WALKWAY_W - edge, 0.0, z), top)
+	_column(facade, rails, Vector3(back - LANDING_D + edge, 0.0, length + edge), half_top)
+	_column(facade, rails, Vector3(back - LANDING_D + edge, 0.0, outer - edge), half_top)
 
 
 ## Where the columns stand along an edge [param length] long: both ends, and evenly between them no more
@@ -137,8 +170,11 @@ static func column_stations(length: float, step: float) -> Array[float]:
 
 
 ## A column from the ground at [param foot] up to [param top] (the underside of the deck it carries).
-static func _column(facade: StaticBody3D, foot: Vector3, top: float) -> void:
-	_box(facade, true, Vector3(COLUMN_W, top, COLUMN_W), foot + Vector3.UP * top * 0.5, _rail_mat())
+static func _column(facade: StaticBody3D, rails: BoxBatch, foot: Vector3, top: float) -> void:
+	var size := Vector3(COLUMN_W, top, COLUMN_W)
+	var centre: Vector3 = foot + Vector3.UP * top * 0.5
+	rails.add(size, centre)
+	_shape(facade, size, centre)
 
 
 static func _flight(facade: Node3D, place: Transform3D) -> void:
@@ -206,12 +242,16 @@ static func flight_post_feet() -> Array[Vector3]:
 static func _deck(facade: StaticBody3D, from: Vector3, to: Vector3) -> void:
 	var size := Vector3(absf(to.x - from.x), DECK_T, absf(to.z - from.z))
 	var centre := Vector3((from.x + to.x) * 0.5, from.y - DECK_T * 0.5, (from.z + to.z) * 0.5)
-	_box(facade, true, size, centre, _plate())
+	var instance := MeshInstance3D.new()
+	instance.mesh = _mesh(size, _plate())
+	instance.position = centre
+	facade.add_child(instance)
+	_shape(facade, size, centre)
 
 
-## A railing along the deck edge [param from] .. [param to]: a top rail, a middle rail and posts, and a
-## wall of the same height for the bodies.
-static func _rail(facade: StaticBody3D, from: Vector3, to: Vector3) -> void:
+## A railing along the deck edge [param from] .. [param to]: a top rail, a middle rail and posts (into
+## [param rails]), and a wall of the same height for the bodies.
+static func _rail(facade: StaticBody3D, rails: BoxBatch, from: Vector3, to: Vector3) -> void:
 	var along: Vector3 = to - from
 	var length: float = along.length()
 	if length < 0.01:
@@ -219,24 +259,13 @@ static func _rail(facade: StaticBody3D, from: Vector3, to: Vector3) -> void:
 	var on_z: bool = absf(along.z) > absf(along.x)
 	var bar := Vector3(0.04, 0.04, length) if on_z else Vector3(length, 0.04, 0.04)
 	var mid: Vector3 = (from + to) * 0.5
-	_box(facade, false, bar, mid + Vector3.UP * RAIL_H, _rail_mat())
-	_box(facade, false, bar, mid + Vector3.UP * RAIL_H * 0.5, _rail_mat())
+	rails.add(bar, mid + Vector3.UP * RAIL_H)
+	rails.add(bar, mid + Vector3.UP * RAIL_H * 0.5)
 	var posts: int = maxi(1, ceili(length / POST_STEP))
 	for i in posts + 1:
-		_box(facade, false, Vector3(0.04, RAIL_H, 0.04), from + along * (float(i) / posts) + Vector3.UP * RAIL_H * 0.5,
-				_rail_mat())
+		rails.add(Vector3(0.04, RAIL_H, 0.04), from + along * (float(i) / posts) + Vector3.UP * RAIL_H * 0.5)
 	var wall := Vector3(0.05, RAIL_H, length) if on_z else Vector3(length, RAIL_H, 0.05)
 	_shape(facade, wall, mid + Vector3.UP * RAIL_H * 0.5)
-
-
-## A box seen (a mesh) and, when [param solid], walked against (one of the façade's shapes).
-static func _box(facade: StaticBody3D, solid: bool, size: Vector3, centre: Vector3, material: Material) -> void:
-	var instance := MeshInstance3D.new()
-	instance.mesh = _mesh(size, material)
-	instance.position = centre
-	facade.add_child(instance)
-	if solid:
-		_shape(facade, size, centre)
 
 
 ## A box shape of [param facade], in its frame.
@@ -278,3 +307,45 @@ static func _rail_mat() -> StandardMaterial3D:
 		_rail_material.metallic = 0.6
 		_rail_material.roughness = 0.4
 	return _rail_material
+
+
+## Axis-aligned boxes gathered into one mesh, their vertices written here. SurfaceTool.append_from read each
+## source box back from the GPU (Mesh.surface_get_arrays -> RenderingDevice.buffer_get_data, which stalls
+## until every frame in flight is done): 24-275 ms a building in game, free headless (2026-11-28).
+class BoxBatch:
+	## Each face of a box: its normal and two axes across it, u x v = the normal.
+	const FACES: Array[Array] = [
+		[Vector3.RIGHT, Vector3.UP, Vector3.BACK], [Vector3.LEFT, Vector3.BACK, Vector3.UP],
+		[Vector3.UP, Vector3.BACK, Vector3.RIGHT], [Vector3.DOWN, Vector3.RIGHT, Vector3.BACK],
+		[Vector3.BACK, Vector3.RIGHT, Vector3.UP], [Vector3.FORWARD, Vector3.UP, Vector3.RIGHT],
+	]
+
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var indices := PackedInt32Array()
+
+	## A box of [param size] around [param centre].
+	func add(size: Vector3, centre: Vector3) -> void:
+		var half: Vector3 = size * 0.5
+		for face: Array in FACES:
+			var n: Vector3 = face[0]
+			var du: Vector3 = (face[1] as Vector3) * half
+			var dv: Vector3 = (face[2] as Vector3) * half
+			var mid: Vector3 = centre + n * half
+			var base: int = vertices.size()
+			vertices.append_array([mid - du - dv, mid + du - dv, mid + du + dv, mid - du + dv])
+			normals.append_array([n, n, n, n])
+			# Clockwise seen from outside: Godot's front faces.
+			indices.append_array([base, base + 2, base + 1, base, base + 3, base + 2])
+
+	## The boxes as one mesh in [param material].
+	func commit(material: Material) -> ArrayMesh:
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = vertices
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		arrays[Mesh.ARRAY_INDEX] = indices
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(0, material)
+		return mesh

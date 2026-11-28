@@ -77,7 +77,7 @@ func _exit_tree() -> void:
 	if _probe != null:
 		_probe.wait()
 	if _pending_task != -1:
-		WorkerThreadPool.wait_for_task_completion(_pending_task)
+		PerfTasks.wait(_pending_task, "menu_stage")
 		_pending_task = -1
 	_session.end()
 
@@ -243,12 +243,12 @@ func _load_world() -> PackedScene:
 	var data : PlanetData = planet_data_of(scene)
 	BootTrace.step("menu stage: world loaded, preparing the planet's data on a worker")
 	if data != null:
-		_pending_task = WorkerThreadPool.add_task(data.prepare_off_main_thread, true, "MenuStage planet data")
+		_pending_task = PerfTasks.add_task("menu_stage:planet_data", data.prepare_off_main_thread, true, "MenuStage planet data")
 		while not WorkerThreadPool.is_task_completed(_pending_task):
 			await get_tree().process_frame
 			if not is_inside_tree():
 				return null  # _exit_tree waits for the task
-		WorkerThreadPool.wait_for_task_completion(_pending_task)
+		PerfTasks.wait(_pending_task, "menu_stage")
 		_pending_task = -1
 	BootTrace.step("menu stage: planet data ready")
 	_progress(0.4)
@@ -262,12 +262,12 @@ func _load_world() -> PackedScene:
 ## meanwhile instead of freezing.
 func _pipelines_compiled() -> void:
 	await RenderingServer.frame_post_draw  # the render that met the newest surfaces
-	_pending_task = WorkerThreadPool.add_task(func() -> void: pass, true, "MenuStage pipelines")
+	_pending_task = PerfTasks.add_task("menu_stage:pipelines", func() -> void: pass, true, "MenuStage pipelines")
 	while not WorkerThreadPool.is_task_completed(_pending_task):
 		await get_tree().process_frame
 		if not is_inside_tree():
 			return  # _exit_tree waits for the task
-	WorkerThreadPool.wait_for_task_completion(_pending_task)
+	PerfTasks.wait(_pending_task, "menu_stage")
 	_pending_task = -1
 
 

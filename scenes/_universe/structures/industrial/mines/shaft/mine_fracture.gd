@@ -205,13 +205,13 @@ static func blocks_for(ref: Dictionary, gap: float) -> Variant:
     if job == null:
         var result: Array = [[]]
         var layer_ref_copy := ref.duplicate(true)
-        var task := WorkerThreadPool.add_task(func(): result[0] = build(plan_from(layout_for(layer_ref_copy),
+        var task := PerfTasks.add_task("mine:fracture", func(): result[0] = build(plan_from(layout_for(layer_ref_copy),
             layer_ref_copy, gap)))
         _jobs[k] = {"task": task, "result": result}
         return null
     if not WorkerThreadPool.is_task_completed(job.task):
         return null
-    WorkerThreadPool.wait_for_task_completion(job.task)
+    PerfTasks.wait(job.task, "mine_fracture")
     _jobs.erase(k)
     var blocks: Array = job.result[0]
     _blocks[k] = blocks

@@ -62,11 +62,11 @@ func apply_prop_data(data: Dictionary) -> void:
 	# (server.gd), but one awake has a body around: registered from the node too, as the client does, its
 	# fences go first (want_village_fences). Registering the same ground again changes nothing. Deferred:
 	# the first call runs before add_child and the uuid.
-	_register_zone.call_deferred()
+	PerfTasks.deferred("poi_villages:register_zone", _register_zone)
 	if not is_spawned and GameOrchestrator.is_server():
 		# Deferred: create_generic_object calls us BEFORE registering this village in props_list, so
 		# a child spawned right now could not find its parent_id and would sit in the pending queue.
-		spawn_items.call_deferred()
+		PerfTasks.deferred("poi_villages:spawn_items", spawn_items)
 
 
 func spawn_items() -> void:

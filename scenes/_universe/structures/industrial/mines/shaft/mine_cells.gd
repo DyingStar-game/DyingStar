@@ -69,7 +69,7 @@ func _start_configure() -> void:
     var result: Array = [null, {}]
     var graph: Dictionary = job.graph
     job.result = result
-    job.id = WorkerThreadPool.add_task(func():
+    job.id = PerfTasks.add_task("mine:configure", func():
         result[0] = MineMesher.configure(graph)
         result[1] = MineLayout.cells(graph, CELL_M))
     _configuring = job
@@ -79,7 +79,7 @@ func _start_configure() -> void:
 func _finish_configure() -> void:
     if not _configuring.has("id") or not WorkerThreadPool.is_task_completed(_configuring.id):
         return
-    WorkerThreadPool.wait_for_task_completion(_configuring.id)
+    PerfTasks.wait(_configuring.id, "mine_cells")
     var job := _configuring
     _configuring = {}
     var mesher: RefCounted = job.result[0]
@@ -184,7 +184,7 @@ func _collect() -> void:
         var task: Dictionary = _tasks[cell]
         if not WorkerThreadPool.is_task_completed(task.id):
             continue
-        WorkerThreadPool.wait_for_task_completion(task.id)
+        PerfTasks.wait(task.id, "mine_cells")
         _tasks.erase(cell)
         if not _wanted.has(cell):
             continue
@@ -216,7 +216,7 @@ func _dispatch() -> void:
         var mesher := _mesher
         var result: Array = [{}]
         var step := step_m
-        var id := WorkerThreadPool.add_task(func(): result[0] = MineMesher.build_cell(mesher, cell, CELL_M, step))
+        var id := PerfTasks.add_task("mine:cell", func(): result[0] = MineMesher.build_cell(mesher, cell, CELL_M, step))
         _tasks[cell] = {"id": id, "result": result, "version": _version}
 
 
@@ -252,8 +252,8 @@ func _assemble(cell: Vector3i, built: Dictionary) -> Node3D:
 
 func _exit_tree() -> void:
     if _configuring.has("id"):
-        WorkerThreadPool.wait_for_task_completion(_configuring.id)
+        PerfTasks.wait(_configuring.id, "mine_cells")
         _configuring = {}
     for cell: Vector3i in _tasks:
-        WorkerThreadPool.wait_for_task_completion(_tasks[cell].id)
+        PerfTasks.wait(_tasks[cell].id, "mine_cells")
     _tasks.clear()

@@ -104,7 +104,7 @@ func pump() -> bool:
         var task: Dictionary = _tasks[id]
         if not WorkerThreadPool.is_task_completed(task.id):
             continue
-        WorkerThreadPool.wait_for_task_completion(task.id)
+        PerfTasks.wait(task.id, "cave_resident_set")
         _tasks.erase(id)
         if not _wanted.has(id) or task.site != _sites.get(id):
             continue  # unwanted now, or built from a definition replaced since
@@ -130,7 +130,7 @@ func pump() -> bool:
         var data := _terrain.planet_data
         var result: Array = [{}]
         var dressing := CavePreviewBuilder.decoration_request(site.profile.asset_library)
-        var task_id := WorkerThreadPool.add_task(func(): result[0] = CavePlanetRegistry.build_plan(data, site, dressing))
+        var task_id := PerfTasks.add_task("cave:plan", func(): result[0] = CavePlanetRegistry.build_plan(data, site, dressing))
         _tasks[id] = {"id": task_id, "result": result, "site": site}
     _owner.error_message = "" if _errors.is_empty() else str(_errors.values()[0])
     _ready = true
@@ -152,7 +152,7 @@ func shutdown() -> void:
     if is_instance_valid(_terrain) and _terrain.residency_changed.is_connected(_changed):
         _terrain.residency_changed.disconnect(_changed)
     for task: Dictionary in _tasks.values():
-        WorkerThreadPool.wait_for_task_completion(task.id)
+        PerfTasks.wait(task.id, "cave_resident_set")
     _tasks.clear()
 
 
