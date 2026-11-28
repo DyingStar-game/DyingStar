@@ -28,7 +28,7 @@ func _ready() -> void:
 	if not GameOrchestrator.is_server():
 		return
 	# Deferred: the building is given its uuid and registered right after it enters the tree.
-	_spawn_once.call_deferred()
+	PerfTasks.deferred("fixture_spawn:spawn_once", _spawn_once)
 
 
 func _spawn_once() -> void:

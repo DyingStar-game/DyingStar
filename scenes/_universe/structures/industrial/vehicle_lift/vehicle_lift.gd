@@ -419,7 +419,7 @@ func _ready() -> void:
 	if not Engine.is_editor_hint() and GameOrchestrator.is_server() and not _is_platform_system_spawned:
 		# Deferred: create_generic_object registers us in props_list only after add_child, and the
 		# platform system's parent_id is our uuid.
-		spawn_platform_system.call_deferred()
+		PerfTasks.deferred("vehicle_lift:spawn_platform_system", spawn_platform_system)
 
 	_update_visuals()
 
@@ -948,7 +948,7 @@ func platform_system_spawned() -> void:
 	# the lift placed it again -- a lift standing still kept its old height after a change of the model's offset
 	# (playtest 2026-11-12). Deferred: the stored transform is applied after the system's _ready.
 	if not Engine.is_editor_hint() and GameOrchestrator.is_server():
-		_update_platform_movement.call_deferred()
+		PerfTasks.deferred("vehicle_lift:update_platform_movement", _update_platform_movement)
 	if _sync != null:
 		_sync.server_prop_update({
 			"is_platformsystem_spawned": _is_platform_system_spawned

@@ -169,6 +169,16 @@ var _rgpu_max: float = 0.0
 ##     exactly where a render scenario's AABBs would collapse into one blob; see
 ##     [[jolt-broadphase-f32-astronomic-coords]] for the same failure one layer down.
 var _tail_usec: int = 0
+## `sync=` cut by marks planted from the tail probe, SceneTree::process (Godot 4.7) doing after the last
+## _process: the message queue (`flush`: a call deferred twice from the tail runs after those queued before
+## it), the transform flush and the game's timers (`xform+timers`: up to a 0 s SceneTreeTimer made in the
+## flush, which fires after the game's), the tweens and second transform flush (`tweens`: up to a probe node's
+## PREDELETE in the delete queue), then (`rs`) the idle callbacks, Main's own message flush, the navigation
+## and RenderingServer::sync(). The RenderingServer calls the worker threads queued run on the main thread at
+## its first RenderingServer call after them, wherever that is: not always in `rs`.
+var _s_flush_at: int = 0
+var _s_timer_at: int = 0
+var _s_free_at: int = 0
 var _predraw_usec: int = 0
 var _postdraw_usec: int = 0
 var _sync_max: float = 0.0
@@ -745,8 +755,28 @@ func _frame_breakdown() -> String:
 		for e: Array in kinds.slice(0, 4):
 			top.append("%s=%d" % [e[1], e[0]])
 		parts.append("bodies+=%d shapes+=%d (%s)" % [_frame_bodies_n, _frame_shapes_n, " ".join(top)])
+	if _frame_classes.size() > 0 and _prev_nodes > 0:
+		var classes: Array = []
+		for k: String in _frame_classes:
+			classes.append([int(_frame_classes[k]), k])
+		classes.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
+		var top := PackedStringArray()
+		for e: Array in classes.slice(0, 8):
+			top.append("%s=%d" % [e[1], e[0]])
+		parts.append("added(%s)" % " ".join(top))
+	if _frame_screens.size() > 0 and _prev_nodes > 0:
+		var screens: Array = []
+		for k: String in _frame_screens:
+			screens.append([int(_frame_screens[k]), k])
+		screens.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
+		var top_ui := PackedStringArray()
+		for e: Array in screens.slice(0, 6):
+			top_ui.append("%s=%d" % [e[1], e[0]])
+		parts.append("ui(%s)" % " ".join(top_ui))
 	if _frame_wtp_max > 0:
 		parts.append("wtp=%d" % _frame_wtp_max)
+	if not _frame_pipes.is_empty():
+		parts.append(_frame_pipes)
 	for site: String in _frame_waits:
 		parts.append("%s%s=%.1fms" % ["" if site.begins_with("defer:") else "wait:", site,
 				float(_frame_waits[site]) / 1000.0])
@@ -760,6 +790,16 @@ func _frame_breakdown() -> String:
 ## Physics bodies and shapes entering the tree this frame, by kind (script file, else class): Jolt takes them
 ## into its broadphase at the next step, inside `jolt=`.
 var _frame_bodies: Dictionary = {}
+## Every node entering the tree this frame, by class: what queues engine work in the message queue at once
+## (a CSG shape rebuilds its mesh there, a Label3D its text), inside `sync=`'s `flush`.
+var _frame_classes: Dictionary = {}
+## The Controls entering the tree this frame by the screen they belong to (the top Control of their branch,
+## by script, else class:name): which UI lays out ~2 000 containers and labels in the message queue at once.
+var _frame_screens: Dictionary = {}
+## Pipelines compiled since the last frame, canvas/mesh/surface/draw/specialization (PerfMath.PIPE_MONITORS):
+## `draw` ones were compiled while drawing, the frame waiting for them.
+var _frame_pipes: String = ""
+var _pipe_frame_prev: Array[int] = []
 ## The main thread's waits on the game's tasks this frame (PerfTasks.wait), by caller file.
 var _frame_waits: Dictionary = {}
 ## The most game tasks seen running at a physics step's ends this frame (PerfTasks.running): a full pool
@@ -770,6 +810,15 @@ var _frame_shapes_n: int = 0
 
 
 func _on_node_added_physics(node: Node) -> void:
+	var cls: String = node.get_class()
+	_frame_classes[cls] = int(_frame_classes.get(cls, 0)) + 1
+	if node is Control:
+		var root: Node = node
+		while root.get_parent() is Control:
+			root = root.get_parent()
+		var sc := root.get_script() as Script
+		var screen: String = sc.resource_path.get_file() if sc != null else "%s:%s" % [root.get_class(), root.name]
+		_frame_screens[screen] = int(_frame_screens.get(screen, 0)) + 1
 	if node is CollisionShape3D:
 		_frame_shapes_n += 1
 	elif node is CollisionObject3D:
@@ -861,8 +910,14 @@ func _process(_delta: float) -> void:
 	# The tail of the SAME frame: the tail probe, then draw()'s two signals, all before this call.
 	var sync_ms: float = 0.0
 	var draw_ms: float = 0.0
+	var sync_parts := ""
 	if _tail_usec > 0 and _predraw_usec > _tail_usec:
 		sync_ms = float(_predraw_usec - _tail_usec) / 1000.0
+		if _tail_usec <= _s_flush_at and _s_flush_at <= _s_timer_at and _s_timer_at <= _s_free_at \
+				and _s_free_at <= _predraw_usec:
+			sync_parts = " (flush=%.0f xform+timers=%.0f tweens=%.0f rs=%.0f)" % [
+					float(_s_flush_at - _tail_usec) / 1000.0, float(_s_timer_at - _s_flush_at) / 1000.0,
+					float(_s_free_at - _s_timer_at) / 1000.0, float(_predraw_usec - _s_free_at) / 1000.0]
 	if _postdraw_usec > _predraw_usec:
 		draw_ms = float(_postdraw_usec - _predraw_usec) / 1000.0
 	# Render-thread work OUTSIDE any viewport: dirty instances, AABBs, culling structures.
@@ -899,6 +954,19 @@ func _process(_delta: float) -> void:
 	var psig_ms: float = float(_pf_sig_usec) / 1000.0
 	var pengine_ms: float = float(_pf_engine_usec) / 1000.0 + (pf_ms if psteps > 0 else 0.0)
 	_frame_waits = PerfTasks.take_waits()
+	_frame_pipes = ""
+	var pipes_now: Array[int] = []
+	var pipes_new := 0
+	for i: int in PerfMath.PIPE_MONITORS.size():
+		pipes_now.append(int(Performance.get_monitor(PerfMath.PIPE_MONITORS[i])))
+		if i < _pipe_frame_prev.size():
+			pipes_new += pipes_now[i] - _pipe_frame_prev[i]
+	if pipes_new > 0 and _pipe_frame_prev.size() == pipes_now.size():
+		var parts := PackedStringArray()
+		for i: int in pipes_now.size():
+			parts.append(str(pipes_now[i] - _pipe_frame_prev[i]))
+		_frame_pipes = "pipes+=%s" % "/".join(parts)
+	_pipe_frame_prev = pipes_now
 	var pflush_ms: float = float(_pf_flush_usec) / 1000.0
 	var ptimers_ms: float = float(_pf_timers_usec) / 1000.0
 	var pxform_ms: float = float(_pf_xform_usec) / 1000.0
@@ -949,14 +1017,14 @@ func _process(_delta: float) -> void:
 			_hitch_lines += 1
 			print((
 				"[CPerf!] %s up=%.1fs hitch %.0f ms (frame %d) | proc=%.0f phys=%.0f nav=%.1f ms"
-				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f rsdraw=%.0f"
+				+ " | scripts=%.0f rcpu=%.1f rgpu=%.1f setup=%.1f sync=%.0f%s rsdraw=%.0f"
 				+ " gap=%.0f pre=%.0f (pf=%.0f tf=%.0f mq=%.0f xf=%.0f) ms"
 				+ " | idle=%.1f steps=%d pscripts=%.1f sig+pick=%.1f pengine=%.1f (flush=%.1f timers=%.1f xform=%.1f jolt=%.1f) ms pbands: %s"
 				+ " | nodes=%d%+d | %s | bands: %s | draw=%d obj=%d act=%d pairs=%d mem=%s vram=%s"
 			) % [
 				_clock(), _uptime(), ms, Engine.get_frames_drawn(),
 				proc_ms, phys_ms, Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
-				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, draw_ms, gap_ms, pre_ms,
+				scripts_ms, rcpu_ms, rgpu_ms, setup_ms, sync_ms, sync_parts, draw_ms, gap_ms, pre_ms,
 				pf_ms, tf_ms, mq_ms, xf_ms,
 				pidle_ms, psteps, pscripts_ms, psig_ms, pengine_ms, pflush_ms, ptimers_ms, pxform_ms, pjolt_ms, pbands,
 				nodes, nodes - _prev_nodes,
@@ -974,6 +1042,8 @@ func _process(_delta: float) -> void:
 	_prev_nodes = nodes
 	_frame_usec.clear()
 	_frame_bodies.clear()
+	_frame_classes.clear()
+	_frame_screens.clear()
 	_frame_wtp_max = 0
 	_frame_bodies_n = 0
 	_frame_shapes_n = 0
@@ -1633,6 +1703,26 @@ class _TailProbe extends Node:
 func _tail_tick() -> void:
 	_tail_usec = Time.get_ticks_usec()
 	_scripts_usec = _tail_usec - _frame_start_usec
+	_s_flush_at = 0
+	_s_timer_at = 0
+	_s_free_at = 0
+	_sflush_mark.call_deferred()
+
+
+func _sflush_mark() -> void:
+	_sflush_end.call_deferred()
+
+
+func _sflush_end() -> void:
+	_s_flush_at = Time.get_ticks_usec()
+	get_tree().create_timer(0.0, true, false, true).timeout.connect(_stimer_mark)
+
+
+func _stimer_mark() -> void:
+	_s_timer_at = Time.get_ticks_usec()
+	var probe := _FreeProbe.new()
+	probe.freed = func() -> void: _s_free_at = Time.get_ticks_usec()
+	probe.queue_free()
 
 
 ## End of the LAST physics step of the burst, so the frame's dead time can be cut in two: the

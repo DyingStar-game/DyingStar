@@ -117,7 +117,7 @@ func _ready() -> void:
 		# would otherwise stay invisible to the magasiniers forever: the property would say the temp
 		# zone is empty while it is visibly full. Deferred by two physics frames because overlaps are
 		# only resolved once the bodies have been added to the space.
-		_seed_zone_contents.call_deferred()
+		PerfTasks.deferred("cargo_depot:seed_zone_contents", _seed_zone_contents)
 		_hang_boards()  # nothing drawn here: they can break down, and the server lists them
 	else:
 		# Every area of the depot feeds server logic only (each handler returns at once on a client),
@@ -262,7 +262,7 @@ func apply_prop_data(data: Dictionary) -> void:
 	if not shelves_spawned and GameOrchestrator.is_server():
 		# Deferred: the first call runs before add_child and before the uuid is assigned, and
 		# create_generic_object registers us in props_list only after it (the shelves' parent_id).
-		spawn_shelves.call_deferred()
+		PerfTasks.deferred("cargo_depot:spawn_shelves", spawn_shelves)
 
 
 ## SERVER: spawn the networked shelves of SHELVES_LAYOUT under this depot, once. Their uuids are drawn

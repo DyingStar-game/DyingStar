@@ -179,7 +179,7 @@ func _mark_dirty(pose_only: bool = false) -> void:
 	if _dirty or not is_inside_tree():
 		return
 	_dirty = true
-	_apply.call_deferred()
+	PerfTasks.deferred("terrain_pad:apply", _apply)
 
 
 ## Does ANY object around this pad's own scene carry a pad of its own? Then this pad's object is nested

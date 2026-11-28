@@ -211,7 +211,7 @@ func apply_prop_data(data: Dictionary) -> void:
             if int(face_step[key]) > int(before.get(key, 0)):
                 _layer_fell(int(key))  # where the old face stood, before the refresh moves it
     if is_inside_tree():
-        _refresh.call_deferred()
+        PerfTasks.deferred("mine_site:refresh", _refresh)
 
 
 func _enter_tree() -> void:
@@ -219,7 +219,7 @@ func _enter_tree() -> void:
         _live.append(self)
     set_notify_transform(true)
     _fit_collar()
-    _refresh.call_deferred()
+    PerfTasks.deferred("mine_site:refresh", _refresh)
 
 
 ## The concrete collar round the hole, at the shaft's radius: a ring over the cut edge, a low parapet inside, and a
@@ -250,7 +250,7 @@ func _exit_tree() -> void:
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_TRANSFORM_CHANGED:
-        _register_hole.call_deferred()  # the server seats the mine on its pad: the hole follows
+        PerfTasks.deferred("mine_site:register_hole", _register_hole)  # the server seats the mine on its pad: the hole follows
     elif what == NOTIFICATION_PREDELETE and not keep_on_exit and is_instance_valid(_terrain) and not uuid.is_empty():
         _terrain.unregister_mine_hole(uuid)
 
@@ -1074,7 +1074,7 @@ func _measure_limits() -> void:
         var at := frame * point
         return CaveGround.surface_dist(data, at.normalized()) - at.length()
     _measuring = PerfTasks.add_task("mine:limits", func(): result[0] = CaveGround.run(data, func(): return MineLayout.limits(plan, cover)))
-    _await_limits.call_deferred()
+    PerfTasks.deferred("mine_site:await_limits", _await_limits)
 
 
 func _await_limits() -> void:
