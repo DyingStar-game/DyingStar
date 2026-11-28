@@ -104,7 +104,7 @@ func _ready() -> void:
 	add_to_group(GROUP)
 	set_process(false)
 	if not GameOrchestrator.is_server():
-		refresh.call_deferred()
+		PerfTasks.deferred("machine_breakdown:refresh", refresh)
 
 
 ## The machine itself.

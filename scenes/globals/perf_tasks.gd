@@ -65,13 +65,16 @@ static func wait_group(group_id: int, site: String = "") -> void:
 
 
 ## [param action] called on the main thread at its next message-queue flush (call_deferred), its time put to
-## [param site]: how a task hands its result over. Deferred from a worker while the main thread flushes, it runs
-## in that very flush -- after the physics step's, inside ClientPerf's `pengine` (2026-11-28).
+## [param site]: how a task hands its result over, and what a prop puts off to after its spawn. Deferred from a
+## worker while the main thread flushes, it runs in that very flush -- after the physics step's, inside
+## ClientPerf's `pengine` (2026-11-28). A call whose object was freed meanwhile is dropped, as call_deferred does.
 static func deferred(site: String, action: Callable) -> void:
 	_run_deferred.call_deferred(site, action)
 
 
 static func _run_deferred(site: String, action: Callable) -> void:
+	if not action.is_valid():
+		return  # its object freed meanwhile: call_deferred dropped the call silently too
 	if not on:
 		action.call()
 		return

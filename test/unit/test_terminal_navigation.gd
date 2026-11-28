@@ -22,11 +22,23 @@ func before_each() -> void:
 func test_the_slot_is_in_the_content_card_and_hidden_until_the_tab() -> void:
 	var slot : Control = _tablet.navigation_slot()
 	assert_not_null(slot)
+	_tablet.open()
 	assert_true(_tablet.is_ancestor_of(slot))
 	assert_false(slot.visible, "home shows the overview, not the chart")
-	_tablet.open()
-	assert_false(slot.visible)
 	assert_eq(_opened, 0)
+
+
+## The chart is hosted as the player appears: asking for its slot builds nothing (the whole tablet was
+## 2 438 Controls laid out in that frame, 2026-11-28); the first opening takes the slot in, its face with it.
+func test_asking_for_the_slot_builds_nothing_until_the_first_opening() -> void:
+	var face := Control.new()
+	_tablet.navigation_slot().add_child(face)
+	assert_false(_tablet.get("_built"), "nothing built yet")
+	assert_eq(_tablet.find_children("*", "Container", true, false).size(), 0)
+	assert_same(_tablet.navigation_slot().get_child(0), face, "the same slot each time")
+	_tablet.open_navigation()
+	assert_true(_tablet.is_ancestor_of(face))
+	assert_true(face.is_visible_in_tree())
 
 
 func test_the_tab_shows_the_slot_and_asks_for_the_chart_once() -> void:

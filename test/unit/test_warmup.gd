@@ -191,3 +191,14 @@ func test_the_surfaces_built_at_run_time_are_warmed() -> void:
 	BuildingWalkways._build_facade(facade, 10.0, 2, 2.6)
 	var railings := facade.get_node(NodePath(BuildingWalkways.RAILINGS_NAME)) as MeshInstance3D
 	assert_eq(batch_format, railings.mesh.surface_get_format(0), "drawn on the railings' own vertex format")
+
+
+func test_the_sky_shaders_are_loaded_and_compiled_ahead() -> void:
+	for path: String in Warmup.BY_USE_SHADERS:
+		assert_has(Warmup.wanted(), path, "%s is loaded by the warm-up" % path)
+		assert_true(load(path) is Shader, "%s is a shader" % path)
+	var users := FileAccess.get_file_as_string("res://scenes/player/atmosphere_renderer.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/ui/star_map/star_map.gd") \
+			+ FileAccess.get_file_as_string("res://scenes/ui/star_map/ecliptic_grid.gd")
+	for path: String in Warmup.BY_USE_SHADERS:
+		assert_string_contains(users, path, "%s is what the sky or the chart loads" % path.get_file())

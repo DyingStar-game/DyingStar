@@ -28,6 +28,8 @@ const CROSS_HALF_M := 0.04
 const DROP_REACH_M := 30.0
 const BORDER_COLOR := Color(0.0, 0.0, 0.0, 0.9)
 
+static var _materials: Dictionary = {}  # Color -> StandardMaterial3D (material_of)
+
 var _player: Node = null
 var _disc: MeshInstance3D = null
 var _mesh: ImmediateMesh = null
@@ -46,8 +48,8 @@ var place: Dictionary = {}
 
 func setup(player: Node) -> void:
 	_player = player
-	_fill_mat = _make_material(FILL_COLOR)
-	_border_mat = _make_material(BORDER_COLOR)
+	_fill_mat = material_of(FILL_COLOR)
+	_border_mat = material_of(BORDER_COLOR)
 	_mesh = ImmediateMesh.new()
 	_disc = MeshInstance3D.new()
 	_disc.mesh = _mesh
@@ -61,10 +63,24 @@ func setup(player: Node) -> void:
 	_drop.top_level = true
 	_drop.visible = false
 	_drop.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_drop.material_override = _make_material(DROP_COLOR)
+	_drop.material_override = material_of(DROP_COLOR)
 	add_child(_drop)
 
-func _make_material(color: Color) -> StandardMaterial3D:
+## The marker's material in [param color], made once and shared: its shader (unshaded, alpha, both faces) is
+## compiled by the warm-up on these very materials (warm_surfaces). Made at the player's appearing, it was
+## compiled then, in that frame (2026-11-28); a StandardMaterial3D's shader goes when its last material does.
+static func material_of(color: Color) -> StandardMaterial3D:
+	if not _materials.has(color):
+		_materials[color] = _make_material(color)
+	return _materials[color]
+
+
+## What the warm-up draws (Warmup.RUNTIME_SURFACES) to compile the marker's shader before the player appears.
+static func warm_surfaces() -> Array:
+	return [[QuadMesh.new(), [material_of(FILL_COLOR), material_of(BORDER_COLOR), material_of(DROP_COLOR)]]]
+
+
+static func _make_material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

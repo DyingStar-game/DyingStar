@@ -59,7 +59,7 @@ func _ready() -> void:
 
 			if not _is_platform_spawned:
 				# Deferred: we enter props_list only after add_child, and the platform's parent_id is us.
-				spawn_platform.call_deferred()
+				PerfTasks.deferred("platform_system:spawn_platform", spawn_platform)
 
 
 ## SERVER: spawn the networked platform under this system, once. Its uuid is drawn from ours, so a lost

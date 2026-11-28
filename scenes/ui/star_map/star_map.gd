@@ -290,6 +290,13 @@ const DAY_ENERGY: float = 1.35
 
 var _viewport: SubViewport
 ## The chart's face: the 3D view and every panel over it. Hosted, it lives in the DataPad's tab.
+## Where the chart's face is built when it enters the tree (null: under the chart itself). The player's chart
+## is built in the DataPad's NAVIGATION slot, out of the tree until the tablet first opens: built under the
+## chart, then moved there (host_in), it entered and left the tree -- 145 ms of the frame the player appeared
+## in (2026-11-28). Set before the chart enters the tree.
+var build_in: Control = null
+## The flat materials the warm-up compiled (warm_surfaces), kept so their shaders stay.
+static var _warm_materials: Array = []
 var _surface: Control = null
 ## The mouse is on the face. Hosted in the DataPad, the face is drawn on the wrist's screen and only
 ## hears the mouse while the cursor is on that screen: off it, its mouse stays where it last was, and
@@ -485,7 +492,7 @@ var _max_body_units: float = 1.0
 func _ready() -> void:
 	layer = LAYER
 	if _surface == null:
-		_build_ui()
+		_build_ui(build_in)
 	_offer_play_hints()
 
 
@@ -609,9 +616,10 @@ func drawn_layer() -> int:
 ## host the face fills this layer, the whole screen. The face is hidden until [method open].
 func host_in(slot: Control) -> void:
 	if _surface == null:
-		_build_ui()
-	_surface.get_parent().remove_child(_surface)
-	slot.add_child(_surface)
+		_build_ui(slot)
+	elif _surface.get_parent() != slot:
+		_surface.get_parent().remove_child(_surface)
+		slot.add_child(_surface)
 	_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hosted = true
 	# The service's POIs belong to the player, so they arrive AFTER the chart is built: on open, and
@@ -976,7 +984,10 @@ func _mission_notice_text() -> String:
 	return tr("%%HUD_MAP_MISSION_HINT") % width
 
 
-func _build_ui() -> void:
+## Builds the chart's face under [param host] (the chart itself when null).
+func _build_ui(host: Node = null) -> void:
+	# sm:* (debug_perf): the parts of the face's build, 66 ms as the player appeared (2026-11-28).
+	var tok: int = ClientPerf.scope_begin()
 	# The face STOPS the mouse: hosted in the DataPad, a click or a drag that fell through would be the
 	# tablet's panel's, never reaching the chart. What it stops it turns into the chart's gestures
 	# (_on_surface_input), in its own pixels, which are the pixels its camera unprojects into.
@@ -987,7 +998,7 @@ func _build_ui() -> void:
 	_surface.mouse_entered.connect(func() -> void: _mouse_on_face = true)
 	_surface.mouse_exited.connect(func() -> void: _mouse_on_face = false)
 	_surface.visible = false
-	add_child(_surface)
+	(host if host != null else self).add_child(_surface)
 
 	var container := SubViewportContainer.new()
 	container.stretch = true
@@ -1050,6 +1061,7 @@ func _build_ui() -> void:
 
 	# Built with the camera and the light rather than per rebuild, because it holds a node pool and a
 	# file cache of its own; _rebuild() spares all three.
+	tok = _sm_mark("viewport", tok)
 	_poi_layer = StarMapPoiLayer.new()
 	_world_root.add_child(_poi_layer)
 
@@ -1072,6 +1084,7 @@ func _build_ui() -> void:
 	_world_root.add_child(_halo)
 
 	# Over the 3D chart, under every panel: added here, after the viewport and before the rest.
+	tok = _sm_mark("world", tok)
 	_view_cone = StarMapViewCone.new()
 	_surface.add_child(_view_cone)
 	_cursor_readout = StarMapCursorReadout.new()
@@ -1092,6 +1105,7 @@ func _build_ui() -> void:
 	# a body is to click it — and at system scale Tarsis VIII is three pixels wide. Typing is the way
 	# out of that, and it is the ONLY way to reach a town, which is not drawn at all until you are
 	# already close to the body carrying it.
+	tok = _sm_mark("overlay", tok)
 	var search_box := VBoxContainer.new()
 	# Centred at the top: it is the one control you go looking for, and on an ultrawide the top-left
 	# corner is a long way from where the eye is.
@@ -1140,6 +1154,7 @@ func _build_ui() -> void:
 	_surface.add_child(_scale)
 
 	# Info panel. Hidden until you pick a body, and filled from what the scene knows about it.
+	tok = _sm_mark("search", tok)
 	_info_panel = PanelContainer.new()
 	_info_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_info_panel.position = Vector2(INFO_PANEL_X, 16)
@@ -1158,6 +1173,13 @@ func _build_ui() -> void:
 	_info_text.custom_minimum_size = Vector2(310, 0)
 	_info_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(_info_text)
+	_sm_mark("info", tok)
+
+
+## Ends the sm:<[param scope_name]> scope begun at [param tok] and begins the next (ClientPerf, debug_perf).
+static func _sm_mark(scope_name: String, tok: int) -> int:
+	ClientPerf.scope_end("sm:" + scope_name, tok)
+	return ClientPerf.scope_begin()
 
 
 func _rebuild() -> void:
@@ -1597,6 +1619,21 @@ func _ring_colour(body_colour: Color) -> Color:
 	var lift: float = maxf(1.0, ORBIT_MIN_VALUE / peak)
 	return Color(minf(body_colour.r * lift, 1.0), minf(body_colour.g * lift, 1.0),
 			minf(body_colour.b * lift, 1.0), ORBIT_ALPHA)
+
+
+## What the warm-up draws (Warmup.RUNTIME_SURFACES) so the chart's flat materials (_flat_material, opaque and
+## blended) have their shaders before the player appears: two made with its face cost 31 ms then, on the main
+## thread (2026-11-28). Kept: a StandardMaterial3D's shader goes when its last material does.
+static func warm_surfaces() -> Array:
+	if _warm_materials.is_empty():
+		for blended: bool in [false, true]:
+			var mat := StandardMaterial3D.new()
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.vertex_color_use_as_albedo = true
+			if blended:
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			_warm_materials.append(mat)
+	return [[QuadMesh.new(), _warm_materials.duplicate()]]
 
 
 func _flat_material(colour: Color) -> StandardMaterial3D:

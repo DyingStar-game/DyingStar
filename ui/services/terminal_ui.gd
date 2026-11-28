@@ -274,9 +274,14 @@ func close() -> void:
 	hide()
 
 
-## The content card's slot of the NAVIGATION tab, for the chart's face to be hosted in.
+## The content card's slot of the NAVIGATION tab, for the chart's face to be hosted in. Made alone, out of the
+## tree until the tablet is first built (it then takes it in, _build): asked for as the player appears, it
+## built the whole tablet then -- 2 438 Controls laid out at once, 1.1 s of the frame the player appeared in
+## (2026-11-28), for a tablet most never open.
 func navigation_slot() -> Control:
-	_ensure_built()
+	if _navigation == null:
+		_navigation = Control.new()
+		_navigation.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return _navigation
 
 

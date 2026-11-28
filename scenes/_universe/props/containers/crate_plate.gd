@@ -78,7 +78,7 @@ func _ready() -> void:
 	_add_bezel(self)
 	if not OS.has_feature("dedicated_server"):
 		add_child(Photocell.new())  # drives its parent: set_lit() below
-		_add_top.call_deferred()
+		PerfTasks.deferred("crate_plate:add_top", _add_top)
 	visible = false
 	set_process(false)
 
