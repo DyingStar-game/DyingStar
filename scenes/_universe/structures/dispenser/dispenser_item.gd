@@ -14,3 +14,6 @@ extends Resource
 @export_file("*.tscn") var scene_path: String = ""
 ## How many come out per delivery, side by side in the hatch.
 @export_range(1, 6) var count: int = 1
+## Where it lies from the hatch's marker (m, in the marker's frame; -Z = the way a vehicle faces). Zero: on
+## the marker. The ship is moved forward, its rear ramp opening clear of the garage's terminal behind it.
+@export var spawn_offset: Vector3 = Vector3.ZERO

@@ -10,8 +10,17 @@ const PROMPT_SHADE := preload("res://ui/hud/prompt_shade.gd")
 const PROMPT_LEADER := preload("res://ui/hud/prompt_leader.gd")
 ## Height of the mouse button's picture in a prompt (px): a little taller than its 24 px text.
 const PROMPT_ICON_PX := 30
-## Piloting a ship: how fast (per second) the view swings back ahead once the free look (`aim` held) is let go.
+## Piloting a ship: how fast (per second) the view swings back ahead once the free look (`ship_free_look`
+## held) is let go.
 const FLIGHT_VIEW_RETURN: float = 6.0
+## In a ship, each seat control a truck reads, and the ship's own action read instead (_seat_key). The
+## flight axes, the brake, the free look and the stick's pitch / yaw have theirs too (flight_axes, ship_*).
+const SHIP_KEYS: Dictionary = {
+	"exit": "ship_exit", "vehicle_reset": "ship_reset", "vehicle_ignition": "ship_ignition",
+	"vehicle_lights": "ship_lights", "vehicle_speed_limiter": "ship_speed_limiter",
+	"vehicle_cruise_control": "ship_cruise_control", "vehicle_limiter_up": "ship_limiter_up",
+	"vehicle_limiter_down": "ship_limiter_down",
+}
 ## Step (m) the camera pivot's offset is rounded to before it is sent to the server ("eye"): a finer one
 ## only sends more, the server's look ray does not need it.
 const EYE_STEP_M := 0.02
@@ -594,7 +603,7 @@ func _process(_delta: float) -> void:
 		var seated_focus: bool = _ui_focus()
 		_apply_cursor_mode(seated_focus)  # a panel opened at the wheel needs the pointer, same as on foot
 		if not seated_focus:
-			player.mouse_motion += _stick_look(_delta)  # free look at the wheel, from the stick too
+			player.mouse_motion += _stick_look(_delta, _flying_ship())  # free look at the wheel, from the stick too
 		if _flying_ship():
 			_update_flight_view(seated_focus, _delta)
 		player._ride_seat(player._seat_node)
@@ -970,7 +979,7 @@ static func flight_view(ui_focus: bool, aiming: bool) -> FlightView:
 ## every frame -- the tablet drawn beside where the cursor's ray met it, its clicks lost. Nothing gathered
 ## meanwhile is kept, so closing the panel does not jerk the ship.
 func _update_flight_view(ui_focus: bool, delta: float) -> void:
-	var mode: FlightView = flight_view(ui_focus, Input.is_action_pressed(&"aim"))
+	var mode: FlightView = flight_view(ui_focus, Input.is_action_pressed(&"ship_free_look"))
 	if mode == FlightView.FROZEN or _flight_was_frozen:
 		# Under the panel, and on the first frame back (the cursor's re-capture is not a look).
 		_flight_look = Vector2.ZERO
@@ -989,9 +998,9 @@ func _update_flight_view(ui_focus: bool, delta: float) -> void:
 
 
 ## Owner, at a ship's controls: the same "vehicle_input" message as the truck's, with the six flight axes
-## (Spaceship.flight_input) -- forward / back on the vehicle's pedals, strafe on the walk's left / right, up /
-## down on strafe_up / strafe_down, roll on roll_left / roll_right, pitch and yaw from the mouse look
-## gathered since the last tick -- and the brake on eva_stabilize (Space is "up" here). Sent on change.
+## (Spaceship.flight_input) -- the ship's own keys (ship_forward / ship_back, ship_strafe_*, ship_up /
+## ship_down, ship_roll_*), pitch and yaw from the mouse look (and the right stick, _stick_look) gathered
+## since the last tick -- and the brake on ship_brake. Sent on change.
 func _send_flight_input(locked: bool) -> void:
 	# The look is gathered per RENDER frame, read per physics tick: turned into a rate once per new render
 	# frame, over the time it covers, and kept for the other ticks of the same frame. Read raw, a tick with
@@ -1020,17 +1029,17 @@ static func flight_axes(look: Vector2, locked: bool) -> Dictionary:
 	if locked:
 		return {"throttle": 0.0, "strafe": 0.0, "lift": 0.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0, "brake": false}
 	var axes: Dictionary = {
-		"throttle": Input.get_axis("vehicle_decelerate", "vehicle_accelerate"),
-		"strafe": Input.get_axis("move_left", "move_right"),
+		"throttle": Input.get_axis("ship_back", "ship_forward"),
+		"strafe": Input.get_axis("ship_strafe_left", "ship_strafe_right"),
 		# Through AltGr, as the EVA's: Windows sends AltGr with a fake Ctrl, which would read as "down".
-		"lift": AltGr.axis("strafe_down", "strafe_up"),
-		"roll": Input.get_axis("roll_left", "roll_right"),
+		"lift": AltGr.axis("ship_down", "ship_up"),
+		"roll": Input.get_axis("ship_roll_left", "ship_roll_right"),
 		"pitch": look.y,
 		"yaw": -look.x,
 	}
 	for axis: String in axes:
 		axes[axis] = snappedf(clampf(float(axes[axis]), -1.0, 1.0), SHIP_AXIS_STEP)
-	axes["brake"] = Input.is_action_pressed("eva_stabilize")
+	axes["brake"] = Input.is_action_pressed("ship_brake")
 	return axes
 
 ## Driver: a long press on the brake key at low speed toggles the hand brake (once per hold).
@@ -1070,17 +1079,28 @@ func _send_horn_input(event: InputEvent) -> void:
 ## toggle the limiter. Returns true when the event was ours, so the caller stops there — a wheel
 ## notch spent on the limiter must not also change the walk speed.
 func _handle_limiter_input(event: InputEvent) -> bool:
-	if event.is_action_pressed("vehicle_speed_limiter", false, true):
+	if event.is_action_pressed(_seat_key("vehicle_speed_limiter"), false, true):
 		_send_vehicle_action("vehicle_limiter")
 		return true
-	if event.is_action_pressed("vehicle_cruise_control", false, true):
+	if event.is_action_pressed(_seat_key("vehicle_cruise_control"), false, true):
 		_send_vehicle_action("vehicle_cruise")
 		return true
-	var up: bool = event.is_action_pressed("vehicle_limiter_up", false, true)
-	if up or event.is_action_pressed("vehicle_limiter_down", false, true):
+	var up: bool = event.is_action_pressed(_seat_key("vehicle_limiter_up"), false, true)
+	if up or event.is_action_pressed(_seat_key("vehicle_limiter_down"), false, true):
 		_send_vehicle_action("vehicle_limiter_step", {"dir": 1 if up else -1})
 		return true
 	return false
+
+
+## The ship's own action for a seat control (SHIP_KEYS) while we sit in a ship, else [param action] as is:
+## a ship shares no key with the truck, so each can be rebound alone (Settings > Controls > Ship).
+func _seat_key(action: String) -> String:
+	return str(SHIP_KEYS.get(action, action)) if _in_ship() else action
+
+
+## Whether our seat, at the controls or not, is in a ship (a vehicle that takes a flight input, Spaceship).
+func _in_ship() -> bool:
+	return is_instance_valid(player._seat_vehicle_node) and player._seat_vehicle_node.has_method("set_flight_input")
 
 
 ## Every driving control goes to the vehicle of our seat; one place builds the message.
@@ -1097,8 +1117,10 @@ func _is_driving() -> bool:
 ## STICK_LOOK_RATE pushed all the way. Squared, so a small push is a fine aim and a full one a turn.
 ## Through mouse_motion, the one road the view is turned by: aiming slows it and perforating holds it
 ## for the stick as for the mouse, and a carried crate tumbles under it the same way.
-func _stick_look(delta: float) -> Vector2:
-	var stick: Vector2 = InputDevice.pad_vector(&"look_left", &"look_right", &"look_up", &"look_down")
+## [param ship]: at a ship's controls, the ship's own pitch and yaw actions instead of the walk's look.
+func _stick_look(delta: float, ship: bool = false) -> Vector2:
+	var stick: Vector2 = InputDevice.pad_vector(&"ship_yaw_left", &"ship_yaw_right", &"ship_pitch_up",
+			&"ship_pitch_down") if ship else InputDevice.pad_vector(&"look_left", &"look_right", &"look_up", &"look_down")
 	if stick == Vector2.ZERO:
 		return Vector2.ZERO
 	return -stick * stick.length() * (STICK_LOOK_RATE * delta / maxf(player.camera_sensitivity, 0.001))
@@ -1470,7 +1492,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	#
 	# Asking unconditionally costs one round trip before standing up and makes the request IDEMPOTENT:
 	# a refusal changes nothing here, so pressing Y again (once the door is really open) always works.
-	if player._seat_vehicle_uuid != "" and InputCombo.pressed(event, "exit"):
+	if player._seat_vehicle_uuid != "" and InputCombo.pressed(event, _seat_key("exit")):
 		_send_vehicle_action("exit_vehicle")
 		return
 
@@ -1478,12 +1500,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	# not caught above (the controls help, a place being named, the bug report): the wheel scrolling it
 	# stepped the speed limiter, its keys sounded the horn or switched the engine off.
 	if _is_driving() and not _input_locked():
-		if InputCombo.pressed(event, "vehicle_reset"):
+		if InputCombo.pressed(event, _seat_key("vehicle_reset")):
 			_send_vehicle_action("reset_vehicle")  # put the vehicle back upright
-		_send_horn_input(event)
-		if InputCombo.pressed(event, "vehicle_ignition"):
+		if not _flying_ship():  # a ship has no horn
+			_send_horn_input(event)
+		if InputCombo.pressed(event, _seat_key("vehicle_ignition")):
 			_send_vehicle_action("vehicle_ignition")  # on or off at any speed; refused with no motor or no charge
-		if InputCombo.pressed(event, "vehicle_lights"):
+		if _flying_ship() and InputCombo.pressed(event, "ship_ramp"):
+			_send_vehicle_action("ship_ramp")  # the rear ramp, from the pilot's seat (it is behind them)
+		if InputCombo.pressed(event, _seat_key("vehicle_lights")):
 			_send_vehicle_action("vehicle_lights")
 		if _handle_limiter_input(event):
 			return
@@ -1916,7 +1941,7 @@ func _prompt(action: StringName, text: String) -> String:
 func _door_prompt(handle: VehicleDoorHandle) -> String:
 	var veh = handle.vehicle()
 	var is_open: bool = veh != null and veh.has_method("is_door_open") and veh.is_door_open(handle.door_id)
-	return _prompt(&"action", tr("%%HUD_DOOR_CLOSE" if is_open else "%%HUD_DOOR_OPEN"))
+	return _prompt(&"action", tr(handle.prompt_close if is_open else handle.prompt_open))
 
 ## True if a seat may be boarded right now: it has no gating door, or its door_id is currently open.
 ## Lets a vehicle require "open the door first" before E enters (the door is opened via its handle).
@@ -2196,17 +2221,19 @@ func _offer_play_hints() -> void:
 		PlayHints.row(&"vehicle_horn_special", "", 1), PlayHints.row(&"vehicle_reset", "", 1),
 	], func() -> bool: return _is_driving() and not _flying_ship(), 10)
 	# A ship's controls are not a truck's: no horn, six axes, and the mouse steers (see _send_flight_input).
-	# The limiter and the cruise control are the truck's (Spaceship maps them to flight).
+	# Every key is the ship's own (ship_*, SHIP_KEYS); the limiter and the cruise control work as the
+	# truck's (Spaceship maps them to flight).
 	PlayHints.provide(self, &"piloting_ship", [
-		PlayHints.row([&"vehicle_accelerate", &"move_left", &"vehicle_decelerate", &"move_right"], "%%HINT_SHIP_MOVE"),
-		PlayHints.row([&"strafe_up", &"strafe_down"], "%%HINT_SHIP_LIFT"),
-		PlayHints.row([&"vehicle_limiter_up", &"vehicle_limiter_down"], "%%HINT_SHIP_SPEED"),
-		PlayHints.row([&"roll_left", &"roll_right"], "%%HINT_ROLL"),
-		PlayHints.row(&"eva_stabilize", "%%HINT_SHIP_BRAKE"), PlayHints.row(&"aim", "%%HINT_SHIP_FREE_LOOK"),
-		PlayHints.row(&"vehicle_ignition"), PlayHints.row(&"vehicle_lights"), PlayHints.row(&"exit"),
-		PlayHints.row(&"vehicle_speed_limiter", "", 1),
-		PlayHints.row(&"vehicle_cruise_control", "", 1),
-		PlayHints.row(&"vehicle_reset", "", 1),
+		PlayHints.row([&"ship_forward", &"ship_strafe_left", &"ship_back", &"ship_strafe_right"], "%%HINT_SHIP_MOVE"),
+		PlayHints.row([&"ship_up", &"ship_down"], "%%HINT_SHIP_LIFT"),
+		PlayHints.row([&"ship_limiter_up", &"ship_limiter_down"], "%%HINT_SHIP_SPEED"),
+		PlayHints.row([&"ship_roll_left", &"ship_roll_right"], "%%HINT_ROLL"),
+		PlayHints.row(&"ship_brake", "%%HINT_SHIP_BRAKE"), PlayHints.row(&"ship_free_look", "%%HINT_SHIP_FREE_LOOK"),
+		PlayHints.row(&"ship_ignition"), PlayHints.row(&"ship_lights"), PlayHints.row(&"ship_ramp"),
+		PlayHints.row(&"ship_exit"),
+		PlayHints.row(&"ship_speed_limiter", "", 1),
+		PlayHints.row(&"ship_cruise_control", "", 1),
+		PlayHints.row(&"ship_reset", "", 1),
 	], func() -> bool: return _is_driving() and _flying_ship(), 10)
 	PlayHints.provide(self, &"passenger", [PlayHints.row(&"exit")],
 			func() -> bool: return seated.call() and not _is_driving(), 10)

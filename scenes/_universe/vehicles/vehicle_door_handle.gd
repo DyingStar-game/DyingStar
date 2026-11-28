@@ -22,6 +22,10 @@ extends Area3D
 ## use the vehicle's door_hinge_axis. A cab door turns about the vertical, a bay hatch usually does
 ## not, and one axis for the whole vehicle cannot serve both.
 @export var hinge_axis: Vector3 = Vector3.ZERO
+## Translation key of the prompt while this door is shut ("Open door"); a ramp says "Open ramp".
+@export var prompt_open: String = "%%HUD_DOOR_OPEN"
+## Translation key of the prompt while this door is open ("Close door").
+@export var prompt_close: String = "%%HUD_DOOR_CLOSE"
 @export_group("Wind")
 ## Area of the door leaf (m2) the relative wind presses on once it is open. -1 = measured from the
 ## door's own mesh when its door_id ends with "_door" (a cab door), none otherwise (a hatch: hatch_fl);

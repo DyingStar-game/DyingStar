@@ -105,7 +105,10 @@ func _update_sun(delta: float) -> void:
 	to_star = to_star.normalized()
 	star_direction = to_star
 	# Stabilised up (centre planet -> player): reject a momentary gravity-area glitch, follow real motion.
-	var up_raw: Vector3 = (player as CharacterBody3D).up_direction
+	# The SKY's up, the planet's radial, not the body's: aboard a ship the body is held by the ship's own
+	# gravity (its floor), and a ship that rolled or looped swung the day, the night and the air with it.
+	var body_up: Vector3 = (player as CharacterBody3D).up_direction
+	var up_raw: Vector3 = sky_up(player, body_up)
 	# Orientation-settled detection for the spawn screen: count frames where the raw up barely moves. On
 	# the ground the gravity stack swings for a few frames after spawn (and the body/camera + light follow);
 	# once it holds steady, everything has settled. Planet spin is negligible per frame, so it stays steady.
@@ -117,7 +120,7 @@ func _update_sun(delta: float) -> void:
 	# Settled = the up has held steady AND the BODY has finished aligning to it. orient_player() lerps the
 	# body toward align-with-up by 0.3/frame, so the camera keeps straightening for a stretch after the up
 	# is steady; wait until the body's own up matches the gravity up before lifting the spawn screen.
-	var body_aligned: bool = player.global_transform.basis.y.dot(up_raw) > 0.9995
+	var body_aligned: bool = player.global_transform.basis.y.dot(body_up) > 0.9995
 	if _up_steady_frames >= 20 and body_aligned:
 		settled = true
 	if _up_stable == Vector3.ZERO:
@@ -255,6 +258,18 @@ func _apply_shadow_distance() -> void:
 		return
 	var overhead: Color = atmosphere.transmittance_at(1.0)
 	directional_shadow_max_distance = maxf(setting * overhead.get_luminance(), MIN_SHADOW_DISTANCE)
+
+
+## The local vertical of the sky at [param observer]: away from the centre of the planet it is under
+## (Planet.of), whatever holds its body -- a ship's or a station pad's gravity has a floor of its own
+## that turns with it. [param fallback] (the body's up) in deep space. Subtracted before normalising,
+## so it stays exact at astronomic coordinates. Static, for the tests.
+static func sky_up(observer: Node3D, fallback: Vector3) -> Vector3:
+	var planet: Node3D = Planet.of(observer)
+	if planet == null:
+		return fallback
+	var out: Vector3 = observer.global_position - planet.global_position
+	return out.normalized() if out.length_squared() > 1.0 else fallback
 
 
 ## The stabilised local up, for AtmosphereRenderer and MoonLights. A read-only view: the
