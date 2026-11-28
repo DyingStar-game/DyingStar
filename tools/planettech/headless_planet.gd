@@ -104,17 +104,22 @@ static func fetch_ancestors(data: PlanetData, tiles: Array, fetchers: int,
 ## Wait until every tile of [param tiles] (export ipix -> true) is readable — pruned tiles
 ## climb to their finest published ancestor, which the source fetches on its own thread once
 ## PlanetData._grade_tiles_missing has queued it. False when one never can, or after
-## [param timeout_ms]. [param what] names the job in the messages; [param say] and
-## [param err] print a line.
+## [param timeout_ms] without a single tile arriving: a long line (the 42 000 km ring) asks
+## thousands, which take minutes but keep coming. [param what] names the job in the messages;
+## [param say] and [param err] print a line.
 static func wait_tiles(data: PlanetData, tiles: Dictionary, what: String, say: Callable,
 		err: Callable, timeout_ms: int = 60000) -> bool:
 	var deadline := Time.get_ticks_msec() + timeout_ms
 	var next_report := 0
+	var fewest := -1
 	while true:
 		var state := data._grade_tiles_missing(tiles)
 		var missing := int(state["missing"])
 		if missing == 0:
 			return true
+		if fewest < 0 or missing < fewest:
+			fewest = missing
+			deadline = Time.get_ticks_msec() + timeout_ms
 		if Time.get_ticks_msec() >= next_report:
 			next_report = Time.get_ticks_msec() + 10000
 			_report(data, tiles, what, missing, say)
@@ -122,7 +127,8 @@ static func wait_tiles(data: PlanetData, tiles: Dictionary, what: String, say: C
 			err.call("%s: %d tile(s) can never be read" % [what, missing])
 			return false
 		if Time.get_ticks_msec() > deadline:
-			err.call("%s: %d tile(s) still missing after %d s" % [what, missing, timeout_ms / 1000])
+			err.call("%s: %d tile(s) still missing, none arrived in %d s"
+					% [what, missing, timeout_ms / 1000])
 			return false
 		OS.delay_msec(500)
 	return false
